@@ -56,10 +56,15 @@ jobs:
           WEBCMD_E2E: '0'
         run: |
           xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" \
-            npm run test:e2e -- --reporter=verbose
+            npx vitest run --project e2e-fixed-port --project e2e \
+              tests/e2e/browser-tabs.test.ts tests/e2e/cloak-runtime.test.ts \
+              --reporter=verbose
 
       - name: Run browser e2e tests (macOS)
         if: runner.os == 'macOS'
         env:
           WEBCMD_E2E: '0'
-        run: npm run test:e2e -- --reporter=verbose
+        run: |
+          npx vitest run --project e2e-fixed-port --project e2e \
+            tests/e2e/browser-tabs.test.ts tests/e2e/cloak-runtime.test.ts \
+            --reporter=verbose
