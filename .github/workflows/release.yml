@@ -1,0 +1,71 @@
+name: Release Please
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  id-token: write
+
+concurrency:
+  group: release-please-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create or finalize release PR
+        uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+      - name: Checkout release commit
+        if: ${{ steps.release.outputs.release_created }}
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        if: ${{ steps.release.outputs.release_created }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        if: ${{ steps.release.outputs.release_created }}
+        run: npm ci
+
+      - name: Type check
+        if: ${{ steps.release.outputs.release_created }}
+        run: npm run typecheck
+
+      - name: Build package
+        if: ${{ steps.release.outputs.release_created }}
+        run: npm run build
+
+      - name: Check cli-manifest.json is up-to-date
+        if: ${{ steps.release.outputs.release_created }}
+        shell: bash
+        run: |
+          if ! git diff --exit-code -- cli-manifest.json; then
+            echo "::error::cli-manifest.json drift detected at release time. Run 'npm run build' locally and commit the result before release."
+            exit 1
+          fi
+
+      - name: Run tests
+        if: ${{ steps.release.outputs.release_created }}
+        run: npm test
+
+      - name: Publish to npm
+        if: ${{ steps.release.outputs.release_created }}
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

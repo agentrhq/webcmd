@@ -1,0 +1,9 @@
+export const PRODUCT_NAME = 'webcmd';
+export const PRODUCT_DISPLAY_NAME = 'Webcmd';
+export const CLI_COMMAND = 'webcmd';
+export const PACKAGE_NAME = '@agentrhq/webcmd';
+export const CONFIG_DIR_NAME = '.webcmd';
+export const ENV_PREFIX = 'WEBCMD';
+export const DAEMON_HEADER_NAME = 'X-Webcmd';
+export const EXTENSION_PACKAGE_NAME = 'webcmd-extension';
+export const EXTENSION_ARTIFACT_PREFIX = 'webcmd-extension';

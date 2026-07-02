@@ -1,0 +1,12 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "node",
+  "initial-version": "0.1.0",
+  "include-v-in-tag": true,
+  "packages": {
+    ".": {
+      "package-name": "@agentrhq/webcmd",
+      "changelog-path": "CHANGELOG.md"
+    }
+  }
+}
