@@ -1,0 +1,32 @@
+node_modules/
+dist/
+!extension/dist/
+*.tsbuildinfo
+.webcmd/
+.superpowers/
+.worktrees/
+.mcp.json
+*.log
+.DS_Store
+
+# Local-only research, examples, and agent planning artifacts
+autoresearch/
+cases/
+designs/
+docs/superpowers/
+instagram-test/
+llms.txt
+sitemaps/
+
+# Extensions & Secrets
+*.pem
+*.crx
+*.zip
+.envrc
+.windsurf
+.claude
+.cortex
+
+# Database files
+*.db
+autoresearch-results.tsv

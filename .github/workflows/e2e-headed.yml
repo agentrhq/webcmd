@@ -1,0 +1,70 @@
+name: E2E Browser Runtime
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'package.json'
+      - 'package-lock.json'
+      - 'src/browser/**'
+      - 'src/daemon.ts'
+      - 'src/execution.ts'
+      - 'src/interceptor.ts'
+      - 'tests/e2e/**'
+      - '.github/workflows/e2e-headed.yml'
+  schedule:
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e-browser-runtime:
+    name: E2E (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Install xvfb
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      - name: Run browser e2e tests (Linux)
+        if: runner.os == 'Linux'
+        env:
+          WEBCMD_E2E: '0'
+        run: |
+          xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" \
+            npx vitest run --project e2e-fixed-port --project e2e \
+              tests/e2e/browser-tabs.test.ts tests/e2e/cloak-runtime.test.ts \
+              --reporter=verbose
+
+      - name: Run browser e2e tests (macOS)
+        if: runner.os == 'macOS'
+        env:
+          WEBCMD_E2E: '0'
+        run: |
+          npx vitest run --project e2e-fixed-port --project e2e \
+            tests/e2e/browser-tabs.test.ts tests/e2e/cloak-runtime.test.ts \
+            --reporter=verbose

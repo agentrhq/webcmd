@@ -1,0 +1,107 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { CloakSessionManager } from './session-manager.js';
+
+function fakeContext() {
+  const page = {
+    goto: vi.fn().mockResolvedValue(undefined),
+    evaluate: vi.fn().mockResolvedValue('ok'),
+    title: vi.fn().mockResolvedValue('Title'),
+    url: vi.fn().mockReturnValue('https://example.com/'),
+    screenshot: vi.fn().mockResolvedValue(Buffer.from('png')),
+    isClosed: vi.fn().mockReturnValue(false),
+    close: vi.fn().mockResolvedValue(undefined),
+  };
+  return {
+    context: {
+      pages: vi.fn().mockReturnValue([page]),
+      newPage: vi.fn().mockResolvedValue(page),
+      cookies: vi.fn().mockResolvedValue([{ name: 'sid', value: '1', domain: 'example.com', path: '/' }]),
+      close: vi.fn().mockResolvedValue(undefined),
+    },
+    page,
+  };
+}
+
+describe('CloakSessionManager', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('launches one persistent context per profile and reuses named sessions', async () => {
+    const launched = fakeContext();
+    const launchPersistentContext = vi.fn().mockResolvedValue(launched.context);
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      launchPersistentContext,
+    });
+
+    const first = await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser' });
+    const second = await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser' });
+
+    expect(first.page).toBe(second.page);
+    expect(launchPersistentContext).toHaveBeenCalledTimes(1);
+    expect(launchPersistentContext.mock.calls[0][0]).toMatchObject({ headless: false });
+  });
+
+  it('closes ephemeral adapter sessions when released', async () => {
+    const launched = fakeContext();
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
+    });
+    const lease = await manager.getPage({ profileId: 'default', session: 'site:x:uuid', surface: 'adapter', siteSession: 'ephemeral' });
+    await manager.release({ profileId: 'default', session: 'site:x:uuid', surface: 'adapter' });
+    expect(lease.page.close).toHaveBeenCalled();
+  });
+
+  it('closes non-persistent leases when their idle timeout expires', async () => {
+    vi.useFakeTimers();
+    const launched = fakeContext();
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
+    });
+    const lease = await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser', idleTimeout: 25 });
+
+    await vi.advanceTimersByTimeAsync(24);
+    expect(lease.page.close).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(lease.page.close).toHaveBeenCalled();
+    expect(await manager.listPages({ profileId: 'default' })).toEqual([]);
+  });
+
+  it('refreshes an idle timeout when a lease is reused', async () => {
+    vi.useFakeTimers();
+    const launched = fakeContext();
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
+    });
+    const first = await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser', idleTimeout: 25 });
+
+    await vi.advanceTimersByTimeAsync(20);
+    const second = await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser', idleTimeout: 25 });
+    expect(second.page).toBe(first.page);
+    await vi.advanceTimersByTimeAsync(20);
+    expect(first.page.close).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(5);
+    expect(first.page.close).toHaveBeenCalled();
+  });
+
+  it('does not close persistent site sessions when their idle timeout expires', async () => {
+    vi.useFakeTimers();
+    const launched = fakeContext();
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
+    });
+    const lease = await manager.getPage({ profileId: 'default', session: 'site:x:uuid', surface: 'adapter', siteSession: 'persistent', idleTimeout: 25 });
+
+    await vi.advanceTimersByTimeAsync(25);
+
+    expect(lease.page.close).not.toHaveBeenCalled();
+    expect(await manager.listPages({ profileId: 'default' })).toHaveLength(1);
+  });
+});
