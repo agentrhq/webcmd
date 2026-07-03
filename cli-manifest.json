@@ -25360,6 +25360,115 @@
     "navigateBefore": false
   },
   {
+    "site": "open-meteo",
+    "name": "current",
+    "description": "Current weather from Open-Meteo for a city or lat,lon",
+    "access": "read",
+    "domain": "open-meteo.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "location",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "City name or \"lat,lon\""
+      },
+      {
+        "name": "units",
+        "type": "str",
+        "default": "metric",
+        "required": false,
+        "help": "metric or imperial units",
+        "choices": [
+          "metric",
+          "imperial"
+        ]
+      }
+    ],
+    "columns": [
+      "location",
+      "region",
+      "country",
+      "latitude",
+      "longitude",
+      "timezone",
+      "time",
+      "temperature",
+      "apparentTemperature",
+      "humidity",
+      "precipitation",
+      "cloudCover",
+      "windSpeed",
+      "windDirection",
+      "windGusts",
+      "isDay",
+      "weather"
+    ],
+    "type": "js",
+    "modulePath": "open-meteo/current.js",
+    "sourceFile": "open-meteo/current.js"
+  },
+  {
+    "site": "open-meteo",
+    "name": "forecast",
+    "description": "Daily Open-Meteo forecast for a city or lat,lon",
+    "access": "read",
+    "domain": "open-meteo.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "location",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "City name or \"lat,lon\""
+      },
+      {
+        "name": "days",
+        "type": "int",
+        "default": 7,
+        "required": false,
+        "help": "Forecast days (1-16)"
+      },
+      {
+        "name": "units",
+        "type": "str",
+        "default": "metric",
+        "required": false,
+        "help": "metric or imperial units",
+        "choices": [
+          "metric",
+          "imperial"
+        ]
+      }
+    ],
+    "columns": [
+      "rank",
+      "location",
+      "region",
+      "country",
+      "latitude",
+      "longitude",
+      "timezone",
+      "date",
+      "weather",
+      "tempMin",
+      "tempMax",
+      "apparentTempMin",
+      "apparentTempMax",
+      "precipitation",
+      "precipitationProbability",
+      "windSpeedMax",
+      "windGustsMax"
+    ],
+    "type": "js",
+    "modulePath": "open-meteo/forecast.js",
+    "sourceFile": "open-meteo/forecast.js"
+  },
+  {
     "site": "openalex",
     "name": "search",
     "description": "Search OpenAlex Works (papers, books, preprints) by keyword",
