@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ArgumentError, EmptyResultError } from '@agentrhq/webcmd/errors';
 import { getRegistry } from '@agentrhq/webcmd/registry';
+import './asset.js';
+import './captions.js';
+import './metadata.js';
 import './search.js';
 
 afterEach(() => {
@@ -74,5 +77,86 @@ describe('nasa-images search', () => {
             collection: { items: [] },
         }), { status: 200 }))));
         await expect(cmd.func({ query: 'not-a-real-query' })).rejects.toBeInstanceOf(EmptyResultError);
+    });
+});
+
+describe('nasa-images asset', () => {
+    const cmd = getRegistry().get('nasa-images/asset');
+
+    it('lists asset file URLs', async () => {
+        vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(JSON.stringify({
+            collection: {
+                items: [
+                    { href: 'http://images-assets.nasa.gov/image/as11-40-5874/as11-40-5874~orig.jpg' },
+                    { href: 'http://images-assets.nasa.gov/image/as11-40-5874/metadata.json' },
+                ],
+            },
+        }), { status: 200 }))));
+
+        await expect(cmd.func({ nasaId: 'as11-40-5874' })).resolves.toEqual([
+            {
+                rank: 1,
+                nasaId: 'as11-40-5874',
+                variant: 'orig',
+                extension: 'jpg',
+                url: 'http://images-assets.nasa.gov/image/as11-40-5874/as11-40-5874~orig.jpg',
+            },
+            {
+                rank: 2,
+                nasaId: 'as11-40-5874',
+                variant: 'metadata',
+                extension: 'json',
+                url: 'http://images-assets.nasa.gov/image/as11-40-5874/metadata.json',
+            },
+        ]);
+    });
+
+    it('rejects missing NASA ids', async () => {
+        await expect(cmd.func({ nasaId: '' })).rejects.toBeInstanceOf(ArgumentError);
+    });
+
+    it('treats missing assets as empty results', async () => {
+        vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response('', { status: 404 }))));
+        await expect(cmd.func({ nasaId: 'missing' })).rejects.toBeInstanceOf(EmptyResultError);
+    });
+});
+
+describe('nasa-images metadata', () => {
+    const cmd = getRegistry().get('nasa-images/metadata');
+
+    it('returns the metadata URL', async () => {
+        vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(JSON.stringify({
+            location: 'https://images-assets.nasa.gov/image/as11-40-5874/metadata.json',
+        }), { status: 200 }))));
+
+        await expect(cmd.func({ nasaId: 'as11-40-5874' })).resolves.toEqual([{
+            nasaId: 'as11-40-5874',
+            metadataUrl: 'https://images-assets.nasa.gov/image/as11-40-5874/metadata.json',
+        }]);
+    });
+
+    it('requires the metadata location', async () => {
+        vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(JSON.stringify({}), { status: 200 }))));
+        await expect(cmd.func({ nasaId: 'as11-40-5874' })).rejects.toBeInstanceOf(EmptyResultError);
+    });
+});
+
+describe('nasa-images captions', () => {
+    const cmd = getRegistry().get('nasa-images/captions');
+
+    it('returns the captions URL', async () => {
+        vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(JSON.stringify({
+            location: 'https://images-assets.nasa.gov/video/172_ISS-Slosh/172_ISS-Slosh.srt',
+        }), { status: 200 }))));
+
+        await expect(cmd.func({ nasaId: '172_ISS-Slosh' })).resolves.toEqual([{
+            nasaId: '172_ISS-Slosh',
+            captionsUrl: 'https://images-assets.nasa.gov/video/172_ISS-Slosh/172_ISS-Slosh.srt',
+        }]);
+    });
+
+    it('treats missing captions as empty results', async () => {
+        vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response('', { status: 404 }))));
+        await expect(cmd.func({ nasaId: 'as11-40-5874' })).rejects.toBeInstanceOf(EmptyResultError);
     });
 });

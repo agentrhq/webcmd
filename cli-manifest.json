@@ -23586,6 +23586,84 @@
   },
   {
     "site": "nasa-images",
+    "name": "asset",
+    "description": "List downloadable asset files for a NASA media item",
+    "access": "read",
+    "domain": "images-api.nasa.gov",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "nasaId",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "NASA media id, e.g. as11-40-5874"
+      }
+    ],
+    "columns": [
+      "rank",
+      "nasaId",
+      "variant",
+      "extension",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "nasa-images/asset.js",
+    "sourceFile": "nasa-images/asset.js"
+  },
+  {
+    "site": "nasa-images",
+    "name": "captions",
+    "description": "Get the caption file URL for a NASA video item",
+    "access": "read",
+    "domain": "images-api.nasa.gov",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "nasaId",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "NASA video id, e.g. 172_ISS-Slosh"
+      }
+    ],
+    "columns": [
+      "nasaId",
+      "captionsUrl"
+    ],
+    "type": "js",
+    "modulePath": "nasa-images/captions.js",
+    "sourceFile": "nasa-images/captions.js"
+  },
+  {
+    "site": "nasa-images",
+    "name": "metadata",
+    "description": "Get the metadata JSON URL for a NASA media item",
+    "access": "read",
+    "domain": "images-api.nasa.gov",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "nasaId",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "NASA media id, e.g. as11-40-5874"
+      }
+    ],
+    "columns": [
+      "nasaId",
+      "metadataUrl"
+    ],
+    "type": "js",
+    "modulePath": "nasa-images/metadata.js",
+    "sourceFile": "nasa-images/metadata.js"
+  },
+  {
+    "site": "nasa-images",
     "name": "search",
     "description": "Search NASA Images and Video Library media",
     "access": "read",

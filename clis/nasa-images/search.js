@@ -1,62 +1,6 @@
-import { ArgumentError, CommandExecutionError, EmptyResultError } from '@agentrhq/webcmd/errors';
+import { EmptyResultError } from '@agentrhq/webcmd/errors';
 import { cli, Strategy } from '@agentrhq/webcmd/registry';
-
-const SEARCH_URL = 'https://images-api.nasa.gov/search';
-const UA = 'webcmd-nasa-images-adapter (+https://github.com/agentrhq/webcmd)';
-
-function requireQuery(value) {
-    const query = String(value ?? '').trim();
-    if (!query) throw new ArgumentError('nasa-images query is required');
-    return query;
-}
-
-function intArg(value, defaultValue, maxValue, label) {
-    const raw = value == null || value === '' ? defaultValue : value;
-    const n = Number(raw);
-    if (!Number.isInteger(n) || n < 1 || n > maxValue) {
-        throw new ArgumentError(`nasa-images ${label} must be an integer between 1 and ${maxValue}`);
-    }
-    return n;
-}
-
-function yearArg(value, label) {
-    if (value == null || value === '') return null;
-    const year = Number(value);
-    if (!Number.isInteger(year) || year < 1900 || year > 2100) {
-        throw new ArgumentError(`nasa-images ${label} must be a year between 1900 and 2100`);
-    }
-    return year;
-}
-
-async function fetchJson(url) {
-    let resp;
-    try {
-        resp = await fetch(url, { headers: { 'user-agent': UA, accept: 'application/json' } });
-    } catch (err) {
-        throw new CommandExecutionError(`nasa-images search request failed: ${err?.message ?? err}`);
-    }
-    if (!resp.ok) {
-        throw new CommandExecutionError(`nasa-images search returned HTTP ${resp.status}`);
-    }
-    try {
-        return await resp.json();
-    } catch (err) {
-        throw new CommandExecutionError(`nasa-images search returned malformed JSON: ${err?.message ?? err}`);
-    }
-}
-
-function firstData(item) {
-    return Array.isArray(item?.data) && item.data.length ? item.data[0] : {};
-}
-
-function firstPreview(item) {
-    const link = Array.isArray(item?.links) ? item.links.find((l) => l?.href) : null;
-    return String(link?.href ?? '').trim();
-}
-
-function join(values, max = 5) {
-    return Array.isArray(values) ? values.slice(0, max).filter(Boolean).join(', ') : '';
-}
+import { API_BASE, collectionItems, fetchJson, firstData, firstPreview, intArg, join, requireQuery, yearArg } from './utils.js';
 
 cli({
     site: 'nasa-images',
@@ -84,7 +28,7 @@ cli({
         const yearEnd = yearArg(args['year-end'], 'year-end');
         const mediaType = String(args['media-type'] ?? 'image').trim();
 
-        const url = new URL(SEARCH_URL);
+        const url = new URL(`${API_BASE}/search`);
         url.searchParams.set('q', query);
         url.searchParams.set('page_size', String(limit));
         url.searchParams.set('page', String(page));
@@ -93,8 +37,8 @@ cli({
         if (yearEnd != null) url.searchParams.set('year_end', String(yearEnd));
         if (String(args.center ?? '').trim()) url.searchParams.set('center', String(args.center).trim());
 
-        const body = await fetchJson(url);
-        const items = Array.isArray(body?.collection?.items) ? body.collection.items : [];
+        const body = await fetchJson(url, 'nasa-images search');
+        const items = collectionItems(body);
         if (!items.length) {
             throw new EmptyResultError('nasa-images search', `No NASA media matched "${query}".`);
         }
