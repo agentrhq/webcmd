@@ -1386,8 +1386,7 @@
       "calories",
       "ingredients",
       "instructions",
-      "url",
-      "key"
+      "url"
     ],
     "type": "js",
     "modulePath": "allrecipes/recipe.js",

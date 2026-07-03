@@ -21,7 +21,7 @@ describe('allrecipes recipe', () => {
             payload: {
                 name: "World's Best Lasagna",
                 author: { name: 'John Chandler' },
-                aggregateRating: { ratingValue: '4.8', ratingCount: 20500 },
+                aggregateRating: { ratingValue: '4.8', ratingCount: '20500' },
                 prepTime: 'PT30M',
                 cookTime: 'PT2H30M',
                 totalTime: 'PT3H15M',
@@ -47,7 +47,6 @@ describe('allrecipes recipe', () => {
             ingredients: '1 pound sweet Italian sausage\n12 lasagna noodles',
             instructions: '1. Cook sausage.\n2. Layer noodles.',
             url: 'https://www.allrecipes.com/recipe/23600/worlds-best-lasagna/',
-            key: 'recipe/23600/worlds-best-lasagna',
         }]);
     });
 
@@ -76,13 +75,13 @@ describe('allrecipes helpers', () => {
 
     it('maps array authors and raw instruction strings', () => {
         expect(mapRecipe({
-            name: 'Pie',
+            name: 'A &amp; B Pie',
             author: [{ name: 'A' }, { name: 'B' }],
-            recipeInstructions: ['Bake it.'],
+            recipeInstructions: ['Bake it &#39;til done.'],
         }, 'https://www.allrecipes.com/recipe/1/pie/')).toMatchObject({
-            title: 'Pie',
+            title: 'A & B Pie',
             author: 'A, B',
-            instructions: '1. Bake it.',
+            instructions: "1. Bake it 'til done.",
         });
     });
 });

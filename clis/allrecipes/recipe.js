@@ -14,7 +14,18 @@ function asText(value) {
     if (value == null) return '';
     if (Array.isArray(value)) return value.map(asText).filter(Boolean).join(', ');
     if (typeof value === 'object') return asText(value.name || value.text);
-    return String(value).trim();
+    return decodeHtml(String(value).trim());
+}
+
+function decodeHtml(value) {
+    return String(value ?? '')
+        .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+        .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(Number.parseInt(n, 16)))
+        .replace(/&quot;/g, '"')
+        .replace(/&apos;|&#39;/g, "'")
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&');
 }
 
 function instructionText(value) {
@@ -28,21 +39,20 @@ function instructionText(value) {
 
 export function mapRecipe(recipe, fallbackUrl) {
     const rating = recipe?.aggregateRating || {};
-    const key = String(fallbackUrl).replace(/^https?:\/\/(?:www\.)?allrecipes\.com\//i, '').replace(/\/$/, '');
+    const ratingCount = rating.ratingCount ?? rating.reviewCount;
     return {
         title: asText(recipe?.name),
         author: asText(recipe?.author),
         rating: rating.ratingValue == null ? null : Number(rating.ratingValue),
-        ratingCount: rating.ratingCount ?? rating.reviewCount ?? null,
+        ratingCount: ratingCount == null ? null : Number(ratingCount),
         prepTime: asText(recipe?.prepTime),
         cookTime: asText(recipe?.cookTime),
         totalTime: asText(recipe?.totalTime),
         servings: asText(recipe?.recipeYield),
         calories: asText(recipe?.nutrition?.calories),
-        ingredients: Array.isArray(recipe?.recipeIngredient) ? recipe.recipeIngredient.join('\n') : '',
+        ingredients: Array.isArray(recipe?.recipeIngredient) ? recipe.recipeIngredient.map(asText).join('\n') : '',
         instructions: instructionText(recipe?.recipeInstructions),
         url: asText(recipe?.url) || fallbackUrl,
-        key,
     };
 }
 
@@ -90,7 +100,7 @@ cli({
     args: [
         { name: 'url', positional: true, required: true, help: 'Allrecipes recipe URL' },
     ],
-    columns: ['title', 'author', 'rating', 'ratingCount', 'prepTime', 'cookTime', 'totalTime', 'servings', 'calories', 'ingredients', 'instructions', 'url', 'key'],
+    columns: ['title', 'author', 'rating', 'ratingCount', 'prepTime', 'cookTime', 'totalTime', 'servings', 'calories', 'ingredients', 'instructions', 'url'],
     func: async (page, args) => {
         const url = requireUrl(args.url);
         await page.goto(url);
