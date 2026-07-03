@@ -6004,6 +6004,147 @@
     "sourceFile": "brave/search.js"
   },
   {
+    "site": "bse-india",
+    "name": "announcements",
+    "description": "Latest BSE corporate announcements, optionally filtered by text",
+    "access": "read",
+    "domain": "api.bseindia.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "query",
+        "type": "string",
+        "default": "",
+        "required": false,
+        "help": "Optional company/text filter"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Max announcements (1-50)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "title",
+      "newsId",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "bse-india/announcements.js",
+    "sourceFile": "bse-india/announcements.js"
+  },
+  {
+    "site": "bse-india",
+    "name": "indices",
+    "description": "BSE index snapshot, including Sensex and sector indices",
+    "access": "read",
+    "domain": "api.bseindia.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "Max indices (1-100)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "code",
+      "name",
+      "alias",
+      "price",
+      "change",
+      "changePct",
+      "updateTime",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "bse-india/indices.js",
+    "sourceFile": "bse-india/indices.js"
+  },
+  {
+    "site": "bse-india",
+    "name": "movers",
+    "description": "BSE gainers, losers, or top turnover securities",
+    "access": "read",
+    "domain": "api.bseindia.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "type",
+        "type": "string",
+        "default": "gainers",
+        "required": false,
+        "help": "gainers / losers / turnover"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Max rows (1-10)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "code",
+      "symbol",
+      "name",
+      "price",
+      "change",
+      "changePct",
+      "turnoverCr",
+      "volume",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "bse-india/movers.js",
+    "sourceFile": "bse-india/movers.js"
+  },
+  {
+    "site": "bse-india",
+    "name": "quote",
+    "description": "BSE stock quote by symbol, company name, ISIN, or code",
+    "access": "read",
+    "domain": "api.bseindia.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "symbol",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "BSE symbol, code, company name, or ISIN"
+      }
+    ],
+    "columns": [
+      "code",
+      "symbol",
+      "name",
+      "isin",
+      "price",
+      "change",
+      "changePct",
+      "open",
+      "high",
+      "low",
+      "updateTime",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "bse-india/quote.js",
+    "sourceFile": "bse-india/quote.js"
+  },
+  {
     "site": "chaoxing",
     "name": "assignments",
     "description": "学习通作业列表",
