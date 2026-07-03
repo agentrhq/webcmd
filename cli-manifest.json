@@ -24871,6 +24871,201 @@
     "sourceFile": "npm/search.js"
   },
   {
+    "site": "ntes",
+    "name": "between",
+    "description": "NTES trains between two stations",
+    "access": "read",
+    "example": "webcmd ntes between MMCT NDLS --limit 5",
+    "domain": "enquiry.indianrail.gov.in",
+    "strategy": "ui",
+    "browser": true,
+    "args": [
+      {
+        "name": "from",
+        "type": "string",
+        "required": true,
+        "positional": true,
+        "help": "Origin station code or NTES station label"
+      },
+      {
+        "name": "to",
+        "type": "string",
+        "required": true,
+        "positional": true,
+        "help": "Destination station code or NTES station label"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Number of trains to return (max 20)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "trainNumber",
+      "trainName",
+      "from",
+      "to",
+      "days",
+      "departTime",
+      "departStation",
+      "arriveTime",
+      "arriveStation",
+      "duration",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "ntes/between.js",
+    "sourceFile": "ntes/between.js",
+    "navigateBefore": true
+  },
+  {
+    "site": "ntes",
+    "name": "schedule",
+    "description": "NTES train schedule stops",
+    "access": "read",
+    "example": "webcmd ntes schedule 12951 --limit 8",
+    "domain": "enquiry.indianrail.gov.in",
+    "strategy": "ui",
+    "browser": true,
+    "args": [
+      {
+        "name": "train",
+        "type": "string",
+        "required": true,
+        "positional": true,
+        "help": "5 digit train number"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Number of stops to return (max 20)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "trainNumber",
+      "station",
+      "code",
+      "day",
+      "arrival",
+      "departure",
+      "halt",
+      "distanceKm",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "ntes/schedule.js",
+    "sourceFile": "ntes/schedule.js",
+    "navigateBefore": true
+  },
+  {
+    "site": "ntes",
+    "name": "station",
+    "description": "NTES live station departures and arrivals",
+    "access": "read",
+    "example": "webcmd ntes station MMCT --hours 2 --limit 5",
+    "domain": "enquiry.indianrail.gov.in",
+    "strategy": "ui",
+    "browser": true,
+    "args": [
+      {
+        "name": "station",
+        "type": "string",
+        "required": true,
+        "positional": true,
+        "help": "Station code or NTES station label"
+      },
+      {
+        "name": "hours",
+        "type": "int",
+        "default": 2,
+        "required": false,
+        "help": "Lookahead window in hours",
+        "choices": [
+          "2",
+          "4",
+          "8"
+        ]
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Number of trains to return (max 20)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "station",
+      "trainNumber",
+      "trainName",
+      "route",
+      "arrival",
+      "departure",
+      "status",
+      "platform",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "ntes/station.js",
+    "sourceFile": "ntes/station.js",
+    "navigateBefore": true
+  },
+  {
+    "site": "ntes",
+    "name": "status",
+    "description": "NTES live train running status",
+    "access": "read",
+    "example": "webcmd ntes status 12951 --station MMCT --limit 8",
+    "domain": "enquiry.indianrail.gov.in",
+    "strategy": "ui",
+    "browser": true,
+    "args": [
+      {
+        "name": "train",
+        "type": "string",
+        "required": true,
+        "positional": true,
+        "help": "5 digit train number"
+      },
+      {
+        "name": "station",
+        "type": "string",
+        "default": "MMCT",
+        "required": false,
+        "help": "Journey station code or NTES station label"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Number of status rows to return (max 20)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "trainNumber",
+      "station",
+      "code",
+      "arrival",
+      "departure",
+      "status",
+      "distanceKm",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "ntes/status.js",
+    "sourceFile": "ntes/status.js",
+    "navigateBefore": true
+  },
+  {
     "site": "nuget",
     "name": "package",
     "description": "Full NuGet package version history (catalogEntry per release)",
