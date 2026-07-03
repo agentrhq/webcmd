@@ -48,15 +48,11 @@ export function buildBetweenExtractScript() {
         trainNumber: match ? match[1] : '',
         trainName: match ? match[2] : head,
         days: meta[0] || '',
-        type: meta[1] || '',
         departTime: lines[2] || '',
         departStation: lines[3] || '',
-        departCode: lines[4] || '',
         duration: durationIndex >= 0 ? lines[durationIndex].replace(/^--|--$/g, '') : '',
-        classes: maybeClasses ? lines[durationIndex + 1] || '' : '',
         arriveTime: arriveIndex >= 0 ? lines[arriveIndex] || '' : '',
         arriveStation: arriveIndex >= 0 ? lines[arriveIndex + 1] || '' : '',
-        arriveCode: arriveIndex >= 0 ? lines[arriveIndex + 2] || '' : '',
       };
     }) };
   })()`;
