@@ -1358,6 +1358,43 @@
     "sourceFile": "aibase/news.js"
   },
   {
+    "site": "allrecipes",
+    "name": "recipe",
+    "description": "Extract an Allrecipes recipe from a recipe URL",
+    "access": "read",
+    "domain": "www.allrecipes.com",
+    "strategy": "ui",
+    "browser": true,
+    "args": [
+      {
+        "name": "url",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Allrecipes recipe URL"
+      }
+    ],
+    "columns": [
+      "title",
+      "author",
+      "rating",
+      "ratingCount",
+      "prepTime",
+      "cookTime",
+      "totalTime",
+      "servings",
+      "calories",
+      "ingredients",
+      "instructions",
+      "url",
+      "key"
+    ],
+    "type": "js",
+    "modulePath": "allrecipes/recipe.js",
+    "sourceFile": "allrecipes/recipe.js",
+    "navigateBefore": true
+  },
+  {
     "site": "amazon",
     "name": "bestsellers",
     "description": "Amazon Best Sellers pages for category candidate discovery",
@@ -5221,6 +5258,64 @@
     "type": "js",
     "modulePath": "bluesky/user.js",
     "sourceFile": "bluesky/user.js"
+  },
+  {
+    "site": "boardgamegeek",
+    "name": "search",
+    "description": "Search BoardGameGeek games via XML API2",
+    "access": "read",
+    "domain": "boardgamegeek.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "query",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Game search terms, e.g. \"catan\""
+      },
+      {
+        "name": "type",
+        "type": "str",
+        "default": "boardgame",
+        "required": false,
+        "help": "BGG thing type or all",
+        "choices": [
+          "boardgame",
+          "boardgameexpansion",
+          "boardgameaccessory",
+          "videogame",
+          "rpgitem",
+          "all"
+        ]
+      },
+      {
+        "name": "exact",
+        "type": "boolean",
+        "default": false,
+        "required": false,
+        "help": "Only exact name matches"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "Max results (1-100)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "id",
+      "name",
+      "type",
+      "yearPublished",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "boardgamegeek/search.js",
+    "sourceFile": "boardgamegeek/search.js"
   },
   {
     "site": "booking",
@@ -23585,6 +23680,85 @@
     "navigateBefore": "https://mubu.com"
   },
   {
+    "site": "nasa-images",
+    "name": "search",
+    "description": "Search NASA Images and Video Library media",
+    "access": "read",
+    "domain": "images-api.nasa.gov",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "query",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Search terms, e.g. \"apollo 11\""
+      },
+      {
+        "name": "media-type",
+        "type": "str",
+        "default": "image",
+        "required": false,
+        "help": "image, video, audio, or all",
+        "choices": [
+          "image",
+          "video",
+          "audio",
+          "all"
+        ]
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "Max results (1-100)"
+      },
+      {
+        "name": "page",
+        "type": "int",
+        "default": 1,
+        "required": false,
+        "help": "Result page (1-1000)"
+      },
+      {
+        "name": "year-start",
+        "type": "int",
+        "required": false,
+        "help": "Filter start year, e.g. 1969"
+      },
+      {
+        "name": "year-end",
+        "type": "int",
+        "required": false,
+        "help": "Filter end year, e.g. 1972"
+      },
+      {
+        "name": "center",
+        "type": "str",
+        "required": false,
+        "help": "NASA center filter, e.g. JSC"
+      }
+    ],
+    "columns": [
+      "rank",
+      "nasaId",
+      "title",
+      "mediaType",
+      "center",
+      "dateCreated",
+      "description",
+      "keywords",
+      "previewUrl",
+      "assetUrl",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "nasa-images/search.js",
+    "sourceFile": "nasa-images/search.js"
+  },
+  {
     "site": "notebooklm",
     "name": "add-source",
     "description": "Add a URL, text, or local file source to an existing NotebookLM notebook",
@@ -25358,6 +25532,115 @@
     "modulePath": "ones/worklog.js",
     "sourceFile": "ones/worklog.js",
     "navigateBefore": false
+  },
+  {
+    "site": "open-meteo",
+    "name": "current",
+    "description": "Current weather from Open-Meteo for a city or lat,lon",
+    "access": "read",
+    "domain": "open-meteo.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "location",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "City name or \"lat,lon\""
+      },
+      {
+        "name": "units",
+        "type": "str",
+        "default": "metric",
+        "required": false,
+        "help": "metric or imperial units",
+        "choices": [
+          "metric",
+          "imperial"
+        ]
+      }
+    ],
+    "columns": [
+      "location",
+      "region",
+      "country",
+      "latitude",
+      "longitude",
+      "timezone",
+      "time",
+      "temperature",
+      "apparentTemperature",
+      "humidity",
+      "precipitation",
+      "cloudCover",
+      "windSpeed",
+      "windDirection",
+      "windGusts",
+      "isDay",
+      "weather"
+    ],
+    "type": "js",
+    "modulePath": "open-meteo/current.js",
+    "sourceFile": "open-meteo/current.js"
+  },
+  {
+    "site": "open-meteo",
+    "name": "forecast",
+    "description": "Daily Open-Meteo forecast for a city or lat,lon",
+    "access": "read",
+    "domain": "open-meteo.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "location",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "City name or \"lat,lon\""
+      },
+      {
+        "name": "days",
+        "type": "int",
+        "default": 7,
+        "required": false,
+        "help": "Forecast days (1-16)"
+      },
+      {
+        "name": "units",
+        "type": "str",
+        "default": "metric",
+        "required": false,
+        "help": "metric or imperial units",
+        "choices": [
+          "metric",
+          "imperial"
+        ]
+      }
+    ],
+    "columns": [
+      "rank",
+      "location",
+      "region",
+      "country",
+      "latitude",
+      "longitude",
+      "timezone",
+      "date",
+      "weather",
+      "tempMin",
+      "tempMax",
+      "apparentTempMin",
+      "apparentTempMax",
+      "precipitation",
+      "precipitationProbability",
+      "windSpeedMax",
+      "windGustsMax"
+    ],
+    "type": "js",
+    "modulePath": "open-meteo/forecast.js",
+    "sourceFile": "open-meteo/forecast.js"
   },
   {
     "site": "openalex",
