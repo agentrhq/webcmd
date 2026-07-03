@@ -32,6 +32,19 @@ function run(command, args, opts = {}) {
   return result;
 }
 
+function parseNpmJsonArray(stdout) {
+  const text = stdout.trim();
+  const jsonStart = text.lastIndexOf('\n[');
+  const jsonText = jsonStart === -1 ? text : text.slice(jsonStart + 1);
+  try {
+    const parsed = JSON.parse(jsonText);
+    if (Array.isArray(parsed)) return parsed;
+  } catch {
+    // Fall through to the clearer failure below.
+  }
+  fail(`npm did not return a JSON array:\n${stdout.trim()}`);
+}
+
 if (binEntries.length === 0) {
   fail('package.json has no bin entries');
 }
@@ -50,7 +63,7 @@ for (const [name, target] of binEntries) {
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-package-bin-'));
 try {
   const pack = run('npm', ['pack', '--ignore-scripts', '--pack-destination', tmp, '--json']);
-  const packData = JSON.parse(pack.stdout)[0];
+  const packData = parseNpmJsonArray(pack.stdout)[0];
   if (!packData?.filename || !Array.isArray(packData.files)) {
     fail('npm pack did not return the expected JSON payload');
   }
