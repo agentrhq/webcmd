@@ -3,6 +3,7 @@ import { ArgumentError, CommandExecutionError, EmptyResultError } from '@agentrh
 
 export const GEOCODING_BASE = 'https://geocoding-api.open-meteo.com/v1/search';
 export const FORECAST_BASE = 'https://api.open-meteo.com/v1/forecast';
+export const AIR_QUALITY_BASE = 'https://air-quality-api.open-meteo.com/v1/air-quality';
 const UA = 'webcmd-open-meteo/1.0';
 
 const WEATHER_CODES = {
@@ -46,6 +47,14 @@ export function requireDays(value, def = 7) {
     const n = value == null || value === '' ? def : Number(value);
     if (!Number.isInteger(n) || n < 1 || n > 16) {
         throw new ArgumentError('--days must be an integer between 1 and 16');
+    }
+    return n;
+}
+
+export function requireHours(value, def = 24, max = 168) {
+    const n = value == null || value === '' ? def : Number(value);
+    if (!Number.isInteger(n) || n < 1 || n > max) {
+        throw new ArgumentError(`--hours must be an integer between 1 and ${max}`);
     }
     return n;
 }

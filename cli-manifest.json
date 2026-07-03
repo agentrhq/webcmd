@@ -25361,6 +25361,48 @@
   },
   {
     "site": "open-meteo",
+    "name": "air-quality",
+    "description": "Hourly Open-Meteo air quality forecast for a city or lat,lon",
+    "access": "read",
+    "domain": "open-meteo.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "location",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "City name or \"lat,lon\""
+      },
+      {
+        "name": "hours",
+        "type": "int",
+        "default": 24,
+        "required": false,
+        "help": "Forecast hours (1-168)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "location",
+      "region",
+      "country",
+      "time",
+      "usAqi",
+      "europeanAqi",
+      "pm10",
+      "pm25",
+      "nitrogenDioxide",
+      "ozone",
+      "uvIndex"
+    ],
+    "type": "js",
+    "modulePath": "open-meteo/air-quality.js",
+    "sourceFile": "open-meteo/air-quality.js"
+  },
+  {
+    "site": "open-meteo",
     "name": "current",
     "description": "Current weather from Open-Meteo for a city or lat,lon",
     "access": "read",
@@ -25467,6 +25509,59 @@
     "type": "js",
     "modulePath": "open-meteo/forecast.js",
     "sourceFile": "open-meteo/forecast.js"
+  },
+  {
+    "site": "open-meteo",
+    "name": "hourly",
+    "description": "Hourly Open-Meteo forecast for a city or lat,lon",
+    "access": "read",
+    "domain": "open-meteo.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "location",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "City name or \"lat,lon\""
+      },
+      {
+        "name": "hours",
+        "type": "int",
+        "default": 24,
+        "required": false,
+        "help": "Forecast hours (1-168)"
+      },
+      {
+        "name": "units",
+        "type": "str",
+        "default": "metric",
+        "required": false,
+        "help": "metric or imperial units",
+        "choices": [
+          "metric",
+          "imperial"
+        ]
+      }
+    ],
+    "columns": [
+      "rank",
+      "location",
+      "region",
+      "country",
+      "time",
+      "weather",
+      "temperature",
+      "humidity",
+      "precipitationProbability",
+      "precipitation",
+      "windSpeed",
+      "windGusts"
+    ],
+    "type": "js",
+    "modulePath": "open-meteo/hourly.js",
+    "sourceFile": "open-meteo/hourly.js"
   },
   {
     "site": "openalex",

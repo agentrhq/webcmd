@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getRegistry } from '@agentrhq/webcmd/registry';
 import { ArgumentError, EmptyResultError } from '@agentrhq/webcmd/errors';
+import './air-quality.js';
 import './current.js';
 import './forecast.js';
+import './hourly.js';
 
 afterEach(() => {
     vi.unstubAllGlobals();
@@ -105,5 +107,98 @@ describe('open-meteo forecast', () => {
 
     it('rejects --days out of range', async () => {
         await expect(cmd.func({ location: 'Seattle', days: 17 })).rejects.toBeInstanceOf(ArgumentError);
+    });
+});
+
+describe('open-meteo hourly', () => {
+    const cmd = getRegistry().get('open-meteo/hourly');
+
+    it('returns hourly forecast rows', async () => {
+        vi.stubGlobal('fetch', vi.fn((url) => {
+            expect(String(url)).toContain('forecast_days=1');
+            expect(String(url)).toContain('hourly=temperature_2m');
+            return Promise.resolve(new Response(JSON.stringify({
+                timezone: 'America/New_York',
+                hourly: {
+                    time: ['2026-07-03T00:00', '2026-07-03T01:00'],
+                    temperature_2m: [70, 71],
+                    relative_humidity_2m: [60, 61],
+                    precipitation_probability: [10, 20],
+                    precipitation: [0, 0.01],
+                    weather_code: [0, 2],
+                    wind_speed_10m: [8, 9],
+                    wind_gusts_10m: [14, 15],
+                },
+            }), { status: 200 }));
+        }));
+
+        const rows = await cmd.func({ location: '40.7128,-74.0060', hours: 2, units: 'imperial' });
+        expect(rows).toEqual([
+            {
+                rank: 1,
+                location: '40.7128,-74.0060',
+                region: null,
+                country: null,
+                time: '2026-07-03T00:00',
+                weather: 'Clear sky',
+                temperature: 70,
+                humidity: 60,
+                precipitationProbability: 10,
+                precipitation: 0,
+                windSpeed: 8,
+                windGusts: 14,
+            },
+            expect.objectContaining({ rank: 2, weather: 'Partly cloudy', temperature: 71 }),
+        ]);
+    });
+
+    it('rejects --hours out of range', async () => {
+        await expect(cmd.func({ location: 'Seattle', hours: 169 })).rejects.toBeInstanceOf(ArgumentError);
+    });
+});
+
+describe('open-meteo air-quality', () => {
+    const cmd = getRegistry().get('open-meteo/air-quality');
+
+    it('geocodes and maps air quality rows', async () => {
+        vi.stubGlobal('fetch', vi.fn()
+            .mockResolvedValueOnce(new Response(JSON.stringify(geocodeBody), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({
+                timezone: 'America/Los_Angeles',
+                hourly: {
+                    time: ['2026-07-03T00:00'],
+                    us_aqi: [12],
+                    european_aqi: [8],
+                    pm10: [5.1],
+                    pm2_5: [3.1],
+                    nitrogen_dioxide: [7.2],
+                    ozone: [55.5],
+                    uv_index: [0],
+                },
+            }), { status: 200 })));
+
+        const rows = await cmd.func({ location: 'Seattle', hours: 1 });
+        expect(String(fetch.mock.calls[1][0])).toContain('air-quality');
+        expect(rows).toEqual([{
+            rank: 1,
+            location: 'Seattle',
+            region: 'Washington',
+            country: 'United States',
+            time: '2026-07-03T00:00',
+            usAqi: 12,
+            europeanAqi: 8,
+            pm10: 5.1,
+            pm25: 3.1,
+            nitrogenDioxide: 7.2,
+            ozone: 55.5,
+            uvIndex: 0,
+        }]);
+    });
+
+    it('promotes empty hourly air quality responses to EmptyResultError', async () => {
+        vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(JSON.stringify({
+            hourly: { time: [] },
+        }), { status: 200 }))));
+        await expect(cmd.func({ location: '40.7128,-74.0060', hours: 1 })).rejects.toBeInstanceOf(EmptyResultError);
     });
 });
