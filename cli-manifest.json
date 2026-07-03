@@ -5223,6 +5223,64 @@
     "sourceFile": "bluesky/user.js"
   },
   {
+    "site": "boardgamegeek",
+    "name": "search",
+    "description": "Search BoardGameGeek games via XML API2",
+    "access": "read",
+    "domain": "boardgamegeek.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "query",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Game search terms, e.g. \"catan\""
+      },
+      {
+        "name": "type",
+        "type": "str",
+        "default": "boardgame",
+        "required": false,
+        "help": "BGG thing type or all",
+        "choices": [
+          "boardgame",
+          "boardgameexpansion",
+          "boardgameaccessory",
+          "videogame",
+          "rpgitem",
+          "all"
+        ]
+      },
+      {
+        "name": "exact",
+        "type": "boolean",
+        "default": false,
+        "required": false,
+        "help": "Only exact name matches"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "Max results (1-100)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "id",
+      "name",
+      "type",
+      "yearPublished",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "boardgamegeek/search.js",
+    "sourceFile": "boardgamegeek/search.js"
+  },
+  {
     "site": "booking",
     "name": "search",
     "description": "Search Booking.com hotels by destination and dates (server-rendered card scrape).",
