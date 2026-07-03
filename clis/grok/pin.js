@@ -61,8 +61,8 @@ function defineToggle(name, accessLabels) {
     });
 }
 
-// Grok's context menu shows EITHER "置顶" OR "取消置顶" depending on the
+// Grok's context menu shows EITHER "localized text" OR "localized text" depending on the
 // current pin state, never both. We register two commands that bind to
 // the matching label so callers can use whichever they want.
-defineToggle('pin', ['置顶', 'pin']);
-defineToggle('unpin', ['取消置顶', 'unpin']);
+defineToggle('pin', ['localized text', 'pin']);
+defineToggle('unpin', ['localized text', 'unpin']);

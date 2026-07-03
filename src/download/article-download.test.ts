@@ -121,12 +121,12 @@ describe('downloadArticle', () => {
       const md = await runAndRead(
         '<p>top</p>' +
         '<p>-</p>' +
-        '<p>·</p>' +
+        '<p>\u00b7</p>' +
         '<p>bottom</p>',
       );
       expect(md).not.toMatch(/\n{3,}/);
       expect(md).not.toMatch(/^\s*-\s*$/m);
-      expect(md).not.toMatch(/^\s*·\s*$/m);
+      expect(md).not.toMatch(/^\s*\u00b7\s*$/m);
       expect(md).toContain('top');
       expect(md).toContain('bottom');
     });
@@ -149,15 +149,15 @@ describe('downloadArticle', () => {
     it('cleanSelectors removes matching nodes before conversion', async () => {
       const md = await runAndRead(
         '<p>keep-me</p>' +
-        '<div class="vote-card">折叠卡</div>' +
-        '<section class="reward-panel">赞赏栏</section>' +
+        '<div class="vote-card">Collapsed card</div>' +
+        '<section class="reward-panel">Reward panel</section>' +
         '<p>also-keep</p>',
         { cleanSelectors: ['.vote-card', '.reward-panel'] },
       );
       expect(md).toContain('keep-me');
       expect(md).toContain('also-keep');
-      expect(md).not.toContain('折叠卡');
-      expect(md).not.toContain('赞赏栏');
+      expect(md).not.toContain('Collapsed card');
+      expect(md).not.toContain('Reward panel');
     });
 
     it('cleanSelectors silently ignores invalid selectors', async () => {

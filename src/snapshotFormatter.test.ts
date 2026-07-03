@@ -1,7 +1,7 @@
 /**
  * Tests for snapshotFormatter.ts: snapshot tree filtering.
  *
- * Uses sanitized excerpts from real websites (GitHub, Bilibili, Twitter)
+ * Uses sanitized excerpts from real websites (GitHub, video sites, Twitter)
  * to validate noise filtering, annotation stripping, and output quality.
  */
 
@@ -74,56 +74,56 @@ const GITHUB_REPOS = `\
           - link "agentrhq/webcmd" [ref=e100] [cursor=pointer]:
             - /url: /agentrhq/webcmd`;
 
-/** Bilibili nav bar (Chinese text, multiple link categories) */
-const BILIBILI_NAV = `\
+/** Video-site nav bar (multiple link categories) */
+const VIDEO_SITE_NAV = `\
 - generic [ref=e3]:
   - generic [ref=e4]:
     - generic [ref=e5]:
       - list [ref=e6]:
         - listitem [ref=e7]:
-          - link "首页" [ref=e8] [cursor=pointer]:
-            - /url: //www.bilibili.com
+          - link "Home" [ref=e8] [cursor=pointer]:
+            - /url: https://video.example.com
             - img [ref=e9]
-            - generic [ref=e11]: 首页
+            - generic [ref=e11]: Home
         - listitem [ref=e12]:
-          - link "番剧" [ref=e13] [cursor=pointer]:
-            - /url: //www.bilibili.com/anime/
+          - link "Shows" [ref=e13] [cursor=pointer]:
+            - /url: https://video.example.com/shows/
         - listitem [ref=e14]:
-          - link "直播" [ref=e15] [cursor=pointer]:
-            - /url: //live.bilibili.com
+          - link "Live" [ref=e15] [cursor=pointer]:
+            - /url: https://live.video.example.com
       - generic [ref=e32]:
-        - textbox "冷知识 金廷26年胜率100%" [ref=e34]
+        - textbox "Search videos" [ref=e34]
         - img [ref=e36] [cursor=pointer]`;
 
-/** Bilibili video card (deeply nested generic wrappers, view counts) */
-const BILIBILI_VIDEO = `\
+/** Video card (deeply nested generic wrappers, view counts) */
+const VIDEO_CARD = `\
 - generic [ref=e363]:
-  - link "超酷时刻 即将到来 3.3万 40 16:24" [ref=e364] [cursor=pointer]:
-    - /url: https://www.bilibili.com/video/BV1zVw5zoEFt
+  - link "Amazing moment coming soon 33K 40 16:24" [ref=e364] [cursor=pointer]:
+    - /url: https://video.example.com/watch/abc
     - generic [ref=e365]:
-      - img "超酷时刻 即将到来" [ref=e368]
+      - img "Amazing moment coming soon" [ref=e368]
       - generic:
         - generic:
           - generic:
             - generic:
               - img
-              - generic: 3.3万
+              - generic: 33K
             - generic:
               - img
               - generic: "40"
           - generic: 16:24
   - generic [ref=e370]:
-    - heading "超酷时刻 即将到来" [level=3] [ref=e371]:
-      - link "超酷时刻 即将到来" [ref=e372] [cursor=pointer]:
-        - /url: https://www.bilibili.com/video/BV1zVw5zoEFt
-    - link "Tesla特斯拉中国 · 13小时前" [ref=e374] [cursor=pointer]:
-      - /url: //space.bilibili.com/491190876
+    - heading "Amazing moment coming soon" [level=3] [ref=e371]:
+      - link "Amazing moment coming soon" [ref=e372] [cursor=pointer]:
+        - /url: https://video.example.com/watch/abc
+    - link "Global Tech - 13 hours ago" [ref=e374] [cursor=pointer]:
+      - /url: https://video.example.com/channel/global-tech
       - img [ref=e375]
-      - generic "Tesla特斯拉中国" [ref=e379]
-      - generic [ref=e380]: · 13小时前`;
+      - generic "Global Tech" [ref=e379]
+      - generic [ref=e380]: 13 hours ago`;
 
-/** Empty paragraph blocks (Bilibili bottom section) */
-const BILIBILI_EMPTY = `\
+/** Empty paragraph blocks (video-site bottom section) */
+const VIDEO_SITE_EMPTY = `\
 - generic [ref=e576]:
   - generic:
     - generic:
@@ -388,28 +388,28 @@ describe('formatSnapshot', () => {
     });
   });
 
-  describe('Bilibili snapshot', () => {
-    it('cleans nav bar with Chinese text', () => {
-      const result = formatSnapshot(BILIBILI_NAV);
-      expect(result).toContain('link "首页"');
-      expect(result).toContain('link "番剧"');
-      expect(result).toContain('link "直播"');
-      expect(result).toContain('textbox "冷知识 金廷26年胜率100%"');
+  describe('video-site snapshot', () => {
+    it('cleans nav bar with category links', () => {
+      const result = formatSnapshot(VIDEO_SITE_NAV);
+      expect(result).toContain('link "Home"');
+      expect(result).toContain('link "Shows"');
+      expect(result).toContain('link "Live"');
+      expect(result).toContain('textbox "Search videos"');
       expect(result).not.toContain('[ref=');
     });
 
     it('handles video card with deeply nested wrappers', () => {
-      const result = formatSnapshot(BILIBILI_VIDEO);
-      expect(result).toContain('link "超酷时刻 即将到来 3.3万 40 16:24"');
-      expect(result).toContain('heading "超酷时刻 即将到来"');
-      expect(result).toContain('generic "Tesla特斯拉中国"');
+      const result = formatSnapshot(VIDEO_CARD);
+      expect(result).toContain('link "Amazing moment coming soon 33K 40 16:24"');
+      expect(result).toContain('heading "Amazing moment coming soon"');
+      expect(result).toContain('generic "Global Tech"');
 
       // Deeply nested view count generics with text are kept
-      expect(result).toContain('3.3万');
+      expect(result).toContain('33K');
     });
 
     it('prunes empty paragraph blocks', () => {
-      const result = formatSnapshot(BILIBILI_EMPTY);
+      const result = formatSnapshot(VIDEO_SITE_EMPTY);
       // All content is generic (no text) and empty paragraphs
       // After noise filtering, everything should be pruned
       expect(result.trim()).toBe('');
@@ -467,9 +467,9 @@ describe('formatSnapshot', () => {
       expect(formattedLines).toBeLessThan(rawLines * 0.6);
     });
 
-    it('achieves significant reduction on Bilibili video card', () => {
-      const rawLines = BILIBILI_VIDEO.split('\n').length;
-      const formatted = formatSnapshot(BILIBILI_VIDEO);
+    it('achieves significant reduction on video card', () => {
+      const rawLines = VIDEO_CARD.split('\n').length;
+      const formatted = formatSnapshot(VIDEO_CARD);
       const formattedLines = formatted.split('\n').filter(l => l.trim()).length;
       // Expect at least 30% reduction
       expect(formattedLines).toBeLessThan(rawLines * 0.7);
@@ -512,23 +512,23 @@ describe('formatSnapshot', () => {
       expect(result).toContain('heading "Dashboard"');
     });
 
-    it('Bilibili: significant reduction and Chinese text preserved', () => {
-      const raw = loadFixture('snapshot_bilibili.txt');
+    it('video site: significant reduction and navigation text preserved', () => {
+      const raw = loadFixture('snapshot_video.txt');
       if (!raw) return;
       const rawLines = raw.split('\n').length;
       const result = formatSnapshot(raw);
       const resultLines = result.split('\n').filter((l: string) => l.trim()).length;
 
-      // Should achieve > 40% reduction on Bilibili (lots of imgs and generics)
+      // Should achieve > 40% reduction on a video-site snapshot (lots of imgs and generics)
       expect(resultLines).toBeLessThan(rawLines * 0.6);
 
       // No annotations remain
       expect(result).not.toContain('[ref=');
       expect(result).not.toContain('[cursor=');
 
-      // Chinese text preserved
-      expect(result).toContain('link "首页"');
-      expect(result).toContain('link "番剧"');
+      // Navigation text preserved
+      expect(result).toContain('link "Home"');
+      expect(result).toContain('link "Shows"');
     });
 
     it('Twitter/X: significant reduction and tweet structure preserved', () => {
@@ -565,8 +565,8 @@ describe('formatSnapshot', () => {
       expect(result).toContain('textbox');
     });
 
-    it('Bilibili maxDepth=3: shallow view', () => {
-      const raw = loadFixture('snapshot_bilibili.txt');
+    it('video site maxDepth=3: shallow view', () => {
+      const raw = loadFixture('snapshot_video.txt');
       if (!raw) return;
       const result = formatSnapshot(raw, { maxDepth: 3 });
       const resultLines = result.split('\n').filter((l: string) => l.trim()).length;
@@ -576,4 +576,3 @@ describe('formatSnapshot', () => {
     });
   });
 });
-

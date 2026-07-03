@@ -43,11 +43,11 @@ function findModelPickerLogic() {
     return `
       // Patterns for detecting model/mode selector buttons by aria-label.
       const MODE_SELECTOR_PATTERNS = [
-        /模式选择器/i,
+        /Mode selector/i,
         /mode[\\s-]*selector/i,
         /model[\\s-]*selector/i,
         /model[\\s-]*picker/i,
-        /选择模型/i,
+        /Select model/i,
         /select[\\s-]+model/i,
         /choose[\\s-]+model/i,
         /switch[\\s-]+model/i,
@@ -95,7 +95,7 @@ function findModelPickerLogic() {
 
         // Method 4: Fallback — look for any element with model-related attributes.
         const attrEls = Array.from(
-          document.querySelectorAll('[data-model-selector], [aria-label*="model" i], [aria-label*="模式" i]')
+          document.querySelectorAll('[data-model-selector], [aria-label*="model" i], [aria-label*="mode" i]')
         ).filter(isVisible);
         if (attrEls.length > 0) return attrEls[0];
 
@@ -110,7 +110,7 @@ function modelParsingLogic() {
        * Best-effort extraction of a canonical model id from display text.
        * Handles patterns like "3.1 flash-lite", "3.5 flash", "3.1 pro",
        * "2.5-flash-thinking", "gemini 3.0 pro experimental", and entries with
-       * trailing Chinese descriptions (e.g. "3.1 Flash-Lite 极速回答").
+       * trailing Chinese descriptions (e.g. "3.1 Flash-Lite localized text").
        */
       const canonicalModelId = (raw) => {
         const text = normalize(raw);
@@ -152,15 +152,15 @@ function thinkingExtractionLogic() {
       /**
        * Extract thinking values from the full set of visible menu items.
        * Gemini Web shows thinking levels as separate menu items
-       * (e.g. "标准 最适合回答大多数问题", "扩展 擅长解决复杂问题").
+       * (e.g. "standard localized text", "extended localized text").
        * Returns a deduplicated, stable-order array.
        */
       const extractAllThinkingValues = (menuItems) => {
         const found = new Map();
 
         const THINKING_PATTERNS = [
-          { value: 'standard', patterns: [/\\bstandard\\b/i, /标准/i], priority: 1 },
-          { value: 'extended', patterns: [/\\bextended\\b/i, /扩展/i], priority: 2 },
+          { value: 'standard', patterns: [/\\bstandard\\b/i, /standard/i], priority: 1 },
+          { value: 'extended', patterns: [/\\bextended\\b/i, /extended/i], priority: 2 },
         ];
 
         for (const item of menuItems) {
@@ -170,8 +170,8 @@ function thinkingExtractionLogic() {
 
           // Skip model entries (contain a version like "3.1").
           if (/\\d+\\.\\d+/.test(combined)) continue;
-          // Skip the thinking-section header itself (e.g. "思考等级").
-          if (/^思考等级|^thinking level|^thinking mode/i.test(combined.trim())) continue;
+          // Skip the thinking-section header itself (e.g. "Thinking level").
+          if (/^Thinking level|^thinking level|^thinking mode/i.test(combined.trim())) continue;
 
           for (const { value, patterns } of THINKING_PATTERNS) {
             for (const re of patterns) {
@@ -372,7 +372,7 @@ export function readMenuModelsScript() {
 }
 
 /**
- * Script that clicks the "思考等级" / "Thinking level" toggle in the
+ * Script that clicks the "Thinking level" / "Thinking level" toggle in the
  * currently-open menu to expand thinking options.
  * Returns true if the toggle was found and clicked.
  */
@@ -395,7 +395,7 @@ export function clickThinkingToggleScript() {
 
       const thinkingToggle = menuItems.find((item) => {
         const text = (item.textContent || '').trim();
-        return /思考等级|thinking level|thinking mode/i.test(text);
+        return /Thinking level|thinking level|thinking mode/i.test(text);
       });
 
       if (thinkingToggle) {

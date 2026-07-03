@@ -139,11 +139,11 @@ function project(label, projectPath, children) {
 function fixtureDocument() {
     return el('document', {}, [
         project('stock', '/Users/youngcan/stock', [
-            thread({ threadId: 'local:stock-sync', hostId: 'local', kind: 'local', active: true }, '同步各仓库最新代码', '4 小时'),
-            thread({ threadId: 'local:trading-agents' }, '借鉴 TradingAgents', '2 小时'),
+            thread({ threadId: 'local:stock-sync', hostId: 'local', kind: 'local', active: true }, 'localized text', '4 hours'),
+            thread({ threadId: 'local:trading-agents' }, 'localized text TradingAgents', '2 hours'),
         ]),
         project('webcmd', '/Users/youngcan/webcmd', [
-            thread({ threadId: 'local:webcmd-groups' }, '统一 webcmd 二级命令分组', '1 天'),
+            thread({ threadId: 'local:webcmd-groups' }, 'localized text webcmd localized text', '1 days'),
         ]),
     ]);
 }
@@ -160,8 +160,8 @@ describe('codex sidebar helpers', () => {
         });
         expect(projects[0].conversations[0]).toMatchObject({
             index: 1,
-            title: '同步各仓库最新代码',
-            updated: '4 小时',
+            title: 'localized text',
+            updated: '4 hours',
             active: true,
             threadId: 'local:stock-sync',
         });
@@ -175,8 +175,8 @@ describe('codex sidebar helpers', () => {
             expect.objectContaining({
                 Project: 'webcmd',
                 Index: 1,
-                Title: '统一 webcmd 二级命令分组',
-                Updated: '1 天',
+                Title: 'localized text webcmd localized text',
+                Updated: '1 days',
             }),
         ]);
     });
@@ -222,7 +222,7 @@ describe('codex sidebar helpers', () => {
             ok: true,
             selected: true,
             project: 'stock',
-            conversation: '借鉴 TradingAgents',
+            conversation: 'localized text TradingAgents',
             threadId: 'local:trading-agents',
             index: 2,
         });
@@ -259,7 +259,7 @@ describe('codex sidebar helpers', () => {
         expect(result).toMatchObject({
             ok: true,
             project: 'webcmd',
-            conversation: '统一 webcmd 二级命令分组',
+            conversation: 'localized text webcmd localized text',
             threadId: 'local:webcmd-groups',
         });
     });
@@ -274,7 +274,7 @@ describe('codex sidebar helpers', () => {
         });
 
         expect(result?.project.project).toBe('stock');
-        expect(result?.conversation.title).toBe('借鉴 TradingAgents');
+        expect(result?.conversation.title).toBe('localized text TradingAgents');
     });
 
     it('requires exactly one active conversation for active-chat write postconditions', () => {
@@ -345,10 +345,10 @@ describe('codex sidebar helpers', () => {
     it('maps ambiguous conversation selection to ArgumentError', async () => {
         const duplicateDoc = el('document', {}, [
             project('alpha', '/tmp/alpha', [
-                thread({ threadId: 'local:one' }, 'Shared title', '1 小时'),
+                thread({ threadId: 'local:one' }, 'Shared title', '1 hours'),
             ]),
             project('beta', '/tmp/beta', [
-                thread({ threadId: 'local:two' }, 'Shared title', '2 小时'),
+                thread({ threadId: 'local:two' }, 'Shared title', '2 hours'),
             ]),
         ]);
         const page = {

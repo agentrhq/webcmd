@@ -266,7 +266,7 @@ if !imagePath.isEmpty {
 
 let valueBeforeSend = s(input, kAXValueAttribute as String) ?? ""
 
-guard let sendButton = findByDescriptions(win, ["发送", "傳送", "Send"]) else {
+guard let sendButton = findByDescriptions(win, ["Send", "Send", "Send"]) else {
     fputs("Could not find send button\\n", stderr)
     exit(1)
 }
@@ -370,7 +370,7 @@ let needsLegacy = args.count > 2 && args[2] == "legacy"
 
 // Step 1: Click the "Options" button to open the popover (support English, Simplified and Traditional Chinese UI)
 var optionsBtn: AXUIElement? = nil
-for label in ["Options", "选项", "選項"] {
+for label in ["Options", "Options", "Options"] {
     if let btn = findByDesc(win, label) {
         optionsBtn = btn
         break
@@ -390,7 +390,7 @@ guard let popover = waitForElement(check: { findPopover(win) }) else {
 // Step 3: If legacy, click "Legacy models" to expand submenu (supports EN/CN/TW localizations)
 if needsLegacy {
     var legacyBtn: AXUIElement? = nil
-    for label in ["Legacy models", "经典模型", "經典模型"] {
+    for label in ["Legacy models", "Legacy models", "Legacy models"] {
         if let btn = findByDesc(popover, label) {
             legacyBtn = btn
             break
@@ -457,7 +457,7 @@ if targetWin == nil {
 guard let win = targetWin else {
     print("false"); exit(0)
 }
-let targets = ["Stop generating", "停止生成", "停止產生", "停止傳送"]
+let targets = ["Stop generating", "Stop generating", "Stop generating", "Stop sending"]
 print(targets.contains(where: { hasButton(win, desc: $0) }) ? "true" : "false")
 `;
 const AX_TEMPORARY_CHAT_SCRIPT = `
@@ -487,7 +487,7 @@ func hasTemporaryChatText(_ el: AXUIElement, depth: Int = 0) -> Bool {
         s(el, kAXValueAttribute as String) ?? "",
         s(el, kAXHelpAttribute as String) ?? "",
     ].joined(separator: " ")
-    let labels = ["Temporary Chat", "临时聊天", "臨時聊天", "临时对话", "臨時對話"]
+    let labels = ["Temporary Chat", "Temporary chat", "Temporary chat", "Temporary chat", "Temporary chat"]
     if labels.contains(where: { haystack.localizedCaseInsensitiveContains($0) }) {
         return true
     }

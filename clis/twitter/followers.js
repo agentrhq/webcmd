@@ -17,7 +17,7 @@ import { normalizeTwitterScreenName, unwrapBrowserResult } from './shared.js';
  * Strategy: subtract the i18n-variable button / badge texts from the lines of
  * `cell.innerText`, treat the first remaining `@…` line as the handle, the
  * first non-handle line as display name, and the rest as bio. We avoid
- * locale-coupled string matching (`"Follow"` / `"关注"` / `"Folgen"`).
+ * locale-coupled string matching (`"Follow"` / `"Follow"` / `"Folgen"`).
  *
  * Note: Twitter does NOT render follower COUNTS in the list view, so the
  * `followers` column is omitted from the output schema. Use

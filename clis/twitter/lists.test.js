@@ -109,8 +109,8 @@ describe('twitter lists parser', () => {
     });
 
     it('skips "Discover new Lists" recommendations (list-to-follow-module-*)', () => {
-        // 真实 X.com /<user>/lists 响应：Discover 推荐 + Your Lists 同 instruction，
-        // 区别只在 entry.entryId 前缀。Parser 必须按前缀剔除推荐。
+        // real X.com /<user>/lists response:Discover recommendation + Your Lists same instruction,
+        // differs only by entry.entryId prefix.Parser must filter recommendations by prefix.
         const payload = {
             data: {
                 viewer: {

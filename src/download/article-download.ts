@@ -1,7 +1,7 @@
 /**
  * Article download helper — shared logic for downloading articles as Markdown.
  *
- * Used by: zhihu/download, weixin/download, and future article adapters.
+ * Used by article adapters that export readable web pages as Markdown.
  *
  * Flow: ArticleData → TurndownService → image download → frontmatter → .md file
  */
@@ -47,12 +47,12 @@ export interface ArticleDownloadOptions {
   configureTurndown?: (td: TurndownService) => void;
   /** Custom image extension detector (default: infer from URL extension) */
   detectImageExt?: (url: string) => string;
-  /** Custom frontmatter labels (default: Chinese labels) */
+  /** Custom frontmatter labels (default: English labels) */
   frontmatterLabels?: FrontmatterLabels;
   /**
    * Extra CSS selectors removed from the article before Turndown conversion.
    * Use this to drop site-specific noise the adapter can't always trim upstream
-   * (e.g. zhihu 折叠卡, weixin 赞赏栏, wiki infobox).
+   * (e.g. social widgets, reward panels, wiki infoboxes).
    */
   cleanSelectors?: string[];
   /**
@@ -73,9 +73,9 @@ export interface ArticleDownloadResult {
 }
 
 const DEFAULT_LABELS: Required<FrontmatterLabels> = {
-  author: '作者',
-  publishTime: '发布时间',
-  sourceUrl: '原文链接',
+  author: 'Author',
+  publishTime: 'Published',
+  sourceUrl: 'Source URL',
 };
 
 // ============================================================
@@ -175,8 +175,8 @@ function createTurndown(
     },
   });
   // Per-adapter dirty-node removal. Adapters know their site's specific noise
-  // (zhihu 折叠卡, weixin 赞赏栏, wiki 折叠 infobox …); we keep the default set
-  // empty so the generic converter stays untouched.
+  // (social widgets, reward panels, wiki infoboxes, and similar chrome);
+  // we keep the default set empty so the generic converter stays untouched.
   const selectorRules = (cleanSelectors ?? [])
     .map(sel => sel.trim())
     .filter(Boolean);
@@ -220,7 +220,7 @@ function convertToMarkdown(
   md = md.replace(/\u00a0/g, ' ');
   // Turndown leaves behind lone dashes / middle dots when list bullets or
   // decorative separators lose their surrounding inline context.
-  md = md.replace(/^[ \t]*[-·][ \t]*$/gm, '');
+  md = md.replace(/^[ \t]*[-\u00b7][ \t]*$/gm, '');
   md = md.replace(/^[ \t]+$/gm, '');
   md = md.replace(/[ \t]+$/gm, '');
   md = md.replace(/\n{3,}/g, '\n\n');

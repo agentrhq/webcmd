@@ -232,7 +232,7 @@ function consumeKnownOption(argv: readonly string[], index: number, options: Rea
 /**
  * `webcmd boss detail -abc123def` fails because commander parses
  * `-abc123def` as an unknown option rather than the required
- * `<security-id>` positional. BOSS 直聘 securityId tokens are opaque
+ * `<security-id>` positional. Some adapter security tokens are opaque
  * strings that can legitimately start with `-` (issue #1160), and the
  * same shape can show up in any adapter that takes an opaque-id
  * positional. Insert a `--` separator so commander treats the next

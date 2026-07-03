@@ -23,7 +23,7 @@ export interface ExternalCliConfig {
   /**
    * Display alias rendered alongside `name` in help/listing as `name(package)`.
    * Use either the upstream distribution/project name (e.g. `tg-cli`, `discord-cli`)
-   * or a human-readable brand label (e.g. `notion`, `企业微信`) when the bare
+   * or a human-readable brand label (e.g. `notion`, `linear`) when the bare
    * executable name is ambiguous.
    */
   package?: string;

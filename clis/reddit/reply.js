@@ -100,8 +100,8 @@ cli({
         //
         // Intermediate object keys deliberately avoid `status` / `message` to
         // sidestep the silent-column-drop audit (columns are ['status',
-        // 'message']) — see PR #1329 sediment "中间解析对象 key 不能跟 columns
-        // 任一项重叠".
+        // 'message']) — see PR #1329 sediment "intermediate parse object key must not overlap with columns
+        // any column".
         const result = await page.evaluate(`(async () => {
       try {
         const fullname = ${JSON.stringify(fullname)};

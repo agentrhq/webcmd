@@ -140,8 +140,8 @@ cli({
         const expandRounds = parseExpandRounds(kwargs['expand-rounds']);
         const postId = normalizeRedditPostId(kwargs['post-id']);
 
-        // 不再显式导航首页：框架 navigateBefore（domain=reddit.com）已把页面带到 reddit origin，
-        // 下面的相对 fetch(/comments/<id>.json) 照常可用。省掉每条评论命令一次冗余首页导航。
+        // no longer explicitly navigate home:framework navigateBefore(domain=reddit.com)already brought the page to reddit origin,
+        // the relative fetch(/comments/<id>.json) works as usual.avoids redundant home navigation per comment command.
 
         // The in-browser script returns a discriminated union so we can map
         // each failure mode to its proper typed error on the Node side

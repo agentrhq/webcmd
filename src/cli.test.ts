@@ -121,10 +121,10 @@ describe('createProgram root help descriptions', () => {
     registry.clear();
     try {
       cli({
-        site: 'bilibili',
+        site: 'reddit',
         name: 'hot',
         access: 'read',
-        description: 'Bilibili hot videos',
+        description: 'Reddit hot posts',
         strategy: Strategy.PUBLIC,
         browser: false,
       });
@@ -141,9 +141,9 @@ describe('createProgram root help descriptions', () => {
       const help = program.helpInformation();
 
       expect(help).toContain('Site adapters (2):');
-      expect(help).toContain('bilibili, youtube');
+      expect(help).toContain('reddit, youtube');
       expect(help).toContain("webcmd <site> --help -f yaml");
-      expect(help).not.toMatch(/\n  bilibili\s+hot/);
+      expect(help).not.toMatch(/\n  reddit\s+hot/);
       expect(help).not.toMatch(/\n  youtube\s+search/);
     } finally {
       registry.clear();
@@ -157,11 +157,11 @@ describe('createProgram root help descriptions', () => {
     registry.clear();
     try {
       cli({
-        site: 'bilibili',
-        name: 'hot',
+        site: 'youtube',
+        name: 'search',
         access: 'read',
-        description: 'Bilibili hot videos',
-        domain: 'www.bilibili.com',
+        description: 'Search YouTube',
+        domain: 'www.youtube.com',
         strategy: Strategy.PUBLIC,
         browser: false,
       });
@@ -182,7 +182,7 @@ describe('createProgram root help descriptions', () => {
       expect(help).toContain('App adapters (1):');
       expect(help).toMatch(/App adapters \(1\):\n {2}chatwise/);
       expect(help).toContain('Site adapters (1):');
-      expect(help).toMatch(/Site adapters \(1\):\n {2}bilibili/);
+      expect(help).toMatch(/Site adapters \(1\):\n {2}youtube/);
 
       // App adapters appear before Site adapters (External CLIs are absent here)
       expect(help.indexOf('App adapters')).toBeLessThan(help.indexOf('Site adapters'));
@@ -196,7 +196,7 @@ describe('createProgram root help descriptions', () => {
     expect(classifyAdapter('localhost')).toBe('app');
     expect(classifyAdapter('127.0.0.1')).toBe('app');
     expect(classifyAdapter('::1')).toBe('app');
-    expect(classifyAdapter('www.bilibili.com')).toBe('site');
+    expect(classifyAdapter('www.youtube.com')).toBe('site');
   });
 
   it('splits list table output into App and Site sections without changing per-site rows', async () => {
@@ -225,11 +225,11 @@ describe('createProgram root help descriptions', () => {
         browser: true,
       });
       cli({
-        site: 'bilibili',
-        name: 'hot',
+        site: 'youtube',
+name: 'search',
         access: 'read',
-        description: 'Bilibili hot videos',
-        domain: 'www.bilibili.com',
+        description: 'Search YouTube',
+        domain: 'www.youtube.com',
         strategy: Strategy.PUBLIC,
         browser: false,
       });
@@ -243,7 +243,7 @@ describe('createProgram root help descriptions', () => {
       expect(output.indexOf('App adapters')).toBeLessThan(output.indexOf('Site adapters'));
       expect(output).toMatch(/App adapters[\s\S]*antigravity[\s\S]*history \[ui\] — Read Antigravity history/);
       expect(output).toMatch(/App adapters[\s\S]*chatwise[\s\S]*ask \[ui\] — Ask Chatwise desktop app/);
-      expect(output).toMatch(/Site adapters[\s\S]*bilibili[\s\S]*hot \[public\] — Bilibili hot videos/);
+      expect(output).toMatch(/Site adapters[\s\S]*youtube[\s\S]*search \[public\] — Search YouTube/);
       expect(output).toContain('3 built-in commands across 2 apps + 1 sites,');
     } finally {
       restoreStdoutSpy();
@@ -261,11 +261,11 @@ describe('createProgram root help descriptions', () => {
     registry.clear();
     try {
       cli({
-        site: 'bilibili',
-        name: 'hot',
+        site: 'youtube',
+        name: 'search',
         access: 'read',
-        description: 'Bilibili hot videos',
-        domain: 'www.bilibili.com',
+        description: 'Search YouTube',
+        domain: 'www.youtube.com',
         strategy: Strategy.PUBLIC,
         browser: false,
         columns: ['title', 'url'],
@@ -285,9 +285,9 @@ describe('createProgram root help descriptions', () => {
       const rows = JSON.parse(jsonOutput);
       expect(rows).toMatchObject([
         {
-          site: 'bilibili',
-          name: 'hot',
-          domain: 'www.bilibili.com',
+          site: 'youtube',
+          name: 'search',
+          domain: 'www.youtube.com',
           columns: ['title', 'url'],
         },
       ]);
@@ -308,11 +308,11 @@ describe('createProgram root help descriptions', () => {
     registry.clear();
     try {
       cli({
-        site: 'bilibili',
-        name: 'hot',
+        site: 'youtube',
+        name: 'search',
         access: 'read',
-        description: 'Bilibili hot videos',
-        domain: 'www.bilibili.com',
+        description: 'Search YouTube',
+        domain: 'www.youtube.com',
         strategy: Strategy.PUBLIC,
         browser: false,
       });
@@ -333,13 +333,13 @@ describe('createProgram root help descriptions', () => {
       expect(data.app_adapters.count).toBe(1);
       expect(data.app_adapters.apps).toEqual(['chatwise']);
       expect(data.site_adapters.count).toBe(1);
-      expect(data.site_adapters.sites).toEqual(['bilibili']);
+      expect(data.site_adapters.sites).toEqual(['youtube']);
       expect(data.external_clis.count).toBeGreaterThanOrEqual(0);
       expect(Array.isArray(data.external_clis.clis)).toBe(true);
       expect(Array.isArray(data.external_clis.display)).toBe(true);
       // Adapters must NOT leak into the core commands list
       const commandNames = data.commands.map((cmd: any) => cmd.name);
-      expect(commandNames).not.toContain('bilibili');
+      expect(commandNames).not.toContain('youtube');
       expect(commandNames).not.toContain('chatwise');
     } finally {
       process.argv = argv;
@@ -355,10 +355,10 @@ describe('createProgram root help descriptions', () => {
     registry.clear();
     try {
       cli({
-        site: 'bilibili',
-        name: 'hot',
+        site: 'youtube',
+        name: 'search',
         access: 'read',
-        description: 'Bilibili hot videos',
+        description: 'Search YouTube',
         strategy: Strategy.PUBLIC,
         browser: false,
       });
@@ -368,9 +368,9 @@ describe('createProgram root help descriptions', () => {
       const data = yaml.load(program.helpInformation()) as any;
 
       expect(data.site_adapters.count).toBe(1);
-      expect(data.site_adapters.sites).toEqual(['bilibili']);
+      expect(data.site_adapters.sites).toEqual(['youtube']);
       expect(data.commands.map((cmd: any) => cmd.name)).toContain('list');
-      expect(data.commands.map((cmd: any) => cmd.name)).not.toContain('bilibili');
+      expect(data.commands.map((cmd: any) => cmd.name)).not.toContain('youtube');
     } finally {
       process.argv = argv;
       registry.clear();
@@ -385,10 +385,10 @@ describe('createProgram root help descriptions', () => {
     registry.clear();
     try {
       cli({
-        site: 'bilibili',
-        name: 'hot',
+        site: 'youtube',
+        name: 'search',
         access: 'read',
-        description: 'Bilibili hot videos',
+        description: 'Search YouTube',
         strategy: Strategy.PUBLIC,
         browser: false,
         args: [{ name: 'limit', type: 'int', default: 20, help: 'Number of videos' }],
@@ -396,19 +396,19 @@ describe('createProgram root help descriptions', () => {
       });
 
       const program = createProgram('', '');
-      const site = program.commands.find(cmd => cmd.name() === 'bilibili');
+      const site = program.commands.find(cmd => cmd.name() === 'youtube');
       expect(site).toBeTruthy();
-      process.argv = ['node', 'webcmd', 'bilibili', '--help', '-f', 'yaml'];
+      process.argv = ['node', 'webcmd', 'youtube', '--help', '-f', 'yaml'];
       const data = yaml.load(site!.helpInformation()) as any;
 
-      expect(data.site).toBe('bilibili');
+      expect(data.site).toBe('youtube');
       expect(data.commands).toMatchObject([
         {
-          name: 'hot',
+          name: 'search',
           access: 'read',
-          description: 'Bilibili hot videos',
+          description: 'Search YouTube',
           browser: false,
-          example: 'webcmd bilibili hot -f yaml',
+          example: 'webcmd youtube search -f yaml',
           command_options: [{ name: 'limit', type: 'int', default: 20 }],
           columns: ['title', 'url'],
         },
@@ -427,33 +427,33 @@ describe('createProgram root help descriptions', () => {
     registry.clear();
     try {
       cli({
-        site: 'bilibili',
-        name: 'hot',
+        site: 'youtube',
+        name: 'search',
         access: 'read',
-        description: 'Bilibili hot videos',
+        description: 'Search YouTube',
         strategy: Strategy.PUBLIC,
         browser: false,
         args: [{ name: 'limit', type: 'int', default: 20, help: 'Number of videos' }],
       });
       cli({
-        site: 'bilibili',
+        site: 'youtube',
         name: 'video',
         access: 'read',
         description: 'Read one video',
-        domain: 'www.bilibili.com',
+        domain: 'www.youtube.com',
         strategy: Strategy.PUBLIC,
         browser: true,
         args: [{ name: 'bvid', positional: true, required: true, help: 'Video id' }],
       });
 
       const program = createProgram('', '');
-      const site = program.commands.find(cmd => cmd.name() === 'bilibili');
+      const site = program.commands.find(cmd => cmd.name() === 'youtube');
       expect(site).toBeTruthy();
       const help = site!.helpInformation();
 
-      expect(help).toContain('hot [options]  [read] Bilibili hot videos');
-      expect(help).toContain('video <bvid>   [read] Read one video');
-      expect(help).toContain('hot [options]');
+      expect(help).toContain('search [options]  [read] Search YouTube');
+      expect(help).toContain('video <bvid>      [read] Read one video');
+      expect(help).toContain('search [options]');
       expect(help).not.toContain('video <bvid> [options]');
       expect(help).not.toContain('\nOptions:');
       expect(help).toContain('Common options:');
@@ -473,12 +473,12 @@ describe('createProgram root help descriptions', () => {
     registry.clear();
     try {
       cli({
-        site: 'bilibili',
+        site: 'youtube',
         name: 'video',
         access: 'read',
         description: 'Read one video',
         strategy: Strategy.PUBLIC,
-        domain: 'www.bilibili.com',
+        domain: 'www.youtube.com',
         browser: true,
         args: [
           { name: 'bvid', positional: true, required: true, help: 'Video id' },
@@ -488,15 +488,15 @@ describe('createProgram root help descriptions', () => {
       });
 
       const program = createProgram('', '');
-      const site = program.commands.find(cmd => cmd.name() === 'bilibili');
+      const site = program.commands.find(cmd => cmd.name() === 'youtube');
       const command = site!.commands.find(cmd => cmd.name() === 'video');
       expect(command).toBeTruthy();
-      process.argv = ['node', 'webcmd', 'bilibili', 'video', '--help', '-f', 'yaml'];
+      process.argv = ['node', 'webcmd', 'youtube', 'video', '--help', '-f', 'yaml'];
       const data = yaml.load(command!.helpInformation()) as any;
 
-      expect(data.usage).toBe('webcmd bilibili video <bvid> [options]');
+      expect(data.usage).toBe('webcmd youtube video <bvid> [options]');
       expect(data.browser).toBe(true);
-      expect(data.domain).toBe('www.bilibili.com');
+      expect(data.domain).toBe('www.youtube.com');
       expect(data.positionals).toMatchObject([{ name: 'bvid', positional: true, required: true }]);
       expect(data.command_options).toMatchObject([{ name: 'with-comments', default: false }]);
       expect(data.common_options.map((option: any) => option.name)).toEqual(['format', 'trace', 'verbose', 'help']);

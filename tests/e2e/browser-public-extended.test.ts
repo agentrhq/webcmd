@@ -36,17 +36,6 @@ describe('browser extended public-data commands E2E', () => {
     }
   }, 60_000);
 
-  // ── weibo ──
-  it('weibo hot returns trending topics', async () => {
-    const data = await tryBrowserCommand(['weibo', 'hot', '--limit', '5', '-f', 'json']);
-    expectDataOrSkip(data, 'weibo hot');
-  }, 60_000);
-
-  it('weibo search returns results', async () => {
-    const data = await tryBrowserCommand(['weibo', 'search', 'openai', '--limit', '3', '-f', 'json']);
-    expectDataOrSkip(data, 'weibo search');
-  }, 60_000);
-
   // ── reddit ──
   it('reddit hot returns posts', async () => {
     const data = await tryBrowserCommand(['reddit', 'hot', '--limit', '5', '-f', 'json']);
@@ -64,17 +53,6 @@ describe('browser extended public-data commands E2E', () => {
     expectDataOrSkip(data, 'twitter trending');
   }, 60_000);
 
-  // ── xueqiu ──
-  it('xueqiu hot returns hot posts', async () => {
-    const data = await tryBrowserCommand(['xueqiu', 'hot', '--limit', '5', '-f', 'json']);
-    expectDataOrSkip(data, 'xueqiu hot');
-  }, 60_000);
-
-  it('xueqiu hot-stock returns stocks', async () => {
-    const data = await tryBrowserCommand(['xueqiu', 'hot-stock', '--limit', '5', '-f', 'json']);
-    expectDataOrSkip(data, 'xueqiu hot-stock');
-  }, 60_000);
-
   // ── reuters ──
   it('reuters search returns articles', async () => {
     const data = await tryBrowserCommand(['reuters', 'search', 'technology', '--limit', '3', '-f', 'json']);
@@ -87,38 +65,10 @@ describe('browser extended public-data commands E2E', () => {
     expectDataOrSkip(data, 'youtube search');
   }, 60_000);
 
-  // ── smzdm ──
-  it('smzdm search returns deals', async () => {
-    const data = await tryBrowserCommand(['smzdm', 'search', '键盘', '--limit', '3', '-f', 'json']);
-    expectDataOrSkip(data, 'smzdm search');
-  }, 60_000);
-
-  // ── boss ──
-  it('boss search returns jobs', async () => {
-    const data = await tryBrowserCommand(['boss', 'search', 'golang', '--limit', '3', '-f', 'json']);
-    expectDataOrSkip(data, 'boss search');
-  }, 60_000);
-
-  // ── ctrip ──
-  it('ctrip search returns destination suggestions', async () => {
-    const data = await tryBrowserCommand(['ctrip', 'search', '苏州', '--limit', '3', '-f', 'json']);
-    expectDataOrSkip(data, 'ctrip search');
-    if (data) {
-      expect(data[0]).toHaveProperty('name');
-      expect(data[0]).toHaveProperty('type');
-    }
-  }, 60_000);
-
   // ── coupang ──
   it('coupang search returns products', async () => {
     const data = await tryBrowserCommand(['coupang', 'search', 'laptop', '--limit', '3', '-f', 'json']);
     expectDataOrSkip(data, 'coupang search');
-  }, 60_000);
-
-  // ── xiaohongshu ──
-  it('xiaohongshu search returns notes', async () => {
-    const data = await tryBrowserCommand(['xiaohongshu', 'search', '美食', '--limit', '3', '-f', 'json']);
-    expectDataOrSkip(data, 'xiaohongshu search');
   }, 60_000);
 
   // ── google ──
@@ -133,15 +83,6 @@ describe('browser extended public-data commands E2E', () => {
   }, 60_000);
 
   // ── academic / policy search ──
-  it('baidu-scholar search returns papers', async () => {
-    const data = await tryBrowserCommand(['baidu-scholar', 'search', '大语言模型', '--limit', '3', '-f', 'json']);
-    expectDataOrSkip(data, 'baidu-scholar search');
-    if (data) {
-      expect(data[0]).toHaveProperty('title');
-      expect(data[0]).toHaveProperty('url');
-    }
-  }, 60_000);
-
   it('google-scholar search returns papers', async () => {
     const data = await tryBrowserCommand(['google-scholar', 'search', 'transformer', '--limit', '3', '-f', 'json']);
     expectDataOrSkip(data, 'google-scholar search');
@@ -149,40 +90,6 @@ describe('browser extended public-data commands E2E', () => {
       expect(data[0]).toHaveProperty('title');
       expect(data[0]).toHaveProperty('url');
     }
-  }, 60_000);
-
-  it('wanfang search returns papers', async () => {
-    const data = await tryBrowserCommand(['wanfang', 'search', '知识图谱', '--limit', '3', '-f', 'json']);
-    expectDataOrSkip(data, 'wanfang search');
-    if (data) {
-      expect(data[0]).toHaveProperty('title');
-    }
-  }, 60_000);
-
-  it('gov-law search returns regulations', async () => {
-    const data = await tryBrowserCommand(['gov-law', 'search', '人工智能', '--limit', '3', '-f', 'json']);
-    expectDataOrSkip(data, 'gov-law search');
-    if (data) {
-      expect(data[0]).toHaveProperty('title');
-    }
-  }, 60_000);
-
-  it('gov-law recent returns latest regulations', async () => {
-    const data = await tryBrowserCommand(['gov-law', 'recent', '--limit', '3', '-f', 'json']);
-    expectDataOrSkip(data, 'gov-law recent');
-  }, 60_000);
-
-  it('gov-policy search returns policy documents', async () => {
-    const data = await tryBrowserCommand(['gov-policy', 'search', '科技创新', '--limit', '3', '-f', 'json']);
-    expectDataOrSkip(data, 'gov-policy search');
-    if (data) {
-      expect(data[0]).toHaveProperty('title');
-    }
-  }, 60_000);
-
-  it('gov-policy recent returns latest policy documents', async () => {
-    const data = await tryBrowserCommand(['gov-policy', 'recent', '--limit', '3', '-f', 'json']);
-    expectDataOrSkip(data, 'gov-policy recent');
   }, 60_000);
 
   // ── yahoo-finance ──

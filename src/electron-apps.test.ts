@@ -32,7 +32,7 @@ describe('electron-apps registry', () => {
   });
 
   it('returns undefined for non-Electron sites', () => {
-    expect(getElectronApp('bilibili')).toBeUndefined();
+    expect(getElectronApp('youtube')).toBeUndefined();
     expect(getElectronApp('hackernews')).toBeUndefined();
   });
 
@@ -65,7 +65,7 @@ describe('electron-apps registry', () => {
   });
 
   it('isElectronApp returns false for non-Electron sites', () => {
-    expect(isElectronApp('bilibili')).toBe(false);
+    expect(isElectronApp('youtube')).toBe(false);
     expect(isElectronApp('notion')).toBe(false);
     expect(isElectronApp('unknown-app')).toBe(false);
   });

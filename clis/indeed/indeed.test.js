@@ -155,7 +155,7 @@ describe('indeed adapter — URL builders', () => {
 describe('indeed adapter — DOM normalizers', () => {
     it('dedupeTags drops the salary duplicate and trims', () => {
         const tags = ['$50 - $100 an hour', 'Contract', 'Hourly pay', 'Flexible schedule', 'Contract'];
-        expect(dedupeTags(tags, '$50 - $100 an hour')).toBe('Contract · Hourly pay · Flexible schedule');
+        expect(dedupeTags(tags, '$50 - $100 an hour')).toBe('Contract \u00b7 Hourly pay \u00b7 Flexible schedule');
     });
 
     it('dedupeTags handles empty / no-salary input', () => {
@@ -184,7 +184,7 @@ describe('indeed adapter — DOM normalizers', () => {
             company: 'Somos, Inc.',
             location: 'Remote',
             salary: '$150,000 - $179,000 a year',
-            tags: 'Full-time · 401(k)',
+            tags: 'Full-time \u00b7 401(k)',
             url: `${INDEED_ORIGIN}/viewjob?jk=a0021a1886f32d09`,
         });
     });
@@ -270,7 +270,7 @@ describe('indeed adapter — search runtime', () => {
             company: 'Acme',
             location: 'Remote',
             salary: '$180,000 a year',
-            tags: 'Full-time · 401(k)',
+            tags: 'Full-time \u00b7 401(k)',
             url: `${INDEED_ORIGIN}/viewjob?jk=dccc07ac5a6a3683`,
         }]);
     });

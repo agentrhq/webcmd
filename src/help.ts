@@ -131,7 +131,7 @@ export function wrapCommaList(
 /**
  * Adapter category for help-text grouping.
  *
- * - `site`: web site adapter (real DNS-style domain, e.g. `www.bilibili.com`)
+ * - `site`: web site adapter (real DNS-style domain, e.g. `www.youtube.com`)
  * - `app`: desktop app adapter (Electron/osascript, signaled by `domain: 'localhost'`
  *   or other non-DNS/local endpoint string like `'127.0.0.1'` / `'doubao-app'`)
  *
@@ -160,7 +160,7 @@ export interface RootAdapterGroups {
   external: readonly RootExternalCli[];
   /** Desktop-app adapters (chatgpt-app, chatwise, codex, ...) */
   apps: readonly string[];
-  /** Web-site adapters (bilibili, dianping, ...) */
+  /** Web-site adapters (youtube, reddit, github, ...) */
   sites: readonly string[];
 }
 

@@ -18,8 +18,8 @@ cli({
   if (!btn) throw new Error('Favorites button not found - make sure you are logged in');
   const container = btn.closest('button') || btn.closest('[role="button"]') || btn;
   const aria = (container.getAttribute('aria-label') || '').toLowerCase();
-  if (aria.includes('add to favorites') || aria.includes('收藏')) {
-    if (!aria.includes('remove') && !aria.includes('取消')) {
+  if (aria.includes('add to favorites') || aria.includes('favorites')) {
+    if (!aria.includes('remove') && !aria.includes('Cancel')) {
       return [{ status: 'Not in Favorites', url: url }];
     }
   }

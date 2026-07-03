@@ -623,8 +623,8 @@ export async function getNotebooklmPageState(page) {
     const loginRequired = textNodes.some(text =>
       text.includes('sign in') ||
       text.includes('log in') ||
-      text.includes('登录') ||
-      text.includes('登入')
+      text.includes('Log in') ||
+      text.includes('Sign in')
     );
 
     const notebookCount = Array.from(document.querySelectorAll('a[href*="/notebook/"]'))
@@ -711,7 +711,7 @@ export async function listNotebooklmLinks(page) {
         titleNode?.textContent ||
         node.getAttribute('aria-label') ||
         node.getAttribute('title') ||
-        parentLines.find((line) => !line.includes('个来源') && !line.includes('sources') && !line.includes('more_vert')) ||
+        parentLines.find((line) => !line.includes('sources') && !line.includes('sources') && !line.includes('more_vert')) ||
         node.textContent ||
         ''
       ).trim();
@@ -753,32 +753,32 @@ export async function listNotebooklmSourcesFromPage(page) {
     if (!notebookId) return [];
 
     const skip = new Set([
-      '选择所有来源',
-      '添加来源',
-      '收起来源面板',
-      '更多',
+      'Select all sources',
+      'Add source',
+      'Collapse source panel',
+      'More',
       'Web',
       'Fast Research',
-      '提交',
-      '创建笔记本',
-      '分享笔记本',
-      '设置',
-      '对话选项',
-      '配置笔记本',
-      '音频概览',
-      '演示文稿',
-      '视频概览',
-      '思维导图',
-      '报告',
-      '闪卡',
-      '测验',
-      '信息图',
-      '数据表格',
-      '添加笔记',
-      '保存到笔记',
-      '复制摘要',
-      '摘要很棒',
-      '摘要欠佳',
+      'Submit',
+      'Create notebook',
+      'Share notebook',
+      'Settings',
+      'Conversation options',
+      'Configure notebook',
+      'Audio overview',
+      'Presentation',
+      'Video overview',
+      'Mind map',
+      'Report',
+      'Flashcards',
+      'Quiz',
+      'Infographic',
+      'Data table',
+      'Add note',
+      'Save to note',
+      'Copy summary',
+      'Good summary',
+      'Poor summary',
     ]);
 
     const rows = [];
@@ -786,7 +786,7 @@ export async function listNotebooklmSourcesFromPage(page) {
     for (const node of Array.from(document.querySelectorAll('button, [role="button"], input[type="checkbox"]'))) {
       const text = (node.getAttribute?.('aria-label') || node.textContent || '').trim();
       if (!text || skip.has(text) || seen.has(text)) continue;
-      if (text.includes('个来源') || text.includes('来源') && text.length < 5) continue;
+      if (text.includes('sources') || text.includes('sources') && text.length < 5) continue;
       seen.add(text);
       rows.push({
         id: text,

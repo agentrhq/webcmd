@@ -10,7 +10,7 @@
 // Accepted inputs:
 //   - a full message UUID
 //   - "#channel:msgShortId" — short id is expanded via /api/messages/context,
-//     reading `targetMessageId` (NOT m.message.id — Phase 7.1 lesson / 托瓦茲
+//     reading `targetMessageId` (NOT m.message.id — Phase 7.1 lesson / Tovaz
 //     gate ②). The fragment is inlined here for now (R3 backlog: consolidate
 //     into a shared shortIdResolveFragment).
 

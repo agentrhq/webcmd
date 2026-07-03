@@ -28,7 +28,7 @@ cli({
 
     const result = await page.evaluate(String.raw`(() => {
       const clean = (s) => String(s || '').replace(/[\u00a0\u202f]/g, ' ').replace(/\s+/g, ' ').trim();
-      const timeRe = /^(?:\d{1,2}:\d{2}\s?(?:AM|PM|am|pm|上午|下午)?|Mon|Tue|Wed|Thu|Fri|Sat|Sun|Today|Yesterday|\d+[mhdw]|\d+\s*(?:min|h|d|w))$/;
+      const timeRe = /^(?:\d{1,2}:\d{2}\s?(?:AM|PM|am|pm|AM|PM)?|Mon|Tue|Wed|Thu|Fri|Sat|Sun|Today|Yesterday|\d+[mhdw]|\d+\s*(?:min|h|d|w))$/;
       const text = document.body?.innerText || '';
       if (/log in|sign in/i.test(text) && !/Marketplace/i.test(text)) {
         return { authRequired: true, rows: [] };
@@ -41,8 +41,8 @@ cli({
       for (let i = 0; i < lines.length - 2; i += 1) {
         const buyer = lines[i];
         const meta = lines[i + 1];
-        if (skipBuyer.test(buyer) || !/^·\s+/.test(meta)) continue;
-        const listing = meta.replace(/^·\s*/, '');
+        if (skipBuyer.test(buyer) || !/^\u00b7\s+/.test(meta)) continue;
+        const listing = meta.replace(/^\u00b7\s*/, '');
         if (!listing || /^Within\b/i.test(listing)) continue;
         const snippet = lines[i + 2] || '';
         const time = timeRe.test(lines[i + 3] || '') ? lines[i + 3] : '';

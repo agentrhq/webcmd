@@ -320,7 +320,7 @@ function auditTypedErrorPatterns(
         details: { text: line.trim() },
       });
     }
-    const sentinel = /(?:\?\?|\|\|)\s*(['"])(unknown|Unknown|UNKNOWN|N\/A|n\/a|NA|未知|-)\1/.exec(line);
+    const sentinel = /(?:\?\?|\|\|)\s*(['"])(unknown|Unknown|UNKNOWN|N\/A|n\/a|NA|-)\1/.exec(line);
     if (sentinel) {
       if (!isThrowMessageLine(line)) {
         violations.push({

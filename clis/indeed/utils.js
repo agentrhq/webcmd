@@ -118,7 +118,7 @@ export function dedupeTags(tags, salary) {
         if (out.includes(trimmed)) continue;
         out.push(trimmed);
     }
-    return out.join(' · ');
+    return out.join(' \u00b7 ');
 }
 
 /**

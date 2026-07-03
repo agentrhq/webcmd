@@ -3,7 +3,7 @@ import { classifyAdapter, formatRootAdapterHelpText } from './help.js';
 
 describe('classifyAdapter', () => {
   it('classifies DNS-style domains as site', () => {
-    expect(classifyAdapter('www.bilibili.com')).toBe('site');
+    expect(classifyAdapter('www.youtube.com')).toBe('site');
     expect(classifyAdapter('chatgpt.com')).toBe('site');
     expect(classifyAdapter('claude.ai')).toBe('site');
     expect(classifyAdapter('grok.com')).toBe('site');
@@ -27,15 +27,15 @@ describe('formatRootAdapterHelpText', () => {
     const text = formatRootAdapterHelpText({
       external: [
         { name: 'gh', label: 'gh' },
-        { name: 'wx', label: 'wx(wx-cli)' },
+        { name: 'vercel', label: 'vercel' },
       ],
       apps: ['chatwise', 'codex'],
-      sites: ['bilibili'],
+      sites: ['youtube'],
     });
     expect(text).toContain('External CLIs (2):');
     expect(text).toContain('App adapters (2):');
     expect(text).toContain('Site adapters (1):');
-    expect(text).toContain('wx(wx-cli)');
+    expect(text).toContain('vercel');
     expect(text.indexOf('External CLIs')).toBeLessThan(text.indexOf('App adapters'));
     expect(text.indexOf('App adapters')).toBeLessThan(text.indexOf('Site adapters'));
   });
@@ -44,7 +44,7 @@ describe('formatRootAdapterHelpText', () => {
     const text = formatRootAdapterHelpText({
       external: [],
       apps: [],
-      sites: ['bilibili'],
+      sites: ['youtube'],
     });
     expect(text).not.toContain('External CLIs');
     expect(text).not.toContain('App adapters');
@@ -59,7 +59,7 @@ describe('formatRootAdapterHelpText', () => {
     const text = formatRootAdapterHelpText({
       external: [],
       apps: [],
-      sites: ['bilibili'],
+      sites: ['youtube'],
     });
     expect(text).toContain("'webcmd <site> --help -f yaml'");
   });

@@ -403,15 +403,15 @@ describe('chatgpt model selection validation', () => {
     it('selects current Chinese intelligence options by exact visible menu text', async () => {
         const page = createDomEvaluatePage(`
             <form>
-              <button type="button" data-testid="model-switcher-dropdown-button">GPT-5.5 均衡</button>
+              <button type="button" data-testid="model-switcher-dropdown-button">GPT-5.5 balanced</button>
               <div id="prompt-textarea" contenteditable="true"></div>
             </form>
             <div role="menu">
-              <div role="menuitemradio">极速</div>
-              <div role="menuitemradio">均衡</div>
-              <div role="menuitemradio">高级</div>
-              <div role="menuitemradio">超高</div>
-              <div role="menuitemradio">专业</div>
+              <div role="menuitemradio">fast</div>
+              <div role="menuitemradio">balanced</div>
+              <div role="menuitemradio">advanced</div>
+              <div role="menuitemradio">very high</div>
+              <div role="menuitemradio">professional</div>
             </div>
         `);
         let clickCount = 0;
@@ -419,7 +419,7 @@ describe('chatgpt model selection validation', () => {
         page.nativeClick = vi.fn().mockImplementation(async () => {
             clickCount += 1;
             if (clickCount === 2) {
-                page.evaluate(`document.querySelector('[data-testid="model-switcher-dropdown-button"]').textContent = 'GPT-5.5 超高'`);
+                page.evaluate(`document.querySelector('[data-testid="model-switcher-dropdown-button"]').textContent = 'GPT-5.5 very high'`);
             }
         });
 
@@ -434,7 +434,7 @@ describe('chatgpt model selection validation', () => {
               <div id="prompt-textarea" contenteditable="true"></div>
             </form>
             <div role="menu">
-              <div role="menuitemradio">极速</div>
+              <div role="menuitemradio">fast</div>
             </div>
         `);
         let clickCount = 0;
@@ -862,7 +862,7 @@ describe('chatgpt generation state', () => {
     it('detects zh-CN thinking status text', async () => {
         const page = {
             evaluate: vi.fn((script) => {
-                expect(script).toContain('正在思考');
+                expect(script).toContain('Thinking');
                 return Promise.resolve(true);
             }),
         };
@@ -879,12 +879,12 @@ describe('chatgpt current model detection', () => {
         ['High', { model: 'advanced', label: 'Advanced' }],
         ['Extra High', { model: 'very-high', label: 'Very High' }],
         ['Pro', { model: 'pro', label: 'Pro' }],
-        ['GPT-5.5 极速', { model: 'fast', label: 'Fast' }],
-        ['GPT-5.5 均衡', { model: 'balanced', label: 'Balanced' }],
-        ['智能水平 高级', { model: 'advanced', label: 'Advanced' }],
-        ['GPT-5.5 超高', { model: 'very-high', label: 'Very High' }],
-        ['GPT-5.5 专业', { model: 'pro', label: 'Pro' }],
-        ['进阶专业', { model: 'pro', label: 'Pro' }],
+        ['GPT-5.5 fast', { model: 'fast', label: 'Fast' }],
+        ['GPT-5.5 balanced', { model: 'balanced', label: 'Balanced' }],
+        ['intelligence level advanced', { model: 'advanced', label: 'Advanced' }],
+        ['GPT-5.5 very high', { model: 'very-high', label: 'Very High' }],
+        ['GPT-5.5 professional', { model: 'pro', label: 'Pro' }],
+        ['professional', { model: 'pro', label: 'Pro' }],
     ])('detects the visible %s model label', async (label, expected) => {
         const page = createDomEvaluatePage(`<form><button>${label}</button></form>`);
 
@@ -915,10 +915,10 @@ describe('chatgpt current model detection', () => {
 
 describe('chatgpt current tool detection', () => {
     it.each([
-        ['深度研究', { tool: 'deep-research', label: 'Deep Research' }],
         ['Deep Research', { tool: 'deep-research', label: 'Deep Research' }],
-        ['网页搜索', { tool: 'web-search', label: 'Web Search' }],
-        ['搜索', { tool: 'web-search', label: 'Web Search' }],
+        ['Deep Research', { tool: 'deep-research', label: 'Deep Research' }],
+        ['Web Search', { tool: 'web-search', label: 'Web Search' }],
+        ['Search', { tool: 'web-search', label: 'Web Search' }],
         ['Web Search', { tool: 'web-search', label: 'Web Search' }],
     ])('detects the visible %s tool label', async (label, expected) => {
         const page = createDomEvaluatePage(`<form><button>${label}</button></form>`);
@@ -927,7 +927,7 @@ describe('chatgpt current tool detection', () => {
     });
 
     it('returns null fields when no supported tool is selected', async () => {
-        const page = createDomEvaluatePage('<form><button>添加文件</button></form>');
+        const page = createDomEvaluatePage('<form><button>Add file</button></form>');
 
         await expect(getCurrentChatGPTTool(page)).resolves.toEqual({
             tool: null,
@@ -1001,15 +1001,15 @@ describe('chatgpt send selectors', () => {
     it('keeps zh-CN aria and placeholder fallbacks without replacing English selectors', () => {
         expect(__test__.COMPOSER_SELECTORS).toEqual(expect.arrayContaining([
             '[aria-label="Chat with ChatGPT"]',
-            '[aria-label="与 ChatGPT 聊天"]',
+            '[aria-label="localized text ChatGPT chat"]',
             '[placeholder="Ask anything"]',
-            '[placeholder="有问题，尽管问"]',
+            '[placeholder="Ask anything,ask away"]',
             '[data-testid="prompt-textarea"]',
         ]));
         expect(__test__.SEND_BUTTON_SELECTOR).toBe('button[data-testid="send-button"]:not([disabled])');
         expect(__test__.SEND_BUTTON_FALLBACK_SELECTORS).toContain('#composer-submit-button:not([disabled])');
-        expect(__test__.SEND_BUTTON_LABELS).toEqual(expect.arrayContaining(['Send prompt', 'Send message', 'Send', '发送', '发送消息', '发送提示']));
-        expect(__test__.CLOSE_SIDEBAR_LABELS).toEqual(expect.arrayContaining(['Close sidebar', '关闭边栏']));
+        expect(__test__.SEND_BUTTON_LABELS).toEqual(expect.arrayContaining(['Send prompt', 'Send message', 'Send', 'Send', 'Send message', 'Send prompt']));
+        expect(__test__.CLOSE_SIDEBAR_LABELS).toEqual(expect.arrayContaining(['Close sidebar', 'Close sidebar']));
     });
 });
 

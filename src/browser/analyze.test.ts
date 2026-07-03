@@ -183,7 +183,7 @@ describe('findNearestAdapter', () => {
     const reg = new Map<string, CliCommand>([
       ['51job search', mkCmd('51job', 'search', '51job.com')],
       ['51job detail', mkCmd('51job', 'detail', '51job.com')],
-      ['xueqiu search', mkCmd('xueqiu', 'search', 'xueqiu.com')],
+      ['github search', mkCmd('github', 'search', 'github.com')],
     ]);
     const v = findNearestAdapter('https://jobs.51job.com/', reg);
     expect(v?.site).toBe('51job');
@@ -200,7 +200,7 @@ describe('findNearestAdapter', () => {
 
   it('returns null when no adapter matches', () => {
     const reg = new Map<string, CliCommand>([
-      ['xueqiu search', mkCmd('xueqiu', 'search', 'xueqiu.com')],
+      ['github search', mkCmd('github', 'search', 'github.com')],
     ]);
     const v = findNearestAdapter('https://random-site.io/', reg);
     expect(v).toBeNull();
