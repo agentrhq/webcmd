@@ -1358,6 +1358,43 @@
     "sourceFile": "aibase/news.js"
   },
   {
+    "site": "allrecipes",
+    "name": "recipe",
+    "description": "Extract an Allrecipes recipe from a recipe URL",
+    "access": "read",
+    "domain": "www.allrecipes.com",
+    "strategy": "ui",
+    "browser": true,
+    "args": [
+      {
+        "name": "url",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Allrecipes recipe URL"
+      }
+    ],
+    "columns": [
+      "title",
+      "author",
+      "rating",
+      "ratingCount",
+      "prepTime",
+      "cookTime",
+      "totalTime",
+      "servings",
+      "calories",
+      "ingredients",
+      "instructions",
+      "url",
+      "key"
+    ],
+    "type": "js",
+    "modulePath": "allrecipes/recipe.js",
+    "sourceFile": "allrecipes/recipe.js",
+    "navigateBefore": true
+  },
+  {
     "site": "amazon",
     "name": "bestsellers",
     "description": "Amazon Best Sellers pages for category candidate discovery",
