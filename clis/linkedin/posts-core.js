@@ -92,8 +92,15 @@ export function buildPostsScript() {
       const trailingNumber = text.match(/(?:^|\s)(\d[\d,.]*\s*(?:k|m)?)\s*$/i);
       return trailingNumber ? parseMetric(trailingNumber[1]) : 0;
     };
-    const expanders = Array.from(document.querySelectorAll('button, a'))
-      .filter((el) => /\b(see more|show more|more)\b|…more/i.test(clean(el.innerText || el.textContent || el.getAttribute('aria-label') || '')));
+    const expanders = Array.from(document.querySelectorAll('button'))
+      .filter((el) => {
+        const text = clean(el.innerText || el.textContent || '');
+        const aria = clean(el.getAttribute('aria-label') || '');
+        const className = clean(el.className || '');
+        return text === '…more'
+          || /\b(see more|show more)\b/i.test(aria)
+          || /\b(?:see-more|show-more|inline-show-more)\b/i.test(className);
+      });
     for (const expander of expanders.slice(0, 20)) {
       try { expander.click(); } catch {}
     }
