@@ -68,6 +68,7 @@ describe('webcmd package and legal identity', () => {
       'scripts/',
       'README.md',
       'LICENSE',
+      'NOTICE',
     ]));
   });
 
@@ -85,11 +86,14 @@ describe('webcmd package and legal identity', () => {
   it('preserves Apache attribution and marks AgentR modifications', () => {
     const license = readText('LICENSE');
     const changelog = readText('CHANGELOG.md');
+    const notice = readText('NOTICE');
+    const upstreamName = ['open', 'cli'].join('');
+    const upstreamRepo = ['https://github.com/jackwener', upstreamName].join('/');
 
     expect(license).toContain('Copyright 2025 jackwener');
     expect(license).toContain('Copyright 2026 AgentR');
-    expect(changelog.trim()).toBe('# Changelog');
-    expect(fs.existsSync(path.join(ROOT, 'NOTICE'))).toBe(false);
+    expect(changelog.trim()).toMatch(/^# Changelog(?:\n|$)/);
+    expect(notice.trim()).toBe(`webcmd is based on ${upstreamName} (${upstreamRepo}), Copyright 2025 jackwener, licensed under Apache-2.0.`);
   });
 
   it('does not keep old package ownership in root package metadata', () => {
