@@ -17097,6 +17097,79 @@
     "navigateBefore": false
   },
   {
+    "site": "instacart",
+    "name": "storefront",
+    "description": "Visible Instacart product cards from a retailer storefront",
+    "access": "read",
+    "domain": "www.instacart.com",
+    "strategy": "ui",
+    "browser": true,
+    "args": [
+      {
+        "name": "retailer",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Retailer slug, for example sprouts or costco"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Maximum products to return (1-30)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "productId",
+      "title",
+      "priceText",
+      "originalPriceText",
+      "discount",
+      "size",
+      "stock",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "instacart/storefront.js",
+    "sourceFile": "instacart/storefront.js",
+    "navigateBefore": true,
+    "siteSession": "persistent"
+  },
+  {
+    "site": "instacart",
+    "name": "stores",
+    "description": "Visible Instacart nearby stores from the public marketplace page",
+    "access": "read",
+    "domain": "www.instacart.com",
+    "strategy": "ui",
+    "browser": true,
+    "args": [
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Maximum stores to return (1-30)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "slug",
+      "name",
+      "delivery",
+      "pickup",
+      "tags",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "instacart/stores.js",
+    "sourceFile": "instacart/stores.js",
+    "navigateBefore": true,
+    "siteSession": "persistent"
+  },
+  {
     "site": "instagram",
     "name": "collection-create",
     "description": "Create a new Instagram saved-posts collection (folder)",
