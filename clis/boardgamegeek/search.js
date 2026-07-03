@@ -1,93 +1,22 @@
-import { ArgumentError, AuthRequiredError, CommandExecutionError, EmptyResultError } from '@agentrhq/webcmd/errors';
 import { cli, Strategy } from '@agentrhq/webcmd/registry';
-
-const SEARCH_URL = 'https://boardgamegeek.com/xmlapi2/search';
-const TOKEN_ENV = 'BOARDGAMEGEEK_TOKEN';
-const UA = 'webcmd-boardgamegeek-adapter (+https://github.com/agentrhq/webcmd)';
-
-function requireQuery(value) {
-    const query = String(value ?? '').trim();
-    if (!query) throw new ArgumentError('boardgamegeek query is required');
-    return query;
-}
-
-function requireLimit(value) {
-    const raw = value == null || value === '' ? 20 : value;
-    const n = Number(raw);
-    if (!Number.isInteger(n) || n < 1 || n > 100) {
-        throw new ArgumentError('boardgamegeek limit must be an integer between 1 and 100');
-    }
-    return n;
-}
-
-function token() {
-    const value = String(process.env[TOKEN_ENV] ?? '').trim();
-    if (!value) {
-        throw new AuthRequiredError('boardgamegeek.com', `Set ${TOKEN_ENV} to a BoardGameGeek XML API application Bearer token.`);
-    }
-    return value;
-}
-
-function decodeXml(value) {
-    return String(value ?? '')
-        .replace(/&quot;/g, '"')
-        .replace(/&apos;/g, "'")
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&amp;/g, '&');
-}
-
-function attrs(xml) {
-    const out = {};
-    for (const match of String(xml ?? '').matchAll(/\s([A-Za-z_:][-A-Za-z0-9_:.]*)="([^"]*)"/g)) {
-        out[match[1]] = decodeXml(match[2]);
-    }
-    return out;
-}
+import { API_BASE, attrs, blocks, fetchXml, positiveInt, requireRows, requiredText } from './utils.js';
 
 function parseSearch(xml) {
     const rows = [];
-    for (const match of String(xml ?? '').matchAll(/<item\b([^>]*)>([\s\S]*?)<\/item>/g)) {
-        const itemAttrs = attrs(match[1]);
-        const nameMatch = match[2].match(/<name\b([^>]*)\/?>/);
-        const yearMatch = match[2].match(/<yearpublished\b([^>]*)\/?>/);
+    for (const item of blocks(xml, 'item')) {
+        const nameMatch = item.body.match(/<name\b([^>]*)\/?>/);
+        const yearMatch = item.body.match(/<yearpublished\b([^>]*)\/?>/);
         const name = attrs(nameMatch?.[1]).value ?? '';
         const yearRaw = attrs(yearMatch?.[1]).value;
         rows.push({
-            id: itemAttrs.id ?? '',
+            id: item.attrs.id ?? '',
             name,
-            type: itemAttrs.type ?? '',
+            type: item.attrs.type ?? '',
             yearPublished: yearRaw == null ? null : Number(yearRaw),
-            url: itemAttrs.id ? `https://boardgamegeek.com/boardgame/${itemAttrs.id}` : '',
+            url: item.attrs.id ? `https://boardgamegeek.com/boardgame/${item.attrs.id}` : '',
         });
     }
     return rows.filter((row) => row.id && row.name);
-}
-
-async function fetchXml(url) {
-    const bearer = token();
-    let resp;
-    try {
-        resp = await fetch(url, {
-            headers: {
-                authorization: `Bearer ${bearer}`,
-                'user-agent': UA,
-                accept: 'application/xml,text/xml',
-            },
-        });
-    } catch (err) {
-        throw new CommandExecutionError(`boardgamegeek search request failed: ${err?.message ?? err}`);
-    }
-    if (resp.status === 401 || resp.status === 403) {
-        throw new AuthRequiredError('boardgamegeek.com', `BoardGameGeek XML API rejected ${TOKEN_ENV}.`);
-    }
-    if (resp.status === 429 || resp.status === 500 || resp.status === 503) {
-        throw new CommandExecutionError(`boardgamegeek search is rate limited or busy (HTTP ${resp.status}); retry later.`);
-    }
-    if (!resp.ok) {
-        throw new CommandExecutionError(`boardgamegeek search returned HTTP ${resp.status}`);
-    }
-    return resp.text();
 }
 
 cli({
@@ -106,18 +35,15 @@ cli({
     ],
     columns: ['rank', 'id', 'name', 'type', 'yearPublished', 'url'],
     func: async (args) => {
-        const query = requireQuery(args.query);
-        const limit = requireLimit(args.limit);
+        const query = requiredText(args.query, 'query');
+        const limit = positiveInt(args.limit, 20, 100, 'limit');
         const type = String(args.type ?? 'boardgame').trim();
-        const url = new URL(SEARCH_URL);
+        const url = new URL(`${API_BASE}/search`);
         url.searchParams.set('query', query);
         if (type !== 'all') url.searchParams.set('type', type);
         if (args.exact) url.searchParams.set('exact', '1');
 
-        const rows = parseSearch(await fetchXml(url));
-        if (!rows.length) {
-            throw new EmptyResultError('boardgamegeek search', `No BoardGameGeek games matched "${query}".`);
-        }
+        const rows = requireRows(parseSearch(await fetchXml(url, 'boardgamegeek search')), 'boardgamegeek search', `No BoardGameGeek games matched "${query}".`);
         return rows.slice(0, limit).map((row, i) => ({ rank: i + 1, ...row }));
     },
 });

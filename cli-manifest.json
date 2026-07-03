@@ -5224,6 +5224,210 @@
   },
   {
     "site": "boardgamegeek",
+    "name": "collection",
+    "description": "List a public BoardGameGeek user collection",
+    "access": "read",
+    "domain": "boardgamegeek.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "username",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "BoardGameGeek username"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 50,
+        "required": false,
+        "help": "Max results (1-100)"
+      },
+      {
+        "name": "subtype",
+        "type": "str",
+        "default": "boardgame",
+        "required": false,
+        "help": "Collection subtype",
+        "choices": [
+          "boardgame",
+          "boardgameexpansion",
+          "boardgameaccessory",
+          "rpgitem",
+          "rpgissue",
+          "videogame"
+        ]
+      },
+      {
+        "name": "own",
+        "type": "boolean",
+        "default": true,
+        "required": false,
+        "help": "Only owned items"
+      }
+    ],
+    "columns": [
+      "rank",
+      "id",
+      "collectionId",
+      "name",
+      "yearPublished",
+      "subtype",
+      "own",
+      "wishlist",
+      "forTrade",
+      "wantToPlay",
+      "numPlays",
+      "userRating",
+      "averageRating",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "boardgamegeek/collection.js",
+    "sourceFile": "boardgamegeek/collection.js"
+  },
+  {
+    "site": "boardgamegeek",
+    "name": "guild",
+    "description": "Get BoardGameGeek guild details",
+    "access": "read",
+    "domain": "boardgamegeek.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "id",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "BGG guild id, e.g. 1229"
+      }
+    ],
+    "columns": [
+      "id",
+      "name",
+      "created",
+      "manager",
+      "category",
+      "websiteUrl",
+      "memberCount",
+      "description",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "boardgamegeek/guild.js",
+    "sourceFile": "boardgamegeek/guild.js"
+  },
+  {
+    "site": "boardgamegeek",
+    "name": "hot",
+    "description": "List currently hot BoardGameGeek items",
+    "access": "read",
+    "domain": "boardgamegeek.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "type",
+        "type": "str",
+        "default": "boardgame",
+        "required": false,
+        "help": "Hot list type",
+        "choices": [
+          "boardgame",
+          "rpg",
+          "videogame",
+          "boardgameperson",
+          "rpgperson",
+          "boardgamecompany",
+          "rpgcompany",
+          "videogamecompany"
+        ]
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "Max results (1-50)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "id",
+      "name",
+      "yearPublished",
+      "thumbnailUrl",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "boardgamegeek/hot.js",
+    "sourceFile": "boardgamegeek/hot.js"
+  },
+  {
+    "site": "boardgamegeek",
+    "name": "plays",
+    "description": "List recent BoardGameGeek logged plays",
+    "access": "read",
+    "domain": "boardgamegeek.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "username",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "BoardGameGeek username"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "Max results (1-100)"
+      },
+      {
+        "name": "page",
+        "type": "int",
+        "default": 1,
+        "required": false,
+        "help": "Result page (1-1000)"
+      },
+      {
+        "name": "mindate",
+        "type": "str",
+        "required": false,
+        "help": "Only plays on/after YYYY-MM-DD"
+      },
+      {
+        "name": "maxdate",
+        "type": "str",
+        "required": false,
+        "help": "Only plays on/before YYYY-MM-DD"
+      }
+    ],
+    "columns": [
+      "rank",
+      "id",
+      "date",
+      "quantity",
+      "length",
+      "incomplete",
+      "nowInStats",
+      "location",
+      "itemId",
+      "itemName",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "boardgamegeek/plays.js",
+    "sourceFile": "boardgamegeek/plays.js"
+  },
+  {
+    "site": "boardgamegeek",
     "name": "search",
     "description": "Search BoardGameGeek games via XML API2",
     "access": "read",
@@ -5279,6 +5483,77 @@
     "type": "js",
     "modulePath": "boardgamegeek/search.js",
     "sourceFile": "boardgamegeek/search.js"
+  },
+  {
+    "site": "boardgamegeek",
+    "name": "thing",
+    "description": "Get BoardGameGeek item details and ratings",
+    "access": "read",
+    "domain": "boardgamegeek.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "id",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "BGG thing id, e.g. 13"
+      }
+    ],
+    "columns": [
+      "id",
+      "name",
+      "type",
+      "yearPublished",
+      "minPlayers",
+      "maxPlayers",
+      "playingTime",
+      "minAge",
+      "averageRating",
+      "bayesAverage",
+      "usersRated",
+      "categories",
+      "mechanics",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "boardgamegeek/thing.js",
+    "sourceFile": "boardgamegeek/thing.js"
+  },
+  {
+    "site": "boardgamegeek",
+    "name": "user",
+    "description": "Get a public BoardGameGeek user profile",
+    "access": "read",
+    "domain": "boardgamegeek.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "username",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "BoardGameGeek username"
+      }
+    ],
+    "columns": [
+      "id",
+      "username",
+      "firstName",
+      "lastName",
+      "stateOrProvince",
+      "country",
+      "yearRegistered",
+      "lastLogin",
+      "tradeRating",
+      "marketRating",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "boardgamegeek/user.js",
+    "sourceFile": "boardgamegeek/user.js"
   },
   {
     "site": "booking",
