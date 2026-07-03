@@ -23585,6 +23585,85 @@
     "navigateBefore": "https://mubu.com"
   },
   {
+    "site": "nasa-images",
+    "name": "search",
+    "description": "Search NASA Images and Video Library media",
+    "access": "read",
+    "domain": "images-api.nasa.gov",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "query",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Search terms, e.g. \"apollo 11\""
+      },
+      {
+        "name": "media-type",
+        "type": "str",
+        "default": "image",
+        "required": false,
+        "help": "image, video, audio, or all",
+        "choices": [
+          "image",
+          "video",
+          "audio",
+          "all"
+        ]
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "Max results (1-100)"
+      },
+      {
+        "name": "page",
+        "type": "int",
+        "default": 1,
+        "required": false,
+        "help": "Result page (1-1000)"
+      },
+      {
+        "name": "year-start",
+        "type": "int",
+        "required": false,
+        "help": "Filter start year, e.g. 1969"
+      },
+      {
+        "name": "year-end",
+        "type": "int",
+        "required": false,
+        "help": "Filter end year, e.g. 1972"
+      },
+      {
+        "name": "center",
+        "type": "str",
+        "required": false,
+        "help": "NASA center filter, e.g. JSC"
+      }
+    ],
+    "columns": [
+      "rank",
+      "nasaId",
+      "title",
+      "mediaType",
+      "center",
+      "dateCreated",
+      "description",
+      "keywords",
+      "previewUrl",
+      "assetUrl",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "nasa-images/search.js",
+    "sourceFile": "nasa-images/search.js"
+  },
+  {
     "site": "notebooklm",
     "name": "add-source",
     "description": "Add a URL, text, or local file source to an existing NotebookLM notebook",
