@@ -1,11 +1,11 @@
 # Default AI Sources
 
-When the user does not explicitly name a site, choose one of `grok`, `doubao`, or `gemini` first. Do not start by running multiple AI sources in parallel.
+When the user does not explicitly name a site, choose one of `grok`, `chatgpt`, or `gemini` first. Do not start by running multiple AI sources in parallel.
 
 ## Usage Rules
 
 1. Run `webcmd list -f yaml`
-2. Confirm which of `grok`, `doubao`, and `gemini` are available in the current registry
+2. Confirm which of `grok`, `chatgpt`, and `gemini` are available in the current registry
 3. Run `webcmd <site> -h`
 4. After selecting a subcommand, run `webcmd <site> <command> -h`
 
@@ -24,18 +24,18 @@ When the user does not explicitly name a site, choose one of `grok`, `doubao`, o
     - `TSLA earnings main viewpoints on social media April 2026`
     - `Nintendo Switch 2 rumors latest discussion on X`
 
-### doubao
+### chatgpt
 
-- Use for: Chinese-language context, China-market trends, lifestyle content, ByteDance ecosystem content, and broad Chinese-language Q&A
+- Use for: broad Q&A, synthesis, planning, coding help, and general-purpose English-language research
 - Common follow-up sources: `reddit`, `youtube`, `google`, `reuters`
 - Query suggestions:
-  - Add a language or market scope, such as "Chinese-language discussion" or "China-market users"
+  - Add a language, market, or audience scope, such as "English-language discussion" or "US users"
   - Add the requested goal, such as "summarize", "compare", or "extract recommendation reasons"
-  - Add audience or use-case constraints, such as "for beginners", "under 500 CNY", or "Shanghai jobs"
+  - Add audience or use-case constraints, such as "for beginners", "under $500", or "remote jobs"
   - Examples:
-    - `Is the 2026 MacBook Air worth buying? Main views in Chinese-language discussions`
-    - `Shanghai AI product manager hiring trends over the last month`
-    - `Sunscreen recommendations for sensitive skin, common pros and cons from Chinese-language users`
+    - `Is the 2026 MacBook Air worth buying? Main views in English-language discussions`
+    - `Remote AI product manager hiring trends over the last month`
+    - `Sunscreen recommendations for sensitive skin, common pros and cons from US users`
 
 ### gemini
 

@@ -56,22 +56,30 @@ interface RunDependencies {
   generateText?: (prompt: string, model: string, apiKey: string) => Promise<string>;
 }
 
+type GhRunner = (args: readonly string[]) => string;
+
+interface LoadReleaseContextOptions {
+  gh?: GhRunner;
+  maxDiffCharacters?: number;
+}
+
 const DEFAULT_MODEL = 'gemini-2.5-pro';
+const DEFAULT_MAX_DIFF_CHARACTERS = 24_000;
 const DEFAULT_IO: Io = {
   writeStdout: (chunk) => process.stdout.write(chunk),
   writeStderr: (chunk) => process.stderr.write(chunk),
 };
 
-function execGh(args: string[]): string {
-  return execFileSync('gh', args, {
+function execGh(args: readonly string[]): string {
+  return execFileSync('gh', [...args], {
     encoding: 'utf8',
     timeout: 300_000,
     maxBuffer: 10 * 1024 * 1024,
   });
 }
 
-function ghJson<T>(args: string[]): T {
-  return JSON.parse(execGh(args)) as T;
+function ghJson<T>(args: readonly string[], gh: GhRunner = execGh): T {
+  return JSON.parse(gh(args)) as T;
 }
 
 function normalizeTag(tag: string): string {
@@ -83,11 +91,11 @@ function normalizeTag(tag: string): string {
   return value;
 }
 
-function resolveRepository(env: NodeJS.ProcessEnv): string {
+function resolveRepository(env: NodeJS.ProcessEnv, gh: GhRunner = execGh): string {
   const repository = env.GITHUB_REPOSITORY?.trim();
   if (repository) return repository;
 
-  const fallback = execGh(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']).trim();
+  const fallback = gh(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']).trim();
   if (!fallback) {
     throw new Error('Unable to determine GitHub repository');
   }
@@ -95,8 +103,8 @@ function resolveRepository(env: NodeJS.ProcessEnv): string {
   return fallback;
 }
 
-function getPreviousTag(repository: string, tag: string): string {
-  const releases = ghJson<ReleaseSummary[]>(['api', `repos/${repository}/releases?per_page=100`]);
+function getPreviousTag(repository: string, tag: string, gh: GhRunner = execGh): string {
+  const releases = ghJson<ReleaseSummary[]>(['api', `repos/${repository}/releases?per_page=100`], gh);
   const currentIndex = releases.findIndex((release) => release.tag_name === tag);
   if (currentIndex === -1) {
     throw new Error(`Could not find GitHub release for tag ${tag}`);
@@ -118,9 +126,25 @@ function collectPullRequestNumbers(commits: CompareCommitResponse[]): number[] {
   )];
 }
 
-function loadPullRequest(repository: string, number: number): PullRequestDetails {
-  const details = ghJson<PullRequestResponse>(['api', `repos/${repository}/pulls/${number}`]);
-  const files = ghJson<PullRequestFileResponse[]>(['api', `repos/${repository}/pulls/${number}/files?per_page=100`]);
+function truncateDiff(diff: string, maxCharacters: number): string {
+  const trimmed = diff.trim();
+  if (trimmed.length <= maxCharacters) return trimmed;
+
+  return `${trimmed.slice(0, maxCharacters).trimEnd()}\n[diff truncated]`;
+}
+
+function loadPullRequestDiff(repository: string, number: number, gh: GhRunner, maxCharacters: number): string {
+  try {
+    return truncateDiff(gh(['pr', 'diff', String(number), '--repo', repository]), maxCharacters);
+  } catch {
+    return '';
+  }
+}
+
+function loadPullRequest(repository: string, number: number, gh: GhRunner = execGh, maxDiffCharacters = DEFAULT_MAX_DIFF_CHARACTERS): PullRequestDetails {
+  const details = ghJson<PullRequestResponse>(['api', `repos/${repository}/pulls/${number}`], gh);
+  const files = ghJson<PullRequestFileResponse[]>(['api', `repos/${repository}/pulls/${number}/files?per_page=100`], gh);
+  const diff = loadPullRequestDiff(repository, number, gh, maxDiffCharacters);
 
   return {
     number: details.number,
@@ -129,18 +153,20 @@ function loadPullRequest(repository: string, number: number): PullRequestDetails
     author: details.user?.login ? { login: details.user.login } : null,
     labels: (details.labels ?? []).flatMap((label) => (label.name ? [{ name: label.name }] : [])),
     files: files.map((file) => ({ path: file.filename })),
+    diff,
     url: details.html_url,
     mergedAt: details.merged_at ?? null,
   };
 }
 
-async function loadReleaseContext(tag: string, env: NodeJS.ProcessEnv): Promise<ReleaseContext> {
+export async function loadReleaseContext(tag: string, env: NodeJS.ProcessEnv, options: LoadReleaseContextOptions = {}): Promise<ReleaseContext> {
+  const gh = options.gh ?? execGh;
   const normalizedTag = normalizeTag(tag);
-  const repository = resolveRepository(env);
-  const previousTag = getPreviousTag(repository, normalizedTag);
-  const compare = ghJson<CompareResponse>(['api', `repos/${repository}/compare/${previousTag}...${normalizedTag}`]);
+  const repository = resolveRepository(env, gh);
+  const previousTag = getPreviousTag(repository, normalizedTag, gh);
+  const compare = ghJson<CompareResponse>(['api', `repos/${repository}/compare/${previousTag}...${normalizedTag}`], gh);
   const pullRequests = filterReleasePullRequests(
-    collectPullRequestNumbers(compare.commits).map((number) => loadPullRequest(repository, number)),
+    collectPullRequestNumbers(compare.commits).map((number) => loadPullRequest(repository, number, gh, options.maxDiffCharacters)),
   );
 
   return {

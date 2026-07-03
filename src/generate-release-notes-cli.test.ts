@@ -1,6 +1,8 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import type { ReleaseContext } from './release-notes.js';
-import { runGenerateReleaseNotes } from '../scripts/generate-release-notes.js';
+import { loadReleaseContext, runGenerateReleaseNotes } from '../scripts/generate-release-notes.js';
 
 function createIo() {
   let stdout = '';
@@ -116,5 +118,58 @@ describe('runGenerateReleaseNotes', () => {
       stdout: '',
       stderr: 'Gemini release notes failed: gh timed out\n',
     });
+  });
+
+  it('loads bounded PR diffs into release context', async () => {
+    const gh = vi.fn((args: readonly string[]) => {
+      const key = args.join(' ');
+      if (key === 'api repos/acme/webcmd/releases?per_page=100') {
+        return JSON.stringify([{ tag_name: 'v1.2.3' }, { tag_name: 'v1.2.2' }]);
+      }
+      if (key === 'api repos/acme/webcmd/compare/v1.2.2...v1.2.3') {
+        return JSON.stringify({
+          commits: [
+            { sha: 'abc123', commit: { message: 'feat: improve releases (#42)\n\nBody' } },
+          ],
+        });
+      }
+      if (key === 'api repos/acme/webcmd/pulls/42') {
+        return JSON.stringify({
+          number: 42,
+          title: 'feat: improve releases',
+          body: 'Release polish.',
+          user: { login: 'alice' },
+          labels: [{ name: 'feature' }],
+          html_url: 'https://github.com/acme/webcmd/pull/42',
+          merged_at: '2026-07-03T00:00:00Z',
+        });
+      }
+      if (key === 'api repos/acme/webcmd/pulls/42/files?per_page=100') {
+        return JSON.stringify([{ filename: 'src/release-notes.ts' }]);
+      }
+      if (key === 'pr diff 42 --repo acme/webcmd') {
+        return `diff --git a/src/release-notes.ts b/src/release-notes.ts\n${'x'.repeat(80)}`;
+      }
+
+      throw new Error(`unexpected gh call: ${key}`);
+    });
+
+    const context = await loadReleaseContext(
+      'v1.2.3',
+      { GITHUB_REPOSITORY: 'acme/webcmd' },
+      { gh, maxDiffCharacters: 40 },
+    );
+
+    expect(context.pullRequests).toHaveLength(1);
+    expect(context.pullRequests[0]?.diff).toBe('diff --git a/src/release-notes.ts b/src/\n[diff truncated]');
+    expect(gh).toHaveBeenCalledWith(['pr', 'diff', '42', '--repo', 'acme/webcmd']);
+  });
+
+  it('keeps npm publish unblocked when enhanced release-note editing fails', () => {
+    const workflowPath = fileURLToPath(new URL('../.github/workflows/release.yml', import.meta.url));
+    const workflow = readFileSync(workflowPath, 'utf8');
+
+    expect(workflow).toMatch(/if gh release edit "\$\{\{ steps\.release\.outputs\.tag_name \}\}" --notes-file "\$RUNNER_TEMP\/release-notes\.md"; then/);
+    expect(workflow).toMatch(/Enhanced release notes could not be applied; keeping release-please notes\./);
   });
 });

@@ -26,7 +26,7 @@ Do not hard-code parameters or assume command signatures from skill docs. Trust 
 Use this single rule instead of maintaining multiple priority lists:
 
 1. If the user explicitly names a website, platform, or data source, use that site directly.
-2. If the user does not name a site, prefer exactly one AI source: choose one of `grok`, `doubao`, or `gemini`.
+2. If the user does not name a site, prefer exactly one AI source: choose one of `grok`, `chatgpt`, or `gemini`.
 3. If the AI answer is thin, lacks raw data, needs authoritative corroboration, or needs vertical results, add 1-2 specialized sources.
 
 ## Per-Question Budget And Rate Limits
@@ -84,8 +84,8 @@ Search Summary
 
 - `grok`
   Best for real-time discussion, English-language internet sentiment, Twitter/X context, and trending topics.
-- `doubao`
-  Best for Chinese-language context, ByteDance/Douyin ecosystem content, lifestyle content, Chinese trends, and broad Chinese Q&A.
+- `chatgpt`
+  Best for broad Q&A, synthesis, planning, coding help, and general-purpose English-language research.
 - `gemini`
   Best for global web coverage, English-language sources, general information retrieval, and background summaries.
 

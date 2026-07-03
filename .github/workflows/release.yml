@@ -79,7 +79,11 @@ jobs:
           set -euo pipefail
           npm --silent run generate-release-notes -- "${{ steps.release.outputs.tag_name }}" > "$RUNNER_TEMP/release-notes.md"
           if [ -s "$RUNNER_TEMP/release-notes.md" ]; then
-            gh release edit "${{ steps.release.outputs.tag_name }}" --notes-file "$RUNNER_TEMP/release-notes.md"
+            if gh release edit "${{ steps.release.outputs.tag_name }}" --notes-file "$RUNNER_TEMP/release-notes.md"; then
+              echo "Enhanced release notes were applied."
+            else
+              echo "::warning::Enhanced release notes could not be applied; keeping release-please notes."
+            fi
           else
             echo "Enhanced release notes were not generated; keeping release-please notes."
           fi

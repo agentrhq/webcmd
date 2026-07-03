@@ -11,6 +11,7 @@ import {
 describe('release notes helpers', () => {
   it('extracts PR numbers from squash and merge commit messages', () => {
     expect(extractPullRequestNumber('feat: add release notes (#123)')).toBe(123);
+    expect(extractPullRequestNumber('feat: add release notes (#124)\n\nExpanded body')).toBe(124);
     expect(extractPullRequestNumber('Merge pull request #456 from agentrhq/example')).toBe(456);
     expect(extractPullRequestNumber('docs: plain commit without pr')).toBeNull();
   });
@@ -21,6 +22,7 @@ describe('release notes helpers', () => {
       { number: 2, title: 'release: 0.2.0', author: { login: 'bot' }, labels: [], files: [], url: 'https://example.com/2' },
       { number: 3, title: 'chore: generated updates', author: { login: 'ci' }, labels: [{ name: 'skip-changelog' }], files: [], url: 'https://example.com/3' },
       { number: 4, title: 'chore: release prep', author: { login: 'ci' }, labels: [{ name: 'release' }], files: [], url: 'https://example.com/4' },
+      { number: 5, title: 'chore(main): release webcmd 0.2.0', author: { login: 'release-please' }, labels: [], files: [], url: 'https://example.com/5' },
     ];
 
     expect(filterReleasePullRequests(prs).map((pr) => pr.number)).toEqual([1]);

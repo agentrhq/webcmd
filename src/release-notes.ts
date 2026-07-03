@@ -43,6 +43,7 @@ export type GitRunner = (args: readonly string[]) => Promise<string>;
 
 const SQUASH_MERGE_PR_NUMBER_PATTERN = /\(#(?<number>\d+)\)\s*$/;
 const MERGE_COMMIT_PR_NUMBER_PATTERN = /^Merge pull request #(?<number>\d+) /;
+const RELEASE_PLEASE_TITLE_PATTERN = /^chore(?:\([^)]+\))?: release(?:\s|$)/;
 
 function normalizeHandle(handle: string): string {
   const trimmed = handle.trim();
@@ -59,12 +60,13 @@ function formatSectionContent(content: string | undefined): string {
 }
 
 export function extractPullRequestNumber(message: string): number | null {
-  const squashMatch = message.match(SQUASH_MERGE_PR_NUMBER_PATTERN);
+  const firstLine = message.split(/\r?\n/, 1)[0] ?? message;
+  const squashMatch = firstLine.match(SQUASH_MERGE_PR_NUMBER_PATTERN);
   if (squashMatch?.groups?.number) {
     return Number(squashMatch.groups.number);
   }
 
-  const mergeMatch = message.match(MERGE_COMMIT_PR_NUMBER_PATTERN);
+  const mergeMatch = firstLine.match(MERGE_COMMIT_PR_NUMBER_PATTERN);
   if (mergeMatch?.groups?.number) {
     return Number(mergeMatch.groups.number);
   }
@@ -76,6 +78,7 @@ export function filterReleasePullRequests(prs: PullRequestDetails[]): PullReques
   return prs.filter((pr) => {
     const title = pr.title.trim().toLowerCase();
     if (title.startsWith('release:')) return false;
+    if (RELEASE_PLEASE_TITLE_PATTERN.test(title)) return false;
 
     return !pr.labels.some((label) => {
       const name = label.name.trim().toLowerCase();
