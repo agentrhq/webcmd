@@ -30,6 +30,7 @@ import { adapterLoadError, ArgumentError, CommandExecutionError, attachTraceRece
 import { shouldUseBrowserSession } from './capabilityRouting.js';
 import { getBrowserFactory, browserSession, runWithTimeout, DEFAULT_BROWSER_COMMAND_TIMEOUT, type BrowserWindowMode } from './runtime.js';
 import { resolveProfileContextId } from './browser/profile.js';
+import { setDaemonCommandTimeoutSeconds } from './browser/daemon-client.js';
 import { emitHook, type HookContext } from './hooks.js';
 import { log } from './logger.js';
 import { isElectronApp } from './electron-apps.js';
@@ -216,6 +217,7 @@ export async function executeCommand(
   }
 
   const userTimeoutSec = readUserTimeoutSeconds(cmd, kwargs);
+  setDaemonCommandTimeoutSeconds(userTimeoutSec);
   const traceMode = normalizeTraceMode(opts.trace);
 
   const hookCtx: HookContext = {

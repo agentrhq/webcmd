@@ -1,10 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockGetDaemonHealth, mockConnect, mockClose, mockFindShadowedUserAdapters } = vi.hoisted(() => ({
+const {
+  mockGetDaemonHealth,
+  mockConnect,
+  mockClose,
+  mockFindShadowedUserAdapters,
+  mockSetDaemonCommandTimeoutSeconds,
+} = vi.hoisted(() => ({
   mockGetDaemonHealth: vi.fn(),
   mockConnect: vi.fn(),
   mockClose: vi.fn(),
   mockFindShadowedUserAdapters: vi.fn(),
+  mockSetDaemonCommandTimeoutSeconds: vi.fn(),
 }));
 
 vi.mock('./browser/daemon-transport.js', () => ({
@@ -16,6 +23,10 @@ vi.mock('./browser/index.js', () => ({
     connect = mockConnect;
     close = mockClose;
   },
+}));
+
+vi.mock('./browser/daemon-client.js', () => ({
+  setDaemonCommandTimeoutSeconds: mockSetDaemonCommandTimeoutSeconds,
 }));
 
 vi.mock('./adapter-shadow.js', async () => {
@@ -34,6 +45,7 @@ describe('doctor report rendering', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockFindShadowedUserAdapters.mockReturnValue([]);
+    mockSetDaemonCommandTimeoutSeconds.mockClear();
     // Doctor always runs live connectivity. Tests that want connect to fail override.
     mockConnect.mockResolvedValue({
       evaluate: vi.fn().mockResolvedValue(2),
@@ -242,6 +254,8 @@ describe('doctor report rendering', () => {
 
     expect(timeoutSeen).toBe(8);
     expect(closeWindow).toHaveBeenCalledTimes(1);
+    expect(mockSetDaemonCommandTimeoutSeconds).toHaveBeenNthCalledWith(1, 8);
+    expect(mockSetDaemonCommandTimeoutSeconds).toHaveBeenLastCalledWith(null);
   });
 
   it('does not report an issue when the connected Cloak runtime does not report a version', async () => {

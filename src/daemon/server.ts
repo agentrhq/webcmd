@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { DAEMON_HEADER_NAME, DEFAULT_DAEMON_PORT } from '../constants.js';
 import type { BrowserRuntimeCommand, BrowserRuntimeResult } from '../browser/protocol.js';
 import type { BrowserRuntimeProvider } from '../browser/runtime/provider.js';
-import { getResponseCorsHeaders } from '../daemon-utils.js';
+import { buildCommandTimeoutFailure, getResponseCorsHeaders } from '../daemon-utils.js';
 
 const MAX_BODY = 1024 * 1024;
 const LOG_BUFFER_SIZE = 200;
@@ -57,7 +57,7 @@ export function createDaemonServer(provider: BrowserRuntimeProvider, opts: Daemo
   const port = opts.port ?? DEFAULT_DAEMON_PORT;
   const host = opts.host ?? '127.0.0.1';
   const logBuffer: Array<{ level: string; msg: string; ts: number }> = [];
-  const pending = new Set<string>();
+  const pending = new Map<string, Promise<BrowserRuntimeResult>>();
   let shutdownStarted = false;
 
   function pushLog(level: string, msg: string): void {
@@ -145,32 +145,38 @@ export function createDaemonServer(provider: BrowserRuntimeProvider, opts: Daemo
           jsonResponse(res, 400, { ok: false, error: 'Missing command id' });
           return;
         }
-        if (pending.has(body.id)) {
-          jsonResponse(res, 409, { id: body.id, ok: false, error: 'Duplicate command id already pending; retry' });
+        const existing = pending.get(body.id);
+        if (existing) {
+          const result = await existing;
+          jsonResponse(res, result.ok ? 200 : result.errorCode === 'command_result_unknown' ? 408 : 400, result);
           return;
         }
-        pending.add(body.id);
-        const timeoutMs = typeof body.timeout === 'number' && body.timeout > 0 ? body.timeout * 1000 : 120_000;
+        const timeoutMs = typeof body.deadlineAt === 'number' && body.deadlineAt > 0
+          ? Math.max(1000, body.deadlineAt - Date.now())
+          : (typeof body.timeout === 'number' && body.timeout > 0 ? body.timeout * 1000 : 120_000);
         let timeoutId: ReturnType<typeof setTimeout> | undefined;
-        try {
-          const result: BrowserRuntimeResult = await Promise.race([
-            provider.dispatch(body),
-            new Promise<BrowserRuntimeResult>((resolve) => {
-              timeoutId = setTimeout(() => resolve({
+        const commandPromise: Promise<BrowserRuntimeResult> = Promise.race([
+          provider.dispatch(body),
+          new Promise<BrowserRuntimeResult>((resolve) => {
+            timeoutId = setTimeout(() => {
+              const failure = buildCommandTimeoutFailure(body.action, timeoutMs);
+              resolve({
                 id: body.id,
                 ok: false,
-                errorCode: 'command_result_unknown',
-                error: `Command timeout (${timeoutMs / 1000}s)`,
-                errorHint: 'Inspect the browser state before retrying non-idempotent commands.',
-              }), timeoutMs);
-            }),
-          ]);
-          if (!result.ok) pushLog('warn', `Command ${body.id} failed: ${result.error ?? result.errorCode ?? 'unknown error'}`);
-          jsonResponse(res, result.ok ? 200 : result.errorCode === 'command_result_unknown' ? 408 : 400, result);
-        } finally {
+                errorCode: failure.errorCode,
+                error: failure.message,
+                errorHint: failure.errorHint,
+              });
+            }, timeoutMs);
+          }),
+        ]).finally(() => {
           if (timeoutId) clearTimeout(timeoutId);
           pending.delete(body.id);
-        }
+        });
+        pending.set(body.id, commandPromise);
+        const result = await commandPromise;
+        if (!result.ok) pushLog('warn', `Command ${body.id} failed: ${result.error ?? result.errorCode ?? 'unknown error'}`);
+        jsonResponse(res, result.ok ? 200 : result.errorCode === 'command_result_unknown' ? 408 : 400, result);
       } catch (err) {
         jsonResponse(res, 400, { ok: false, error: err instanceof Error ? err.message : 'Invalid request' });
       }
