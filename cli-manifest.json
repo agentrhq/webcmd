@@ -5318,6 +5318,176 @@
     "sourceFile": "booking/search.js"
   },
   {
+    "site": "bookmyshow",
+    "name": "cinemas",
+    "description": "BookMyShow cinemas in a city",
+    "access": "read",
+    "example": "webcmd bookmyshow cinemas --city mumbai --limit 5",
+    "domain": "in.bookmyshow.com",
+    "strategy": "ui",
+    "browser": true,
+    "args": [
+      {
+        "name": "city",
+        "type": "string",
+        "default": "mumbai",
+        "required": false,
+        "help": "BookMyShow city name or slug"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Number of cinemas to return (max 20)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "name",
+      "address",
+      "city",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "bookmyshow/cinemas.js",
+    "sourceFile": "bookmyshow/cinemas.js",
+    "navigateBefore": true
+  },
+  {
+    "site": "bookmyshow",
+    "name": "events",
+    "description": "BookMyShow events in a city",
+    "access": "read",
+    "example": "webcmd bookmyshow events --city mumbai --limit 5",
+    "domain": "in.bookmyshow.com",
+    "strategy": "ui",
+    "browser": true,
+    "args": [
+      {
+        "name": "city",
+        "type": "string",
+        "default": "mumbai",
+        "required": false,
+        "help": "BookMyShow city name or slug"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Number of events to return (max 20)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "eventCode",
+      "title",
+      "venue",
+      "category",
+      "price",
+      "city",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "bookmyshow/events.js",
+    "sourceFile": "bookmyshow/events.js",
+    "navigateBefore": true
+  },
+  {
+    "site": "bookmyshow",
+    "name": "movies",
+    "description": "BookMyShow movies running in a city",
+    "access": "read",
+    "example": "webcmd bookmyshow movies --city mumbai --limit 5",
+    "domain": "in.bookmyshow.com",
+    "strategy": "ui",
+    "browser": true,
+    "args": [
+      {
+        "name": "city",
+        "type": "string",
+        "default": "mumbai",
+        "required": false,
+        "help": "BookMyShow city name or slug"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Number of movies to return (max 20)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "eventCode",
+      "title",
+      "genres",
+      "city",
+      "url",
+      "image"
+    ],
+    "type": "js",
+    "modulePath": "bookmyshow/movies.js",
+    "sourceFile": "bookmyshow/movies.js",
+    "navigateBefore": true
+  },
+  {
+    "site": "bookmyshow",
+    "name": "shows",
+    "description": "BookMyShow movie showtimes in a city",
+    "access": "read",
+    "example": "webcmd bookmyshow shows alpha --city mumbai --limit 5",
+    "domain": "in.bookmyshow.com",
+    "strategy": "ui",
+    "browser": true,
+    "args": [
+      {
+        "name": "movie",
+        "type": "string",
+        "required": true,
+        "positional": true,
+        "help": "Movie title, event code, or BookMyShow movie URL"
+      },
+      {
+        "name": "city",
+        "type": "string",
+        "default": "mumbai",
+        "required": false,
+        "help": "BookMyShow city name or slug"
+      },
+      {
+        "name": "date",
+        "type": "string",
+        "required": false,
+        "help": "Show date as YYYYMMDD; defaults to today"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Number of showtimes to return (max 20)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "eventCode",
+      "movie",
+      "cinema",
+      "showTime",
+      "format",
+      "status",
+      "city",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "bookmyshow/shows.js",
+    "sourceFile": "bookmyshow/shows.js",
+    "navigateBefore": true
+  },
+  {
     "site": "boss",
     "name": "batchgreet",
     "description": "BOSS直聘批量向推荐候选人发送招呼",
