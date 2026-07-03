@@ -17098,6 +17098,131 @@
   },
   {
     "site": "instacart",
+    "name": "categories",
+    "description": "Visible Instacart collection links for a retailer",
+    "access": "read",
+    "domain": "www.instacart.com",
+    "strategy": "ui",
+    "browser": true,
+    "args": [
+      {
+        "name": "retailer",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Retailer slug, for example sprouts or costco"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Maximum collections to return (1-30)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "slug",
+      "name",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "instacart/categories.js",
+    "sourceFile": "instacart/categories.js",
+    "navigateBefore": true,
+    "siteSession": "persistent"
+  },
+  {
+    "site": "instacart",
+    "name": "collection",
+    "description": "Visible Instacart product cards from a retailer collection",
+    "access": "read",
+    "domain": "www.instacart.com",
+    "strategy": "ui",
+    "browser": true,
+    "args": [
+      {
+        "name": "retailer",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Retailer slug, for example sprouts or costco"
+      },
+      {
+        "name": "collection",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Collection slug, for example produce or fresh-fruits"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Maximum products to return (1-30)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "productId",
+      "title",
+      "priceText",
+      "originalPriceText",
+      "discount",
+      "size",
+      "stock",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "instacart/collection.js",
+    "sourceFile": "instacart/collection.js",
+    "navigateBefore": true,
+    "siteSession": "persistent"
+  },
+  {
+    "site": "instacart",
+    "name": "product",
+    "description": "Visible Instacart product detail by product URL or id",
+    "access": "read",
+    "domain": "www.instacart.com",
+    "strategy": "ui",
+    "browser": true,
+    "args": [
+      {
+        "name": "product",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Instacart product URL or numeric product id"
+      },
+      {
+        "name": "retailer",
+        "type": "string",
+        "default": "",
+        "required": false,
+        "help": "Retailer slug required when product is a numeric id, for example sprouts"
+      }
+    ],
+    "columns": [
+      "productId",
+      "title",
+      "priceText",
+      "originalPriceText",
+      "discount",
+      "size",
+      "stock",
+      "retailer",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "instacart/product.js",
+    "sourceFile": "instacart/product.js",
+    "navigateBefore": true,
+    "siteSession": "persistent"
+  },
+  {
+    "site": "instacart",
     "name": "storefront",
     "description": "Visible Instacart product cards from a retailer storefront",
     "access": "read",

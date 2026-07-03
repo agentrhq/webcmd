@@ -1,4 +1,4 @@
-import { ArgumentError } from '@agentrhq/webcmd/errors';
+import { ArgumentError, CommandExecutionError } from '@agentrhq/webcmd/errors';
 
 export const HOST = 'www.instacart.com';
 export const BASE_URL = `https://${HOST}`;
@@ -25,6 +25,15 @@ export function normalizeRetailer(raw) {
     if (!value) throw new ArgumentError('retailer is required');
     if (!/^[a-z0-9-]+$/.test(value)) {
         throw new ArgumentError('retailer must be an Instacart retailer slug like "sprouts" or "costco"');
+    }
+    return value;
+}
+
+export function normalizeCollection(raw) {
+    const value = String(raw ?? '').trim().toLowerCase();
+    if (!value) throw new ArgumentError('collection is required');
+    if (!/^[a-z0-9-]+$/.test(value)) {
+        throw new ArgumentError('collection must be an Instacart collection slug like "produce" or "fresh-fruits"');
     }
     return value;
 }
@@ -87,15 +96,50 @@ export function extractStoreCards(doc, limit = 10) {
     return rows;
 }
 
-function productIdFromUrl(url) {
+export function productIdFromUrl(url) {
     const match = String(url || '').match(/\/products\/(\d+)/);
     return match ? match[1] : null;
+}
+
+export function retailerFromProductUrl(url) {
+    try {
+        const parsed = new URL(String(url));
+        return parsed.searchParams.get('retailerSlug') || null;
+    } catch {
+        return null;
+    }
+}
+
+export function buildProductUrl(raw, retailerRaw) {
+    const value = String(raw ?? '').trim();
+    if (!value) throw new ArgumentError('product is required');
+    if (/^https?:\/\//i.test(value)) {
+        let parsed;
+        try {
+            parsed = new URL(value);
+        } catch {
+            throw new ArgumentError('product must be an Instacart product URL or numeric product id');
+        }
+        if (parsed.hostname !== HOST || !productIdFromUrl(parsed.href)) {
+            throw new ArgumentError('product URL must be an Instacart /products/<id> URL');
+        }
+        const retailer = retailerRaw ? normalizeRetailer(retailerRaw) : retailerFromProductUrl(parsed.href);
+        if (retailer) parsed.searchParams.set('retailerSlug', retailer);
+        return parsed.href;
+    }
+    if (!/^\d+$/.test(value)) {
+        throw new ArgumentError('product must be an Instacart product URL or numeric product id');
+    }
+    const retailer = normalizeRetailer(retailerRaw);
+    return `${BASE_URL}/products/${value}?retailerSlug=${retailer}`;
 }
 
 function compactPrice(raw) {
     const value = normalizeText(raw);
     const match = value.match(/Current price:\s*(\$\d+(?:\.\d{2})?)/i);
-    return match ? match[1] : null;
+    if (match) return match[1];
+    const fallback = value.match(/\$\d+(?:\.\d{2})?\b/);
+    return fallback ? fallback[0] : null;
 }
 
 function compactOriginalPrice(raw) {
@@ -125,12 +169,14 @@ export function extractProductCards(doc, limit = 10) {
         const discount = firstMatching(spanTexts, /^(\d+%\s+off|buy\s+\d+)/i);
         const stock = firstMatching(spanTexts, /^((many|few)\s+in stock|in stock|out of stock)$/i);
         const size = firstMatching(spanTexts, /^\d+(?:\.\d+)?\s*(oz|lb|ct|fl oz|g|kg|ml|l|pack|x\b)/i);
-        const title = spanTexts.find((value) => {
+        const headingTitle = normalizeText(link.querySelector('[role="heading"]')?.textContent);
+        const fallbackTitle = spanTexts.find((value) => {
             if (!value || value.length > 120) return false;
-            if (/^(current price|original price|\$|\d+$|each|\/|organic$|non gmo$|in season$)/i.test(value)) return false;
+            if (/^(add|current price|original price|\$|\d+$|each|\/|organic$|non gmo$|in season$)/i.test(value)) return false;
             if (value === priceText || value === originalPriceText || value === discount || value === stock || value === size) return false;
             return /[a-z]/i.test(value);
         });
+        const title = headingTitle || fallbackTitle;
         if (!title || !priceText) continue;
         seen.add(productId);
         rows.push({
@@ -146,6 +192,67 @@ export function extractProductCards(doc, limit = 10) {
         });
     }
     return rows;
+}
+
+export function extractCollectionLinks(doc, retailer, limit = 10) {
+    const pageUrl = doc?.location?.href || doc?.URL || `${BASE_URL}/store/${retailer}/storefront`;
+    const pattern = new RegExp(`/store/${retailer}/collections/([^/?#]+)`, 'i');
+    const links = Array.from(doc.querySelectorAll(`a[href*="/store/${retailer}/collections/"]`));
+    const seen = new Set();
+    const rows = [];
+    for (const link of links) {
+        if (rows.length >= limit) break;
+        const href = link.getAttribute('href') || '';
+        const match = href.match(pattern);
+        if (!match) continue;
+        const slug = match[1].toLowerCase();
+        if (seen.has(slug)) continue;
+        const name = normalizeText(link.getAttribute('aria-label') || link.textContent || slug);
+        if (!name || name.length > 120) continue;
+        seen.add(slug);
+        rows.push({
+            rank: rows.length + 1,
+            slug,
+            name,
+            url: absoluteUrl(href, pageUrl),
+        });
+    }
+    return rows;
+}
+
+export function extractProductDetail(doc) {
+    const pageUrl = doc?.location?.href || doc?.URL || BASE_URL;
+    const bodyText = normalizeText(doc.body?.innerText || doc.body?.textContent || '');
+    const leaf = leafTexts(doc.body || doc);
+    const heading = normalizeText(doc.querySelector('h1')?.textContent);
+    const docTitle = normalizeText(doc.title || '').replace(/\s+Same-Day Delivery.*$/i, '').replace(/\s+\|\s+Instacart$/i, '');
+    const title = heading || docTitle || null;
+    const priceText = compactPrice(bodyText);
+    const originalPriceText = compactOriginalPrice(bodyText);
+    const discount = firstMatching(leaf, /^(\d+%\s+off|buy\s+\d+)/i);
+    const stock = firstMatching(leaf, /^((many|few)\s+in stock|in stock|out of stock)$/i);
+    const size = firstMatching(leaf, /^\d+(?:\.\d+)?\s*(oz|lb|ct|fl oz|g|kg|ml|l|pack|x\b)/i);
+    return {
+        productId: productIdFromUrl(pageUrl),
+        title,
+        priceText,
+        originalPriceText,
+        discount,
+        size,
+        stock,
+        retailer: retailerFromProductUrl(pageUrl),
+        url: pageUrl,
+    };
+}
+
+export async function gotoInstacartPage(page, url, settleMs = 2500) {
+    try {
+        await page.goto(url, { waitUntil: 'load', settleMs });
+    } catch (error) {
+        if (!/ERR_ABORTED/i.test(String(error?.message || error))) {
+            throw new CommandExecutionError(`Instacart navigation failed: ${error?.message || error}`);
+        }
+    }
 }
 
 export function buildExtractStoresScript(limit) {
@@ -171,5 +278,32 @@ export function buildExtractProductsScript(limit) {
       const firstMatching = ${firstMatching.toString()};
       const extractProductCards = ${extractProductCards.toString()};
       return extractProductCards(document, ${limit});
+    })()`;
+}
+
+export function buildExtractCollectionsScript(retailer, limit) {
+    return `(() => {
+      const normalizeText = ${normalizeText.toString()};
+      const absoluteUrl = ${absoluteUrl.toString()};
+      const unique = ${unique.toString()};
+      const leafTexts = ${leafTexts.toString()};
+      const extractCollectionLinks = ${extractCollectionLinks.toString()};
+      return extractCollectionLinks(document, ${JSON.stringify(retailer)}, ${limit});
+    })()`;
+}
+
+export function buildExtractProductDetailScript() {
+    return `(() => {
+      const normalizeText = ${normalizeText.toString()};
+      const absoluteUrl = ${absoluteUrl.toString()};
+      const unique = ${unique.toString()};
+      const leafTexts = ${leafTexts.toString()};
+      const productIdFromUrl = ${productIdFromUrl.toString()};
+      const retailerFromProductUrl = ${retailerFromProductUrl.toString()};
+      const compactPrice = ${compactPrice.toString()};
+      const compactOriginalPrice = ${compactOriginalPrice.toString()};
+      const firstMatching = ${firstMatching.toString()};
+      const extractProductDetail = ${extractProductDetail.toString()};
+      return extractProductDetail(document);
     })()`;
 }
