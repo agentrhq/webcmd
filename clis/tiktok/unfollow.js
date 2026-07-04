@@ -37,11 +37,11 @@ function buildUnfollowScript(username) {
   ensureLoggedInOrThrow();
   ensureNoRateLimitOrThrow();
 
-  const FOLLOW_LABELS = ['Follow', '关注', 'フォロー'];
-  const FOLLOWING_LABELS = ['Following', '已关注', 'フォロー中'];
-  const FRIENDS_LABELS = ['Friends', '互关', 'フレンド'];
+  const FOLLOW_LABELS = ['Follow', 'Follow', 'フォロー'];
+  const FOLLOWING_LABELS = ['Following', 'Following', 'フォローlocalized text'];
+  const FRIENDS_LABELS = ['Friends', 'Friends', 'フレンド'];
   const RELATION_LABELS = FOLLOWING_LABELS.concat(FRIENDS_LABELS);
-  const CONFIRM_LABELS = ['Unfollow', '取消关注'];
+  const CONFIRM_LABELS = ['Unfollow', 'Unfollow'];
 
   // Idempotent fast path: not currently following.
   if (!buttonExists(RELATION_LABELS) && buttonExists(FOLLOW_LABELS)) {

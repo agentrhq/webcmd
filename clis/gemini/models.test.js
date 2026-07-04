@@ -537,7 +537,7 @@ describe('discoverModelsScript — read-only verification (DOM fixture)', () => 
         // Body click (menu dismiss) is allowed.
         expect(spy['(body)']).toBeGreaterThanOrEqual(1);
 
-        // Thinking items must NOT receive clicks (no 思考等级 toggle).
+        // Thinking items must NOT receive clicks (no Thinking level toggle).
         expect(spy['Standard'] || 0).toBe(0);
         expect(spy['Extended'] || 0).toBe(0);
     });

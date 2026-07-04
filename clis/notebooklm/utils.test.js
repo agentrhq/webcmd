@@ -301,15 +301,15 @@ describe('notebooklm utils', () => {
     it('parses notebook notes from studio note rows', () => {
         const rows = parseNotebooklmNoteListRawRows([
             {
-                title: '新建笔记',
-                text: 'sticky_note_2 新建笔记 6 分钟前 more_vert',
+                title: 'New note',
+                text: 'sticky_note_2 New note 6 minutes ago more_vert',
             },
         ], 'nb-demo', 'https://notebooklm.google.com/notebook/nb-demo');
         expect(rows).toEqual([
             {
                 notebook_id: 'nb-demo',
-                title: '新建笔记',
-                created_at: '6 分钟前',
+                title: 'New note',
+                created_at: '6 minutes ago',
                 url: 'https://notebooklm.google.com/notebook/nb-demo',
                 source: 'studio-list',
             },
@@ -319,7 +319,7 @@ describe('notebooklm utils', () => {
         const row = parseNotebooklmSourceFulltextResult([
             [
                 [['src-1']],
-                '粘贴的文字',
+                'Pasted text',
                 [null, 359, [1774872183, 855096000], null, 8, null, 1, ['https://example.com/source']],
                 [null, 2],
             ],
@@ -328,8 +328,8 @@ describe('notebooklm utils', () => {
             [
                 [
                     [
-                        [0, 5, [[[0, 5, ['第一段']]]]],
-                        [5, 10, [[[5, 10, ['第二段']]]]],
+                        [0, 5, [[[0, 5, ['First paragraph']]]]],
+                        [5, 10, [[[5, 10, ['Second paragraph']]]]],
                     ],
                 ],
             ],
@@ -337,10 +337,10 @@ describe('notebooklm utils', () => {
         expect(row).toEqual({
             source_id: 'src-1',
             notebook_id: 'nb-demo',
-            title: '粘贴的文字',
+            title: 'Pasted text',
             kind: 'pasted-text',
-            content: '第一段\n第二段',
-            char_count: 7,
+            content: 'First paragraph\nSecond paragraph',
+            char_count: 32,
             url: 'https://example.com/source',
             source: 'rpc',
         });

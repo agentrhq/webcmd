@@ -52,14 +52,14 @@ describe('groupTranscriptSegments', () => {
     });
     it('recognizes CJK sentence-ending punctuation', () => {
         const segments = [
-            { start: 0, text: '你好世界。' },
-            { start: 2, text: '这是测试' },
-            { start: 4, text: '内容。' },
+            { start: 0, text: 'Hello world.' },
+            { start: 2, text: 'This is a test' },
+            { start: 4, text: 'content.' },
         ];
         const result = groupTranscriptSegments(segments);
         expect(result).toHaveLength(2);
-        expect(result[0].text).toBe('你好世界。');
-        expect(result[1].text).toBe('这是测试 内容。');
+        expect(result[0].text).toBe('Hello world.');
+        expect(result[1].text).toBe('This is a test content.');
     });
     it('returns empty array for empty input', () => {
         expect(groupTranscriptSegments([])).toEqual([]);

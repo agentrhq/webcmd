@@ -3,6 +3,19 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type { CliCommand } from './registry.js';
+
+const { mockSetDaemonCommandTimeoutSeconds } = vi.hoisted(() => ({
+  mockSetDaemonCommandTimeoutSeconds: vi.fn(),
+}));
+
+vi.mock('./browser/daemon-client.js', async () => {
+  const actual = await vi.importActual<typeof import('./browser/daemon-client.js')>('./browser/daemon-client.js');
+  return {
+    ...actual,
+    setDaemonCommandTimeoutSeconds: mockSetDaemonCommandTimeoutSeconds,
+  };
+});
+
 import { executeCommand, prepareCommandArgs } from './execution.js';
 import { ArgumentError, TimeoutError, toEnvelope } from './errors.js';
 import { cli, Strategy } from './registry.js';
@@ -109,6 +122,7 @@ describe('executeCommand — non-browser timeout', () => {
   });
 
   it('applies the user --timeout arg as the ceiling for browser commands (with +30s padding)', async () => {
+    mockSetDaemonCommandTimeoutSeconds.mockClear();
     const closeWindow = vi.fn().mockResolvedValue(undefined);
     const mockPage = { closeWindow } as any;
 
@@ -135,6 +149,7 @@ describe('executeCommand — non-browser timeout', () => {
       timeout: 35,
       label: 'test-execution/browser-with-timeout',
     });
+    expect(mockSetDaemonCommandTimeoutSeconds).toHaveBeenCalledWith(5);
     vi.restoreAllMocks();
   });
 

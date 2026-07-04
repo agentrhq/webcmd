@@ -69,7 +69,7 @@ function buildCommentScript(commentText) {
   // Wait for the post button to become enabled — TikTok disables it
   // until non-empty text is detected by their input handler.
   const postReady = await waitFor(() => {
-    const candidate = findButtonByText(['Post', '发布', '发送']);
+    const candidate = findButtonByText(['Post', 'Post', 'Send']);
     if (!candidate) return false;
     const ariaDisabled = candidate.getAttribute && candidate.getAttribute('aria-disabled');
     return !candidate.disabled && ariaDisabled !== 'true';
@@ -79,7 +79,7 @@ function buildCommentScript(commentText) {
     throw new Error('BUTTON_NOT_FOUND: Post button never became enabled (text not registered or selectors changed)');
   }
 
-  const postBtn = findButtonByText(['Post', '发布', '发送']);
+  const postBtn = findButtonByText(['Post', 'Post', 'Send']);
   postBtn.click();
 
   // State verification: a new comment-level-1 element should appear.

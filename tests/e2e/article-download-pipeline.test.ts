@@ -6,7 +6,7 @@
  *   - no base64 `data:image/…` leaks
  *   - no <script> / <style> leakage
  *   - no runs of 3+ blank lines
- *   - no lone `-` / `·` residue lines
+ *   - no lone `-` / middle-dot residue lines
  *   - no trailing-whitespace lines
  *   - no NBSP residue
  *
@@ -99,7 +99,7 @@ function assertPipelineInvariants(md: string, label: string) {
 
   // Lone dash / middle-dot residue from lost list bullets.
   expect(md).not.toMatch(/^[ \t]*-[ \t]*$/m);
-  expect(md).not.toMatch(/^[ \t]*·[ \t]*$/m);
+  expect(md).not.toMatch(/^[ \t]*\u00b7[ \t]*$/m);
 
   // Trailing whitespace should never appear (stripped in post-processing).
   expect(md).not.toMatch(/[ \t]+\n/);

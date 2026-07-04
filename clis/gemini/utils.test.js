@@ -57,10 +57,10 @@ describe('collectGeminiTranscriptAdditions', () => {
         expect(collectGeminiTranscriptAdditions(before, current, prompt)).toBe('Soft spring rain arrives');
     });
     it('keeps a reply line that quotes the prompt inside the answer body', () => {
-        const prompt = '请只回复：OK';
+        const prompt = 'Please reply only:OK';
         const before = ['baseline'];
-        const current = ['baseline', '关于“请只回复：OK”，这里是解释。'];
-        expect(collectGeminiTranscriptAdditions(before, current, prompt)).toBe('关于“请只回复：OK”，这里是解释。');
+        const current = ['baseline', 'About"Please reply only:OK",here is an explanation.'];
+        expect(collectGeminiTranscriptAdditions(before, current, prompt)).toBe('About"Please reply only:OK",here is an explanation.');
     });
 });
 describe('gemini send strategy', () => {
@@ -78,8 +78,8 @@ describe('gemini send strategy', () => {
             .mockResolvedValueOnce({ ok: true })
             .mockResolvedValueOnce({ hasText: true })
             .mockResolvedValueOnce('button');
-        const result = await sendGeminiMessage(page, '你好');
-        expect(nativeType).toHaveBeenCalledWith('你好');
+        const result = await sendGeminiMessage(page, 'hello');
+        expect(nativeType).toHaveBeenCalledWith('hello');
         expect(nativeKeyPress).not.toHaveBeenCalled();
         expect(result).toBe('button');
     });
@@ -94,8 +94,8 @@ describe('gemini send strategy', () => {
             .mockResolvedValueOnce({ hasText: false })
             .mockResolvedValueOnce({ hasText: true })
             .mockResolvedValueOnce('enter');
-        const result = await sendGeminiMessage(page, '你好');
-        expect(nativeType).toHaveBeenCalledWith('你好');
+        const result = await sendGeminiMessage(page, 'hello');
+        expect(nativeType).toHaveBeenCalledWith('hello');
         expect(nativeKeyPress).toHaveBeenCalledWith('Enter');
         expect(evaluate).toHaveBeenCalledTimes(5);
         expect(result).toBe('enter');
@@ -110,8 +110,8 @@ describe('gemini send strategy', () => {
             .mockResolvedValueOnce({ ok: true })
             .mockResolvedValueOnce({ hasText: true })
             .mockResolvedValueOnce('button');
-        const result = await sendGeminiMessage(page, '你好');
-        expect(nativeType).toHaveBeenCalledWith('你好');
+        const result = await sendGeminiMessage(page, 'hello');
+        expect(nativeType).toHaveBeenCalledWith('hello');
         expect(result).toBe('button');
     });
     it('retries composer preparation until a slow-loading composer appears', async () => {
@@ -125,7 +125,7 @@ describe('gemini send strategy', () => {
             .mockResolvedValueOnce({ ok: true })
             .mockResolvedValueOnce({ hasText: true })
             .mockResolvedValueOnce('button');
-        const result = await sendGeminiMessage(page, '你好');
+        const result = await sendGeminiMessage(page, 'hello');
         expect(result).toBe('button');
         expect(wait.mock.calls.filter(([value]) => value === 1)).toHaveLength(3);
     });
@@ -141,42 +141,42 @@ describe('gemini send strategy', () => {
             .mockResolvedValueOnce({ ok: true })
             .mockResolvedValueOnce({ hasText: true })
             .mockResolvedValueOnce('button');
-        const result = await sendGeminiMessage(page, '你好');
+        const result = await sendGeminiMessage(page, 'hello');
         expect(result).toBe('button');
         expect(wait.mock.calls.filter(([value]) => value === 1)).toHaveLength(4);
     });
     it('avoids innerHTML in the fallback insertion path for trusted types pages', () => {
-        expect(__test__.insertComposerTextFallbackScript('你好')).not.toContain('innerHTML');
-        expect(__test__.insertComposerTextFallbackScript('你好')).toContain('replaceChildren');
+        expect(__test__.insertComposerTextFallbackScript('hello')).not.toContain('innerHTML');
+        expect(__test__.insertComposerTextFallbackScript('hello')).toContain('replaceChildren');
     });
     it('keeps a button submit path in the generated submit script', () => {
         expect(__test__.submitComposerScript()).toContain('.click()');
     });
     it('matches the Traditional Chinese send label in the generated submit script', () => {
-        expect(__test__.submitComposerScript()).toContain('傳送');
+        expect(__test__.submitComposerScript()).toContain('Send');
     });
     it('supports localized new chat labels in the generated new-chat script', () => {
-        expect(__test__.clickNewChatScript()).toContain('发起新对话');
+        expect(__test__.clickNewChatScript()).toContain('Start new chat');
     });
 });
 describe('gemini turn normalization', () => {
     it('collapses only adjacent duplicate turns so identical replies across rounds remain visible', () => {
         const turns = [
-            { Role: 'User', Text: '你说\n\n请只回复：OK' },
-            { Role: 'User', Text: '请只回复：OK' },
+            { Role: 'User', Text: 'You said\n\nPlease reply only:OK' },
+            { Role: 'User', Text: 'Please reply only:OK' },
             { Role: 'Assistant', Text: 'OK' },
             { Role: 'Assistant', Text: 'OK' },
-            { Role: 'User', Text: '你说\n\n请只回复：OK' },
-            { Role: 'User', Text: '请只回复：OK' },
+            { Role: 'User', Text: 'You said\n\nPlease reply only:OK' },
+            { Role: 'User', Text: 'Please reply only:OK' },
             { Role: 'Assistant', Text: 'OK' },
             { Role: 'Assistant', Text: 'OK' },
         ];
         expect(__test__.collapseAdjacentGeminiTurns(turns)).toEqual([
-            { Role: 'User', Text: '你说\n\n请只回复：OK' },
-            { Role: 'User', Text: '请只回复：OK' },
+            { Role: 'User', Text: 'You said\n\nPlease reply only:OK' },
+            { Role: 'User', Text: 'Please reply only:OK' },
             { Role: 'Assistant', Text: 'OK' },
-            { Role: 'User', Text: '你说\n\n请只回复：OK' },
-            { Role: 'User', Text: '请只回复：OK' },
+            { Role: 'User', Text: 'You said\n\nPlease reply only:OK' },
+            { Role: 'User', Text: 'Please reply only:OK' },
             { Role: 'Assistant', Text: 'OK' },
         ]);
     });
@@ -204,7 +204,7 @@ describe('gemini evaluate result boundaries', () => {
             changed: false,
             clicks: 0,
         });
-        expect(runExpandRecentScript('<button aria-label="收起最近">最近</button>')).toEqual({
+        expect(runExpandRecentScript('<button aria-label="Collapse recent">Recent</button>')).toEqual({
             changed: false,
             clicks: 0,
         });
@@ -426,9 +426,9 @@ describe('openModelPickerForThinkingScript — picker detection', () => {
         expect(result).toEqual({ ok: true });
     });
 
-    it('Method 1: detects picker by aria-label "模式选择器"', () => {
+    it('Method 1: detects picker by aria-label "Mode selector"', () => {
         const { window } = createPickerDom(`
-            <button aria-label="模式选择器">选择</button>
+            <button aria-label="Mode selector">localized text</button>
         `);
         const result = evalScript(window, __test__.openModelPickerForThinkingScript);
         expect(result).toEqual({ ok: true });
@@ -442,9 +442,9 @@ describe('openModelPickerForThinkingScript — picker detection', () => {
         expect(result).toEqual({ ok: true });
     });
 
-    it('Method 1: detects picker by aria-label "选择模型"', () => {
+    it('Method 1: detects picker by aria-label "Select model"', () => {
         const { window } = createPickerDom(`
-            <button aria-label="选择模型">选择</button>
+            <button aria-label="Select model">localized text</button>
         `);
         const result = evalScript(window, __test__.openModelPickerForThinkingScript);
         expect(result).toEqual({ ok: true });
@@ -550,9 +550,9 @@ describe('selectGeminiModelScript — picker detection parity', () => {
 });
 
 describe('getCurrentGeminiModelScript — picker detection parity', () => {
-    it('Method 1: detects picker by aria-label "模式选择器"', () => {
+    it('Method 1: detects picker by aria-label "Mode selector"', () => {
         const { window } = createPickerDom(`
-            <button aria-label="模式选择器">2.5 Flash</button>
+            <button aria-label="Mode selector">2.5 Flash</button>
         `);
         const result = window.eval(__test__.getCurrentGeminiModelScript());
         expect(result).toBe('2.5-flash');

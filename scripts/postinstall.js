@@ -162,7 +162,7 @@ function main() {
   // ── Browser runtime setup hint ──────────────────────────────────────
   console.log('');
   console.log('  \x1b[1mNext step — Browser runtime setup\x1b[0m');
-  console.log('  Browser commands (bilibili, zhihu, twitter...) use a webcmd-managed CloakBrowser runtime.');
+  console.log('  Browser commands (youtube, reddit, twitter...) use a webcmd-managed CloakBrowser runtime.');
   console.log('  On first use, CloakBrowser downloads its Chromium binary.');
   console.log('  Existing Chrome logins are not imported, so run the site login command again when needed.');
   console.log('');

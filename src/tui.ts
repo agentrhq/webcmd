@@ -54,7 +54,7 @@ export async function checkboxPrompt(
       out += `  ${pointer} ${checkbox} ${item.label}${status ? `  ${status}` : ''}\n`;
     }
 
-    out += `\n  ↑↓ navigate  ·  Space toggle  ·  a all  ·  Enter confirm  ·  q cancel\n`;
+    out += `\n  Up/Down navigate | Space toggle | a all | Enter confirm | q cancel\n`;
 
     return out;
   }

@@ -3,7 +3,7 @@ cli({
     site: 'reddit',
     name: 'hot',
     access: 'read',
-    description: 'Reddit 热门帖子',
+    description: 'Reddit hot posts',
     domain: 'www.reddit.com',
     args: [
         {

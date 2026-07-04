@@ -1,31 +1,21 @@
-# 购物
+# Shopping
 
-用于商品搜索、价格、好价、口碑与区域电商结果。
+Use for product search, prices, deals, reputation, and regional e-commerce results.
 
-## 站点
+## Sites
 
 ### amazon
 
-- 适用：全球商品搜索、价格参考、英文电商
-- 使用前先运行：`webcmd amazon -h`
-
-### smzdm
-
-- 适用：国内好价、优惠、导购、商品讨论
-- 使用前先运行：`webcmd smzdm -h`
+- Use for: global product search, price references, and English-language e-commerce
+- Before use, run: `webcmd amazon -h`
 
 ### coupang
 
-- 适用：韩国电商商品搜索
-- 使用前先运行：`webcmd coupang -h`
+- Use for: Korean e-commerce product search
+- Before use, run: `webcmd coupang -h`
 
-### douban
+## Routing Hints
 
-- 适用：图书、影视、音乐类口碑补充，不是标准电商，但可用于消费决策补充
-- 使用前先运行：`webcmd douban -h`
-
-## 路由提示
-
-- 用户指定平台时直接使用该平台
-- 未指定平台时，全球商品优先 `amazon`，国内好价优先 `smzdm`
-- 若先用 AI 做产品调研，后续可补电商站点拿实际商品结果
+- If the user names a platform, use that platform directly
+- If no platform is named, prefer `amazon` for global products and `coupang` for Korean e-commerce
+- If product research starts with an AI source, add an e-commerce site afterward for actual product results

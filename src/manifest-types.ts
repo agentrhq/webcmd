@@ -31,7 +31,7 @@ export interface ManifestEntry {
   pipeline?: Record<string, unknown>[];
   defaultFormat?: 'table' | 'plain' | 'json' | 'yaml' | 'yml' | 'md' | 'markdown' | 'csv';
   type: 'js';
-  /** Relative path from clis/ dir, e.g. 'bilibili/search.js' */
+  /** Relative path from clis/ dir, e.g. 'youtube/search.js' */
   modulePath?: string;
   /** Relative path to the source file from clis/ dir (e.g. 'site/cmd.js') */
   sourceFile?: string;

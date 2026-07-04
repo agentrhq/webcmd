@@ -18,13 +18,13 @@ async function verifyNotebookLmIdentity(page) {
       if (/accounts\\.google\\.com\\/ServiceLogin/.test(location.href) || /accounts\\.google\\.com\\/signin/i.test(location.href)) {
         return { kind: 'auth', detail: 'NotebookLM redirected to Google sign-in' };
       }
-      const acctEl = document.querySelector('a[aria-label^="Google Account:"], a[aria-label*="Google 账号:"]');
+      const acctEl = document.querySelector('a[aria-label^="Google Account:"], a[aria-label*="Google localized text:"]');
       if (!acctEl) {
         return { kind: 'auth', detail: 'NotebookLM missing Google Account button' };
       }
       const label = acctEl.getAttribute('aria-label') || '';
       const nameMatch = label.match(/Google Account:\\s*([^\\n\\(]+?)(?:\\s*\\n|\\s*\\()/i) ||
-                        label.match(/Google 账号:\\s*([^\\n\\(]+?)(?:\\s*\\n|\\s*\\()/i);
+                        label.match(/Google localized text:\\s*([^\\n\\(]+?)(?:\\s*\\n|\\s*\\()/i);
       const name = nameMatch ? nameMatch[1].trim() : '';
       const authuserMatch = location.href.match(/[?&]authuser=(\\d+)/);
       const authuser = authuserMatch ? Number(authuserMatch[1]) : 0;

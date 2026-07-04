@@ -223,7 +223,7 @@ function buildRenderAwareExtractorJs(options) {
           const section = document.createElement('section');
           section.setAttribute('data-webcmd-iframe-source', desc.src);
           const heading = document.createElement('h2');
-          heading.textContent = '来自 iframe: ' + (desc.src || fallbackLabel);
+          heading.textContent = 'localized text iframe: ' + (desc.src || fallbackLabel);
           section.appendChild(heading);
           Array.from(frameBody.childNodes).forEach(node => section.appendChild(node));
           return section;

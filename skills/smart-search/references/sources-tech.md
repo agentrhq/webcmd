@@ -1,42 +1,38 @@
-# 技术 / 学术
+# Technology And Research
 
-用于技术问题、研究论文、开发者讨论、开源社区信息。
+Use for technical questions, research papers, developer discussion, and open-source community information.
 
-## 站点
+## Sites
 
 ### arxiv
 
-- 适用：论文、研究、模型、算法、学术背景
-- 使用前先运行：`webcmd arxiv -h`
+- Use for: papers, research, models, algorithms, and academic background
+- Before use, run: `webcmd arxiv -h`
 
 ### stackoverflow
 
-- 适用：具体报错、API 用法、代码模式、实现细节
-- 使用前先运行：`webcmd stackoverflow -h`
+- Use for: specific errors, API usage, code patterns, and implementation details
+- Before use, run: `webcmd stackoverflow -h`
 
 ### hackernews
 
-- 适用：技术社区讨论、开发者观点、创业和产品话题
-- 使用前先运行：`webcmd hackernews -h`
+- Use for: technical community discussion, developer opinions, startup topics, and product discussion
+- Before use, run: `webcmd hackernews -h`
 
 ### reddit
 
-- 适用：英文社区问答、经验贴、推荐、对比讨论
-- 使用前先运行：`webcmd reddit -h`
+- Use for: community Q&A, experience posts, recommendations, and comparison discussions
+- Before use, run: `webcmd reddit -h`
 
-### linux-do
+### github
 
-- 适用：人工智能、开源工具、中文技术社区
-- 使用前先运行：`webcmd linux-do -h`
+- Use for: repositories, issues, pull requests, releases, code search, and open-source project signals
+- Before use, run: `webcmd github -h`
 
-### v2ex
+## Routing Hints
 
-- 适用：中文技术社区
-- 使用前先运行：`webcmd v2ex -h`
-
-## 路由提示
-
-- 用户明确说“论文”“研究”时，优先 `arxiv`
-- 用户明确说“报错”“API 怎么用”时，优先 `stackoverflow`
-- 用户要“社区讨论”“开发者观点”时，优先 `hackernews` 或 `reddit`
-- 若用户没有明确指定站点，可先选 `gemini` 或 `grok`，内容不足时再补这些专用源
+- If the user explicitly asks for papers or research, prefer `arxiv`
+- If the user asks about an error or API usage, prefer `stackoverflow`
+- If the user wants community discussion or developer viewpoints, prefer `hackernews` or `reddit`
+- If the user wants open-source project evidence, prefer `github`
+- If the user did not name a site, start with `gemini` or `grok`, then add these specialized sources when needed

@@ -4,7 +4,7 @@ import { AuthRequiredError, EmptyResultError } from '@agentrhq/webcmd/errors';
 //
 // X (Twitter) removed the post-count caption from each trend cell on the
 // /explore/tabs/trending page in 2024-2025. The DOM now only carries:
-//   divs[0] = rank + category (e.g. "1 · Trending in United States")
+//   divs[0] = rank + category (e.g. "1 \u00b7 Trending in United States")
 //   divs[1] = topic
 //   divs[2..] = caret menu button (no post-count text)
 // We previously surfaced a `tweets` column whose value was permanently

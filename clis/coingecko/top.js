@@ -6,13 +6,13 @@ cli({
   site: 'coingecko',
   name: 'top',
   access: 'read',
-  description: '按市值排序的加密货币行情（默认 USD）',
+  description: 'Cryptocurrency quotes by market cap (default USD)',
   domain: 'api.coingecko.com',
   strategy: Strategy.PUBLIC,
   browser: false,
   args: [
-    { name: 'currency', type: 'string', default: 'usd', help: '计价币种 (usd / cny / eur / jpy ...)' },
-    { name: 'limit',    type: 'int',    default: 10,    help: '返回数量（默认 10，最多 250）' },
+    { name: 'currency', type: 'string', default: 'usd', help: 'quote currency (usd / cny / eur / jpy ...)' },
+    { name: 'limit',    type: 'int',    default: 10,    help: 'Number to return (default 10, maximum 250)' },
   ],
   columns: ['rank', 'symbol', 'name', 'price', 'change24hPct', 'marketCap', 'volume24h', 'high24h', 'low24h'],
   func: async (args) => {

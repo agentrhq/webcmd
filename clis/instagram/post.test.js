@@ -234,7 +234,7 @@ describe('instagram click action detection', () => {
             getComputedStyle: () => ({ display: 'block', visibility: 'visible' }),
         };
         try {
-            expect(eval(buildClickActionJs(['Next', '下一步'], 'media'))).toEqual({
+            expect(eval(buildClickActionJs(['Next', 'Next'], 'media'))).toEqual({
                 ok: true,
                 label: 'Next',
             });
@@ -286,7 +286,7 @@ describe('instagram click action detection', () => {
             getComputedStyle: () => ({ display: 'block', visibility: 'visible' }),
         };
         try {
-            expect(eval(buildClickActionJs(['Next', '下一步'], 'media'))).toEqual({ ok: false });
+            expect(eval(buildClickActionJs(['Next', 'Next'], 'media'))).toEqual({ ok: false });
             expect(bodyNext.clicked).toBe(false);
         }
         finally {

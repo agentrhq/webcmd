@@ -30,7 +30,6 @@ export const builtinApps: Record<string, ElectronAppEntry> = {
   codex:         { port: 9238, processName: 'Codex',        bundleId: 'com.openai.codex',               displayName: 'Codex' },
   chatwise:      { port: 9228, processName: 'ChatWise',     bundleId: 'com.chatwise.app',               displayName: 'ChatWise' },
   'discord-app': { port: 9232, processName: 'Discord',      bundleId: 'com.discord.app',                 displayName: 'Discord' },
-  'doubao-app':  { port: 9225, processName: 'Doubao',       bundleId: 'com.volcengine.doubao',          displayName: 'Doubao' },
   antigravity:   {
     port: 9234,
     processName: 'Antigravity',
@@ -52,13 +51,6 @@ export const builtinApps: Record<string, ElectronAppEntry> = {
     executableNames: ['Electron', 'TRAE SOLO'],
     bundleId: 'com.trae.solo.app',
     displayName: 'Trae SOLO',
-  },
-  'trae-cn':      {
-    port: 39240,
-    processName: 'Trae CN',
-    executableNames: ['Electron'],
-    bundleId: 'cn.trae.app',
-    displayName: 'Trae CN',
   },
 };
 

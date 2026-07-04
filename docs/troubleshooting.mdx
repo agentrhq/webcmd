@@ -1,0 +1,103 @@
+---
+title: Troubleshooting
+description: Prompt-based fixes for common Webcmd install, profile, auth, plugin, and adapter issues.
+---
+
+# Troubleshooting
+
+Most troubleshooting should be done by an agent. Give the symptom, the command, the expected output, and permission to diagnose.
+
+## Basic Diagnosis
+
+```text
+Diagnose my Webcmd setup. Run the doctor command, check whether the browser runtime is available, and tell me what I need to fix.
+```
+
+The agent will usually start with:
+
+```bash
+webcmd doctor -v
+```
+
+## Runtime or Browser Bridge Fails
+
+Prompt:
+
+```text
+Webcmd says the browser bridge is unavailable. Diagnose the daemon and runtime, restart what is safe to restart, and explain whether public adapters still work.
+```
+
+Public adapters may still work. Authenticated, intercepted, UI, and browser-backed workflows need the bridge.
+
+## Multiple Profiles Are Connected
+
+```text
+Webcmd found multiple browser profiles. List them, recommend which one to use for this task, and set the default only after I confirm.
+```
+
+Profiles matter when commands depend on login state.
+
+## Authenticated Commands Return Empty Results
+
+```text
+`webcmd acme invoices` returns empty rows, but I can see invoices in the browser. Check whether this is a login/profile issue or an adapter issue. Preserve the output schema.
+```
+
+The agent may ask you to sign in once. It should not store credentials in code.
+
+## Adapter Returns Wrong or Empty Data
+
+```text
+Heal this Webcmd adapter. Command: `webcmd example jobs "designer"`. Expected columns: title, company, location, salary_text, posted_at, url. It now returns empty rows. Repair it and verify the result.
+```
+
+The agent should repair the existing adapter rather than create a duplicate command.
+
+## Output Shape Changed
+
+```text
+The command still runs, but the JSON shape changed. Restore backward compatibility for existing fields and add any new fields as optional keys.
+```
+
+Stable output is more important than exposing every new site field.
+
+## Plugin Problems
+
+```text
+This Webcmd plugin is installed but its commands do not appear in `webcmd list -f json`. Diagnose the plugin manifest, adapter paths, and install state.
+```
+
+## External CLI Problems
+
+```text
+`webcmd releasectl status` fails, but `releasectl status` works directly. Check the Webcmd external CLI registration and fix the binary or PATH configuration.
+```
+
+## Node Fails on Startup
+
+Webcmd requires Node.js 20 or newer:
+
+```bash
+node --version
+```
+
+Upgrade Node.js, reinstall Webcmd, then retry.
+
+Prompt:
+
+```text
+Check my Node version and Webcmd installation. If Node is too old, tell me the exact upgrade needed before changing anything.
+```
+
+## Useful Environment Variables
+
+| Variable | Purpose |
+| --- | --- |
+| `WEBCMD_PROFILE` | Browser profile alias or context ID. |
+| `WEBCMD_WINDOW` | `foreground` or `background` browser window mode. |
+| `WEBCMD_BROWSER_CONNECT_TIMEOUT` | Seconds to wait for the browser bridge. |
+| `WEBCMD_BROWSER_COMMAND_TIMEOUT` | Seconds to wait for one browser command. |
+| `WEBCMD_CDP_ENDPOINT` | Manual CDP endpoint for remote browsers or Electron apps. |
+| `WEBCMD_CDP_TARGET` | Filter CDP targets by URL substring. |
+| `WEBCMD_CACHE_DIR` | Browser state and network cache directory. |
+| `WEBCMD_VERBOSE` | Enable verbose logs. |
