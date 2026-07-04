@@ -46,7 +46,7 @@ export const searchCommand = cli({
         });
         
         const bodyText = document.body?.innerText || document.body?.textContent || '';
-        const empty = /no results|no messages match|没有结果|无结果/i.test(bodyText);
+        const empty = /no results|no messages match|no results|no results/i.test(bodyText);
         return { items, empty };
       })()
     `);

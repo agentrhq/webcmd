@@ -444,11 +444,11 @@ cli({
         }
         if (captionData?.error) {
             const msg = `${captionData.error}${captionData.available ? ' (available: ' + captionData.available.join(', ') + ')' : ''}`;
-            // "No captions available" 是合法 empty 数据条件（作者没开字幕 + YT 没自动生成），
-            // 与 bilibili subtitle 的 EmptyResultError 同模式。下游应按 code EMPTY_RESULT 跳过
-            // 重试和 softFail 计数。其它 error（HTTP / parse / 短暂空响应）仍按 fetch 失败抛。
+            // "No captions available" is a valid empty data condition(creator disabled captions + YT no auto captions),
+            // Localized "no captions" text follows the same empty-result pattern; downstream should treat code EMPTY_RESULT as skip.
+            // retry and softFail count.other error(HTTP / parse / temporary empty response)still treat as fetch failure.
             if (captionData.error === 'No captions available for this video') {
-                throw new EmptyResultError('youtube transcript', '该视频没有字幕（作者未开启 + 无自动字幕）。');
+                throw new EmptyResultError('youtube transcript', 'This video has no captions(creator disabled captions + no automatic captions).');
             }
             throw new CommandExecutionError(msg);
         }
@@ -640,7 +640,7 @@ cli({
         }
         // Step 4: Format output based on mode
         if (mode === 'raw') {
-            // Precise timestamps in seconds with decimals, matching bilibili/subtitle format
+            // Precise timestamps in seconds with decimals, matching the subtitle segment format.
             return segments.map((seg, i) => ({
                 index: i + 1,
                 start: Number(seg.start).toFixed(2) + 's',

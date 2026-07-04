@@ -7,7 +7,7 @@
  * - Speaker turns: detect ">>" markers from YouTube auto-captions
  * - Chapters: optional chapter headings inserted at appropriate timestamps
  */
-// Include CJK sentence-ending punctuation: 。！？ (fullwidth: ．！？)
+// Include CJK sentence-ending punctuation: .!? (fullwidth: ．!?)
 const SENTENCE_END = /[.!?\u3002\uFF01\uFF1F\uFF0E]["'\u2019\u201D)]*\s*$/;
 const QUESTION_END = /[?\uFF1F]["'\u2019\u201D)]*\s*$/;
 const TRANSCRIPT_GROUP_GAP_SECONDS = 20;

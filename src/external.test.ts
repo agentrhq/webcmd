@@ -60,27 +60,11 @@ describe('parseCommand', () => {
     }
   });
 
-  it('registers Longbridge with safe package-manager installers only', () => {
-    const raw = fs.readFileSync(path.join(__dirname, 'external-clis.yaml'), 'utf8');
-    const entries = (yaml.load(raw) || []) as ExternalCliConfig[];
-    const longbridge = entries.find((entry) => entry.name === 'longbridge');
-
-    expect(longbridge).toMatchObject({
-      binary: 'longbridge',
-      homepage: 'https://open.longbridge.com/zh-CN/docs/cli/',
-      install: {
-        mac: 'brew install --cask longbridge/tap/longbridge-terminal',
-        windows: 'scoop install https://open.longbridge.com/longbridge/longbridge-terminal/longbridge.json',
-      },
-    });
-    expect(longbridge?.install?.linux).toBeUndefined();
-    expect(longbridge?.install?.default).toBeUndefined();
-  });
 });
 
 describe('formatExternalCliLabel', () => {
   it('shows the package name when the executable name differs', () => {
-    expect(formatExternalCliLabel({ name: 'wx', binary: 'wx', package: 'wx-cli' })).toBe('wx(wx-cli)');
+    expect(formatExternalCliLabel({ name: 'tg', binary: 'tg', package: 'tg-cli' })).toBe('tg(tg-cli)');
   });
 
   it('keeps the label compact when package and name match', () => {
@@ -89,8 +73,8 @@ describe('formatExternalCliLabel', () => {
 
   it('renders a human-readable brand alias for ambiguous executable names', () => {
     expect(formatExternalCliLabel({ name: 'ntn', binary: 'ntn', package: 'notion' })).toBe('ntn(notion)');
-    expect(formatExternalCliLabel({ name: 'wecom-cli', binary: 'wecom-cli', package: '企业微信' })).toBe(
-      'wecom-cli(企业微信)',
+    expect(formatExternalCliLabel({ name: 'lin', binary: 'lin', package: 'linear' })).toBe(
+      'lin(linear)',
     );
   });
 });

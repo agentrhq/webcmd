@@ -19,12 +19,12 @@ cli({
     .map((el, i) => {
       const text = el.textContent.trim().replace(/\\s+/g, ' ');
       // Extract mutual info if present (before name extraction to avoid pollution)
-      const mutualMatch = text.match(/([\\d,]+)\\s*位.*(?:关注|共同|mutual)/);
+      const mutualMatch = text.match(/([\\d,]+)\\s*people.*(?:Follow|mutual|mutual)/);
       // Extract name: remove mutual info, action buttons, etc.
       let name = text
-        .replace(/[\\d,]+\\s*位.*(?:关注了|共同好友|mutual friends?)/, '')
-        .replace(/加好友.*/, '').replace(/Add [Ff]riend.*/, '')
-        .replace(/移除$/, '').replace(/Remove$/, '')
+        .replace(/[\\d,]+\\s*people.*(?:followed|mutual friends|mutual friends?)/, '')
+        .replace(/Add friend.*/, '').replace(/Add [Ff]riend.*/, '')
+        .replace(/Remove$/, '').replace(/Remove$/, '')
         .trim();
       return {
         index: i + 1,

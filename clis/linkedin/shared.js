@@ -46,7 +46,7 @@ export function looksLinkedInAuthWall(value) {
   if (!text) return false;
   return /linkedin\.com\/(?:login|checkpoint|authwall|uas)/i.test(text)
     || /\b(sign in|log in|join linkedin|captcha|verification required)\b/i.test(text)
-    || /(请登录|登录领英|安全验证)/.test(text);
+    || /(Please log in|Log in to LinkedIn|security verification)/.test(text);
 }
 
 export function assertSafeLinkedinUrl(value, label, fallbackPath = '/') {
@@ -108,7 +108,7 @@ export function buildAuthProbeScript() {
     ].join('\n');
     return /linkedin\.com\/(?:login|checkpoint|authwall|uas)/i.test(text)
       || /\b(sign in|log in|join linkedin|captcha|verification required)\b/i.test(text)
-      || /(请登录|登录领英|安全验证)/.test(text);
+      || /(Please log in|Log in to LinkedIn|security verification)/.test(text);
   })()`;
 }
 

@@ -44,7 +44,7 @@ cli({
         seen.add(title);
         const windowLines = lines.slice(i, i + 12);
         const status = windowLines.find((line) => /^(Active|Sold|Pending|Draft)$/i.test(line)) || '';
-        const listed = windowLines.find((line) => /Listed on\b/i.test(line))?.replace(/^·\s*/, '') || '';
+        const listed = windowLines.find((line) => /Listed on\b/i.test(line))?.replace(/^\u00b7\s*/, '') || '';
         const clickLine = windowLines.find((line) => /clicks? on listing/i.test(line)) || '';
         const clickMatch = clickLine.match(/([\d,.]+)\s+clicks? on listing/i);
         const actions = windowLines.filter((line) => /^(Mark as sold|Mark as available|Relist this item|Share|Boost listing)$/i.test(line));

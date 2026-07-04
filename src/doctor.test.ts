@@ -1,10 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockGetDaemonHealth, mockConnect, mockClose, mockFindShadowedUserAdapters } = vi.hoisted(() => ({
+const {
+  mockGetDaemonHealth,
+  mockConnect,
+  mockClose,
+  mockFindShadowedUserAdapters,
+  mockSetDaemonCommandTimeoutSeconds,
+} = vi.hoisted(() => ({
   mockGetDaemonHealth: vi.fn(),
   mockConnect: vi.fn(),
   mockClose: vi.fn(),
   mockFindShadowedUserAdapters: vi.fn(),
+  mockSetDaemonCommandTimeoutSeconds: vi.fn(),
 }));
 
 vi.mock('./browser/daemon-transport.js', () => ({
@@ -16,6 +23,10 @@ vi.mock('./browser/index.js', () => ({
     connect = mockConnect;
     close = mockClose;
   },
+}));
+
+vi.mock('./browser/daemon-client.js', () => ({
+  setDaemonCommandTimeoutSeconds: mockSetDaemonCommandTimeoutSeconds,
 }));
 
 vi.mock('./adapter-shadow.js', async () => {
@@ -34,6 +45,7 @@ describe('doctor report rendering', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockFindShadowedUserAdapters.mockReturnValue([]);
+    mockSetDaemonCommandTimeoutSeconds.mockClear();
     // Doctor always runs live connectivity. Tests that want connect to fail override.
     mockConnect.mockResolvedValue({
       evaluate: vi.fn().mockResolvedValue(2),
@@ -100,17 +112,17 @@ describe('doctor report rendering', () => {
     expect(text).toContain('[MISSING] Runtime: Cloak not connected');
   });
 
-  it('renders a warning when the runtime version is unknown', () => {
+  it('renders OK when the connected Cloak runtime version is unknown', () => {
     const text = strip(renderBrowserDoctorReport({
       daemonRunning: true,
       runtimeConnected: true,
       runtimeName: 'Cloak',
-      issues: ['Cloak runtime is connected but did not report a version.'],
+      issues: [],
     }));
 
-    expect(text).toContain('[WARN] Runtime: Cloak connected (version unknown)');
-    expect(text).toContain('Cloak runtime is connected but did not report a version.');
-    expect(text).not.toContain('Everything looks good!');
+    expect(text).toContain('[OK] Runtime: Cloak connected (version unknown)');
+    expect(text).not.toContain('Cloak runtime is connected but did not report a version.');
+    expect(text).toContain('Everything looks good!');
   });
 
   it('renders connectivity OK when live test succeeds', () => {
@@ -242,9 +254,11 @@ describe('doctor report rendering', () => {
 
     expect(timeoutSeen).toBe(8);
     expect(closeWindow).toHaveBeenCalledTimes(1);
+    expect(mockSetDaemonCommandTimeoutSeconds).toHaveBeenNthCalledWith(1, 8);
+    expect(mockSetDaemonCommandTimeoutSeconds).toHaveBeenLastCalledWith(null);
   });
 
-  it('reports an issue when the runtime is connected but does not report a version', async () => {
+  it('does not report an issue when the connected Cloak runtime does not report a version', async () => {
     const status = {
       state: 'ready' as const,
       status: {
@@ -257,9 +271,9 @@ describe('doctor report rendering', () => {
 
     const report = await runBrowserDoctor();
 
-    expect(report.issues).toEqual(expect.arrayContaining([
-      expect.stringContaining('did not report a version'),
-    ]));
+    expect(report.runtimeConnected).toBe(true);
+    expect(report.runtimeVersion).toBeUndefined();
+    expect(report.issues.join('\n')).not.toContain('did not report a version');
   });
 
   it('does not compare runtime version to CLI version or cached extension updates', async () => {

@@ -231,7 +231,7 @@ describe('tiktok/comment (Route 1 button-walker refactor)', () => {
         expect(script).toContain('BUTTON_NOT_FOUND');
         expect(script).toContain('[data-e2e="comment-input"]');
         expect(script).toContain('[data-e2e="comment-level-1"]');
-        expect(script).toContain("['Post', '发布', '发送']");
+        expect(script).toContain("['Post', 'Post', 'Send']");
     });
 });
 
@@ -292,9 +292,9 @@ describe('tiktok/follow (Route 1 button-walker refactor)', () => {
         expect(script).toContain('const username = "creator";');
         expect(script).toContain('ensureLoggedInOrThrow()');
         expect(script).toContain('ensureNoRateLimitOrThrow()');
-        expect(script).toContain("'Follow', '关注'");
-        expect(script).toContain("'Following', '已关注'");
-        expect(script).toContain("'Friends', '互关'");
+        expect(script).toContain("'Follow', 'Follow'");
+        expect(script).toContain("'Following', 'Following'");
+        expect(script).toContain("'Friends', 'Friends'");
         expect(script).toContain("'already-following'");
         expect(script).toContain("'already-friends'");
         expect(script).toContain("result: 'followed'");
@@ -361,7 +361,7 @@ describe('tiktok/unfollow (Route 1 button-walker refactor)', () => {
         expect(script).toContain('const username = "creator";');
         expect(script).toContain('ensureLoggedInOrThrow()');
         expect(script).toContain('ensureNoRateLimitOrThrow()');
-        expect(script).toContain("'Unfollow', '取消关注'");
+        expect(script).toContain("'Unfollow', 'Unfollow'");
         expect(script).toContain("'already-not-following'");
         expect(script).toContain("'unfollowed'");
         expect(script).toContain('STATE_VERIFY_FAIL');

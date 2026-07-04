@@ -55,7 +55,7 @@ cli({
               || text(link);
             const channel =
               text(renderer.querySelector('#channel-name a'))
-              || text(renderer.querySelector('[aria-label^="前往频道："]'))
+              || text(renderer.querySelector('[aria-label^="Go to channel:"]'))
               || text(renderer.querySelector('[aria-label^="Go to channel:"]'))
               || text(renderer.querySelector('ytd-channel-name'))
               || text(renderer.querySelector('#metadata #byline-container'))
@@ -68,8 +68,8 @@ cli({
               .filter(Boolean);
             const combinedMetadata = (metadata.length ? metadata : lockupMetadata)
               .filter(value => value && value !== title && value !== '•');
-            const inferredChannel = channel || combinedMetadata.find(value => !/观看|views|前|前に|ago|次观看|次查看|stream/i.test(value)) || '';
-            const inferredViews = combinedMetadata.find(value => /观看|views/i.test(value)) || '';
+            const inferredChannel = channel || combinedMetadata.find(value => !/views|views|ago|agoに|ago|views|views|stream/i.test(value)) || '';
+            const inferredViews = combinedMetadata.find(value => /views|views/i.test(value)) || '';
             const inferredPublished = combinedMetadata.find(value => value !== inferredChannel && value !== inferredViews) || '';
             const duration =
               text(renderer.querySelector('ytd-thumbnail-overlay-time-status-renderer'))
@@ -96,7 +96,7 @@ cli({
             push({
               title,
               channel: 'Shorts',
-              views: stats.find(value => /观看|views/i.test(value)) || '',
+              views: stats.find(value => /views|views/i.test(value)) || '',
               duration: 'SHORT',
               published: '',
               url: href.startsWith('http') ? href : 'https://www.youtube.com' + href,

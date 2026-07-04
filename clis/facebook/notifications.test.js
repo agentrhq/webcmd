@@ -5,17 +5,16 @@
 // snapshot of `www.facebook.com/notifications` captured live from a
 // logged-in session. Class names are stripped; SVG / `<i>` icon nodes
 // are removed. The structure preserves what the extractor needs:
-//   - 5 `[role="listitem"]` rows: 1 header ("新通知" — no anchor) +
+//   - 5 `[role="listitem"]` rows: 1 header ("New notifications" — no anchor) +
 //     4 real notifications across 3 distinct `notif_t` types
 //     (`onthisday`, `approve_from_another_device`,
 //     `group_recommendation`).
 //   - Each data row has `<a href>` with `notif_id` + `notif_t` query
-//     params, `<div>未读</div>` unread badge, `<abbr aria-label="N天前">
-//     <span>N天</span></abbr>` for time, and a `<div role="button"
-//     aria-label="标记为已读，<body>">` for the bare body text.
+//     params, `<div>Unread</div>` unread badge, `<abbr aria-label="Ndays ago">
+//     <span>Ndays</span></abbr>` for time, and a `<div role="button"
+//     aria-label="Mark as read,<body>">` for the bare body text.
 //
-// Per dianping #1313 / hupu #1387 / xiaoe #1388 pattern: the live IIFE
-// embeds the same `extractNotificationRowsFromDoc` function via
+// The live IIFE embeds the same `extractNotificationRowsFromDoc` function via
 // `${fn.toString()}` so the extractor seen by these JSDOM tests is the
 // exact same code that runs in the browser.
 
@@ -135,8 +134,8 @@ describe('normalizeNotificationsLimit', () => {
 
 describe('stripMarkAsReadPrefix', () => {
     it('strips known locale prefixes', () => {
-        expect(stripMarkAsReadPrefix('标记为已读，回顾你在 2019年6月的那段过往.', MARK_AS_READ_PREFIXES))
-            .toBe('回顾你在 2019年6月的那段过往.');
+        expect(stripMarkAsReadPrefix('Mark as read,Review your 2019year6memory from that month.', MARK_AS_READ_PREFIXES))
+            .toBe('Review your 2019year6memory from that month.');
         expect(stripMarkAsReadPrefix('Mark as read, John liked your photo', MARK_AS_READ_PREFIXES))
             .toBe('John liked your photo');
         expect(stripMarkAsReadPrefix('Mark as Read, John liked your photo', MARK_AS_READ_PREFIXES))
@@ -144,7 +143,7 @@ describe('stripMarkAsReadPrefix', () => {
     });
 
     it('returns null when prefix is missing — never silent default', () => {
-        expect(stripMarkAsReadPrefix('管理Jake Win通知设置', MARK_AS_READ_PREFIXES)).toBeNull();
+        expect(stripMarkAsReadPrefix('ManageJake Winnotification settings', MARK_AS_READ_PREFIXES)).toBeNull();
         expect(stripMarkAsReadPrefix('arbitrary aria-label without prefix', MARK_AS_READ_PREFIXES))
             .toBeNull();
     });
@@ -158,18 +157,18 @@ describe('stripMarkAsReadPrefix', () => {
 });
 
 describe('stripAnchorChrome', () => {
-    it('strips leading 未读 / Unread badge', () => {
-        expect(stripAnchorChrome('未读John liked your photo', null, UNREAD_BADGE_LABELS))
+    it('strips leading Unread / Unread badge', () => {
+        expect(stripAnchorChrome('UnreadJohn liked your photo', null, UNREAD_BADGE_LABELS))
             .toBe('John liked your photo');
         expect(stripAnchorChrome('UnreadJohn liked your photo', null, UNREAD_BADGE_LABELS))
             .toBe('John liked your photo');
     });
 
     it('strips trailing time-ago suffix when timeStr is provided', () => {
-        expect(stripAnchorChrome('未读回顾你在 2019年6月的那段过往.2天', '2天', UNREAD_BADGE_LABELS))
-            .toBe('回顾你在 2019年6月的那段过往');
-        expect(stripAnchorChrome('未读有人尝试登录，但我们已阻止。7周', '7周', UNREAD_BADGE_LABELS))
-            .toBe('有人尝试登录，但我们已阻止');
+        expect(stripAnchorChrome('UnreadReview your June 2019 memory.2 days', '2 days', UNREAD_BADGE_LABELS))
+            .toBe('Review your June 2019 memory');
+        expect(stripAnchorChrome('UnreadSomeone tried to log in, but we blocked it.7 weeks', '7 weeks', UNREAD_BADGE_LABELS))
+            .toBe('Someone tried to log in, but we blocked it');
     });
 
     it('keeps text intact when there is no badge / no time', () => {
@@ -237,8 +236,8 @@ describe('extractNotificationRowsFromDoc — JSDOM against frozen fixture', () =
         expect(rows[0]).toEqual({
             index: 1,
             unread: true,
-            text: '回顾你在 2019年6月的那段过往',
-            time: '2天',
+            text: 'Review your 2019year6memory from that month',
+            time: '2days',
             url: 'https://www.facebook.com/photo/?fbid=104250644186433&set=a.104250310853133&notif_id=1777926497886652&notif_t=onthisday&ref=notif',
             notif_id: '1777926497886652',
             notif_type: 'onthisday',
@@ -246,16 +245,16 @@ describe('extractNotificationRowsFromDoc — JSDOM against frozen fixture', () =
         expect(rows[2]).toMatchObject({
             index: 3,
             unread: true,
-            text: '有人尝试登录，但我们已阻止',
-            time: '7周',
+            text: 'Someone tried to log in,but we blocked it',
+            time: '7weeks',
             notif_type: 'approve_from_another_device',
             notif_id: '1773680546395691',
         });
         expect(rows[3]).toMatchObject({
             index: 4,
             unread: true,
-            text: '你可能会喜欢 ETYCAL VIBEZ fan\'s page',
-            time: '2天',
+            text: 'You might like ETYCAL VIBEZ fan\'s page',
+            time: '2days',
             notif_type: 'group_recommendation',
         });
     });
@@ -275,7 +274,7 @@ describe('extractNotificationRowsFromDoc — JSDOM against frozen fixture', () =
         expect(rows.length).toBe(4); // header skipped
         // None of the returned rows match the header text.
         for (const row of rows) {
-            expect(row.text).not.toBe('新通知');
+            expect(row.text).not.toBe('New notifications');
         }
     });
 
@@ -286,8 +285,8 @@ describe('extractNotificationRowsFromDoc — JSDOM against frozen fixture', () =
         // have happily returned anything <= 150. The point of this test
         // is to assert nothing is silently sliced — full body text round-
         // trips through the extractor.
-        expect(rows[0].text).toBe('回顾你在 2019年6月的那段过往');
-        expect(rows[1].text).toBe('看看你在 2019年6月发布的帖子，瞬间回到过去的美好时光');
+        expect(rows[0].text).toBe('Review your 2019year6memory from that month');
+        expect(rows[1].text).toBe('Look back at your 2019year6post from June,memory from the past');
         // No row has a value that ends with our legacy truncation point.
         for (const row of rows) {
             expect(row.text).not.toMatch(/\u2026$/); // U+2026 ellipsis as a defensive check
@@ -299,7 +298,7 @@ describe('extractNotificationRowsFromDoc — JSDOM against frozen fixture', () =
         const html = `<!doctype html><html><body><div role="main">
             <div role="listitem">
               <a href="https://www.facebook.com/page?notif_id=999&notif_t=test_event">
-                <span><div>未读</div>Body text without time</span>
+                <span><div>Unread</div>Body text without time</span>
               </a>
             </div>
         </body></html>`;
@@ -347,7 +346,7 @@ describe('extractNotificationRowsFromDoc — JSDOM against frozen fixture', () =
         const html = `<!doctype html><html><body><div role="main">
             <div role="listitem">
               <a href="https://www.facebook.com/x?notif_id=1&notif_t=blank">
-                <span><div>未读</div></span>
+                <span><div>Unread</div></span>
                 <abbr aria-label="3 hr"><span>3 hr</span></abbr>
               </a>
             </div>
@@ -382,8 +381,8 @@ describe('buildNotificationsScript — IIFE invariants', () => {
 
     it('inlines locale prefix and badge tables so the IIFE has them at runtime', () => {
         const script = buildNotificationsScript(15);
-        expect(script).toContain('"标记为已读，"');
-        expect(script).toContain('"未读"');
+        expect(script).toContain('"Mark as read,"');
+        expect(script).toContain('"Unread"');
         expect(script).toContain('"Unread"');
     });
 
@@ -430,7 +429,7 @@ describe('facebook/notifications — func typed boundaries', () => {
             index: 1,
             unread: true,
             text: 'hello',
-            time: '2天',
+            time: '2days',
             url: 'https://www.facebook.com/notifications/?notif_id=1&notif_t=test',
             notif_id: '1',
             notif_type: 'test',

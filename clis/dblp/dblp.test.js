@@ -166,7 +166,7 @@ describe('dblp adapter', () => {
             expect(decodeXmlEntities('don&apos;t')).toBe("don't");
             expect(decodeXmlEntities('a &lt; b &gt; c')).toBe('a < b > c');
             expect(decodeXmlEntities('&quot;x&quot;')).toBe('"x"');
-            expect(decodeXmlEntities('&#x4E2D;')).toBe('中');
+            expect(decodeXmlEntities('&#x4E2D;')).toBe('\u4e2d');
             expect(decodeXmlEntities('&#65;')).toBe('A');
         });
         it('returns empty string for null/undefined', () => {

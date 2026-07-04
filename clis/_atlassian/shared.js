@@ -134,7 +134,7 @@ function summarizeApiError(parsed, fallback) {
                 messages.push(`${key}: ${String(value)}`);
             }
         }
-        if (messages.length) return messages.join(' · ');
+        if (messages.length) return messages.join(' \u00b7 ');
     }
     if (typeof parsed === 'string' && parsed.trim()) return parsed.trim().slice(0, 300);
     return fallback;

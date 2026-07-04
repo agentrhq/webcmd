@@ -37,7 +37,7 @@ const SESSIONS = {
       userId: '310519663277886366',
       title: 'PPT task',
       status: 'SESSION_STATUS_STOPPED',
-      lastDisplayMessage: '已 完成修改',
+      lastDisplayMessage: 'localized text localized text',
       lastMessageTime: '2026-05-04T06:39:47.774Z',
       createdAt: '2026-04-30T07:54:17.891Z',
       updatedAt: '2026-05-26T06:23:41Z',
@@ -75,7 +75,7 @@ const SKILLS = {
   ],
 };
 
-// ── makePage helper (queue pattern matching kimi.test.js) ─────────────────
+// ── makePage helper with queued evaluate results ──────────────────────────
 
 /**
  * Create a mock page with a queue of page.evaluate results.

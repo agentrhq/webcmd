@@ -11,8 +11,8 @@ function isGeminiRootAppUrl(url) {
     }
 }
 function parseDeepResearchProgress(text) {
-    const isResearching = /\bresearching(?:\s+websites?)?\b|research in progress|working on your research|正在研究|研究中/i.test(text);
-    const waitingForStart = /\bstart(?:\s+deep)?\s+research\b|begin\s+research|generate(?:\s+deep)?\s+research\s+plan|开始研究|开始深度研究|开始调研|生成研究计划|生成调研计划|try again without deep research/i.test(text);
+    const isResearching = /\bresearching(?:\s+websites?)?\b|research in progress|working on your research|Researching|Researching/i.test(text);
+    const waitingForStart = /\bstart(?:\s+deep)?\s+research\b|begin\s+research|generate(?:\s+deep)?\s+research\s+plan|Start research|Start deep research|Start research|Generating research plan|Generate research plan|try again without deep research/i.test(text);
     return { isResearching, waitingForStart };
 }
 export const deepResearchCommand = cli({

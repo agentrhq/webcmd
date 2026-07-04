@@ -48,6 +48,10 @@ jobs:
             exit 1
           fi
 
+      - name: Check npm package executable
+        if: runner.os == 'Linux'
+        run: npm run check:package-bin
+
       - name: Check silent column drops
         if: runner.os == 'Linux'
         run: npm run check:silent-column-drop

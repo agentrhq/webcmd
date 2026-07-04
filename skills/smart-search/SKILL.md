@@ -1,156 +1,156 @@
 ---
 name: smart-search
-description: 基于 webcmd 命令的智能搜索路由器。当用户想要使用 Webcmd、CLI 或 API 搜索、查询、查找或研究信息时，尤其是涉及指定网站、社交媒体、技术资料、新闻、购物、旅游、求职、金融或中文内容时，务必使用此 skill
+description: Intelligent search router based on webcmd commands. Use this skill when the user wants to search, query, find, or research information through Webcmd, CLI, or API sources, especially for named websites, social media, technical material, news, shopping, travel, jobs, finance, or multilingual content
 ---
 
-# 智能搜索路由器
+# Smart Search Router
 
-根据话题和场景，将查询路由到最佳的 webcmd 搜索源。此 skill 的核心目标不是记忆命令，而是先定位数据源，再让 Agent 通过 `webcmd` 自己读取实时帮助，避免文档漂移。
+Route a query to the best webcmd search source based on the topic and context. The goal of this skill is not to memorize command signatures. First choose the data source, then have the agent read live help through `webcmd` so stale documentation does not leak into the answer.
 
-## 强制预检
+## Mandatory Preflight
 
-每次使用前，必须先做下面两步：
+Before every use, do both of these steps:
 
-- 运行 `webcmd list -f yaml`
-- 用 live registry 确认候选站点是否存在，并检查 `strategy`、`browser`、`domain`
+- Run `webcmd list -f yaml`
+- Use the live registry to confirm that candidate sites exist, and inspect `strategy`, `browser`, and `domain`
 
-选定站点后，必须再做下面两步：
+After choosing a site, do both of these steps:
 
-- 运行 `webcmd <site> -h` 查看该站点有哪些子命令
-- 若已锁定某个子命令，再运行 `webcmd <site> <command> -h` 查看参数、输出列、策略
+- Run `webcmd <site> -h` to see the site's subcommands
+- If a subcommand is already selected, run `webcmd <site> <command> -h` to inspect parameters, output columns, and strategy
 
-不要在 skill 文档里硬编码参数或假设命令签名；以 `webcmd ... -h` 的实时输出为准。
+Do not hard-code parameters or assume command signatures from skill docs. Trust the live output of `webcmd ... -h`.
 
-## 主路由规则
+## Main Routing Rule
 
-只使用这一条规则，不再维护多套优先级：
+Use this single rule instead of maintaining multiple priority lists:
 
-1. 当用户明确指定网站、平台或数据源时，直接使用对应网站。
-2. 当用户没有指定网站时，优先只选择一个 AI 源：`grok`、`doubao`、`gemini` 三选一。
-3. 当 AI 返回内容不足、缺少原始数据、需要权威佐证或需要垂直结果时，再补充 1-2 个专用源。
+1. If the user explicitly names a website, platform, or data source, use that site directly.
+2. If the user does not name a site, prefer exactly one AI source: choose one of `grok`, `chatgpt`, or `gemini`.
+3. If the AI answer is thin, lacks raw data, needs authoritative corroboration, or needs vertical results, add 1-2 specialized sources.
 
-## 单题预算与频率限制
+## Per-Question Budget And Rate Limits
 
-把“单个用户问题”理解为同一意图链路下的一次问题求解；同一轮追问、澄清、补充条件，若核心问题未变，仍算同一题。
+Treat a "single user question" as one problem-solving chain for the same intent. Follow-ups, clarifications, and added constraints in the same thread still count as the same question when the core problem has not changed.
 
-先建立一份站点调用台账。每次真正执行搜索命令后，立刻更新：
+First create a site-call ledger. After each real search command, update it immediately:
 
 - `site`
 - `query`
 - `count`
 - `status`
 
-计数规则：
+Counting rules:
 
-- `webcmd list -f yaml`、`webcmd <site> -h`、`webcmd <site> <command> -h` 属于预检与帮助，不计入搜索次数
-- 一次真正的 `webcmd <site> ...` 搜索/查询执行，计为该站点 1 次调用
-- 同站点因为报错、超时、验证码、反爬、登录态异常而失败，也算 1 次调用，不要无限重试
+- `webcmd list -f yaml`, `webcmd <site> -h`, and `webcmd <site> <command> -h` are preflight/help commands and do not count as searches.
+- One real `webcmd <site> ...` search/query execution counts as 1 call for that site.
+- A failed call caused by an error, timeout, CAPTCHA, anti-bot check, or broken login state still counts as 1 call for that site. Do not retry indefinitely.
 
-频率上限：
+Rate limits:
 
-- AI 站点硬限制：同一题内，每个 AI 站点最多调用 1 次
-- 默认策略仍然是只选 1 个 AI 站点，不要把多个 AI 站点串成常规流程
-- 只有当用户明确要求比较多个 AI 站点时，才可以额外调用其他 AI 站点；但每个被点名的 AI 站点仍然最多 1 次
-- 非 AI 站点默认最多调用 2 次
-- 非 AI 站点第 2 次调用必须有明确理由，例如第一次结果过宽，需要加时间、地区、类别、排序或关键词限定
-- 非 AI 站点不要进行第 3 次调用；若信息仍不足，停止扩搜并明确说明缺口
+- Hard AI-source limit: for the same question, call each AI source at most once.
+- The default strategy is still to choose only 1 AI source. Do not chain multiple AI sources as a routine workflow.
+- Call additional AI sources only when the user explicitly asks to compare multiple AI sources. Even then, each named AI source may be called at most once.
+- Non-AI sites default to at most 2 calls.
+- The second call to a non-AI site must have a clear reason, such as narrowing by time, region, category, sorting, or keywords after an overly broad first result.
+- Do not make a third call to a non-AI site. If information is still insufficient, stop expanding and state the gap clearly.
 
-触发限频后的处理：
+When a rate limit is reached:
 
-- 记录：「已跳过：<site> 达到频率上限」
-- 优先改用其他同类站点
-- 若没有合适替代源，则直接基于已收集信息回答，并说明覆盖范围与缺口
+- Record: `Skipped: <site> reached the rate limit`
+- Prefer another site of the same type
+- If no suitable alternative source exists, answer from the collected information and explain coverage and gaps
 
-## 查询结束汇报
+## End-Of-Query Report
 
-每次查询结束后，回答末尾必须追加一段简短的“搜索摘要”，至少包含下面三项：
+At the end of every query, append a short "Search Summary" with at least these three items:
 
-- 使用了什么网站搜索
-- 每个网站搜了什么词
-- 每个网站搜了几次
+- Which sites were searched
+- What query terms were used for each site
+- How many times each site was searched
 
-如果有被限频跳过的站点，也要明确写出。
+If any site was skipped because of a rate limit, say so explicitly.
 
-建议使用下面的固定格式：
+Use this fixed format when possible:
 
 ```md
-搜索摘要
-- 网站：<site1> | 查询词：<term1> | 次数：<n>
-- 网站：<site2> | 查询词：<term2>；<term3> | 次数：<n>
-- 已跳过：<site3>，原因：达到频率上限
+Search Summary
+- Site: <site1> | Query: <term1> | Calls: <n>
+- Site: <site2> | Query: <term2>; <term3> | Calls: <n>
+- Skipped: <site3> | Reason: reached the rate limit
 ```
 
-## AI 源选择
+## AI Source Selection
 
 - `grok`
-  适合实时讨论、英文互联网舆论、Twitter/X 语境、热点追踪。
-- `doubao`
-  适合中文语境、字节抖音生态、生活方式内容、中文热点与泛中文问答。
+  Best for real-time discussion, English-language internet sentiment, Twitter/X context, and trending topics.
+- `chatgpt`
+  Best for broad Q&A, synthesis, planning, coding help, and general-purpose English-language research.
 - `gemini`
-  适合全球网页、英文资料、通用信息检索、背景综述。
+  Best for global web coverage, English-language sources, general information retrieval, and background summaries.
 
-如果用户没有指定网站，默认先判断语言和语境，再从这三个里只选一个。
+If the user did not name a site, first judge language and context, then choose exactly one of these three.
 
-一旦某个 AI 站点已经执行过一次真实查询，就不要在同一题里改写关键词后再次调用该 AI 站点。若答案不足，优先补专用源，不要反复追打同一个 AI 站点。
+After an AI site has run one real query for the same question, do not call that same AI site again with rewritten keywords. If the answer is insufficient, prefer specialized sources instead of repeatedly hitting the same AI site.
 
-## AI 查询词建议
+## AI Query Guidance
 
-当使用 AI 源时，不要只丢一个过短关键词。优先构造成“主题 + 目标 + 限定条件”的查询。
+When using an AI source, do not send a very short keyword by itself. Prefer a query shaped as "topic + goal + constraints."
 
-- 主题
-  用户真正要查的对象、事件、产品、人物、公司、技术名词。
-- 目标
-  想要什么结果，例如总结、对比、原因、趋势、推荐、原始线索。
-- 限定条件
-  语言、地区、时间范围、平台范围、受众、价格带、岗位地点、是否要引用原始来源。
+- Topic
+  The object, event, product, person, company, or technical term the user really wants to investigate.
+- Goal
+  The desired result, such as summary, comparison, cause, trend, recommendation, or raw leads.
+- Constraints
+  Language, region, time range, platform scope, audience, price band, job location, or whether raw sources are required.
 
-优先使用下面这种表达方式：
+Prefer these shapes:
 
-- `<主题> + <你要回答的问题>`
-- `<主题> + <时间范围/地区/语言>`
-- `<主题> + <平台或来源范围>`
-- `<主题> + <输出要求>`
+- `<topic> + <question to answer>`
+- `<topic> + <time range/region/language>`
+- `<topic> + <platform or source scope>`
+- `<topic> + <output requirement>`
 
-避免只输入：
+Avoid sending only:
 
-- 单个名词
-- 没有时间范围的热点问题
-- 没有地区限制的购物、求职、旅游问题
-- 没有平台限制的社交媒体问题
+- A single noun
+- A trending question with no time range
+- A shopping, jobs, or travel question with no region
+- A social-media question with no platform scope
 
-## 专用源补充时机
+## When To Add Specialized Sources
 
-当出现以下任一情况时，再补充专用源：
+Add specialized sources when any of these conditions apply:
 
-- AI 给出的是摘要，但你需要原始帖子、原始视频、原始商品或原始职位结果
-- AI 覆盖面不足，漏掉垂直站点信息
-- 需要更高权威性或更强领域相关性
-- 用户明确要求“从某个平台找”
+- The AI provides a summary, but raw posts, raw videos, raw products, or raw job results are needed
+- The AI coverage is thin or misses vertical-site information
+- Higher authority or stronger domain relevance is needed
+- The user explicitly asks to search on a specific platform
 
-单次查询通常控制在 1 个 AI 源 + 1 到 2 个专用源，避免结果过载。
+Keep a typical query to 1 AI source plus 1-2 specialized sources to avoid result overload.
 
-## 处理不可用的源
+## Handling Unavailable Sources
 
-当站点不可用时：
+When a site is unavailable:
 
-- 不要因为单个源失败而中止整个搜索
-- 记录：「已跳过：<site> 不可用」
-- 回退到同类其他站点，或回退到一个 AI 源
-- 始终以 `webcmd list -f yaml` 与 `webcmd <site> -h` 的实际结果为准
+- Do not stop the whole search because one source failed
+- Record: `Skipped: <site> unavailable`
+- Fall back to another site of the same type, or to one AI source
+- Always trust the actual output of `webcmd list -f yaml` and `webcmd <site> -h`
 
-不要假设任何站点“绝对可用”。即使是公开站点，也以当前环境中的 live help 和执行结果为准。
+Do not assume any site is always available. Even for public sites, trust live help and execution results in the current environment.
 
-## 参考文件
+## Reference Files
 
-根据需要读取对应文件：
+Read only the files relevant to the current query:
 
-- **`references/sources-ai.md`** — AI 默认源
-- **`references/sources-tech.md`** — 技术 / 学术
-- **`references/sources-social.md`** — 社交媒体
-- **`references/sources-media.md`** — 媒体 / 娱乐
-- **`references/sources-info.md`** — 资讯 / 知识
-- **`references/sources-shopping.md`** — 购物
-- **`references/sources-travel.md`** — 旅游
-- **`references/sources-other.md`** — 其他垂直源
+- **`references/sources-ai.md`** - default AI sources
+- **`references/sources-tech.md`** - technology and research
+- **`references/sources-social.md`** - social media
+- **`references/sources-media.md`** - media and entertainment
+- **`references/sources-info.md`** - news and knowledge
+- **`references/sources-shopping.md`** - shopping
+- **`references/sources-travel.md`** - travel
+- **`references/sources-other.md`** - other vertical sources
 
-只读与当前查询相关的文件，无需全部加载。
+Do not load every reference file unless the query actually needs them.

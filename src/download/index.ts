@@ -42,7 +42,7 @@ export function checkYtdlp(): boolean {
 
 /** Domains that host video content and can be downloaded via yt-dlp. */
 const VIDEO_PLATFORM_DOMAINS = [
-  'youtube.com', 'youtu.be', 'bilibili.com', 'twitter.com',
+  'youtube.com', 'youtu.be', 'twitter.com',
   'x.com', 'tiktok.com', 'vimeo.com', 'twitch.tv',
 ];
 

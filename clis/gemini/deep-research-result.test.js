@@ -116,7 +116,7 @@ describe('gemini/deep-research-result', () => {
     });
     it('returns waiting message when assistant response indicates research in progress', async () => {
         mockExportGeminiDeepResearchReport.mockResolvedValue({ url: '', source: 'none' });
-        mockGetLatestGeminiAssistantResponse.mockResolvedValue('正在研究中，请稍候。');
+        mockGetLatestGeminiAssistantResponse.mockResolvedValue('Researching,please wait.');
         const result = await runCommand({ query: 'A title' });
         expect(result).toEqual([{ response: 'Deep Research is still running. Please wait and retry later.' }]);
     });
@@ -125,7 +125,7 @@ describe('gemini/deep-research-result', () => {
         mockGetLatestGeminiAssistantResponse.mockResolvedValue('');
         mockReadGeminiSnapshot.mockResolvedValue({
             turns: [],
-            transcriptLines: ['生成研究计划中，请稍候。'],
+            transcriptLines: ['Generating research plan,please wait.'],
             composerHasText: false,
             isGenerating: false,
             structuredTurnsTrusted: true,
