@@ -92,13 +92,13 @@ describe('bse-india movers', () => {
 describe('bse-india announcements', () => {
     const cmd = getRegistry().get('bse-india/announcements');
 
-    it('maps corporate announcements and filters by query', async () => {
+    it('maps latest corporate announcements', async () => {
         vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([
             { Subject: 'Reliance Industries Ltd - Board Meeting', Newsid: 'abc&flag=1' },
             { Subject: 'Other company update', Newsid: 'def&flag=1' },
         ])));
 
-        await expect(cmd.func({ query: 'reliance', limit: 5 })).resolves.toEqual([{
+        await expect(cmd.func({ limit: 1 })).resolves.toEqual([{
             rank: 1,
             title: 'Reliance Industries Ltd - Board Meeting',
             newsId: 'abc',
@@ -106,8 +106,40 @@ describe('bse-india announcements', () => {
         }]);
     });
 
+    it('uses company search for announcement queries', async () => {
+        vi.stubGlobal('fetch', vi.fn()
+            .mockResolvedValueOnce(json([{
+                strSricpCode: '500325',
+                shortName: 'RELIANCE',
+                scripName: 'Reliance Industries Ltd',
+                Type: 'in Equity T+1',
+            }]))
+            .mockResolvedValueOnce(json(JSON.stringify([
+                { NewsSubj: 'Announcement under Regulation 30 (LODR)-Credit Rating', Newsid: 'abc&flag=1' },
+            ]))));
+
+        await expect(cmd.func({ query: 'reliance', limit: 5 })).resolves.toEqual([{
+            rank: 1,
+            title: 'Announcement under Regulation 30 (LODR)-Credit Rating',
+            newsId: 'abc',
+            url: 'https://www.bseindia.com/corporates/anndet_new.aspx?newsid=abc',
+        }]);
+        expect(fetch).toHaveBeenNthCalledWith(
+            1,
+            'https://api.bseindia.com/BseIndiaAPI/api/GetQuoteAllSearchDatabeta/w?searchString=reliance',
+            expect.any(Object),
+        );
+        expect(fetch).toHaveBeenNthCalledWith(
+            2,
+            'https://api.bseindia.com/BseIndiaAPI/api/TabResults_PAR/w?scripcode=500325&tabtype=NEWS',
+            expect.any(Object),
+        );
+    });
+
     it('throws EmptyResultError when filtering removes all announcements', async () => {
-        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([{ Subject: 'Other', Newsid: 'def' }])));
+        vi.stubGlobal('fetch', vi.fn()
+            .mockResolvedValueOnce(json([]))
+            .mockResolvedValueOnce(json([{ Subject: 'Other', Newsid: 'def' }])));
         await expect(cmd.func({ query: 'missing', limit: 5 })).rejects.toBeInstanceOf(EmptyResultError);
     });
 });
