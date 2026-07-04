@@ -9,7 +9,7 @@ cli({
     strategy: Strategy.UI,
     browser: true,
     args: [
-        { name: 'query', type: 'string', required: true, positional: true, help: 'Keywords to match (comma-separated for OR, e.g. "群,微信")' },
+        { name: 'query', type: 'string', required: true, positional: true, help: 'Keywords to match (comma-separated for OR, e.g. "invoice,urgent")' },
         { name: 'max', type: 'int', required: false, default: 20, help: 'Maximum number of requests to accept (default: 20)' },
         { name: 'timeout', type: 'int', required: false, default: 600, help: 'Max seconds for the overall command (default: 600 — batch op)' },
     ],
@@ -146,7 +146,7 @@ cli({
             const allBtns = Array.from(document.querySelectorAll('[role="button"]'));
             const acceptBtn = allBtns.find(btn => {
               const t = btn.innerText.trim().toLowerCase();
-              return t === 'accept' || t === '接受';
+              return t === 'accept' || t === 'localized text';
             });
 
             if (!acceptBtn) {
@@ -161,7 +161,7 @@ cli({
             const btnsAfter = Array.from(document.querySelectorAll('[role="button"]'));
             const confirmBtn = btnsAfter.find(btn => {
               const t = btn.innerText.trim().toLowerCase();
-              return (t === 'accept' || t === '接受') && btn !== acceptBtn;
+              return (t === 'accept' || t === 'localized text') && btn !== acceptBtn;
             });
             if (confirmBtn) {
               confirmBtn.click();

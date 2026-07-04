@@ -106,6 +106,62 @@ describe('createDaemonServer', () => {
     }
   });
 
+  it('uses deadlineAt as the command timeout budget when present', async () => {
+    const now = 1_763_000_000_000;
+    const dateSpy = vi.spyOn(Date, 'now').mockReturnValue(now);
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    try {
+      const { baseUrl } = await start();
+      const res = await fetch(`${baseUrl}/command`, {
+        method: 'POST',
+        headers: { [DAEMON_HEADER_NAME]: '1', 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: 'deadline-command',
+          action: 'exec',
+          session: 'work',
+          timeout: 120,
+          deadlineAt: now + 12_345,
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      await expect(res.json()).resolves.toMatchObject({
+        id: 'deadline-command',
+        ok: true,
+      });
+      expect(setTimeoutSpy.mock.calls.some(([, delay]) => delay === 12_345)).toBe(true);
+    } finally {
+      setTimeoutSpy.mockRestore();
+      dateSpy.mockRestore();
+    }
+  });
+
+  it('attaches duplicate command ids to the in-flight dispatch instead of re-dispatching', async () => {
+    const provider = new FakeProvider();
+    provider.delayMs = 50;
+    const { baseUrl } = await start(provider);
+    const body = JSON.stringify({ id: 'same-id', action: 'exec', session: 'work', code: '1' });
+
+    const [first, second] = await Promise.all([
+      fetch(`${baseUrl}/command`, {
+        method: 'POST',
+        headers: { [DAEMON_HEADER_NAME]: '1', 'Content-Type': 'application/json' },
+        body,
+      }),
+      fetch(`${baseUrl}/command`, {
+        method: 'POST',
+        headers: { [DAEMON_HEADER_NAME]: '1', 'Content-Type': 'application/json' },
+        body,
+      }),
+    ]);
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    await expect(first.json()).resolves.toMatchObject({ id: 'same-id', ok: true });
+    await expect(second.json()).resolves.toMatchObject({ id: 'same-id', ok: true });
+    expect(provider.commands).toHaveLength(1);
+  });
+
   it('requires X-Webcmd on non-ping endpoints', async () => {
     const { baseUrl } = await start();
     const res = await fetch(`${baseUrl}/status`);

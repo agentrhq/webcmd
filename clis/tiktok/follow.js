@@ -36,9 +36,9 @@ function buildFollowScript(username) {
   ensureLoggedInOrThrow();
   ensureNoRateLimitOrThrow();
 
-  const FOLLOW_LABELS = ['Follow', '关注', 'フォロー'];
-  const FOLLOWING_LABELS = ['Following', '已关注', 'フォロー中'];
-  const FRIENDS_LABELS = ['Friends', '互关', 'フレンド'];
+  const FOLLOW_LABELS = ['Follow', 'Follow', 'フォロー'];
+  const FOLLOWING_LABELS = ['Following', 'Following', 'フォローlocalized text'];
+  const FRIENDS_LABELS = ['Friends', 'Friends', 'フレンド'];
   const ALREADY_LABELS = FOLLOWING_LABELS.concat(FRIENDS_LABELS);
 
   // Idempotent fast path: already in target state.
@@ -57,7 +57,7 @@ function buildFollowScript(username) {
   const target = followBtn.closest('button') || followBtn.closest('[role="button"]') || followBtn;
   target.click();
 
-  // State verification: button text should flip to Following / 已关注 etc.
+  // State verification: button text should flip to Following / Following etc.
   const flipped = await waitFor(() => buttonExists(ALREADY_LABELS), { timeoutMs: 5000 });
   if (!flipped) {
     ensureNoRateLimitOrThrow();

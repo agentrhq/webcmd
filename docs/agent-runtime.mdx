@@ -1,0 +1,75 @@
+---
+title: Agent Runtime
+description: How Webcmd lets agents crawl sites, understand workflows, and turn them into reliable commands.
+---
+
+# Agent Runtime
+
+Webcmd is the tool layer an agent uses when a website or app does not already have a clean API or CLI.
+
+Users do not need to inspect pages, capture requests, or click through workflows by hand. They describe the outcome. The agent uses Webcmd to explore the target, understand the page or app, and decide whether to reuse, update, or create a command.
+
+## What Agents Can Do
+
+With Webcmd, an agent can:
+
+- Discover existing commands and their schemas.
+- Open real browser sessions when a site needs UI exploration.
+- Read page structure, accessible elements, content, and forms.
+- Capture useful browser state and network context.
+- Compare a site against existing adapter patterns.
+- Generate a reusable adapter command.
+- Validate and smoke test the command.
+- Repair commands when selectors, APIs, or response shapes drift.
+
+The browser runtime is an implementation detail. It exists so agents can do reliable exploration before producing a deterministic CLI.
+
+## Agent Decision Flow
+
+When you ask for a workflow, a good agent should:
+
+1. Check whether Webcmd already has a command for the target.
+2. Use the existing command if it fits.
+3. Explore the site or app only when no command exists or the command is broken.
+4. Create or update an adapter.
+5. Verify the adapter output.
+6. Tell you the final command, output shape, and where the adapter lives.
+
+## Strategies
+
+Adapters choose a strategy based on the target:
+
+| Strategy | Agent uses it when |
+| --- | --- |
+| `PUBLIC` | Public pages or APIs are enough. |
+| `COOKIE` | The site needs an authenticated browser profile. |
+| `INTERCEPT` | A browser request must be captured and replayed safely. |
+| `UI` | The workflow can only be done through the page UI. |
+| `LOCAL` | The command wraps a desktop app, local daemon, or installed CLI. |
+
+The user does not need to choose the strategy. You can ask the agent to explain why it chose one.
+
+## Browser Profiles
+
+Some sites need login state. Webcmd profiles keep those identities separate.
+
+Typical prompt:
+
+```text
+Use my logged-in work browser profile to create a Webcmd command for exporting my open invoices from Acme Billing. Keep the adapter private and return JSON rows with invoice_id, customer, amount, due_date, and status.
+```
+
+If login is missing, the agent should ask you to sign in once, then continue.
+
+## What Good Output Looks Like
+
+A finished agent task should include:
+
+- The command name, for example `webcmd acme invoices`.
+- The adapter location, such as `~/.webcmd/clis/acme/invoices.js` or a plugin path.
+- The output columns or JSON schema.
+- Any required profile or auth assumptions.
+- Verification results.
+- Known limitations.
+
+That summary is the handoff from exploratory browser work to repeatable CLI.

@@ -6,13 +6,13 @@ cli({
     site: 'google-scholar',
     name: 'search',
     access: 'read',
-    description: 'Google Scholar 学术搜索',
+    description: 'Google Scholar scholar search',
     domain: 'scholar.google.com',
     strategy: Strategy.PUBLIC,
     browser: true,
     args: [
-        { name: 'query', positional: true, required: true, help: '搜索关键词' },
-        { name: 'limit', type: 'int', default: 10, help: '返回结果数量 (max 20)' },
+        { name: 'query', positional: true, required: true, help: 'Search keyword' },
+        { name: 'limit', type: 'int', default: 10, help: 'Number of results to return (max 20)' },
     ],
     columns: ['rank', 'title', 'authors', 'source', 'year', 'cited', 'url'],
     func: async (page, kwargs) => {

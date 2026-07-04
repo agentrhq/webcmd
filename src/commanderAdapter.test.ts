@@ -325,12 +325,12 @@ describe('commanderAdapter default formats', () => {
 
 describe('commanderAdapter error envelope output', () => {
   const cmd: CliCommand = {
-    site: 'xiaohongshu',
-    name: 'note', access: 'read',
-    description: 'Read one note',
+    site: 'github',
+    name: 'issue', access: 'read',
+    description: 'Read one issue',
     browser: false,
     args: [
-      { name: 'note-id', positional: true, required: true, help: 'Note ID' },
+      { name: 'issue-id', positional: true, required: true, help: 'Issue ID' },
     ],
     func: vi.fn(),
   };
@@ -344,32 +344,32 @@ describe('commanderAdapter error envelope output', () => {
 
   it('outputs YAML error envelope with adapter hint to stderr', async () => {
     const program = new Command();
-    const siteCmd = program.command('xiaohongshu');
+    const siteCmd = program.command('github');
     registerCommandToProgram(siteCmd, cmd);
 
     const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     mockExecuteCommand.mockRejectedValueOnce(
       new EmptyResultError(
-        'xiaohongshu/note',
-        'Pass the full search_result URL with xsec_token instead of a bare note ID.',
+        'github/issue',
+        'Pass the full issue URL instead of a bare issue number.',
       ),
     );
 
-    await program.parseAsync(['node', 'webcmd', 'xiaohongshu', 'note', '69ca3927000000001a020fd5']);
+    await program.parseAsync(['node', 'webcmd', 'github', 'issue', '12345']);
 
     const output = stderrSpy.mock.calls.map(c => String(c[0])).join('');
     expect(output).toContain('ok: false');
     expect(output).toContain('code: EMPTY_RESULT');
-    expect(output).toContain('xsec_token');
+    expect(output).toContain('full issue URL');
     expect(output).toContain('--trace=retain-on-failure');
-    expect(output).toContain('webcmd xiaohongshu note --trace retain-on-failure');
+    expect(output).toContain('webcmd github issue --trace retain-on-failure');
 
     stderrSpy.mockRestore();
   });
 
   it('outputs YAML error envelope for selector errors', async () => {
     const program = new Command();
-    const siteCmd = program.command('xiaohongshu');
+    const siteCmd = program.command('github');
     registerCommandToProgram(siteCmd, cmd);
 
     const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
@@ -377,7 +377,7 @@ describe('commanderAdapter error envelope output', () => {
       selectorError('.note-title', 'The note title selector no longer matches the current page.'),
     );
 
-    await program.parseAsync(['node', 'webcmd', 'xiaohongshu', 'note', '69ca3927000000001a020fd5']);
+    await program.parseAsync(['node', 'webcmd', 'github', 'issue', '12345']);
 
     const output = stderrSpy.mock.calls.map(c => String(c[0])).join('');
     expect(output).toContain('ok: false');
@@ -390,7 +390,7 @@ describe('commanderAdapter error envelope output', () => {
 
   it('does not add an AutoFix rerun hint when trace is already enabled', async () => {
     const program = new Command();
-    const siteCmd = program.command('xiaohongshu');
+    const siteCmd = program.command('github');
     registerCommandToProgram(siteCmd, cmd);
 
     const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
@@ -399,9 +399,9 @@ describe('commanderAdapter error envelope output', () => {
     await program.parseAsync([
       'node',
       'webcmd',
-      'xiaohongshu',
-      'note',
-      '69ca3927000000001a020fd5',
+      'github',
+      'issue',
+      '12345',
       '--trace',
       'retain-on-failure',
     ]);
@@ -415,7 +415,7 @@ describe('commanderAdapter error envelope output', () => {
 
   it('includes trace metadata from the error envelope when execution attached it', async () => {
     const program = new Command();
-    const siteCmd = program.command('xiaohongshu');
+    const siteCmd = program.command('github');
     registerCommandToProgram(siteCmd, cmd);
 
     const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
@@ -436,9 +436,9 @@ describe('commanderAdapter error envelope output', () => {
     await program.parseAsync([
       'node',
       'webcmd',
-      'xiaohongshu',
-      'note',
-      '69ca3927000000001a020fd5',
+      'github',
+      'issue',
+      '12345',
       '--trace',
       'retain-on-failure',
     ]);

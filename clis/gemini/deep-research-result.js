@@ -5,10 +5,10 @@ const DEEP_RESEARCH_WAITING_MESSAGE = 'Deep Research is still running. Please wa
 const DEEP_RESEARCH_NO_DOCS_MESSAGE = 'No Docs URL found. Please check Share & Export -> Export to Docs in Gemini UI.';
 const DEEP_RESEARCH_PENDING_MESSAGE = 'Deep Research may still be running or preparing export. Please wait and retry later.';
 function isDeepResearchInProgress(text) {
-    return /\bresearching(?:\s+websites?)?\b|research in progress|working on your research|generating research plan|gathering sources|creating report|planning research|正在研究|研究中|调研中|生成研究计划|搜集资料|请稍候|稍候|请等待/i.test(text);
+    return /\bresearching(?:\s+websites?)?\b|research in progress|working on your research|generating research plan|gathering sources|creating report|planning research|Researching|Researching|localized text|Generating research plan|Collecting sources|please wait|please wait|please wait/i.test(text);
 }
 function isDeepResearchCompleted(text) {
-    return /\bcompleted\b|research complete|completed research|report completed|已完成|研究完成|完成了研究|报告已完成/i.test(text);
+    return /\bcompleted\b|research complete|completed research|report completed|Completed|Research complete|Research complete|Report complete/i.test(text);
 }
 async function resolveDeepResearchExportResponse(page, timeoutSeconds) {
     const exported = await exportGeminiDeepResearchReport(page, timeoutSeconds);

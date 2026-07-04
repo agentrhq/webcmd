@@ -18,7 +18,7 @@ cli({
   const container = btn.closest('button') || btn.closest('[role="button"]') || btn;
   const aria = (container.getAttribute('aria-label') || '').toLowerCase();
   const color = window.getComputedStyle(btn).color;
-  const isLiked = aria.includes('unlike') || aria.includes('取消点赞') ||
+  const isLiked = aria.includes('unlike') || aria.includes('Unlike') ||
                   (color && (color.includes('255, 65') || color.includes('fe2c55')));
   if (!isLiked) {
     const count = document.querySelector('[data-e2e="like-count"]');

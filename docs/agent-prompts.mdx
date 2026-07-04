@@ -1,0 +1,93 @@
+---
+title: Agent Prompts
+description: Prompt examples for creating, extending, using, and healing Webcmd CLIs with an agent.
+---
+
+# Agent Prompts
+
+Webcmd is meant to be driven by agents. Your job is to describe the target, workflow, output, and constraints. The agent should do the crawling, implementation, and verification.
+
+## Create a New CLI
+
+```text
+Create a Webcmd CLI for example.com job search. I want:
+- command: webcmd example jobs
+- input: search query and optional location
+- output: title, company, location, salary_text, posted_at, url
+- format: JSON-friendly rows
+Keep it as a private adapter and verify it with a smoke test.
+```
+
+```text
+Build a Webcmd adapter for the logged-in Acme dashboard that lists invoices. Use my work browser profile. Return invoice_id, customer, due_date, amount, status, and detail_url. Do not store credentials in code.
+```
+
+## Add a Command to an Existing Site
+
+```text
+Extend the existing Webcmd GitHub adapter with a command that lists open pull requests assigned to me. Reuse existing helpers where possible, return stable JSON, and add tests for the parser.
+```
+
+```text
+Add a `profile-posts` command to the LinkedIn adapter. It should accept a profile URL and return recent post text, post URL, reaction count, comment count, and timestamp.
+```
+
+## Heal a Broken CLI
+
+```text
+The command `webcmd example jobs "designer"` used to work but now returns empty rows. Diagnose it, repair the adapter, run verification, and explain what changed.
+```
+
+```text
+This adapter fails after login. Use Webcmd trace and browser tooling to find whether the site changed selectors, API fields, or auth behavior. Patch the adapter and keep the output schema unchanged.
+```
+
+## Improve Output Shape
+
+```text
+Update `webcmd acme invoices` so it also returns purchase_order, currency, and paid_at when available. Keep existing columns stable and add nulls for missing optional fields.
+```
+
+```text
+Normalize dates in `webcmd events search` to ISO 8601. Keep the table readable, but make JSON output easy for another agent to consume.
+```
+
+## Turn a Repeated Task Into a Command
+
+```text
+I often search this supplier portal for part numbers and copy price, stock, MOQ, and lead time. Create a Webcmd command that takes one or more part numbers and returns those fields as JSON.
+```
+
+```text
+Create a CLI for this internal review tool. Given a project ID, it should return open review comments grouped by file, with author, severity, comment text, and deep link.
+```
+
+## Package Work as a Plugin
+
+```text
+Create a Webcmd plugin for our internal tools. Start with commands for Jira release notes, Confluence page lookup, and the Acme billing dashboard. Include clear command descriptions and install instructions.
+```
+
+```text
+Move my private `acme` adapters into a plugin called `webcmd-acme`. Keep the commands compatible and add a README with examples.
+```
+
+## Ask for a Plan First
+
+```text
+Before writing code, inspect the existing Webcmd adapter patterns and propose the smallest adapter design for this site. Include command names, output columns, auth needs, and verification plan.
+```
+
+## Good Prompt Ingredients
+
+Include as many of these as you know:
+
+- Target site, app, or API.
+- Workflow goal.
+- Command name you want.
+- Inputs and options.
+- Output columns or JSON schema.
+- Whether login is required.
+- Whether the adapter should be private, plugin-based, or upstream-ready.
+- Examples of successful output.
+- Constraints such as "do not post anything" or "read-only only."

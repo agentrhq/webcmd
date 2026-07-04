@@ -60,14 +60,14 @@ cli({
     site: 'substack',
     name: 'search',
     access: 'read',
-    description: '搜索 Substack 文章和 Newsletter',
+    description: 'Search Substack posts and newsletters',
     domain: 'substack.com',
     strategy: Strategy.PUBLIC,
     browser: false,
     args: [
-        { name: 'keyword', required: true, positional: true, help: '搜索关键词' },
-        { name: 'type', default: 'posts', choices: ['posts', 'publications'], help: '搜索类型（posts=文章, publications=Newsletter）' },
-        { name: 'limit', type: 'int', default: 20, help: '返回结果数量' },
+        { name: 'keyword', required: true, positional: true, help: 'Search keyword' },
+        { name: 'type', default: 'posts', choices: ['posts', 'publications'], help: 'Search type(posts=posts, publications=Newsletter)' },
+        { name: 'limit', type: 'int', default: 20, help: 'Number of results to return' },
     ],
     columns: ['rank', 'title', 'author', 'date', 'description', 'url'],
     func: async (args) => {

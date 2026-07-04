@@ -8,7 +8,7 @@
 //   2. silent-bad-shape — the old time field used a dash sentinel for
 //      unknown values; typed unknown should be `null` so an agent caller
 //      does not have to learn in-band sentinel strings.
-//   3. silent-column-drop — the IIFE saw the `<div>未读</div>` /
+//   3. silent-column-drop — the IIFE saw the `<div>Unread</div>` /
 //      `<div>Unread</div>` badge child and the anchor's `<a href>` URL
 //      but kept neither, so callers got a bare text blob with no way
 //      to follow up on a notification.
@@ -22,8 +22,7 @@
 //     silent clamp; `ArgumentError` on bad input.
 //   - Pure extractor `extractNotificationRowsFromDoc` is a Node-side
 //     export — JSDOM-against-frozen-fixture tests call it directly while
-//     the live IIFE embeds it via `${fn.toString()}` (mirrors hupu
-//     #1387 / xiaoe #1388 / dianping #1313 pattern). Helpers
+//     the live IIFE embeds it via `${fn.toString()}`. Helpers
 //     `stripMarkAsReadPrefix`, `stripAnchorChrome`, `parseNotifQuery`
 //     are also pure exports for the same reason.
 //   - Seven columns instead of three:
@@ -50,24 +49,24 @@ export const NOTIFICATIONS_LIMIT_MAX = 100;
 
 // Locale-specific "Mark as read" button prefixes Facebook attaches to
 // the per-row mark-as-read action. We use this to recover the bare
-// notification body text without the leading "未读" / "Unread" badge or
+// notification body text without the leading "Unread" / "Unread" badge or
 // the trailing time-ago suffix that the anchor's textContent contains.
 //
 // Each entry must be a complete, deterministic prefix — no regex — so a
 // rare false-positive substring match elsewhere on the page does not
 // silently truncate body text.
 export const MARK_AS_READ_PREFIXES = [
-    '标记为已读，',
+    'Mark as read,',
     'Mark as read, ',
     'Mark as Read, ',
     'Marquer comme lu, ',
     'Marcar como leído, ',
-    '既読にする, ',
+    'Readにする, ',
 ];
 
 // Localised "unread" badge labels that appear inside a `<div>` inside
 // the notification listitem. Used to set the typed `unread` boolean.
-export const UNREAD_BADGE_LABELS = ['未读', 'Unread', 'No leído', '未読'];
+export const UNREAD_BADGE_LABELS = ['Unread', 'Unread', 'No leído', 'Unread'];
 
 export function normalizeNotificationsLimit(raw) {
     if (raw === undefined || raw === null || raw === '') {
@@ -102,14 +101,14 @@ export function stripMarkAsReadPrefix(label, prefixes) {
     return null;
 }
 
-// Pure: strip the leading "未读" / "Unread" badge prefix and the trailing
-// time-ago suffix (e.g. "2天" / "5 hrs") from the rendered text of a
+// Pure: strip the leading "Unread" / "Unread" badge prefix and the trailing
+// time-ago suffix (e.g. "2days" / "5 hrs") from the rendered text of a
 // notification anchor. Used as a fallback when the mark-as-read
 // aria-label is not present (already-read rows).
 //
 // `badges` is the localized unread-badge labels list; `timeStr` is the
 // trailing time string previously extracted from `<abbr>` (or `null`).
-// Trailing `.` / `。` that Facebook inserts between body and time are
+// Trailing `.` / `.` that Facebook inserts between body and time are
 // also stripped — but only at the very end, never mid-text.
 export function stripAnchorChrome(rawText, timeStr, badges) {
     if (!rawText) return '';
@@ -127,7 +126,7 @@ export function stripAnchorChrome(rawText, timeStr, badges) {
             text = text.slice(0, text.length - t.length).trim();
         }
     }
-    text = text.replace(/[.。]+$/, '').trim();
+    text = text.replace(/[..]+$/, '').trim();
     return text;
 }
 
@@ -156,7 +155,7 @@ export function isFacebookAuthRedirectPath(pathname) {
 
 // Pure extractor: walks `[role="listitem"]` containers in `doc` and
 // returns at most `limit` notification rows. Header listitems (those
-// without an `<a href>` child — e.g. the "新通知" / "Earlier" section
+// without an `<a href>` child — e.g. the "New notifications" / "Earlier" section
 // heading FB inserts at the top of the feed) are skipped.
 //
 // `helpers` carries the four pure helpers as positional refs so the
@@ -177,7 +176,7 @@ export function extractNotificationRowsFromDoc(doc, limit, helpers) {
         const abbr = item.querySelector('abbr');
         const time = abbr ? ((abbr.textContent || '').trim() || null) : null;
 
-        // Unread badge: prefer the explicit `<div>未读</div>` /
+        // Unread badge: prefer the explicit `<div>Unread</div>` /
         // `<div>Unread</div>` child; fall back to anchor text prefix.
         let unread = false;
         const allDivs = item.querySelectorAll('div');
@@ -208,7 +207,7 @@ export function extractNotificationRowsFromDoc(doc, limit, helpers) {
             const label = labelHosts[k].getAttribute('aria-label');
             const stripped = helpers.stripMark(label, helpers.markPrefixes);
             if (stripped !== null) {
-                const cleaned = stripped.replace(/[.。]+$/, '').trim();
+                const cleaned = stripped.replace(/[..]+$/, '').trim();
                 text = cleaned || null;
                 break;
             }
@@ -311,7 +310,7 @@ export const notificationsCommand = cli({
     site: 'facebook',
     name: 'notifications',
     access: 'read',
-    description: 'Get recent Facebook notifications (含 unread / time / url / notif_id / notif_type 列)',
+    description: 'Get recent Facebook notifications (includes unread / time / url / notif_id / notif_type columns)',
     domain: 'www.facebook.com',
     strategy: Strategy.COOKIE,
     browser: true,

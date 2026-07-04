@@ -74,7 +74,7 @@ cli({
         ]));
         if (!sendRes?.ok) {
             // Fallback: try clickByText.
-            const textRes = await evaluateQoder(page, clickByTextScript(['Send message', 'Send', '发送']));
+            const textRes = await evaluateQoder(page, clickByTextScript(['Send message', 'Send', 'Send']));
             if (!textRes?.ok) throw new CommandExecutionError('Send button not found', '');
         }
         const afterCount = await waitForMessageCountGrowth(page, beforeCount);
@@ -111,7 +111,7 @@ cli({
         await page.wait(0.3);
         const sendRes = await evaluateQoder(page, clickFirstScript(['button[aria-label="Send message"]', 'button[title="Send message"]']));
         if (!sendRes?.ok) {
-            const textRes = await evaluateQoder(page, clickByTextScript(['Send message', 'Send', '发送']));
+            const textRes = await evaluateQoder(page, clickByTextScript(['Send message', 'Send', 'Send']));
             if (!textRes?.ok) throw new CommandExecutionError('Send button not found', '');
         }
 

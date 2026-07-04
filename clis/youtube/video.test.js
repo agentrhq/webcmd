@@ -21,8 +21,8 @@ const videoSource = readFileSync(resolve(__dirname, 'video.js'), 'utf8');
 
 describe('youtube video source contract', () => {
   it('extracts playability gate signals inside the watch bootstrap evaluate', () => {
-    // 会员专享视频 metadata 照常可见但流不可播——playabilityStatus 是判断依据；
-    // reason 文本本地化，membersOnly 必须用 locale 无关的徽标枚举判定。
+    // members-only video metadata localized text——playabilityStatus is the decision source;
+    // reason localized text,membersOnly must use locale locale-independent badge enum detection.
     expect(videoSource).toContain('player.playabilityStatus');
     expect(videoSource).toContain('BADGE_STYLE_TYPE_MEMBERS_ONLY');
   });
@@ -39,8 +39,8 @@ describe('youtube video row mapping', () => {
 
   it('surfaces playabilityStatus / playabilityReason / membersOnly as rows', async () => {
     page.evaluate.mockResolvedValueOnce({
-      title: 'Koji杨远骋：高手如何用AI？',
-      channel: '课代表立正',
+      title: 'KojiKoji Yang:How experts useAI?',
+      channel: 'Class Notes',
       videoId: 'jgeqHyFzfIM',
       playabilityStatus: 'UNPLAYABLE',
       playabilityReason: "This video is available to this channel's members",
@@ -53,8 +53,8 @@ describe('youtube video row mapping', () => {
     expect(byField.playabilityStatus).toBe('UNPLAYABLE');
     expect(byField.membersOnly).toBe('true');
     expect(byField.playabilityReason).toContain('members');
-    // metadata 行照常返回（会员视频标题等仍可见）
-    expect(byField.title).toBe('Koji杨远骋：高手如何用AI？');
+    // metadata metadata rows still return(member video metadata remains visible)
+    expect(byField.title).toBe('KojiKoji Yang:How experts useAI?');
   });
 
   it('reports OK playability for a normal video', async () => {

@@ -12,44 +12,44 @@ export const CHATGPT_URL = 'https://chatgpt.com';
 const CHATGPT_MODEL_TARGETS = {
     fast: {
         label: 'Fast',
-        labels: ['Fast', 'Speed', 'Instant', '极速', '即时'],
-        optionLabels: ['Fast', 'Speed', 'Instant', '极速', '即时'],
+        labels: ['Fast', 'Speed', 'Instant', 'fast', 'localized text'],
+        optionLabels: ['Fast', 'Speed', 'Instant', 'fast', 'localized text'],
         testIds: ['model-switcher-gpt-5-5'],
         intelligenceOrder: 0,
-        aliases: ['speed', 'instant', '极速'],
+        aliases: ['speed', 'instant', 'fast'],
     },
     balanced: {
         label: 'Balanced',
-        labels: ['Balanced', 'Balance', 'Medium', '均衡'],
-        optionLabels: ['Balanced', 'Balance', 'Medium', '均衡'],
+        labels: ['Balanced', 'Balance', 'Medium', 'balanced'],
+        optionLabels: ['Balanced', 'Balance', 'Medium', 'balanced'],
         testIds: [],
         intelligenceOrder: 1,
-        aliases: ['balance', 'medium', '均衡'],
+        aliases: ['balance', 'medium', 'balanced'],
     },
     advanced: {
         label: 'Advanced',
-        labels: ['Advanced', 'High', 'Thinking', '高级', '思考'],
-        optionLabels: ['Advanced', 'High', 'Thinking', '高级', '思考'],
+        labels: ['Advanced', 'High', 'Thinking', 'advanced', 'thinking'],
+        optionLabels: ['Advanced', 'High', 'Thinking', 'advanced', 'thinking'],
         testIds: ['model-switcher-gpt-5-5-thinking'],
         intelligenceOrder: 2,
-        aliases: ['high', 'thinking', '高级'],
+        aliases: ['high', 'thinking', 'advanced'],
         modelConfig: { modelSlug: 'gpt-5-5-thinking', effort: 'extended' },
     },
     'very-high': {
         label: 'Very High',
-        labels: ['Very High', 'Extra High', 'Ultra', 'XHigh', 'X-High', '超高'],
-        optionLabels: ['Very High', 'Extra High', 'Ultra', 'XHigh', 'X-High', '超高'],
+        labels: ['Very High', 'Extra High', 'Ultra', 'XHigh', 'X-High', 'very high'],
+        optionLabels: ['Very High', 'Extra High', 'Ultra', 'XHigh', 'X-High', 'very high'],
         testIds: [],
         intelligenceOrder: 3,
-        aliases: ['ultra', 'xhigh', 'x-high', 'extra-high', '超高'],
+        aliases: ['ultra', 'xhigh', 'x-high', 'extra-high', 'very high'],
     },
     pro: {
         label: 'Pro',
-        labels: ['Pro', 'Professional', '进阶专业', '专业'],
-        optionLabels: ['专业', 'Pro', 'Professional', '进阶专业'],
+        labels: ['Pro', 'Professional', 'professional', 'professional'],
+        optionLabels: ['professional', 'Pro', 'Professional', 'professional'],
         testIds: ['model-switcher-gpt-5-5-pro'],
         intelligenceOrder: 4,
-        aliases: ['professional', '专业'],
+        aliases: ['professional', 'professional'],
         modelConfig: { modelSlug: 'gpt-5-5-pro', effort: 'standard' },
     },
 };
@@ -66,8 +66,8 @@ function debugChatGPTModel(message) {
 }
 
 const CHATGPT_TOOL_OPTIONS = {
-    'deep-research': { label: 'Deep Research', labels: ['深度研究', 'Deep Research'] },
-    'web-search': { label: 'Web Search', labels: ['网页搜索', '搜索', 'Web Search', 'Search'] },
+    'deep-research': { label: 'Deep Research', labels: ['Deep Research', 'Deep Research'] },
+    'web-search': { label: 'Web Search', labels: ['Web Search', 'Search', 'Web Search', 'Search'] },
 };
 export const CHATGPT_TOOL_CHOICES = Object.keys(CHATGPT_TOOL_OPTIONS);
 
@@ -76,9 +76,9 @@ const COMPOSER_SELECTORS = [
     '[contenteditable="true"][role="textbox"]',
     '#prompt-textarea[contenteditable="true"]',
     '[aria-label="Chat with ChatGPT"]',
-    '[aria-label="与 ChatGPT 聊天"]',
+    '[aria-label="localized text ChatGPT chat"]',
     '[placeholder="Ask anything"]',
-    '[placeholder="有问题，尽管问"]',
+    '[placeholder="Ask anything,ask away"]',
     '#prompt-textarea',
     '[data-testid="prompt-textarea"]',
 ];
@@ -90,13 +90,13 @@ const SEND_BUTTON_LABELS = [
     'Send prompt',
     'Send message',
     'Send',
-    '发送',
-    '发送消息',
-    '发送提示',
+    'Send',
+    'Send message',
+    'Send prompt',
 ];
 const CLOSE_SIDEBAR_LABELS = [
     'Close sidebar',
-    '关闭边栏',
+    'Close sidebar',
 ];
 
 function isSameChatGPTConversation(currentUrl, expectedUrl) {
@@ -179,8 +179,7 @@ export function requireNonNegativeInt(value, flagLabel, hint) {
 // The browser bridge wraps every `page.evaluate(...)` return value in a
 // `{ session, data }` envelope. Adapters that read `.length` or
 // `Array.isArray(payload)` directly on the envelope silently see "no data" —
-// this matches the failure mode fixed for xiaohongshu/rednote (#1561) and
-// weibo (#1568).
+// this matches the failure mode fixed in earlier adapter regressions.
 //
 // `unwrapEvaluateResult` is a defensive ternary: it unwraps when the payload
 // looks like an envelope, otherwise passes the value through unchanged so
@@ -618,8 +617,8 @@ export async function selectChatGPTModel(page, model) {
         const menuButtonSelectors = [
             'button[data-testid="model-switcher-dropdown-button"]',
             'button[aria-label*="model" i]',
-            'button[aria-label*="模型"]',
-            'button[aria-label*="智能"]',
+            'button[aria-label*="model"]',
+            'button[aria-label*="smart"]',
         ];
         let button = Array.from(document.querySelectorAll('form button')).find((node) =>
             isVisible(node) && labels.some((label) => textMatchesLabel(node.textContent, label))
@@ -866,7 +865,7 @@ export async function selectChatGPTTool(page, tool) {
 export async function clearChatGPTDraft(page) {
     await page.evaluate(`
         (() => {
-            const removeLabels = [/^remove file/i, /^移除文件/];
+            const removeLabels = [/^remove file/i, /^Remove file/];
             for (let pass = 0; pass < 10; pass += 1) {
                 const button = Array.from(document.querySelectorAll('button')).find((node) => {
                     const label = node.getAttribute('aria-label') || '';
@@ -1013,7 +1012,7 @@ export async function sendChatGPTMessage(page, text) {
                 const looksLikeSend = (button) => {
                     const label = button.getAttribute('aria-label') || '';
                     const text = (button.innerText || button.textContent || '').replace(/\\s+/g, ' ').trim();
-                    return labels.includes(label) || labels.includes(text) || /send|发送/i.test(label) || /send|发送/i.test(text);
+                    return labels.includes(label) || labels.includes(text) || /send|Send/i.test(label) || /send|Send/i.test(text);
                 };
                 const sendBtn = isUsable(primary)
                     ? primary
@@ -1049,7 +1048,7 @@ export async function sendChatGPTMessage(page, text) {
             const looksLikeSend = (button) => {
                 const label = button.getAttribute('aria-label') || '';
                 const text = (button.innerText || button.textContent || '').replace(/\\s+/g, ' ').trim();
-                return labels.includes(label) || labels.includes(text) || /send|发送/i.test(label) || /send|发送/i.test(text);
+                return labels.includes(label) || labels.includes(text) || /send|Send/i.test(label) || /send|Send/i.test(text);
             };
             const sendBtn = isUsable(primary)
                 ? primary
@@ -1191,7 +1190,7 @@ function normalizeDeepResearchText(value) {
 function looksLikeDeepResearchReport(text) {
     const normalized = normalizeDeepResearchText(text);
     if (normalized.length < 500) return false;
-    return /(^|\n)\s*#{1,3}\s+\S|Sources|References|参考|来源|结论|建议|Executive Summary|摘要/i.test(normalized);
+    return /(^|\n)\s*#{1,3}\s+\S|Sources|References|References|sources|Conclusion|Suggestion|Executive Summary|Summary/i.test(normalized);
 }
 
 function parseJsonMaybe(value) {
@@ -2172,13 +2171,13 @@ export async function isGenerating(page) {
     return requireBooleanEvaluateResult(unwrapEvaluateResult(await page.evaluate(`
         (() => {
             const text = (document.body?.innerText || '').replace(/\\s+/g, ' ');
-            if (/正在思考|停止生成|Thinking/.test(text)) return true;
+            if (/Thinking|Stop generating|Thinking/.test(text)) return true;
             return Array.from(document.querySelectorAll('button')).some(b => {
                 const label = b.getAttribute('aria-label') || '';
                 return label === 'Stop generating'
                     || label.includes('Thinking')
-                    || label.includes('停止生成')
-                    || label.includes('正在思考');
+                    || label.includes('Stop generating')
+                    || label.includes('Thinking');
             });
         })()
     `)), 'chatgpt generation state');
@@ -2228,12 +2227,12 @@ export async function getChatGPTVisibleImageUrls(page) {
                 const alt = (img.getAttribute('alt') || '').toLowerCase();
                 const turn = img.closest('section[data-testid^="conversation-turn"]');
                 const heading = (turn?.querySelector('h4')?.innerText || '').toLowerCase();
-                if (/you said|你说/.test(heading)) return true;
-                if (/chatgpt|assistant|助手/.test(heading)) return false;
+                if (/you said|You said/.test(heading)) return true;
+                if (/chatgpt|assistant|Assistant/.test(heading)) return false;
                 const openButtonLabel = (img.closest('button[aria-label^="Open image:"]')?.getAttribute('aria-label') || '').toLowerCase();
                 const previewText = [alt, openButtonLabel].join(' ');
                 return /\.(png|jpe?g|webp|gif|heic|heif)(?:\b|$)/i.test(previewText)
-                    || /ref-|reference|参考|upload|uploaded|attachment/.test(previewText);
+                    || /ref-|reference|References|upload|uploaded|attachment/.test(previewText);
             };
 
             const imgs = Array.from(document.querySelectorAll('img')).filter(img =>
@@ -2387,7 +2386,7 @@ export async function getProjectList(page) {
     await page.evaluate(`(() => {
         var btn = Array.from(document.querySelectorAll('button')).find(function(b) {
             var text = (b.innerText || '').trim();
-            return text === 'Show more' || text === '显示更多' || text === '查看更多';
+            return text === 'Show more' || text === 'Show more' || text === 'See more';
         });
         if (btn instanceof HTMLElement) {
             btn.click();
@@ -2403,7 +2402,7 @@ export async function getProjectList(page) {
         await page.evaluate(`(() => {
             var btn = Array.from(document.querySelectorAll('button')).find(function(b) {
                 var text = (b.innerText || '').trim();
-                return text === 'Show more' || text === '显示更多' || text === '查看更多';
+                return text === 'Show more' || text === 'Show more' || text === 'See more';
             });
             if (btn instanceof HTMLElement) {
                 btn.click();
@@ -2544,9 +2543,9 @@ async function extractProjectLinks(page) {
 const PROJECT_ADD_FILES_LABELS = [
     'Add files',
     'Add sources',
-    '添加文件',
+    'Add file',
     'Project files',
-    '项目文件',
+    'Project files',
 ];
 
 const PROJECT_ADD_FILES_DIALOG_SELECTORS = [
@@ -2605,7 +2604,7 @@ export async function openProjectKnowledgeDialog(page) {
             const sourcesTab = Array.from(document.querySelectorAll('[role="tab"], button')).find(el => {
                 const text = (el.innerText || el.textContent || '').trim();
                 const id = el.id || '';
-                return text === 'Sources' || text === '资料' || id.includes('-sources');
+                return text === 'Sources' || text === 'Sources' || id.includes('-sources');
             });
             if (sourcesTab instanceof HTMLElement) {
                 if (sourcesTab.getAttribute('aria-selected') === 'true') return { ok: true };

@@ -70,8 +70,8 @@ cli({
         //
         // Intermediate object keys avoid `rank`/`title`/`subreddit`/etc. to
         // sidestep the silent-column-drop audit; we use `entries` for the
-        // raw payload. See PR #1329 sediment "中间解析对象 key 不能跟
-        // columns 任一项重叠".
+        // raw payload. See PR #1329 sediment "intermediate parse object key must not overlap with
+        // columns any column".
         const result = await page.evaluate(`(async () => {
       try {
         const meRes = await fetch('/api/me.json', { credentials: 'include' });

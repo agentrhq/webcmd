@@ -12,7 +12,7 @@ cli({
     site: 'reuters',
     name: 'search',
     access: 'read',
-    description: 'Reuters 路透社新闻搜索',
+    description: 'Reuters Reuters news search',
     domain: 'www.reuters.com',
     strategy: Strategy.COOKIE,
     args: [

@@ -1,0 +1,100 @@
+---
+title: Command Surface
+description: The Webcmd commands agents use for discovery, adapter execution, plugins, profiles, and validation.
+---
+
+# Command Surface
+
+This page helps you understand what an agent is doing when it uses Webcmd. You do not need to run every command yourself.
+
+## Discovery
+
+```bash
+webcmd list
+webcmd list -f json
+webcmd <site> --help
+webcmd <site> <command> --help
+```
+
+`webcmd list -f json` is the source of truth for agents. It includes the site, command name, args, output columns, strategy, and browser requirement.
+
+## Adapter Execution
+
+```bash
+webcmd <site> <command> [args] [options]
+```
+
+Examples:
+
+```bash
+webcmd hackernews top --limit 10
+webcmd wikipedia summary "Command-line interface"
+webcmd pubmed search "agentic browser automation" --limit 5 -f json
+```
+
+Agents should prefer existing adapters before browser exploration. That keeps tasks fast and repeatable.
+
+## Top-Level Commands
+
+| Command | Purpose |
+| --- | --- |
+| `list` | Show registered built-in, user, plugin, and external commands. |
+| `doctor` | Diagnose browser bridge and daemon connectivity. |
+| `browser` | Agent-facing browser runtime for exploration and verification. |
+| `profile` | List, rename, and select browser runtime profiles. |
+| `plugin` | Install, update, list, create, and uninstall plugins. |
+| `adapter` | Eject, reset, and inspect local adapter overrides. |
+| `external` | Register or install external local CLIs. |
+| `validate` | Validate adapter definitions. |
+| `verify` | Validate and smoke test an adapter. |
+| `skills` | List and read bundled Webcmd agent skills. |
+| `completion` | Print shell completion scripts. |
+
+## Output Formats
+
+```bash
+webcmd hackernews top -f table
+webcmd hackernews top -f json
+webcmd hackernews top -f yaml
+webcmd hackernews top -f md
+webcmd hackernews top -f csv
+```
+
+Agents should use JSON unless they are presenting output to a human.
+
+## Profiles
+
+Profiles keep login state separate:
+
+```bash
+webcmd profile list
+webcmd profile use work
+```
+
+Prompt example:
+
+```text
+Use the `work` profile for this Webcmd task. If it is not authenticated, stop and ask me to sign in.
+```
+
+## External CLIs
+
+Agents can expose local tools through Webcmd, such as `gh`, `docker`, `vercel`, or internal CLIs.
+
+Prompt example:
+
+```text
+Register our internal `releasectl` binary as a Webcmd external CLI with a short description and verify that `webcmd releasectl --help` works.
+```
+
+## Useful Paths
+
+| Path | Purpose |
+| --- | --- |
+| `~/.webcmd/` | User-level Webcmd state. |
+| `~/.webcmd/clis/` | Private adapters and local overrides. |
+| `~/.webcmd/cache/browser-network/` | Browser network capture cache. |
+| `~/.webcmd/external-clis.yaml` | User external CLI registry. |
+| `skills/` | Bundled agent skills shipped with the package. |
+
+These paths are mostly useful when reviewing an agent's changes or packaging adapters into plugins.

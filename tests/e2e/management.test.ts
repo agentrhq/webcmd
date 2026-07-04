@@ -29,7 +29,7 @@ describe('management commands E2E', () => {
     expect(code).toBe(0);
     // Should contain site names
     expect(stdout).toContain('hackernews');
-    expect(stdout).toContain('bilibili');
+    expect(stdout).toContain('youtube');
     expect(stdout).toContain('twitter');
     expect(stdout).toContain('commands across');
   });

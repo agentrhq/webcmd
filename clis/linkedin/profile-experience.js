@@ -50,7 +50,7 @@ function isDateLine(line) {
 }
 
 function splitLinkedInDotLine(line) {
-  return normalizeWhitespace(line).split(/\s*[·•]\s*/).map(normalizeWhitespace).filter(Boolean);
+  return normalizeWhitespace(line).split(/\s*[\u00b7•]\s*/).map(normalizeWhitespace).filter(Boolean);
 }
 
 function parseDateRangeParts(dateLine) {
@@ -65,7 +65,7 @@ function parseCompanyLine(companyLine) {
   const parts = splitLinkedInDotLine(companyLine);
   return {
     company: parts[0] || normalizeWhitespace(companyLine),
-    employment_type: parts.slice(1).join(' · '),
+    employment_type: parts.slice(1).join(' \u00b7 '),
   };
 }
 
@@ -73,7 +73,7 @@ function parseLocationLine(locationLine) {
   const parts = splitLinkedInDotLine(locationLine);
   return {
     location: parts[0] || normalizeWhitespace(locationLine),
-    location_type: parts.slice(1).join(' · '),
+    location_type: parts.slice(1).join(' \u00b7 '),
   };
 }
 
@@ -155,7 +155,7 @@ function buildExperienceExtractionScript() {
     const isDateLine = (line) => DATE_RANGE_RE.test(line) || YEAR_RANGE_RE.test(line);
     const isChromeLine = (line) => /^(show all|show less|edit|delete|add experience|back to profile|experience|show credential|show media|see more|see less|←|\+)$/i.test(line);
     const splitLines = (text) => String(text || '').split(/\n+/).map(clean).filter(Boolean);
-    const splitDotLine = (line) => clean(line).split(/\s*[·•]\s*/).map(clean).filter(Boolean);
+    const splitDotLine = (line) => clean(line).split(/\s*[\u00b7•]\s*/).map(clean).filter(Boolean);
     const looksLocationLine = (line) => /remote|hybrid|on-site|india|area|bengaluru|jaipur|delhi|mumbai|pune|gurugram|noida|hyderabad|chennai|kolkata/i.test(line || '');
     const decodeLinkedInSafetyUrl = (value) => {
       if (!value) return '';
@@ -195,7 +195,7 @@ function buildExperienceExtractionScript() {
       const groupEmploymentParts = splitDotLine(context.employment_type || '');
       const company = (dateIndex > 1 ? companyParts[0] : '') || context.company || ariaMatch?.[2] || companyParts[0] || companyLine;
       const parsedEmploymentType = dateIndex > 1
-        ? companyParts.slice(1).join(' · ')
+        ? companyParts.slice(1).join(' \u00b7 ')
         : (groupEmploymentParts[0] || context.employment_type || '');
       const dateParts = dateIndex >= 0 ? parseDateParts(lines[dateIndex]) : { dateRange: '', startDate: '', endDate: '' };
       const lineAfterDate = dateIndex >= 0 ? lines[dateIndex + 1] : '';
@@ -253,7 +253,7 @@ function buildExperienceExtractionScript() {
         start_date: dateParts.startDate,
         end_date: dateParts.endDate,
         location: locationParts[0] || locationLine,
-        location_type: locationParts.slice(1).join(' · '),
+        location_type: locationParts.slice(1).join(' \u00b7 '),
         description,
         skills: skillLine.replace(/^skills?:\s*/i, ''),
         media: Array.from(new Set(media)).join(' | '),

@@ -134,7 +134,7 @@ export function buildListChannelsScript() {
 
         function cleanChannelLabel(label) {
           var cleaned = String(label || '').trim();
-          var commaIdx = cleaned.search(/[,，]/);
+          var commaIdx = cleaned.search(/[,,]/);
           if (commaIdx !== -1) cleaned = cleaned.slice(commaIdx + 1).trimStart();
           return cleaned;
         }
@@ -151,12 +151,12 @@ export function buildListChannelsScript() {
 
         function channelName(label, el) {
           var cleaned = cleanChannelLabel(label);
-          var m = cleaned.match(/^(.+?)\\s*[（(](.+?)[）)]\\s*$/);
+          var m = cleaned.match(/^(.+?)\\s*[((](.+?)[))]\\s*$/);
           if (m) return m[1].trim();
           var ariaName = el.getAttribute('aria-label') || '';
-          if (ariaName && ariaName !== label) return cleanChannelLabel(ariaName).replace(/\\s*[（(].*?[）)]\\s*$/, '').trim();
+          if (ariaName && ariaName !== label) return cleanChannelLabel(ariaName).replace(/\\s*[((].*?[))]\\s*$/, '').trim();
           var text = (el.textContent || '').replace(/\\s+/g, ' ').trim();
-          return text.replace(/\\s*[（(].*?[）)]\\s*$/, '').trim();
+          return text.replace(/\\s*[((].*?[))]\\s*$/, '').trim();
         }
 
         var links = Array.from(document.querySelectorAll('a[href*="/channels/"]'));
@@ -171,7 +171,7 @@ export function buildListChannelsScript() {
 
           var label = el.getAttribute('aria-label') || el.getAttribute('title') || '';
           var cleaned = cleanChannelLabel(label);
-          if (/[（(]\\s*category\\s*[）)]/i.test(cleaned)) return;
+          if (/[((]\\s*category\\s*[))]/i.test(cleaned)) return;
 
           var name = channelName(cleaned, el);
           if (!name) return;
@@ -355,7 +355,7 @@ export function buildRouteStateScript() {
           route: parseRoute(window.location.href),
           has_messages: !!document.querySelector('[id^="chat-messages-"], [class*="messageListItem"]'),
           has_threads: !!document.querySelector('a[href*="/channels/"][href*="/"]'),
-          has_header: !!document.querySelector('[class*="title"], [aria-label*="Channel"], [aria-label*="频道"]')
+          has_header: !!document.querySelector('[class*="title"], [aria-label*="Channel"], [aria-label*="Channel"]')
         };
       })()
     `;

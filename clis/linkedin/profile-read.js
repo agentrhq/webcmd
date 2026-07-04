@@ -44,7 +44,7 @@ function buildProfileExtractionScript() {
       || line === name
       || /^(1st|2nd|3rd|contact info|message|more|follow|connect|open to|add section|enhance profile|resources|self employed)$/i.test(line)
       || /^\d[\d,]*\s+(followers|connections)/i.test(line)
-      || line === '·';
+      || line === '\u00b7';
     const headline = compact(lines.find((line) => !skipIntro(line) && line.length > 20) || '');
     const locationText = lines.find((line) => /(area|india|jaipur|bangalore|bengaluru|delhi|mumbai|hyderabad|pune)/i.test(line) && line.length < 120) || '';
     const about = readSection(/^About$/i);

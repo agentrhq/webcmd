@@ -260,7 +260,7 @@ function buildInspectReelStageJs() {
           return isVisible(el) && labels.includes(value);
         })
       );
-      if (/something went wrong|please try again|share failed|couldn['’]t be shared|could not be shared|失败|出错/.test(lower)) {
+      if (/something went wrong|please try again|share failed|couldn['']t be shared|could not be shared|failed|error/.test(lower)) {
         return { state: 'failed', detail: text };
       }
       if (/new reel|write a caption|add location|tag people/.test(lower) && hasVisibleButton(['share'])) {
@@ -597,9 +597,9 @@ function buildReelPublishStatusProbeJs() {
       const lower = dialogText.toLowerCase();
       const url = window.location.href;
       const sharingVisible = /sharing/.test(lower);
-      const shared = /your reel has been shared|reel shared|已分享|已发布/.test(lower) || /\\/reel\\//.test(url);
+      const shared = /your reel has been shared|reel shared|Shared|Posted/.test(lower) || /\\/reel\\//.test(url);
       const failed = !shared && !sharingVisible && (
-        /couldn['’]t be shared|could not be shared|share failed|无法分享|分享失败/.test(lower)
+        /couldn['']t be shared|could not be shared|share failed|Unable to share|Share failed/.test(lower)
         || (/something went wrong/.test(lower) && /try again/.test(lower))
       );
       const composerOpen = dialogs.some((dialog) =>
@@ -782,15 +782,15 @@ cli({
                     : new CommandExecutionError('Instagram reel preview did not appear after upload');
             }
             await clickActionMaybe(activePage, ['OK'], 'any');
-            await clickAction(activePage, ['Next', '下一步'], 'media');
+            await clickAction(activePage, ['Next', 'Next'], 'media');
             await waitForReelStage(activePage, 'edit', 20);
-            await clickAction(activePage, ['Next', '下一步'], 'media');
+            await clickAction(activePage, ['Next', 'Next'], 'media');
             await waitForReelStage(activePage, 'composer', 20);
             if (content) {
                 await fillCaption(activePage, content);
                 await ensureCaptionFilled(activePage, content);
             }
-            await clickAction(activePage, ['Share', '分享'], 'caption');
+            await clickAction(activePage, ['Share', 'Share'], 'caption');
             const sharedUrl = await waitForPublishSuccess(activePage);
             const url = sharedUrl || await resolveLatestReelUrl(activePage, existingMediaPaths);
             return buildInstagramReelSuccessResult(url);
