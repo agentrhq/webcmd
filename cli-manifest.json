@@ -3101,6 +3101,253 @@
     "sourceFile": "booking/search.js"
   },
   {
+    "site": "bookmyshow",
+    "name": "cities",
+    "description": "List available cities and regions on BookMyShow",
+    "access": "read",
+    "domain": "in.bookmyshow.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 50,
+        "required": false,
+        "help": "Max rows to return (1-300)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "code",
+      "name",
+      "region",
+      "isTopCity",
+      "sourceUrl",
+      "fetchedAt",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "bookmyshow/cities.js",
+    "sourceFile": "bookmyshow/cities.js",
+    "navigateBefore": "https://in.bookmyshow.com"
+  },
+  {
+    "site": "bookmyshow",
+    "name": "events",
+    "description": "List live events (concerts, comedy, sports, plays) in a city on BookMyShow",
+    "access": "read",
+    "domain": "in.bookmyshow.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "city",
+        "type": "string",
+        "required": true,
+        "positional": true,
+        "help": "City slug (e.g. mumbai, delhi-ncr, bengaluru)"
+      },
+      {
+        "name": "category",
+        "type": "string",
+        "default": "",
+        "required": false,
+        "help": "Filter by category (e.g. music, comedy, sports, plays, workshops)"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "Max rows to return (1-100)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "eventCode",
+      "title",
+      "category",
+      "venue",
+      "date",
+      "price",
+      "currency",
+      "language",
+      "sourceUrl",
+      "fetchedAt",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "bookmyshow/events.js",
+    "sourceFile": "bookmyshow/events.js",
+    "navigateBefore": "https://in.bookmyshow.com"
+  },
+  {
+    "site": "bookmyshow",
+    "name": "movie",
+    "description": "Get movie details by event code from BookMyShow",
+    "access": "read",
+    "domain": "in.bookmyshow.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "code",
+        "type": "string",
+        "required": true,
+        "positional": true,
+        "help": "Movie event code (e.g. ET00412327)"
+      },
+      {
+        "name": "city",
+        "type": "string",
+        "default": "mumbai",
+        "required": false,
+        "help": "City slug for regional data (e.g. mumbai, delhi-ncr)"
+      }
+    ],
+    "columns": [
+      "field",
+      "value"
+    ],
+    "type": "js",
+    "modulePath": "bookmyshow/movie.js",
+    "sourceFile": "bookmyshow/movie.js",
+    "navigateBefore": "https://in.bookmyshow.com"
+  },
+  {
+    "site": "bookmyshow",
+    "name": "movies",
+    "description": "List currently showing movies in a city on BookMyShow",
+    "access": "read",
+    "domain": "in.bookmyshow.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "city",
+        "type": "string",
+        "required": true,
+        "positional": true,
+        "help": "City slug (e.g. mumbai, delhi-ncr, bengaluru)"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "Max rows to return (1-100)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "eventCode",
+      "title",
+      "language",
+      "genre",
+      "certification",
+      "rating",
+      "votes",
+      "releaseDate",
+      "sourceUrl",
+      "fetchedAt",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "bookmyshow/movies.js",
+    "sourceFile": "bookmyshow/movies.js",
+    "navigateBefore": "https://in.bookmyshow.com"
+  },
+  {
+    "site": "bookmyshow",
+    "name": "search",
+    "description": "Search movies, events, and venues on BookMyShow",
+    "access": "read",
+    "domain": "in.bookmyshow.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "query",
+        "type": "string",
+        "required": true,
+        "positional": true,
+        "help": "Search term (movie title, event name, venue, etc.)"
+      },
+      {
+        "name": "city",
+        "type": "string",
+        "default": "mumbai",
+        "required": false,
+        "help": "City slug for regional results (e.g. mumbai, delhi-ncr)"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "Max rows to return (1-50)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "title",
+      "category",
+      "language",
+      "genre",
+      "rating",
+      "releaseDate",
+      "sourceUrl",
+      "fetchedAt",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "bookmyshow/search.js",
+    "sourceFile": "bookmyshow/search.js",
+    "navigateBefore": "https://in.bookmyshow.com"
+  },
+  {
+    "site": "bookmyshow",
+    "name": "upcoming",
+    "description": "List upcoming movies in a city on BookMyShow",
+    "access": "read",
+    "domain": "in.bookmyshow.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "city",
+        "type": "string",
+        "required": true,
+        "positional": true,
+        "help": "City slug (e.g. mumbai, delhi-ncr, bengaluru)"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "Max rows to return (1-100)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "eventCode",
+      "title",
+      "language",
+      "genre",
+      "certification",
+      "releaseDate",
+      "sourceUrl",
+      "fetchedAt",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "bookmyshow/upcoming.js",
+    "sourceFile": "bookmyshow/upcoming.js",
+    "navigateBefore": "https://in.bookmyshow.com"
+  },
+  {
     "site": "brave",
     "name": "search",
     "description": "Search Brave Search",
