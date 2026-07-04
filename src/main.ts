@@ -160,7 +160,7 @@ const { rewriteBrowserArgv, BrowserSessionArgvError, escapeLeadingDashPositional
 try {
   let rewritten = rewriteBrowserArgv(process.argv.slice(2));
   // Insert a `--` separator before a required positional whose value starts
-  // with `-` (e.g. BOSS 直聘 securityId tokens; #1160). Skipped when the
+  // with `-` (e.g. opaque securityId tokens; #1160). Skipped when the
   // manifest is unavailable so the user-cli / dev paths still work.
   try {
     const manifestPath = getCliManifestPath(BUILTIN_CLIS);

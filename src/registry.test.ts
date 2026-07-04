@@ -126,9 +126,9 @@ describe('cli() registration', () => {
 describe('fullName', () => {
   it('returns site/name', () => {
     const cmd: CliCommand = {
-      site: 'bilibili', name: 'hot', access: 'read', description: '', args: [],
+      site: 'youtube', name: 'search', access: 'read', description: '', args: [],
     };
-    expect(fullName(cmd)).toBe('bilibili/hot');
+    expect(fullName(cmd)).toBe('youtube/search');
   });
 });
 

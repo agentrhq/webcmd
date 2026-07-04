@@ -63,12 +63,25 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+const ERROR_CODE_ADVICE: Record<string, RetryAdvice> = {
+  attach_failed: { kind: 'extension-transient', retryable: true, delayMs: 1500 },
+  tab_gone: { kind: 'extension-transient', retryable: true, delayMs: 1500 },
+  target_navigated: { kind: 'target-navigation', retryable: true, delayMs: 200 },
+  detached_mid_command: { kind: 'non-retryable', retryable: false, delayMs: 0 },
+  cdp_timeout: { kind: 'non-retryable', retryable: false, delayMs: 0 },
+};
+
 /**
  * Classify a browser error and return retry advice.
  *
  * Single source of truth for "is this error transient?" across all layers.
  */
 export function classifyBrowserError(err: unknown): RetryAdvice {
+  const code = err && typeof err === 'object' ? (err as { code?: unknown }).code : undefined;
+  if (typeof code === 'string' && ERROR_CODE_ADVICE[code]) {
+    return ERROR_CODE_ADVICE[code];
+  }
+
   const msg = errorMessage(err);
 
   // Runtime/daemon transient errors — longer recovery time

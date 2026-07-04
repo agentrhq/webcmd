@@ -43,7 +43,7 @@ function looksLinkedInAuthWall(value) {
     if (!text) return false;
     return /linkedin\.com\/(?:login|checkpoint|authwall|uas)/i.test(text)
         || /\b(sign in|log in|join linkedin|captcha|verification required)\b/i.test(text)
-        || /(请登录|登录领英|安全验证)/.test(text);
+        || /(Please log in|Log in to LinkedIn|security verification)/.test(text);
 }
 
 function normalizeProfileUrl(value) {
@@ -106,8 +106,8 @@ function extractionScript() {
     const skip = (l) => !l
       || /^Status is/.test(l)
       || /^(Message|Connect|Follow|View profile|Pending|Remove)$/i.test(l)
-      || /^[•·]\s*(?:1st|2nd|3rd\+?|degree)/i.test(l)
-      || /^[•·]/.test(l)
+      || /^[•\u00b7]\s*(?:1st|2nd|3rd\+?|degree)/i.test(l)
+      || /^[•\u00b7]/.test(l)
       || l.includes('mutual connection')
       || l.includes('shared connection')
       || /^Summary:/i.test(l)
@@ -125,7 +125,7 @@ function extractionScript() {
       let name = normalize(aria ? aria.textContent : a.textContent);
       name = name.replace(/^Status is (online|offline)\.?\s*/i, '')
                  .replace(/'?s profile$/i, '')
-                 .replace(/\s*[•·].*$/, '').trim();
+                 .replace(/\s*[•\u00b7].*$/, '').trim();
       if (!name) continue;
       seenHandles.add(profileHandle);
       personEntries.push({ profileHandle, displayName: name });

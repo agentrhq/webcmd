@@ -74,7 +74,7 @@ function renderTable(data: unknown, opts: RenderOptions): void {
   if (opts.elapsed !== undefined) footer.push(`${opts.elapsed.toFixed(1)}s`);
   if (opts.source) footer.push(opts.source);
   if (opts.footerExtra) footer.push(opts.footerExtra);
-  console.log(footer.join(' · '));
+  console.log(footer.join(' | '));
 }
 
 function renderJson(data: unknown): void {

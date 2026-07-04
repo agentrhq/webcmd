@@ -140,7 +140,7 @@ export async function ggbEval(page, cmd) {
         const afterCount = collectNames().length;
         const dialogText = [...document.querySelectorAll('[role="dialog"], .gwt-DialogBox')]
           .map(node => node.textContent?.trim() || '')
-          .find(text => /error|unknown command|错误|未知的指令/i.test(text)) || '';
+          .find(text => /error|unknown command|error|unknown command/i.test(text)) || '';
         return {
           ok: label !== '' || afterCount > beforeCount,
           label,

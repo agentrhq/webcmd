@@ -1,471 +1,278 @@
 # Adapter Template
 
-一份 adapter 就是一次 `cli({...})` 调用。文件结构固定，三段：declaration、args、func。
+Use this after recon, endpoint verification, field decoding, output design, and strategy-note writing are complete.
 
-拿 `clis/eastmoney/convertible.js` 当活例子，对照拆解。
+## Create The File
 
----
+For private iteration:
 
-## 活例子：convertible.js
+```bash
+webcmd browser init <site>/<name> --strategy <strategy>
+```
 
-> **注意（2026-05 起）**：下面这份 `convertible.js` 的 limit clamp 和 `CliError('HTTP_ERROR' / 'NO_DATA')` 是 grandfathered 写法（在 [`scripts/typed-error-lint-baseline.json`](../../../scripts/typed-error-lint-baseline.json) 里）。结构布局（cli 声明 / args / columns / map）仍然是好范本，但 **error 处理 + limit 校验请按下文 §3 + [`typed-errors.md`](./typed-errors.md) 写**。新写 adapter 抄这个文件别连 `Math.max(1, Math.min(...))` 和 `CliError(...)` 一起抄过去。
+Write the working file at:
 
-```javascript
-// eastmoney convertible — on-market convertible bond listing.
+```text
+~/.webcmd/clis/<site>/<name>.js
+```
+
+Copy it to the repo only when preparing a PR:
+
+```text
+clis/<site>/<name>.js
+```
+
+## Minimal Registry Shape
+
+Adapters register commands with `cli` and `Strategy` from `@agentrhq/webcmd/registry`.
+
+```js
 import { cli, Strategy } from '@agentrhq/webcmd/registry';
-import { CliError } from '@agentrhq/webcmd/errors';
-
-const SORTS = {
-  change:   { fid: 'f3',   order: 'desc' },
-  drop:     { fid: 'f3',   order: 'asc' },
-  turnover: { fid: 'f6',   order: 'desc' },
-  price:    { fid: 'f2',   order: 'desc' },
-  premium:  { fid: 'f237', order: 'desc' },
-  value:    { fid: 'f236', order: 'desc' },
-  ytm:      { fid: 'f239', order: 'desc' },
-};
 
 cli({
-  site: 'eastmoney',
-  name: 'convertible',
-  description: '可转债行情列表（默认按成交额排序）',
-  domain: 'push2.eastmoney.com',
+  site: 'hackernews',
+  name: 'top',
+  access: 'read',
+  description: 'Hacker News top stories',
+  domain: 'news.ycombinator.com',
   strategy: Strategy.PUBLIC,
   browser: false,
   args: [
-    { name: 'sort',  type: 'string', default: 'turnover', help: '排序：turnover / change / drop / price / premium' },
-    { name: 'limit', type: 'int',    default: 20,         help: '返回数量 (max 100)' },
+    { name: 'limit', type: 'int', default: 20, help: 'Number of rows' },
   ],
-  columns: ['rank', 'bondCode', 'bondName', 'bondPrice', 'bondChangePct',
-            'stockCode', 'stockName', 'stockPrice', 'stockChangePct',
-            'convPrice', 'convValue', 'convPremiumPct', 'remainingYears', 'ytm', 'listDate'],
+  columns: ['rank', 'title', 'url', 'score', 'author', 'commentCount'],
+  pipeline: [
+    { navigate: 'https://news.ycombinator.com/' },
+    {
+      evaluate: `(async () => {
+        const rows = [...document.querySelectorAll('.athing')].slice(0, \${{ args.limit }});
+        return rows.map((row, index) => {
+          const subtext = row.nextElementSibling;
+          const titleLink = row.querySelector('.titleline a');
+          return {
+            rank: index + 1,
+            title: titleLink?.textContent?.trim() || '',
+            url: titleLink?.href || '',
+            score: Number((subtext?.querySelector('.score')?.textContent || '').match(/\\d+/)?.[0] || 0),
+            author: subtext?.querySelector('.hnuser')?.textContent?.trim() || '',
+            commentCount: Number((subtext?.textContent || '').match(/(\\d+)\\s+comments?/)?.[1] || 0),
+          };
+        });
+      })()`,
+    },
+    {
+      map: {
+        rank: '${{ item.rank }}',
+        title: '${{ item.title }}',
+        url: '${{ item.url }}',
+        score: '${{ item.score }}',
+        author: '${{ item.author }}',
+        commentCount: '${{ item.commentCount }}',
+      },
+    },
+    { limit: '${{ args.limit }}' },
+  ],
+});
+```
+
+Treat this as shape guidance, not a universal solution. Prefer the closest existing adapter for the same site or source type.
+
+## Imports
+
+Allowed imports:
+
+```js
+import { cli, Strategy } from '@agentrhq/webcmd/registry';
+import {
+  ArgumentError,
+  AuthRequiredError,
+  CommandExecutionError,
+  EmptyResultError,
+  TimeoutError,
+} from '@agentrhq/webcmd/errors';
+```
+
+Rules:
+
+- Do not add third-party dependencies.
+- Do not import private repo internals unless an established neighboring adapter already does so.
+- Keep helpers local unless there is real duplication in the same site directory.
+
+## Required Fields
+
+| Field | Rule |
+| --- | --- |
+| `site` | Directory/site id. Keep lowercase and stable. |
+| `name` | Command id. Keep lowercase and stable. |
+| `access` | Usually `read`; use write-like access only for commands that mutate state. |
+| `description` | One clear sentence. |
+| `domain` | Primary domain for auth and help output. |
+| `strategy` | Use a registry enum such as `Strategy.PUBLIC` or `Strategy.COOKIE`; align it with the strategy note. |
+| `browser` | `false` for plain Node-side adapters; `true` when the adapter needs the page, cookie jar, or browser runtime. |
+| `args` | Include type, default, and help for every external parameter. |
+| `columns` | Must exactly match row keys, including order. |
+| `pipeline` or `func` | Use the style already established by nearby adapters. |
+
+## Strategy Enum Examples
+
+The strategy note uses discovery names such as `PUBLIC_API` and `COOKIE_API`. The adapter declaration records the runtime choice with `Strategy` enum values.
+
+Use `Strategy.PUBLIC` when an anonymous, stable endpoint can be fetched directly from Node:
+
+```js
+import { cli, Strategy } from '@agentrhq/webcmd/registry';
+import { ArgumentError, CommandExecutionError, EmptyResultError } from '@agentrhq/webcmd/errors';
+
+cli({
+  site: 'example',
+  name: 'public-list',
+  access: 'read',
+  description: 'Example public listing',
+  domain: 'api.example.com',
+  strategy: Strategy.PUBLIC,
+  browser: false,
+  args: [{ name: 'limit', type: 'int', default: 20, help: 'Number of rows' }],
+  columns: ['index', 'title', 'url'],
   func: async (args) => {
-    const sortKey = String(args.sort ?? 'turnover').toLowerCase();
-    const sort = SORTS[sortKey];
-    if (!sort) throw new CliError('INVALID_ARGUMENT', `Unknown sort "${sortKey}". Valid: ${Object.keys(SORTS).join(', ')}`);
-    const limit = Math.max(1, Math.min(Number(args.limit) || 20, 100));
+    const limit = Number(args.limit ?? 20);
+    if (!Number.isInteger(limit) || limit <= 0) {
+      throw new ArgumentError('limit must be a positive integer');
+    }
 
-    const url = new URL('https://push2.eastmoney.com/api/qt/clist/get');
-    url.searchParams.set('pn', '1');
-    url.searchParams.set('pz', String(limit));
-    url.searchParams.set('po', sort.order === 'desc' ? '1' : '0');
-    url.searchParams.set('np', '1');
-    url.searchParams.set('fltt', '2');
-    url.searchParams.set('invt', '2');
-    url.searchParams.set('fid', sort.fid);
-    url.searchParams.set('fs', 'b:MK0354');
-    url.searchParams.set('fields', 'f12,f14,f2,f3,f6,f229,f230,f232,f234,f235,f236,f237,f238,f239,f243');
-    url.searchParams.set('ut', 'bd1d9ddb04089700cf9c27f6f7426281');
+    const resp = await fetch(`https://api.example.com/items?limit=${limit}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+    });
+    if (!resp.ok) throw new CommandExecutionError(`example request failed: HTTP ${resp.status}`);
 
-    const resp = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-    if (!resp.ok) throw new CliError('HTTP_ERROR', `convertible failed: HTTP ${resp.status}`);
     const data = await resp.json();
-    const diff = Array.isArray(data?.data?.diff) ? data.data.diff : [];
-    if (diff.length === 0) throw new CliError('NO_DATA', 'eastmoney returned no convertible data');
+    const items = Array.isArray(data?.items) ? data.items : [];
+    if (!items.length) throw new EmptyResultError('example public-list', 'API returned no rows');
 
-    return diff.slice(0, limit).map((it, i) => ({
-      rank: i + 1,
-      bondCode: it.f12,
-      bondName: it.f14,
-      bondPrice: it.f2,
-      bondChangePct: it.f3,
-      stockCode: it.f232,
-      stockName: it.f234,
-      stockPrice: it.f229,
-      stockChangePct: it.f230,
-      convPrice: it.f235,
-      convValue: it.f236,
-      convPremiumPct: it.f237,
-      remainingYears: it.f238,
-      ytm: it.f239,
-      listDate: String(it.f243 ?? ''),
+    return items.map((item, index) => ({
+      index: index + 1,
+      title: item.title,
+      url: item.url,
     }));
   },
 });
 ```
 
----
+Use `Strategy.COOKIE` when the endpoint or HTML page needs the user's existing browser session. Read cookies with `page.getCookies()` and pass them to Node-side `fetch`; do not rely on `document.cookie` for HttpOnly auth cookies.
 
-## 三段解剖
-
-### 1. Declaration — 标头
-
-```javascript
-cli({
-  site: 'eastmoney',          // 第一级命名空间，目录名一致
-  name: 'convertible',        // 第二级，CLI 上的子命令
-  description: '...',         // 一句话，出现在 `webcmd list` 和 `webcmd <site> -h`
-  domain: 'push2.eastmoney.com',  // 主要请求域名（诊断面板用）
-  strategy: Strategy.PUBLIC,  // PUBLIC / COOKIE / INTERCEPT / UI
-  browser: false,             // PUBLIC 几乎总是 false；COOKIE/INTERCEPT/UI 一律 true
-  ...
-});
-```
-
-### 2. Args & Columns
-
-```javascript
-args: [
-  { name: 'sort',  type: 'string', default: 'turnover', help: '...' },
-  { name: 'limit', type: 'int',    default: 20,         help: '...' },
-],
-columns: ['rank', 'bondCode', 'bondName', /* ... */ ],
-```
-
-**规则**：
-
-- `type`: `string` / `int` / `float` / `bool`
-- `default` 必填（缺失的命令会拒绝启动）
-- `columns` 数组必须跟 `func` 返回的 object keys 完全对上，顺序也一致（决定表格列顺序）
-- 列名 camelCase，跟 `cli({...})` 其他 adapter 保持统一
-- **中间解析对象 key 不能跟 columns 任一项重叠** —— 否则 `silent-column-drop` audit 会把它当 row 候选误判。`{pid, html, start}` 这类中间结构改成 `{postId, body, offset}`，最后在 push row 时再 destructure aliasing 回 column 命名。背景：PR #1329 R1 codex-mini0 catch 的（[before](https://github.com/agentrhq/webcmd/blob/384bcd6fdd93f3075bd2c835e82689c42bfe4b2f/clis/1point3acres/thread.js#L50-L63) → [after](../../../clis/1point3acres/thread.js#L50-L65)）
-
-### 3. func — 主体
-
-```javascript
-import { ArgumentError, CommandExecutionError, EmptyResultError } from '@agentrhq/webcmd/errors';
-
-func: async (args) => {
-  // 1. 解析参数 — 越界一律抛，不要 silent clamp
-  const n = Number(args.limit ?? 20);
-  if (!Number.isInteger(n) || n <= 0) throw new ArgumentError('limit must be a positive integer');
-  if (n > 100) throw new ArgumentError('limit must be <= 100');
-  const limit = n;
-
-  // 2. 构造 URL / 请求
-  const url = new URL(...);
-  url.searchParams.set(...);
-
-  // 3. 发请求 — fetch 抛 / HTTP 非 2xx 都归 CommandExecutionError
-  let resp;
-  try {
-    resp = await fetch(url, { headers: { /* ... */ } });
-  } catch (error) {
-    throw new CommandExecutionError(`request failed: ${error?.message || error}`);
-  }
-  if (!resp.ok) throw new CommandExecutionError(`request failed: HTTP ${resp.status}`);
-
-  // 4. 解析 + 业务校验 — 业务空 → EmptyResultError，不要 sentinel row 也不要 return []
-  const data = await resp.json();
-  const diff = Array.isArray(data?.data?.diff) ? data.data.diff : [];
-  if (diff.length === 0) throw new EmptyResultError('site command', 'API returned no rows');
-
-  // 5. map 到 columns 同名 keys
-  return diff.slice(0, limit).map((it, i) => ({
-    rank: i + 1,
-    bondCode: it.f12,
-    // ...
-  }));
-},
-```
-
-**站点级 helper**：≥ 2 个同站 adapter 都做相同 limit / page 校验时，把校验抽成 `clis/<site>/utils.js` 的 `normalizeLimit(value, default, max, label)` / `normalizePositiveInteger(value, default, label, { min })`，避免每个 adapter 都 inline 一遍。模板见 [`typed-errors.md` §2](./typed-errors.md) 和 [`clis/1point3acres/utils.js`](../../../clis/1point3acres/utils.js)。1 个 adapter 用就直接 inline，不要为 1 处单点抽 helper。
-
-**参数形态**（**踩过最多次的坑**：搞反签名后 `args` 实际是 `debug` flag，所有 `args.foo` 静默 undefined → fallback 到 default。#1329 upstream 之前 8 个 non-browser adapter 写错过签名，全部 silently fallback 到默认参数）：
-
-- `browser: false`：`func: async (args, debug?) => { ... }` —— **单参 args**，不会收到 `page`
-- `browser: true`：`func: async (page, args, debug?) => { ... }` —— **双参 (page, args)**，第一参是浏览器上下文
-- `args`：所有 `args[]` 声明的参数解析后的 object
-
-**错误处理**：用 typed error 5-classification（参见 [`typed-errors.md`](./typed-errors.md)），**不要** `CliError('XXX', ...)` 直传，**不要** `return []` 了事，**不要** `return [{sentinel}]` 装一行业务数据冒充 empty。autofix skill 靠 typed error 的 exit code（66 = empty / 77 = auth / 75 = timeout / 2 = argument / 1 = exec）决定要不要重试。
-
----
-
-## COOKIE adapter 骨架（需要登录态）
-
-PUBLIC 模式不够（接口 401 / 302 到 login / 响应是"请登录"页）就走这里。要点三条：
-
-1. 读 cookie 走 `page.getCookies(...)`，**不要读 `document.cookie`**。
-2. 拿 HTML 走 Node 端 `fetch` + 手动解码，**不要塞进 `page.evaluate` 里**。
-3. Declaration 加 `browser: true`；不需要真的打开目标页时 `navigateBefore: false`。
-
-```javascript
+```js
 import { cli, Strategy } from '@agentrhq/webcmd/registry';
 import { ArgumentError, AuthRequiredError, CommandExecutionError, EmptyResultError } from '@agentrhq/webcmd/errors';
 
 const BASE = 'https://www.example.com';
 const HOST = 'www.example.com';
-const ROOT = '.example.com';  // 根域（auth 常在这里）
+const ROOT = '.example.com';
 
-async function readCookie(page) {
-    const seen = new Map();
-    for (const opts of [{ domain: HOST }, { domain: ROOT }]) {
-        try {
-            const cookies = await page.getCookies(opts);
-            for (const c of cookies || []) {
-                if (!seen.has(c.name)) seen.set(c.name, c.value);
-            }
-        } catch { /* try next domain */ }
+async function cookieHeader(page) {
+  const seen = new Map();
+  for (const opts of [{ domain: HOST }, { domain: ROOT }]) {
+    for (const cookie of await page.getCookies(opts).catch(() => [])) {
+      if (!seen.has(cookie.name)) seen.set(cookie.name, cookie.value);
     }
-    return [...seen].map(([k, v]) => `${k}=${v}`).join('; ');
+  }
+  return [...seen].map(([name, value]) => `${name}=${value}`).join('; ');
 }
 
-async function fetchHtml(url, { cookie, encoding = 'utf-8', headers = {} } = {}) {
-    let resp;
-    try {
-        resp = await fetch(url, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0',
-                'Accept-Language': 'zh-CN,zh;q=0.9',
-                Referer: `${BASE}/`,
-                ...(cookie ? { Cookie: cookie } : {}),
-                ...headers,
-            },
-            redirect: 'follow',
-        });
-    } catch (error) {
-        throw new CommandExecutionError(`example request failed: ${error?.message || error}`);
+function parseRowsFromHtml(html) {
+  return [...html.matchAll(/<a[^>]+href="([^"]+)"[^>]*>([^<]+)<\/a>/g)].map((match, index) => ({
+    index: index + 1,
+    title: match[2].trim(),
+    time: '',
+  }));
+}
+
+cli({
+  site: 'example',
+  name: 'private-list',
+  access: 'read',
+  description: 'Example private listing',
+  domain: HOST,
+  strategy: Strategy.COOKIE,
+  browser: true,
+  navigateBefore: false,
+  args: [{ name: 'limit', type: 'int', default: 20, help: 'Number of rows' }],
+  columns: ['index', 'title', 'time'],
+  func: async (page, args) => {
+    const limit = Number(args.limit ?? 20);
+    if (!Number.isInteger(limit) || limit <= 0) {
+      throw new ArgumentError('limit must be a positive integer');
     }
+
+    const cookie = await cookieHeader(page);
+    const resp = await fetch(`${BASE}/inbox`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0',
+        Referer: `${BASE}/`,
+        ...(cookie ? { Cookie: cookie } : {}),
+      },
+      redirect: 'follow',
+    });
     if (!resp.ok) throw new CommandExecutionError(`example request failed: HTTP ${resp.status}`);
-    const buf = await resp.arrayBuffer();
-    return new TextDecoder(encoding).decode(buf);
-}
 
-cli({
-    site: 'example',
-    name: 'me',
-    access: 'read',
-    description: '示例：需要登录的私有页面',
-    domain: HOST,
-    strategy: Strategy.COOKIE,
-    browser: true,
-    navigateBefore: false,    // 本命令不需要先开目标页
-    args: [{ name: 'limit', type: 'int', default: 20, help: '返回条数' }],
-    columns: ['index', 'title', 'time'],
-    func: async (page, args) => {
-        const limit = Number(args.limit ?? 20);
-        if (!Number.isInteger(limit) || limit <= 0) throw new ArgumentError('limit must be a positive integer');
+    const html = await resp.text();
+    if (/login required|sign in/i.test(html)) throw new AuthRequiredError(HOST);
 
-        const cookie = await readCookie(page);
-        const html = await fetchHtml(`${BASE}/inbox`, { cookie, encoding: 'gbk' });
-
-        if (/请登录|需要登录|<title>Login/i.test(html)) {
-            throw new AuthRequiredError(HOST);
-        }
-
-        // parse html → rows
-        if (!rows.length) throw new EmptyResultError('example me', 'inbox is empty');
-        return rows.slice(0, limit);
-    },
+    const rows = parseRowsFromHtml(html).slice(0, limit);
+    if (!rows.length) throw new EmptyResultError('example private-list', 'page returned no rows');
+    return rows;
+  },
 });
 ```
 
-### JSON API 用 `page.fetchJson()`，不要手写 `page.evaluate(fetch(...))`
+## Parameter Safety
 
-如果接口必须在浏览器上下文里请求（依赖当前页面 cookie / CORS / origin），用内置 primitive：
+- Validate user-facing numbers before use.
+- Throw `ArgumentError` for invalid external parameters.
+- Do not silently clamp with `Math.max` / `Math.min` unless the user explicitly requested clamping and the output says so.
+- Do not let a failed selector or missing field become a valid empty result.
 
-```javascript
-const data = await page.fetchJson(`${BASE}/api/list`, {
-  method: 'POST',
-  headers: { 'X-Requested-With': 'XMLHttpRequest' },
-  body: { page: 1, size: limit },
-});
+## Row Safety
+
+Before mapping rows:
+
+- Confirm the response contains the expected shape.
+- Throw `EmptyResultError` only when the site truly reports no results.
+- Throw `CommandExecutionError` when the response shape is wrong, parsing fails, or an endpoint returns HTML instead of expected data.
+- Use `AuthRequiredError` when login is required or session expired.
+- Use `TimeoutError` when the page or endpoint did not settle in time.
+
+## Column Alignment Checklist
+
+Before verify:
+
+```text
+[ ] columns array and row keys match exactly
+[ ] no intermediate object key overlaps a column accidentally
+[ ] values use documented units
+[ ] percentage scale is consistent
+[ ] dates are ISO or clearly documented
+[ ] URLs are absolute when users need to click them
+[ ] one row was compared with the visible page
 ```
 
-它固定 `credentials: 'include'`，带 timeout，HTTP 非 2xx / 非 JSON 会抛统一 runtime error。adapter 里不用再手写 `page.evaluate(fetch(...))`；如果你需要额外包一层业务语义，按 [`typed-errors.md`](./typed-errors.md) 映射到 `CommandExecutionError` / `AuthRequiredError` / `EmptyResultError`。
+## Verify
 
-### 页面内 DOM 逻辑用 `page.evaluate(fn, ...args)`
-
-新 adapter 优先写函数形式，外部变量通过参数传入：
-
-```javascript
-const href = await page.evaluate((selector) => {
-  const link = document.querySelector(selector);
-  return link ? link.getAttribute('href') : null;
-}, 'a[data-testid="profile"]');
-```
-
-`fn` 在浏览器页面上下文执行，不能读取 Node 侧闭包变量；参数必须能被 `JSON.stringify` 序列化。字符串形式 `page.evaluate('document.title')` 仍可用于简单表达式和既有代码，但不要再写依赖隐式 auto-IIFE 的模板字符串函数。
-
-### HTML 不走 browser fetch
-
-三个坑，踩一个就重写：
-
-- **HttpOnly cookie 看不见**：绝大多数登录站点把 auth cookie 标 `HttpOnly`，`document.cookie` 永远读不到它，只能通过 CDP 的 cookie jar 拿（`page.getCookies`）。塞到 `page.evaluate` 里就等于回到 `document.cookie` 那条路，必挂。
-- **`navigateBefore: false` 时当前 tab 不在目标站**：页面 origin 可能是 `about:blank` 或上一条命令留下的别处，从那儿发 fetch 到目标域就是 cross-origin，浏览器 CORS 一挡就是 "Failed to fetch"。
-- **非 UTF-8 编码解码麻烦**：GBK / Big5 / Shift-JIS 的站（Discuz / phpBB 老版 / 日站）在 `page.evaluate` 里用 `response.text()` 拿到的是乱码，`TextDecoder('gbk').decode(buf)` 的写法只在 Node 侧干净。
-
-**规则**：JSON 型浏览器接口用 `page.fetchJson()`；HTML 型 COOKIE adapter 一律 Node 侧 `fetch`，浏览器只当 cookie jar 用。
-
-### Selector 稳定性 — 不要 select 用户可见文本
-
-issue #1474 触发：同一个发送按钮在英文 Chrome 是 `aria-label="Submit"`，在中文 Chrome（`chrome://settings/languages` 设中文）变 `aria-label="提交"`，CSS 选择器 `button[aria-label="Submit"]` 在中文环境下直接 0 匹配，silent empty result。
-
-根因不是 i18n bug，是**选择器的 anchor 选错了**。把页面 DOM 属性按 "locale-stable vs locale-dependent" 分两类：
-
-| 类 | 例子 | locale 切换会变吗 | 用作 primary selector？ |
-|----|------|----------------|---------------------|
-| **locale-stable 标识** | `data-testid`、`data-*`、稳定 `id` / `class` | 通常不变（开发者内部 ID） | ✅ 首选，但要先确认不是 hash / A-B test |
-| **semantic / scope anchor** | `role`、结构关系、邻近稳定容器 | 不按 locale 翻译，但常常不唯一 | ⚠️ 只作 scope/filter；不要单独用 `button[role="button"]` |
-| **locale-dependent 文本** | `aria-label`、`title`、`placeholder`、`alt`、`textContent` | 变（被 i18n 框架翻译） | ❌ 仅当 stable 选择器全都不存在时的兜底 |
-
-ChatGPT 的 web 端就是反例驱动的：有些 controls 暴露稳定 `data-testid`，有些 surfaces 只暴露 `aria-label` / `placeholder`。这种站必须先用 stable selector，再用多语言 fallback list：
-
-```javascript
-// clis/chatgpt/utils.js（简化活例）
-const COMPOSER_SELECTORS = [
-  '#prompt-textarea',
-  '[data-testid="composer"] [contenteditable="true"]',
-  '[aria-label="Chat with ChatGPT"]',   // en
-  '[aria-label="与 ChatGPT 聊天"]',      // zh-CN
-  '[placeholder="Ask anything"]',
-  '[placeholder="有问题，尽管问"]',       // zh-CN
-];
-const SEND_BUTTON_SELECTORS = [
-  'button[data-testid="send-button"]:not([disabled])',
-  'button[aria-label="Send prompt"]:not([disabled])',
-  'button[aria-label="发送提示"]:not([disabled])',
-];
-```
-
-写 fallback list 的纪律：
-
-1. **stable selector 放最前**（`#prompt-textarea` / `[data-testid="send-button"]`），locale-dependent 的放后面当兜底
-2. **`role` 只能当 semantic / scope filter**：`dialog [role="textbox"]` 可以；裸 `button` / `[role="button"]` 不够，因为同页可能有多个按钮
-3. **每种 locale 至少列一条**（en + zh-CN 是底线；扩到 ja / ko / ar 看站点用户分布）
-4. **commit 前 grep `aria-label=` / `placeholder=` / `title=` 看是不是漏了 fallback locale**——见 success-rate-pitfalls.md §11
-5. **失败要 typed fail-fast**：找不到 control 应该 `CommandExecutionError` / send-failed，不要返回空 rows 或假成功
-6. **不要给 framework 加 `--i18n "zh:提交,ja:送信"` 这种 flag** —— 等于把 fallback list 从 adapter 挪到 CLI，多一层 indirection 还要维护翻译字典。这是 over-engineering，已经在评审时被否
-
-为什么不在 daemon 端固定 Chrome locale？因为 webcmd **不启动 Chrome**——daemon 是连用户已经在跑的 Chrome（CDP via extension），用户可能就是中文 UI / 中文资料检索需求。强制 en-US 会破坏用户的正当工作流。
-
-### Cookie 域的双查
-
-```javascript
-for (const opts of [{ domain: HOST }, { domain: ROOT }]) { ... }
-```
-
-不是所有站都这么玄学，但下面这几类踩坑最多：
-
-| 站点类型 | 坑 |
-|---------|----|
-| Discuz!X / phpBB / vBulletin 论坛 | Auth cookie 设在 `.<root>.com`，HttpOnly；业务页在 `www.<root>.com`。只查 `www.` 会漏 |
-| 多子域账户体系（`account.x.com` vs `api.x.com`） | 登录时写在 account 域，API 域读取时拿不到 |
-| 新版 Chrome SameSite=Lax 默认 | 某些 cookie 查 `url:` 才给返，查 `domain:` 不给 |
-
-双查成本很低，不确定就两个都查，用 Map 去重第一次出现的 name。
-
-### 空态抛 `EmptyResultError`，**不**塞 sentinel 行
-
-历史上这里写的是"返回一行说明 row 比 `return []` 安全"。**这条已经反过来了**——见 PR #1329 R3 的 four anti-pattern fixes。现在的契约：
-
-```javascript
-import { EmptyResultError } from '@agentrhq/webcmd/errors';
-
-// ❌ 老写法：sentinel 行污染 row 合同，让 listing→detail round-trip 拿到 tid='' 白跑
-if (/暂时没有提醒内容/.test(html)) {
-    return [{ index: 0, from: '', summary: '暂时没有提醒内容', time: '', threadUrl: '' }];
-}
-
-// ✅ 新写法：empty 是合法状态，但不是 row。exit code 66 让 agent 直接 branch
-if (/暂时没有提醒内容/.test(html)) {
-    throw new EmptyResultError('1point3acres notifications', '暂时没有提醒内容');
-}
-```
-
-更多反例和详细 routing 见 [`typed-errors.md` §3](./typed-errors.md)。
-
----
-
-## 同类型 adapter 对照
-
-| 类型 | 代表 | 参考 |
-|------|------|-----|
-| clist 分页排行 | `convertible.js` / `rank.js` / `etf.js` / `sectors.js` | 都共享 `fs` + `fid` + `po` 结构 |
-| ulist 批量报价 | `quote.js` | `secids` 逗号拼接 |
-| K 线历史 | `kline.js` | `fields1 / fields2` 控列，CSV 解析 |
-| 报表（datacenter-web） | `longhu.js` / `holders.js` | `reportName` 驱动 |
-| 7x24 新闻 | `kuaixun.js` | `np-listapi` 栏目 id |
-| 公司公告 | `announcement.js` | `np-anotice-stock` |
-| 指数/北上 | `index-board.js` / `northbound.js` | push2 专用端点 |
-
-新写一条时，选最像的那类，复制后改 `name` / URL / fields / column 映射三处。
-
----
-
-## Verify fixture（每个 adapter 配一份 `~/.webcmd/sites/<site>/verify/<name>.json`）
-
-verify fixture 是"adapter 产出长什么样"的结构锚点。没有它，`webcmd browser verify` 只能证"adapter 能跑完不抛"，证不出数据没错位。**必写**。
-
-详细 schema 见 `site-memory.md` 的 `verify/<cmd>.json` 节。这里只讲两个容易踩的地方：
-
-### args 形态：object vs array
-
-`args` 字段决定 verify 怎么调你的 adapter：
-
-- **对象形态** `{ "limit": 3 }` → 展开成 `--limit 3`，标准 named-flag adapter 用这个
-- **数组形态** `["123", "--limit", "3"]` → 原样 append 到命令后，**positional 主语型** adapter 必须用这个
-
-repo 约定"主语优先 positional"——thread 详情型、url 解析型、关键词搜索型都用 positional：
-
-```js
-// clis/1point3acres/thread.js — 接收 <tid> 作为主语
-cli({
-  site: '1point3acres',
-  name: 'thread',
-  args: [
-    { name: 'tid',   type: 'string', required: true, positional: true },
-    { name: 'limit', type: 'int',    default: 20 },
-  ],
-  // ...
-});
-```
-
-对应 fixture：
-
-```json
-{
-  "args": ["1234567", "--limit", "3"],
-  "expect": { "rowCount": { "min": 1, "max": 3 }, "...": "..." }
-}
-```
-
-**不要写成** `{ "tid": "1234567", "limit": 3 }`——这会被展开成 `--tid 1234567 --limit 3`，commander 把 `--tid` 当未知 flag 报错，或者 adapter 根本不认。
-
-### 种子 → 手改
-
-named-flag adapter（`hot` / `latest` 类）可以直接让工具生成种子：
+Run:
 
 ```bash
-# 1. 让 verify 先跑一遍，--write-fixture 生成种子（默认追加 --limit 3）
-webcmd browser verify 1point3acres/hot --write-fixture
-
-# 2. 手改 ~/.webcmd/sites/1point3acres/verify/hot.json
-#    - patterns: 加 URL / 日期 / ID 正则
-#    - notEmpty: 加核心字段（title / author / url）
-#    - rowCount: 收紧到业务合理区间
-
-# 3. 再跑 verify，fixture 吃得动就 OK
-webcmd browser verify 1point3acres/hot
+webcmd browser verify <site>/<name> --trace retain-on-failure
 ```
 
-positional adapter 目前 `--write-fixture` 没法表达主语，**首份 fixture 要手写**：
+After the first passing run, write a fixture:
 
 ```bash
-# 1. 先直跑 adapter 看输出长啥样
-webcmd 1point3acres thread 1173710 --limit 2 --format json | head
-
-# 2. 照着响应手写 ~/.webcmd/sites/1point3acres/verify/thread.json
-#    （args 一定用数组: ["1173710", "--limit", "2"]）
-
-# 3. 跑 verify 核对
-webcmd browser verify 1point3acres/thread
+webcmd browser verify <site>/<name> --write-fixture
 ```
 
-机器生成的种子只有 rowCount.min=1 / columns / types，挡不住字段值错位。**patterns + notEmpty 无论哪种情形都是肉写的**。
+Then tighten the fixture manually:
 
----
+- Add `notEmpty` for essential columns.
+- Add `patterns` for URL, ID, date, or slug formats.
+- Set realistic `rowCount`.
+- Keep `types` narrow.
 
-## 私人 adapter vs repo 贡献
-
-```
-~/.webcmd/clis/<site>/<name>.js    # 私人
-clis/<site>/<name>.js               # repo 贡献
-```
-
-**两者在 `cli({...})` 层面完全一样**。差别只在运行入口：
-
-- 私人：写完立即可跑（`webcmd <site> <name>`）
-- repo：要 `npm run build` 才被注册
-
-先在 `~/.webcmd/clis/` 调通再拷贝到 `clis/`。
+Run verify again and confirm the fixture matches.

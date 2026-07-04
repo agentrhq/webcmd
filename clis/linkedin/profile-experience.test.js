@@ -58,16 +58,16 @@ describe('linkedin profile-experience adapter', () => {
   });
 
   it('parses company, date, and location line variants', () => {
-    expect(parseCompanyLine('Self Employed · Freelance')).toEqual({
+    expect(parseCompanyLine('Self Employed \u00b7 Freelance')).toEqual({
       company: 'Self Employed',
       employment_type: 'Freelance',
     });
-    expect(parseDateRangeParts('Feb 2026 – Present · 4 mos')).toEqual({
+    expect(parseDateRangeParts('Feb 2026 – Present \u00b7 4 mos')).toEqual({
       dateRange: 'Feb 2026 – Present',
       startDate: 'Feb 2026',
       endDate: 'Present',
     });
-    expect(parseLocationLine('Jaipur, Rajasthan, India · Remote')).toEqual({
+    expect(parseLocationLine('Jaipur, Rajasthan, India \u00b7 Remote')).toEqual({
       location: 'Jaipur, Rajasthan, India',
       location_type: 'Remote',
     });
@@ -75,9 +75,9 @@ describe('linkedin profile-experience adapter', () => {
 
   it('parses visible experience text into fields', () => {
     expect(parseExperienceText(`Senior Full-Stack AI Engineer
-Self Employed · Freelance
-Feb 2026 – Present · 4 mos
-Jaipur, Rajasthan, India · Remote
+Self Employed \u00b7 Freelance
+Feb 2026 – Present \u00b7 4 mos
+Jaipur, Rajasthan, India \u00b7 Remote
 Building AI-enabled SaaS products and agentic workflows.
 Skills: Generative AI, Next.js, TypeScript`, 'https://www.linkedin.com/in/me/', 0, 1)).toMatchObject({
       rank: 1,
@@ -100,15 +100,15 @@ Skills: Generative AI, Next.js, TypeScript`, 'https://www.linkedin.com/in/me/', 
 
 Senior Software Engineer
 Zetwerk Manufacturing
-Apr 2022 – Present · 4 yrs 2 mos
-Bengaluru, Karnataka, India · Hybrid
+Apr 2022 – Present \u00b7 4 yrs 2 mos
+Bengaluru, Karnataka, India \u00b7 Hybrid
 Led development and mentored team members.
 Skills: Angular, Node.js
 
 Software Engineer
 OnGraph Technologies Pvt. Ltd.
-Jun 2019 – Apr 2022 · 2 yrs 11 mos
-Jaipur, Rajasthan, India · On-site
+Jun 2019 – Apr 2022 \u00b7 2 yrs 11 mos
+Jaipur, Rajasthan, India \u00b7 On-site
 Full-stack development for client projects.
 Skills: React, MongoDB
 

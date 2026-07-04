@@ -79,7 +79,7 @@ describe('slock attachment-upload', () => {
     // Endpoint stays put.
     expect(snippet).toContain('/api/attachments/upload');
 
-    // --- The from-scratch `uploadHeaders` invariants (托瓦茲 #1 fix-now). ---
+    // --- The from-scratch `uploadHeaders` invariants (Tovaz #1 fix-now). ---
     //
     // The whole point of building uploadHeaders from scratch is: forward auth,
     // drop content-type so the browser sets its own multipart boundary. If a

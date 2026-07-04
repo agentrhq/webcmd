@@ -32,11 +32,11 @@ cli({
     if (seen.has(href)) continue;
     seen.add(href);
     const raw = a.textContent.trim().replace(/\\s+/g, ' ');
-    // Split name from "上次发帖" info
-    const parts = raw.split(/上次发帖|Last post/);
+    // Split name from "Last post" info
+    const parts = raw.split(/Last post|Last post/);
     groups.push({
       name: (parts[0] || '').trim().substring(0, 60),
-      last_post: parts[1] ? parts[1].replace(/^[：:]/, '').trim() : '-',
+      last_post: parts[1] ? parts[1].replace(/^[::]/, '').trim() : '-',
       url: href,
     });
   }

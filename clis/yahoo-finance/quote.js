@@ -7,7 +7,7 @@ cli({
     site: 'yahoo-finance',
     name: 'quote',
     access: 'read',
-    description: 'Yahoo Finance 股票行情',
+    description: 'Yahoo Finance stock quote',
     domain: 'finance.yahoo.com',
     strategy: Strategy.COOKIE,
     args: [

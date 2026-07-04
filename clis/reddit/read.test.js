@@ -175,7 +175,7 @@ describe('reddit read adapter', () => {
             expandMeta: { rounds: 0, fetched: 0, capped: false, errors: [] },
         });
         const result = await command.func(page, { 'post-id': 'abc123', limit: 5 });
-        // perf: read 不再显式导航首页——框架 navigateBefore（domain=reddit.com）已把页面带到 reddit origin
+        // perf: read no longer explicitly navigate home——framework navigateBefore(domain=reddit.com)already brought the page to reddit origin
         expect(page.goto).not.toHaveBeenCalledWith('https://www.reddit.com');
         expect(result).toEqual([
             { type: 'POST', author: 'alice', score: 10, text: 'Title',

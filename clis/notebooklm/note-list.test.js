@@ -36,8 +36,8 @@ describe('notebooklm note-list', () => {
         mockListNotebooklmNotesFromPage.mockResolvedValue([
             {
                 notebook_id: 'nb-demo',
-                title: '新建笔记',
-                created_at: '6 分钟前',
+                title: 'New note',
+                created_at: '6 minutes ago',
                 url: 'https://notebooklm.google.com/notebook/nb-demo',
                 source: 'studio-list',
             },
@@ -46,8 +46,8 @@ describe('notebooklm note-list', () => {
         expect(result).toEqual([
             {
                 notebook_id: 'nb-demo',
-                title: '新建笔记',
-                created_at: '6 分钟前',
+                title: 'New note',
+                created_at: '6 minutes ago',
                 url: 'https://notebooklm.google.com/notebook/nb-demo',
                 source: 'studio-list',
             },

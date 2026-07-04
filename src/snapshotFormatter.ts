@@ -44,19 +44,19 @@ const CONTAINER_ROLES = new Set([
 ]);
 
 // Decorator / separator text that adds no semantic value
-const DECORATOR_TEXT = new Set(['•', '·', '|', '—', '-', '/', '\\']);
+const DECORATOR_TEXT = new Set(['•', '\u00b7', '|', '\u2014', '-', '/', '\\']);
 
 // Ad-related URL patterns
 const AD_URL_PATTERNS = [
   'googleadservices.com/pagead/',
   'alb.reddit.com/cr?',
   'doubleclick.net/',
-  'cm.bilibili.com/cm/api/fees/',
+  'ads.example.com/track/',
 ];
 
 // Boilerplate button labels to filter (back-to-top, etc.)
 const BOILERPLATE_LABELS = [
-  '回到顶部', 'back to top', 'scroll to top', 'go to top',
+  'back to top', 'scroll to top', 'go to top',
 ];
 
 /**
@@ -151,7 +151,6 @@ function isDecoratorText(text: string): boolean {
 function isAdNode(text: string, trailingText: string): boolean {
   const t = (text + ' ' + trailingText).toLowerCase();
   if (t.includes('sponsored') || t.includes('advertisement')) return true;
-  if (t.includes('广告')) return true;
   // Check for ad tracking URLs in the label
   for (const pattern of AD_URL_PATTERNS) {
     if (text.includes(pattern) || trailingText.includes(pattern)) return true;

@@ -275,8 +275,7 @@ describe('twitter parseTweetUrl', () => {
 describe('twitter buildTwitterArticleScopeSource', () => {
     // JSDOM-based tests prove the returned source actually works on real DOM —
     // mocked `evaluate` tests in adapter specs only verify the script string
-    // contains expected tokens, but cannot catch silent matching bugs (cf.
-    // dianping #1312: mocked-evaluate single tests miss in-browser logic bugs).
+    // contains expected tokens, but cannot catch silent in-browser matching bugs.
     function loadHelpers(tweetId, dom) {
         const source = buildTwitterArticleScopeSource(tweetId);
         const probe = new Function(
@@ -742,7 +741,7 @@ describe('twitter extractQuotedTweet', () => {
                 result: {
                     rest_id: '2040254679301718161',
                     legacy: {
-                        full_text: '罗某官二代背景考',
+                        full_text: 'official family background review',
                         created_at: 'Wed May 13 22:00:00 +0000 2026',
                     },
                     core: {
@@ -757,7 +756,7 @@ describe('twitter extractQuotedTweet', () => {
             id: '2040254679301718161',
             author: 'alice',
             name: 'Alice',
-            text: '罗某官二代背景考',
+            text: 'official family background review',
             created_at: 'Wed May 13 22:00:00 +0000 2026',
             url: 'https://x.com/alice/status/2040254679301718161',
             has_media: false,
@@ -773,7 +772,7 @@ describe('twitter extractQuotedTweet', () => {
                 result: {
                     rest_id: '99',
                     legacy: {
-                        full_text: '日本电车实录',
+                        full_text: 'Japanese train record',
                         extended_entities: {
                             media: [
                                 { type: 'photo', media_url_https: 'https://pbs.twimg.com/media/a.jpg' },

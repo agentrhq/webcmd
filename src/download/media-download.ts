@@ -1,7 +1,7 @@
 /**
  * Media download helper — shared logic for batch downloading images/videos.
  *
- * Used by: xiaohongshu/download, twitter/download, bilibili/download,
+ * Used by: twitter/download, youtube/download,
  * and future media adapters.
  *
  * Flow: MediaItem[] → DownloadProgressTracker → httpDownload/ytdlpDownload → results

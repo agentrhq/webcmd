@@ -1,43 +1,43 @@
-# 资讯 / 知识
+# News And Knowledge
 
-用于新闻、百科、通用知识、中文科技资讯。
+Use for news, encyclopedic background, general knowledge, and technology/business reporting.
 
-## 站点
+## Sites
 
 ### google
 
-- 适用：通用网页搜索、跨站点兜底
-- 使用前先运行：`webcmd google -h`
+- Use for: general web search and cross-site fallback
+- Before use, run: `webcmd google -h`
 
 ### wikipedia
 
-- 适用：名词解释、背景知识、历史事实
-- 使用前先运行：`webcmd wikipedia -h`
+- Use for: definitions, background knowledge, and historical facts
+- Before use, run: `webcmd wikipedia -h`
 
 ### reuters
 
-- 适用：国际新闻、事实性报道
-- 使用前先运行：`webcmd reuters -h`
+- Use for: international news and factual reporting
+- Before use, run: `webcmd reuters -h`
 
-### weibo
+### hackernews
 
-- 适用：微博热点、话题、中文舆论
-- 使用前先运行：`webcmd weibo -h`
+- Use for: technology news discussion, startup links, and developer reactions
+- Before use, run: `webcmd hackernews -h`
 
-### 36kr
+### github
 
-- 适用：中文科技、创业、融资资讯
-- 使用前先运行：`webcmd 36kr -h`
+- Use for: repository, issue, pull request, release, and open-source project signals
+- Before use, run: `webcmd github -h`
 
 ### substack
 
-- 适用：newsletter、作者订阅内容、长文
-- 使用前先运行：`webcmd substack -h`
+- Use for: newsletters, creator subscription content, and long-form posts
+- Before use, run: `webcmd substack -h`
 
-## 路由提示
+## Routing Hints
 
-- 背景知识与定义，优先 `wikipedia`
-- 通用网页与跨站信息，优先 `google`
-- 国际新闻优先 `reuters`
-- 中文科技资讯优先 `36kr`
-- 当 AI 回答过于泛化时，用这些源补充事实和链接
+- For background knowledge and definitions, prefer `wikipedia`
+- For general web and cross-site information, prefer `google`
+- For international news, prefer `reuters`
+- For technology-community signals, prefer `hackernews` or `github`
+- When an AI answer is too generic, use these sources to add facts and links

@@ -38,17 +38,17 @@ describe('notebooklm notes-get', () => {
     it('returns the currently visible note editor content when the title matches', async () => {
         mockReadNotebooklmVisibleNoteFromPage.mockResolvedValue({
             notebook_id: 'nb-demo',
-            title: '新建笔记',
-            content: '第一段\\n第二段',
+            title: 'New note',
+            content: 'First paragraph\\nSecond paragraph',
             url: 'https://notebooklm.google.com/notebook/nb-demo',
             source: 'studio-editor',
         });
-        const result = await command.func({}, { note: '新建笔记' });
+        const result = await command.func({}, { note: 'New note' });
         expect(result).toEqual([
             {
                 notebook_id: 'nb-demo',
-                title: '新建笔记',
-                content: '第一段\\n第二段',
+                title: 'New note',
+                content: 'First paragraph\\nSecond paragraph',
                 url: 'https://notebooklm.google.com/notebook/nb-demo',
                 source: 'studio-editor',
             },
@@ -59,13 +59,13 @@ describe('notebooklm notes-get', () => {
         mockListNotebooklmNotesFromPage.mockResolvedValue([
             {
                 notebook_id: 'nb-demo',
-                title: '新建笔记',
-                created_at: '6 分钟前',
+                title: 'New note',
+                created_at: '6 minutes ago',
                 url: 'https://notebooklm.google.com/notebook/nb-demo',
                 source: 'studio-list',
             },
         ]);
-        await expect(command.func({}, { note: '新建笔记' })).rejects.toMatchObject({
+        await expect(command.func({}, { note: 'New note' })).rejects.toMatchObject({
             hint: expect.stringMatching(/currently reads note content only from the visible note editor/i),
         });
     });

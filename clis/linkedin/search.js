@@ -144,7 +144,7 @@ function looksLinkedInAuthWallText(value) {
     return /\b(sign in|log in|join linkedin)\b/.test(text) ||
         /linkedin\.com\/(login|checkpoint|authwall)/i.test(text) ||
         /\b(captcha|verification required)\b/.test(text) ||
-        /(请登录|登录领英|安全验证)/.test(text);
+        /(Please log in|Log in to LinkedIn|security verification)/.test(text);
 }
 function buildLinkedInAuthProbeScript() {
     return `(() => {

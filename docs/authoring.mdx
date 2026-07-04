@@ -1,0 +1,111 @@
+---
+title: Authoring
+description: What to ask an agent for when it creates, updates, or verifies Webcmd adapters.
+---
+
+# Authoring
+
+Authoring is agent work. Users describe the CLI they want; agents crawl, inspect, implement, and verify.
+
+Use this page to understand what to ask for and what a good result should include.
+
+## What to Specify
+
+A strong authoring prompt includes:
+
+- Target site, app, API, or local tool.
+- Command name.
+- Inputs and options.
+- Output columns or JSON schema.
+- Login/profile requirements.
+- Whether the adapter should be private, plugin-based, or upstream-ready.
+- Verification expectations.
+- Safety constraints, especially for write actions.
+
+Example:
+
+```text
+Create a private Webcmd adapter for the Acme supplier portal.
+Command: webcmd acme part <part_number>
+Output: part_number, title, price, currency, stock, moq, lead_time, product_url
+Use my `work` profile if login is needed. Read-only only. Verify with two part numbers and return JSON examples.
+```
+
+## What the Agent Should Do
+
+The agent should:
+
+1. Check the existing Webcmd registry.
+2. Reuse or extend an existing adapter if possible.
+3. Explore the target only when needed.
+4. Choose the simplest reliable strategy.
+5. Implement the adapter.
+6. Validate and verify it.
+7. Summarize command usage, output shape, auth assumptions, and changed files.
+
+## Strategy Selection
+
+| Strategy | Use when |
+| --- | --- |
+| `PUBLIC` | Data is available from public HTML or APIs. |
+| `COOKIE` | Login cookies are enough for authenticated reads. |
+| `INTERCEPT` | Browser-derived request context is needed for reliable data. |
+| `UI` | The only stable path is driving the page. |
+| `LOCAL` | The command wraps a local app, daemon, or binary. |
+
+The agent should choose this, not the user. It should explain the tradeoff briefly.
+
+## Output Design
+
+Ask for output that another agent can consume:
+
+```text
+Return JSON rows with stable keys. Use null for missing optional fields. Do not rename existing fields in future updates unless I explicitly ask for a breaking change.
+```
+
+Good command output is:
+
+- Small enough to inspect.
+- Structured enough for automation.
+- Stable across site changes.
+- Explicit about errors and empty states.
+
+## Create a New Adapter
+
+```text
+Create a Webcmd command for this site that searches grants. Inputs: query, optional funder, optional date range. Output: title, funder, amount, deadline, eligibility, url. Keep it private and verify it.
+```
+
+## Extend an Adapter
+
+```text
+Extend the existing PubMed adapter with a command that returns related articles for a PMID. Match the style of existing PubMed commands and add parser tests.
+```
+
+## Prepare for Upstream
+
+```text
+Make this adapter upstream-ready. Follow existing Webcmd conventions, add tests, run validation, and summarize any site-specific limitations.
+```
+
+## Acceptance Criteria
+
+A finished adapter should come with:
+
+- Command usage.
+- Output schema.
+- Adapter location.
+- Strategy used.
+- Verification result.
+- Known limitations.
+- Clear next steps if auth or site access blocked the work.
+
+## Healing Existing Adapters
+
+When something breaks, ask the agent to repair the existing command.
+
+```text
+Heal `webcmd acme part ABC-123`. It used to return price and stock, but now stock is null. Preserve the output schema, repair the adapter, and explain the root cause.
+```
+
+The agent should avoid creating a second command unless the workflow has truly changed.

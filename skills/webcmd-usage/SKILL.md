@@ -1,170 +1,179 @@
 ---
 name: webcmd-usage
-description: Use at the start of any Webcmd session — this is the top-level map of what `webcmd` can do, how to discover adapters, what flags and output formats are universal, and which specialized skill to load next. Point here when an agent asks "what can webcmd do?" or "how do I find the right command?".
+description: Use at the start of any Webcmd session. This is the top-level map of what `webcmd` can do, how to discover adapters, what flags and output formats are universal, and which specialized skill to load next. Point here when an agent asks "what can webcmd do?" or "how do I find the right command?".
 allowed-tools: Bash(webcmd:*), Read
 ---
 
 # webcmd-usage
 
-Webcmd turns any website, Electron desktop app, or external CLI into a uniform `webcmd <site> <command>` surface that agents can drive without screen-scraping. This skill is the orientation layer — once you know what you want to do, load one of the specialized skills below.
+Webcmd turns websites, Electron desktop apps, and external CLIs into a uniform `webcmd <site> <command>` surface that agents can drive without screen scraping. This skill is the orientation layer. Once you know the task, load the specialized skill that fits it.
 
-## The three pillars
+## The Three Pillars
 
-- **Adapter commands** — `webcmd <site> <command> [...]`. Built-in adapters live in `clis/`, user adapters in `~/.webcmd/clis/`. Each is backed by a strategy (`PUBLIC | COOKIE | INTERCEPT | UI | LOCAL`) that tells you whether a Chrome session is needed.
-- **Browser driving** — `webcmd browser *` subcommands (`open`, `state`, `click`, `type`, `select`, `find`, `extract`, `network`, …) for ad-hoc interaction and scraping when no adapter covers the task. See `webcmd-browser`.
-- **Cloak-tab binding** — `webcmd browser <session> bind --page <page-id>` attaches an existing webcmd-managed Cloak tab to that browser session. Run `webcmd browser <session> tab list` first; follow-up commands use `webcmd browser <session> ...`. See `webcmd-browser` before using it.
-- **External CLI passthrough** — `webcmd gh`, `webcmd docker`, `webcmd vercel`, etc. Managed via `webcmd external install <name>` (auto-install from `external-clis.yaml`) or `webcmd external register <name>` (bring your own).
+- **Adapter commands:** `webcmd <site> <command> [...]`. Built-in adapters live in `clis/`; user adapters live in `~/.webcmd/clis/`. Each command has a strategy such as `PUBLIC`, `COOKIE`, `INTERCEPT`, `UI`, or `LOCAL`.
+- **Browser driving:** `webcmd browser *` subcommands (`open`, `state`, `click`, `type`, `select`, `find`, `extract`, `network`) for ad-hoc interaction when no adapter covers the task. See `webcmd-browser`.
+- **External CLI passthrough:** `webcmd gh`, `webcmd docker`, `webcmd vercel`, and similar wrappers. Manage them with `webcmd external install <name>` or `webcmd external register <name>`.
 
 ## Install
 
 ```bash
-# npm global
-npm install -g @agentrhq/webcmd          # binary: webcmd, requires Node >= 21
-webcmd doctor                              # run before browser-dependent work (see below)
-
-# From source
-git clone git@github.com:agentrhq/webcmd.git
-cd webcmd && npm install
-npx tsx src/main.ts <command>               # same surface, no global install
+npm install -g @agentrhq/webcmd
+webcmd doctor
 ```
 
-`webcmd doctor` prints a structured `DoctorReport` — daemon status, runtime connection, version checks, and a live browser connectivity probe. Scope is narrow: it diagnoses the **browser runtime** (daemon + CloakBrowser wiring). `PUBLIC` / `LOCAL` adapters, `webcmd list`, `validate`, `verify`, plugin commands, and external-CLI passthrough don't need it to be green — only `COOKIE` / `INTERCEPT` / `UI` adapters and the `webcmd browser *` subcommands do. Flag: `-v` (verbose).
-
-## Prerequisites by command type
-
-| Strategy tag on `webcmd list` | What it needs |
-|--------------------------------|---------------|
-| `PUBLIC` | Nothing — pure HTTP, no browser. |
-| `COOKIE` | Logged into the target site in the webcmd-managed CloakBrowser profile. Existing Chrome logins are not imported, so run the site's login command again. |
-| `INTERCEPT` | Same as COOKIE, plus webcmd opens an automation window to capture a signed request. |
-| `UI` | Same as COOKIE, full DOM interaction. |
-| `LOCAL` | No browser; talks to a local/dev endpoint. |
-
-Electron desktop apps (cursor, codex, chatwise, discord-app, doubao-app, antigravity, chatgpt-app) route through CDP against the running app — same cookie-less flow as a logged-in browser. Make sure the app is running before invoking.
-
-## Discover what's installed — don't read this file, run a command
+From source:
 
 ```bash
-webcmd list                    # table, grouped by site
-webcmd list -f json            # machine-readable; pipe to jq or your agent
-webcmd list | grep -i twitter  # find commands for a specific site
-webcmd <site> --help           # see that site's commands + flags
-webcmd <site> <command> --help # see positional args and command-specific flags
+git clone git@github.com:agentrhq/webcmd.git
+cd webcmd
+npm install
+npx tsx src/main.ts <command>
 ```
 
-Do not hard-code adapter lists — there are 100+ sites and the count moves every week. `webcmd list -f json` is the source of truth; it emits one entry per command with `{site, name, aliases, description, strategy, browser, args, columns, ...}`. For an agent, that is always better than grepping a doc.
+`webcmd doctor` reports daemon status, runtime connection, version checks, and live browser connectivity. It is required for `COOKIE`, `INTERCEPT`, `UI`, and `webcmd browser *` work. It is not required for `PUBLIC`, `LOCAL`, `webcmd list`, `validate`, `verify`, plugin commands, or external CLI passthrough.
 
-Before falling back to raw `webcmd browser` commands on high-change authenticated sites, check whether a site adapter already exposes the workflow. For example, ChatGPT web has higher-level commands for conversation reads and Deep Research result extraction; discover the current surface with `webcmd chatgpt --help` or `webcmd list -f json`.
+## Prerequisites By Strategy
 
-## Universal flags (work on every adapter command)
+| Strategy | Needs |
+| --- | --- |
+| `PUBLIC` | No browser; pure HTTP. |
+| `COOKIE` | Logged into the target site in the webcmd-managed browser profile. |
+| `INTERCEPT` | Same as `COOKIE`, plus an automation window to capture a signed request. |
+| `UI` | Same as `COOKIE`, plus full DOM interaction. |
+| `LOCAL` | No browser; talks to a local or development endpoint. |
 
-| flag | effect |
-|------|--------|
-| `-f, --format <fmt>` | `table` (default in TTY) · `yaml` (default in non-TTY) · `json` · `plain` · `md` · `csv`. Pass explicitly when you want a specific shape; agents almost always want `-f json`. |
-| `-v, --verbose` | Debug logs + stack traces on failure; also sets `WEBCMD_VERBOSE=1` for the process. |
+Electron desktop app adapters route through CDP against the running app. Make sure the app is open before invoking those commands.
 
-Command-specific flags (`--limit`, `--tab`, `--filter`, …) are not universal — consult `<site> <command> --help`.
+## Discover Installed Commands
 
-## Output formats
+Run commands instead of reading static docs:
 
-- `json` — pretty-printed, 2-space indent. Default choice for agents.
-- `plain` — prints a single primary field for chat-style commands (`response`/`content`/`text`/`value`). Useful for piping to another tool.
-- `yaml` — fallback when output is not a TTY and `-f` is not explicit.
-- `table` — color-coded, site-grouped; meant for humans.
-- `md`, `csv` — straightforward tabular dumps.
+```bash
+webcmd list
+webcmd list -f json
+webcmd list | grep -i github
+webcmd <site> --help
+webcmd <site> <command> --help
+```
 
-A few commands override the default via `cmd.defaultFormat` (e.g. chat commands default to `plain`), so don't assume without reading `--help`.
+Do not hard-code adapter lists. `webcmd list -f json` is the source of truth and emits one entry per command with fields such as `{site, name, aliases, description, strategy, browser, args, columns}`.
 
-## Environment variables
+Before falling back to raw `webcmd browser` on high-change authenticated sites, check whether a site adapter already exposes the workflow.
 
-| variable | default | purpose |
-|----------|---------|---------|
+## Universal Flags
+
+| Flag | Effect |
+| --- | --- |
+| `-f, --format <fmt>` | `table` in TTY by default; `yaml` outside TTY by default; also supports `json`, `plain`, `md`, `csv`. Agents usually want `-f json`. |
+| `-v, --verbose` | Debug logs and stack traces on failure; also sets `WEBCMD_VERBOSE=1`. |
+
+Command-specific flags such as `--limit`, `--tab`, and `--filter` are not universal. Read `<site> <command> --help`.
+
+## Output Formats
+
+- `json`: pretty-printed, 2-space indent. Best default for agents.
+- `plain`: prints the primary text field for chat-style commands.
+- `yaml`: default when output is not a TTY and `-f` is not explicit.
+- `table`: color-coded and grouped for humans.
+- `md`, `csv`: tabular dumps.
+
+Some commands override the default through `cmd.defaultFormat`; read `--help`.
+
+## Environment Variables
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
 | `WEBCMD_BROWSER_CONNECT_TIMEOUT` | `45` | Seconds to wait for the browser bridge. |
 | `WEBCMD_BROWSER_COMMAND_TIMEOUT` | `60` | Per-command timeout. |
-| `WEBCMD_CDP_ENDPOINT` | — | Manual CDP endpoint override (dev / remote Chrome / Electron). |
-| `WEBCMD_CACHE_DIR` | `~/.webcmd/cache` | Network capture + browser-state cache. |
+| `WEBCMD_CDP_ENDPOINT` | unset | Manual CDP endpoint override. |
+| `WEBCMD_CACHE_DIR` | `~/.webcmd/cache` | Network capture and browser-state cache. |
 | `WEBCMD_WINDOW` | command-specific | `foreground` or `background` browser window mode. |
-| `WEBCMD_VERBOSE` | `false` | Verbose logging (also triggered by `-v`). |
+| `WEBCMD_VERBOSE` | `false` | Verbose logging, also triggered by `-v`. |
 
-## Self-repair
+## Self-Repair
 
-When an adapter command fails because the site changed (selectors drifted, API rotated, response schema shifted), re-run with `--trace retain-on-failure`. The error envelope includes a `trace` block pointing at `summary.md`; patch only the `adapterSourcePath` from that summary and retry. Max 3 repair rounds. The full flow is in `webcmd-autofix`.
-
-## Writing your own adapter
-
-Two-path storage:
-
-- **Private**: `~/.webcmd/clis/<site>/<command>.js` — no build step, hot-available, not visible in the public package.
-- **Public / PR**: `clis/<site>/<command>.js` — for upstream contribution; requires build.
-
-Scaffolding & verification:
+When an adapter command fails because a site changed, rerun with:
 
 ```bash
-webcmd browser init <site>/<command>   # generates a skeleton
-webcmd validate [target]               # semantic checks on the loaded registry (description, domain, pipeline step names, func|pipeline|_lazy presence, arg duplicates) — no network, no browser
-webcmd verify [target] [--smoke]       # run the command with synthetic args
-webcmd browser verify <site>/<command> # end-to-end smoke inside the bridge
+webcmd <site> <command> [args...] --trace retain-on-failure
 ```
 
-Adapters import only `@agentrhq/webcmd/registry` and `@agentrhq/webcmd/errors`. `columns` must align 1:1 (in name and order) with keys of the object returned by `func`. For the full workflow see `webcmd-adapter-author`.
+The error envelope includes a `trace` block pointing at `summary.md`. Patch only `adapterSourcePath` from that summary and retry. Maximum 3 repair rounds. See `webcmd-autofix`.
+
+## Writing An Adapter
+
+Two storage paths:
+
+- Private: `~/.webcmd/clis/<site>/<command>.js`
+- Public / PR: `clis/<site>/<command>.js`
+
+Scaffolding and checks:
+
+```bash
+webcmd browser init <site>/<command>
+webcmd validate [target]
+webcmd verify [target] [--smoke]
+webcmd browser verify <site>/<command>
+```
+
+Adapters import only `@agentrhq/webcmd/registry` and `@agentrhq/webcmd/errors`. `columns` must align one-to-one, in name and order, with returned row object keys. See `webcmd-adapter-author`.
 
 ## Plugins
 
-Plugins are third-party extensions pulled from git, separate from the main adapter registry:
-
 ```bash
-webcmd plugin install github:user/repo    # install
-webcmd plugin list [-f json]              # see installed
-webcmd plugin update [name] | --all       # keep current
+webcmd plugin install github:user/repo
+webcmd plugin list [-f json]
+webcmd plugin update [name] | --all
 webcmd plugin uninstall <name>
-webcmd plugin create <name>               # scaffold a new plugin
+webcmd plugin create <name>
 ```
 
-## External CLI passthrough
+Plugins are third-party extensions pulled from git and separate from the main adapter registry.
 
-Wraps external command-line tools so you can discover + invoke them through the same `webcmd …` entrypoint:
+## External CLI Passthrough
 
 ```bash
-webcmd external install gh    # auto-install via brew/apt/npm per external-clis.yaml
+webcmd external install gh
 webcmd external register my-tool \
-    --binary my-tool \
-    --install "npm i -g my-tool" \
-    --desc "My internal CLI"
+  --binary my-tool \
+  --install "npm i -g my-tool" \
+  --desc "My internal CLI"
 webcmd external list
-webcmd gh pr list --limit 5   # passthrough; stdio is inherited, exit code propagated
+webcmd gh pr list --limit 5
 webcmd docker ps
 ```
 
-Built-in entries live in `src/external-clis.yaml`; user overrides and additions in `~/.webcmd/external-clis.yaml`. Commonly shipped: `gh`, `docker`, `vercel`, `lark-cli`, `longbridge`, `dws`, `wecom-cli`, `obsidian`, `ntn`, `tg(tg-cli)`, `discord(discord-cli)`, `wx(wx-cli)`.
+Built-in entries live in `src/external-clis.yaml`; user overrides live in `~/.webcmd/external-clis.yaml`.
 
-Some official CLIs use shell-script installers instead of a shell-free package-manager command. Entries without an `install` config, such as `ntn`, must be installed manually from their homepage before passthrough use.
-
-## Shell completion
+## Shell Completion
 
 ```bash
-webcmd completion bash   # also: zsh, fish
-# -> script on stdout; source or save per your shell's convention
+webcmd completion bash
+webcmd completion zsh
+webcmd completion fish
 ```
 
-## Where to go next
+The script prints to stdout; source or save it according to your shell.
 
-| If you're about to… | Load this skill |
-|---------------------|-----------------|
-| Drive a live browser ad-hoc (no adapter available, or prototyping) | `webcmd-browser` |
-| Write a new adapter, or add a command to an existing site | `webcmd-adapter-author` |
-| Fix a broken adapter after a command failure | `webcmd-autofix` |
-| Route a search / lookup / research request to the right adapter | `smart-search` |
+## Where To Go Next
 
-## Commands that used to exist
+| Task | Load |
+| --- | --- |
+| Drive a live browser ad-hoc | `webcmd-browser` |
+| Write a new adapter or command | `webcmd-adapter-author` |
+| Fix a broken adapter after failure | `webcmd-autofix` |
+| Route a search or research request | `smart-search` |
 
-The following were removed in the PR #1094 consolidation — don't try to invoke them:
+## Removed Commands
 
-- `webcmd explore <url>` — superseded by `webcmd browser network` + `webcmd browser find` for live API discovery, and by the `webcmd-adapter-author` workflow for capture.
-- `webcmd record <url>` — removed; manual capture now lives in `webcmd browser network --detail`.
-- `webcmd web read` / `webcmd desktop *` as top-level groups — folded into their respective adapters (`webcmd web read` still exists as the `web` adapter's `read` command, but there is no standalone `web` / `desktop` top-level group command).
+Do not invoke these removed commands:
 
-## Don't
+- `webcmd explore <url>`: use `webcmd browser network` and `webcmd browser find`, or the `webcmd-adapter-author` workflow.
+- `webcmd record <url>`: manual capture now lives in `webcmd browser network --detail`.
+- Top-level `webcmd web read` / `webcmd desktop *` groups: use their adapters instead.
 
-- Don't paste this skill's command list into your plan; it will rot. Call `webcmd list -f json` at the start of a task instead.
-- Don't assume every adapter needs a browser — strategy `PUBLIC` and `LOCAL` don't. Check the `strategy` field.
-- Don't silently fall back from a failing adapter to a hand-rolled `fetch` — `--trace retain-on-failure` gives you the browser evidence and adapter source path. Do that first.
+## Do Not
+
+- Do not paste static command lists into plans; call `webcmd list -f json`.
+- Do not assume every adapter needs a browser; check `strategy`.
+- Do not silently fall back from a failing adapter to hand-rolled `fetch`; use `--trace retain-on-failure` first.

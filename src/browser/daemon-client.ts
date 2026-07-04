@@ -6,6 +6,7 @@
 
 import { sleep } from '../utils.js';
 import { BrowserConnectError } from '../errors.js';
+import { COMMAND_RESULT_UNKNOWN_CODE, COMMAND_RESULT_UNKNOWN_HINT } from '../daemon-utils.js';
 import { classifyBrowserError } from './errors.js';
 import { resolveProfileContextId } from './profile.js';
 import { DEFAULT_BROWSER_CONNECT_TIMEOUT } from './config.js';
@@ -26,6 +27,54 @@ let _idCounter = 0;
 
 function generateId(): string {
   return `cmd_${process.pid}_${Date.now()}_${++_idCounter}`;
+}
+
+const DEFAULT_COMMAND_TIMEOUT_SECONDS = 120;
+const RUNTIME_OP_TIMEOUT_MARGIN_MS = 15_000;
+const HTTP_TIMEOUT_MARGIN_MS = 10_000;
+const TRANSPORT_MAX_ATTEMPTS = 4;
+
+let _userCommandTimeoutSeconds: number | null = null;
+
+export function setDaemonCommandTimeoutSeconds(seconds: number | null): void {
+  _userCommandTimeoutSeconds = typeof seconds === 'number' && seconds > 0 ? Math.ceil(seconds) : null;
+}
+
+function effectiveCommandTimeoutSeconds(params: Omit<DaemonCommand, 'id' | 'action'>): number {
+  const base = _userCommandTimeoutSeconds ?? DEFAULT_COMMAND_TIMEOUT_SECONDS;
+  if (typeof params.timeoutMs === 'number' && params.timeoutMs > 0) {
+    return Math.max(base, Math.ceil((params.timeoutMs + RUNTIME_OP_TIMEOUT_MARGIN_MS) / 1000));
+  }
+  return base;
+}
+
+const UNKNOWN_OUTCOME_CODES = new Set([
+  COMMAND_RESULT_UNKNOWN_CODE,
+  'command_lost',
+  'result_evicted',
+]);
+
+const PRE_CONNECT_ERROR_CODES = new Set([
+  'ECONNREFUSED',
+  'UND_ERR_CONNECT_TIMEOUT',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+  'ENOTFOUND',
+]);
+
+function isPreConnectFetchError(err: unknown): boolean {
+  const queue: unknown[] = [err];
+  const seen = new Set<unknown>();
+  while (queue.length) {
+    const current = queue.pop();
+    if (!current || typeof current !== 'object' || seen.has(current)) continue;
+    seen.add(current);
+    const { code, cause, errors } = current as { code?: unknown; cause?: unknown; errors?: unknown };
+    if (typeof code === 'string' && PRE_CONNECT_ERROR_CODES.has(code)) return true;
+    if (cause) queue.push(cause);
+    if (Array.isArray(errors)) queue.push(...errors);
+  }
+  return false;
 }
 
 export type DaemonCommand = BrowserRuntimeCommand;
@@ -51,67 +100,95 @@ export {
  * Internal: send a command to the daemon and return the raw `DaemonResult`.
  *
  * Retry policy is explicit:
- * - pre-dispatch bridge/profile errors: run the full daemon/runtime ensure
- *   path, then resend with a fresh transport id;
- * - local TypeError before dispatch: same full ensure path, because the daemon
- *   may be stopped/stale and needs spawn/replacement, not just polling;
- * - `command_result_unknown` and AbortError: never retry automatically.
+ * - pre-dispatch bridge/profile errors and pre-connect fetch failures run the
+ *   full daemon/runtime ensure path, then resend the same command id;
+ * - executor-transient errors that happened before page code ran get one new
+ *   logical attempt with a fresh id;
+ * - `command_result_unknown`, duplicate pending ids from old daemons,
+ *   post-connect drops, and AbortError are never retried automatically.
  */
 async function sendCommandRaw(
   action: DaemonCommand['action'],
   params: Omit<DaemonCommand, 'id' | 'action'>,
 ): Promise<DaemonResult> {
-  const maxAttempts = 4;
-  let dispatchRecoveryUsed = false;
-  let duplicateIdRetryUsed = false;
-  let transientRetryUsed = false;
+  const timeoutSeconds = effectiveCommandTimeoutSeconds(params);
+  const deadlineAt = Date.now() + timeoutSeconds * 1000;
+  const rawWindowMode = process.env.WEBCMD_WINDOW;
+  const envWindowMode = rawWindowMode === 'foreground' || rawWindowMode === 'background'
+    ? rawWindowMode
+    : undefined;
+  const contextId = params.contextId ?? resolveProfileContextId();
+  const windowMode = params.windowMode ?? envWindowMode;
 
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const id = generateId();
-    const rawWindowMode = process.env.WEBCMD_WINDOW;
-    const envWindowMode = rawWindowMode === 'foreground' || rawWindowMode === 'background'
-      ? rawWindowMode
-      : undefined;
-    const contextId = params.contextId ?? resolveProfileContextId();
-    const windowMode = params.windowMode ?? envWindowMode;
-    const command: DaemonCommand = { id, action, ...params, ...(contextId && { contextId }), ...(windowMode && { windowMode }) };
+  let id = generateId();
+  let ensureUsed = false;
+  let semanticRetryUsed = false;
+
+  const ensureBridge = async (): Promise<void> => {
+    const remainingSeconds = Math.ceil((deadlineAt - Date.now()) / 1000);
+    await ensureBrowserBridgeReady({
+      timeoutSeconds: Math.max(1, Math.min(DEFAULT_BROWSER_CONNECT_TIMEOUT, remainingSeconds)),
+      contextId,
+      verbose: false,
+    });
+  };
+
+  for (let attempt = 1; attempt <= TRANSPORT_MAX_ATTEMPTS; attempt++) {
+    if (attempt > 1 && Date.now() >= deadlineAt) {
+      throw new BrowserCommandError(
+        'Browser command deadline exhausted across transport retries.',
+        COMMAND_RESULT_UNKNOWN_CODE,
+        COMMAND_RESULT_UNKNOWN_HINT,
+      );
+    }
+
+    const remainingMs = Math.max(1000, deadlineAt - Date.now());
+    const command: DaemonCommand = {
+      id,
+      action,
+      ...params,
+      timeout: timeoutSeconds,
+      deadlineAt,
+      ...(contextId && { contextId }),
+      ...(windowMode && { windowMode }),
+    };
     try {
       const res = await requestDaemon('/command', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(command),
-        timeout: 30000,
+        timeout: remainingMs + HTTP_TIMEOUT_MARGIN_MS,
       });
 
       const result = (await res.json()) as DaemonResult;
 
       if (result.ok) return result;
 
-      if (result.errorCode === 'command_result_unknown') {
+      if (result.errorCode && UNKNOWN_OUTCOME_CODES.has(result.errorCode)) {
         throw new BrowserCommandError(result.error ?? 'Browser command result is unknown', result.errorCode, result.errorHint);
-      }
-
-      if (!dispatchRecoveryUsed && isPreDispatchError(result.errorCode)) {
-        dispatchRecoveryUsed = true;
-        await ensureBrowserBridgeReady({
-          timeoutSeconds: DEFAULT_BROWSER_CONNECT_TIMEOUT,
-          contextId,
-          verbose: false,
-        });
-        continue;
       }
 
       const isDuplicateCommandId = res.status === 409
         && !result.errorCode
         && (result.error ?? '').includes('Duplicate command id');
-      if (isDuplicateCommandId && !duplicateIdRetryUsed) {
-        duplicateIdRetryUsed = true;
+      if (isDuplicateCommandId) {
+        throw new BrowserCommandError(
+          'Daemon already has this command id pending; the command may already be running.',
+          COMMAND_RESULT_UNKNOWN_CODE,
+          COMMAND_RESULT_UNKNOWN_HINT,
+        );
+      }
+
+      if (isPreDispatchError(result.errorCode) && !ensureUsed) {
+        ensureUsed = true;
+        await ensureBridge();
         continue;
       }
 
-      const advice = classifyBrowserError(new Error(result.error ?? ''));
-      if (advice.retryable && !transientRetryUsed) {
-        transientRetryUsed = true;
+      const advice = classifyBrowserError(new BrowserCommandError(result.error ?? '', result.errorCode));
+      if (advice.kind === 'extension-transient' && !semanticRetryUsed) {
+        semanticRetryUsed = true;
+        id = generateId();
         await sleep(advice.delayMs);
         continue;
       }
@@ -123,28 +200,19 @@ async function sendCommandRaw(
       if (err instanceof Error && err.name === 'AbortError') {
         throw new BrowserCommandError(
           'Browser command timed out client-side; the page may still have applied it.',
-          'command_result_unknown',
-          'Inspect the page state before retrying. Idempotent reads are safe to retry; non-idempotent writes may have already happened.',
+          COMMAND_RESULT_UNKNOWN_CODE,
+          COMMAND_RESULT_UNKNOWN_HINT,
         );
       }
 
-      if (!dispatchRecoveryUsed && err instanceof TypeError) {
-        dispatchRecoveryUsed = true;
-        await ensureBrowserBridgeReady({
-          timeoutSeconds: DEFAULT_BROWSER_CONNECT_TIMEOUT,
-          contextId,
-          verbose: false,
-        });
-        continue;
-      }
-
-      if (err instanceof Error) {
-        const advice = classifyBrowserError(err);
-        if (advice.retryable && !transientRetryUsed) {
-          transientRetryUsed = true;
-          await sleep(advice.delayMs);
-          continue;
-        }
+      if (err instanceof TypeError) {
+        await ensureBridge();
+        if (isPreConnectFetchError(err)) continue;
+        throw new BrowserCommandError(
+          'Connection to the daemon was lost mid-command; it may have already been applied.',
+          COMMAND_RESULT_UNKNOWN_CODE,
+          COMMAND_RESULT_UNKNOWN_HINT,
+        );
       }
 
       throw err;

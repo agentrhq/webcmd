@@ -24,13 +24,13 @@ cli({
   const buttons = Array.from(document.querySelectorAll('[role="button"]'));
   const joinBtn = buttons.find(b => {
     const text = b.textContent.trim();
-    return text === '加入小组' || text === 'Join group' || text === 'Join Group';
+    return text === 'Join group' || text === 'Join group' || text === 'Join Group';
   });
 
   if (!joinBtn) {
     const isMember = buttons.some(b => {
       const t = b.textContent.trim();
-      return t === '已加入' || t === 'Joined' || t === '成员' || t === 'Member';
+      return t === 'Joined' || t === 'Joined' || t === 'Member' || t === 'Member';
     });
     if (isMember) return [{ status: 'Already a member', group: groupName }];
     return [{ status: 'Join button not found', group: groupName }];

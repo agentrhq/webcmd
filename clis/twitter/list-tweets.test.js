@@ -45,7 +45,7 @@ describe('twitter list-tweets parser', () => {
         const tweet = extractTimelineTweet({
             rest_id: '500',
             legacy: {
-                full_text: '总的来说，还是有个好爹',
+                full_text: 'Overall,family background still matters',
                 is_quote_status: true,
                 quoted_status_id_str: '499',
             },
@@ -54,7 +54,7 @@ describe('twitter list-tweets parser', () => {
                 result: {
                     rest_id: '499',
                     legacy: {
-                        full_text: '罗某官二代背景考',
+                        full_text: 'official family background review',
                         created_at: 'Wed May 13 22:00:00 +0000 2026',
                         extended_entities: {
                             media: [{ type: 'photo', media_url_https: 'https://pbs.twimg.com/media/x.jpg' }],
@@ -68,7 +68,7 @@ describe('twitter list-tweets parser', () => {
             id: '499',
             author: 'alice',
             name: 'Alice',
-            text: '罗某官二代背景考',
+            text: 'official family background review',
             created_at: 'Wed May 13 22:00:00 +0000 2026',
             url: 'https://x.com/alice/status/499',
             has_media: true,

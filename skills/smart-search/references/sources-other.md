@@ -1,42 +1,32 @@
-# 其他垂直源
+# Other Vertical Sources
 
-用于求职、金融、书籍、词典等不适合归入前述分类的场景。
+Use for jobs, finance, books, dictionaries, and other cases that do not fit the earlier categories.
 
-## 站点
+## Sites
 
 ### linkedin
 
-- 适用：全球职位、英文岗位、跨国公司招聘
-- 使用前先运行：`webcmd linkedin -h`
+- Use for: global jobs, English-language job listings, and multinational-company hiring
+- Before use, run: `webcmd linkedin -h`
 
-### boss
+### yahoo
 
-- 适用：国内职位搜索、招聘与岗位信息
-- 使用前先运行：`webcmd boss -h`
+- Use for: finance, market data, stock quotes, and company finance pages
+- Before use, run: `webcmd yahoo -h`
 
-### xueqiu
+### github
 
-- 适用：股票、金融讨论、行情相关线索
-- 使用前先运行：`webcmd xueqiu -h`
-
-### weread
-
-- 适用：中文书籍搜索与书单线索
-- 使用前先运行：`webcmd weread -h`
+- Use for: open-source project discovery, repository signals, issues, pull requests, and releases
+- Before use, run: `webcmd github -h`
 
 ### dictionary
 
-- 适用：英文词义、基础词典查询
-- 使用前先运行：`webcmd dictionary -h`
+- Use for: English word meanings and basic dictionary lookup
+- Before use, run: `webcmd dictionary -h`
 
-### sinablog
+## Routing Hints
 
-- 适用：较旧的中文博客内容
-- 使用前先运行：`webcmd sinablog -h`
-
-## 路由提示
-
-- 求职：全球优先 `linkedin`，国内优先 `boss`
-- 金融：优先 `xueqiu`
-- 书籍：中文优先 `weread`
-- 英文单词定义：优先 `dictionary`
+- For jobs, prefer `linkedin`
+- For finance and market data, prefer `yahoo`
+- For open-source project signals, prefer `github`
+- For English word definitions, prefer `dictionary`

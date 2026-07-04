@@ -46,23 +46,23 @@ describe('formatRegistryHelpText', () => {
 
   it('surfaces access and canonical examples instead of strategy as primary help metadata', () => {
     const cmd: CliCommand = {
-      site: 'bilibili',
-      name: 'hot',
+      site: 'youtube',
+      name: 'search',
       access: 'read',
-      description: 'Bilibili hot videos',
+      description: 'Search YouTube',
       strategy: Strategy.COOKIE,
       browser: true,
       args: [],
     };
 
-    expect(formatCommandExample(cmd)).toBe('webcmd bilibili hot -f yaml');
+    expect(formatCommandExample(cmd)).toBe('webcmd youtube search -f yaml');
     expect(serializeCommand(cmd)).toMatchObject({
-      command: 'bilibili/hot',
+      command: 'youtube/search',
       access: 'read',
-      example: 'webcmd bilibili hot -f yaml',
+      example: 'webcmd youtube search -f yaml',
     });
     expect(formatRegistryHelpText(cmd)).toContain('Access: read');
-    expect(formatRegistryHelpText(cmd)).toContain('Example: webcmd bilibili hot -f yaml');
+    expect(formatRegistryHelpText(cmd)).toContain('Example: webcmd youtube search -f yaml');
     expect(formatRegistryHelpText(cmd)).not.toContain('Strategy:');
   });
 
