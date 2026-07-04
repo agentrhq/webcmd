@@ -22,14 +22,14 @@ cli({
   const buttons = Array.from(document.querySelectorAll('[role="button"]'));
   const addBtn = buttons.find(b => {
     const text = b.textContent.trim();
-    return text === '加好友' || text === 'Add Friend' || text === 'Add friend';
+    return text === 'Add friend' || text === 'Add Friend' || text === 'Add friend';
   });
 
   if (!addBtn) {
     // Check if already friends
     const isFriend = buttons.some(b => {
       const t = b.textContent.trim();
-      return t === '好友' || t === 'Friends' || t.includes('已发送') || t.includes('Pending');
+      return t === 'Friends' || t === 'Friends' || t.includes('Pending') || t.includes('Pending');
     });
     if (isFriend) return [{ status: 'Already friends or request pending', username }];
     return [{ status: 'Add Friend button not found', username }];

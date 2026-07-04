@@ -230,9 +230,9 @@ function consumeKnownOption(argv: readonly string[], index: number, options: Rea
 }
 
 /**
- * `webcmd boss detail -abc123def` fails because commander parses
+ * `webcmd openreview paper -abc123def` fails because commander parses
  * `-abc123def` as an unknown option rather than the required
- * `<security-id>` positional. BOSS 直聘 securityId tokens are opaque
+ * `<id>` positional. Some adapter identifiers are opaque
  * strings that can legitimately start with `-` (issue #1160), and the
  * same shape can show up in any adapter that takes an opaque-id
  * positional. Insert a `--` separator so commander treats the next

@@ -68,6 +68,26 @@ jobs:
         if: ${{ steps.release.outputs.release_created }}
         run: npm run check:package-bin
 
+      - name: Generate enhanced release notes
+        if: ${{ steps.release.outputs.release_created }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_RELEASE_NOTES_MODEL: ${{ vars.GEMINI_RELEASE_NOTES_MODEL }}
+        run: |
+          set -euo pipefail
+          npm --silent run generate-release-notes -- "${{ steps.release.outputs.tag_name }}" > "$RUNNER_TEMP/release-notes.md"
+          if [ -s "$RUNNER_TEMP/release-notes.md" ]; then
+            if gh release edit "${{ steps.release.outputs.tag_name }}" --notes-file "$RUNNER_TEMP/release-notes.md"; then
+              echo "Enhanced release notes were applied."
+            else
+              echo "::warning::Enhanced release notes could not be applied; keeping release-please notes."
+            fi
+          else
+            echo "Enhanced release notes were not generated; keeping release-please notes."
+          fi
+
       - name: Publish to npm
         if: ${{ steps.release.outputs.release_created }}
         run: npm publish --provenance --access public --ignore-scripts

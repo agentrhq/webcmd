@@ -158,7 +158,7 @@ export async function listRemoveUser(page, kwargs) {
                 caret.click();
                 await sleep(600);
                 const menuItems = Array.from(document.querySelectorAll('[role="menuitem"]'));
-                const addToListItem = menuItems.find(el => /add\\/remove|从列表|列表|add to list|add or remove/i.test(el.innerText));
+                const addToListItem = menuItems.find(el => /add\\/remove|localized text|localized text|add to list|add or remove/i.test(el.innerText));
                 if (!addToListItem) return { ok: false, message: 'Could not find "Add/remove from Lists" menu item' };
                 addToListItem.click();
                 await sleep(1200);
@@ -221,7 +221,7 @@ export async function listRemoveUser(page, kwargs) {
                 const rowRect = listCell.getBoundingClientRect();
                 const saveButton = Array.from(dialog.querySelectorAll('[role="button"], button')).find(b => {
                     const txt = (b.innerText || '').trim();
-                    return /^(Save|Done|保存|完成|儲存)$/i.test(txt);
+                    return /^(Save|Done|localized text|localized text|localized text)$/i.test(txt);
                 });
                 const saveRect = saveButton ? saveButton.getBoundingClientRect() : null;
                 return {

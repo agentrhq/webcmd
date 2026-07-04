@@ -236,7 +236,7 @@ describe('web/read render-aware helpers', () => {
 
         expect(result.diagnostics.includedFrameCount).toBe(1);
         expect(result.contentHtml).toContain('data-webcmd-iframe-source="https://example.com/frame.html"');
-        expect(result.contentHtml).toContain('来自 iframe: https://example.com/frame.html');
+        expect(result.contentHtml).toContain('localized text iframe: https://example.com/frame.html');
         expect(result.contentHtml).toContain('Station A 42');
         expect(result.diagnostics.emptyContainers).toEqual(expect.arrayContaining([
             expect.objectContaining({ scope: 'iframe', id: 'gridDatas', url: 'https://example.com/frame.html' }),
@@ -277,7 +277,7 @@ describe('web/read render-aware helpers', () => {
         `, { url: 'https://example.com/main.html', runScripts: 'outside-only' });
         const frame = dom.window.document.querySelector('iframe');
         frame.contentDocument.open();
-        frame.contentDocument.write('<body><table id="gridHd"><tr><th>水位</th></tr><tr><td>42</td></tr></table><ul id="gridDatas"></ul></body>');
+        frame.contentDocument.write('<body><table id="gridHd"><tr><th>water level</th></tr><tr><td>42</td></tr></table><ul id="gridDatas"></ul></body>');
         frame.contentDocument.close();
 
         const result = dom.window.eval(__test__.buildRenderAwareExtractorJs({ frames: 'same-origin' }));

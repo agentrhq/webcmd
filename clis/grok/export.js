@@ -62,7 +62,7 @@ export const grokExportCommand = cli({
       };
       const hasHistoryEntry = Boolean(document.querySelector('a[href^="/c/"]'));
       const hasHistoryLauncher = Array.from(document.querySelectorAll('button, [role="button"]'))
-        .some((node) => isVisible(node) && /^(查看全部|show all|view all)$/i.test((node.textContent || '').trim()));
+        .some((node) => isVisible(node) && /^(localized text|show all|view all)$/i.test((node.textContent || '').trim()));
       const signInCta = Array.from(document.querySelectorAll('button, a'))
         .some((node) => isVisible(node) && /^(sign in|log in)$/i.test((node.textContent || '').trim()));
       if (signInCta && !hasHistoryEntry && !hasHistoryLauncher) {
@@ -72,7 +72,7 @@ export const grokExportCommand = cli({
       const clickAllHistory = () => {
         const buttons = Array.from(document.querySelectorAll('button, [role="button"]'))
           .filter((node) => node instanceof HTMLElement && isVisible(node));
-        const target = buttons.find((node) => /^(查看全部|show all|view all)$/i.test((node.textContent || '').trim()));
+        const target = buttons.find((node) => /^(localized text|show all|view all)$/i.test((node.textContent || '').trim()));
         if (!target) return false;
         target.click();
         return true;

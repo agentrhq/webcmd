@@ -1,0 +1,94 @@
+---
+title: Concepts
+description: The core ideas behind agent-created CLIs, adapters, strategies, profiles, and plugins.
+---
+
+# Concepts
+
+Webcmd is built for agents that need to turn messy surfaces into stable commands.
+
+## The Loop
+
+The typical loop is:
+
+```text
+User prompt -> agent discovers -> agent crawls if needed -> adapter is created or updated -> command is verified -> command is reused
+```
+
+Repeated work should become a CLI. Once a command exists, future agents should use it instead of re-crawling the site.
+
+## Commands
+
+Webcmd commands have a consistent shape:
+
+```bash
+webcmd <site-or-tool> <command> [args] [options]
+```
+
+Humans usually ask an agent to run or create these commands. Agents use structured command metadata to decide what to call.
+
+## Adapters
+
+An adapter is the code that turns a website, app, API, or local surface into one or more commands.
+
+Adapters can be built in, private to a user, shipped in a plugin, or backed by an external local CLI.
+
+Good adapters have:
+
+- Clear command names.
+- Stable inputs and options.
+- JSON-friendly output.
+- Useful errors.
+- Verification coverage.
+
+## Strategies
+
+Each command has a strategy. The strategy describes how the agent or adapter gets the data.
+
+| Strategy | Meaning |
+| --- | --- |
+| `PUBLIC` | Uses public pages or APIs. No browser or login required. |
+| `COOKIE` | Uses a logged-in browser profile for authenticated requests. |
+| `INTERCEPT` | Uses browser-derived request context, then replays a useful request. |
+| `UI` | Drives the live page UI. |
+| `LOCAL` | Talks to a local app, service, or CLI. |
+
+You can ask the agent to explain the selected strategy, but you should not need to pick it yourself.
+
+## Profiles
+
+Profiles keep browser identities and login state separate. They matter for sites that require auth.
+
+Prompt example:
+
+```text
+Use my `work` Webcmd profile for this adapter. If the profile is not logged in, pause and ask me to sign in.
+```
+
+## Plugins
+
+Plugins are adapter packs. Use them for company workflows, community adapters, or experiments that should be installed without changing core Webcmd.
+
+Prompt example:
+
+```text
+Package these private Acme adapters as a Webcmd plugin with install instructions and examples.
+```
+
+## Skills
+
+Skills teach agents how to use Webcmd. They help agents choose existing commands, crawl sites, author adapters, and repair failures.
+
+Useful skills include `webcmd-usage`, `webcmd-browser`, `webcmd-adapter-author`, and `webcmd-autofix`.
+
+## Output Contracts
+
+A command is only useful if other agents can consume it.
+
+Ask for explicit columns:
+
+```text
+Return JSON rows with id, title, status, owner, updated_at, and url. Keep those fields stable across future updates.
+```
+
+Stable output is what turns one successful crawl into reusable infrastructure.

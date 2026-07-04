@@ -25,7 +25,7 @@ export function buildEnsureComposerOpenJs() {
       const hasLoginField = !!document.querySelector('input[name="username"], input[name="password"]');
       const hasLoginButton = Array.from(document.querySelectorAll('button, div[role="button"]')).some((el) => {
         const text = (el.textContent || '').replace(/\\s+/g, ' ').trim().toLowerCase();
-        return text === 'log in' || text === 'login' || text === '登录';
+        return text === 'log in' || text === 'login' || text === 'Log in';
       });
 
       if (onLoginRoute || (hasLoginField && hasLoginButton)) {
@@ -35,7 +35,7 @@ export function buildEnsureComposerOpenJs() {
       const alreadyOpen = document.querySelector('input[type="file"]');
       if (alreadyOpen) return { ok: true };
 
-      const labels = ['Create', 'New post', 'Post', '创建', '新帖子'];
+      const labels = ['Create', 'New post', 'Post', 'Create', 'New post'];
       const nodes = Array.from(document.querySelectorAll('a, button, div[role="button"], svg[aria-label], [aria-label]'));
       for (const node of nodes) {
         const text = ((node.textContent || '') + ' ' + (node.getAttribute?.('aria-label') || '')).trim();
@@ -71,10 +71,10 @@ export function buildPublishStatusProbeJs() {
       const url = window.location.href;
       const visibleText = dialogText.toLowerCase();
       const sharingVisible = /sharing/.test(visibleText);
-      const shared = /post shared|your post has been shared|已分享|已发布/.test(visibleText)
+      const shared = /post shared|your post has been shared|Shared|Posted/.test(visibleText)
         || /\\/p\\//.test(url);
       const failed = !shared && !sharingVisible && (
-        /couldn['’]t be shared|could not be shared|failed to share|share failed|无法分享|分享失败/.test(visibleText)
+        /couldn['']t be shared|could not be shared|failed to share|share failed|Unable to share|Share failed/.test(visibleText)
         || (/something went wrong/.test(visibleText) && /try again/.test(visibleText))
       );
       const composerOpen = dialogs.some((dialog) =>
@@ -256,7 +256,7 @@ async function executeUiInstagramPost(input) {
             if (input.preShareDelaySeconds > 0) {
                 await input.page.wait({ time: input.preShareDelaySeconds });
             }
-            await clickAction(input.page, ['Share', '分享'], 'caption');
+            await clickAction(input.page, ['Share', 'Share'], 'caption');
             shareClicked = true;
             let url = '';
             try {
@@ -357,7 +357,7 @@ async function dismissResidualDialogs(page) {
             }
             const closeByText = Array.from(dialog.querySelectorAll('button, div[role="button"]')).find((el) => {
               const buttonText = (el.textContent || '').replace(/\\s+/g, ' ').trim().toLowerCase();
-              return isVisible(el) && (buttonText === 'close' || buttonText === 'cancel' || buttonText === '取消');
+              return isVisible(el) && (buttonText === 'close' || buttonText === 'cancel' || buttonText === 'Cancel');
             });
             if (closeByText instanceof HTMLElement) {
               closeByText.click();
@@ -408,7 +408,7 @@ async function findUploadSelectors(page, mediaItems) {
 
       const dialogInputs = candidates.filter((el) => {
         const dialog = el.closest('[role="dialog"]');
-        return hasButtonText(dialog, ['Select from computer', '从电脑中选择']);
+        return hasButtonText(dialog, ['Select from computer', 'Select from computer']);
       });
 
       const visibleDialogInputs = dialogInputs.filter((el) => {
@@ -417,7 +417,7 @@ async function findUploadSelectors(page, mediaItems) {
       });
 
       const pickerInputs = candidates.filter((el) => {
-        return hasButtonText(el.parentElement, ['Select from computer', '从电脑中选择']);
+        return hasButtonText(el.parentElement, ['Select from computer', 'Select from computer']);
       });
 
       const primary = visibleDialogInputs.length
@@ -593,12 +593,12 @@ export function buildInspectUploadStageJs() {
         );
       };
       const hasCaption = dialogs.some((dialog) => !!dialog.querySelector('textarea, [contenteditable="true"]'));
-      const hasPicker = hasVisibleButtonInDialogs(['Select from computer', '从电脑中选择']);
-      const hasNext = hasVisibleButtonInDialogs(['Next', '下一步']);
+      const hasPicker = hasVisibleButtonInDialogs(['Select from computer', 'Select from computer']);
+      const hasNext = hasVisibleButtonInDialogs(['Next', 'Next']);
       const hasPreviewUi = hasCaption
         || (!hasPicker && hasNext)
-        || /crop|select crop|select zoom|open media gallery|filters|adjustments|裁剪|缩放|滤镜|调整/.test(combined);
-      const failed = /something went wrong|please try again|couldn['’]t upload|could not upload|upload failed|try again|出错|失败/.test(combined);
+        || /crop|select crop|select zoom|open media gallery|filters|adjustments|crop|zoom|filters|adjustments/.test(combined);
+      const failed = /something went wrong|please try again|couldn['']t upload|could not upload|upload failed|try again|error|failed/.test(combined);
       if (hasPreviewUi) return { state: 'preview', detail: dialogText || '' };
       if (failed) return { state: 'failed', detail: dialogText || 'Something went wrong' };
       return { state: 'pending', detail: dialogText || '' };
@@ -722,7 +722,7 @@ async function dismissUploadErrorDialog(page) {
       const dialogs = Array.from(document.querySelectorAll('[role="dialog"]')).filter((el) => isVisible(el));
       for (const dialog of dialogs) {
         const text = (dialog.textContent || '').replace(/\\s+/g, ' ').trim().toLowerCase();
-        if (!text.includes('something went wrong') && !text.includes('try again') && !text.includes('失败') && !text.includes('出错')) continue;
+        if (!text.includes('something went wrong') && !text.includes('try again') && !text.includes('failed') && !text.includes('error')) continue;
         const close = dialog.querySelector('[aria-label="Close"], button[aria-label="Close"], div[role="button"][aria-label="Close"]');
         if (close instanceof HTMLElement && isVisible(close)) {
           close.click();
@@ -749,7 +749,7 @@ async function clickVisibleUploadRetry(page) {
       const dialogs = Array.from(document.querySelectorAll('[role="dialog"]')).filter((el) => isVisible(el));
       for (const dialog of dialogs) {
         const text = (dialog.textContent || '').replace(/\\s+/g, ' ').trim().toLowerCase();
-        if (!text.includes('something went wrong') && !text.includes('try again') && !text.includes('失败') && !text.includes('出错')) continue;
+        if (!text.includes('something went wrong') && !text.includes('try again') && !text.includes('failed') && !text.includes('error')) continue;
         const retry = Array.from(dialog.querySelectorAll('button, div[role="button"]')).find((el) => {
           const label = ((el.textContent || '') + ' ' + (el.getAttribute?.('aria-label') || ''))
             .replace(/\\s+/g, ' ')
@@ -758,8 +758,8 @@ async function clickVisibleUploadRetry(page) {
           return isVisible(el) && (
             label === 'try again'
             || label === 'retry'
-            || label === '再试一次'
-            || label === '重试'
+            || label === 'Try again'
+            || label === 'Retry'
           );
         });
         if (retry instanceof HTMLElement) {
@@ -890,8 +890,8 @@ async function clickVisibleShareRetry(page) {
           return isVisible(el) && (
             label === 'try again'
             || label === 'retry'
-            || label === '再试一次'
-            || label === '重试'
+            || label === 'Try again'
+            || label === 'Retry'
           );
         });
 
@@ -939,7 +939,7 @@ async function advanceToCaptionEditor(page) {
             return;
         }
         try {
-            await clickAction(page, ['Next', '下一步'], 'media');
+            await clickAction(page, ['Next', 'Next'], 'media');
         }
         catch (error) {
             if (error instanceof CommandExecutionError) {

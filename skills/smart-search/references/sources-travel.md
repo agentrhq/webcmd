@@ -1,20 +1,26 @@
-# 旅游
+# Travel
 
-用于目的地、景区、酒店联想和旅行线索。
+Use for destinations, attractions, hotel ideas, and travel leads.
 
-## 站点
+## Sites
 
-### ctrip
+### google
 
-- 适用：目的地、景区、酒店、旅行联想搜索
-- 使用前先运行：`webcmd ctrip -h`
+- Use for: broad destination, attraction, hotel, and itinerary discovery across the web
+- Before use, run: `webcmd google -h`
 
-### xiaohongshu
+### reddit
 
-- 适用：生活方式、穿搭、美妆、旅行、真实体验
-- 使用前先运行：`webcmd xiaohongshu -h`
+- Use for: traveler experiences, local tips, itinerary comparisons, and community recommendations
+- Before use, run: `webcmd reddit -h`
 
-## 路由提示
+### youtube
 
-- 用户明确说“携程”时直接使用 `ctrip`
-- 用户只说“旅行/目的地/景区”时，可先选 `doubao` 做中文语境粗检索，再补 `ctrip`
+- Use for: destination walkthroughs, hotel reviews, travel vlogs, and visual checks
+- Before use, run: `webcmd youtube -h`
+
+## Routing Hints
+
+- If the user names a specific travel platform and it exists in the live registry, use that platform directly
+- If the user only asks about travel, destinations, attractions, or hotels, start with `google`
+- Add `reddit` for traveler experience and `youtube` for visual inspection

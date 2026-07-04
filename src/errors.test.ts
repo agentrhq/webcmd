@@ -34,11 +34,11 @@ describe('Error type hierarchy', () => {
   });
 
   it('AuthRequiredError has correct code, domain, and auto-generated hint', () => {
-    const err = new AuthRequiredError('bilibili.com');
+    const err = new AuthRequiredError('youtube.com');
     expect(err.code).toBe('AUTH_REQUIRED');
-    expect(err.domain).toBe('bilibili.com');
-    expect(err.message).toBe('Not logged in to bilibili.com');
-    expect(err.hint).toContain('https://bilibili.com');
+    expect(err.domain).toBe('youtube.com');
+    expect(err.message).toBe('Not logged in to youtube.com');
+    expect(err.hint).toContain('https://youtube.com');
   });
 
   it('AuthRequiredError accepts custom message', () => {
@@ -48,9 +48,9 @@ describe('Error type hierarchy', () => {
   });
 
   it('TimeoutError has correct code and hint', () => {
-    const err = new TimeoutError('bilibili/hot', 60);
+    const err = new TimeoutError('youtube/search', 60);
     expect(err.code).toBe('TIMEOUT');
-    expect(err.message).toBe('bilibili/hot timed out after 60s');
+    expect(err.message).toBe('youtube/search timed out after 60s');
     expect(err.hint).toContain('timeout');
   });
 
@@ -81,14 +81,14 @@ describe('Error type hierarchy', () => {
 
 describe('toEnvelope', () => {
   it('converts CliError to structured envelope', () => {
-    const err = new AuthRequiredError('bilibili.com');
+    const err = new AuthRequiredError('youtube.com');
     const envelope = toEnvelope(err);
     expect(envelope).toEqual({
       ok: false,
       error: {
         code: 'AUTH_REQUIRED',
-        message: 'Not logged in to bilibili.com',
-        help: expect.stringContaining('https://bilibili.com'),
+        message: 'Not logged in to youtube.com',
+        help: expect.stringContaining('https://youtube.com'),
         exitCode: 77,
       },
     });

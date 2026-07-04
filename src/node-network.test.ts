@@ -11,7 +11,7 @@ describe('node network proxy decisions', () => {
 
   it('routes external https traffic through https_proxy', () => {
     const decision = decideProxy(
-      new URL('https://www.v2ex.com/api/topics/latest.json'),
+      new URL('https://api.github.com/repos/agentrhq/webcmd'),
       { https_proxy: 'http://127.0.0.1:7897' },
     );
 
@@ -23,7 +23,7 @@ describe('node network proxy decisions', () => {
 
   it('falls back to HTTP_PROXY for https traffic when HTTPS_PROXY is absent', () => {
     const decision = decideProxy(
-      new URL('https://www.v2ex.com/api/topics/latest.json'),
+      new URL('https://api.github.com/repos/agentrhq/webcmd'),
       { HTTP_PROXY: 'http://127.0.0.1:7897' },
     );
 

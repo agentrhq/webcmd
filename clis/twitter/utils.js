@@ -216,7 +216,7 @@ export async function waitForComposerMediaReady(page, expectedCount = 1) {
         ).length;
         const blobCount = document.querySelectorAll('img[src^="blob:"], video[src^="blob:"]').length;
         const removeButtonCount = Array.from(document.querySelectorAll('button,[role="button"]')).filter((el) =>
-          /remove media|remove image|remove|编辑/i.test((el.getAttribute('aria-label') || '') + ' ' + (el.textContent || ''))
+          /remove media|remove image|remove|localized text/i.test((el.getAttribute('aria-label') || '') + ' ' + (el.textContent || ''))
         ).length;
         const explicitPreviewCount = Math.max(
           previewCount,

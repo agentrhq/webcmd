@@ -1,0 +1,81 @@
+---
+title: Quickstart
+description: Install Webcmd, verify the runtime, and start asking agents to create or use CLIs.
+---
+
+# Quickstart
+
+Webcmd requires Node.js 20 or newer. Install it where your coding agent can run shell commands.
+
+## Install
+
+```bash
+node --version
+npm install -g @agentrhq/webcmd
+```
+
+Check that the CLI is available:
+
+```bash
+webcmd --version
+webcmd --help
+```
+
+## Verify the Runtime
+
+Agents use Webcmd for public commands, authenticated browser workflows, local CLIs, and adapter authoring. Verify the local runtime before asking an agent to create commands:
+
+```bash
+webcmd doctor
+```
+
+`doctor` checks the local daemon, browser bridge, runtime wiring, selected profile, and connectivity.
+
+## Give Your Agent a Goal
+
+Start with a plain-language prompt:
+
+```text
+Use Webcmd to create a private CLI for example.com search. The command should accept a query and return title, snippet, author, date, and url as JSON. Verify it before you finish.
+```
+
+Or ask the agent to reuse what already exists:
+
+```text
+Check whether Webcmd already has a command for Hacker News search. If it does, run it for "browser automation" and show me the JSON output. If not, propose an adapter.
+```
+
+## Let Agents Discover the Registry
+
+```bash
+webcmd list -f json
+```
+
+Agents should use this command before crawling. It tells them what commands already exist, which inputs they accept, whether a browser is needed, and what output columns are expected.
+
+## Login-Based Workflows
+
+If a site requires login, ask the agent to use a named profile:
+
+```text
+Use my `work` Webcmd profile to create a CLI for the Acme billing dashboard. If I need to sign in, pause and tell me. Do not store credentials in the adapter.
+```
+
+## Development Setup
+
+From a cloned repository:
+
+```bash
+npm install
+npm run dev -- list
+npm test
+npm run typecheck
+```
+
+Build the distributable package with:
+
+```bash
+npm run build
+```
+
+Most users do not need local development commands. They are useful when you are improving Webcmd itself or preparing an adapter for upstream contribution.

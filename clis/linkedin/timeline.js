@@ -54,7 +54,7 @@ function mergeTimelinePosts(existing, batch) {
     return merged;
 }
 function normalizeTimestamp(value) {
-    const text = normalizeWhitespace(value).replace(/[•·.]$/g, '').trim();
+    const text = normalizeWhitespace(value).replace(/[•\u00b7.]$/g, '').trim();
     const match = text.match(/\b(\d+\s*(?:s|m|h|d|w|mo|yr|min))\b/i);
     return match ? match[1].replace(/\s+/g, '') : text;
 }
@@ -215,8 +215,8 @@ async function extractVisiblePosts(page) {
       } else {
         rest = text;
       }
-      rest = normalize(rest.replace(/^[•·]\\s*(1st|2nd|3rd\\+?|3rd|degree connection)/i, ''));
-      match = rest.match(/(\\d+\\s*(?:s|m|h|d|w|mo|yr|min))\\s*[•·]?$/i);
+      rest = normalize(rest.replace(/^[•\u00b7]\\s*(1st|2nd|3rd\\+?|3rd|degree connection)/i, ''));
+      match = rest.match(/(\\d+\\s*(?:s|m|h|d|w|mo|yr|min))\\s*[•\u00b7]?$/i);
       if (match) {
         postedAt = cleanTimestamp(match[1]);
         headline = normalize(rest.slice(0, rest.length - match[0].length));
@@ -244,13 +244,13 @@ async function extractVisiblePosts(page) {
       var postedAt = '';
       var match;
       if (actorText) {
-        match = actorText.match(/^(.+?)\\s+[•·]\\s+(1st|2nd|3rd\\+?|3rd|degree connection)(.*)$/i);
+        match = actorText.match(/^(.+?)\\s+[•\u00b7]\\s+(1st|2nd|3rd\\+?|3rd|degree connection)(.*)$/i);
         if (match) {
           author = normalize(match[1]);
           actorText = normalize(match[3]);
         }
       }
-      match = actorText.match(/(.+?)\\s+(\\d+\\s*(?:s|m|h|d|w|mo|yr|min))\\s*[•·]?$/i);
+      match = actorText.match(/(.+?)\\s+(\\d+\\s*(?:s|m|h|d|w|mo|yr|min))\\s*[•\u00b7]?$/i);
       if (match) {
         headline = normalize(match[1]);
         postedAt = cleanTimestamp(match[2]);

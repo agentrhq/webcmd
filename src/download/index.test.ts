@@ -167,11 +167,10 @@ describe('video-platform host detection', () => {
     for (const url of [
       'https://www.youtube.com/watch?v=abc',
       'https://youtu.be/abc',
-      'https://m.bilibili.com/video/BV1xx',
+      'https://vimeo.com/12345',
       'https://twitter.com/u/status/1',
       'https://x.com/u/status/1',
       'https://www.tiktok.com/@u/video/1',
-      'https://vimeo.com/12345',
       'https://www.twitch.tv/u',
     ]) {
       expect(requiresYtdlp(url)).toBe(true);

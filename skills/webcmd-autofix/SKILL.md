@@ -1,63 +1,67 @@
 ---
 name: webcmd-autofix
-description: Automatically fix broken Webcmd adapters when commands fail. Load this skill when a webcmd command fails — it guides you through collecting a trace artifact, patching the adapter, retrying, and filing an upstream GitHub issue after a verified fix. Works with any AI agent.
+description: Automatically fix broken Webcmd adapters when commands fail. Load this skill when a webcmd command fails; it guides you through collecting a trace artifact, patching the adapter, retrying, and filing an upstream GitHub issue after a verified fix. Works with any AI agent.
 allowed-tools: Bash(webcmd:*), Bash(gh:*), Read, Edit, Write
 ---
 
-# Webcmd AutoFix — Automatic Adapter Self-Repair
+# Webcmd AutoFix - Automatic Adapter Self-Repair
 
-When an `webcmd` command fails because a website changed its DOM, API, or response schema, **automatically diagnose, fix the adapter, and retry** — don't just report the error.
+When a `webcmd` command fails because a website changed its DOM, API, or response schema, diagnose, fix the adapter, and retry. Do not only report the error when the failure is repairable.
 
 ## Safety Boundaries
 
-**Before starting any repair, check these hard stops:**
+Hard stops before any code change:
 
-- **`AUTH_REQUIRED`** (exit code 77) — **STOP.** Do not modify code. Tell the user to log into the site in Chrome.
-- **`BROWSER_CONNECT`** (exit code 69) — **STOP.** Do not modify code. Tell the user to run `webcmd doctor`.
-- **CAPTCHA / rate limiting** — **STOP.** Not an adapter issue.
+- **`AUTH_REQUIRED`** (exit code 77): stop. Tell the user to log into the site in Chrome or the webcmd-managed browser profile.
+- **`BROWSER_CONNECT`** (exit code 69): stop. Tell the user to run `webcmd doctor`.
+- **CAPTCHA / rate limiting / IP block:** stop. This is not an adapter issue.
 
-**Scope constraint:**
-- **Only modify the file at `adapterSourcePath` in the trace `summary.md` front matter** — this is the authoritative adapter location (may be `clis/<site>/` in repo or `~/.webcmd/clis/<site>/` for npm installs)
-- **Never modify** `src/`, `extension/`, `tests/`, `package.json`, or `tsconfig.json`
+Scope constraint:
 
-**Retry budget:** Max **3 repair rounds** per failure. If 3 rounds of diagnose → fix → retry don't resolve it, stop and report what was tried.
+- Modify only the file at `adapterSourcePath` in the trace `summary.md` front matter. That path is authoritative and may be `clis/<site>/...` in the repo or `~/.webcmd/clis/<site>/...` for user-local installs.
+- Never modify `src/`, `extension/`, `tests/`, `package.json`, or `tsconfig.json` during autofix.
 
-## Prerequisites
+Retry budget: maximum **3 repair rounds** per failure. A round is diagnose -> patch -> retry. If 3 rounds do not resolve it, stop and report what was tried.
+
+## Prerequisite
 
 ```bash
-webcmd doctor    # Verify extension + daemon connectivity
+webcmd doctor
 ```
 
-## When to Use This Skill
+This verifies extension and daemon connectivity for browser-dependent repairs.
 
-Use when `webcmd <site> <command>` fails with repairable errors:
-- **SELECTOR** — element not found (DOM changed)
-- **EMPTY_RESULT** — no data returned (API response changed)
-- **API_ERROR** / **NETWORK** — endpoint moved or broke
-- **PAGE_CHANGED** — page structure no longer matches
-- **COMMAND_EXEC** — runtime error in adapter logic
-- **TIMEOUT** — page loads differently, adapter waits for wrong thing
+## When To Use
 
-## Before Entering Repair: "Empty" ≠ "Broken"
+Use this skill when `webcmd <site> <command>` fails with repairable errors:
 
-`EMPTY_RESULT` — and sometimes a structurally-valid `SELECTOR` that returns nothing — is often **not an adapter bug**. Platforms actively degrade results under anti-scrape heuristics, and a "not found" response from the site doesn't mean the content is actually missing. Rule this out **before** committing to a repair round:
+- **SELECTOR:** element not found or DOM changed.
+- **EMPTY_RESULT:** no data returned and evidence suggests a schema/API drift.
+- **API_ERROR / NETWORK:** endpoint moved, params changed, or network contract broke.
+- **PAGE_CHANGED:** page structure no longer matches the adapter.
+- **COMMAND_EXEC:** runtime error in adapter logic.
+- **TIMEOUT:** page loads differently or waits for the wrong signal.
 
-- **Retry with an alternative query or entry point.** If `webcmd xiaohongshu search "X"` returns 0 but `webcmd xiaohongshu search "X 攻略"` returns 20, the adapter is fine — the platform was shaping results for the first query.
-- **Spot-check in a normal Chrome tab.** If the data is visible in the user's own browser but the adapter comes back empty, the issue is usually authentication state, rate limiting, or a soft block — not a code bug. The fix is `webcmd doctor` / re-login, not editing source.
-- **Look for soft 404s.** Sites like xiaohongshu / weibo / douyin return HTTP 200 with an empty payload instead of a real 404 when an item is hidden or deleted. The snapshot will look structurally correct. A retry 2-3 seconds later often distinguishes "temporarily hidden" from "actually gone".
-- **"0 results" from a search is an answer.** If the adapter successfully reached the search endpoint, got an HTTP 200, and the platform returned `results: []`, that is a valid answer — report it to the user as "no matches for this query" rather than patching the adapter.
+## Before Repair: Empty Does Not Always Mean Broken
 
-Only proceed to Step 1 if the empty/selector-missing result is **reproducible across retries and alternative entry points**. Otherwise you're patching a working adapter to chase noise, and the patched version will break the next working path.
+`EMPTY_RESULT`, and sometimes a structurally valid selector that returns no rows, may be a real platform answer rather than an adapter bug. Rule this out before a repair round:
+
+- Retry with an alternative query or entry point. If `webcmd reddit search "X"` returns 0 but `webcmd reddit search "X guide"` returns 20, the adapter is likely fine and the first query was too narrow.
+- Spot-check in a normal browser tab. If the data is visible there but the adapter is empty, the issue may be auth state, soft blocking, or rate limiting; use `webcmd doctor` or re-login rather than editing source.
+- Look for soft 404s. Some platforms return HTTP 200 with an empty payload when an item is hidden, deleted, or temporarily unavailable. A retry after a short wait can distinguish transient hiding from real deletion.
+- Treat a successful empty search as an answer. If the adapter reached the endpoint, got HTTP 200, and the platform returned `results: []`, report "no matches" instead of patching.
+
+Proceed only when the empty or missing-selector result is reproducible across retries and alternative entry points.
 
 ## Step 1: Collect Trace Context
 
-Run the failing command with failure-retained trace enabled:
+Run the failing command with retained trace:
 
 ```bash
 webcmd <site> <command> [args...] --trace retain-on-failure 2>trace-error.yaml
 ```
 
-On failure, stderr contains the normal error envelope plus a small `trace` block:
+On failure, stderr contains the normal error envelope plus a `trace` block:
 
 ```yaml
 ok: false
@@ -73,7 +77,7 @@ trace:
   receiptPath: "/path/to/.webcmd/profiles/default/traces/.../receipt.json"
 ```
 
-Read `summaryPath` first. It is the LLM-oriented entry point and includes front matter:
+Read `summaryPath` first. It is the LLM-oriented entry point and includes:
 
 ```yaml
 ---
@@ -89,137 +93,122 @@ errorMessage: "Could not find element: .old-selector"
 ---
 ```
 
-The artifact directory contains:
+Trace artifacts include:
 
 ```text
-summary.md      # start here
-receipt.json    # machine-readable trace receipt
-trace.jsonl     # full redacted timeline
-network.jsonl   # redacted network events
-console.jsonl   # redacted console events
-state/          # final snapshots when available
-screenshots/    # final screenshots when available
+summary.md
+receipt.json
+trace.jsonl
+network.jsonl
+console.jsonl
+state/
+screenshots/
 ```
 
-If you redirected stderr to a file, read that file and copy `trace.summaryPath`.
+Do not ask the user to rerun with legacy diagnostic environment variables. Trace artifacts are the repair evidence path.
 
-Do not ask the user to rerun with legacy diagnostic env vars. Trace is the repair evidence path.
+## Step 2: Analyze The Failure
 
-## Step 2: Analyze the Failure
+Read the trace summary and adapter source. Classify root cause:
 
-Read the trace summary and the adapter source. Classify the root cause:
+| Error code | Likely cause | Repair strategy |
+| --- | --- | --- |
+| SELECTOR | DOM restructured or class/id changed | Explore current DOM and find a stable selector |
+| EMPTY_RESULT | API response schema changed, data moved, or real empty result | Check network and visible page before patching |
+| API_ERROR | Endpoint URL changed or new params required | Discover current API through network evidence |
+| AUTH_REQUIRED | Login flow changed or cookies expired | Stop; ask user to log in |
+| TIMEOUT | Page loads differently or lazy-load signal changed | Update wait conditions |
+| PAGE_CHANGED | Major redesign | May need full adapter rewrite through `webcmd-adapter-author` |
 
-| Error Code | Likely Cause | Repair Strategy |
-|-----------|-------------|-----------------|
-| SELECTOR | DOM restructured, class/id renamed | Explore current DOM → find new selector |
-| EMPTY_RESULT | API response schema changed, or data moved | Check network → find new response path |
-| API_ERROR | Endpoint URL changed, new params required | Discover new API via network intercept |
-| AUTH_REQUIRED | Login flow changed, cookies expired | **STOP** — tell user to log in, do not modify code |
-| TIMEOUT | Page loads differently, spinner/lazy-load | Add/update wait conditions |
-| PAGE_CHANGED | Major redesign | May need full adapter rewrite |
+Answer these questions:
 
-**Key questions to answer:**
-1. What is the adapter trying to do? (Read the file at `adapterSourcePath`)
-2. What did the page look like when it failed? (Read `summary.md`, then `state/` if needed)
-3. What network requests happened? (Read `Failed Network` in `summary.md`, then `network.jsonl` if needed)
-4. What's the gap between what the adapter expects and what the page provides?
+1. What is the adapter trying to do? Read `adapterSourcePath`.
+2. What did the page look like when it failed? Read `summary.md`, then `state/` if needed.
+3. What network requests happened? Read failed network in `summary.md`, then `network.jsonl` if needed.
+4. What gap exists between adapter expectations and current page reality?
 
-## Step 3: Explore the Current Website
+## Step 3: Explore The Current Website
 
-Use `webcmd browser` to inspect the live website. **Never use the broken adapter** — it will just fail again.
+Use `webcmd browser` to inspect the live site. Do not use the broken adapter for exploration.
 
-### DOM changed (SELECTOR errors)
+For DOM changes:
 
 ```bash
-# Open the page and inspect current DOM
-webcmd browser open https://example.com/target-page && webcmd browser state
-
-# Look for elements that match the adapter's intent
-# Compare the snapshot with what the adapter expects
+webcmd browser open https://example.com/target-page
+webcmd browser state
 ```
 
-### API changed (API_ERROR, EMPTY_RESULT)
+For API changes:
 
 ```bash
-# Open page with network interceptor, then trigger the action manually
-webcmd browser open https://example.com/target-page && webcmd browser state
-
-# Interact to trigger API calls
-webcmd browser click <N> && webcmd browser network
-
-# Narrow to the request you care about by the fields its body should have
+webcmd browser open https://example.com/target-page
+webcmd browser state
+webcmd browser click <N>
+webcmd browser network
 webcmd browser network --filter author,text,likes
-
-# Inspect specific API response (key is the `key` field from the default JSON output)
 webcmd browser network --detail <key>
 ```
 
-## Step 4: Patch the Adapter
+Use the `key` field from network output with `--detail`.
 
-Read the adapter source file at `adapterSourcePath` from the trace summary front matter and make targeted fixes. This path is authoritative — it may be in the repo (`clis/`) or user-local (`~/.webcmd/clis/`).
+## Step 4: Patch The Adapter
 
-Use the `Read` tool on the exact path from summary.md front matter.
+Patch only `adapterSourcePath`.
 
-### Common Fixes
+Common fixes:
 
-**Selector update:**
-```typescript
-// Before: page.evaluate('document.querySelector(".old-class")...')
-// After:  page.evaluate('document.querySelector(".new-class")...')
+```js
+// Selector update
+document.querySelector('.new-class')
 ```
 
-**API endpoint change:**
-```typescript
-// Before: const resp = await page.evaluate(`fetch('/api/v1/old-endpoint')...`)
-// After:  const resp = await page.evaluate(`fetch('/api/v2/new-endpoint')...`)
+```js
+// Endpoint update
+fetch('/api/v2/search')
 ```
 
-**Response schema change:**
-```typescript
-// Before: const items = data.results
-// After:  const items = data.data.items  // API now nests under "data"
+```js
+// Response schema update
+const items = data.data.items;
 ```
 
-**Wait condition update:**
-```typescript
-// Before: await page.wait({ selector: '.loading-spinner', hidden: true })
-// After:  await page.wait({ selector: '[data-loaded="true"]' })
+```js
+// Wait condition update
+await page.wait({ selector: '[data-loaded="true"]' });
 ```
 
-### Rules for Patching
+Rules:
 
-1. **Make minimal changes** — fix only what's broken, don't refactor
-2. **Keep the same output structure** — `columns` and return format must stay compatible
-3. **Prefer API over DOM scraping** — if you discover a JSON API during exploration, switch to it
-4. **Use `@agentrhq/webcmd/*` imports only** — never add third-party package imports
-5. **Test after patching** — run the command again to verify
-6. **Never relax `verify/<cmd>.json` fixtures to silence a failure.** A failing `patterns` / `notEmpty` / `mustNotContain` / `mustBeTruthy` rule means the adapter's output is broken. Tighten the adapter so it produces correct values; do not loosen the fixture to accept the broken values. The one legitimate reason to edit a fixture during repair is when the **site itself** changed shape (e.g. URL format migration) — in that case update the fixture and note the change in `~/.webcmd/sites/<site>/notes.md`. Otherwise editing the fixture is covering up a silent correctness regression.
+1. Make minimal changes; do not refactor unrelated code.
+2. Keep output structure compatible: `columns` and row keys must remain aligned.
+3. Prefer stable API evidence over brittle DOM scraping when discovered.
+4. Use only `@agentrhq/webcmd/*` imports; do not add third-party packages.
+5. Test after patching.
+6. Never relax `verify/<cmd>.json` fixtures to silence a failure. A failing `patterns`, `notEmpty`, `mustNotContain`, or `mustBeTruthy` rule usually means adapter output is wrong. Edit a fixture only when the site itself legitimately changed shape, such as a URL format migration, and note the change in `~/.webcmd/sites/<site>/notes.md`.
 
-## Step 5: Verify the Fix
+## Step 5: Verify The Fix
+
+Run:
 
 ```bash
-# Run the command normally
 webcmd <site> <command> [args...]
 ```
 
-If it still fails, go back to Step 1 and collect a fresh trace. You have a budget of **3 repair rounds** (trace → fix → retry). If the same error persists after a fix, try a different approach. After 3 rounds, stop and report what was tried.
+If it still fails, collect a fresh trace and start another round. Stop after 3 rounds.
 
-## Step 6: File an Upstream Issue
+## Step 6: File An Upstream Issue
 
-If the retry **passes**, the local adapter has drifted from upstream. File a GitHub issue so the fix flows back to `agentrhq/webcmd`.
+If the retry passes, prepare an upstream issue so the local fix can flow back to `agentrhq/webcmd`.
 
-**Do NOT file for:**
-- `AUTH_REQUIRED`, `BROWSER_CONNECT`, `ARGUMENT`, `CONFIG` — environment/usage issues, not adapter bugs
-- CAPTCHA or rate limiting — not fixable upstream
-- Failures you couldn't actually fix (3 rounds exhausted)
+Do not file for:
 
-**Only file after a verified local fix** — the retry must pass first.
+- `AUTH_REQUIRED`, `BROWSER_CONNECT`, `ARGUMENT`, or `CONFIG`
+- CAPTCHA or rate limiting
+- failures you could not fix
 
-**Procedure:**
+Only file after a verified local fix.
 
-1. Prepare the issue content from the trace summary you already have:
-   - **Title:** `[autofix] <site>/<command>: <error_code>` (e.g. `[autofix] zhihu/hot: SELECTOR`)
-   - **Body** (use this template):
+Draft:
 
 ```markdown
 ## Summary
@@ -240,15 +229,13 @@ Webcmd autofix repaired this adapter locally, and the retry passed.
 ## Local fix summary
 
 ~~~
-<1-2 sentence description of what you changed and why>
+<1-2 sentence description of what changed and why>
 ~~~
 
 _Issue filed by Webcmd autofix after a verified local repair._
 ```
 
-2. **Ask the user before filing.** Show them the draft title and body. Only proceed if they confirm.
-
-3. If the user approves and `gh auth status` succeeds:
+Ask the user before filing. Show the draft title and body. If they approve and `gh auth status` succeeds:
 
 ```bash
 gh issue create --repo agentrhq/webcmd \
@@ -256,42 +243,48 @@ gh issue create --repo agentrhq/webcmd \
   --body "<the body above>"
 ```
 
-If `gh` is not installed or not authenticated, tell the user and skip — do not error out.
+If `gh` is unavailable or unauthenticated, tell the user and skip issue creation.
 
-## When to Stop
+## When To Stop
 
-**Hard stops (do not modify code):**
-- **AUTH_REQUIRED / BROWSER_CONNECT** — environment issue, not adapter bug
-- **Site requires CAPTCHA** — can't automate this
-- **Rate limited / IP blocked** — not an adapter issue
+Hard stops:
 
-**Soft stops (report after attempting):**
-- **3 repair rounds exhausted** — stop, report what was tried and what failed
-- **Feature completely removed** — the data no longer exists
-- **Major redesign** — needs full adapter rewrite via `webcmd-adapter-author` skill
+- `AUTH_REQUIRED` / `BROWSER_CONNECT`: environment issue, not adapter bug.
+- Site requires CAPTCHA.
+- Rate limited or IP blocked.
 
-In all stop cases, clearly communicate the situation to the user rather than making futile patches.
+Soft stops:
+
+- 3 repair rounds exhausted.
+- Feature completely removed.
+- Major redesign requiring `webcmd-adapter-author`.
+
+In all stop cases, clearly report the situation instead of making speculative patches.
 
 ## Example Repair Session
 
-```
-1. User runs: webcmd zhihu hot
-   → Fails: SELECTOR "Could not find element: .HotList-item"
+```text
+1. User runs: webcmd reddit hot
+   -> Fails: SELECTOR "Could not find element: .old-post-selector"
 
-2. AI runs: webcmd zhihu hot --trace retain-on-failure 2>trace-error.yaml
-   → Gets trace summary with final state and failed action evidence
+2. Agent runs: webcmd reddit hot --trace retain-on-failure 2>trace-error.yaml
+   -> Gets trace summary with final state and failed action evidence
 
-3. AI reads summary/state: page loaded but uses ".HotItem" instead of ".HotList-item"
+3. Agent reads summary/state:
+   -> Page loaded, but post cards now use "[data-testid=post-container]"
 
-4. AI explores: webcmd browser open https://www.zhihu.com/hot && webcmd browser state
-   → Confirms new class name ".HotItem" with child ".HotItem-content"
+4. Agent explores:
+   -> webcmd browser open https://www.reddit.com && webcmd browser state
 
-5. AI patches: Edit adapter at `adapterSourcePath` — replace ".HotList-item" with ".HotItem"
+5. Agent patches adapterSourcePath:
+   -> Replace old selector with stable scoped selector
 
-6. AI verifies: webcmd zhihu hot
-   → Success: returns hot topics
+6. Agent verifies:
+   -> webcmd reddit hot
+   -> Success: returns hot posts
 
-7. AI prepares upstream issue draft, shows it to the user
+7. Agent prepares upstream issue draft and asks the user
 
-8. User approves → AI runs: gh issue create --repo agentrhq/webcmd --title "[autofix] zhihu/hot: SELECTOR" --body "..."
+8. User approves:
+   -> gh issue create --repo agentrhq/webcmd --title "[autofix] reddit/hot: SELECTOR" --body "..."
 ```

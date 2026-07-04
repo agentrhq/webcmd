@@ -39,36 +39,36 @@ function buildFeedExtractScript(limit) {
       const path = window.location && window.location.pathname ? window.location.pathname : '';
       const body = textOf(document.body);
       return /^\\/(login|checkpoint)(\\/|$|\\.php)/.test(path)
-        || /^(Log in to Facebook|Facebook登录|登录 Facebook)/i.test(body)
+        || /^(Log in to Facebook|FacebookLog in|Log in Facebook)/i.test(body)
         || /You must log in to continue/i.test(body);
     }
 
     function isExplicitEmptyFeed() {
       const body = textOf(document.body);
-      return /No posts available|Nothing to show|暂无动态|没有更多动态|还没有帖子/i.test(body);
+      return /No posts available|Nothing to show|No posts available|No more posts|No posts yet/i.test(body);
     }
 
     function isSuggestionOrChrome(text) {
-      return /^(People you may know|People You May Know|可能认识的人?|你可能认识的人?)/i.test(text)
-        || /^(Suggested for you|Suggested Groups|推荐小组|推荐内容)/i.test(text);
+      return /^(People you may know|People You May Know|People you may know?|People you may know?)/i.test(text)
+        || /^(Suggested for you|Suggested Groups|Suggested groups|Suggested content)/i.test(text);
     }
 
     function isSponsored(text) {
-      return /(^|\\s)(Sponsored|赞助|广告)(\\s|$)/i.test(text);
+      return /(^|\\s)(Sponsored|Sponsored|Advertisement)(\\s|$)/i.test(text);
     }
 
     function isActionText(text) {
-      return /^(Like|Comment|Share|Send|Follow|赞|评论|分享|发送|关注)$/i.test(text);
+      return /^(Like|Comment|Share|Send|Follow|Like|Comment|Share|Send|Follow)$/i.test(text);
     }
 
     function isMetricText(text) {
-      return /^(All:|所有心情：)/i.test(text)
+      return /^(All:|All reactions:)/i.test(text)
         || /\\b(likes?|reactions?|comments?|shares?)\\b/i.test(text)
-        || /(条评论|次分享)$/.test(text);
+        || /(comments|shares)$/.test(text);
     }
 
     function isTimestampText(text) {
-      return /^(\\d+\\s*(s|m|h|d|w|mo|yr|min|sec|second|minute|hour|day|week|month|year)s?|Just now|Yesterday|刚刚|昨天|\\d+小时|\\d+天)(\\s*[·•.])?$/i.test(text);
+      return /^(\\d+\\s*(s|m|h|d|w|mo|yr|min|sec|second|minute|hour|day|week|month|year)s?|Just now|Yesterday|just now|yesterday|\\d+hours|\\d+days)(\\s*[\u00b7•.])?$/i.test(text);
     }
 
     function postUrlFrom(root) {
@@ -86,9 +86,9 @@ function buildFeedExtractScript(limit) {
       const kinds = new Set();
       for (const el of root.querySelectorAll('[aria-label]')) {
         const label = labelOf(el);
-        if (/^(Like|赞)$/i.test(label)) kinds.add('like');
-        if (/^(Comment|评论)$/i.test(label)) kinds.add('comment');
-        if (/^(Share|分享)$/i.test(label)) kinds.add('share');
+        if (/^(Like|Like)$/i.test(label)) kinds.add('like');
+        if (/^(Comment|Comment)$/i.test(label)) kinds.add('comment');
+        if (/^(Share|Share)$/i.test(label)) kinds.add('share');
       }
       return kinds;
     }
@@ -129,7 +129,7 @@ function buildFeedExtractScript(limit) {
         if (text.length <= 10) return false;
         if (isSuggestionOrChrome(text) || isSponsored(text)) return false;
         if (isActionText(text) || isMetricText(text) || isTimestampText(text)) return false;
-        if (/^(See more|查看更多|更多)$/i.test(text)) return false;
+        if (/^(See more|See more|More)$/i.test(text)) return false;
         return true;
       });
     }
@@ -147,12 +147,12 @@ function buildFeedExtractScript(limit) {
       if (!author && !content) return null;
       if (!content && !postUrl && kinds.size < 2) return null;
 
-      const likesMatch = fullText.match(/所有心情：\\s*(\\d[\\d,.\\s万亿KMk]*)/)
+      const likesMatch = fullText.match(/All reactions:\\s*(\\d[\\d,.\\slocalized textKMk]*)/)
         || fullText.match(/All:\\s*(\\d[\\d,.KMk]*)/)
         || fullText.match(/(\\d[\\d,.KMk]*)\\s*(?:likes?|reactions?)/i);
-      const commentsMatch = fullText.match(/([\\d,.]+\\s*[万亿]?)\\s*条评论/)
+      const commentsMatch = fullText.match(/([\\d,.]+\\s*[localized text]?)\\s*comments/)
         || fullText.match(/(\\d[\\d,.KMk]*)\\s*comments?/i);
-      const sharesMatch = fullText.match(/([\\d,.]+\\s*[万亿]?)\\s*次分享/)
+      const sharesMatch = fullText.match(/([\\d,.]+\\s*[localized text]?)\\s*shares/)
         || fullText.match(/(\\d[\\d,.KMk]*)\\s*shares?/i);
 
       return {
@@ -173,7 +173,7 @@ function buildFeedExtractScript(limit) {
     function fallbackContainers() {
       const main = document.querySelector('[role="main"]');
       if (!main) return [];
-      const buttons = Array.from(main.querySelectorAll('[aria-label="Like"], [aria-label="赞"], [aria-label="Comment"], [aria-label="评论"], [aria-label="Share"], [aria-label="分享"]'));
+      const buttons = Array.from(main.querySelectorAll('[aria-label="Like"], [aria-label="Like"], [aria-label="Comment"], [aria-label="Comment"], [aria-label="Share"], [aria-label="Share"]'));
       const seen = new WeakSet();
       const containers = [];
       for (const button of buttons) {
@@ -224,7 +224,7 @@ function buildFeedExtractScript(limit) {
       diagnostics: {
         articleCount: document.querySelectorAll('[role="article"]').length,
         primaryCount: primary.length,
-        fallbackActionCount: document.querySelectorAll('[role="main"] [aria-label="Like"], [role="main"] [aria-label="赞"], [role="main"] [aria-label="Comment"], [role="main"] [aria-label="评论"]').length,
+        fallbackActionCount: document.querySelectorAll('[role="main"] [aria-label="Like"], [role="main"] [aria-label="Like"], [role="main"] [aria-label="Comment"], [role="main"] [aria-label="Comment"]').length,
         mainTextLength: textOf(document.querySelector('[role="main"]')).length,
       },
     };

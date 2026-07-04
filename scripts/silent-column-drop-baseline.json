@@ -1,153 +1,5 @@
 [
   {
-    "command": "1688/assets",
-    "file": "clis/1688/assets.js",
-    "missing": [
-      "detail_images",
-      "item_url",
-      "main_images",
-      "other_images",
-      "raw_assets",
-      "sku_images",
-      "source",
-      "videos"
-    ]
-  },
-  {
-    "command": "1688/assets",
-    "file": "clis/1688/assets.js",
-    "missing": [
-      "gallery",
-      "href",
-      "offerId",
-      "offerTitle",
-      "scannedAssets"
-    ]
-  },
-  {
-    "command": "1688/download",
-    "file": "clis/1688/download.js",
-    "missing": [
-      "filename",
-      "url"
-    ]
-  },
-  {
-    "command": "1688/item",
-    "file": "clis/1688/item.js",
-    "missing": [
-      "bodyText",
-      "gallery",
-      "href",
-      "offerId",
-      "offerTitle",
-      "seller",
-      "services",
-      "shipping",
-      "trade"
-    ]
-  },
-  {
-    "command": "1688/item",
-    "file": "clis/1688/item.js",
-    "missing": [
-      "currency",
-      "customization_text",
-      "delivery_days_text",
-      "item_url",
-      "main_images",
-      "member_id",
-      "moq_value",
-      "price_tiers",
-      "private_label_text",
-      "sales_text",
-      "seller_url",
-      "service_badges",
-      "shop_id",
-      "shop_name",
-      "stock_quantity",
-      "visible_attributes"
-    ]
-  },
-  {
-    "command": "1688/search",
-    "file": "clis/1688/search.js",
-    "missing": [
-      "badges",
-      "currency",
-      "fetched_at",
-      "moq_value",
-      "price_max",
-      "price_min",
-      "return_rate_text",
-      "sales_text",
-      "seller_url",
-      "shop_id",
-      "source_url",
-      "strategy"
-    ]
-  },
-  {
-    "command": "1688/search",
-    "file": "clis/1688/search.js",
-    "missing": [
-      "bodyText",
-      "candidates",
-      "href",
-      "next_url"
-    ]
-  },
-  {
-    "command": "1688/search",
-    "file": "clis/1688/search.js",
-    "missing": [
-      "container_text",
-      "desc_rows",
-      "hover_items",
-      "hover_price_text",
-      "sales_text",
-      "seller_url",
-      "tag_items"
-    ]
-  },
-  {
-    "command": "1688/store",
-    "file": "clis/1688/store.js",
-    "missing": [
-      "business_model_text",
-      "company_name",
-      "company_url",
-      "factory_badges",
-      "member_id",
-      "mobile_text",
-      "phone_text",
-      "response_rate_text",
-      "service_badges",
-      "shop_id",
-      "staff_size_text",
-      "store_url",
-      "top_categories"
-    ]
-  },
-  {
-    "command": "51job/company",
-    "file": "clis/51job/company.js",
-    "missing": [
-      "cInfoParts",
-      "links",
-      "sidebarText"
-    ]
-  },
-  {
-    "command": "51job/detail",
-    "file": "clis/51job/detail.js",
-    "missing": [
-      "companyTag",
-      "finalUrl",
-      "meta"
-    ]
-  },
-  {
     "command": "amazon/discussion",
     "file": "clis/amazon/discussion.js",
     "missing": [
@@ -265,21 +117,6 @@
     ]
   },
   {
-    "command": "bilibili/download",
-    "file": "clis/bilibili/download.js",
-    "missing": [
-      "author"
-    ]
-  },
-  {
-    "command": "bilibili/feed",
-    "file": "clis/bilibili/feed.js",
-    "missing": [
-      "comments",
-      "itemType"
-    ]
-  },
-  {
     "command": "binance/depth",
     "file": "clis/binance/depth.js",
     "missing": [
@@ -332,15 +169,6 @@
     ]
   },
   {
-    "command": "boss/resume",
-    "file": "clis/boss/resume.js",
-    "missing": [
-      "activeTime",
-      "jobChatting",
-      "workHistory"
-    ]
-  },
-  {
     "command": "coupang/search",
     "file": "clis/coupang/search.js",
     "missing": [
@@ -362,51 +190,6 @@
     "missing": [
       "originalPrice",
       "unitPrice"
-    ]
-  },
-  {
-    "command": "douban/download",
-    "file": "clis/douban/download.js",
-    "missing": [
-      "detail_url",
-      "image_url",
-      "photo_id"
-    ]
-  },
-  {
-    "command": "douban/marks",
-    "file": "clis/douban/marks.js",
-    "missing": [
-      "movieId"
-    ]
-  },
-  {
-    "command": "douban/photos",
-    "file": "clis/douban/photos.js",
-    "missing": [
-      "page",
-      "subject_title",
-      "thumb_url",
-      "type"
-    ]
-  },
-  {
-    "command": "douban/reviews",
-    "file": "clis/douban/reviews.js",
-    "missing": [
-      "createdAt",
-      "movieId",
-      "reviewId"
-    ]
-  },
-  {
-    "command": "hupu/mentions",
-    "file": "clis/hupu/mentions.js",
-    "missing": [
-      "has_next_page",
-      "msg_type",
-      "next_page_str",
-      "topic_id"
     ]
   },
   {
@@ -465,72 +248,6 @@
     ]
   },
   {
-    "command": "jd/item",
-    "file": "clis/jd/item.js",
-    "missing": [
-      "hasProductMarker",
-      "hasSecurityChallenge",
-      "href",
-      "isLoginPage",
-      "isProductPage",
-      "looksBlocked",
-      "onExpectedItemUrl"
-    ]
-  },
-  {
-    "command": "jianyu/search",
-    "file": "clis/jianyu/search.js",
-    "missing": [
-      "contextText",
-      "date"
-    ]
-  },
-  {
-    "command": "jianyu/search",
-    "file": "clis/jianyu/search.js",
-    "missing": [
-      "detail_reason"
-    ]
-  },
-  {
-    "command": "jianyu/search",
-    "file": "clis/jianyu/search.js",
-    "missing": [
-      "detail_reason",
-      "notice_id",
-      "source_id"
-    ]
-  },
-  {
-    "command": "jike/notifications",
-    "file": "clis/jike/notifications.js",
-    "missing": [
-      "actionType",
-      "fromUser"
-    ]
-  },
-  {
-    "command": "jike/topic",
-    "file": "clis/jike/topic.js",
-    "missing": [
-      "id"
-    ]
-  },
-  {
-    "command": "ke/chengjiao",
-    "file": "clis/ke/chengjiao.js",
-    "missing": [
-      "url"
-    ]
-  },
-  {
-    "command": "ke/xiaoqu",
-    "file": "clis/ke/xiaoqu.js",
-    "missing": [
-      "url"
-    ]
-  },
-  {
     "command": "linkedin/timeline",
     "file": "clis/linkedin/timeline.js",
     "missing": [
@@ -553,13 +270,6 @@
     ]
   },
   {
-    "command": "linux-do/tags",
-    "file": "clis/linux-do/tags.js",
-    "missing": [
-      "id"
-    ]
-  },
-  {
     "command": "paperreview/review",
     "file": "clis/paperreview/review.js",
     "missing": [
@@ -568,25 +278,10 @@
     ]
   },
   {
-    "command": "powerchina/search",
-    "file": "clis/powerchina/search.js",
-    "missing": [
-      "contextText",
-      "date"
-    ]
-  },
-  {
     "command": "producthunt/hot",
     "file": "clis/producthunt/hot.js",
     "missing": [
       "voteCandidates"
-    ]
-  },
-  {
-    "command": "tieba/search",
-    "file": "clis/tieba/search.js",
-    "missing": [
-      "snippet"
     ]
   },
   {
@@ -603,15 +298,6 @@
     "file": "clis/twitter/bookmarks.js",
     "missing": [
       "name"
-    ]
-  },
-  {
-    "command": "twitter/list-remove",
-    "file": "clis/twitter/list-remove.js",
-    "missing": [
-      "method",
-      "ts",
-      "url"
     ]
   },
   {
@@ -671,21 +357,6 @@
     ]
   },
   {
-    "command": "v2ex/daily",
-    "file": "clis/v2ex/daily.js",
-    "missing": [
-      "claimed"
-    ]
-  },
-  {
-    "command": "v2ex/daily",
-    "file": "clis/v2ex/daily.js",
-    "missing": [
-      "claimed",
-      "once"
-    ]
-  },
-  {
     "command": "web/read",
     "file": "clis/web/read.js",
     "missing": [
@@ -704,152 +375,6 @@
       "contentType",
       "method",
       "url"
-    ]
-  },
-  {
-    "command": "weibo/me",
-    "file": "clis/weibo/me.js",
-    "missing": [
-      "avatar",
-      "description",
-      "profile_url"
-    ]
-  },
-  {
-    "command": "weibo/user",
-    "file": "clis/weibo/user.js",
-    "missing": [
-      "avatar",
-      "birthday",
-      "created_at",
-      "gender",
-      "ip_location",
-      "verified_reason"
-    ]
-  },
-  {
-    "command": "weread/book",
-    "file": "clis/weread/book.js",
-    "missing": [
-      "metadataReady"
-    ]
-  },
-  {
-    "command": "weread/book",
-    "file": "clis/weread/book.js",
-    "missing": [
-      "url"
-    ]
-  },
-  {
-    "command": "xianyu/item",
-    "file": "clis/xianyu/item.js",
-    "missing": [
-      "browse_count",
-      "category",
-      "collect_count",
-      "description",
-      "image_count",
-      "image_urls",
-      "item_url",
-      "original_price",
-      "reply_interval",
-      "reply_ratio_24h",
-      "seller_id",
-      "seller_score",
-      "seller_url",
-      "status"
-    ]
-  },
-  {
-    "command": "xianyu/search",
-    "file": "clis/xianyu/search.js",
-    "missing": [
-      "extra",
-      "original_price"
-    ]
-  },
-  {
-    "command": "xiaohongshu/creator-note-detail",
-    "file": "clis/xiaohongshu/creator-note-detail.js",
-    "missing": [
-      "label"
-    ]
-  },
-  {
-    "command": "xiaohongshu/creator-notes-summary",
-    "file": "clis/xiaohongshu/creator-notes-summary.js",
-    "missing": [
-      "published_at",
-      "top_interest_pct",
-      "top_source_pct"
-    ]
-  },
-  {
-    "command": "xiaohongshu/creator-notes",
-    "file": "clis/xiaohongshu/creator-notes-summary.js",
-    "missing": [
-      "avg_view_time",
-      "published_at",
-      "rise_fans",
-      "shares",
-      "top_interest",
-      "top_interest_pct",
-      "top_source",
-      "top_source_pct"
-    ]
-  },
-  {
-    "command": "xiaohongshu/download",
-    "file": "clis/xiaohongshu/download.js",
-    "missing": [
-      "url"
-    ]
-  },
-  {
-    "command": "xiaohongshu/search",
-    "file": "clis/xiaohongshu/search.js",
-    "missing": [
-      "author_url"
-    ]
-  },
-  {
-    "command": "xueqiu/comments",
-    "file": "clis/xueqiu/comments.js",
-    "missing": [
-      "id"
-    ]
-  },
-  {
-    "command": "xueqiu/earnings-date",
-    "file": "clis/xueqiu/earnings-date.js",
-    "missing": [
-      "_future",
-      "_ts"
-    ]
-  },
-  {
-    "command": "xueqiu/hot-stock",
-    "file": "clis/xueqiu/hot-stock.js",
-    "missing": [
-      "url"
-    ]
-  },
-  {
-    "command": "xueqiu/kline",
-    "file": "clis/xueqiu/kline.js",
-    "missing": [
-      "percent",
-      "symbol"
-    ]
-  },
-  {
-    "command": "xueqiu/watchlist",
-    "file": "clis/xueqiu/watchlist.js",
-    "missing": [
-      "change",
-      "url",
-      "volume"
     ]
   },
   {
@@ -882,29 +407,6 @@
     "missing": [
       "stats",
       "videos"
-    ]
-  },
-  {
-    "command": "zhihu/hot",
-    "file": "clis/zhihu/hot.js",
-    "missing": [
-      "answer_count",
-      "follower_count",
-      "url"
-    ]
-  },
-  {
-    "command": "zhihu/hot",
-    "file": "clis/zhihu/hot.js",
-    "missing": [
-      "url"
-    ]
-  },
-  {
-    "command": "zsxq/groups",
-    "file": "clis/zsxq/groups.js",
-    "missing": [
-      "valid_until"
     ]
   }
 ]

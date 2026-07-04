@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ArgumentError, CommandExecutionError } from '@agentrhq/webcmd/errors';
 
 const baseline = {
-    turns: [{ Role: 'Assistant', Text: '旧回答' }],
+    turns: [{ Role: 'Assistant', Text: 'Previous answer' }],
     transcriptLines: ['baseline'],
     composerHasText: true,
     isGenerating: false,
@@ -11,16 +11,16 @@ const baseline = {
 const submission = {
     snapshot: {
         turns: [
-            { Role: 'Assistant', Text: '旧回答' },
-            { Role: 'User', Text: '请只回复：OK' },
+            { Role: 'Assistant', Text: 'Previous answer' },
+            { Role: 'User', Text: 'Please reply only:OK' },
         ],
-        transcriptLines: ['baseline', '请只回复：OK'],
+        transcriptLines: ['baseline', 'Please reply only:OK'],
         composerHasText: false,
         isGenerating: true,
         structuredTurnsTrusted: true,
     },
     preSendAssistantCount: 1,
-    userAnchorTurn: { Role: 'User', Text: '请只回复：OK' },
+    userAnchorTurn: { Role: 'User', Text: 'Please reply only:OK' },
     reason: 'user_turn',
 };
 
@@ -275,11 +275,11 @@ describe('gemini ask orchestration', () => {
         mocks.waitForGeminiSubmission.mockResolvedValueOnce(submission);
         mocks.waitForGeminiResponse.mockResolvedValueOnce('OK');
 
-        const result = await askCommand.func(page, { prompt: '请只回复：OK', timeout: 20, new: 'false' });
+        const result = await askCommand.func(page, { prompt: 'Please reply only:OK', timeout: 20, new: 'false' });
 
         expect(mocks.readGeminiSnapshot).toHaveBeenCalledWith(page);
         expect(mocks.waitForGeminiSubmission).toHaveBeenCalledWith(page, baseline, 20);
-        expect(mocks.waitForGeminiResponse).toHaveBeenCalledWith(page, submission, '请只回复：OK', 18);
+        expect(mocks.waitForGeminiResponse).toHaveBeenCalledWith(page, submission, 'Please reply only:OK', 18);
         expect(result).toEqual([{ response: '💬 OK' }]);
     });
 
@@ -294,9 +294,9 @@ describe('gemini ask orchestration', () => {
         mocks.waitForGeminiSubmission.mockResolvedValueOnce(submission);
         mocks.waitForGeminiResponse.mockResolvedValueOnce('');
 
-        await askCommand.func(page, { prompt: '请只回复：OK', timeout: 20, new: 'false' });
+        await askCommand.func(page, { prompt: 'Please reply only:OK', timeout: 20, new: 'false' });
 
-        expect(mocks.waitForGeminiResponse).toHaveBeenCalledWith(page, submission, '请只回复：OK', 0);
+        expect(mocks.waitForGeminiResponse).toHaveBeenCalledWith(page, submission, 'Please reply only:OK', 0);
     });
 
     // ── Omitted --model (no model change) ────────────────────────────────
@@ -625,7 +625,7 @@ describe('gemini ask thinking selection', () => {
         setupHappyPath();
 
         const result = await askCommand.func(page, {
-            prompt: '请只回复：OK', timeout: 20, new: 'false', thinking: 'standard',
+            prompt: 'Please reply only:OK', timeout: 20, new: 'false', thinking: 'standard',
         });
 
         expect(mocks.selectGeminiThinking).toHaveBeenCalledWith(page, 'standard');
@@ -1227,14 +1227,14 @@ describe('gemini ask thinking selection', () => {
         setupHappyPath();
 
         const result = await askCommand.func(page, {
-            prompt: '请只回复：OK', timeout: 20, new: 'false',
+            prompt: 'Please reply only:OK', timeout: 20, new: 'false',
             model: '2.5-flash', thinking: 'standard',
         });
 
         // Response extraction is unchanged: same prefix, same wait logic.
         expect(mocks.readGeminiSnapshot).toHaveBeenCalledWith(page);
         expect(mocks.waitForGeminiSubmission).toHaveBeenCalledWith(page, baseline, 20);
-        expect(mocks.waitForGeminiResponse).toHaveBeenCalledWith(page, submission, '请只回复：OK', 18);
+        expect(mocks.waitForGeminiResponse).toHaveBeenCalledWith(page, submission, 'Please reply only:OK', 18);
         expect(result).toEqual([{ response: '💬 OK' }]);
     });
 

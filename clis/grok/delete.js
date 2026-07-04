@@ -38,7 +38,7 @@ cli({
             return [{ status: 'dry-run (pass --yes to actually delete)', id }];
         }
 
-        const result = await clickConversationMenuItem(page, id, ['删除', 'delete']);
+        const result = await clickConversationMenuItem(page, id, ['localized text', 'delete']);
         if (!result || !result.ok) {
             const detail = result?.detail ? ` ${result.detail}` : '';
             throw new CommandExecutionError(`${result?.reason || 'Failed to click delete menu item.'}${detail}`, SESSION_HINT);

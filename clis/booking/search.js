@@ -144,19 +144,19 @@ const EXTRACTOR = `
 
       const reviewTextRaw = trim(card.querySelector('[data-testid=review-score]')?.textContent);
       // Booking renders the score twice (a11y + visual), text reads like "Scored 8.6 8.6 Very Good 6,151 reviews"
-      // or "评分8.68.6很棒 6,151条住客点评". Take only the first numeric occurrence.
+      // or "rating8.68.6great 6,151guest reviews". Take only the first numeric occurrence.
       const scoreMatch = reviewTextRaw.match(/(\\d{1,2})\\.(\\d)/);
       const reviewScore = scoreMatch ? Number(scoreMatch[1] + '.' + scoreMatch[2]) : null;
 
-      const countMatch = reviewTextRaw.match(/([0-9][0-9,]*)\\s*(?:reviews|reseñas|avis|recensioni|条住客点评|条评论|レビュー|리뷰)/i);
+      const countMatch = reviewTextRaw.match(/([0-9][0-9,]*)\\s*(?:reviews|reseñas|avis|recensioni|guest reviews|comments|レビュー|리뷰)/i);
       const reviewCount = countMatch ? Number(countMatch[1].replace(/,/g, '')) : null;
 
-      // Star rating: aria-label often "5 out of 5" / "4 星 (满分 5 星)" / "Hôtel 4 étoiles"
+      // Star rating: aria-label often "5 out of 5" / "4 localized text (full score 5 localized text)" / "Hôtel 4 étoiles"
       let starRating = null;
       const starEl = card.querySelector('[data-testid=rating-stars], [data-testid=quality-rating]');
       if (starEl) {
         const aria = starEl.getAttribute('aria-label') || starEl.textContent || '';
-        const m = aria.match(/(\\d)(?:\\s*(?:out of|\\/|星|颗星|stars?|étoiles?)|\\s*$)/i);
+        const m = aria.match(/(\\d)(?:\\s*(?:out of|\\/|localized text|stars|stars?|étoiles?)|\\s*$)/i);
         if (m) starRating = Number(m[1]);
         if (starRating == null) {
           const count = starEl.querySelectorAll('svg, [aria-hidden=true]').length;

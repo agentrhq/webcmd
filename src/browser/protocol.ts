@@ -42,6 +42,8 @@ export interface BrowserRuntimeCommand {
   timeoutMs?: number;
   /** Daemon command timeout in seconds. Preserves the existing daemon protocol field. */
   timeout?: number;
+  /** Absolute command deadline in epoch milliseconds. Preferred by newer daemons. */
+  deadlineAt?: number;
   cdpMethod?: string;
   cdpParams?: Record<string, unknown>;
   windowMode?: BrowserWindowMode;

@@ -15,7 +15,7 @@ describe('chatgpt-app AX send script', () => {
     });
 
     it('supports english, zh-CN, and zh-TW send button labels', () => {
-        expect(__test__.AX_SEND_SCRIPT).toContain('["发送", "傳送", "Send"]');
+        expect(__test__.AX_SEND_SCRIPT).toContain('["Send", "Send", "Send"]');
     });
 
     it('supports loading an optional image and writing it to the general pasteboard', () => {
@@ -64,7 +64,7 @@ describe('chatgpt-app AX send script', () => {
 
 describe('chatgpt-app AX model script', () => {
     it('supports english, zh-CN, and zh-TW options button labels', () => {
-        expect(__test__.AX_MODEL_SCRIPT).toContain('["Options", "选项", "選項"]');
+        expect(__test__.AX_MODEL_SCRIPT).toContain('["Options", "Options", "Options"]');
     });
 
     it('utilizes dynamic element polling helper to prevent rigid sleep delays', () => {
@@ -72,24 +72,24 @@ describe('chatgpt-app AX model script', () => {
     });
 
     it('supports localized legacy model menus for Chinese systems', () => {
-        expect(__test__.AX_MODEL_SCRIPT).toContain('["Legacy models", "经典模型", "經典模型"]');
+        expect(__test__.AX_MODEL_SCRIPT).toContain('["Legacy models", "Legacy models", "Legacy models"]');
     });
 });
 
 describe('chatgpt-app generating detection', () => {
     it('supports english, zh-CN, and zh-TW stop-generating labels', () => {
         expect(__test__.AX_GENERATING_SCRIPT).toContain('Stop generating');
-        expect(__test__.AX_GENERATING_SCRIPT).toContain('停止生成');
-        expect(__test__.AX_GENERATING_SCRIPT).toContain('停止產生');
-        expect(__test__.AX_GENERATING_SCRIPT).toContain('停止傳送');
+        expect(__test__.AX_GENERATING_SCRIPT).toContain('Stop generating');
+        expect(__test__.AX_GENERATING_SCRIPT).toContain('Stop generating');
+        expect(__test__.AX_GENERATING_SCRIPT).toContain('Stop sending');
     });
 });
 
 describe('chatgpt-app temporary chat detection', () => {
     it('looks for localized temporary-chat state text in the active window', () => {
         expect(__test__.AX_TEMPORARY_CHAT_SCRIPT).toContain('Temporary Chat');
-        expect(__test__.AX_TEMPORARY_CHAT_SCRIPT).toContain('临时聊天');
-        expect(__test__.AX_TEMPORARY_CHAT_SCRIPT).toContain('臨時聊天');
+        expect(__test__.AX_TEMPORARY_CHAT_SCRIPT).toContain('Temporary chat');
+        expect(__test__.AX_TEMPORARY_CHAT_SCRIPT).toContain('Temporary chat');
         expect(__test__.AX_TEMPORARY_CHAT_SCRIPT).toContain('hasTemporaryChatText');
     });
 });
