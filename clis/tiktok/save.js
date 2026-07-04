@@ -18,7 +18,7 @@ cli({
   if (!btn) throw new Error('Favorites button not found - make sure you are logged in');
   const container = btn.closest('button') || btn.closest('[role="button"]') || btn;
   const aria = (container.getAttribute('aria-label') || '').toLowerCase();
-  if (aria.includes('remove from favorites') || aria.includes('取消收藏')) {
+  if (aria.includes('remove from favorites') || aria.includes('remove from favorites')) {
     return [{ status: 'Already in Favorites', url: url }];
   }
   container.click();

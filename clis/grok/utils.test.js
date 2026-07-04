@@ -105,12 +105,12 @@ describe('grok normalizeBooleanFlag', () => {
 describe('grok getPinStateFromMenuLabels', () => {
     it('detects pinned state from unpin labels without substring collisions', () => {
         expect(__test__.getPinStateFromMenuLabels(['Open in new tab', 'Unpin', 'Delete'])).toBe('pinned');
-        expect(__test__.getPinStateFromMenuLabels(['打开新标签页', '取消置顶', '删除'])).toBe('pinned');
+        expect(__test__.getPinStateFromMenuLabels(['Rename', 'Unpin', 'Delete'])).toBe('pinned');
     });
 
     it('detects unpinned state from pin labels', () => {
         expect(__test__.getPinStateFromMenuLabels(['Open in new tab', 'Pin', 'Delete'])).toBe('unpinned');
-        expect(__test__.getPinStateFromMenuLabels(['打开新标签页', '置顶', '删除'])).toBe('unpinned');
+        expect(__test__.getPinStateFromMenuLabels(['Rename', 'Pin', 'Delete'])).toBe('unpinned');
     });
 
     it('returns empty string when neither state label is visible', () => {

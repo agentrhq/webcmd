@@ -1,256 +1,259 @@
 ---
 name: webcmd-adapter-author
-description: Use when writing a Webcmd adapter for a new site or adding a new command to an existing site. Guides end-to-end from first recon through field decoding, adapter coding, and verify. Replaces webcmd-oneshot / webcmd-explorer. For ad-hoc browser driving (no adapter), see webcmd-browser instead; for a top-level orientation to webcmd, see webcmd-usage.
+description: Use when writing a Webcmd adapter for a new site or adding a new command to an existing site. Guides end-to-end from first recon through field decoding, adapter coding, and verify. Replaces webcmd-oneshot / webcmd-explorer. For ad-hoc browser driving without an adapter, use webcmd-browser instead; for top-level orientation, use webcmd-usage.
 allowed-tools: Bash(webcmd:*), Read, Edit, Write, Grep
 ---
 
-# webcmd-adapter-author
+# Webcmd Adapter Authoring
 
-你是要给一个站点写 adapter 的 agent。这份 skill 目标：**从零到通过 `webcmd browser verify` 的 30 分钟内闭环**。
+You are an agent writing an adapter for a site. The goal of this skill is a 30-minute loop from zero context to a passing `webcmd browser verify`.
 
-全程用现有工具：`webcmd browser *` / `webcmd doctor` / `webcmd browser init` / `webcmd browser verify`。没有新命令。
+Use the existing tools throughout: `webcmd browser *`, `webcmd doctor`, `webcmd browser init`, and `webcmd browser verify`. This skill does not introduce new commands.
 
-调试浏览器型 adapter 时，优先直接带上 `--trace on --keep-tab true --window foreground`。`--trace on` 每轮都落 trace artifact，`summary.md` 是失败/成功复盘入口；`--keep-tab true --window foreground` 让 tab lease 保留且浏览器窗口在前台，方便核对最终页面状态。
-
----
-
-## 前置：看你落在哪
-
-先拿 `coverage-matrix.md` 快速自测。三个问题：
-
-1. 数据在浏览器里看得到吗？（否 → 先解决鉴权）
-2. 数据是 HTTP/JSON/HTML 吗？（否 → 不在 skill 范围）
-3. 需要实时推送吗？（是 → 找同数据 HTTP 接口；没有就放弃）
-
-三个都 yes 继续。
+When debugging browser-backed adapters, start with `--trace on --keep-tab true --window foreground`. `--trace on` writes a trace artifact every round, and `summary.md` is the entry point for reviewing both failures and successes. `--keep-tab true --window foreground` keeps the tab lease alive and puts the browser window in front so you can inspect the final page state.
 
 ---
 
-## 顶层决策树
+## Precheck: Know Your Lane
 
-**先定 strategy，再写 adapter。** 每次进入 Step 3/4 后、写代码前，必须产出一段 strategy note。没有这段 note，不要开始写 `clis/<site>/<name>.js`。
+Use `coverage-matrix.md` for a quick self-test before implementation. Ask three questions:
 
-核心判断不是 "API 比 DOM 高级"，而是 **数据源有没有外部契约**。实测维护成本显示：公开/官方接口最稳；UI/DOM 语义通常也有用户可见契约；站内未文档化 XHR/GraphQL/signature endpoint 最容易漂。不要为了 "API-first" 把稳定的 UI/DOM 实现盲目迁到无契约内部接口。
+1. Can the data be seen in the browser? If no, solve authentication first.
+2. Is the data HTTP, JSON, or HTML? If no, this skill is out of scope.
+3. Does the command require real-time push? If yes, look for an HTTP endpoint with the same data; if none exists, stop.
+
+Continue only when all three answers are yes.
+
+---
+
+## Top-Level Decision Tree
+
+**Choose the strategy before writing the adapter.** Every time you reach Step 3 or Step 4, and before writing code, produce a strategy note. Without that note, do not start `clis/<site>/<name>.js`.
+
+The core question is not whether an API is more elegant than DOM work. The core question is whether the data source has an external contract. Public or official interfaces are usually the most stable. UI/DOM semantics often have a user-visible contract too. Undocumented in-site XHR, GraphQL, or signature endpoints drift the most. Do not move a stable UI/DOM implementation to an uncontracted internal endpoint just to be "API-first."
+
+Strategy note template:
 
 ```md
-Strategy: PUBLIC_API | COOKIE_API | PAGE_FETCH | INTERCEPT | DOM_STATE | UI_SELECTOR
+Strategy: PUBLIC_API | COOKIE_API | UI_SELECTOR | DOM_STATE | PAGE_FETCH | INTERCEPT
 Contract: stable | visible-ui | internal-unstable
 Evidence:
-- observed request/state: <endpoint / state global / UI-only signal>
-- auth source: <none / browser cookie / csrf from meta / localStorage / page runtime>
-- replay result: <status + content-type + non-empty sample shape>
-
-If Strategy is PAGE_FETCH or INTERCEPT:
-- why PUBLIC_API / COOKIE_API are unavailable:
-- why UI_SELECTOR / DOM_STATE are not safer:
-- why the maintenance cost is acceptable:
+- observed request/state:
+- auth source:
+- replay result:
+Why not simpler:
+- PUBLIC_API:
+- COOKIE_API:
+- UI_SELECTOR/DOM_STATE:
 ```
 
-Strategy classes:
+| Strategy | Contract level | Use when | Evidence required |
+| --- | --- | --- | --- |
+| `PUBLIC_API` | stable | Node-side `fetch` can get target data without login | 200 + JSON/HTML contains target data, not analytics or ads |
+| `COOKIE_API` | stable | Node-side `fetch` plus `page.getCookies()` / header helper can get the data | cookie/CSRF source is clear and replay is non-empty |
+| `UI_SELECTOR` | visible-ui | publish/upload/click/form flows, or page semantics are more stable than internal APIs | selector has a semantic anchor; failure path is a typed error |
+| `DOM_STATE` | visible-ui | data is in hydration state, bootstrap JSON, or SSR HTML | state key, script JSON, or HTML structure is clear |
+| `PAGE_FETCH` | internal-unstable | only page-context `fetch` can reuse same-origin/session/runtime state | `webcmd browser eval fetch(...)` is non-empty; explain why the internal endpoint is unavoidable |
+| `INTERCEPT` | internal-unstable | request signing is complex but the page can naturally issue the request | target response is captured after triggering UI; explain why UI/DOM is insufficient |
 
-| Strategy | 契约级别 | 用在什么时候 | 证据要求 |
-|---|---|---|---|
-| `PUBLIC_API` | stable | 不需要登录，Node-side `fetch` 直接拿到目标数据 | 200 + JSON/HTML 含目标数据，不是埋点/广告 |
-| `COOKIE_API` | stable | Node-side `fetch` + `page.getCookies()` / header helper 能拿数据 | cookie/CSRF 来源清楚，replay 非空 |
-| `UI_SELECTOR` | visible-ui | publish/upload/click/表单，或页面语义比内部接口更稳 | selector 有语义锚点；错误路径是 typed error |
-| `DOM_STATE` | visible-ui | 数据在 hydration state / bootstrap JSON / SSR HTML 里 | state key / script JSON / HTML 结构明确 |
-| `PAGE_FETCH` | internal-unstable | 只能在页面上下文 `fetch` 才能复用 same-origin/session/runtime | `webcmd browser eval fetch(...)` 非空；必须解释为什么避不开内部接口 |
-| `INTERCEPT` | internal-unstable | 请求签名复杂，但页面自己能自然发出请求 | 触发 UI 后能截到目标 response；必须解释为什么 UI/DOM 不够 |
+Selection rule: prefer `PUBLIC_API` / `COOKIE_API`. If UI/DOM semantics are stable, do not force an upgrade to `PAGE_FETCH` / `INTERCEPT`. Pay the maintenance cost of uncontracted internal endpoints only when public/official APIs are unavailable and UI/DOM cannot express the target data or operation.
 
-选择规则：优先 `PUBLIC_API` / `COOKIE_API`。如果 UI/DOM 语义稳定，不要强行升级到 `PAGE_FETCH` / `INTERCEPT`。只有公开/官方接口不可用、UI/DOM 无法表达目标数据或操作时，才承担无契约内部接口的维护成本。
+Observed maintenance pattern: `PAGE_FETCH` / `INTERCEPT` fixes are roughly 7-8x as frequent as `PUBLIC_API` fixes, while `UI_SELECTOR` is in the same rough band as `COOKIE_API`. See [`references/strategy-selection.md`](./references/strategy-selection.md) for the ladder, `api_candidates` evidence guidance, and counterexamples such as the booking #1680 case.
 
-实测：`PAGE_FETCH` / `INTERCEPT` 的 fix 频率约为 `PUBLIC_API` 的 7-8 倍，`UI_SELECTOR` 跟 `COOKIE_API` 同档。详细 ladder 推导、`api_candidates` 证据怎么填、booking #1680 等反例见 [`references/strategy-selection.md`](./references/strategy-selection.md)。
+Boundary: reuse only data and capabilities the page has already obtained legitimately. Do not teach signature cracking, CAPTCHA bypass, risk-control bypass, or access-control bypass. If a signature cannot be reused safely, such as a runtime-generated page signature that cannot be abstracted, fall back to `UI_SELECTOR`, `DOM_STATE`, or `INTERCEPT`.
 
-边界：只复用页面自己已经合法获得的数据/能力。不教破解签名、不绕验证码/风控/访问控制；遇到不可复用签名（如必须由页面 runtime 生成且不能安全抽象）就降级到 `UI_SELECTOR` / `DOM_STATE` / `INTERCEPT`。
-
-```
-START
-  │
-  ▼
-┌──────────────────────────┐
-│ webcmd doctor 通？      │── no ──→ 修桥接（doctor 输出里的提示）
-└──────────────────────────┘
-  │ yes
-  ▼
-┌────────────────────────────────────────────────────┐
-│ 读站点记忆：                                        │
-│   1. ~/.webcmd/sites/<site>/endpoints.json         │
-│   2. ~/.webcmd/sites/<site>/notes.md               │
-│   3. references/site-memory/<site>.md               │
-└────────────────────────────────────────────────────┘
-  │ 命中 endpoint + 字段 → 直接跳到【endpoint 验证】（不跳写 adapter！memory 可能过期）
-  │ 没命中 → 继续
-  ▼
-┌──────────────────────────┐
-│ 站点侦察（site-recon）    │  → Pattern A/B/C/D/E
-└──────────────────────────┘
-  │
-  ▼
-┌──────────────────────────┐
-│ API 发现（api-discovery）│  §1 network → §2 state → §3 bundle → §4 token → §5 intercept
-└──────────────────────────┘
-  │ 拿到候选 endpoint
-  ▼
-┌────────────────────────────────────────────┐
-│ 直接 fetch 验证 endpoint（memory 命中也要跑）│── 401/403 ──→ 回到 §4 排 token
-│ 数据非空 + 200                              │── 空/HTML ──→ 回到 site-recon 换 Pattern
-│ memory 里的值还活着吗？                     │── 站点换版 ──→ 标记旧 endpoint，回 api-discovery
-└────────────────────────────────────────────┘
-  │ OK
-  ▼
-┌───────────────────────────────────────┐
-│ 字段解码（memory 里的 field-map 也要抽查）│  自解释 → 直接 / 已知代号 → field-conventions / 未知 → decode-playbook
-│ 比一条已知字段和网页肉眼值，确认没错位     │
-└───────────────────────────────────────┘
-  │
-  ▼
-┌──────────────────────────┐
-│ 设计 columns (output)    │  对照 output-design.md 的命名 / 类型 / 顺序
-└──────────────────────────┘
-  │
-  ▼
-┌──────────────────────────┐
-│ webcmd browser init      │  生成 ~/.webcmd/clis/<site>/<name>.js 骨架
-│ 复制最像的邻居 adapter    │
-│ 改 name / URL / 映射三处  │
-└──────────────────────────┘
-  │
-  ▼
-┌──────────────────────────┐
-│ webcmd browser verify    │── 失败 ──→ autofix skill，用 --trace retain-on-failure 回对应步骤
-└──────────────────────────┘
-  │ 成功
-  ▼
-┌──────────────────────────┐
-│ 字段 vs 网页肉眼对一遍   │── 数值不对 ──→ 回字段解码
-└──────────────────────────┘
-  │ 对得上
-  ▼
-┌──────────────────────────┐
-│ 回写 ~/.webcmd/sites/   │  endpoints / field-map / notes / fixtures
-└──────────────────────────┘
-  │
-  ▼
-DONE
+```text
+Start
+  |
+  v
+webcmd doctor passes?
+  | no -> fix the bridge using doctor output
+  v yes
+Read site memory:
+  - ~/.webcmd/sites/<site>/endpoints.json
+  - ~/.webcmd/sites/<site>/field-map.json
+  - references/site-memory/<site>.md, if present
+  |
+  | hit endpoint + fields -> jump to endpoint verification
+  |                         (do not jump straight to adapter code; memory may be stale)
+  | no hit -> continue
+  v
+Site recon (site-recon.md) -> Pattern A/B/C/D/E
+  |
+  v
+API discovery (api-discovery.md)
+  section 1 network -> section 2 state -> section 3 bundle ->
+  section 4 token -> section 5 intercept
+  |
+  v
+Candidate endpoint found
+  |
+  v
+Direct fetch verification, even for memory hits
+  - 401/403 -> return to section 4 token investigation
+  - empty/HTML -> return to site-recon and choose another Pattern
+  - site changed -> mark old endpoint stale and return to api-discovery
+  |
+  v
+Field decoding
+  - self-explanatory -> use directly
+  - known code -> field-conventions.md
+  - unknown -> field-decode-playbook.md
+  Compare one known field against the visible web page to catch misalignment.
+  |
+  v
+Design columns (output-design.md)
+  - names
+  - types
+  - order
+  |
+  v
+webcmd browser init
+  - generate ~/.webcmd/clis/<site>/<name>.js skeleton
+  - copy the closest neighboring adapter
+  - edit name, URL, and field mapping
+  |
+  v
+webcmd browser verify
+  | fail -> use the autofix skill with --trace retain-on-failure
+  v pass
+Compare field values against the visible page
+  | mismatch -> return to field decoding
+  v match
+Write back ~/.webcmd/sites/
+  - endpoints
+  - field-map
+  - notes
+  - fixtures
 ```
 
 ---
 
-## Runbook（一步一步勾选）
+## Runbook
 
-```
-[ ] 1. webcmd doctor 返回 "Everything looks good"
-[ ] 2. 读站点记忆：
-       [ ] ~/.webcmd/sites/<site>/endpoints.json 存在？里面有想要的 endpoint？
-       [ ] references/site-memory/<site>.md 存在？看"已知 endpoint"节
-       [ ] 命中后：**跳到第 5（endpoint 验证） + 第 7（字段核对）**，不能直接跳第 9 写 adapter
-       [ ] memory 写入超过 30 天（看 `verified_at`）→ 当作过期，按冷启动走 Step 3 → 4
-[ ] 3. 侦察（site-recon.md）：
-       [ ] **首选**：`webcmd browser analyze <url>` 一步拿 pattern + 反爬 + 最近 adapter + next step
-       [ ] `analyze` 结论模糊时再手跑：`open` → `wait time 2` (或 `wait xhr <regex>`) → `network`
-       [ ] 定 Pattern（A / B / C / D / E）
-[ ] 4. API 发现（api-discovery.md）按 Pattern 选 §：
-       [ ] Pattern A → §1 network 精读
-       [ ] Pattern B → §2 state 抽取 + §1 深层数据
-       [ ] Pattern C → §3 bundle / script src 搜索
-       [ ] Pattern D → §4 token 来源 + 降级 §5
-       [ ] Pattern E → 找 HTTP 轮询接口；找不到才 §5
-[ ] 5. 直接 fetch 候选 endpoint 验证：
-       [ ] 返回 200
-       [ ] 响应含目标数据（不是 HTML / 广告）
-[ ] 6. 写 strategy note（写代码前的强制产物）：
-       [ ] 从 `PUBLIC_API / COOKIE_API / PAGE_FETCH / INTERCEPT / DOM_STATE / UI_SELECTOR` 选一个
-       [ ] 填 Contract：`stable / visible-ui / internal-unstable`
-       [ ] 填 Evidence：observed request/state、auth source、replay result
-       [ ] 如果选 `PAGE_FETCH` / `INTERCEPT`，必须解释为什么 `PUBLIC_API` / `COOKIE_API` / `UI_SELECTOR` / `DOM_STATE` 都不适合
-       [ ] 如果选 `UI_SELECTOR` / `DOM_STATE`，不需要为 "为什么不是 API" 过度辩护；只要说明语义锚点和 typed error 路径
-[ ] 7. 字段解码：
-       [ ] 自解释 → 直接用 key
-       [ ] 已知代号 → field-conventions.md 查表
-       [ ] 未知代号 → field-decode-playbook.md（排序键对比 / 结构差分 / 常量排查）
-[ ] 8. 设计 columns（output-design.md）：
-       [ ] 命名 camelCase 且对齐邻居 adapter
-       [ ] 类型 / 单位 / 百分比格式清楚
-       [ ] 顺序：识别列 → 业务数字 → metadata
-[ ] 9. 写 adapter（adapter-template.md）：
-       [ ] webcmd browser init <site>/<name>
-       [ ] 找同站点或同类型最像的 adapter，cp 过来
-       [ ] 改 name / URL / 字段映射
-[ ] 10. webcmd browser verify <site>/<name>
-        [ ] 首轮通过后立刻 `--write-fixture` 生成 `~/.webcmd/sites/<site>/verify/<cmd>.json` 种子
-        [ ] 手改种子：加 `patterns`（URL / 日期 / ID 格式）+ `notEmpty`（核心字段）+ 收紧 `rowCount`
-        [ ] 再跑一次 `webcmd browser verify <site>/<name>`，确认 ✓ matches fixture
-[ ] 11. 字段值 vs 网页肉眼比对（别只看 "Adapter works!"）
-[ ] 12. 回写站点记忆（**verify 通过 + 肉眼比对对得上之后**，schema 见 `references/site-memory.md`）：
-        [ ] `endpoints.json`：以 endpoint 的短名为 key，value = `{url, method, params.{required,optional}, response, verified_at: YYYY-MM-DD, notes}`
-        [ ] `field-map.json`：只追加新代号。key = 字段代号，value = `{meaning, verified_at: YYYY-MM-DD, source}`；**已存在的 key 不要覆盖**，有冲突先和网页肉眼值对齐再写
-        [ ] `notes.md`：顶部追加一段 `## YYYY-MM-DD by <agent/user>`，写本次写 adapter 时遇到的新坑 / 新结论
-        [ ] `verify/<cmd>.json`：**必填。** `webcmd browser verify` 的期望值（args / rowCount / columns / types / patterns / notEmpty），Step 10 已经让你生成了，这里只是 checklist
-        [ ] `fixtures/<cmd>-<YYYYMMDDHHMM>.json`：存一份该 endpoint 的完整响应样本（去掉 cookie / token / 用户私有字段再存），给后续字段对比 / 离线 replay 用
-        [ ] 调试过程中如果在 repo / adapter 目录 dump 过临时文件（`.dbg-*.html` / `raw-*.json` / 等），**在 commit 前清干净**——这些本来就该落在 `~/.webcmd/sites/<site>/fixtures/` 或 `/tmp/`
-```
+Check these off step by step:
 
----
+[ ] 1. `webcmd doctor` returns "Everything looks good"
 
-## 降级路径（某步卡住跳到哪）
+[ ] 2. Read site memory:
+       [ ] Does `~/.webcmd/sites/<site>/endpoints.json` exist, and does it contain the desired endpoint?
+       [ ] Does `references/site-memory/<site>.md` exist? If yes, read its "Known endpoints" section.
+       [ ] On a hit: **jump to Step 5 endpoint verification + Step 7 field check**, not directly to Step 9 adapter code.
+       [ ] If memory is older than 30 days according to `verified_at`, treat it as stale and use the cold-start path through Steps 3 and 4.
 
-| 卡在 | 现象 | 跳去 |
-|------|------|-----|
-| Step 4 API 发现 | `network` 空，`__INITIAL_STATE__` 也空 | §3 bundle 搜 baseURL |
-| | bundle 搜不到 baseURL | §5 intercept |
-| Step 5 endpoint 验证 | 401 / 403 | §4 token 排查 |
-| | 200 但响应是 HTML | 回 Step 3 换 Pattern 判断 |
-| | 200 但 `data: []` 空 | 参数传错 / 接口换版，回 §1 看 network 里真实请求头 |
-| Step 7 字段解码 | 排序键对比推不出 | field-decode-playbook.md §3 结构差分 |
-| | 还推不出 | 先输出 raw，adapter 跑起来再迭代 |
-| Step 10 verify 失败 | `fltt` 漏了 / 字段映射错 | autofix skill；复现命令加 `--trace retain-on-failure` |
-| | 某列永远是 `null` | 字段路径错了，回 Step 7 |
-| Step 10 verify fixture mismatch | `[pattern]` row[i] 报错 | 先肉眼比对网页值；值对 → 是 fixture pattern 太严，放宽；值不对 → 字段映射错 |
-| | `[column] missing column "X"` | 实际 response 没这列（站点改版 or args 影响）；重新 `--update-fixture` 或修 adapter |
-| | `[type]` actual null / undefined | 字段提取失败，回 Step 7 重抽；临时 fallback 用 union type `string\|null` 只有在语义真的可空时用 |
-| Step 11 数值不对 | 差 10000 倍 | 单位不统一（"万" vs "元"） |
-| | 百分比小 100 倍 | 响应已是 `0.025`，不要 × 100 |
+[ ] 3. Recon (`site-recon.md`):
+       [ ] **Preferred:** `webcmd browser analyze <url>` to get pattern, anti-bot signals, nearest adapter, and next step in one pass.
+       [ ] If `analyze` is ambiguous, run manual checks: `open` -> `wait time 2` (or `wait xhr <regex>`) -> `network`.
+       [ ] Choose Pattern A / B / C / D / E.
+
+[ ] 4. API discovery (`api-discovery.md`) by Pattern:
+       [ ] Pattern A -> section 1 network deep read.
+       [ ] Pattern B -> section 2 state extraction + section 1 for deeper data.
+       [ ] Pattern C -> section 3 bundle / script src search.
+       [ ] Pattern D -> section 4 token source + section 5 fallback.
+       [ ] Pattern E -> find an HTTP polling endpoint; use section 5 only if none exists.
+
+[ ] 5. Directly verify the candidate endpoint:
+       [ ] Response is 200.
+       [ ] Response contains target data, not HTML, ads, or analytics.
+
+[ ] 6. Write the strategy note before code:
+       [ ] Choose one of `PUBLIC_API / COOKIE_API / PAGE_FETCH / INTERCEPT / DOM_STATE / UI_SELECTOR`.
+       [ ] Fill Contract: `stable / visible-ui / internal-unstable`.
+       [ ] Fill Evidence: observed request/state, auth source, replay result.
+       [ ] If choosing `PAGE_FETCH` / `INTERCEPT`, explain why `PUBLIC_API`, `COOKIE_API`, `UI_SELECTOR`, and `DOM_STATE` are not suitable.
+       [ ] If choosing `UI_SELECTOR` / `DOM_STATE`, do not over-defend why it is not an API; state the semantic anchor and typed-error path.
+
+[ ] 7. Field decoding:
+       [ ] Self-explanatory key -> use it directly.
+       [ ] Known code -> look it up in `field-conventions.md`.
+       [ ] Unknown code -> use `field-decode-playbook.md` (sort-key comparison, structural diff, constant checks).
+
+[ ] 8. Design columns (`output-design.md`):
+       [ ] Use camelCase names aligned with neighboring adapters.
+       [ ] Make types, units, and percentage format clear.
+       [ ] Order: identifier columns -> business numbers -> metadata.
+
+[ ] 9. Write the adapter (`adapter-template.md`):
+       [ ] `webcmd browser init <site>/<name> --strategy <strategy>`
+       [ ] Find the closest same-site or same-type adapter and copy it.
+       [ ] Edit name, URL, and field mapping.
+
+[ ] 10. Verification fixtures:
+        [ ] After the first passing run, immediately use `--write-fixture` to seed `~/.webcmd/sites/<site>/verify/<cmd>.json`.
+        [ ] Tighten the seed by adding `patterns` (URL/date/ID formats), `notEmpty` (core fields), and stricter `rowCount`.
+        [ ] Run `webcmd browser verify <site>/<name>` again and confirm it matches the fixture.
+
+[ ] 11. Compare field values against the visible page. Do not stop at "Adapter works!"
+
+[ ] 12. Write site memory after **verify passes and visible-page comparison matches**. See `references/site-memory.md` for schema:
+        [ ] `endpoints.json`: short endpoint name as key; value = `{url, method, params.{required,optional}, response, verified_at: YYYY-MM-DD, notes}`.
+        [ ] `field-map.json`: append only new codes. key = field code; value = `{meaning, verified_at: YYYY-MM-DD, source}`. **Do not overwrite existing keys.** If there is a conflict, align with the visible page before writing.
+        [ ] `notes.md`: prepend `## YYYY-MM-DD by <agent/user>` with new pitfalls or conclusions from this adapter work.
+        [ ] `verify/<cmd>.json`: **required.** Expected values for `webcmd browser verify`: args, rowCount, columns, types, patterns, notEmpty. Step 10 generated this; this item is the checklist gate.
+        [ ] `fixtures/<cmd>-<YYYYMMDDHHMM>.json`: save one complete endpoint response sample after removing cookies, tokens, and private user fields. Use it for later field comparison and offline replay.
+        [ ] If debugging dumped temporary files in the repo or adapter directory, such as `.dbg-*.html`, `raw-*.json`, or similar, **delete them before commit**. Those belong in `~/.webcmd/sites/<site>/fixtures/` or `/tmp/`.
 
 ---
 
-## 参考文件
+## Fallback Paths
 
-| 文件 | 什么时候翻 |
-|------|----------|
-| `references/coverage-matrix.md` | 动手前做"是否在范围内"自测 |
-| `references/site-recon.md` | Step 3 定站点类型 |
-| `references/api-discovery.md` | Step 4 找 endpoint |
-| `references/strategy-selection.md` | Step 6 填 strategy note 之前：契约模型 + 实测 fix 频率 + `api_candidates` 证据用法 + 反例 |
-| `references/field-conventions.md` | Step 7 查已知字段代号 |
-| `references/field-decode-playbook.md` | Step 7 字段不在词典时 |
-| `references/output-design.md` | Step 8 命名 / 类型 / 顺序 |
-| `references/adapter-template.md` | Step 9 文件结构 + 活例子 `convertible.js` |
-| `references/site-memory.md` | 总览：in-repo 种子 + 本地 `~/.webcmd/sites/` 的两层结构 |
-| `references/site-memory/<site>.md` | Step 2 读站点公共知识（eastmoney / xueqiu / bilibili / tonghuashun 已铺） |
-| `references/success-rate-pitfalls.md` | Step 7 / 11 踩坑前翻：11 种"verify 能过但数据是错的"静默失败（含 aria-label locale-dependence） |
-| `references/jsdom-fixture-pattern.md` | 当 adapter 走 `page.evaluate` 内 DOM 抽取、且 mocked-evaluate 单测漏 silent bug 时——把 HTML 冻进 `clis/<site>/__fixtures__/` 用 JSDOM 跑（含 fixture 创建 mandatory `awk 'NF>0'` 收紧 + reverse-validate 纪律） |
-| `references/typed-errors.md` | 写 `func` 主体之前必读：5 类 typed error 落点表（ArgumentError / EmptyResultError / CommandExecutionError / AuthRequiredError / TimeoutError）+ 三大 silent anti-pattern（silent-clamp / sentinel-row / generic CliError）的反例修法 |
-
----
-
-## 关键约定
-
-- adapter 只引 `@agentrhq/webcmd/registry` + `@agentrhq/webcmd/errors`，不用第三方
-- `columns` 数组和 `func` 返回对象 keys 完全对齐（含顺序）
-- **中间解析对象 key 不能跟 `columns` 任一项重叠**（否则 silent-column-drop audit 误判，PR #1329 R1 真踩过；改成专属命名 + push row 时 destructure aliasing）
-- **`browser:` field 决定 func 签名**：`browser:false → (args)`，`browser:true → (page, args)`。搞反时 `args` 实际是 debug flag，所有外部参数 silent fallback 到 default（PR #1329 upstream 之前 8 个 non-browser adapter 全踩过这个）
-- 已知失败按 [`references/typed-errors.md`](./references/typed-errors.md) 5-classification 抛对应 typed error；**不要** silent `return []`，**不要** silent `return [{sentinel}]`，**不要** `Math.max/min` silent clamp 外部参数
-- 写私人 adapter 用 `~/.webcmd/clis/<site>/<name>.js`（免 build）；要提 PR 才 copy 到 `clis/<site>/<name>.js`
-- 站点记忆每轮回写：没记忆 → 用 skill → 产生记忆 → 下次变 5 分钟
-- **调试过程中的原始 dump / 抓包 / HTML 样本只能落在 `~/.webcmd/sites/<site>/fixtures/` 或 `/tmp/`。严禁在 repo 根目录、`clis/<site>/` 或当前工作目录留 `.dbg-*.html / raw-*.json / sample.*` 这类临时文件**（PR diff 会带上去，别人 review 时很烦）。
-- **JSDOM unit-test fixture（`clis/<site>/__fixtures__/<command>.html`）是上面那条的例外**——它是有意 commit 进 repo 的 review artifact，不是临时 dump。但因此 quality bar 要更高：必须按 `references/jsdom-fixture-pattern.md` 的 5 步做完（含 mandatory `awk 'NF>0'` 空白行收紧），并 reverse-validate 一道证明 regression guard 真能挂。
+| Stuck at | Symptom | Go to |
+| --- | --- | --- |
+| Step 4 API discovery | `network` is empty and `__INITIAL_STATE__` is empty | section 3 bundle search for baseURL |
+| | bundle search cannot find baseURL | section 5 intercept |
+| Step 5 endpoint verification | 401 / 403 | section 4 token investigation |
+| | 200 but response is HTML | return to Step 3 and reassess Pattern |
+| | 200 but `data: []` is empty | wrong params or endpoint version changed; return to section 1 and inspect real network headers |
+| Step 7 field decoding | sort-key comparison is inconclusive | field-decode-playbook.md section 3 structural diff |
+| | still inconclusive | output raw values first, get the adapter running, then iterate |
+| Step 10 verify fails | missing filter / wrong field mapping | autofix skill; rerun with `--trace retain-on-failure` |
+| | a column is always `null` | field path is wrong; return to Step 7 |
+| Step 10 verify fixture mismatch | `[pattern]` row[i] failure | compare visible page value first. If value is right, loosen fixture pattern; if value is wrong, fix mapping |
+| | `[column] missing column "X"` | actual response lacks this column due to site change or args; rerun `--update-fixture` or fix adapter |
+| | `[type]` actual null / undefined | extraction failed; return to Step 7. Use a `string|null` union only when the value is truly nullable |
+| Step 11 values mismatch | value differs by 10,000x | unit mismatch |
+| | percentage is 100x too small | response already uses `0.025`; do not multiply by 100 |
 
 ---
 
-## 卡住了
+## Reference Files
 
-- 诊断类：`webcmd doctor` → 看 `notes.md` → 搜 autofix skill
-- 字段解码类：`field-decode-playbook.md` 全三节走完 → 先输出 raw 迭代
-- endpoint 找不到：api-discovery §5 intercept 兜底
+| File | When to open |
+| --- | --- |
+| `references/coverage-matrix.md` | Before implementation: scope self-test |
+| `references/site-recon.md` | Step 3: classify site type |
+| `references/api-discovery.md` | Step 4: find endpoint |
+| `references/strategy-selection.md` | Before Step 6 strategy note: contract model, observed fix frequency, `api_candidates` evidence, counterexamples |
+| `references/field-conventions.md` | Step 7: known field-code lookup |
+| `references/field-decode-playbook.md` | Step 7: field not in dictionary |
+| `references/output-design.md` | Step 8: naming, types, order |
+| `references/adapter-template.md` | Step 9: file structure and live example `convertible.js` |
+| `references/site-memory.md` | Overview: in-repo seeds plus local `~/.webcmd/sites/` two-layer structure |
+| `references/site-memory/<site>.md` | Step 2: public site knowledge when a seed file exists |
+| `references/success-rate-pitfalls.md` | Step 7 / 11: eleven silent failure modes where verify can pass with wrong data, including aria-label locale dependence |
+| `references/jsdom-fixture-pattern.md` | When adapter uses DOM extraction inside `page.evaluate` and mocked-evaluate unit tests miss silent bugs; freeze HTML into `clis/<site>/__fixtures__/` and run JSDOM with the mandatory `awk 'NF>0'` tightening plus reverse-validation discipline |
+| `references/typed-errors.md` | Read before writing `func`: five typed error classes (`ArgumentError`, `EmptyResultError`, `CommandExecutionError`, `AuthRequiredError`, `TimeoutError`) plus fixes for silent anti-patterns (`silent-clamp`, `sentinel-row`, `generic CliError`) |
 
-不要猜。猜错了 verify 能通过但数据是错的，用户看到乱码才发现。
+---
+
+## Key Conventions
+
+- Adapters import only `@agentrhq/webcmd/registry` and `@agentrhq/webcmd/errors`; do not add third-party dependencies.
+- The `columns` array and `func` return object keys must match exactly, including order.
+- **Intermediate parsing object keys must not overlap any `columns` entry.** Otherwise silent-column-drop audits can misread the adapter. Use dedicated internal names and destructure with aliases when pushing rows.
+- **The `browser:` field determines the `func` signature:** `browser:false -> (args)`, `browser:true -> (page, args)`. If this is reversed, `args` may actually be a debug flag and all external parameters can silently fall back to defaults.
+- Throw the correct typed error for known failures according to [`references/typed-errors.md`](./references/typed-errors.md). **Do not** silently `return []`, **do not** silently `return [{sentinel}]`, and **do not** silently clamp external parameters with `Math.max/min`.
+- For private adapters, write `~/.webcmd/clis/<site>/<name>.js` to avoid a build. Copy to `clis/<site>/<name>.js` only when preparing a PR.
+- Write site memory every round: no memory -> use skill -> produce memory -> next time becomes a five-minute task.
+- **Raw dumps, packet captures, and HTML samples from debugging may only be written to `~/.webcmd/sites/<site>/fixtures/` or `/tmp/`. Never leave `.dbg-*.html`, `raw-*.json`, `sample.*`, or similar temporary files in the repo root, `clis/<site>/`, or the current working directory.**
+- **JSDOM unit-test fixtures (`clis/<site>/__fixtures__/<command>.html`) are the exception.** They are intentional review artifacts committed to the repo, not temporary dumps. Because of that, the quality bar is higher: complete the five steps in `references/jsdom-fixture-pattern.md`, including the mandatory `awk 'NF>0'` blank-line tightening, and reverse-validate once to prove the regression guard can fail.
+
+---
+
+## If You Are Stuck
+
+- Diagnostic path: `webcmd doctor` -> inspect `notes.md` -> rerun with `--trace retain-on-failure`.
+- Endpoint path: return to `site-recon` and reclassify Pattern. Do not stay attached to the first API guess.
+- Field path: compare one visible page value, then use sort-key comparison, structural diff, and constants.
+- Verification path: if `webcmd browser verify` fails, switch to the autofix skill instead of improvising.

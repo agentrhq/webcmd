@@ -9,7 +9,7 @@ function normalizeWhitespace(value) {
 
 function normalizeName(value) {
     return normalizeWhitespace(value)
-        .replace(/\s*[•·]\s*(?:1st|2nd|3rd\+?|degree connection).*$/i, '')
+        .replace(/\s*[•\u00b7]\s*(?:1st|2nd|3rd\+?|degree connection).*$/i, '')
         .replace(/\s+LinkedIn.*$/i, '')
         .replace(/\b(p\.?eng\.?|cpa|mba|ph\.?d\.?)\b/ig, '')
         .replace(/[^\p{L}\p{N}\s.'-]+/gu, ' ')
@@ -131,7 +131,7 @@ function buildProfileProbeScript(expectedName = '') {
     const clean = (s) => String(s || '').replace(/[\u00a0\u202f]/g, ' ').replace(/\s+/g, ' ').trim();
     const expectedName = ${JSON.stringify(expectedName)};
     const normalizeName = (s) => clean(s)
-      .replace(/\s*[•·]\s*(?:1st|2nd|3rd\+?|degree connection).*$/i, '')
+      .replace(/\s*[•\u00b7]\s*(?:1st|2nd|3rd\+?|degree connection).*$/i, '')
       .replace(/\s+LinkedIn.*$/i, '')
       .replace(/\b(p\.?eng\.?|cpa|mba|ph\.?d\.?)\b/ig, '')
       .replace(/[^\p{L}\p{N}\s.'-]+/gu, ' ')
@@ -223,7 +223,7 @@ function buildSentInvitationsProbeScript(expectedName, expectedProfileUrl) {
     const expectedUrl = ${JSON.stringify(canonicalizeLinkedInProfileUrl(expectedProfileUrl))};
     const clean = (s) => String(s || '').replace(/[\u00a0\u202f]/g, ' ').replace(/\s+/g, ' ').trim();
     const normName = (s) => clean(s)
-      .replace(/\s*[•·]\s*(?:1st|2nd|3rd\+?|degree connection).*$/i, '')
+      .replace(/\s*[•\u00b7]\s*(?:1st|2nd|3rd\+?|degree connection).*$/i, '')
       .replace(/\s+LinkedIn.*$/i, '')
       .replace(/\b(p\.?eng\.?|cpa|mba|ph\.?d\.?)\b/ig, '')
       .replace(/[^\p{L}\p{N}\s.'-]+/gu, ' ')

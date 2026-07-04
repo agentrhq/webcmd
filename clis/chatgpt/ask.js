@@ -52,8 +52,8 @@ export const askCommand = cli({
         { name: 'conversation', valueRequired: true, help: 'Continue an existing ChatGPT conversation ID or /c/<id> URL' },
         { name: 'project', valueRequired: true, help: 'Start a new chat inside a ChatGPT project ID or /g/g-p-<id> URL' },
         { name: 'wait', type: 'boolean', default: true, help: 'Wait for the assistant response after sending' },
-        { name: 'deep-research', type: 'boolean', default: false, help: 'Enable ChatGPT 深度研究 (Deep Research)' },
-        { name: 'web-search', type: 'boolean', default: false, help: 'Enable ChatGPT 网页搜索 (Web Search)' },
+        { name: 'deep-research', type: 'boolean', default: false, help: 'Enable ChatGPT Deep Research (Deep Research)' },
+        { name: 'web-search', type: 'boolean', default: false, help: 'Enable ChatGPT Web Search (Web Search)' },
     ],
     columns: ['conversationId', 'conversationUrl', 'tool', 'response'],
     func: async (page, kwargs) => {

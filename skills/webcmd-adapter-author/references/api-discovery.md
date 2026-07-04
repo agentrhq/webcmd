@@ -1,295 +1,186 @@
 # API Discovery
 
-**Layer 2：这个站的目标数据 endpoint 是什么？** 已经分完类（`site-recon.md`）再进来。
+Use this after `site-recon.md` chooses Pattern A/B/C/D/E. The output of this file is a candidate endpoint plus evidence for the strategy note.
 
-五种手段。按优先级降级用，命中即走。
+Keep `--trace on --keep-tab true --window foreground` enabled while exploring browser-backed sites.
 
----
+## Section 0 - Preflight Red Lines
 
-## §0 进入 §1 之前：先看两条红线
+Read these before endpoint verification. If you miss either one, you can spend the rest of discovery testing the wrong thing.
 
-这两条不看清楚，后面的 endpoint 验证会一直在错的前提下兜圈子。
+### 0.1 Anti-bot and WAF gates decide whether Node fetch is valid
 
-### 0.1 反爬厂商 → 决定 fetch 能不能从 Node 走
+`webcmd browser analyze <url>` reports the `anti_bot` field. You can also inspect cookies and the response body manually.
 
-`webcmd browser analyze <url>` 的 `anti_bot` 字段给答案；手查看 cookies 也行：
+| Cookie or body signal | Vendor | Bare Node fetch or curl result | Strategy |
+| --- | --- | --- | --- |
+| `acw_sc__v2`, `acw_tc`, `ssxmod_itna`; body contains `arg1 = '32-HEX'` or `/ntc_captcha/` | Aliyun WAF | Slider HTML instead of real data | Verify the endpoint in browser context first; HTML-style cookie adapters can still end with Node-side fetch plus `page.getCookies()` |
+| `__cf_bm`, `cf_clearance`, `__cfduid`; body contains `Cloudflare Ray ID` or `Checking your browser` | Cloudflare | TLS or browser fingerprint is rejected | Use a browser/session-aware probe first, then choose the adapter fetch route from `adapter-template.md` |
+| `_abck`, `bm_sz`, `bm_sv` | Akamai | Often blocked even with cookies | Use a browser/session-aware probe first |
+| Body contains `geetest` or `gt_captcha` | Geetest | Slider or puzzle challenge; no programmatic solution in this skill | Out of scope; stop or use a user-visible UI strategy |
 
-| cookie / body 信号 | 厂商 | 裸 Node fetch / curl 结果 | 策略 |
-|------------------|------|-----|-----|
-| `acw_sc__v2` / `acw_tc` / `ssxmod_itna`；body 含 `arg1 = '32-HEX'` 或 `/ntc_captcha/` | **Aliyun WAF** | 返回 slider HTML，不是真数据 | 先在浏览器上下文里验证 endpoint；HTML 型 COOKIE adapter 最终仍走 Node-side fetch + `page.getCookies()` |
-| `__cf_bm` / `cf_clearance` / `__cfduid`；body 含 `Cloudflare Ray ID` / `Checking your browser` | **Cloudflare** | TLS 指纹被标记，失败 | 同上：先 browser-context probe，最终 adapter 仍按模板选 fetch 路线 |
-| `_abck` / `bm_sz` / `bm_sv` | **Akamai** | 即使带 cookie 也常被挡 | 同上 |
-| body 含 `geetest` / `gt_captcha` | **Geetest** | 滑块/拼图，程序无解 | 超出 skill 范围，放弃或 UI 策略 |
+Rule: if any of these anti-bot or WAF signals appear, do not use bare Node fetch as endpoint verification. First prove the endpoint from the browser context or from a page on the target origin. After that, choose the final adapter strategy normally: JSON browser APIs may use `page.fetchJson()`, while HTML-style cookie adapters should keep using Node-side `fetch` with cookies read through `page.getCookies()`.
 
-**规则**：看到上面四种任一个，先不要拿**裸** Node fetch 做 endpoint 验证。先用 browser-context probe 或目标 origin 页面确认接口能通；最终 adapter 的 fetch 路线仍按 `adapter-template.md` 选，HTML 型 COOKIE adapter 继续走 Node-side fetch + `page.getCookies()`。
+### 0.2 Cross-subdomain fetch is CORS-blocked by default
 
-### 0.2 跨 subdomain = CORS 默认关
+For example, a page on `jobs.51job.com` fetching an API on `cupid.51job.com` will usually hit a CORS preflight unless the API returns `Access-Control-Allow-Origin`.
 
-`jobs.51job.com` 页面 fetch `cupid.51job.com` 的 API，默认会被浏览器 CORS 预检挡住——除非目标接口回了 `Access-Control-Allow-Origin`。
-
-判断：
+Probe it explicitly:
 
 ```bash
-webcmd browser eval "fetch('https://<target-subdomain>/api/...', {credentials:'include'}).then(r=>r.status).catch(e=>'cors:'+e.message)"
+webcmd browser eval "fetch('https://<target-subdomain>/api/...', { credentials: 'include' }).then(r => r.status).catch(e => 'cors:' + e.message)"
 ```
 
-- 返回 status 数字 → CORS 通，继续
-- 返回 `cors:...` 或 `TypeError: Failed to fetch` → 挡住了
+- A numeric status means CORS allows the request.
+- `cors:...` or `TypeError: Failed to fetch` means the browser blocked it.
 
-**挡住时**：不要把 `credentials:'include'` 当万能药——这只解决"带 cookie"，不解决"跨 origin"。降级路径：
+When it is blocked, `credentials: include` is not a CORS fix across subdomains. It only asks the browser to send cookies; it does not grant cross-origin permission. Use this fallback order:
 
-1. 换同 origin 的 endpoint（同一个 subdomain 下的 API 往往更宽松）
-2. 用 `webcmd browser open https://<target-subdomain>/`，让页面在目标 subdomain 本身打开，再 fetch 相对路径
-3. 真跨域且无替代 → 走 `§5 intercept`，从页面自身发的请求里抓响应
+1. Prefer a same-origin endpoint on the current subdomain.
+2. Open a page on the target subdomain with `webcmd browser open https://<target-subdomain>/`, then fetch relative paths from that origin.
+3. If the data is truly cross-origin and there is no same-origin alternative, use Section 5 intercept and capture the response from the page's own request.
 
----
+## Section 1 - Network Deep Read
 
-## §1 network 精读（首选，Pattern A / D 命中率最高）
-
-### 拿候选
+Use for Pattern A and for deeper data in Pattern B.
 
 ```bash
-webcmd browser network
+webcmd browser open <url> --trace on --keep-tab true --window foreground
+webcmd browser wait xhr '<path-or-domain-fragment>'
+webcmd browser network --format json
 ```
 
-默认输出是 JSON，每个候选都带：
-- `key` — 稳定引用（GraphQL 的 `operationName` 或 `METHOD host+pathname`）
-- `shape` — response body 的路径→类型映射（不含原 body，省 token）
-- `status / url / method / ct / size`
+Inspect each candidate:
 
-静态资源 / 埋点 / 追踪默认已过滤。默认会保留 JSON / XML / plain text / `text/javascript` 这类 API 响应；如果你确定浏览器 DevTools 里有目标请求但这里缺失，用 `--all` 查一遍是否被 content-type 或 URL 噪音过滤挡掉。
+- URL and method.
+- Status code and content type.
+- Query/body params.
+- Request headers that appear auth-related.
+- Response shape and whether it includes target data.
+- Whether data is user-visible, not analytics, ads, experiments, or personalization noise.
 
-如果是冷启动，先看 `webcmd browser analyze <url>` 里的 `api_candidates`：
+Reject candidates that only contain telemetry, unrelated recommendations, beacons, or layout metadata.
 
-- `verdict: "likely_data"`：优先 replay 这条，拿 status / content-type / sample shape 填 strategy note
-- `verdict: "maybe_data"`：可以试，但必须人工核对字段是否是目标业务数据
-- `verdict: "noise"`：多半是 analytics / beacon / personalization，不要因为 XHR 数量多就判 Pattern A
-- `verdict: "blocked"`：401/403；先排 cookie / token / CSRF，别直接退到 selector
-
-`real_data_score` 是证据，不是自动 strategy。最终仍要在 strategy note 里写 replay 结果和降级理由。
-
-### 按 shape 初筛
-
-挑 `key` 里含业务词（`list / detail / Timeline / User / Tweets / Quote`）的优先看 `shape`：
-
-- `$.data` 是 `object` 且下面出现 `array(N)` / `total` / `page` → 基本是它
-- 路径里出现 `nickname / avatar / title / price / tweets / items` → 就是它
-- shape 只有 `$: string` 或全是 HTML 噪音 → 下一条
-
-### 按期望字段反查（`--filter`）
-
-已经知道目标 body 该含哪些字段就直接让 CLI 把列表筛到只剩候选，不用自己 scroll 翻 shape：
+Replay directly when possible:
 
 ```bash
-webcmd browser network --filter author,text,likes
+webcmd browser eval "await fetch('<url>', { credentials: 'include' }).then(r => r.text())"
 ```
 
-- 字段以英文逗号分隔；AND 语义，必须每个字段都作为 shape 路径的**任意一段**出现才保留（`$.data.items[0].author` 命中 `author`、`items`、`data` 都算）
-- 区分大小写（JSON key 本来就 case-sensitive）
-- 输出 envelope 新增 `filter` / `filter_dropped`，`count` 是过滤后数量
-- 0 命中不是 error，返回 `entries: []`；说明字段组合不对，换一组或去掉约束再试
-- 不要跟 `--detail` 一起用——`--detail` 按 key 取单条、`--filter` 是列表缩窄，组合会报 `invalid_args`
-- 空值 / `,,,` → `invalid_filter` 结构化错误
-- capture 依然按全量持久化，后续 `--detail <key>` 能找到被过滤掉的条目
+If Node-side replay works without page runtime state, prefer `PUBLIC_API` or `COOKIE_API`. If the endpoint only works in page context, document why before selecting `PAGE_FETCH`.
 
-### 拉完整 body
+## Section 2 - State Extraction
 
-候选定了再拉完整 body（by key，不是 index — 数组顺序会随每次 capture 变）：
+Use for Pattern B.
+
+Look for:
+
+- `window.__INITIAL_STATE__`
+- `window.__NEXT_DATA__`
+- `window.__NUXT__`
+- JSON in `<script type="application/json">`
+- SSR HTML structures containing visible values
+
+Commands:
 
 ```bash
-webcmd browser network --detail <key>
+webcmd browser eval "Object.keys(window).filter(k => /STATE|DATA|NUXT|APP/i.test(k))"
+webcmd browser eval "document.querySelectorAll('script[type=\"application/json\"], script:not([src])').length"
+webcmd browser eval "document.body.innerText.slice(0, 2000)"
 ```
 
-capture 会持久化到 `~/.webcmd/cache/browser-network/<session>.json`（默认 TTL 24h），所以 `--detail` 即使跨多条其他命令也还在。
+Use `DOM_STATE` when the target data is stable in state or HTML. If only a deeper interaction loads the target data, return to section 1.
 
-### 关键 request headers
+## Section 3 - Bundle / Script Src Search
 
-`browser network` 当前只抓响应（body + status + ct），抓不到请求头。要看请求头就在 DevTools Network 面板里点这条 request，或用 `browser eval` 手动 `fetch(url)` 复现一次观察浏览器发出去的头：
+Use for Pattern C.
 
-| 看到 | 含义 | 对应策略 |
-|------|------|---------|
-| 只有 `Cookie` | 登录态靠 cookie | `Strategy.COOKIE` |
-| `Authorization: Bearer xxx` | token 鉴权 | 先找 token 来源（localStorage / cookie / bundle 硬编码） |
-| `X-Csrf-Token: xxx` 同时存在 cookie 里 | CSRF 防护 | `Strategy.COOKIE`，从 cookie 读 ct0 类字段拼头 |
-| `X-Workspace-Id / X-Tenant-Id` | 多租户业务头 | 先调 `/workspaces` 拿 ID，缓存下来 |
-| 啥自定义头都没有 | 匿名接口 | `Strategy.PUBLIC` |
-
-### 触发懒加载接口
-
-默认页加载完后滚动 / 点击才会出的接口不在首屏 network 里。需要：
+Collect script sources:
 
 ```bash
-# 滚到底（虚拟列表）
-webcmd browser eval "window.scrollTo(0, document.body.scrollHeight)"
-webcmd browser wait time 2
-webcmd browser network
-
-# 点某个按钮
-webcmd browser click <N>
-webcmd browser wait time 2
-webcmd browser network
+webcmd browser eval "[...document.querySelectorAll('script[src]')].map(s => s.src)"
 ```
 
----
+Look for domains or paths containing:
 
-## §2 `__INITIAL_STATE__` / inline HTML（Pattern B）
+- `api`
+- `data`
+- `search`
+- `graphql`
+- `query`
+- `feed`
+- `suggest`
+- `push`
 
-首屏数据常挂在这几个全局变量上：
+For JSONP or callback-wrapped payloads, verify that stripping the wrapper yields parseable JSON:
+
+```js
+const raw = await fetch(url).then((r) => r.text());
+const json = JSON.parse(raw.replace(/^[\w$.]+\((.*)\);?$/, '$1'));
+```
+
+If a script points to bundle code rather than data, search for base URLs, route names, and query keys. Prefer endpoints with stable names and visible data over minified private internals.
+
+## Section 4 - Token / Header Source
+
+Use for Pattern D.
+
+Find token sources in this order:
+
+1. Network request headers.
+2. Cookies available through `page.getCookies()`.
+3. Meta tags or inline scripts.
+4. Global state.
+5. Same-origin bootstrap endpoint.
+
+Useful probes:
 
 ```bash
-webcmd browser eval "Object.keys(window).filter(k=>k.startsWith('__'))"
+webcmd browser eval "document.querySelector('meta[name=\"csrf-token\"]')?.content"
+webcmd browser eval "Object.keys(localStorage)"
+webcmd browser eval "Object.keys(sessionStorage)"
+webcmd browser eval "document.cookie"
 ```
 
-命中的常见名：
+Rules:
 
-| 全局 | 框架 |
-|------|-----|
-| `__NEXT_DATA__` | Next.js |
-| `__NUXT__` | Nuxt.js |
-| `__INITIAL_STATE__` | 自定义 Vue / React SSR |
-| `__PRELOADED_STATE__` | Redux SSR |
-| `__REMIX_CONTEXT__` | Remix |
+- It is fine to reuse cookies and CSRF values the page already has.
+- Do not teach bypassing CAPTCHA, risk controls, or access controls.
+- Do not reverse engineer private signatures when the only path is static secrets or brittle bundle logic.
+- If token extraction is fragile but the user-visible page can perform the action, choose `UI_SELECTOR` or `INTERCEPT`.
 
-取数据：
+## Section 5 - Store Action / Intercept Fallback
+
+Use only after public API, cookie API, DOM state, and UI selector options are insufficient.
+
+For page actions:
 
 ```bash
-webcmd browser eval "JSON.stringify(window.__NEXT_DATA__).slice(0, 3000)"
+webcmd browser trace start
+webcmd browser click '<selector>'
+webcmd browser wait xhr '<target-fragment>'
+webcmd browser network --format json
 ```
 
-**关键**：inline state 只覆盖首屏的一部分（通常是 SEO 相关字段）。分页 / 评论 / 懒加载还是得回 §1 抓 API。
+Choose `INTERCEPT` when:
 
-把首屏 state 当作 adapter 的兜底数据源：公开访问时 state 里有 → 直接 parse；数据更新快 / 分页 → 回到 API。
+- The page naturally sends the target request.
+- The response contains the target data.
+- You can trigger the request with a stable UI action.
+- You can explain why replay and DOM extraction are not enough.
 
----
+Choose `UI_SELECTOR` when the operation itself is the user-visible contract, such as clicking, publishing, uploading, or filling a form.
 
-## §3 JS bundle / script src 搜索（Pattern C，也是 A/D 的降级）
+## Endpoint Verification Checklist
 
-### 扫 script src
+Before writing adapter code:
 
-```bash
-webcmd browser eval "[...document.querySelectorAll('script[src]')].map(s=>s.src).filter(s=>!/\\.(css|png|jpg|svg|woff|mp4)$/.test(s)&&!/googletagmanager|crazyegg|sentry|doubleclick|amazon-adsystem|cloudflare/.test(s))"
-```
+- [ ] Candidate response is 200.
+- [ ] Candidate response contains target data.
+- [ ] Candidate is not analytics, ads, or telemetry.
+- [ ] Auth source is documented.
+- [ ] Replay method is documented.
+- [ ] Strategy note is written.
+- [ ] At least one field value is compared against the visible page.
 
-看结果里的 hostname：
-
-- 明显像 API 的域名（`api.xxx / push.xxx / data.xxx / gateway.xxx`）→ 直接去试
-- 主 bundle（`main.js / app.js / index.xxx.js`）→ 继续下一步下载 bundle 搜 baseURL
-
-### 搜 bundle 里的 baseURL
-
-```bash
-webcmd browser eval "(async()=>{const s=[...document.querySelectorAll('script[src]')].map(e=>e.src).find(s=>/main|app|index|bundle|chunk/.test(s));if(!s)return'no bundle';const t=await fetch(s).then(r=>r.text());const patterns=['baseURL','baseUrl','BASE_URL','apiHost','apiBase','API_HOST','API_BASE'];const hits=[];for(const p of patterns){let i=-1;while((i=t.indexOf(p,i+1))>-1&&hits.length<5)hits.push(t.slice(Math.max(0,i-5),i+80));}return hits})()"
-```
-
-命中 `baseURL:"https://api.foo.com"` 直接拿 host 拼 endpoint。
-
-### 直接试候选 endpoint
-
-像 eastmoney 这种经验 endpoint 可以直接喂：
-
-```bash
-webcmd browser eval "fetch('https://push2.eastmoney.com/api/qt/clist/get?fs=m:1+t:2&pn=1&pz=5&fltt=2&fid=f3&po=1&fields=f2,f3,f12,f14').then(r=>r.json())"
-```
-
-200 且数据对得上就认。
-
-### URL 后缀探测
-
-有些站直接在 URL 加 `.json` 就是 REST：
-
-- `https://www.reddit.com/r/rust.json` — Reddit 全覆盖
-- `https://xueqiu.com/S/SH600000.json` — 雪球部分页
-
-```bash
-# 当前页加 .json 试
-webcmd browser eval "fetch(location.pathname.replace(/\\/$/,'')+'.json').then(r=>r.ok?r.json():'no')"
-```
-
----
-
-## §4 Token / CSRF 来源排查（Pattern D）
-
-已经在 network 里看到请求带自定义头，怎么拿到那个值：
-
-### Cookie 里
-
-```bash
-webcmd browser eval "document.cookie.split('; ').reduce((o,x)=>{const[k,v]=x.split('=');o[k]=v;return o},{})"
-```
-
-常见 token cookie 名：`ct0`（Twitter CSRF）、`xq_a_token`（雪球）、`SESSDATA`（B 站）、`_csrf / csrfToken`（通用）。
-
-**`document.cookie` 只能看到 non-HttpOnly 的 cookie。** 上面那条命令侦察阶段够用，真写 adapter 时 auth 经常是 HttpOnly，一定要用 `page.getCookies(...)` 从 CDP cookie jar 拿——见 `adapter-template.md` 的 "COOKIE adapter 骨架"。
-
-论坛 / BBS 引擎（Discuz!X / phpBB / vBulletin）还多一坑：auth cookie 设在**根域** `.example.com`（不是 `www.example.com`），且 HttpOnly。要查 `{ domain: '.<root>' }` **和** `{ domain: 'www.<root>' }` 两次，否则 adapter 在有 cookie 的前提下仍然 401。
-
-### localStorage / sessionStorage 里
-
-```bash
-webcmd browser eval "Object.keys(localStorage).map(k=>k+' => '+localStorage.getItem(k).slice(0,50))"
-```
-
-找 `token / auth / jwt / bearer` 关键字。
-
-### Bundle 硬编码
-
-有些站的 Bearer 是全站一个常量（Twitter 的匿名 Bearer）。在 bundle 里搜：
-
-```bash
-webcmd browser eval "(async()=>{const s=[...document.querySelectorAll('script[src]')].map(e=>e.src).find(s=>/main|app|bundle/.test(s));const t=await fetch(s).then(r=>r.text());const m=t.match(/Bearer\\s+[\\w-]{20,}/g);return m?.slice(0,3)||'not found'})()"
-```
-
-### Store action 绕签名
-
-Vue + Pinia / Redux / React Context 有时直接调 store method 能绕过签名逻辑（method 内部会自己拿签名再发请求）：
-
-```bash
-# Pinia
-webcmd browser eval "typeof __pinia !== 'undefined' ? Object.keys(__pinia.state.value) : 'no pinia'"
-
-# 直接调 store action（每个站点具体 action 名要查）
-webcmd browser eval "window.__pinia.state.value.someStore.someMethod({...})"
-```
-
----
-
-## §5 installInterceptor（最后降级）
-
-所有手段都试过还拿不到请求签名时，让页面自己发请求，adapter 做 MITM 拦截响应：
-
-```javascript
-// func 里
-await page.evaluateWithArgs(installInterceptorCode, {
-  config: { domain: 'api.xxx.com', path: '/foo' },
-});
-await page.goto('https://xxx.com/trigger-page');
-// 等页面自己发那条请求
-const intercepted = await page.evaluate('window.__webcmd_intercepted');
-return intercepted.response;
-```
-
-代价是要等页面真的触发请求，慢、不稳。只在 §1-4 都不行时用。
-
----
-
-## 诊断不出来怎么办
-
-按这个顺序试到命中：
-
-```
-§1 network ──→ 命中？yes → 走
-      │        no
-      ↓
-§2 state  ──→ 命中？yes → 走
-      │        no
-      ↓
-§3 bundle ──→ 命中？yes → 走
-      │        no
-      ↓
-§4 token  ──→ 401 解除？yes → 走
-      │        no
-      ↓
-§5 intercept → 让页面自己发
-```
-
-**四条都命不中的站（罕见）**：多半是视觉化渲染（canvas / webgl），数据不以 HTTP/JSON 形式存在。这种放弃或换源。
+If any item fails, return to `site-recon.md` or the earlier section of this file.

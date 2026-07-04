@@ -164,7 +164,7 @@ describe('gemini/deep-research', () => {
             .mockResolvedValueOnce('Researching websites now');
         const result = await runCommand({ prompt: 'research this topic', timeout: 20 });
         expect(mockWaitForGeminiConfirmButton).toHaveBeenCalledTimes(2);
-        expect(mockWaitForGeminiConfirmButton).toHaveBeenNthCalledWith(2, page, expect.arrayContaining(['Start research', 'Start deep research', '开始研究', '开始深度研究']), 8);
+        expect(mockWaitForGeminiConfirmButton).toHaveBeenNthCalledWith(2, page, expect.arrayContaining(['Start research', 'Start deep research', 'Start research', 'Start deep research']), 8);
         expect(mockSendGeminiMessage).toHaveBeenCalledTimes(1);
         expect(result).toEqual([{ status: 'started', url: 'https://gemini.google.com/app/xyz123' }]);
     });

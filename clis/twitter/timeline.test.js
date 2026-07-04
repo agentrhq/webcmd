@@ -50,6 +50,8 @@ describe('twitter timeline helpers', () => {
                                                             favorite_count: 3,
                                                             retweet_count: 2,
                                                             reply_count: 1,
+                                                            quote_count: 4,
+                                                            bookmark_count: 5,
                                                             created_at: 'now',
                                                         },
                                                         core: {
@@ -96,6 +98,8 @@ describe('twitter timeline helpers', () => {
             likes: 3,
             retweets: 2,
             replies: 1,
+            quotes: 4,
+            bookmarks: 5,
             views: 9,
             created_at: 'now',
             url: 'https://x.com/alice/status/1',

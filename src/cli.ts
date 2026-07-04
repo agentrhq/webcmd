@@ -3239,7 +3239,7 @@ cli({
   adapterCmd
     .command('eject')
     .description('Copy an official adapter to ~/.webcmd/clis/ for local editing')
-    .argument('<site>', 'Site name (e.g. twitter, bilibili)')
+    .argument('<site>', 'Site name (e.g. twitter, youtube)')
     .action(async (site: string) => {
       const os = await import('node:os');
       const userClisDir = path.join(os.homedir(), '.webcmd', 'clis');
@@ -3270,7 +3270,7 @@ cli({
   adapterCmd
     .command('reset')
     .description('Remove local override and restore official adapter version')
-    .argument('[site]', 'Site name (e.g. twitter, bilibili)')
+    .argument('[site]', 'Site name (e.g. twitter, youtube)')
     .option('--all', 'Reset all local overrides')
     .action(async (site: string | undefined, opts: { all?: boolean }) => {
       const os = await import('node:os');

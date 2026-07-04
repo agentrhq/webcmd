@@ -1,6 +1,6 @@
 {
   "name": "@agentrhq/webcmd",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Turn websites, browser sessions, desktop apps, and local tools into deterministic CLI surfaces for humans and AI agents.",
   "engines": {
     "node": ">=20.0.0"
@@ -45,6 +45,7 @@
     "build-manifest": "tsx src/build-manifest.ts",
     "clean-dist": "node scripts/clean-dist.cjs",
     "copy-yaml": "node scripts/copy-yaml.cjs",
+    "generate-release-notes": "tsx scripts/generate-release-notes.ts",
     "start": "node dist/src/main.js",
     "start:bun": "bun dist/src/main.js",
     "preuninstall": "node -e \"fetch('http://127.0.0.1:19825/shutdown',{method:'POST',headers:{'X-Webcmd':'1'},signal:AbortSignal.timeout(3000)}).catch(()=>{})\" || true",
@@ -90,6 +91,8 @@
     "ws": "^8.18.0"
   },
   "devDependencies": {
+    "@emnapi/runtime": "^1.11.2",
+    "@google/genai": "^2.10.0",
     "@types/js-yaml": "^4.0.9",
     "@types/jsdom": "^27.0.0",
     "@types/node": "^25.5.2",

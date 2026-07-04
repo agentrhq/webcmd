@@ -23,7 +23,7 @@ const GEMINI_RESPONSE_NOISE_PATTERNS = [
     /Google Privacy Policy/gi,
     /Opens in a new window/gi,
 ];
-const GEMINI_TRANSCRIPT_CHROME_MARKERS = ['gemini', '我的内容', '对话', 'google terms', 'google privacy policy'];
+const GEMINI_TRANSCRIPT_CHROME_MARKERS = ['gemini', 'My content', 'conversation', 'google terms', 'google privacy policy'];
 const GEMINI_COMPOSER_SELECTORS = [
     '.ql-editor[contenteditable="true"]',
     '.ql-editor[role="textbox"]',
@@ -265,7 +265,7 @@ function extractGeminiTranscriptLineCandidate(transcriptLine, promptText) {
     // Some transcript snapshots flatten "prompt + answer" into a single line.
     // Recover the answer only when the line starts with the current prompt.
     if (candidate.startsWith(prompt)) {
-        const tail = candidate.slice(prompt.length).replace(/^[\s:：,，-]+/, '').trim();
+        const tail = candidate.slice(prompt.length).replace(/^[\s::,,-]+/, '').trim();
         return tail ? sanitizeGeminiResponseText(tail, '') : '';
     }
     return sanitized;
@@ -281,8 +281,8 @@ function getStateScript() {
         const href = node.getAttribute('href') || '';
         return text === 'sign in'
           || aria === 'sign in'
-          || text === '登录'
-          || aria === '登录'
+          || text === 'Log in'
+          || aria === 'Log in'
           || href.includes('accounts.google.com/ServiceLogin');
       });
 
@@ -309,8 +309,8 @@ function readGeminiSnapshotScript() {
         const aria = (node.getAttribute('aria-label') || '').trim().toLowerCase();
         return text === 'stop response'
           || aria === 'stop response'
-          || text === '停止回答'
-          || aria === '停止回答';
+          || text === 'Stop response'
+          || aria === 'Stop response';
       });
       const turns = ${getTurnsScript().trim()};
       const transcriptLines = ${getTranscriptLinesScript().trim()};
@@ -593,8 +593,8 @@ function submitComposerScript() {
         });
       }
 
-      const excludedPattern = /main menu|主菜单|microphone|麦克风|upload|上传|mode|模式|tools|工具|settings|临时对话|new chat|新对话/i;
-      const submitPattern = /send|发送|傳送|submit|提交/i;
+      const excludedPattern = /main menu|localized text|microphone|localized text|upload|localized text|mode|mode|tools|tools|settings|Temporary chat|new chat|New chat/i;
+      const submitPattern = /send|Send|Send|submit|Submit/i;
       let bestButton = null;
       let bestScore = -1;
 
@@ -665,10 +665,10 @@ function clickNewChatScript() {
         return isVisible(node) && (
           text === 'new chat'
           || aria === 'new chat'
-          || text === '发起新对话'
-          || aria === '发起新对话'
-          || text === '新对话'
-          || aria === '新对话'
+          || text === 'Start new chat'
+          || aria === 'Start new chat'
+          || text === 'New chat'
+          || aria === 'New chat'
         );
       });
 
@@ -684,7 +684,7 @@ function clickNewChatScript() {
 function openGeminiToolsMenuScript() {
     return `
     (() => {
-      const labels = ['tools', 'tool', 'mode', '研究', 'deep research', 'deep-research', '工具'];
+      const labels = ['tools', 'tool', 'mode', 'research', 'deep research', 'deep-research', 'tools'];
       const normalize = (value) => (value || '').replace(/\\s+/g, ' ').trim().toLowerCase();
       const matchesLabel = (value) => {
         const text = normalize(value);
@@ -973,7 +973,7 @@ function getGeminiConversationListScript() {
   `;
 }
 
-// Gemini collapses the sidebar's "最近" / "Recents" section by default, so the
+// Gemini collapses the sidebar's "Recent" / "Recents" section by default, so the
 // /app/<id> conversation anchors are not present in the DOM (or are hidden)
 // until that section is expanded. The script below opens the sidebar if it is
 // collapsed and expands the Recents toggle, returning true if it likely
@@ -999,16 +999,16 @@ function expandGeminiRecentScript() {
       // 1. Open the sidebar if it is collapsed (button only renders when closed).
       const openSidebar = buttons.find((b) => {
         const label = normalize(b.getAttribute('aria-label') || '');
-        return /打开边栏|open sidebar|open navigation|展开边栏/i.test(label);
+        return /Open sidebar|open sidebar|open navigation|Expand sidebar/i.test(label);
       });
       if (openSidebar) { openSidebar.click(); changed = true; }
 
-      // 2. Expand the "最近" / "Recents" toggle if it is currently collapsed.
+      // 2. Expand the "Recent" / "Recents" toggle if it is currently collapsed.
       const recentToggle = buttons.find((b) => {
         const label = normalize(b.getAttribute('aria-label') || '');
         const expanded = (b.getAttribute('aria-expanded') || '').toLowerCase();
-        return /最近|recent/i.test(label) && (
-          /展开|收起|expand|collapse|toggle|show|hide/i.test(label)
+        return /Recent|recent/i.test(label) && (
+          /Expand|Collapse|expand|collapse|toggle|show|hide/i.test(label)
           || expanded === 'false'
           || expanded === 'true'
         );
@@ -1016,7 +1016,7 @@ function expandGeminiRecentScript() {
       if (recentToggle) {
         const label = normalize(recentToggle.getAttribute('aria-label') || '');
         const expanded = (recentToggle.getAttribute('aria-expanded') || '').toLowerCase();
-        const explicitExpandLabel = /展开|显示|expand|show/i.test(label) && !/收起|collapse|hide/i.test(label);
+        const explicitExpandLabel = /Expand|Show|expand|show/i.test(label) && !/Collapse|collapse|hide/i.test(label);
         if (expanded === 'false' || (expanded !== 'true' && explicitExpandLabel)) {
           recentToggle.click();
           changed = true;
@@ -1138,7 +1138,7 @@ export async function startNewGeminiChat(page) {
 export async function getGeminiConversationList(page) {
     await ensureGeminiPage(page);
     let rows = [];
-    // Gemini collapses the sidebar "最近"/Recents section by default, hiding
+    // Gemini collapses the sidebar "Recent"/Recents section by default, hiding
     // the conversation anchors. Retry extraction after expanding it.
     for (let attempt = 0; attempt < 3; attempt += 1) {
         const raw = requireGeminiArrayResult(await page.evaluate(getGeminiConversationListScript()), 'Gemini conversation list');
@@ -1440,11 +1440,11 @@ function exportGeminiDeepResearchReportScript(maxWaitMs) {
     (async () => {
       const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
       const labels = {
-        actionMenu: ['open menu for conversation actions', 'conversation actions', '会话操作'],
-        share: ['share & export', 'share and export', 'share/export', '分享与导出', '分享和导出', '分享并导出', '共享和导出'],
-        shareConversation: ['share conversation', '分享会话', '分享对话'],
-        export: ['export', '导出'],
-        exportDocs: ['export to docs', 'export to google docs', 'export to doc', '导出到 docs', '导出到文档', '导出到 google docs'],
+        actionMenu: ['open menu for conversation actions', 'conversation actions', 'localized text'],
+        share: ['share & export', 'share and export', 'share/export', 'Share and export', 'Share and export', 'Share and export', 'Share and export'],
+        shareConversation: ['share conversation', 'Share conversation', 'Share conversation'],
+        export: ['export', 'Export'],
+        exportDocs: ['export to docs', 'export to google docs', 'export to doc', 'Export to docs', 'Export to Docs', 'Export to google docs'],
       };
 
       const recorderKey = '__webcmdGeminiExportUrls';
@@ -1547,15 +1547,15 @@ function exportGeminiDeepResearchReportScript(maxWaitMs) {
       };
       const isKindMatch = (kind, combined, targetLabels) => {
         if (includesAny(combined, targetLabels)) return true;
-        if (kind === 'share') return hasTokens(combined, ['share', 'export']) || hasTokens(combined, ['分享', '导出']);
-        if (kind === 'export') return hasTokens(combined, ['export']) || hasTokens(combined, ['导出']);
+        if (kind === 'share') return hasTokens(combined, ['share', 'export']) || hasTokens(combined, ['Share', 'Export']);
+        if (kind === 'export') return hasTokens(combined, ['export']) || hasTokens(combined, ['Export']);
         if (kind === 'export-docs') {
           return hasTokens(combined, ['export', 'docs'])
-            || hasTokens(combined, ['导出', '文档'])
-            || hasTokens(combined, ['导出', 'docs']);
+            || hasTokens(combined, ['Export', 'Docs'])
+            || hasTokens(combined, ['Export', 'docs']);
         }
         if (kind === 'action-menu') {
-          return hasTokens(combined, ['conversation', 'action']) || hasTokens(combined, ['会话', '操作']);
+          return hasTokens(combined, ['conversation', 'action']) || hasTokens(combined, ['localized text', 'localized text']);
         }
         return false;
       };
@@ -1868,11 +1868,11 @@ function openModelPickerForThinkingScript() {
       const VERSION_LABEL_RE = /\\d+\\.\\d+/;
 
       const MODE_SELECTOR_PATTERNS = [
-        /模式选择器/i,
+        /Mode selector/i,
         /mode[\\s-]*selector/i,
         /model[\\s-]*selector/i,
         /model[\\s-]*picker/i,
-        /选择模型/i,
+        /Select model/i,
         /select[\\s-]+model/i,
         /choose[\\s-]+model/i,
         /switch[\\s-]+model/i,
@@ -1921,7 +1921,7 @@ function openModelPickerForThinkingScript() {
 
         // Method 4: Fallback — look for any element with model-related attributes.
         const attrEls = Array.from(
-          document.querySelectorAll('[data-model-selector], [aria-label*="model" i], [aria-label*="模式" i]')
+          document.querySelectorAll('[data-model-selector], [aria-label*="model" i], [aria-label*="mode" i]')
         ).filter(isVisible);
         if (attrEls.length > 0) return attrEls[0];
 
@@ -1942,7 +1942,7 @@ function openModelPickerForThinkingScript() {
 }
 
 /**
- * Browser evaluate script that clicks the "思考等级" / "Thinking level"
+ * Browser evaluate script that clicks the "Thinking level" / "Thinking level"
  * toggle inside an already-open model-picker menu to expand thinking options.
  * Returns true if the toggle was found and clicked.
  */
@@ -1995,7 +1995,7 @@ function clickThinkingToggleInMenuScript() {
 
       const thinkingToggle = menuItems.find((item) => {
         const text = (item.textContent || '').replace(/\\s+/g, ' ').trim();
-        return /思考等级|thinking level|thinking mode/i.test(text);
+        return /Thinking level|thinking level|thinking mode/i.test(text);
       });
 
       if (thinkingToggle) {
@@ -2020,8 +2020,8 @@ function selectThinkingInMenuScript(thinkingValue) {
     const normalizedValue = String(thinkingValue || '').trim().toLowerCase();
     if (!normalizedValue) return '(() => "")';
     const labelMap = JSON.stringify({
-        standard: ['standard', '标准', '標準'],
-        extended: ['extended', '扩展', '擴展', '拡張'],
+        standard: ['standard', 'standard', 'standard'],
+        extended: ['extended', 'extended', 'extended', 'extended'],
     });
     return `
     (() => {
@@ -2125,7 +2125,7 @@ function selectThinkingInMenuScript(thinkingValue) {
  * Multi-step approach matching modelsCommand.func:
  *  1. Open the model-picker menu.
  *  2. Wait for React to render the menu.
- *  3. Click the "思考等级"/"Thinking level" toggle to expand thinking options.
+ *  3. Click the "Thinking level"/"Thinking level" toggle to expand thinking options.
  *  4. Wait for the expanded items to render.
  *  5. Select the requested thinking level.
  *  6. Close the menu.
@@ -2198,11 +2198,11 @@ function getCurrentGeminiModelScript() {
       const VERSION_LABEL_RE = /\\d+\\.\\d+/;
 
       const MODE_SELECTOR_PATTERNS = [
-        /模式选择器/i,
+        /Mode selector/i,
         /mode[\\s-]*selector/i,
         /model[\\s-]*selector/i,
         /model[\\s-]*picker/i,
-        /选择模型/i,
+        /Select model/i,
         /select[\\s-]+model/i,
         /choose[\\s-]+model/i,
         /switch[\\s-]+model/i,
@@ -2251,7 +2251,7 @@ function getCurrentGeminiModelScript() {
 
         // Method 4: Fallback — look for any element with model-related attributes.
         const attrEls = Array.from(
-          document.querySelectorAll('[data-model-selector], [aria-label*="model" i], [aria-label*="模式" i]')
+          document.querySelectorAll('[data-model-selector], [aria-label*="model" i], [aria-label*="mode" i]')
         ).filter(isVisible);
         if (attrEls.length > 0) return attrEls[0];
 

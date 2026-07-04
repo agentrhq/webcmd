@@ -1,196 +1,129 @@
-# JSDOM-against-frozen-fixture pattern (for in-browser DOM extractors)
+# JSDOM Fixture Pattern
 
-## When this pattern applies
+Use this when a browser adapter extracts DOM inside `page.evaluate` and a mocked-evaluate unit test is too weak to catch silent parser bugs.
 
-You're writing an adapter where the data extraction happens **inside the
-live browser** via `page.evaluate(...)` — not in Node-side post-processing.
-Typical signal: the adapter has a function literal stringified into
-`page.evaluate('(' + fn.toString() + ')()')`, walking `document.querySelector`
-and other DOM APIs.
+## When To Use
 
-These extractors are invisible to mocked `page.evaluate` unit tests — those
-tests feed pre-baked results to the func, so the real DOM walk never runs.
-PR #1312 found two such silent in-browser bugs in dianping that only
-surfaced on live verify:
+Use a JSDOM fixture when:
 
-1. shop title fallback split on ASCII `[]` while the page renders
-   full-width `【】`, so `name` was always empty.
-2. `headText.replace(/\s+/g, ' ')` collapsed rating "4.8" with reviews
-   "21241条", and a head-wide `/\d+条/` regex captured `4.821241` → 5.
+- DOM parsing is complex.
+- The page mixes repeated labels, counts, or nested cards.
+- A previous bug passed verify but extracted the wrong value.
+- The parser depends on sibling relationships or scoped selectors.
 
-If either category looks plausible for your site, freeze a representative
-HTML snapshot and replay it through JSDOM in a unit test.
+Do not add JSDOM fixtures for simple JSON adapters.
 
-## File layout
+## Fixture Location
 
-- Test file: `clis/<site>/<site>.test.js` (alongside the adapter file)
-- Fixture file: `clis/<site>/__fixtures__/<command>.html`
+Commit intentional review fixtures under:
 
-Reference implementation: `clis/dianping/__fixtures__/{shop,search}.html`
-(see PR #1313 for the original test + PR #1318 for the whitespace-strip
-follow-up that this doc grew out of).
+```text
+clis/<site>/__fixtures__/<command>.html
+```
 
-## Creating the HTML fixture
+Temporary debug dumps still belong only in:
 
-The whole point is to commit a **representative snapshot of the live
-page's DOM** — so the JSDOM unit test exercises the real selector paths
-the live extractor walks.
+```text
+~/.webcmd/sites/<site>/fixtures/
+/tmp/
+```
 
-### Mandatory steps (in order)
+## Five-Step Workflow
 
-1. **Capture** the page's HTML from a live verify run:
-   ```bash
-   webcmd browser open https://www.example.com/<page>
-   # In another shell, dump page.content():
-   webcmd browser eval 'document.documentElement.outerHTML' \
-     > /tmp/raw-<command>.html
-   ```
+### 1. Capture Minimal HTML
 
-2. **Strip noise blocks** that JSDOM doesn't need and that change every
-   page load (so committed fixtures wouldn't survive a re-capture diff
-   anyway):
-   - All `<script>...</script>` content
-   - All `<style>...</style>` content
-   - All `<iframe>...</iframe>` content
-   - All `<!-- ... -->` HTML comments
-   - All `<link rel="preload" ...>` / tracking pixels
+Use the browser to capture the specific DOM region, not the entire page.
 
-3. **Replace `<img src="...">`** with a placeholder
-   (`src="placeholder.png"`) — real CDN URLs leak account-scoped tokens
-   and are noise.
+```bash
+webcmd browser eval "document.querySelector('<root-selector>')?.outerHTML"
+```
 
-4. **Trim to the minimum subtree** that exercises the extractor and
-   triggers the bug you're guarding against. For dianping shop, that
-   was `.shop-head` + `.desc-info` + `.review-title`; for search,
-   3 of 15 result `<li>` cards (rank 1, 2, 3).
+Save only the required HTML for the parser.
 
-5. **MANDATORY whitespace normalization step** — strip all
-   whitespace-only lines:
-   ```bash
-   awk 'NF>0' /tmp/raw-<command>.html > clis/<site>/__fixtures__/<command>.html
-   ```
-   JSDOM's HTML parser is whitespace-tolerant; blank lines have zero
-   semantic effect on the test, but they bloat the committed diff and
-   obscure the meaningful DOM subtree from reviewers.
-   **Skipping this step is the most common silent quality regression
-   in fixture creation.** PR #1318 cleaned 239 leftover blank lines
-   from dianping's two fixtures (84.6% / 54.8% of file content) and
-   the JSDOM tests still passed unchanged.
+### 2. Tighten Blank Lines
 
-6. **Commit** at `clis/<site>/__fixtures__/<command>.html`.
+Run the mandatory blank-line tightening before committing:
 
-### Anti-patterns to avoid
+```bash
+awk 'NF>0' clis/<site>/__fixtures__/<command>.html > /tmp/<command>.html
+mv /tmp/<command>.html clis/<site>/__fixtures__/<command>.html
+```
 
-- ❌ "Strip script/style content" but leave the surrounding newlines.
-  Removing inline script body without collapsing the now-blank line is
-  the source of the noise — Step 5 exists specifically to clean this up.
-- ❌ Trim to minimum subtree, skip Step 5. The fixture works for the
-  test but reviewers see hundreds of blank lines.
-- ❌ Pretty-print the **mega-line** (e.g. `<div>...</div>` collapsed
-  onto one giant line by the source page). Some bugs depend on
-  text-node adjacency without intervening whitespace (e.g. `4.8` and
-  `21241条` immediately adjacent → `headText` fusion bug). Pretty-print
-  inserts whitespace that masks the very condition you're testing for.
-  Step 5 only deletes empty lines — never re-flow content.
-- ❌ Re-capture from live and overwrite the committed fixture without
-  re-running Steps 2-5. The fixture is a **frozen** snapshot; if the
-  page layout changes, that's a separate decision (update test
-  expectations + re-trim + re-strip).
+This prevents fixture bloat and makes diffs readable.
 
-## Writing the JSDOM unit test
+### 3. Extract Parser Logic
+
+Move DOM parsing into a helper that can run both in `page.evaluate` and in JSDOM.
+
+Keep helper input explicit:
 
 ```js
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+export function parseCards(root) {
+  return [...root.querySelectorAll('[data-testid="card"]')].map((card) => ({
+    title: card.querySelector('a')?.textContent?.trim() || '',
+  }));
+}
+```
+
+### 4. Add JSDOM Test
+
+```js
+import fs from 'node:fs';
+import path from 'node:path';
 import { JSDOM } from 'jsdom';
-import { readFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { extractShopFields } from './shop.js';
+import { describe, expect, it } from 'vitest';
+import { parseCards } from './parse.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const SHOP_FIXTURE = readFileSync(join(__dirname, '__fixtures__/shop.html'), 'utf8');
+describe('parseCards', () => {
+  it('extracts scoped card values from fixture HTML', () => {
+    const html = fs.readFileSync(path.join(import.meta.dirname, '__fixtures__/search.html'), 'utf8');
+    const dom = new JSDOM(html);
 
-describe('shop adapter — extractor against frozen HTML fixture', () => {
-    let originalDocument;
-    let originalLocation;
-
-    beforeEach(() => {
-        originalDocument = globalThis.document;
-        originalLocation = globalThis.location;
-    });
-
-    afterEach(() => {
-        globalThis.document = originalDocument;
-        globalThis.location = originalLocation;
-    });
-
-    function loadFixture(html, url) {
-        const dom = new JSDOM(html, { url });
-        globalThis.document = dom.window.document;
-        globalThis.location = dom.window.location;
-        return dom;
-    }
-
-    it('extracts the canonical fields and avoids known silent bugs', () => {
-        loadFixture(SHOP_FIXTURE, 'https://www.example.com/shop/123');
-
-        const data = extractShopFields();
-
-        expect(data.ok).toBe(true);
-        expect(data.name).toBe('...');
-        // Add explicit regression guards for each known silent bug.
-        expect(data.reviewsRaw).toBe('...');  // not the fused "<rating><reviews>" form
-    });
+    expect(parseCards(dom.window.document)).toMatchObject([
+      { title: 'Expected first title' },
+    ]);
+  });
 });
 ```
 
-For this to work, the adapter's extractor must be a **top-level
-function** that uses bare `document` / `location` (not `window.document`),
-so the same code is exercised by:
+### 5. Reverse-Validate
 
-- live browser: injected via `${extractFn.toString()}` into
-  `page.evaluate`
-- JSDOM unit test: with `globalThis.document` swapped
+Temporarily break the parser and confirm the test fails for the intended reason. Then restore the correct parser and confirm it passes.
 
-If your adapter currently has the extractor as an IIFE inside a
-template literal, refactor to a top-level `export function` first.
-Reference: `clis/dianping/{shop,search}.js` extracts `extractShopFields()`
-and `extractSearchRows()` with bare `document`/`location`.
+This proves the test is guarding the real bug rather than only exercising code.
 
-## Reverse-validation (mandatory before claiming the test catches the bug)
+## Scoped Selector Rule
 
-A test that "passes 18/18" doesn't prove it would have caught the original
-bug — only that it agrees with the current implementation. Before
-trusting a regression guard:
+Every selector inside a repeated component must be scoped to that component root.
 
-1. Make a backup of the adapter source.
-2. Reintroduce the buggy variant of the relevant extractor.
-3. Run the test. It MUST fail with an assertion that points at the
-   silent bug.
-4. Restore from backup.
+Bad:
 
-For dianping bug #2 (rating/reviews fusion):
 ```js
-// BUGGY VARIANT — replaces the .reviews selector path
-const buggyMatch = headText.match(/(\d+)条/);
-let reviewsRaw = buggyMatch ? buggyMatch[0] : '';
+document.querySelector('[data-testid="like"]')
 ```
 
-If after Step 5 of fixture creation the test still fails on this buggy
-variant with `expected '21241条' to be '21241条'` actually receiving
-`'821241条'` (the fused digits), the regression guard is intact. If the
-test still passes with the buggy variant, the fixture is too stripped /
-normalization went too far / the assertion is too loose — go back and
-tighten.
+Good:
 
-This is the same discipline as `--write-fixture` Step 10 in the main
-runbook (verify fixture catches what it should), applied to the JSDOM
-HTML fixture instead of the response JSON fixture.
+```js
+card.querySelector('[data-testid="like"]')
+```
 
-## See also
+If a partial fixture represents a reusable component, write its scope root at the top of the fixture or test.
 
-- `references/adapter-template.md` — basic adapter file structure
-- `references/output-design.md` — column naming for the post-extract mapping
-- `references/success-rate-pitfalls.md` — broader "verify can pass while
-  data is silently wrong" catalog; the mocked-page.evaluate gap that
-  motivates this whole pattern is one entry there
+## Common Bugs This Catches
+
+- Page-level first match selects the first card instead of the target card.
+- Head text from adjacent elements fuses numbers into a wrong count.
+- Locale-specific labels disappear or change.
+- Hidden template content is parsed as visible content.
+- A missing selector silently becomes an empty string.
+
+## Review Bar
+
+Committed JSDOM fixtures are not temporary dumps. They are review artifacts. Keep them:
+
+- minimal
+- readable
+- free of private data
+- blank-line tightened
+- paired with reverse-validation

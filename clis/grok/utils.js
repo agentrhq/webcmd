@@ -108,12 +108,12 @@ export async function getCurrentSessionId(page) {
 
 // Model picker trigger has stable id="model-select-trigger". Use that as the
 // primary selector — aria-label localizes (e.g. "Model select" in English,
-// "模型选择" in Chinese, etc.) and is unreliable across browser locales.
+// "Model selection" in Chinese, etc.) and is unreliable across browser locales.
 const MODEL_TRIGGER_SELECTORS = [
     '#model-select-trigger',
     'button[aria-label="Model select"]',
-    'button[aria-label="模型选择"]',
-    'button[aria-label="モデル選択"]',
+    'button[aria-label="Model selection"]',
+    'button[aria-label="モデルlocalized text"]',
 ];
 
 export async function getModelLabel(page) {
@@ -245,10 +245,10 @@ export async function startNewChat(page) {
 // matches one of the localized labels. Returns whether the click happened.
 //
 // Menu items observed on grok.com (2026-05-31):
-//   "打开新标签页" / "Open in new tab"
-//   "重命名"     / "Rename"
-//   "置顶" or "取消置顶" / "Pin" or "Unpin"
-//   "删除"       / "Delete"
+//   "Open in new tab"
+//   "Rename"
+//   "Pin" or "Unpin"
+//   "Delete"
 //
 // Grok's delete action takes effect IMMEDIATELY — no confirmation dialog —
 // so callers must enforce their own --yes / dry-run gating.
@@ -319,10 +319,10 @@ export function getPinStateFromMenuLabels(labels) {
     const normalized = (Array.isArray(labels) ? labels : [])
         .map((label) => String(label || '').trim().toLowerCase())
         .filter(Boolean);
-    if (normalized.some((label) => label === '取消置顶' || label === 'unpin')) {
+    if (normalized.some((label) => label === 'unpin')) {
         return 'pinned';
     }
-    if (normalized.some((label) => label === '置顶' || label === 'pin')) {
+    if (normalized.some((label) => label === 'pin')) {
         return 'unpinned';
     }
     return '';
@@ -535,12 +535,12 @@ export async function sendMessage(page, prompt) {
     // Prefer data-testid (locale-independent); fall back to aria-label per
     // language. As of 2026-05-31 Grok renders button[data-testid="chat-submit"]
     // once the composer has content. The aria-label varies: "Submit" (en),
-    // "提交" (zh-CN), and presumably other locales.
+    // "Submit" (zh-CN), and presumably other locales.
     const submitSelectors = [
       'button[data-testid="chat-submit"]',
       'button[aria-label="Submit"]',
-      'button[aria-label="提交"]',
-      'button[aria-label="送信"]',
+      'button[aria-label="Submit"]',
+      'button[aria-label="Send"]',
     ];
     let submit = null;
     for (let attempt = 0; attempt < 12; attempt += 1) {

@@ -181,26 +181,26 @@ describe('scoreEndpointEvidence', () => {
 describe('findNearestAdapter', () => {
   it('matches by domain suffix', () => {
     const reg = new Map<string, CliCommand>([
-      ['51job search', mkCmd('51job', 'search', '51job.com')],
-      ['51job detail', mkCmd('51job', 'detail', '51job.com')],
-      ['xueqiu search', mkCmd('xueqiu', 'search', 'xueqiu.com')],
+      ['github search', mkCmd('github', 'search', 'github.com')],
+      ['github auth', mkCmd('github', 'auth', 'github.com')],
+      ['linkedin search', mkCmd('linkedin', 'search', 'linkedin.com')],
     ]);
-    const v = findNearestAdapter('https://jobs.51job.com/', reg);
-    expect(v?.site).toBe('51job');
-    expect(v?.example_commands).toContain('51job search');
+    const v = findNearestAdapter('https://docs.github.com/', reg);
+    expect(v?.site).toBe('github');
+    expect(v?.example_commands).toContain('github search');
   });
 
   it('falls back to site-name containment when no domain is registered', () => {
     const reg = new Map<string, CliCommand>([
-      ['51job search', mkCmd('51job', 'search')],
+      ['github search', mkCmd('github', 'search')],
     ]);
-    const v = findNearestAdapter('https://we.51job.com/', reg);
-    expect(v?.site).toBe('51job');
+    const v = findNearestAdapter('https://gist.github.com/', reg);
+    expect(v?.site).toBe('github');
   });
 
   it('returns null when no adapter matches', () => {
     const reg = new Map<string, CliCommand>([
-      ['xueqiu search', mkCmd('xueqiu', 'search', 'xueqiu.com')],
+      ['github search', mkCmd('github', 'search', 'github.com')],
     ]);
     const v = findNearestAdapter('https://random-site.io/', reg);
     expect(v).toBeNull();
@@ -252,12 +252,12 @@ describe('analyzeSite', () => {
 
   it('includes nearest_adapter when the registry has a match', () => {
     const reg = new Map<string, CliCommand>([
-      ['51job search', mkCmd('51job', 'search', '51job.com')],
+      ['github search', mkCmd('github', 'search', 'github.com')],
     ]);
     const report = analyzeSite(
-      mkSignals({ finalUrl: 'https://we.51job.com/' }),
+      mkSignals({ finalUrl: 'https://github.com/features/actions' }),
       reg,
     );
-    expect(report.nearest_adapter?.site).toBe('51job');
+    expect(report.nearest_adapter?.site).toBe('github');
   });
 });

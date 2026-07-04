@@ -1,4 +1,4 @@
-<img width="2054" height="766" alt="Group 52" src="https://github.com/user-attachments/assets/9080bdf2-55c5-4522-9137-18eeb12f417d" />
+<img width="2054" height="766" alt="Webcmd banner" src="https://github.com/user-attachments/assets/3e5b9702-5ffd-43bd-ab1b-2319a8cc0e2a" />
 
 # Webcmd
 
@@ -6,331 +6,296 @@
   <a href="https://www.npmjs.com/package/@agentrhq/webcmd">
     <img alt="NPM version" src="https://img.shields.io/npm/v/@agentrhq/webcmd.svg?style=for-the-badge&color=1E88E5&labelColor=000000">
   </a>
-
   <a href="https://github.com/agentrhq/webcmd/blob/main/LICENSE">
-    <img alt="License" src="https://img.shields.io/npm/l/@agentrhq/webcmd.svg?style=for-the-badge&color=1E88E5&labelColor=000000">
+    <img alt="License" src="https://img.shields.io/badge/license-Apache%202.0-1E88E5.svg?style=for-the-badge&labelColor=000000">
   </a>
-
   <a href="https://github.com/agentrhq/webcmd/discussions">
     <img alt="Join the community on GitHub" src="https://img.shields.io/badge/Join%20the%20community-1E88E5.svg?style=for-the-badge&logo=github&labelColor=000000&logoWidth=20">
   </a>
 </p>
 
-**Teach a coding agent a website once. Get back a script it can run forever.**
+**Turn websites, browser sessions, desktop apps, and local tools into deterministic command-line surfaces for people and AI agents.**
 
-Coding agents are great at driving a browser and terrible at remembering how. Every session they re-learn the same login, the same clicks, the same fragile selectors. Webcmd records a real browser task session, distills it into a durable capability graph for that app, and materializes the result as a deterministic workflow script or a standalone task CLI — so the next run is one command instead of another exploratory crawl.
+Webcmd gives you one command surface for three kinds of automation:
 
-> **Screen recording / demo goes here.**
+- **Use built-in adapters** for sites like Reddit, Hacker News, LinkedIn, Twitter/X, TikTok, Amazon, PubMed, ChatGPT, Claude, Gemini, NotebookLM, and many more.
+- **Let AI agents operate a real browser** with `webcmd browser <session> ...` primitives: open pages, inspect DOM snapshots, click, type, select, extract, capture network calls, and verify flows.
+- **Wrap local tools and desktop apps** so agents can discover and invoke `gh`, `docker`, `vercel`, Electron apps, and other command surfaces through the same `webcmd ...` entrypoint.
+
+## Quick Start
+
+### 1. Install Webcmd
+
+Webcmd requires **Node.js >= 20**.
 
 ```bash
+node --version
 npm install -g @agentrhq/webcmd
-webcmd setup
 ```
 
----
-
-## How it works
-
-Webcmd turns one messy browser session into reusable, deterministic artifacts through five stages:
-
-1. **Record** — open a browser session with `webcmd open`. Everything is captured to a raw **journal** (DOM snapshots, actions, and redacted network evidence) by default.
-2. **Inspect** — read the journal and review captured network calls to understand what the task actually did and which requests had side effects.
-3. **Distill** — collapse the journal into the app's **capability graph**: the durable, deduplicated model of what this app can do.
-4. **Materialize** — emit a **workflow** (a deterministic `.mjs` replay script) or a **CLI** (a standalone package grounded in graph capabilities, shipped with its own `SKILL.md`).
-5. **Run** — replay the workflow or invoke the generated CLI. Deterministic, no live exploration.
-
-### Vocabulary
-
-| Term | What it is |
-|------|-----------|
-| **Session** | A live browser run, identified by `--session <name>`. Records by default. |
-| **Journal** | The raw event log of a session — snapshots, actions, network evidence. |
-| **Snapshot** | A semantic capture of page state. Webcmd can diff two snapshots. |
-| **Capability graph** | The distilled, durable model of an app's capabilities, built from journals. |
-| **Workflow** | A deterministic `.mjs` script that replays a task. No `SKILL.md`. |
-| **CLI** | A standalone package generated from graph capabilities. Ships a `SKILL.md`. |
-| **Profile** | A workspace identity context under `.webcmd/profiles/<name>` — may hold auth for several apps. |
-| **Authoring packet** | A planning step that decides the safe next action when creating, updating, or healing an artifact. |
-
----
-
-## Quick start (golden path)
-
-From an empty workspace to a runnable CLI:
+### 2. Verify the browser runtime
 
 ```bash
-# 1. Install skills and prepare runtime
-webcmd setup
-
-# 2. Record a task in a headed browser (this shell stays alive until close)
-webcmd open "https://news.ycombinator.com" --session hn --headed
-
-# 3. From another shell, drive and inspect the session
-webcmd snapshot --session hn
-webcmd click --session hn --role link --name "Learn more"
-webcmd network summary --session hn
-
-# 4. Let the authoring packet pick the safe next step
-webcmd author cli --operation create \
-  --task "Collect top Hacker News posts" \
-  --app-id hacker-news \
-  --url https://news.ycombinator.com
-
-# 5. Materialize the CLI from a plan, then run it
-webcmd cli hacker-news --plan <plan.json>
-webcmd run top-posts
-
-# 6. Done — close the session
-webcmd close --session hn
+webcmd doctor
 ```
 
-Sessions record by default; pass `--no-record` only for ephemeral sessions.
+`doctor` checks the Webcmd browser bridge: daemon status, runtime wiring, profile selection, and a live connectivity probe. Pure public adapters and local passthrough commands do not need a green browser check, but `COOKIE`, `INTERCEPT`, `UI`, and `webcmd browser` workflows do.
 
----
-
-## For AI agents
-
-Webcmd is built to be driven by a coding agent (Claude Code, Cursor, and similar), not typed by hand.
-
-**Install the skills.** `webcmd setup` installs the canonical Webcmd skills so your agent knows how to record, inspect, distill, and materialize.
+### 3. Discover commands
 
 ```bash
-webcmd setup                          # global: ~/.agents/skills/
-webcmd setup --scope local            # workspace: .agents/skills/
-webcmd setup --skills-root /path/to/.agents/skills
+webcmd list
+webcmd list -f json
+webcmd reddit --help
+webcmd reddit hot --help
 ```
 
-**Generated CLIs teach the next agent.** Every CLI Webcmd materializes ships with a `SKILL.md` whose frontmatter records command metadata, graph-capability provenance, and safe smoke tests. Install it alongside the CLI or into a shared skills root:
+`webcmd list -f json` is the source of truth for agents. It emits one row per command with the site, command name, arguments, output columns, browser requirement, and strategy.
+
+### 4. Run your first adapters
 
 ```bash
-webcmd cli <app-id> --plan <plan.json> --install-skill
-webcmd cli <app-id> --plan <plan.json> --install-skill /path/to/skills
+webcmd hackernews top --limit 5
+webcmd reddit popular --limit 5
+webcmd pubmed search "agentic browser automation" --limit 5 -f json
 ```
 
-Workflows never get a `SKILL.md`; CLIs always do.
+## For Humans
 
-**The primitives your agent drives.** Open a session, then control it from another shell:
+Use Webcmd directly when you want a reliable command instead of a live browser session:
 
 ```bash
-webcmd snapshot --session default
-webcmd click --session default --role link --name "Learn more"
-webcmd press Enter --session default
-webcmd goto "https://example.com" --session default
-webcmd wait url_contains "example.com" --session default --timeout-ms 5000
-webcmd close --session default
+webcmd list
+webcmd <site> --help
+webcmd <site> <command> --help
+webcmd <site> <command> -f json
 ```
 
----
+The everyday surface is intentionally small:
 
-## Browser runtime
+- `webcmd list` shows every registered adapter and external command.
+- `webcmd <site> <command> ...` runs a built-in, plugin, or private adapter.
+- `webcmd external register <name>` exposes a local CLI through the same discovery surface.
+- `webcmd doctor` diagnoses browser connectivity for authenticated or UI-driven commands.
 
-Webcmd opens a **CloakBrowser**-backed session by default:
+For example:
 
 ```bash
-webcmd open "https://example.com" --session default
+webcmd hackernews top --limit 10
+webcmd reddit subreddit programming --limit 10
+webcmd github whoami
+webcmd gh pr list --limit 5
 ```
 
-Run headed when you need to watch or hand off — the command stays alive until the session closes:
+Adapter commands are tagged by strategy:
+
+| Strategy | What it means |
+|----------|---------------|
+| `PUBLIC` | No browser or login. Webcmd can call a public endpoint or page directly. |
+| `COOKIE` | Uses the logged-in Webcmd browser profile for authenticated reads. |
+| `INTERCEPT` | Uses the browser to capture a signed or stateful request before replaying it. |
+| `UI` | Drives the page UI directly. |
+| `LOCAL` | Talks to a local app, service, or CLI surface. |
+
+Output formats are consistent across adapters:
 
 ```bash
-webcmd open "https://example.com" --session default --headed
+webcmd hackernews top -f table
+webcmd hackernews top -f json
+webcmd hackernews top -f yaml
+webcmd hackernews top -f md
+webcmd hackernews top -f csv
 ```
 
-Use stock Playwright Chromium explicitly when you'd rather not use CloakBrowser (install browsers first):
+Agents usually want `-f json`; humans usually want the default table.
+
+## For AI Agents
+
+Webcmd is designed to be driven by coding agents such as Codex, Claude Code, Cursor, and similar tools.
+
+Install Webcmd skills into the agent environment with your agent's skill manager:
 
 ```bash
-npm run browsers:install
-webcmd open "https://example.com" --browser chromium
+npx skills add agentrhq/webcmd
 ```
 
-### Profiles and identity
+Or install/copy only the skills you need from [`skills/`](./skills/) into your agent's skills root. These skills teach agents when to use adapters, when to drive the browser, how to author new adapters, and how to repair failing commands.
 
-Named profiles are workspace identity contexts under `.webcmd/profiles/<name>`. A single profile can carry auth for more than one app. Use `default` for the normal workspace identity:
+| Skill | When to use |
+|-------|-------------|
+| [`webcmd-usage`](./skills/webcmd-usage/SKILL.md) | Orient an agent to Webcmd commands, formats, strategies, plugins, and external CLIs. |
+| [`webcmd-browser`](./skills/webcmd-browser/SKILL.md) | Drive a real browser ad hoc: inspect, click, type, extract, network, tabs, waits. |
+| [`webcmd-adapter-author`](./skills/webcmd-adapter-author/SKILL.md) | Write or extend a reusable site adapter. |
+| [`webcmd-autofix`](./skills/webcmd-autofix/SKILL.md) | Repair an adapter after selectors, APIs, or response shapes drift. |
+| [`webcmd-browser-sitemap`](./skills/webcmd-browser-sitemap/SKILL.md) | Use recorded site knowledge while driving a browser task. |
+| [`webcmd-sitemap-author`](./skills/webcmd-sitemap-author/SKILL.md) | Capture or update reusable sitemap knowledge for future agents. |
+| [`smart-search`](./skills/smart-search/SKILL.md) | Route search and research requests to the right adapter. |
+
+The common agent workflow is:
 
 ```bash
-webcmd open "https://accounts.google.com" --session login --headed \
-  --profile default --browser chromium --channel chrome
+webcmd list -f json
+webcmd <site> <command> -f json
+webcmd <site> <command> --trace retain-on-failure -f json
 ```
 
-Or point at a dedicated absolute profile directory:
+Start with adapters. Fall back to `webcmd browser` only when no adapter covers the task or you are debugging/building one.
+
+## Browser Automation
+
+`webcmd browser` gives agents a stable, structured interface to a real browser. Commands use a session name immediately after `browser`:
 
 ```bash
-webcmd open "https://accounts.google.com" --session google --headed \
-  --user-data-dir /absolute/dedicated/profile --browser chromium --channel chrome
+webcmd browser work open https://example.com
+webcmd browser work state
+webcmd browser work click --role link --name "Learn more"
+webcmd browser work type --role textbox --name Email "you@example.com"
+webcmd browser work keys Enter
+webcmd browser work extract
+webcmd browser work close
 ```
 
-> **Do not** point `--user-data-dir` at your daily Chrome profile while Chrome is open. Use a dedicated Webcmd profile.
+Useful browser primitives include:
 
-Generated workflows and CLIs that initialize with `auth: true` reuse `.webcmd/profiles/default` unless the caller passes another `profile` or `userDataDir`.
+| Area | Commands |
+|------|----------|
+| Navigation | `open`, `back`, `wait`, `scroll`, `close` |
+| Inspection | `state`, `find`, `get`, `frames`, `screenshot`, `extract` |
+| Interaction | `click`, `type`, `fill`, `select`, `keys`, `hover`, `focus`, `check`, `uncheck`, `upload`, `drag` |
+| Network | `network`, `network --detail <key>`, `network --filter <fields>` |
+| Tabs | `tab list`, `tab new`, `tab select`, `tab close`, `bind`, `unbind` |
+| Adapter work | `init`, `verify`, `analyze` |
 
-### Auth-aware graphs
+Every interaction command returns structured data: match count, target identity, confidence level, and machine-readable errors. That contract is why agents can recover from mild DOM drift instead of guessing.
 
-Validate profile state and open a headed login flow:
+### Profiles
+
+Named profiles let Webcmd keep separate browser identities:
 
 ```bash
-webcmd auth doctor linkedin --profile default
-webcmd auth login linkedin --profile default --browser chromium --channel chrome
-webcmd auth bind linkedin --session login
+webcmd profile list
+webcmd profile rename <context-id> work
+webcmd profile use work
+webcmd --profile work browser work state
 ```
 
-### Optional Camofox provider
+If multiple browser profiles are connected and no default is selected, Webcmd asks you to choose rather than guessing.
 
-Use Camofox when a normal Playwright browser is blocked:
+## Built-in Commands
+
+Webcmd ships a large adapter registry. The list changes over time, so use `webcmd list -f json` for the current surface. Highlights include:
+
+| Site/App | Example commands |
+|----------|------------------|
+| `hackernews` | `top`, `new`, `best`, `ask`, `show`, `jobs`, `search`, `read`, `user` |
+| `reddit` | `hot`, `popular`, `search`, `subreddit`, `read`, `user`, `comment`, `save`, `upvote`, `subscribe` |
+| `linkedin` | `search`, `people-search`, `jobs-preferences`, `job-detail`, `profile-read`, `posts`, `inbox`, `safe-send` |
+| `twitter` | `trending`, `search`, `timeline`, `tweets`, `post`, `profile`, `bookmarks`, `notifications`, `follow`, `unfollow` |
+| `tiktok` | `search`, `explore`, `user`, `creator-videos`, `notifications`, `follow`, `comment`, `like`, `save` |
+| `amazon` | `search`, `product`, `offer`, `bestsellers`, `new-releases`, `movers-shakers`, `discussion` |
+| `pubmed` | `search`, `article`, `author`, `citations`, `clinical-trial`, `journal`, `mesh`, `related`, `review` |
+| `chatgpt` | `ask`, `send`, `new`, `read`, `history`, `detail`, `image`, `deep-research-result`, `model` |
+| `claude` | `ask`, `send`, `new`, `read`, `history`, `detail`, `status` |
+| `gemini` | `ask`, `new`, `image`, `deep-research`, `deep-research-result`, `models` |
+| `notebooklm` | `list`, `open`, `summary`, `source-list`, `source-get`, `source-fulltext`, `generate-audio`, `generate-slides` |
+
+Current registry size is generated from [`cli-manifest.json`](./cli-manifest.json); this README intentionally lists highlights, not a frozen catalog.
+
+## External CLI Hub
+
+Webcmd can expose existing command-line tools through the same discovery and invocation surface:
 
 ```bash
-webcmd open https://example.com --browser camofox --camofox-url http://localhost:3000
+webcmd external install gh
+webcmd external register my-tool \
+  --binary my-tool \
+  --install "npm i -g my-tool" \
+  --desc "My internal CLI"
+webcmd external list
+
+webcmd gh pr list --limit 5
+webcmd docker ps
 ```
 
----
+Built-in external entries include common tools such as `gh`, `docker`, `vercel`, `wrangler`, `obsidian`, `longbridge`, `ntn`, `tg`, `discord`, and `wx`. User overrides live in `~/.webcmd/external-clis.yaml`.
 
-## Network inspection
+## Plugins
 
-Captured sessions write redacted request evidence to `.webcmd/sessions/<session>/network.jsonl`; reviewer marks live separately in `network.marks.json`.
+Plugins let you install third-party adapter packs without patching the core registry:
 
 ```bash
-webcmd network list --session default --method POST
-webcmd network show n1 --session default
-webcmd network summary --session default
-webcmd network candidates --session default
-webcmd network mark n1 --session default --mark side-effect
+webcmd plugin install github:user/repo
+webcmd plugin list -f json
+webcmd plugin update --all
+webcmd plugin uninstall <name>
+webcmd plugin create <name>
 ```
 
-Marking side-effecting requests helps the distill step reason about which calls are safe to replay.
+Use plugins for private company workflows, community adapters, or experiments that are not ready for the built-in registry.
 
----
+## Writing Adapters
 
-## Authoring, distilling & materializing
-
-### Authoring packets
-
-Use an authoring packet when the user asks to **create**, **update**, or **heal** a CLI or workflow and you need to decide whether existing graph evidence is enough.
+When a site is not covered yet, author a reusable adapter instead of leaving an agent to click through the same browser flow every time.
 
 ```bash
-webcmd author cli --operation create --task "Create a Hacker News CLI" --app-id hacker-news --url https://news.ycombinator.com
-webcmd author cli --operation update --task "Add saved jobs" --app-id linkedin
-webcmd author cli --operation heal --task "jobs search fails" --app-id linkedin --target .webcmd/exports/clis/www.linkedin.com
-
-webcmd author workflow --operation create --task "Collect top Hacker News posts" --app-id hacker-news --url https://news.ycombinator.com
-webcmd author workflow --operation update --task "Return JSON with title and URL" --app-id hacker-news
-webcmd author workflow --operation heal --task "top posts workflow no longer finds titles" --app-id hacker-news --target .webcmd/exports/workflows/news.ycombinator.com/top-posts.mjs
+webcmd browser init <site>/<command>
+webcmd validate <site>/<command>
+webcmd verify <site>/<command> --smoke
+webcmd browser work verify <site>/<command>
 ```
 
-The packet tells the agent which phase to run next:
+Adapter files import the public Webcmd registry/error APIs:
 
-| Phase | What to do |
-|-------|-----------|
-| `discovery` | Record browser and network evidence within the discovery budget. |
-| `distill` | Distill existing recorded sessions into the graph. |
-| `build` | Prepare a CLI or workflow materialization packet. |
-| `repair` | Reproduce and classify the failure before patching. |
-
-The packet only chooses the safe next step — the actual artifact always comes from `webcmd cli`, `webcmd workflow`, and `webcmd verify`.
-
-### Materialization exports
-
-```bash
-webcmd workflow <app-id> --plan <plan.json>
-webcmd workflow list
-webcmd run <workflow_name>
-webcmd run <domain>/<workflow_name>
-webcmd run <workflow_name> --help
-
-webcmd cli <app-id> --plan <plan.json>
-webcmd cli <app-id> --plan <plan.json> --install-skill
+```js
+import { cli, Strategy } from '@agentrhq/webcmd/registry';
+import { CommandExecutionError } from '@agentrhq/webcmd/errors';
 ```
 
-- Workflows export to `~/.webcmd/exports/workflows/<domain>/<workflow-name>.mjs`.
-- CLIs export to `~/.webcmd/exports/clis/<domain>/` as standalone packages grounded in graph capabilities.
+Private adapters can live in `~/.webcmd/clis/<site>/<command>.js`; upstream adapters live in [`clis/`](./clis/). For the full authoring workflow, install and use [`webcmd-adapter-author`](./skills/webcmd-adapter-author/SKILL.md).
 
----
+## Configuration
 
-## User handoff
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `WEBCMD_PROFILE` | none | Browser runtime profile alias/context ID to use when multiple profiles are available. |
+| `WEBCMD_WINDOW` | command-specific | `foreground` or `background` browser window mode. |
+| `WEBCMD_BROWSER_CONNECT_TIMEOUT` | `45` | Seconds to wait for the browser bridge. |
+| `WEBCMD_BROWSER_COMMAND_TIMEOUT` | `60` | Seconds to wait for one browser command. |
+| `WEBCMD_CDP_ENDPOINT` | none | Manual CDP endpoint for remote browsers or Electron apps. |
+| `WEBCMD_CDP_TARGET` | none | Filter CDP targets by URL substring. |
+| `WEBCMD_CACHE_DIR` | `~/.webcmd/cache` | Browser state and network capture cache. |
+| `WEBCMD_VERBOSE` | `false` | Enable verbose logs. Also enabled by `-v`. |
 
-Pause for a human to demonstrate a step, then resume from the user-authored journal events:
-
-```bash
-webcmd handoff --session default
-# user demonstrates the workflow in the headed browser
-webcmd resume --session default
-```
-
----
-
-## Reading a session
-
-```bash
-webcmd journal        # read an existing recorded session
-webcmd run <name>     # execute an exported workflow .mjs
-```
-
----
-
-## Configuration reference
+Common paths:
 
 | Path | Purpose |
 |------|---------|
-| `~/.agents/skills/` | Global skills install target (`webcmd setup`). |
-| `.agents/skills/` | Local/workspace skills (`webcmd setup --scope local`). |
-| `.webcmd/` | Runtime state — created automatically when needed. |
-| `.webcmd/profiles/<name>` | Named identity profiles (auth, storage). |
-| `.webcmd/sessions/<session>/network.jsonl` | Redacted request evidence. |
-| `.webcmd/sessions/<session>/network.marks.json` | Reviewer marks. |
-| `~/.webcmd/exports/workflows/<domain>/` | Exported workflow `.mjs` scripts. |
-| `~/.webcmd/exports/clis/<domain>/` | Exported standalone CLI packages. |
-
-Common flags: `--session <name>`, `--profile <name>`, `--browser <cloak\|chromium\|camofox>`, `--channel chrome`, `--headed`, `--no-record`, `--user-data-dir <path>`, `--timeout-ms <n>`.
-
----
+| `~/.webcmd/` | User-level Webcmd state. |
+| `~/.webcmd/clis/` | Private adapters. |
+| `~/.webcmd/cache/browser-network/` | Cached browser network captures. |
+| `~/.webcmd/external-clis.yaml` | User external CLI registry entries. |
+| `~/.agents/skills/` | Common global skills install target for agent skill managers. |
+| `.agents/skills/` | Common workspace-local skills install target. |
 
 ## Troubleshooting
 
-- **`--user-data-dir` conflict / profile locked** — Chrome is likely open on that profile. Close Chrome or use a dedicated Webcmd profile under `.webcmd/profiles/<name>`.
-- **Auth check fails** — run `webcmd auth doctor <app> --profile default`, then `webcmd auth login <app> ...` and re-bind with `webcmd auth bind <app> --session login`.
-- **Browser is blocked / bot-walled** — retry with the Camofox provider: `--browser camofox --camofox-url http://localhost:3000`.
-- **Stock Chromium missing** — run `npm run browsers:install` before using `--browser chromium`.
-- **Session not found** — confirm the `--session` name matches the one used with `webcmd open`; headed sessions must still be alive.
-- **Node errors on startup** — Webcmd requires Node >= 20. Check `node --version` and upgrade.
-
-<!-- TODO: document output formats and exit codes here once finalized —
-     both are high-value for agents/CI branching on results. -->
-
----
-
-## Installation
-
-Webcmd requires **Node >= 20**.
-
-```bash
-npm install -g @agentrhq/webcmd
-webcmd --help
-```
-
-One-off usage without a global install:
-
-```bash
-npx @agentrhq/webcmd --help
-```
-
----
+- **Browser bridge is unavailable**: run `webcmd doctor -v` and follow the daemon/profile/runtime hint it prints.
+- **Multiple profiles are connected**: run `webcmd profile list`, then `webcmd profile use <name>` or pass `--profile <name>`.
+- **Authenticated adapter returns empty or unauthorized**: log into the target site in the Webcmd-managed browser profile, then retry.
+- **A site changed and an adapter fails**: rerun with `--trace retain-on-failure -f json`, inspect the trace summary, and use `webcmd-autofix`.
+- **A browser target is stale**: run `webcmd browser <session> state` again and use the fresh numeric ref or locator.
+- **Node errors on startup**: Webcmd requires Node.js >= 20. Check `node --version`.
 
 ## Development
 
 ```bash
 npm install
 npm test
-npm run check
+npm run typecheck
 npm run build
 ```
 
----
-
-## Contributing & releases
-
-Release engineering (Release Please, Conventional Commits, npm Trusted Publishing, and first-publish bootstrap) is documented separately in [`CONTRIBUTING.md`](./CONTRIBUTING.md) .
-
-In short: `fix:` → patch, `feat:` → minor, `!` or `BREAKING CHANGE:` → major. CI runs `npm ci && npm run check && npm test && npm run build && npm pack --dry-run` on every push and PR; merging the Release Please PR cuts the GitHub release and publishes to npm.
-
----
+Release engineering, Conventional Commits, CI, and npm publishing notes live in [`CONTRIBUTING.md`](./CONTRIBUTING.md).
 
 ## License
 

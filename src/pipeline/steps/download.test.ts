@@ -118,17 +118,17 @@ describe('stepDownload', () => {
       },
       [
         { url: 'https://www.youtube.com/watch?v=one' },
-        { url: 'https://www.bilibili.com/video/BV1xx411c7mD' },
+        { url: 'https://vimeo.com/12345' },
       ],
       {},
     );
 
     expect(getCookies).toHaveBeenCalledWith({ domain: 'www.youtube.com' });
-    expect(getCookies).toHaveBeenCalledWith({ domain: 'www.bilibili.com' });
+    expect(getCookies).toHaveBeenCalledWith({ domain: 'vimeo.com' });
     expect(mockExportCookiesToNetscape).toHaveBeenCalledWith(
       expect.arrayContaining([
         expect.objectContaining({ name: 'sid-www.youtube.com', domain: 'www.youtube.com' }),
-        expect.objectContaining({ name: 'sid-www.bilibili.com', domain: 'www.bilibili.com' }),
+        expect.objectContaining({ name: 'sid-vimeo.com', domain: 'vimeo.com' }),
       ]),
       expect.any(String),
     );

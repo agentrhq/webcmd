@@ -39,16 +39,16 @@ function createPageMock() {
 describe('Gemini snapshot diff helpers', () => {
     it('reports appended trusted turns when the current snapshot extends the baseline', () => {
         const before = snapshot({
-            turns: [{ Role: 'Assistant', Text: '旧回答' }],
+            turns: [{ Role: 'Assistant', Text: 'Previous answer' }],
         });
         const current = snapshot({
             turns: [
-                { Role: 'Assistant', Text: '旧回答' },
-                { Role: 'User', Text: '请只回复：OK' },
+                { Role: 'Assistant', Text: 'Previous answer' },
+                { Role: 'User', Text: 'Please reply only:OK' },
             ],
         });
         expect(__test__.diffTrustedStructuredTurns(before, current)).toEqual({
-            appendedTurns: [{ Role: 'User', Text: '请只回复：OK' }],
+            appendedTurns: [{ Role: 'User', Text: 'Please reply only:OK' }],
             hasTrustedAppend: true,
             hasNewUserTurn: true,
             hasNewAssistantTurn: false,
@@ -57,15 +57,15 @@ describe('Gemini snapshot diff helpers', () => {
     it('treats restored structured turns as untrusted when the pre-send snapshot had no trustworthy turns', () => {
         const before = snapshot({
             turns: [],
-            transcriptLines: ['旧问题', '旧回答'],
+            transcriptLines: ['Previous question', 'Previous answer'],
             structuredTurnsTrusted: false,
         });
         const current = snapshot({
             turns: [
-                { Role: 'User', Text: '旧问题' },
-                { Role: 'Assistant', Text: '旧回答' },
+                { Role: 'User', Text: 'Previous question' },
+                { Role: 'Assistant', Text: 'Previous answer' },
             ],
-            transcriptLines: ['旧问题', '旧回答'],
+            transcriptLines: ['Previous question', 'Previous answer'],
             structuredTurnsTrusted: true,
         });
         expect(__test__.diffTrustedStructuredTurns(before, current)).toEqual({
@@ -80,11 +80,11 @@ describe('Gemini snapshot diff helpers', () => {
             transcriptLines: ['baseline'],
         });
         const current = snapshot({
-            transcriptLines: ['baseline', '关于“请只回复：OK”，这里是解释。'],
+            transcriptLines: ['baseline', 'About"Please reply only:OK",here is an explanation.'],
             structuredTurnsTrusted: false,
         });
         expect(__test__.diffTranscriptLines(before, current)).toEqual([
-            '关于“请只回复：OK”，这里是解释。',
+            'About"Please reply only:OK",here is an explanation.',
         ]);
     });
 });
@@ -96,16 +96,16 @@ describe('Gemini submission state', () => {
             .mockResolvedValueOnce('https://gemini.google.com/app')
             .mockResolvedValueOnce({
             turns: [
-                { Role: 'Assistant', Text: '旧回答' },
-                { Role: 'User', Text: '请只回复：OK' },
+                { Role: 'Assistant', Text: 'Previous answer' },
+                { Role: 'User', Text: 'Please reply only:OK' },
             ],
-            transcriptLines: ['baseline', '请只回复：OK'],
+            transcriptLines: ['baseline', 'Please reply only:OK'],
             composerHasText: false,
             isGenerating: true,
             structuredTurnsTrusted: true,
         });
         const result = await waitForGeminiSubmission(page, snapshot({
-            turns: [{ Role: 'Assistant', Text: '旧回答' }],
+            turns: [{ Role: 'Assistant', Text: 'Previous answer' }],
             transcriptLines: ['baseline'],
             composerHasText: true,
             structuredTurnsTrusted: true,
@@ -113,16 +113,16 @@ describe('Gemini submission state', () => {
         expect(result).toEqual({
             snapshot: {
                 turns: [
-                    { Role: 'Assistant', Text: '旧回答' },
-                    { Role: 'User', Text: '请只回复：OK' },
+                    { Role: 'Assistant', Text: 'Previous answer' },
+                    { Role: 'User', Text: 'Please reply only:OK' },
                 ],
-                transcriptLines: ['baseline', '请只回复：OK'],
+                transcriptLines: ['baseline', 'Please reply only:OK'],
                 composerHasText: false,
                 isGenerating: true,
                 structuredTurnsTrusted: true,
             },
             preSendAssistantCount: 1,
-            userAnchorTurn: { Role: 'User', Text: '请只回复：OK' },
+            userAnchorTurn: { Role: 'User', Text: 'Please reply only:OK' },
             reason: 'user_turn',
         });
     });
@@ -163,16 +163,16 @@ describe('Gemini submission state', () => {
             .mockResolvedValueOnce('https://gemini.google.com/app')
             .mockResolvedValueOnce({
             turns: [
-                { Role: 'User', Text: '你说\n\n请只回复：DBG2' },
-                { Role: 'User', Text: '请只回复：DBG2' },
+                { Role: 'User', Text: 'You said\n\nPlease reply only:DBG2' },
+                { Role: 'User', Text: 'Please reply only:DBG2' },
             ],
-            transcriptLines: ['baseline', '请只回复：DBG2'],
+            transcriptLines: ['baseline', 'Please reply only:DBG2'],
             composerHasText: false,
             isGenerating: true,
             structuredTurnsTrusted: true,
         });
         const result = await waitForGeminiSubmission(page, snapshot({
-            turns: [{ Role: 'Assistant', Text: '需要我为你做些什么？' }],
+            turns: [{ Role: 'Assistant', Text: 'localized text?' }],
             transcriptLines: ['baseline'],
             composerHasText: false,
             structuredTurnsTrusted: true,
@@ -180,16 +180,16 @@ describe('Gemini submission state', () => {
         expect(result).toEqual({
             snapshot: {
                 turns: [
-                    { Role: 'User', Text: '你说\n\n请只回复：DBG2' },
-                    { Role: 'User', Text: '请只回复：DBG2' },
+                    { Role: 'User', Text: 'You said\n\nPlease reply only:DBG2' },
+                    { Role: 'User', Text: 'Please reply only:DBG2' },
                 ],
-                transcriptLines: ['baseline', '请只回复：DBG2'],
+                transcriptLines: ['baseline', 'Please reply only:DBG2'],
                 composerHasText: false,
                 isGenerating: true,
                 structuredTurnsTrusted: true,
             },
             preSendAssistantCount: 1,
-            userAnchorTurn: { Role: 'User', Text: '请只回复：DBG2' },
+            userAnchorTurn: { Role: 'User', Text: 'Please reply only:DBG2' },
             reason: 'composer_generating',
         });
     });
@@ -203,7 +203,7 @@ describe('Gemini submission state', () => {
             .mockResolvedValueOnce('https://gemini.google.com/app')
             .mockResolvedValueOnce({
             turns: [],
-            transcriptLines: ['baseline', '请只回复：OK'],
+            transcriptLines: ['baseline', 'Please reply only:OK'],
             composerHasText: false,
             isGenerating: false,
             structuredTurnsTrusted: false,
@@ -216,7 +216,7 @@ describe('Gemini submission state', () => {
         expect(result).toEqual({
             snapshot: {
                 turns: [],
-                transcriptLines: ['baseline', '请只回复：OK'],
+                transcriptLines: ['baseline', 'Please reply only:OK'],
                 composerHasText: false,
                 isGenerating: false,
                 structuredTurnsTrusted: false,
@@ -233,10 +233,10 @@ describe('Gemini submission state', () => {
             .mockResolvedValueOnce('https://gemini.google.com/app')
             .mockResolvedValueOnce({
             turns: [
-                { Role: 'User', Text: '旧问题' },
-                { Role: 'Assistant', Text: '旧回答' },
+                { Role: 'User', Text: 'Previous question' },
+                { Role: 'Assistant', Text: 'Previous answer' },
             ],
-            transcriptLines: ['旧问题', '旧回答'],
+            transcriptLines: ['Previous question', 'Previous answer'],
             composerHasText: false,
             isGenerating: false,
             structuredTurnsTrusted: true,
@@ -244,17 +244,17 @@ describe('Gemini submission state', () => {
             .mockResolvedValueOnce('https://gemini.google.com/app')
             .mockResolvedValueOnce({
             turns: [
-                { Role: 'User', Text: '旧问题' },
-                { Role: 'Assistant', Text: '旧回答' },
+                { Role: 'User', Text: 'Previous question' },
+                { Role: 'Assistant', Text: 'Previous answer' },
             ],
-            transcriptLines: ['旧问题', '旧回答'],
+            transcriptLines: ['Previous question', 'Previous answer'],
             composerHasText: false,
             isGenerating: false,
             structuredTurnsTrusted: true,
         });
         const result = await waitForGeminiSubmission(page, snapshot({
             turns: [],
-            transcriptLines: ['旧问题', '旧回答'],
+            transcriptLines: ['Previous question', 'Previous answer'],
             composerHasText: true,
             structuredTurnsTrusted: false,
         }), 2);
@@ -267,7 +267,7 @@ describe('Gemini submission state', () => {
             .mockResolvedValueOnce('https://gemini.google.com/app')
             .mockResolvedValueOnce({
             turns: [],
-            transcriptLines: ['baseline', '请只回复：OK'],
+            transcriptLines: ['baseline', 'Please reply only:OK'],
             composerHasText: true,
             isGenerating: false,
             structuredTurnsTrusted: false,
@@ -275,7 +275,7 @@ describe('Gemini submission state', () => {
             .mockResolvedValueOnce('https://gemini.google.com/app')
             .mockResolvedValueOnce({
             turns: [],
-            transcriptLines: ['baseline', '请只回复：OK'],
+            transcriptLines: ['baseline', 'Please reply only:OK'],
             composerHasText: true,
             isGenerating: false,
             structuredTurnsTrusted: false,
@@ -335,7 +335,7 @@ describe('Gemini submission state', () => {
             .mockResolvedValueOnce('https://gemini.google.com/app')
             .mockResolvedValueOnce({
             turns: [],
-            transcriptLines: ['baseline', '请只回复：OK'],
+            transcriptLines: ['baseline', 'Please reply only:OK'],
             composerHasText: false,
             isGenerating: false,
             structuredTurnsTrusted: false,
@@ -394,7 +394,7 @@ describe('Gemini reply state', () => {
             preSendAssistantCount: 1,
             userAnchorTurn: null,
             reason: 'composer_generating',
-        }, '请只回复：OK', 6);
+        }, 'Please reply only:OK', 6);
         expect(result).toBe('OK');
     });
     it('does not treat prepended older history as the current round reply when reply ownership has no user anchor', async () => {
@@ -404,8 +404,8 @@ describe('Gemini reply state', () => {
             .mockResolvedValueOnce('https://gemini.google.com/app')
             .mockResolvedValueOnce({
             turns: [
-                { Role: 'Assistant', Text: '更早的问题' },
-                { Role: 'Assistant', Text: '旧回答' },
+                { Role: 'Assistant', Text: 'Earlier question' },
+                { Role: 'Assistant', Text: 'Previous answer' },
             ],
             transcriptLines: ['baseline'],
             composerHasText: false,
@@ -415,8 +415,8 @@ describe('Gemini reply state', () => {
             .mockResolvedValueOnce('https://gemini.google.com/app')
             .mockResolvedValueOnce({
             turns: [
-                { Role: 'Assistant', Text: '更早的问题' },
-                { Role: 'Assistant', Text: '旧回答' },
+                { Role: 'Assistant', Text: 'Earlier question' },
+                { Role: 'Assistant', Text: 'Previous answer' },
             ],
             transcriptLines: ['baseline'],
             composerHasText: false,
@@ -426,8 +426,8 @@ describe('Gemini reply state', () => {
             .mockResolvedValueOnce('https://gemini.google.com/app')
             .mockResolvedValueOnce({
             turns: [
-                { Role: 'Assistant', Text: '更早的问题' },
-                { Role: 'Assistant', Text: '旧回答' },
+                { Role: 'Assistant', Text: 'Earlier question' },
+                { Role: 'Assistant', Text: 'Previous answer' },
             ],
             transcriptLines: ['baseline'],
             composerHasText: false,
@@ -436,7 +436,7 @@ describe('Gemini reply state', () => {
         });
         const result = await waitForGeminiResponse(page, {
             snapshot: snapshot({
-                turns: [{ Role: 'Assistant', Text: '旧回答' }],
+                turns: [{ Role: 'Assistant', Text: 'Previous answer' }],
                 transcriptLines: ['baseline'],
                 composerHasText: false,
                 isGenerating: true,
@@ -445,7 +445,7 @@ describe('Gemini reply state', () => {
             preSendAssistantCount: 1,
             userAnchorTurn: null,
             reason: 'composer_generating',
-        }, '请只回复：OK', 6);
+        }, 'Please reply only:OK', 6);
         expect(result).toBe('');
     });
     it('accepts a reply when the submission snapshot contains only the current round user turns and later appends a new assistant', async () => {
@@ -455,8 +455,8 @@ describe('Gemini reply state', () => {
             .mockResolvedValueOnce('https://gemini.google.com/app')
             .mockResolvedValueOnce({
             turns: [
-                { Role: 'User', Text: '你说\n\n请只回复：DBGREG' },
-                { Role: 'User', Text: '请只回复：DBGREG' },
+                { Role: 'User', Text: 'You said\n\nPlease reply only:DBGREG' },
+                { Role: 'User', Text: 'Please reply only:DBGREG' },
                 { Role: 'Assistant', Text: 'DBGREG' },
             ],
             transcriptLines: ['baseline'],
@@ -467,8 +467,8 @@ describe('Gemini reply state', () => {
             .mockResolvedValueOnce('https://gemini.google.com/app')
             .mockResolvedValueOnce({
             turns: [
-                { Role: 'User', Text: '你说\n\n请只回复：DBGREG' },
-                { Role: 'User', Text: '请只回复：DBGREG' },
+                { Role: 'User', Text: 'You said\n\nPlease reply only:DBGREG' },
+                { Role: 'User', Text: 'Please reply only:DBGREG' },
                 { Role: 'Assistant', Text: 'DBGREG' },
             ],
             transcriptLines: ['baseline'],
@@ -479,8 +479,8 @@ describe('Gemini reply state', () => {
         const result = await waitForGeminiResponse(page, {
             snapshot: snapshot({
                 turns: [
-                    { Role: 'User', Text: '你说\n\n请只回复：DBGREG' },
-                    { Role: 'User', Text: '请只回复：DBGREG' },
+                    { Role: 'User', Text: 'You said\n\nPlease reply only:DBGREG' },
+                    { Role: 'User', Text: 'Please reply only:DBGREG' },
                 ],
                 transcriptLines: ['baseline'],
                 composerHasText: false,
@@ -488,9 +488,9 @@ describe('Gemini reply state', () => {
                 structuredTurnsTrusted: true,
             }),
             preSendAssistantCount: 1,
-            userAnchorTurn: { Role: 'User', Text: '请只回复：DBGREG' },
+            userAnchorTurn: { Role: 'User', Text: 'Please reply only:DBGREG' },
             reason: 'composer_generating',
-        }, '请只回复：DBGREG', 6);
+        }, 'Please reply only:DBGREG', 6);
         expect(result).toBe('DBGREG');
     });
     it('does not trust an assistant-only submission snapshot without a stable post-submission owner', async () => {
@@ -499,7 +499,7 @@ describe('Gemini reply state', () => {
         evaluate
             .mockResolvedValueOnce('https://gemini.google.com/app')
             .mockResolvedValueOnce({
-            turns: [{ Role: 'Assistant', Text: '完整回答' }],
+            turns: [{ Role: 'Assistant', Text: 'Complete answer' }],
             transcriptLines: ['baseline'],
             composerHasText: false,
             isGenerating: false,
@@ -507,7 +507,7 @@ describe('Gemini reply state', () => {
         })
             .mockResolvedValueOnce('https://gemini.google.com/app')
             .mockResolvedValueOnce({
-            turns: [{ Role: 'Assistant', Text: '完整回答' }],
+            turns: [{ Role: 'Assistant', Text: 'Complete answer' }],
             transcriptLines: ['baseline'],
             composerHasText: false,
             isGenerating: false,
@@ -515,7 +515,7 @@ describe('Gemini reply state', () => {
         });
         const result = await waitForGeminiResponse(page, {
             snapshot: snapshot({
-                turns: [{ Role: 'Assistant', Text: '半截回答' }],
+                turns: [{ Role: 'Assistant', Text: 'Partial answer' }],
                 transcriptLines: ['baseline'],
                 composerHasText: false,
                 isGenerating: true,
@@ -524,7 +524,7 @@ describe('Gemini reply state', () => {
             preSendAssistantCount: 0,
             userAnchorTurn: null,
             reason: 'composer_generating',
-        }, '请解释', 4);
+        }, 'localized text', 4);
         expect(result).toBe('');
     });
     it('accepts an assistant reply that appears after a structured user anchor only after it stabilizes and generation stops', async () => {
@@ -534,9 +534,9 @@ describe('Gemini reply state', () => {
             .mockResolvedValueOnce('https://gemini.google.com/app')
             .mockResolvedValueOnce({
             turns: [
-                { Role: 'Assistant', Text: '旧回答' },
-                { Role: 'User', Text: '请解释' },
-                { Role: 'Assistant', Text: '半截回答' },
+                { Role: 'Assistant', Text: 'Previous answer' },
+                { Role: 'User', Text: 'localized text' },
+                { Role: 'Assistant', Text: 'Partial answer' },
             ],
             transcriptLines: ['baseline'],
             composerHasText: false,
@@ -546,9 +546,9 @@ describe('Gemini reply state', () => {
             .mockResolvedValueOnce('https://gemini.google.com/app')
             .mockResolvedValueOnce({
             turns: [
-                { Role: 'Assistant', Text: '旧回答' },
-                { Role: 'User', Text: '请解释' },
-                { Role: 'Assistant', Text: '完整回答' },
+                { Role: 'Assistant', Text: 'Previous answer' },
+                { Role: 'User', Text: 'localized text' },
+                { Role: 'Assistant', Text: 'Complete answer' },
             ],
             transcriptLines: ['baseline'],
             composerHasText: false,
@@ -558,9 +558,9 @@ describe('Gemini reply state', () => {
             .mockResolvedValueOnce('https://gemini.google.com/app')
             .mockResolvedValueOnce({
             turns: [
-                { Role: 'Assistant', Text: '旧回答' },
-                { Role: 'User', Text: '请解释' },
-                { Role: 'Assistant', Text: '完整回答' },
+                { Role: 'Assistant', Text: 'Previous answer' },
+                { Role: 'User', Text: 'localized text' },
+                { Role: 'Assistant', Text: 'Complete answer' },
             ],
             transcriptLines: ['baseline'],
             composerHasText: false,
@@ -570,8 +570,8 @@ describe('Gemini reply state', () => {
         const result = await waitForGeminiResponse(page, {
             snapshot: snapshot({
                 turns: [
-                    { Role: 'Assistant', Text: '旧回答' },
-                    { Role: 'User', Text: '请解释' },
+                    { Role: 'Assistant', Text: 'Previous answer' },
+                    { Role: 'User', Text: 'localized text' },
                 ],
                 transcriptLines: ['baseline'],
                 composerHasText: false,
@@ -579,10 +579,10 @@ describe('Gemini reply state', () => {
                 structuredTurnsTrusted: true,
             }),
             preSendAssistantCount: 1,
-            userAnchorTurn: { Role: 'User', Text: '请解释' },
+            userAnchorTurn: { Role: 'User', Text: 'localized text' },
             reason: 'user_turn',
-        }, '请解释', 6);
-        expect(result).toBe('完整回答');
+        }, 'localized text', 6);
+        expect(result).toBe('Complete answer');
     });
     it('uses transcript fallback only after two identical post-submission deltas and after generation stops', async () => {
         const page = createPageMock();
@@ -590,7 +590,7 @@ describe('Gemini reply state', () => {
         evaluate
             .mockResolvedValueOnce('https://gemini.google.com/app')
             .mockResolvedValueOnce({
-            turns: [{ Role: 'User', Text: '请只回复：OK' }],
+            turns: [{ Role: 'User', Text: 'Please reply only:OK' }],
             transcriptLines: ['baseline', 'OK'],
             composerHasText: false,
             isGenerating: true,
@@ -598,7 +598,7 @@ describe('Gemini reply state', () => {
         })
             .mockResolvedValueOnce('https://gemini.google.com/app')
             .mockResolvedValueOnce({
-            turns: [{ Role: 'User', Text: '请只回复：OK' }],
+            turns: [{ Role: 'User', Text: 'Please reply only:OK' }],
             transcriptLines: ['baseline', 'OK'],
             composerHasText: false,
             isGenerating: false,
@@ -606,7 +606,7 @@ describe('Gemini reply state', () => {
         })
             .mockResolvedValueOnce('https://gemini.google.com/app')
             .mockResolvedValueOnce({
-            turns: [{ Role: 'User', Text: '请只回复：OK' }],
+            turns: [{ Role: 'User', Text: 'Please reply only:OK' }],
             transcriptLines: ['baseline', 'OK'],
             composerHasText: false,
             isGenerating: false,
@@ -614,16 +614,16 @@ describe('Gemini reply state', () => {
         });
         const result = await waitForGeminiResponse(page, {
             snapshot: snapshot({
-                turns: [{ Role: 'User', Text: '请只回复：OK' }],
+                turns: [{ Role: 'User', Text: 'Please reply only:OK' }],
                 transcriptLines: ['baseline'],
                 composerHasText: false,
                 isGenerating: true,
                 structuredTurnsTrusted: true,
             }),
             preSendAssistantCount: 0,
-            userAnchorTurn: { Role: 'User', Text: '请只回复：OK' },
+            userAnchorTurn: { Role: 'User', Text: 'Please reply only:OK' },
             reason: 'user_turn',
-        }, '请只回复：OK', 6);
+        }, 'Please reply only:OK', 6);
         expect(result).toBe('OK');
     });
     it('ignores transcript lines that appeared before submission confirmation and only accepts post-submission transcript deltas', async () => {
@@ -632,40 +632,40 @@ describe('Gemini reply state', () => {
         evaluate
             .mockResolvedValueOnce('https://gemini.google.com/app')
             .mockResolvedValueOnce({
-            turns: [{ Role: 'User', Text: '请只回复：OK' }],
-            transcriptLines: ['baseline', '早到的提示词回声', 'OK'],
+            turns: [{ Role: 'User', Text: 'Please reply only:OK' }],
+            transcriptLines: ['baseline', 'early prompt echo', 'OK'],
             composerHasText: false,
             isGenerating: false,
             structuredTurnsTrusted: true,
         })
             .mockResolvedValueOnce('https://gemini.google.com/app')
             .mockResolvedValueOnce({
-            turns: [{ Role: 'User', Text: '请只回复：OK' }],
-            transcriptLines: ['baseline', '早到的提示词回声', 'OK'],
+            turns: [{ Role: 'User', Text: 'Please reply only:OK' }],
+            transcriptLines: ['baseline', 'early prompt echo', 'OK'],
             composerHasText: false,
             isGenerating: false,
             structuredTurnsTrusted: true,
         })
             .mockResolvedValueOnce('https://gemini.google.com/app')
             .mockResolvedValueOnce({
-            turns: [{ Role: 'User', Text: '请只回复：OK' }],
-            transcriptLines: ['baseline', '早到的提示词回声', 'OK'],
+            turns: [{ Role: 'User', Text: 'Please reply only:OK' }],
+            transcriptLines: ['baseline', 'early prompt echo', 'OK'],
             composerHasText: false,
             isGenerating: false,
             structuredTurnsTrusted: true,
         });
         const result = await waitForGeminiResponse(page, {
             snapshot: snapshot({
-                turns: [{ Role: 'User', Text: '请只回复：OK' }],
-                transcriptLines: ['baseline', '早到的提示词回声'],
+                turns: [{ Role: 'User', Text: 'Please reply only:OK' }],
+                transcriptLines: ['baseline', 'early prompt echo'],
                 composerHasText: false,
                 isGenerating: true,
                 structuredTurnsTrusted: true,
             }),
             preSendAssistantCount: 0,
-            userAnchorTurn: { Role: 'User', Text: '请只回复：OK' },
+            userAnchorTurn: { Role: 'User', Text: 'Please reply only:OK' },
             reason: 'composer_transcript',
-        }, '请只回复：OK', 6);
+        }, 'Please reply only:OK', 6);
         expect(result).toBe('OK');
     });
 });

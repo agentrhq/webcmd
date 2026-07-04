@@ -62,7 +62,7 @@ export function collectCodexProjectsFromDocument(doc = document) {
     }
 
     function isRelativeTime(text) {
-        return /^(?:(?:\d+\s*)?(?:刚刚|秒|分钟|小时|天|周|个月|年|sec|min|hr|hour|day|week|month|year|s|m|h|d|w)|.*\bago)$/i.test(text.trim());
+        return /^(?:(?:\d+\s*)?(?:just now|seconds|minutes|hours|days|weeks|months|year|sec|min|hr|hour|day|week|month|year|s|m|h|d|w)|.*\bago)$/i.test(text.trim());
     }
 
     function getUpdatedText(row, title) {

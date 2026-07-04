@@ -14,7 +14,7 @@ cli({
     site: 'reuters',
     name: 'article-detail',
     access: 'read',
-    description: 'Reuters 路透社文章详情：标题/作者/正文文本',
+    description: 'Reuters Reuters article detail:title/author/body text',
     domain: 'www.reuters.com',
     strategy: Strategy.COOKIE,
     args: [

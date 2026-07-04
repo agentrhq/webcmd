@@ -11,7 +11,7 @@ beforeAll(() => {
 describe('pixiv search', () => {
     it('throws AuthRequiredError on 401', async () => {
         const page = createPageMock([{ __httpError: 401 }]);
-        await expect(cmd.func(page, { query: '初音ミク', limit: 5 })).rejects.toThrow(AuthRequiredError);
+        await expect(cmd.func(page, { query: 'Mikuミク', limit: 5 })).rejects.toThrow(AuthRequiredError);
     });
     it('throws generic error on non-auth HTTP failure', async () => {
         const page = createPageMock([{ __httpError: 500 }]);
@@ -30,7 +30,7 @@ describe('pixiv search', () => {
                                 userId: '100',
                                 pageCount: 3,
                                 bookmarkCount: 500,
-                                tags: ['初音ミク', 'VOCALOID', 'ミク'],
+                                tags: ['Mikuミク', 'VOCALOID', 'ミク'],
                             },
                             {
                                 id: '67890',
@@ -46,7 +46,7 @@ describe('pixiv search', () => {
                 },
             },
         ]);
-        const result = (await cmd.func(page, { query: '初音ミク', limit: 10 }));
+        const result = (await cmd.func(page, { query: 'Mikuミク', limit: 10 }));
         expect(result).toHaveLength(2);
         expect(result[0]).toMatchObject({
             rank: 1,
