@@ -23638,6 +23638,8 @@
       "likes",
       "retweets",
       "replies",
+      "quotes",
+      "bookmarks",
       "views",
       "created_at",
       "url",
