@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "webcmd",
+  "displayName": "Webcmd",
+  "version": "0.2.0",
+  "description": "Use websites, browser sessions, desktop apps, and local tools through deterministic CLI commands.",
+  "author": {
+    "name": "AgentR",
+    "url": "https://github.com/agentrhq"
+  },
+  "homepage": "https://github.com/agentrhq/webcmd",
+  "repository": "https://github.com/agentrhq/webcmd",
+  "license": "Apache-2.0",
+  "keywords": ["browser", "automation", "cli", "agent-skills"],
+  "skills": "./skills/"
+}

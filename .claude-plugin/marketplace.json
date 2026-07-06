@@ -1,0 +1,24 @@
+{
+  "name": "webcmd",
+  "description": "Claude Code plugin for using Webcmd's deterministic browser and tool CLI.",
+  "owner": {
+    "name": "AgentR",
+    "url": "https://github.com/agentrhq"
+  },
+  "plugins": [
+    {
+      "name": "webcmd",
+      "source": "./",
+      "description": "Use websites, browser sessions, desktop apps, and local tools through deterministic CLI commands.",
+      "author": {
+        "name": "AgentR",
+        "url": "https://github.com/agentrhq"
+      },
+      "homepage": "https://github.com/agentrhq/webcmd",
+      "repository": "https://github.com/agentrhq/webcmd",
+      "license": "Apache-2.0",
+      "keywords": ["browser", "automation", "cli", "agent-skills"],
+      "category": "productivity"
+    }
+  ]
+}

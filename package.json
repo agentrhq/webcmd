@@ -30,6 +30,7 @@
   "files": [
     "dist/src/",
     "clis/",
+    ".claude-plugin/**",
     "skills/webcmd/**",
     "skill-data/**",
     "cli-manifest.json",
