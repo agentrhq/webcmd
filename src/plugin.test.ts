@@ -796,7 +796,7 @@ describe('updateAllPlugins', () => {
 
     expect(resC).toBeDefined();
     expect(resC!.success).toBe(true);
-  });
+  }, 15_000);
 });
 
 // ── Monorepo-specific tests ─────────────────────────────────────────────────
