@@ -41,14 +41,14 @@ The CLI install is the same for everyone. Pick one agent-support path:
 | Agent harness | Install Webcmd agent support |
 |---------------|------------------------------|
 | Codex | `codex plugin marketplace add agentrhq/webcmd`, then open `/plugins` and install Webcmd. |
-| Claude Code | `npx skills add agentrhq/webcmd --skill webcmd -a claude-code` |
+| Claude Code | `/plugin marketplace add agentrhq/webcmd`, then `/plugin install webcmd@webcmd` |
 | Cursor | `npx skills add agentrhq/webcmd --skill webcmd -a cursor` |
 | Gemini CLI | `npx skills add agentrhq/webcmd --skill webcmd -a gemini-cli` |
 | OpenCode | `npx skills add agentrhq/webcmd --skill webcmd -a opencode` |
 | Hermes Agent | `npx skills add agentrhq/webcmd --skill webcmd -a hermes-agent` |
 | Any skills-compatible agent | `npx skills add agentrhq/webcmd --skill webcmd` |
 
-Codex users do not need the `npx skills add` command when they install the Webcmd plugin. The plugin bundles the discovery skill for Codex.
+Codex and Claude Code users do not need the `npx skills add` command when they install the Webcmd plugin for their agent. The plugin bundles the Webcmd discovery skill.
 
 ### 3. Verify the browser runtime
 
