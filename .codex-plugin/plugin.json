@@ -1,0 +1,29 @@
+{
+  "name": "webcmd",
+  "version": "0.2.0",
+  "description": "Deterministic CLI surfaces for websites, browser sessions, desktop apps, and local tools.",
+  "author": {
+    "name": "AgentR",
+    "url": "https://github.com/agentrhq"
+  },
+  "homepage": "https://github.com/agentrhq/webcmd",
+  "repository": "https://github.com/agentrhq/webcmd",
+  "license": "Apache-2.0",
+  "keywords": ["browser", "automation", "cli", "agent-skills"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Webcmd",
+    "shortDescription": "Use websites and browser sessions as CLI commands.",
+    "longDescription": "Install one Webcmd discovery skill for Codex. The Webcmd CLI serves current workflow skills for adapters, browser control, adapter repair, sitemaps, and search.",
+    "developerName": "AgentR",
+    "category": "Productivity",
+    "capabilities": ["Instructions", "CLI"],
+    "websiteURL": "https://github.com/agentrhq/webcmd",
+    "defaultPrompt": [
+      "Use Webcmd to find the right command for this task.",
+      "Use Webcmd browser control for this site flow.",
+      "Create a Webcmd adapter for this workflow."
+    ],
+    "brandColor": "#1E88E5"
+  }
+}

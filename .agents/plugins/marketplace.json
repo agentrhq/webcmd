@@ -1,0 +1,21 @@
+{
+  "name": "webcmd",
+  "interface": {
+    "displayName": "Webcmd"
+  },
+  "plugins": [
+    {
+      "name": "webcmd",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/agentrhq/webcmd.git",
+        "ref": "main"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

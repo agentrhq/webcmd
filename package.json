@@ -32,6 +32,8 @@
     "clis/",
     "skills/webcmd/**",
     "skill-data/**",
+    ".codex-plugin/plugin.json",
+    ".agents/plugins/marketplace.json",
     "cli-manifest.json",
     "scripts/",
     "README.md",
