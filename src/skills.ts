@@ -27,7 +27,8 @@ interface SkillFrontmatter {
 }
 
 export function getSkillsRoot(packageRoot: string = findPackageRoot(MODULE_FILE)): string {
-  return path.join(packageRoot, 'skills');
+  const skillDataRoot = path.join(packageRoot, 'skill-data');
+  return isDirectory(skillDataRoot) ? skillDataRoot : path.join(packageRoot, 'skills');
 }
 
 export function listWebcmdSkills(packageRoot?: string): WebcmdSkillInfo[] {
@@ -35,7 +36,7 @@ export function listWebcmdSkills(packageRoot?: string): WebcmdSkillInfo[] {
   if (!fs.existsSync(skillsRoot)) return [];
 
   return fs.readdirSync(skillsRoot, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && entry.name.startsWith('webcmd-'))
+    .filter((entry) => entry.isDirectory())
     .map((entry) => readSkillInfo(skillsRoot, entry.name))
     .filter((entry): entry is WebcmdSkillInfo => entry !== null)
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -43,9 +44,6 @@ export function listWebcmdSkills(packageRoot?: string): WebcmdSkillInfo[] {
 
 export function readWebcmdSkill(target: string, relpath = '', packageRoot?: string): WebcmdSkillReadResult {
   const { name, pathInSkill } = parseSkillTarget(target, relpath);
-  if (!name.startsWith('webcmd-')) {
-    throw new ArgumentError(`Unknown Webcmd skill: ${name}`, 'Run "webcmd skills list" to see available Webcmd skills.');
-  }
 
   const skillsRoot = getSkillsRoot(packageRoot);
   const skillRoot = path.join(skillsRoot, name);
@@ -60,7 +58,7 @@ export function readWebcmdSkill(target: string, relpath = '', packageRoot?: stri
     throw new ArgumentError(`Invalid skill path: ${relativePath}`, 'Skill paths must stay inside the selected Webcmd skill.');
   }
   if (!fs.existsSync(absolutePath) || !fs.statSync(absolutePath).isFile()) {
-    throw new ArgumentError(`Skill file not found: ${name}/${relativePath}`, 'Run "webcmd skills list <skill>" is not supported yet; read SKILL.md or a known references/... file.');
+    throw new ArgumentError(`Skill file not found: ${name}/${relativePath}`, 'Run "webcmd skills read <skill>" or read a known references/... file.');
   }
 
   return {

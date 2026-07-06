@@ -7,11 +7,11 @@ import { listWebcmdSkills, readWebcmdSkill } from './skills.js';
 
 function makePackageRoot(): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-skills-'));
-  fs.mkdirSync(path.join(root, 'skills', 'webcmd-browser', 'references'), { recursive: true });
-  fs.mkdirSync(path.join(root, 'skills', 'webcmd-autofix'), { recursive: true });
-  fs.mkdirSync(path.join(root, 'skills', 'smart-search'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'skill-data', 'webcmd-browser', 'references'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'skill-data', 'webcmd-autofix'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'skill-data', 'smart-search'), { recursive: true });
   fs.writeFileSync(path.join(root, 'package.json'), '{"name":"@agentrhq/webcmd"}\n');
-  fs.writeFileSync(path.join(root, 'skills', 'webcmd-browser', 'SKILL.md'), [
+  fs.writeFileSync(path.join(root, 'skill-data', 'webcmd-browser', 'SKILL.md'), [
     '---',
     'name: webcmd-browser',
     'description: Browser control skill',
@@ -23,15 +23,15 @@ function makePackageRoot(): string {
     'Body.',
     '',
   ].join('\n'));
-  fs.writeFileSync(path.join(root, 'skills', 'webcmd-browser', 'references', 'targets.md'), '# Targets\n');
-  fs.writeFileSync(path.join(root, 'skills', 'webcmd-autofix', 'SKILL.md'), [
+  fs.writeFileSync(path.join(root, 'skill-data', 'webcmd-browser', 'references', 'targets.md'), '# Targets\n');
+  fs.writeFileSync(path.join(root, 'skill-data', 'webcmd-autofix', 'SKILL.md'), [
     '---',
     'name: webcmd-autofix',
     'description: Fix adapters: keep scope narrow',
     '---',
     '',
   ].join('\n'));
-  fs.writeFileSync(path.join(root, 'skills', 'smart-search', 'SKILL.md'), [
+  fs.writeFileSync(path.join(root, 'skill-data', 'smart-search', 'SKILL.md'), [
     '---',
     'name: smart-search',
     'description: Search skill',
@@ -42,10 +42,11 @@ function makePackageRoot(): string {
 }
 
 describe('webcmd skills content', () => {
-  it('lists only webcmd-prefixed skills', () => {
+  it('lists bundled skills', () => {
     const root = makePackageRoot();
 
     expect(listWebcmdSkills(root).map((skill) => skill.name)).toEqual([
+      'smart-search',
       'webcmd-autofix',
       'webcmd-browser',
     ]);
@@ -68,10 +69,14 @@ describe('webcmd skills content', () => {
     expect(readWebcmdSkill('webcmd-browser', 'references/targets.md', root).content).toBe('# Targets\n');
   });
 
-  it('rejects non-webcmd skills and path traversal', () => {
+  it('rejects unknown skills and path traversal', () => {
     const root = makePackageRoot();
 
-    expect(() => readWebcmdSkill('smart-search', '', root)).toThrow(ArgumentError);
+    expect(readWebcmdSkill('smart-search', '', root)).toMatchObject({
+      skill: 'smart-search',
+      path: 'SKILL.md',
+    });
+    expect(() => readWebcmdSkill('not-real', '', root)).toThrow(ArgumentError);
     expect(() => readWebcmdSkill('webcmd-browser/../smart-search/SKILL.md', '', root)).toThrow(ArgumentError);
     expect(() => readWebcmdSkill('webcmd-browser', '../../package.json', root)).toThrow(ArgumentError);
   });

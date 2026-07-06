@@ -821,11 +821,21 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string): Command 
 
   const skillsCmd = program
     .command('skills')
-    .description('Read bundled Webcmd skills');
+    .description('Read bundled Webcmd skills')
+    .action(() => {
+      const rows = listWebcmdSkills();
+      renderOutput(rows, {
+        fmt: 'table',
+        fmtExplicit: false,
+        columns: ['name', 'description', 'version', 'path'],
+        title: 'webcmd/skills/list',
+        source: 'webcmd skills',
+      });
+    });
 
   skillsCmd
     .command('list')
-    .description('List bundled webcmd-* skills')
+    .description('List bundled Webcmd skills')
     .option('-f, --format <fmt>', 'Output format: table, json, yaml, md, csv', 'table')
     .action((opts) => {
       const rows = listWebcmdSkills();
@@ -840,7 +850,8 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string): Command 
 
   skillsCmd
     .command('read')
-    .description("Print a bundled webcmd-* skill's SKILL.md or reference file")
+    .alias('get')
+    .description("Print a bundled Webcmd skill's SKILL.md or reference file")
     .argument('<skill>', 'Skill name, or skill/path like webcmd-browser/references/foo.md')
     .argument('[path]', 'Path under the skill directory')
     .option('--json', 'Output a JSON envelope instead of raw markdown', false)
