@@ -21,6 +21,22 @@ webcmd --version
 webcmd --help
 ```
 
+## Install Agent Support
+
+The CLI install is universal. The second step depends on the agent harness you use:
+
+| Agent harness | Install Webcmd agent support |
+| --- | --- |
+| Codex | `codex plugin marketplace add agentrhq/webcmd`, then open `/plugins` and install Webcmd. |
+| Claude Code | `npx skills add agentrhq/webcmd --skill webcmd -a claude-code` |
+| Cursor | `npx skills add agentrhq/webcmd --skill webcmd -a cursor` |
+| Gemini CLI | `npx skills add agentrhq/webcmd --skill webcmd -a gemini-cli` |
+| OpenCode | `npx skills add agentrhq/webcmd --skill webcmd -a opencode` |
+| Hermes Agent | `npx skills add agentrhq/webcmd --skill webcmd -a hermes-agent` |
+| Any skills-compatible agent | `npx skills add agentrhq/webcmd --skill webcmd` |
+
+Codex plugin installs already include the Webcmd discovery skill, so Codex users do not need a separate `npx skills add` step.
+
 ## Verify the Runtime
 
 Agents use Webcmd for public commands, authenticated browser workflows, local CLIs, and adapter authoring. Verify the local runtime before asking an agent to create commands:

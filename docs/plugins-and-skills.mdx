@@ -49,6 +49,15 @@ You can run those yourself, but they are usually part of an agent task.
 
 Skills are instructions for agents. They help the agent choose the right workflow instead of guessing.
 
+Webcmd has two install surfaces:
+
+| Agent surface | Recommended install |
+| --- | --- |
+| Codex | Install the Webcmd plugin from the Codex plugin marketplace. |
+| Other skill-aware agents | Install the Webcmd discovery skill with `npx skills add agentrhq/webcmd --skill webcmd`. |
+
+Install the CLI separately with `npm install -g @agentrhq/webcmd`. The skill or plugin teaches the agent how to use the `webcmd` binary; it should not be treated as the CLI package itself.
+
 Common skills:
 
 | Skill | Purpose |
@@ -69,10 +78,10 @@ Use the Webcmd adapter-author skill to create this command. If the site changes 
 
 ## Installing Skills for Agents
 
-If your agent supports skills, install or copy the relevant Webcmd skills from the package. Then tell the agent to use them.
+If your agent supports skills, install the Webcmd discovery skill. Then tell the agent to load the runtime workflow it needs.
 
 ```text
-Before working on this site, load the Webcmd usage and adapter-author skills. Prefer an existing adapter if one exists.
+Before working on this site, load the Webcmd usage workflow and prefer an existing adapter if one exists.
 ```
 
 ## Recommended Agent Behavior

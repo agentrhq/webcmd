@@ -31,9 +31,26 @@ Webcmd requires **Node.js >= 20**.
 ```bash
 node --version
 npm install -g @agentrhq/webcmd
+webcmd --version
 ```
 
-### 2. Verify the browser runtime
+### 2. Teach your agent Webcmd
+
+The CLI install is the same for everyone. Pick one agent-support path:
+
+| Agent harness | Install Webcmd agent support |
+|---------------|------------------------------|
+| Codex | `codex plugin marketplace add agentrhq/webcmd`, then open `/plugins` and install Webcmd. |
+| Claude Code | `npx skills add agentrhq/webcmd --skill webcmd -a claude-code` |
+| Cursor | `npx skills add agentrhq/webcmd --skill webcmd -a cursor` |
+| Gemini CLI | `npx skills add agentrhq/webcmd --skill webcmd -a gemini-cli` |
+| OpenCode | `npx skills add agentrhq/webcmd --skill webcmd -a opencode` |
+| Hermes Agent | `npx skills add agentrhq/webcmd --skill webcmd -a hermes-agent` |
+| Any skills-compatible agent | `npx skills add agentrhq/webcmd --skill webcmd` |
+
+Codex users do not need the `npx skills add` command when they install the Webcmd plugin. The plugin bundles the discovery skill for Codex.
+
+### 3. Verify the browser runtime
 
 ```bash
 webcmd doctor
@@ -41,7 +58,7 @@ webcmd doctor
 
 `doctor` checks the Webcmd browser bridge: daemon status, runtime wiring, profile selection, and a live connectivity probe. Pure public adapters and local passthrough commands do not need a green browser check, but `COOKIE`, `INTERCEPT`, `UI`, and `webcmd browser` workflows do.
 
-### 3. Discover commands
+### 4. Discover commands
 
 ```bash
 webcmd list
@@ -52,7 +69,7 @@ webcmd reddit hot --help
 
 `webcmd list -f json` is the source of truth for agents. It emits one row per command with the site, command name, arguments, output columns, browser requirement, and strategy.
 
-### 4. Run your first adapters
+### 5. Run your first adapters
 
 ```bash
 webcmd hackernews top --limit 5
@@ -111,15 +128,15 @@ Agents usually want `-f json`; humans usually want the default table.
 
 ## For AI Agents
 
-Webcmd is designed to be driven by coding agents such as Codex, Claude Code, Cursor, and similar tools.
+Webcmd is designed to be driven by coding agents such as Codex, Claude Code, Cursor, and similar tools. Install the CLI once, then install the agent support that matches your harness from the Quick Start table.
 
-Install Webcmd skills into the agent environment with your agent's skill manager:
+The installable skill is a discovery entrypoint. Runtime workflow skills are served by the installed CLI so instructions stay in sync with your Webcmd version:
 
 ```bash
-npx skills add agentrhq/webcmd
+webcmd skills list
+webcmd skills get webcmd-usage
+webcmd skills get webcmd-browser
 ```
-
-Or install/copy only the skills you need from [`skills/`](./skills/) into your agent's skills root. These skills teach agents when to use adapters, when to drive the browser, how to author new adapters, and how to repair failing commands.
 
 | Skill | When to use |
 |-------|-------------|
