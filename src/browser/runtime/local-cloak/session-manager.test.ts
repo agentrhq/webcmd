@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import path from 'node:path';
 import { CloakSessionManager } from './session-manager.js';
 import { dispatchCloakAction } from './actions.js';
 
@@ -21,6 +22,10 @@ function fakeContext() {
     },
     page,
   };
+}
+
+function expectedProfileDir(profileId: string): string {
+  return path.join('/tmp/webcmd-test', 'cloak', 'profiles', profileId);
 }
 
 describe('CloakSessionManager', () => {
@@ -124,7 +129,7 @@ describe('CloakSessionManager', () => {
     });
 
     expect(launchPersistentContext).toHaveBeenCalledTimes(1);
-    expect(launchPersistentContext.mock.calls[0][0].userDataDir).toBe('/tmp/webcmd-test/cloak/profiles/profile-default');
+    expect(launchPersistentContext.mock.calls[0][0].userDataDir).toBe(expectedProfileDir('profile-default'));
   });
 
   it('falls back to the only active profile when the preferred profile is stale', async () => {
@@ -153,7 +158,7 @@ describe('CloakSessionManager', () => {
     });
 
     expect(launchPersistentContext).toHaveBeenCalledTimes(1);
-    expect(launchPersistentContext.mock.calls[0][0].userDataDir).toBe('/tmp/webcmd-test/cloak/profiles/active');
+    expect(launchPersistentContext.mock.calls[0][0].userDataDir).toBe(expectedProfileDir('active'));
   });
 
   it('asks for an explicit profile when a stale preferred profile meets multiple active profiles', async () => {
