@@ -231,7 +231,7 @@ webcmd plugin uninstall <name>
 webcmd plugin create <name>
 ```
 
-Use plugins for private company workflows, community adapters, or experiments that are not ready for the built-in registry.
+Use plugins for private company workflows, community adapters, or experiments that are not ready for the built-in registry. See the [Contributing Guide](./CONTRIBUTING.md#community-plugins) for how to create and share your own plugin.
 
 ## Writing Adapters
 
