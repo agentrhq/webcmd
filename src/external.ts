@@ -197,16 +197,36 @@ export function executeExternalCli(name: string, args: string[], preloaded?: Ext
   }
 
   // 3. Passthrough execution with stdio inherited
-  const result = spawnSync(cli.binary, args, { stdio: 'inherit' });
+  const result = spawnPassthrough(cli.binary, args);
   if (result.error) {
     log.error(`Failed to execute '${cli.binary}': ${result.error.message}`);
     process.exitCode = EXIT_CODES.GENERIC_ERROR;
     return;
   }
-  
+
+  if (result.signal) {
+    process.exitCode = EXIT_CODES.GENERIC_ERROR;
+    return;
+  }
+
   if (result.status !== null) {
     process.exitCode = result.status;
   }
+}
+
+function quoteForCmdShell(token: string): string {
+  if (token !== '' && !/[\s"^&|<>%()]/.test(token)) return token;
+  return `"${token.replace(/"/g, '""')}"`;
+}
+
+function spawnPassthrough(binary: string, args: string[]): ReturnType<typeof spawnSync> {
+  const direct = spawnSync(binary, args, { stdio: 'inherit' });
+  const errorCode = (direct.error as NodeJS.ErrnoException | undefined)?.code;
+  if (os.platform() === 'win32' && (errorCode === 'EINVAL' || errorCode === 'ENOENT')) {
+    const command = [binary, ...args].map(quoteForCmdShell).join(' ');
+    return spawnSync(command, { stdio: 'inherit', shell: true });
+  }
+  return direct;
 }
 
 export interface RegisterOptions {

@@ -22,7 +22,8 @@ vi.mock('node:os', async () => {
   };
 });
 
-import { formatExternalCliLabel, installExternalCli, parseCommand, type ExternalCliConfig } from './external.js';
+import { spawnSync } from 'node:child_process';
+import { executeExternalCli, formatExternalCliLabel, installExternalCli, parseCommand, type ExternalCliConfig } from './external.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -128,5 +129,51 @@ describe('installExternalCli', () => {
 
     expect(installExternalCli(cli)).toBe(false);
     expect(mockExecFileSync).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('executeExternalCli passthrough', () => {
+  const spawnMock = vi.mocked(spawnSync);
+  const cli: ExternalCliConfig = { name: 'tg', binary: 'tg', description: '' };
+
+  beforeEach(() => {
+    spawnMock.mockReset();
+    mockExecFileSync.mockReset();
+    mockExecFileSync.mockReturnValue(Buffer.from(''));
+    mockPlatform.mockReturnValue('darwin');
+    process.exitCode = undefined;
+  });
+
+  it('retries through the shell on Windows when the binary is a .cmd shim', () => {
+    mockPlatform.mockReturnValue('win32');
+    const einval = Object.assign(new Error('spawnSync tg EINVAL'), { code: 'EINVAL' });
+    spawnMock
+      .mockReturnValueOnce({ error: einval, status: null, signal: null } as unknown as ReturnType<typeof spawnSync>)
+      .mockReturnValueOnce({ status: 0, signal: null } as unknown as ReturnType<typeof spawnSync>);
+
+    executeExternalCli('tg', ['send', 'hello world', '--to', 'a"b'], [cli]);
+
+    expect(spawnMock).toHaveBeenCalledTimes(2);
+    expect(spawnMock).toHaveBeenNthCalledWith(1, 'tg', ['send', 'hello world', '--to', 'a"b'], { stdio: 'inherit' });
+    expect(spawnMock).toHaveBeenNthCalledWith(2, 'tg send "hello world" --to "a""b"', { stdio: 'inherit', shell: true });
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('does not retry through the shell on non-Windows platforms', () => {
+    const einval = Object.assign(new Error('spawnSync tg EINVAL'), { code: 'EINVAL' });
+    spawnMock.mockReturnValueOnce({ error: einval, status: null, signal: null } as unknown as ReturnType<typeof spawnSync>);
+
+    executeExternalCli('tg', [], [cli]);
+
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('reports a non-zero exit code when the child dies from a signal', () => {
+    spawnMock.mockReturnValueOnce({ status: null, signal: 'SIGKILL' } as unknown as ReturnType<typeof spawnSync>);
+
+    executeExternalCli('tg', [], [cli]);
+
+    expect(process.exitCode).toBe(1);
   });
 });
