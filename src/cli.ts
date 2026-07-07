@@ -37,7 +37,7 @@ import { daemonRestart, daemonStatus, daemonStop } from './commands/daemon.js';
 import { log } from './logger.js';
 import { bindTab, BrowserCommandError, sendCommand } from './browser/daemon-client.js';
 import { fetchDaemonStatus } from './browser/daemon-transport.js';
-import { aliasForContextId, loadProfileConfig, renameProfile, resolveProfileContextId, setDefaultProfile } from './browser/profile.js';
+import { aliasForContextId, loadProfileConfig, profileRouteParams, renameProfile, resolveProfileSelection, setDefaultProfile, type ProfileSelection } from './browser/profile.js';
 import { formatDaemonVersion, isDaemonStale } from './browser/daemon-version.js';
 import { DEFAULT_BROWSER_CONNECT_TIMEOUT } from './browser/config.js';
 import { CLI_COMMAND } from './brand.js';
@@ -520,7 +520,7 @@ async function resolveStoredBrowserTarget(page: import('./types.js').IPage, scop
 async function getBrowserPage(
   session: string,
   targetPage?: string,
-  contextId?: string,
+  profileSelection?: ProfileSelection,
   opts: { windowMode?: BrowserWindowMode } = {},
 ): Promise<import('./types.js').IPage> {
   const { BrowserBridge } = await import('./browser/index.js');
@@ -532,11 +532,11 @@ async function getBrowserPage(
     timeout: DEFAULT_BROWSER_CONNECT_TIMEOUT,
     session,
     surface: 'browser',
-    ...(contextId && { contextId }),
+    ...profileRouteParams(profileSelection),
     ...(idleTimeout && idleTimeout > 0 && { idleTimeout }),
     windowMode: opts.windowMode ?? getBrowserWindowMode(undefined, 'foreground'),
   });
-  const targetScope = getBrowserScope(session, contextId);
+  const targetScope = getBrowserScope(session, profileSelection?.contextId);
   const resolvedTargetPage = targetPage
     ? await resolveBrowserTargetInSession(page, targetPage, { scope: targetScope, source: 'explicit' })
     : await resolveStoredBrowserTarget(page, targetScope);
@@ -592,9 +592,9 @@ function getBrowserSession(command?: Command): string {
   throw new Error('<session> is a required positional argument: webcmd browser <session> <command>');
 }
 
-function getBrowserContextId(command?: Command): string | undefined {
+function getBrowserProfileSelection(command?: Command): ProfileSelection | undefined {
   const raw = getCommandOption(command, 'profile');
-  return resolveProfileContextId(typeof raw === 'string' && raw.trim() ? raw.trim() : undefined);
+  return resolveProfileSelection(typeof raw === 'string' && raw.trim() ? raw.trim() : undefined);
 }
 
 function getPageSession(page: import('./types.js').IPage): string {
@@ -604,8 +604,11 @@ function getPageSession(page: import('./types.js').IPage): string {
 }
 
 function getPageScope(page: import('./types.js').IPage): string {
-  const contextId = (page as unknown as { contextId?: unknown }).contextId;
-  return getBrowserScope(getPageSession(page), typeof contextId === 'string' && contextId.trim() ? contextId.trim() : undefined);
+  const { contextId, preferredContextId } = page as unknown as { contextId?: unknown; preferredContextId?: unknown };
+  const selected = typeof contextId === 'string' && contextId.trim()
+    ? contextId.trim()
+    : (typeof preferredContextId === 'string' && preferredContextId.trim() ? preferredContextId.trim() : undefined);
+  return getBrowserScope(getPageSession(page), selected);
 }
 
 type SnapshotSource = 'dom' | 'ax';
@@ -1007,9 +1010,9 @@ Examples:
         const command = args.at(-1) instanceof Command ? args.at(-1) as Command : undefined;
         const targetPage = getBrowserTargetId(command);
         const session = getBrowserSession(command);
-        const contextId = getBrowserContextId(command);
+        const profileSelection = getBrowserProfileSelection(command);
         const windowMode = getBrowserWindowMode(command, 'foreground');
-        page = await getBrowserPage(session, targetPage, contextId, { windowMode });
+        page = await getBrowserPage(session, targetPage, profileSelection, { windowMode });
         await fn(page, ...args);
       } catch (err) {
         if (err instanceof BrowserConnectError) {
@@ -1046,6 +1049,7 @@ Examples:
   type BrowserSessionCommandContext = {
     session: string;
     contextId?: string;
+    routing: { contextId?: string; preferredContextId?: string };
   };
 
   function browserSessionCommandAction(fn: (ctx: BrowserSessionCommandContext, opts: Record<string, unknown>) => Promise<void>) {
@@ -1055,12 +1059,14 @@ Examples:
         ? optsOrCommand as Record<string, unknown>
         : {};
       const session = getBrowserSession(command);
-      const contextId = getBrowserContextId(command);
+      const profileSelection = getBrowserProfileSelection(command);
+      const contextId = profileSelection?.contextId;
+      const routing = profileRouteParams(profileSelection);
       try {
         const { BrowserBridge } = await import('./browser/index.js');
         const bridge = new BrowserBridge();
-        await bridge.connect({ timeout: DEFAULT_BROWSER_CONNECT_TIMEOUT, session, surface: 'browser', ...(contextId && { contextId }) });
-        await fn({ session, contextId }, opts);
+        await bridge.connect({ timeout: DEFAULT_BROWSER_CONNECT_TIMEOUT, session, surface: 'browser', ...routing });
+        await fn({ session, contextId, routing }, opts);
       } catch (err) {
         if (err instanceof BrowserCommandError) {
           emitBrowserCommandErrorEnvelope(err);
@@ -1077,7 +1083,7 @@ Examples:
     .description('Bind an existing Cloak runtime tab to the browser session named by <session>')
     .option('--page <id>', 'Cloak tab page id from `webcmd browser <session> tab list`')
     .option('--index <n>', 'Cloak tab index from `webcmd browser <session> tab list`')
-    .action(browserSessionCommandAction(async ({ session, contextId }, opts) => {
+    .action(browserSessionCommandAction(async ({ session, contextId, routing }, opts) => {
       const page = typeof opts.page === 'string' && opts.page.trim() ? opts.page.trim() : undefined;
       const rawIndex = typeof opts.index === 'string' && opts.index.trim() ? opts.index.trim() : undefined;
       if ((page && rawIndex) || (!page && !rawIndex)) {
@@ -1091,15 +1097,15 @@ Examples:
         throw new BrowserCommandError('--index must be a non-negative integer.', 'invalid_request');
       }
       const index = rawIndex === undefined ? undefined : Number.parseInt(rawIndex, 10);
-      const data = await bindTab(session, { ...(contextId && { contextId }), ...(page && { page }), ...(index !== undefined && { index }) });
+      const data = await bindTab(session, { ...routing, ...(page && { page }), ...(index !== undefined && { index }) });
       saveBrowserTargetState(undefined, getBrowserScope(session, contextId));
       console.log(JSON.stringify({ session, ...((data && typeof data === 'object') ? data as Record<string, unknown> : { data }) }, null, 2));
     }));
 
   browser.command('unbind')
     .description('Compatibility command; release the Cloak browser session named by <session>')
-    .action(browserSessionCommandAction(async ({ session, contextId }) => {
-      await sendCommand('close-window', { session, surface: 'browser', ...(contextId && { contextId }) });
+    .action(browserSessionCommandAction(async ({ session, contextId, routing }) => {
+      await sendCommand('close-window', { session, surface: 'browser', ...routing });
       saveBrowserTargetState(undefined, getBrowserScope(session, contextId));
       console.log(JSON.stringify({ unbound: true, session }, null, 2));
     }));

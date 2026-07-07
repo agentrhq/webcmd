@@ -131,6 +131,20 @@ export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<Doctor
   if (!connectivity.ok) {
     issues.push(`Browser connectivity test failed: ${connectivity.error ?? 'unknown'}`);
   }
+  const profileConfig = loadProfileConfig();
+  const staleDefault = profileConfig.defaultContextId;
+  if (staleDefault && profiles?.length && !profiles.some((p) => p.contextId === staleDefault)) {
+    const alias = aliasForContextId(profileConfig, staleDefault);
+    const label = alias ? `${alias} (${staleDefault})` : staleDefault;
+    const fallbackNote = profiles.length === 1
+      ? `Commands currently fall back to the only active profile: ${profiles[0].contextId}.`
+      : 'Multiple profiles are active, so commands will ask you to choose.';
+    issues.push(
+      `Default Cloak profile is not active: ${label}.\n` +
+      `  ${fallbackNote}\n` +
+      '  Refresh it with: webcmd profile list, then webcmd profile use <name>.',
+    );
+  }
   if (adapterShadows.length > 0) {
     issues.push(formatAdapterShadowIssue(adapterShadows));
   }

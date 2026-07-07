@@ -50,6 +50,7 @@ export interface BrowserRuntimeCommand {
   idleTimeout?: number;
   frameIndex?: number;
   contextId?: string;
+  preferredContextId?: string;
   profileId?: string;
 }
 

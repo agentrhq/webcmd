@@ -14,8 +14,25 @@ class CloakActionError extends Error {
   }
 }
 
-function commandProfileId(command: BrowserRuntimeCommand): string {
-  return command.profileId ?? command.contextId ?? 'default';
+function commandProfileId(manager: CloakSessionManager, command: BrowserRuntimeCommand): string {
+  const requested = command.profileId ?? command.contextId;
+  if (requested?.trim()) return requested.trim();
+
+  const preferred = command.preferredContextId?.trim();
+  if (!preferred) return 'default';
+
+  const active = manager.activeProfileIds();
+  if (active.includes(preferred)) return preferred;
+  if (active.length === 1) return active[0];
+  if (active.length > 1) {
+    throw new CloakActionError(
+      'profile_required',
+      `Default Cloak profile "${preferred}" is not active and multiple profiles are running; choose one with --profile.`,
+      undefined,
+      'Run webcmd profile list, then update the default with webcmd profile use <name> or pass --profile <name>.',
+    );
+  }
+  return preferred;
 }
 
 function invalidRequest(command: BrowserRuntimeCommand, error: string): BrowserRuntimeResult {
@@ -29,7 +46,7 @@ async function resolveLease(manager: CloakSessionManager, command: BrowserRuntim
     throw new CloakActionError('stale_page_identity', `Page not found: ${command.page} — stale page identity`);
   }
   return manager.getPage({
-    profileId: commandProfileId(command),
+    profileId: commandProfileId(manager, command),
     session: command.session,
     surface: command.surface,
     siteSession: command.siteSession,
@@ -94,11 +111,11 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
       }
       case 'close-window': {
         if (command.page) {
-          const closed = await manager.closePage({ profileId: commandProfileId(command), pageId: command.page });
+          const closed = await manager.closePage({ profileId: commandProfileId(manager, command), pageId: command.page });
           return { id: command.id, ok: true, data: { closed: Boolean(closed), page: closed ?? command.page, session: command.session } };
         } else {
           await manager.release({
-            profileId: commandProfileId(command),
+            profileId: commandProfileId(manager, command),
             session: command.session,
             surface: command.surface,
           });
@@ -108,12 +125,12 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
       case 'tabs': {
         switch (command.op ?? 'list') {
           case 'list': {
-            const tabs = await manager.listPages({ profileId: commandProfileId(command) });
+            const tabs = await manager.listPages({ profileId: commandProfileId(manager, command) });
             return { id: command.id, ok: true, data: tabs };
           }
           case 'new': {
             const lease = await manager.newPage({
-              profileId: commandProfileId(command),
+              profileId: commandProfileId(manager, command),
               session: command.session,
               surface: command.surface,
               siteSession: command.siteSession,
@@ -123,12 +140,12 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
             return { id: command.id, ok: true, data: { title: await lease.page.title(), url: lease.page.url() }, page: lease.pageId };
           }
           case 'select': {
-            const lease = await manager.selectPage({ profileId: commandProfileId(command), pageId: command.page, index: command.index });
+            const lease = await manager.selectPage({ profileId: commandProfileId(manager, command), pageId: command.page, index: command.index });
             if (!lease) return { id: command.id, ok: false, errorCode: 'runtime_command_failed', error: 'Tab not found' };
             return { id: command.id, ok: true, data: { selected: true, url: lease.page.url() }, page: lease.pageId };
           }
           case 'close': {
-            const closed = await manager.closePage({ profileId: commandProfileId(command), pageId: command.page, index: command.index });
+            const closed = await manager.closePage({ profileId: commandProfileId(manager, command), pageId: command.page, index: command.index });
             if (!closed) return { id: command.id, ok: false, errorCode: 'runtime_command_failed', error: 'Tab not found' };
             return { id: command.id, ok: true, data: { closed } };
           }
@@ -192,7 +209,7 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
         }
         {
           const lease = await manager.bindPage({
-            profileId: commandProfileId(command),
+            profileId: commandProfileId(manager, command),
             session: command.session,
             surface: command.surface,
             siteSession: command.siteSession,
