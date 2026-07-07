@@ -31,7 +31,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        # Pin macOS instead of following macos-latest while hosted macOS 26
+        # browser/runtime behavior remains less predictable.
+        os: [ubuntu-latest, macos-15]
     steps:
       - uses: actions/checkout@v6
 
