@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import path from 'node:path';
 import { CloakSessionManager } from './session-manager.js';
+import { dispatchCloakAction } from './actions.js';
 
 function fakeContext() {
   const page = {
@@ -20,6 +22,10 @@ function fakeContext() {
     },
     page,
   };
+}
+
+function expectedProfileDir(profileId: string): string {
+  return path.join('/tmp/webcmd-test', 'cloak', 'profiles', profileId);
 }
 
 describe('CloakSessionManager', () => {
@@ -103,5 +109,97 @@ describe('CloakSessionManager', () => {
 
     expect(lease.page.close).not.toHaveBeenCalled();
     expect(await manager.listPages({ profileId: 'default' })).toHaveLength(1);
+  });
+
+  it('launches a preferred profile when no Cloak profile is active', async () => {
+    const launched = fakeContext();
+    const launchPersistentContext = vi.fn().mockResolvedValue(launched.context);
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      launchPersistentContext,
+    });
+
+    await dispatchCloakAction(manager, {
+      id: 'cmd-preferred',
+      action: 'navigate',
+      session: 'work',
+      surface: 'browser',
+      url: 'https://example.com/',
+      preferredContextId: 'profile-default',
+    });
+
+    expect(launchPersistentContext).toHaveBeenCalledTimes(1);
+    expect(launchPersistentContext.mock.calls[0][0].userDataDir).toBe(expectedProfileDir('profile-default'));
+  });
+
+  it('falls back to the only active profile when the preferred profile is stale', async () => {
+    const launched = fakeContext();
+    const launchPersistentContext = vi.fn().mockResolvedValue(launched.context);
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      launchPersistentContext,
+    });
+
+    await dispatchCloakAction(manager, {
+      id: 'cmd-active',
+      action: 'navigate',
+      session: 'work',
+      surface: 'browser',
+      url: 'https://example.com/',
+      contextId: 'active',
+    });
+    await dispatchCloakAction(manager, {
+      id: 'cmd-stale-default',
+      action: 'navigate',
+      session: 'work',
+      surface: 'browser',
+      url: 'https://example.com/next',
+      preferredContextId: 'stale-default',
+    });
+
+    expect(launchPersistentContext).toHaveBeenCalledTimes(1);
+    expect(launchPersistentContext.mock.calls[0][0].userDataDir).toBe(expectedProfileDir('active'));
+  });
+
+  it('asks for an explicit profile when a stale preferred profile meets multiple active profiles', async () => {
+    const launched = fakeContext();
+    const launchPersistentContext = vi.fn().mockResolvedValue(launched.context);
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      launchPersistentContext,
+    });
+
+    await dispatchCloakAction(manager, {
+      id: 'cmd-a',
+      action: 'navigate',
+      session: 'work-a',
+      surface: 'browser',
+      url: 'https://example.com/a',
+      contextId: 'profile-a',
+    });
+    await dispatchCloakAction(manager, {
+      id: 'cmd-b',
+      action: 'navigate',
+      session: 'work-b',
+      surface: 'browser',
+      url: 'https://example.com/b',
+      contextId: 'profile-b',
+    });
+
+    const result = await dispatchCloakAction(manager, {
+      id: 'cmd-stale',
+      action: 'navigate',
+      session: 'work',
+      surface: 'browser',
+      url: 'https://example.com/',
+      preferredContextId: 'stale-default',
+    });
+
+    expect(result).toMatchObject({
+      id: 'cmd-stale',
+      ok: false,
+      errorCode: 'profile_required',
+    });
+    expect(launchPersistentContext).toHaveBeenCalledTimes(2);
   });
 });

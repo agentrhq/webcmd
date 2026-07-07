@@ -1,20 +1,8 @@
-import { DAEMON_HEADER_NAME, DEFAULT_DAEMON_PORT, unsupportedDaemonPortEnvMessage } from '../constants.js';
+import { DAEMON_HEADER_NAME, DEFAULT_DAEMON_PORT } from '../constants.js';
 
 const DAEMON_PORT = DEFAULT_DAEMON_PORT;
 const DAEMON_URL = `http://127.0.0.1:${DAEMON_PORT}`;
 const WEBCMD_HEADERS = { [DAEMON_HEADER_NAME]: '1' };
-
-class UnsupportedDaemonPortEnvError extends Error {
-  constructor(value: string) {
-    super(unsupportedDaemonPortEnvMessage(value));
-    this.name = 'UnsupportedDaemonPortEnvError';
-  }
-}
-
-function assertSupportedDaemonPortEnv(): void {
-  const value = process.env.WEBCMD_DAEMON_PORT;
-  if (value !== undefined && value !== '') throw new UnsupportedDaemonPortEnvError(value);
-}
 
 export interface DaemonStatus {
   ok: boolean;
@@ -50,7 +38,6 @@ export type DaemonHealth =
   | { state: 'ready'; status: DaemonStatus };
 
 export async function requestDaemon(pathname: string, init?: RequestInit & { timeout?: number }): Promise<Response> {
-  assertSupportedDaemonPortEnv();
   const { timeout = 2000, headers, ...rest } = init ?? {};
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
@@ -71,8 +58,7 @@ export async function fetchDaemonStatus(opts?: { timeout?: number; contextId?: s
     const res = await requestDaemon(`/status${params}`, { timeout: opts?.timeout ?? 2000 });
     if (!res.ok) return null;
     return await res.json() as DaemonStatus;
-  } catch (err) {
-    if (err instanceof UnsupportedDaemonPortEnvError) throw err;
+  } catch {
     return null;
   }
 }
@@ -90,8 +76,7 @@ export async function requestDaemonShutdown(opts?: { timeout?: number }): Promis
   try {
     const res = await requestDaemon('/shutdown', { method: 'POST', timeout: opts?.timeout ?? 5000 });
     return res.ok;
-  } catch (err) {
-    if (err instanceof UnsupportedDaemonPortEnvError) throw err;
+  } catch {
     return false;
   }
 }

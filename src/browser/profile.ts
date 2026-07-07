@@ -54,13 +54,31 @@ export function saveProfileConfig(config: ProfileConfig): void {
   fs.writeFileSync(target, JSON.stringify(config, null, 2) + '\n', 'utf-8');
 }
 
-export function resolveProfileContextId(profile?: string): string | undefined {
+export type ProfileSelection = {
+  contextId: string;
+  source: 'explicit' | 'preferred';
+};
+
+export function resolveProfileSelection(profile?: string): ProfileSelection | undefined {
   const config = loadProfileConfig();
-  const requested = normalizeContextId(profile)
-    ?? normalizeContextId(process.env[`${ENV_PREFIX}_PROFILE`])
-    ?? normalizeContextId(config.defaultContextId);
-  if (!requested) return undefined;
-  return config.aliases[requested] ?? requested;
+  const explicit = normalizeContextId(profile) ?? normalizeContextId(process.env[`${ENV_PREFIX}_PROFILE`]);
+  if (explicit) return { contextId: config.aliases[explicit] ?? explicit, source: 'explicit' };
+  const preferred = normalizeContextId(config.defaultContextId);
+  if (preferred) return { contextId: config.aliases[preferred] ?? preferred, source: 'preferred' };
+  return undefined;
+}
+
+export function profileRouteParams(
+  selection: ProfileSelection | undefined,
+): { contextId?: string; preferredContextId?: string } {
+  if (!selection) return {};
+  return selection.source === 'explicit'
+    ? { contextId: selection.contextId }
+    : { preferredContextId: selection.contextId };
+}
+
+export function resolveProfileContextId(profile?: string): string | undefined {
+  return resolveProfileSelection(profile)?.contextId;
 }
 
 export function aliasForContextId(config: ProfileConfig, contextId: string): string | undefined {

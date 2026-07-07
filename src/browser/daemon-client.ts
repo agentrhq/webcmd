@@ -8,7 +8,7 @@ import { sleep } from '../utils.js';
 import { BrowserConnectError } from '../errors.js';
 import { COMMAND_RESULT_UNKNOWN_CODE, COMMAND_RESULT_UNKNOWN_HINT } from '../daemon-utils.js';
 import { classifyBrowserError } from './errors.js';
-import { resolveProfileContextId } from './profile.js';
+import { profileRouteParams, resolveProfileSelection } from './profile.js';
 import { DEFAULT_BROWSER_CONNECT_TIMEOUT } from './config.js';
 import { ensureBrowserBridgeReady } from './daemon-lifecycle.js';
 import { isPreDispatchError } from './bridge-readiness.js';
@@ -117,7 +117,11 @@ async function sendCommandRaw(
   const envWindowMode = rawWindowMode === 'foreground' || rawWindowMode === 'background'
     ? rawWindowMode
     : undefined;
-  const contextId = params.contextId ?? resolveProfileContextId();
+  const routing = params.contextId || params.preferredContextId
+    ? { contextId: params.contextId, preferredContextId: params.preferredContextId }
+    : profileRouteParams(resolveProfileSelection());
+  const contextId = routing.contextId;
+  const preferredContextId = routing.preferredContextId;
   const windowMode = params.windowMode ?? envWindowMode;
 
   let id = generateId();
@@ -150,6 +154,7 @@ async function sendCommandRaw(
       timeout: timeoutSeconds,
       deadlineAt,
       ...(contextId && { contextId }),
+      ...(preferredContextId && { preferredContextId }),
       ...(windowMode && { windowMode }),
     };
     try {
@@ -245,6 +250,6 @@ export async function sendCommandFull(
   return { data: result.data, page: result.page };
 }
 
-export async function bindTab(session: string, opts: { contextId?: string; page?: string; index?: number } = {}): Promise<unknown> {
+export async function bindTab(session: string, opts: { contextId?: string; preferredContextId?: string; page?: string; index?: number } = {}): Promise<unknown> {
   return sendCommand('bind', { session, surface: 'browser', ...opts });
 }

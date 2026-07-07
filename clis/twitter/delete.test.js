@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
+import { JSDOM } from 'jsdom';
 import { ArgumentError, CommandExecutionError } from '@agentrhq/webcmd/errors';
 import { getRegistry } from '@agentrhq/webcmd/registry';
-import './delete.js';
+import { __test__ } from './delete.js';
 describe('twitter delete command', () => {
     it('targets the matched tweet article instead of the first More button on the page', async () => {
         const cmd = getRegistry().get('twitter/delete');
@@ -27,6 +28,12 @@ describe('twitter delete command', () => {
         expect(script).toContain('__twGetStatusIdFromHref');
         expect(script).toContain("document.querySelectorAll('article')");
         expect(script).toContain("targetArticle.querySelectorAll('button,[role=\"button\"]')");
+        expect(script).toContain("closest('article') === targetArticle");
+        expect(script).toContain(".filter(belongsToTargetArticle)");
+        expect(script).toContain('[data-testid="caret"]');
+        expect(script).toContain('/^More/');
+        expect(script).toContain('i < 20');
+        expect(script).toContain('beforeMenuItems');
         // Substring match must NOT appear — exact-id match only.
         expect(script).not.toContain("'/status/' + tweetId");
         expect(result).toEqual([
@@ -57,6 +64,72 @@ describe('twitter delete command', () => {
             },
         ]);
         expect(page.wait).toHaveBeenCalledTimes(1);
+    });
+    it('unwraps browser runtime evaluate envelopes before checking delete success', async () => {
+        const cmd = getRegistry().get('twitter/delete');
+        expect(cmd?.func).toBeTypeOf('function');
+        const page = {
+            goto: vi.fn().mockResolvedValue(undefined),
+            wait: vi.fn().mockResolvedValue(undefined),
+            evaluate: vi.fn().mockResolvedValue({
+                session: 'twitter',
+                data: { ok: true, message: 'Tweet successfully deleted.' },
+            }),
+        };
+        const result = await cmd.func(page, {
+            url: 'https://x.com/alice/status/2040254679301718161',
+        });
+        expect(result).toEqual([
+            {
+                status: 'success',
+                message: 'Tweet successfully deleted.',
+            },
+        ]);
+        expect(page.wait).toHaveBeenNthCalledWith(2, 2);
+    });
+    it('ignores stale non-target delete menu items that existed before opening the matched tweet menu', async () => {
+        const dom = new JSDOM(`
+            <body>
+              <div role="menuitem" data-stale-delete>Delete</div>
+              <article>
+                <a href="https://x.com/bob/status/999">wrong tweet</a>
+                <button data-testid="caret" aria-label="More"></button>
+              </article>
+              <article>
+                <a href="https://x.com/alice/status/2040254679301718161">target tweet</a>
+                <button data-testid="caret" aria-label="More" data-target-caret></button>
+              </article>
+            </body>
+        `, { runScripts: 'outside-only', url: 'https://x.com/alice/status/2040254679301718161' });
+        dom.window.setTimeout = (handler) => {
+            if (typeof handler === 'function') handler();
+            return 0;
+        };
+        Object.defineProperty(dom.window.HTMLElement.prototype, 'getClientRects', {
+            configurable: true,
+            value() {
+                return [{ bottom: 1, height: 1, left: 0, right: 1, top: 0, width: 1 }];
+            },
+        });
+        let staleDeleteClicked = false;
+        let targetCaretClicked = false;
+        dom.window.document.querySelector('[data-stale-delete]')?.addEventListener('click', () => {
+            staleDeleteClicked = true;
+        });
+        dom.window.document.querySelector('[data-target-caret]')?.addEventListener('click', () => {
+            targetCaretClicked = true;
+            const item = dom.window.document.createElement('div');
+            item.setAttribute('role', 'menuitem');
+            item.textContent = 'Pin to your profile';
+            dom.window.document.body.appendChild(item);
+        });
+        const result = await dom.window.eval(__test__.buildDeleteScript('2040254679301718161'));
+        expect(targetCaretClicked).toBe(true);
+        expect(staleDeleteClicked).toBe(false);
+        expect(result).toEqual({
+            ok: false,
+            message: 'The matched tweet menu did not contain Delete. This tweet may not belong to you.',
+        });
     });
     it('rejects malformed or off-domain URLs with ArgumentError before navigation', async () => {
         const cmd = getRegistry().get('twitter/delete');

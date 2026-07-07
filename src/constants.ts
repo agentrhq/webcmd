@@ -2,18 +2,10 @@
  * Shared constants used across explore, synthesize, and pipeline modules.
  */
 
-import { CLI_COMMAND, DAEMON_HEADER_NAME, ENV_PREFIX, PRODUCT_DISPLAY_NAME } from './brand.js';
+import { DAEMON_HEADER_NAME } from './brand.js';
 
-/** Default daemon port for HTTP/WebSocket communication with browser extension */
+/** Default daemon port for HTTP communication with the browser runtime. */
 export const DEFAULT_DAEMON_PORT = 9777;
-
-export function unsupportedDaemonPortEnvMessage(value?: string): string {
-  const envName = `${ENV_PREFIX}_DAEMON_PORT`;
-  const suffix = value ? ` (received ${value})` : '';
-  return `${envName} is no longer supported${suffix}. ` +
-    `The ${PRODUCT_DISPLAY_NAME} Chrome extension can only connect to localhost:${DEFAULT_DAEMON_PORT}. ` +
-    `Unset ${envName} and rerun ${CLI_COMMAND}.`;
-}
 
 export { DAEMON_HEADER_NAME };
 

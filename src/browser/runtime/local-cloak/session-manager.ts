@@ -91,6 +91,10 @@ export class CloakSessionManager {
     }));
   }
 
+  activeProfileIds(): string[] {
+    return [...this.profiles.keys()];
+  }
+
   async getPage(input: SessionKeyInput): Promise<CloakPageLease> {
     const profileId = normalizeProfileId(input.profileId);
     const session = requireSession(input.session);

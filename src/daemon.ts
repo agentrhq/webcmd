@@ -1,14 +1,9 @@
-import { DEFAULT_DAEMON_PORT, unsupportedDaemonPortEnvMessage } from './constants.js';
+import { DEFAULT_DAEMON_PORT } from './constants.js';
 import { EXIT_CODES } from './errors.js';
 import { log } from './logger.js';
 import { PKG_VERSION } from './version.js';
 import { createDaemonServer } from './daemon/server.js';
 import { LocalCloakRuntimeProvider } from './browser/runtime/local-cloak/provider.js';
-
-if (process.env.WEBCMD_DAEMON_PORT) {
-  log.error(unsupportedDaemonPortEnvMessage(process.env.WEBCMD_DAEMON_PORT));
-  process.exit(EXIT_CODES.USAGE_ERROR);
-}
 
 const provider = new LocalCloakRuntimeProvider();
 const daemon = createDaemonServer(provider, { port: DEFAULT_DAEMON_PORT, host: '127.0.0.1', version: PKG_VERSION });

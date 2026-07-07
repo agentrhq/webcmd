@@ -193,6 +193,38 @@ describe('doctor report rendering', () => {
     ]));
   });
 
+  it('reports a stale default Cloak profile when it is not active', async () => {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-doctor-profile-'));
+    fs.writeFileSync(
+      path.join(configDir, 'browser-profiles.json'),
+      JSON.stringify({ version: 1, aliases: { work: 'profile-default' }, defaultContextId: 'profile-default' }),
+    );
+    vi.stubEnv('WEBCMD_CONFIG_DIR', configDir);
+    try {
+      mockGetDaemonHealth.mockResolvedValueOnce({
+        state: 'ready',
+        status: {
+          runtimeConnected: true,
+          runtimeName: 'Cloak',
+          profiles: [{ contextId: 'active-profile', runtimeConnected: true, pending: 0 }],
+        },
+      });
+
+      const report = await runBrowserDoctor();
+
+      expect(report.issues).toEqual(expect.arrayContaining([
+        expect.stringContaining('Default Cloak profile is not active: work (profile-default)'),
+      ]));
+      expect(report.issues.join('\n')).toContain('fall back to the only active profile: active-profile');
+    } finally {
+      vi.unstubAllEnvs();
+      fs.rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
   it('reports flapping when live check succeeds but final status shows runtime disconnected', async () => {
     mockGetDaemonHealth.mockResolvedValueOnce({ state: 'no-runtime', status: { runtimeConnected: false, runtimeName: 'Cloak' } });
 

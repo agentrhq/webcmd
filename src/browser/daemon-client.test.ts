@@ -159,29 +159,6 @@ describe('daemon-client', () => {
     expect(vi.mocked(fetch).mock.calls[0][0]).toMatch(/\/status\?contextId=work$/);
   });
 
-  it('rejects WEBCMD_DAEMON_PORT so CLI and extension cannot split bridge ports', async () => {
-    vi.resetModules();
-    vi.stubEnv('WEBCMD_DAEMON_PORT', '19999');
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({
-        ok: true,
-        pid: 1,
-        uptime: 0,
-        runtimeConnected: true,
-        runtimeName: 'fake',
-        pending: 0,
-        memoryMB: 1,
-        port: 9777,
-      }),
-    } as Response);
-
-    const freshClient = await import('./daemon-client.js');
-    await expect(freshClient.fetchDaemonStatus()).rejects.toThrow('WEBCMD_DAEMON_PORT is no longer supported');
-
-    expect(vi.mocked(fetch)).not.toHaveBeenCalled();
-  });
-
   it('sendCommand includes the current pid in generated command ids', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(1_763_000_000_000);
     vi.mocked(fetch).mockResolvedValue({
@@ -203,7 +180,7 @@ describe('daemon-client', () => {
     expect(ids[0]).not.toBe(ids[1]);
   });
 
-  it('sendCommand forwards WEBCMD_PROFILE as command contextId', async () => {
+  it('sendCommand forwards WEBCMD_PROFILE as a hard contextId requirement', async () => {
     vi.stubEnv('WEBCMD_PROFILE', 'work');
     vi.spyOn(Date, 'now').mockReturnValue(1_763_000_000_000);
     vi.mocked(fetch).mockResolvedValue({
@@ -213,8 +190,36 @@ describe('daemon-client', () => {
 
     await sendCommand('exec', { code: '1 + 1' });
 
-    const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body)) as { contextId?: string };
+    const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body)) as { contextId?: string; preferredContextId?: string };
     expect(body.contextId).toBe('work');
+    expect(body.preferredContextId).toBeUndefined();
+  });
+
+  it('sendCommand forwards the config default as preferredContextId', async () => {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-dc-profile-'));
+    fs.writeFileSync(
+      path.join(configDir, 'browser-profiles.json'),
+      JSON.stringify({ version: 1, aliases: {}, defaultContextId: 'profile-default' }),
+    );
+    vi.stubEnv('WEBCMD_CONFIG_DIR', configDir);
+    vi.stubEnv('WEBCMD_PROFILE', '');
+    try {
+      vi.mocked(fetch).mockResolvedValue({
+        status: 200,
+        json: () => Promise.resolve({ id: 'server', ok: true, data: 'ok' }),
+      } as Response);
+
+      await sendCommand('exec', { code: '1 + 1' });
+
+      const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body)) as { contextId?: string; preferredContextId?: string };
+      expect(body.contextId).toBeUndefined();
+      expect(body.preferredContextId).toBe('profile-default');
+    } finally {
+      fs.rmSync(configDir, { recursive: true, force: true });
+    }
   });
 
   it('sendCommand uses explicit windowMode before WEBCMD_WINDOW env fallback', async () => {
