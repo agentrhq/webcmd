@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import yaml from 'js-yaml';
 import { describe, expect, it } from 'vitest';
 import { ArgumentError } from './errors.js';
 import { listWebcmdSkills, readWebcmdSkill } from './skills.js';
@@ -42,6 +43,20 @@ function makePackageRoot(): string {
 }
 
 describe('webcmd skills content', () => {
+  it('keeps bundled skill frontmatter valid yaml', () => {
+    const skillsRoot = path.join(process.cwd(), 'skills');
+    const skillNames = fs.readdirSync(skillsRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && entry.name.startsWith('webcmd-'))
+      .map((entry) => entry.name);
+
+    for (const name of skillNames) {
+      const content = fs.readFileSync(path.join(skillsRoot, name, 'SKILL.md'), 'utf8');
+      const end = content.indexOf('\n---', 4);
+      expect(end, name).toBeGreaterThan(0);
+      expect(() => yaml.load(content.slice(4, end)), name).not.toThrow();
+    }
+  });
+
   it('lists only webcmd-prefixed skills', () => {
     const root = makePackageRoot();
 

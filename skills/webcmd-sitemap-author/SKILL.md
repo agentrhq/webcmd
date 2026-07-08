@@ -1,6 +1,6 @@
 ---
 name: webcmd-sitemap-author
-description: Use when creating or maintaining Webcmd site sitemaps: agent-facing navigation, page-state, action, workflow, API-reference, pitfall, and fallback knowledge for a website. Use after browser exploration discovers durable site context, when a sitemap is stale, or when promoting local site knowledge into the repo.
+description: 'Use when creating or maintaining Webcmd site sitemaps: agent-facing navigation, page-state, action, workflow, API-reference, pitfall, and fallback knowledge for a website. Use after browser exploration discovers durable site context, when a sitemap is stale, or when promoting local site knowledge into the repo.'
 allowed-tools: Bash(webcmd:*), Read, Edit, Write, Grep
 ---
 
