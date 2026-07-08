@@ -14,7 +14,7 @@
     <img alt="Join the community on Discord" src="https://img.shields.io/badge/Join%20the%20community-7C3AED.svg?style=for-the-badge&logo=discord&logoColor=white&labelColor=000000&logoWidth=20">
   </a>
   <a href="https://x.com/agentrhq">
-    <img alt="Follow AgentR on X" src="https://img.shields.io/badge/Follow%20%40agentrhq-000000.svg?style=for-the-badge&logo=x&logoColor=white&labelColor=000000&logoWidth=20">
+    <img alt="Follow AgentR on X" src="https://img.shields.io/badge/Built%20by%20%40agentrhq-000000.svg?style=for-the-badge&logo=x&logoColor=white&labelColor=000000&logoWidth=20">
   </a>
 </p>
 
@@ -24,7 +24,7 @@
 
 WebCMD learns the navigational context of websites as agents use them, then compiles that knowledge into deterministic commands for faster, cheaper, more reliable browser automation. The goal is simple: stop making agents rediscover the same sites on every run and cut browser-agent token spend by up to 90%.
 
-On top of vanilla browser interactions, WebCMD adds 3 layers of learnings. Each layer collapses cost and variance for the layer above it.
+On top of live browser control, WebCMD adds 3 layers of learnings. Each layer collapses cost and variance for the layer above it.
 
 | Layer | Scenario | What Webcmd Helps With |
 | --- | --- | --- |
