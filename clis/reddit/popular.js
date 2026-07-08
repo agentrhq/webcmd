@@ -12,6 +12,7 @@ cli({
     ],
     columns: ['rank', 'id', 'title', 'subreddit', 'score', 'comments', 'author', 'url', 'created_utc', 'selftext', 'post_hint', 'url_overridden_by_dest', 'preview_image_url', 'gallery_urls'],
     pipeline: [
+        { navigate: 'https://www.reddit.com' },
         { evaluate: `(async () => {
   function decodeHtml(s) {
     if (typeof s !== 'string' || !s) return '';
@@ -43,7 +44,17 @@ cli({
   const res = await fetch('/r/popular.json?limit=' + limit + '&raw_json=1', {
     credentials: 'include'
   });
-  const d = await res.json();
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error('Reddit popular request failed: HTTP ' + res.status + ' ' + text.replace(/\\s+/g, ' ').slice(0, 160));
+  }
+  let d;
+  try {
+    d = JSON.parse(text);
+  } catch {
+    const kind = /^\\s*</.test(text) ? 'HTML' : 'non-JSON';
+    throw new Error('Reddit popular expected JSON but received ' + kind + ': ' + text.replace(/\\s+/g, ' ').slice(0, 160));
+  }
   return (d?.data?.children || []).map(c => ({
     id: c.data.id,
     title: c.data.title,
