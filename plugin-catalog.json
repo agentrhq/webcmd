@@ -1,0 +1,8 @@
+[
+  {
+    "site": "skyscanner",
+    "description": "Skyscanner flight search commands for warmed browser sessions",
+    "source": "github:agentrhq/webcmd/skyscanner",
+    "homepage": "https://www.skyscanner.com"
+  }
+]

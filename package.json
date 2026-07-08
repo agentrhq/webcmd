@@ -32,6 +32,7 @@
     "clis/",
     "skills/webcmd-*/**",
     "cli-manifest.json",
+    "plugin-catalog.json",
     "scripts/",
     "README.md",
     "LICENSE",

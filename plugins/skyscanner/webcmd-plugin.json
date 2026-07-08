@@ -1,0 +1,6 @@
+{
+  "name": "skyscanner",
+  "version": "0.1.0",
+  "description": "Skyscanner flight search commands for Webcmd",
+  "webcmd": ">=0.1.2"
+}

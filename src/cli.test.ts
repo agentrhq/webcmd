@@ -204,6 +204,7 @@ describe('createProgram root help descriptions', () => {
     const snapshot = new Map(registry);
     const stdoutSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const restoreStdoutSpy = () => stdoutSpy.mockImplementation(() => {});
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'));
     registry.clear();
     try {
       cli({
@@ -246,6 +247,7 @@ name: 'search',
       expect(output).toMatch(/Site adapters[\s\S]*youtube[\s\S]*search \[public\] — Search YouTube/);
       expect(output).toContain('3 built-in commands across 2 apps + 1 sites,');
     } finally {
+      fetchSpy.mockRestore();
       restoreStdoutSpy();
       stdoutSpy.mockClear();
       registry.clear();
@@ -258,6 +260,7 @@ name: 'search',
     const snapshot = new Map(registry);
     const stdoutSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const restoreStdoutSpy = () => stdoutSpy.mockImplementation(() => {});
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'));
     registry.clear();
     try {
       cli({
@@ -294,6 +297,38 @@ name: 'search',
       expect(rows[0]).not.toHaveProperty('adapterKind');
       expect(rows[0]).not.toHaveProperty('section');
     } finally {
+      fetchSpy.mockRestore();
+      restoreStdoutSpy();
+      stdoutSpy.mockClear();
+      registry.clear();
+      for (const [key, value] of snapshot) registry.set(key, value);
+    }
+  });
+
+  it('shows available plugin metadata in list table without pre-install command names', async () => {
+    const registry = getRegistry();
+    const snapshot = new Map(registry);
+    const stdoutSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const restoreStdoutSpy = () => stdoutSpy.mockImplementation(() => {});
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'));
+    registry.clear();
+    try {
+      const program = createProgram('', '');
+      await program.parseAsync(['node', 'webcmd', 'list']);
+      const output = stdoutSpy.mock.calls.flat().join('\n');
+
+      expect(output).toContain('Available plugins');
+      expect(output).toContain('skyscanner');
+      expect(output).toContain('github:agentrhq/webcmd/skyscanner');
+      expect(output).not.toMatch(/\bflights\b/);
+
+      stdoutSpy.mockClear();
+      const jsonProgram = createProgram('', '');
+      await jsonProgram.parseAsync(['node', 'webcmd', 'list', '-f', 'json']);
+      const jsonOutput = stdoutSpy.mock.calls.flat().join('\n');
+      expect(JSON.parse(jsonOutput)).toEqual([]);
+    } finally {
+      fetchSpy.mockRestore();
       restoreStdoutSpy();
       stdoutSpy.mockClear();
       registry.clear();
