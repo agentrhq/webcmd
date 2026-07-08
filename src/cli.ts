@@ -17,7 +17,7 @@ import { render as renderOutput } from './output.js';
 import { PKG_VERSION } from './version.js';
 import { printCompletionScript } from './completion.js';
 import { loadExternalClis, executeExternalCli, installExternalCli, registerExternalCli, isBinaryInstalled, formatExternalCliLabel } from './external.js';
-import { listWebcmdSkills, readWebcmdSkill } from './skills.js';
+import { installWebcmdSkill, listWebcmdSkills, updateWebcmdSkill, type WebcmdSkillInstallResult } from './skills.js';
 import { registerAllCommands } from './commanderAdapter.js';
 import { classifyAdapter, formatRootAdapterHelpText, installCommanderNamespaceStructuredHelp, installStructuredHelp, leadingPositionalFromUsage, rootHelpData, type RootAdapterGroups } from './help.js';
 import { EXIT_CODES, getErrorMessage, BrowserConnectError, CliError } from './errors.js';
@@ -76,6 +76,24 @@ function parseDurationMs(raw: unknown, flagName: string): number | null | { erro
 
 function timestampFromRaw(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : Date.now();
+}
+
+function handleSkillLinkCommand(action: () => WebcmdSkillInstallResult, json: boolean, verb: string): void {
+  try {
+    const result = action();
+    if (json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    console.log(`Webcmd skills ${verb}: ${result.skills.length}`);
+    for (const skill of result.skills) {
+      console.log(`${skill.name}: ${skill.destination ? `${skill.destination} -> ` : ''}${skill.stableLink}`);
+    }
+  } catch (err) {
+    console.error(`Error: ${getErrorMessage(err)}`);
+    if (err instanceof CliError && err.hint) console.error(`Hint: ${err.hint}`);
+    process.exitCode = err instanceof CliError ? err.exitCode : EXIT_CODES.GENERIC_ERROR;
+  }
 }
 
 function toIsoTimestamp(timestamp: unknown): string | undefined {
@@ -824,11 +842,21 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string): Command 
 
   const skillsCmd = program
     .command('skills')
-    .description('Read bundled Webcmd skills');
+    .description('List, install, and update bundled Webcmd skills')
+    .action(() => {
+      const rows = listWebcmdSkills();
+      renderOutput(rows, {
+        fmt: 'table',
+        fmtExplicit: false,
+        columns: ['name', 'description', 'version', 'path'],
+        title: 'webcmd/skills/list',
+        source: 'webcmd skills',
+      });
+    });
 
   skillsCmd
     .command('list')
-    .description('List bundled webcmd-* skills')
+    .description('List bundled Webcmd skills')
     .option('-f, --format <fmt>', 'Output format: table, json, yaml, md, csv', 'table')
     .action((opts) => {
       const rows = listWebcmdSkills();
@@ -842,27 +870,29 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string): Command 
     });
 
   skillsCmd
-    .command('read')
-    .description("Print a bundled webcmd-* skill's SKILL.md or reference file")
-    .argument('<skill>', 'Skill name, or skill/path like webcmd-browser/references/foo.md')
-    .argument('[path]', 'Path under the skill directory')
-    .option('--json', 'Output a JSON envelope instead of raw markdown', false)
-    .action((skill: string, skillPath: string | undefined, opts) => {
-      let result: ReturnType<typeof readWebcmdSkill>;
-      try {
-        result = readWebcmdSkill(skill, skillPath ?? '');
-      } catch (err) {
-        console.error(`Error: ${getErrorMessage(err)}`);
-        if (err instanceof CliError && err.hint) console.error(`Hint: ${err.hint}`);
-        process.exitCode = err instanceof CliError ? err.exitCode : EXIT_CODES.GENERIC_ERROR;
-        return;
-      }
-      if (opts.json) {
-        console.log(JSON.stringify(result, null, 2));
-        return;
-      }
-      process.stdout.write(result.content);
-      if (!result.content.endsWith('\n')) process.stdout.write('\n');
+    .command('install')
+    .description('Install bundled Webcmd skills into an agent skills folder')
+    .option('-p, --provider <provider>', 'Agent provider: agents, codex, claude', 'agents')
+    .option('-s, --scope <scope>', 'Install scope: user/global or project/local', 'user')
+    .option('--json', 'Output a JSON envelope', false)
+    .action((opts) => {
+      handleSkillLinkCommand(() => installWebcmdSkill({
+        provider: opts.provider,
+        scope: opts.scope,
+      }), opts.json, 'installed');
+    });
+
+  skillsCmd
+    .command('update')
+    .description('Refresh bundled Webcmd skill symlinks after updating the package')
+    .option('-p, --provider <provider>', 'Also repair provider link: agents, codex, claude')
+    .option('-s, --scope <scope>', 'Also repair scoped link: user/global or project/local')
+    .option('--json', 'Output a JSON envelope', false)
+    .action((opts) => {
+      handleSkillLinkCommand(() => updateWebcmdSkill({
+        provider: opts.provider,
+        scope: opts.scope,
+      }), opts.json, 'updated');
     });
 
   const authCmd = registerAuthCommands(program);
