@@ -30,8 +30,8 @@ On top of live browser control, WebCMD adds 3 layers of learnings. Each layer co
 | --- | --- | --- |
 | 1. Live browser control | The site is unfamiliar. | Use `webcmd browser` to inspect, click, type, extract, capture network calls, and complete the task in a real browser. |
 | 2. Sitemap memory | The site is familiar, but the action space is not fully known. | Capture an agent-facing sitemap of observed pages, states, actions, workflows, APIs, pitfalls, and fallback paths. |
-| 3. CLI authoring | The action space is known, but the path is still too variable for one fixed sequence. | Explicitly author a reusable `webcmd <site> <command>` adapter with structured output, so future agents spend tokens on the task instead of navigation. |
-| 4. Custom CLI commands | The workflow is deterministic enough to stop browsing. | Extend the CLI with a tailored command so the workflow runs instantly with the least amount of tokens. |
+| 3. CLI authoring | The action space is known, but the path is still too variable for one fixed sequence. | Explicitly author a reusable `webcmd <site>` adapter with structured output, so future agents spend tokens on the task instead of navigation. |
+| 4. Extend existing CLIs | The workflow is deterministic enough to stop browsing. | Extend the `webcmd <site>` adapter with a tailored command so the workflow runs instantly with the least amount of tokens. |
 
 
 ## Quick Start
@@ -51,7 +51,7 @@ npm install -g @agentrhq/webcmd
 webcmd doctor
 ```
 
-`doctor` checks the Webcmd browser bridge: daemon status, runtime wiring, profile selection, and a live connectivity probe. Pure public adapters and local passthrough commands do not need a green browser check, but `COOKIE`, `INTERCEPT`, `UI`, and `webcmd browser` workflows do.
+`doctor` checks the Webcmd browser bridge: daemon status, browser runtime installation, profile selection, and a live connectivity probe. Pure public adapters and local passthrough commands do not need a green browser check, but `COOKIE`, `INTERCEPT`, `UI`, and `webcmd browser` workflows do.
 
 ### 3. Discover commands
 
@@ -64,7 +64,7 @@ webcmd reddit hot --help
 
 `webcmd list -f json` is the source of truth for agents. It emits one row per command with the site, command name, arguments, output columns, browser requirement, and strategy.
 
-### 4. Run your first adapters
+### 4. Run your first command
 
 ```bash
 webcmd hackernews top --limit 5
@@ -80,23 +80,20 @@ Use Webcmd directly when you want a reliable command instead of a live browser s
 webcmd list
 webcmd <site> --help
 webcmd <site> <command> --help
-webcmd <site> <command> -f json
+webcmd <site> <command> -f yaml
 ```
 
 The everyday surface is intentionally small:
 
 - `webcmd list` shows every registered adapter and external command.
 - `webcmd <site> <command> ...` runs a built-in, plugin, or private adapter.
-- `webcmd external register <name>` exposes a local CLI through the same discovery surface.
-- `webcmd doctor` diagnoses browser connectivity for authenticated or UI-driven commands.
 
 For example:
 
 ```bash
 webcmd hackernews top --limit 10
 webcmd reddit subreddit programming --limit 10
-webcmd github whoami
-webcmd gh pr list --limit 5
+webcmd twitter whoami
 ```
 
 Adapter commands are tagged by strategy:
@@ -119,11 +116,13 @@ webcmd hackernews top -f md
 webcmd hackernews top -f csv
 ```
 
-Agents usually want `-f json`; humans usually want the default table.
+Agents usually want `-f json`; humans usually want table (default) or yaml.
 
 ## For AI Agents
 
 Webcmd is designed to be driven by coding agents such as Codex, Claude Code, Cursor, and similar tools.
+
+## Install skills (also refreshes existing installs)
 
 Install Webcmd skills into the agent environment with your agent's skill manager:
 
@@ -131,7 +130,9 @@ Install Webcmd skills into the agent environment with your agent's skill manager
 npx skills add agentrhq/webcmd
 ```
 
-Or install/copy only the skills you need from [`skills/`](./skills/) into your agent's skills root. These skills teach agents when to use adapters, when to drive the browser, how to author new adapters, and how to repair failing commands.
+Or install/copy only the skills you need from [`skills/`](./skills/) into your agent's skills root.
+
+### Which skill to use
 
 | Skill | When to use |
 |-------|-------------|
@@ -153,19 +154,33 @@ webcmd <site> <command> --trace retain-on-failure -f json
 
 Start with adapters. Fall back to `webcmd browser` only when no adapter covers the task or you are teaching Webcmd a new site flow.
 
-## Browser Automation
+## Live Browser Interaction
 
-`webcmd browser` gives agents a stable, structured interface to a real browser. Commands use a session name immediately after `browser`:
+`webcmd browser` gives agents a stable, structured interface to a real browser. Every command takes a session name immediately after `browser` — the session is required, so `webcmd browser tab list` without one is an error:
 
 ```bash
-webcmd browser work open https://example.com
-webcmd browser work state
-webcmd browser work click --role link --name "Learn more"
-webcmd browser work type --role textbox --name Email "you@example.com"
-webcmd browser work keys Enter
-webcmd browser work extract
-webcmd browser work close
+webcmd browser <session> open https://example.com
 ```
+
+### Tabs and page IDs
+
+`webcmd browser work open <url>` and `webcmd browser work tab new [url]` both return a page ID in the `page` field:
+
+```bash
+$ webcmd browser work open https://reddit.com
+{
+  "url": "https://reddit.com",
+  "page": "page-1783484232033-8"
+}
+```
+
+Use `webcmd browser work tab list` to inspect all tabs — each entry carries its page ID (`id`/`page`), the owning `session` (adapter sessions appear as `site:<name>`), and whether it is the currently `selected` tab. Pass `--tab <pageId>` to route a single command to a specific tab:
+
+```bash
+webcmd browser work open https://example.com --tab page-1783484232033-8
+```
+
+`tab new` creates a tab without changing the session's default tab; only `tab select <pageId>` promotes a tab to the default for later untargeted commands in the same session.
 
 Useful browser primitives include:
 
