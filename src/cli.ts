@@ -19,7 +19,6 @@ import { printCompletionScript } from './completion.js';
 import { loadExternalClis, executeExternalCli, installExternalCli, registerExternalCli, isBinaryInstalled, formatExternalCliLabel } from './external.js';
 import { listWebcmdSkills, readWebcmdSkill } from './skills.js';
 import { registerAllCommands } from './commanderAdapter.js';
-import { listAvailablePluginsAsync } from './plugin-catalog.js';
 import { classifyAdapter, formatRootAdapterHelpText, installCommanderNamespaceStructuredHelp, installStructuredHelp, leadingPositionalFromUsage, rootHelpData, type RootAdapterGroups } from './help.js';
 import { EXIT_CODES, getErrorMessage, BrowserConnectError, CliError } from './errors.js';
 import { TargetError, type TargetErrorCode } from './browser/target-errors.js';
@@ -714,7 +713,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string): Command 
     .command('list')
     .description('List all available CLI commands')
     .option('-f, --format <fmt>', 'Output format: table, json, yaml, md, csv', 'table')
-    .action(async (opts) => {
+    .action((opts) => {
       const registry = getRegistry();
       const commands = [...new Set(registry.values())].sort((a, b) => fullName(a).localeCompare(fullName(b)));
       const fmt = opts.format;
@@ -796,19 +795,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string): Command 
         console.log();
       }
 
-      const availablePlugins = await listAvailablePluginsAsync();
-      if (availablePlugins.length > 0) {
-        console.log('  Available plugins');
-        console.log();
-        for (const plugin of availablePlugins) {
-          console.log(`    ${plugin.site} — ${plugin.description}`);
-          console.log(`      source: ${plugin.source}`);
-          console.log(`      install: webcmd plugin install ${plugin.source}`);
-        }
-        console.log();
-      }
-
-      console.log(`  ${commands.length} built-in commands across ${appsBySite.size} apps + ${sitesBySite.size} sites, ${externalClis.length} external CLIs, ${availablePlugins.length} available plugins`);
+      console.log(`  ${commands.length} built-in commands across ${appsBySite.size} apps + ${sitesBySite.size} sites, ${externalClis.length} external CLIs`);
       console.log();
     });
 
