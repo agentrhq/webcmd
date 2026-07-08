@@ -30,7 +30,7 @@
   "files": [
     "dist/src/",
     "clis/",
-    "skills/webcmd-*/**",
+    "skills/**",
     "cli-manifest.json",
     "scripts/",
     "README.md",

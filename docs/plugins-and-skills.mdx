@@ -69,7 +69,13 @@ Use the Webcmd adapter-author skill to create this command. If the site changes 
 
 ## Installing Skills for Agents
 
-If your agent supports skills, install or copy the relevant Webcmd skills from the package. Then tell the agent to use them.
+Install the bundled Webcmd skills and answer the prompts for global/local scope and agent target.
+
+```bash
+webcmd skills install
+```
+
+For automation, pass `--scope`, `--provider`, or `--path`.
 
 ```text
 Before working on this site, load the Webcmd usage and adapter-author skills. Prefer an existing adapter if one exists.

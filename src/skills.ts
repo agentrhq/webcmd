@@ -1,4 +1,5 @@
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
@@ -14,10 +15,26 @@ export interface WebcmdSkillInfo {
   path: string;
 }
 
-export interface WebcmdSkillReadResult {
-  skill: string;
-  path: string;
-  content: string;
+export interface WebcmdSkillInstallOptions {
+  provider?: string;
+  scope?: string;
+  customPath?: string;
+  packageRoot?: string;
+  homeDir?: string;
+  cwd?: string;
+}
+
+export interface WebcmdSkillLink {
+  name: string;
+  source: string;
+  stableLink: string;
+  destination?: string;
+}
+
+export interface WebcmdSkillInstallResult {
+  provider?: SkillProvider;
+  scope?: SkillScope;
+  skills: WebcmdSkillLink[];
 }
 
 interface SkillFrontmatter {
@@ -25,6 +42,9 @@ interface SkillFrontmatter {
   description?: unknown;
   version?: unknown;
 }
+
+type SkillProvider = 'agents' | 'codex' | 'claude';
+type SkillScope = 'user' | 'project';
 
 export function getSkillsRoot(packageRoot: string = findPackageRoot(MODULE_FILE)): string {
   return path.join(packageRoot, 'skills');
@@ -35,39 +55,103 @@ export function listWebcmdSkills(packageRoot?: string): WebcmdSkillInfo[] {
   if (!fs.existsSync(skillsRoot)) return [];
 
   return fs.readdirSync(skillsRoot, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && entry.name.startsWith('webcmd-'))
+    .filter((entry) => entry.isDirectory())
     .map((entry) => readSkillInfo(skillsRoot, entry.name))
     .filter((entry): entry is WebcmdSkillInfo => entry !== null)
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export function readWebcmdSkill(target: string, relpath = '', packageRoot?: string): WebcmdSkillReadResult {
-  const { name, pathInSkill } = parseSkillTarget(target, relpath);
-  if (!name.startsWith('webcmd-')) {
-    throw new ArgumentError(`Unknown Webcmd skill: ${name}`, 'Run "webcmd skills list" to see available Webcmd skills.');
-  }
+export function installWebcmdSkill(options: WebcmdSkillInstallOptions = {}): WebcmdSkillInstallResult {
+  const provider = options.customPath === undefined ? normalizeProvider(options.provider) : undefined;
+  const scope = normalizeScope(options.scope);
+  const skills = updateStableSkillLinks(options)
+    .map((skill) => {
+      const destination = destinationFor(skill.name, provider, scope, options);
+      replaceDirectorySymlink(skill.stableLink, destination);
+      return { ...skill, destination };
+    });
+  return { provider, scope, skills };
+}
 
-  const skillsRoot = getSkillsRoot(packageRoot);
-  const skillRoot = path.join(skillsRoot, name);
-  if (!isDirectory(skillRoot) || !fs.existsSync(path.join(skillRoot, 'SKILL.md'))) {
-    throw new ArgumentError(`Unknown Webcmd skill: ${name}`, 'Run "webcmd skills list" to see available Webcmd skills.');
-  }
+export function updateWebcmdSkill(options: WebcmdSkillInstallOptions = {}): WebcmdSkillInstallResult {
+  const skills = updateStableSkillLinks(options);
+  if (options.provider === undefined && options.scope === undefined && options.customPath === undefined) return { skills };
 
-  const relativePath = normalizeSkillPath(pathInSkill || 'SKILL.md');
-  const absolutePath = path.resolve(skillRoot, relativePath);
-  const relativeToRoot = path.relative(skillRoot, absolutePath);
-  if (relativeToRoot.startsWith('..') || path.isAbsolute(relativeToRoot)) {
-    throw new ArgumentError(`Invalid skill path: ${relativePath}`, 'Skill paths must stay inside the selected Webcmd skill.');
-  }
-  if (!fs.existsSync(absolutePath) || !fs.statSync(absolutePath).isFile()) {
-    throw new ArgumentError(`Skill file not found: ${name}/${relativePath}`, 'Run "webcmd skills list <skill>" is not supported yet; read SKILL.md or a known references/... file.');
-  }
-
+  const provider = options.customPath === undefined ? normalizeProvider(options.provider) : undefined;
+  const scope = normalizeScope(options.scope);
   return {
-    skill: name,
-    path: relativePath,
-    content: fs.readFileSync(absolutePath, 'utf8'),
+    provider,
+    scope,
+    skills: skills.map((skill) => {
+      const destination = destinationFor(skill.name, provider, scope, options);
+      replaceDirectorySymlink(skill.stableLink, destination);
+      return { ...skill, destination };
+    }),
   };
+}
+
+function updateStableSkillLinks(options: WebcmdSkillInstallOptions): WebcmdSkillLink[] {
+  const skillsRoot = getSkillsRoot(options.packageRoot);
+  const skills = listWebcmdSkills(options.packageRoot);
+  if (skills.length === 0) {
+    throw new ArgumentError(`No Webcmd skills found: ${skillsRoot}`, 'Install a package that includes skills/*/SKILL.md.');
+  }
+
+  return skills.map((skill) => {
+    const source = path.join(skillsRoot, skill.name);
+    const stableLink = path.join(options.homeDir ?? os.homedir(), '.webcmd', 'skills', skill.name);
+    replaceDirectorySymlink(source, stableLink);
+    return { name: skill.name, source, stableLink };
+  });
+}
+
+function destinationFor(name: string, provider: SkillProvider | undefined, scope: SkillScope, options: WebcmdSkillInstallOptions): string {
+  if (options.customPath !== undefined) return path.join(expandHomePath(options.customPath), name);
+  const base = scope === 'project' ? options.cwd ?? process.cwd() : options.homeDir ?? os.homedir();
+  const agentDir = provider === 'claude' ? '.claude' : provider === 'codex' ? '.codex' : '.agents';
+  return path.join(base, agentDir, 'skills', name);
+}
+
+function expandHomePath(raw: string): string {
+  const value = raw.trim();
+  if (!value) throw new ArgumentError('Custom skills path must be non-empty.');
+  return path.resolve(value === '~' ? os.homedir() : value.startsWith('~/') ? path.join(os.homedir(), value.slice(2)) : value);
+}
+
+function normalizeProvider(raw = 'agents'): SkillProvider {
+  const value = raw.trim().toLowerCase();
+  if (value === 'agents' || value === 'codex') return value;
+  if (value === 'claude' || value === 'claude-code' || value === 'claude_code') return 'claude';
+  throw new ArgumentError(`Unsupported skill provider: ${raw}`, 'Use one of: agents, codex, claude.');
+}
+
+function normalizeScope(raw = 'user'): SkillScope {
+  const value = raw.trim().toLowerCase();
+  if (value === 'user' || value === 'global') return 'user';
+  if (value === 'project' || value === 'local') return 'project';
+  throw new ArgumentError(`Unsupported skill scope: ${raw}`, 'Use one of: user, global, project, local.');
+}
+
+function replaceDirectorySymlink(target: string, linkPath: string): void {
+  const current = safeLstat(linkPath);
+  if (current) {
+    if (!current.isSymbolicLink()) {
+      throw new ArgumentError(`Refusing to replace non-symlink path: ${linkPath}`, 'Remove it manually or choose a different scope/provider.');
+    }
+    fs.unlinkSync(linkPath);
+  }
+
+  fs.mkdirSync(path.dirname(linkPath), { recursive: true });
+  fs.symlinkSync(target, linkPath, process.platform === 'win32' ? 'junction' : 'dir');
+}
+
+function safeLstat(filePath: string): fs.Stats | null {
+  try {
+    return fs.lstatSync(filePath);
+  } catch (err) {
+    if (err && typeof err === 'object' && 'code' in err && err.code === 'ENOENT') return null;
+    throw err;
+  }
 }
 
 function readSkillInfo(skillsRoot: string, name: string): WebcmdSkillInfo | null {
@@ -81,32 +165,6 @@ function readSkillInfo(skillsRoot: string, name: string): WebcmdSkillInfo | null
     version: typeof fm.version === 'string' || typeof fm.version === 'number' ? String(fm.version) : '',
     path: `${name}/SKILL.md`,
   };
-}
-
-function parseSkillTarget(target: string, relpath: string): { name: string; pathInSkill: string } {
-  const normalizedTarget = normalizeSkillPath(target);
-  if (relpath) {
-    return { name: normalizedTarget, pathInSkill: relpath };
-  }
-  const slash = normalizedTarget.indexOf('/');
-  if (slash === -1) {
-    return { name: normalizedTarget, pathInSkill: '' };
-  }
-  return {
-    name: normalizedTarget.slice(0, slash),
-    pathInSkill: normalizedTarget.slice(slash + 1),
-  };
-}
-
-function normalizeSkillPath(raw: string): string {
-  const normalized = raw.trim().replace(/\\/g, '/');
-  if (!normalized || normalized.includes('\0')) {
-    throw new ArgumentError('Skill path must be non-empty.');
-  }
-  if (normalized.startsWith('/') || normalized.split('/').some((part) => part === '..')) {
-    throw new ArgumentError(`Invalid skill path: ${raw}`, 'Use a path relative to a Webcmd skill directory.');
-  }
-  return path.posix.normalize(normalized);
 }
 
 function parseFrontmatter(content: string): SkillFrontmatter {

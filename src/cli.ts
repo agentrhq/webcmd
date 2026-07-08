@@ -8,6 +8,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import * as readline from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 import { Command, InvalidArgumentError, Option } from 'commander';
 import { findPackageRoot, getBuiltEntryCandidates } from './package-paths.js';
@@ -17,10 +18,10 @@ import { render as renderOutput } from './output.js';
 import { PKG_VERSION } from './version.js';
 import { printCompletionScript } from './completion.js';
 import { loadExternalClis, executeExternalCli, installExternalCli, registerExternalCli, isBinaryInstalled, formatExternalCliLabel } from './external.js';
-import { listWebcmdSkills, readWebcmdSkill } from './skills.js';
+import { installWebcmdSkill, listWebcmdSkills, updateWebcmdSkill, type WebcmdSkillInstallResult } from './skills.js';
 import { registerAllCommands } from './commanderAdapter.js';
 import { classifyAdapter, formatRootAdapterHelpText, installCommanderNamespaceStructuredHelp, installStructuredHelp, leadingPositionalFromUsage, rootHelpData, type RootAdapterGroups } from './help.js';
-import { EXIT_CODES, getErrorMessage, BrowserConnectError, CliError } from './errors.js';
+import { EXIT_CODES, getErrorMessage, BrowserConnectError, CliError, ArgumentError } from './errors.js';
 import { TargetError, type TargetErrorCode } from './browser/target-errors.js';
 import { resolveTargetJs, getTextResolvedJs, getValueResolvedJs, getAttributesResolvedJs, selectResolvedJs, isAutocompleteResolvedJs, type ResolveOptions, type TargetMatchLevel } from './browser/target-resolver.js';
 import { buildFindJs, buildSemanticFindJs, isFindError, type FindResult, type FindError, type SemanticFindOptions } from './browser/find.js';
@@ -76,6 +77,81 @@ function parseDurationMs(raw: unknown, flagName: string): number | null | { erro
 
 function timestampFromRaw(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : Date.now();
+}
+
+type SkillLinkCommandOptions = {
+  provider?: string;
+  scope?: string;
+  path?: string;
+  json?: boolean;
+};
+
+function isInteractiveInstall(opts: SkillLinkCommandOptions): boolean {
+  return !opts.json && process.stdin.isTTY === true && process.stdout.isTTY === true;
+}
+
+async function resolveSkillInstallOptions(opts: SkillLinkCommandOptions): Promise<SkillLinkCommandOptions> {
+  if (!isInteractiveInstall(opts)) return opts;
+
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const scope = opts.scope ?? await choosePrompt(rl, 'Where should Webcmd install skills?', [
+      { key: '1', label: 'Global', value: 'user', aliases: ['global', 'user', 'g'] },
+      { key: '2', label: 'Local project', value: 'project', aliases: ['local', 'project', 'l'] },
+    ], '1');
+    const provider = opts.provider ?? (opts.path ? undefined : await choosePrompt(rl, 'Which coding agent should use them?', [
+      { key: '1', label: 'Agents', value: 'agents', aliases: ['agents', 'agent', 'a'] },
+      { key: '2', label: 'Codex', value: 'codex', aliases: ['codex', 'c'] },
+      { key: '3', label: 'Claude', value: 'claude', aliases: ['claude', 'claude-code'] },
+      { key: '4', label: 'Custom path', value: 'custom', aliases: ['custom', 'path'] },
+    ], '1'));
+    const customPath = opts.path ?? (provider === 'custom' ? await nonEmptyPrompt(rl, 'Skills directory path: ') : undefined);
+    return { ...opts, scope, provider: provider === 'custom' ? undefined : provider, path: customPath };
+  } finally {
+    rl.close();
+  }
+}
+
+async function choosePrompt<T extends string>(
+  rl: readline.Interface,
+  question: string,
+  choices: Array<{ key: string; label: string; value: T; aliases: string[] }>,
+  defaultKey: string,
+): Promise<T> {
+  console.log(question);
+  for (const choice of choices) console.log(`  ${choice.key}) ${choice.label}`);
+  while (true) {
+    const answer = (await rl.question(`Choose [${defaultKey}]: `)).trim().toLowerCase() || defaultKey;
+    const choice = choices.find((item) => item.key === answer || item.aliases.includes(answer));
+    if (choice) return choice.value;
+    console.log(`Choose one of: ${choices.map((item) => item.key).join(', ')}`);
+  }
+}
+
+async function nonEmptyPrompt(rl: readline.Interface, question: string): Promise<string> {
+  while (true) {
+    const answer = (await rl.question(question)).trim();
+    if (answer) return answer;
+    console.log('Path is required.');
+  }
+}
+
+async function handleSkillLinkCommand(action: () => WebcmdSkillInstallResult | Promise<WebcmdSkillInstallResult>, json: boolean, verb: string): Promise<void> {
+  try {
+    const result = await action();
+    if (json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    console.log(`Webcmd skills ${verb}: ${result.skills.length}`);
+    for (const skill of result.skills) {
+      console.log(`${skill.name}: ${skill.destination ? `${skill.destination} -> ` : ''}${skill.stableLink}`);
+    }
+  } catch (err) {
+    console.error(`Error: ${getErrorMessage(err)}`);
+    if (err instanceof CliError && err.hint) console.error(`Hint: ${err.hint}`);
+    process.exitCode = err instanceof CliError ? err.exitCode : EXIT_CODES.GENERIC_ERROR;
+  }
 }
 
 function toIsoTimestamp(timestamp: unknown): string | undefined {
@@ -824,11 +900,21 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string): Command 
 
   const skillsCmd = program
     .command('skills')
-    .description('Read bundled Webcmd skills');
+    .description('List, install, and update bundled Webcmd skills')
+    .action(() => {
+      const rows = listWebcmdSkills();
+      renderOutput(rows, {
+        fmt: 'table',
+        fmtExplicit: false,
+        columns: ['name', 'description', 'version', 'path'],
+        title: 'webcmd/skills/list',
+        source: 'webcmd skills',
+      });
+    });
 
   skillsCmd
     .command('list')
-    .description('List bundled webcmd-* skills')
+    .description('List bundled Webcmd skills')
     .option('-f, --format <fmt>', 'Output format: table, json, yaml, md, csv', 'table')
     .action((opts) => {
       const rows = listWebcmdSkills();
@@ -842,27 +928,39 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string): Command 
     });
 
   skillsCmd
-    .command('read')
-    .description("Print a bundled webcmd-* skill's SKILL.md or reference file")
-    .argument('<skill>', 'Skill name, or skill/path like webcmd-browser/references/foo.md')
-    .argument('[path]', 'Path under the skill directory')
-    .option('--json', 'Output a JSON envelope instead of raw markdown', false)
-    .action((skill: string, skillPath: string | undefined, opts) => {
-      let result: ReturnType<typeof readWebcmdSkill>;
-      try {
-        result = readWebcmdSkill(skill, skillPath ?? '');
-      } catch (err) {
-        console.error(`Error: ${getErrorMessage(err)}`);
-        if (err instanceof CliError && err.hint) console.error(`Hint: ${err.hint}`);
-        process.exitCode = err instanceof CliError ? err.exitCode : EXIT_CODES.GENERIC_ERROR;
-        return;
-      }
-      if (opts.json) {
-        console.log(JSON.stringify(result, null, 2));
-        return;
-      }
-      process.stdout.write(result.content);
-      if (!result.content.endsWith('\n')) process.stdout.write('\n');
+    .command('install')
+    .description('Install bundled Webcmd skills into an agent skills folder')
+    .option('-p, --provider <provider>', 'Agent provider: agents, codex, claude')
+    .option('-s, --scope <scope>', 'Install scope: user/global or project/local')
+    .option('--path <path>', 'Custom agent skills directory')
+    .option('--json', 'Output a JSON envelope', false)
+    .action(async (opts) => {
+      await handleSkillLinkCommand(async () => {
+        const resolved = await resolveSkillInstallOptions(opts);
+        if (resolved.provider === 'custom' && !resolved.path) {
+          throw new ArgumentError('Custom skill provider requires --path.', 'Pass --path <skills-dir> or run interactively.');
+        }
+        return installWebcmdSkill({
+          provider: resolved.provider,
+          scope: resolved.scope,
+          customPath: resolved.path,
+        });
+      }, opts.json, 'installed');
+    });
+
+  skillsCmd
+    .command('update')
+    .description('Refresh bundled Webcmd skill symlinks after updating the package')
+    .option('-p, --provider <provider>', 'Also repair provider link: agents, codex, claude')
+    .option('-s, --scope <scope>', 'Also repair scoped link: user/global or project/local')
+    .option('--path <path>', 'Also repair a custom agent skills directory')
+    .option('--json', 'Output a JSON envelope', false)
+    .action(async (opts) => {
+      await handleSkillLinkCommand(() => updateWebcmdSkill({
+        provider: opts.provider,
+        scope: opts.scope,
+        customPath: opts.path,
+      }), opts.json, 'updated');
     });
 
   const authCmd = registerAuthCommands(program);
