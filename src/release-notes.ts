@@ -3,7 +3,6 @@ export const RELEASE_NOTE_SECTIONS = [
   'Improvements',
   'Fixes',
   'Adapters',
-  'Contributors',
   'Reverts',
 ] as const;
 
@@ -52,18 +51,28 @@ const SQUASH_MERGE_PR_NUMBER_PATTERN = /\(#(?<number>\d+)\)\s*$/;
 const MERGE_COMMIT_PR_NUMBER_PATTERN = /^Merge pull request #(?<number>\d+) /;
 const RELEASE_PLEASE_TITLE_PATTERN = /^chore(?:\([^)]+\))?: release(?:\s|$)/;
 
-function normalizeHandle(handle: string): string {
-  const trimmed = handle.trim();
-  return trimmed.startsWith('@') ? trimmed.slice(1) : trimmed;
+function isNoChangeContent(content: string): boolean {
+  const lines = content
+    .split(/\r?\n/)
+    .map((line) => line.trim().replace(/^[-*]\s+/, '').replace(/[.。]+$/, '').trim().toLowerCase())
+    .filter(Boolean);
+
+  if (lines.length === 0) return true;
+
+  return lines.every((line) => (
+    line === 'none'
+    || line === 'n/a'
+    || line === 'not applicable'
+    || /^no .*?(?:changes|updates|reverts|fixes|improvements|adapters|highlights)(?: in this release)?$/.test(line)
+    || /^there (?:are|were) no .*?(?:changes|updates|reverts|fixes|improvements|adapters|highlights)(?: in this release)?$/.test(line)
+  ));
 }
 
-function uniqueSortedHandles(handles: string[]): string[] {
-  return [...new Set(handles.map(normalizeHandle).filter(Boolean))].sort((left, right) => left.localeCompare(right));
-}
-
-function formatSectionContent(content: string | undefined): string {
+function normalizeSectionContent(content: string | undefined): string | null {
   const trimmed = content?.trim();
-  return trimmed && trimmed.length > 0 ? trimmed : 'None.';
+  if (!trimmed || isNoChangeContent(trimmed)) return null;
+
+  return trimmed;
 }
 
 function escapeRegExp(value: string): string {
@@ -72,7 +81,7 @@ function escapeRegExp(value: string): string {
 
 function formatReleaseNotesForChangelog(notes: string): string {
   const trimmed = notes.trim();
-  if (!trimmed) return '### Highlights\nNone.';
+  if (!trimmed) return '';
 
   return trimmed.replace(/^##\s+/gm, '### ');
 }
@@ -154,18 +163,12 @@ function parseReleaseNoteSections(raw: string): Partial<Record<ReleaseNoteSectio
   return sections;
 }
 
-export function normalizeReleaseNotes(raw: string, contributors: string[]): string {
+export function normalizeReleaseNotes(raw: string): string {
   const sections = parseReleaseNoteSections(raw);
-  const normalizedContributors = uniqueSortedHandles(contributors).map((handle) => `- @${handle}`);
 
-  return RELEASE_NOTE_SECTIONS.map((section) => {
-    if (section === 'Contributors') {
-      const content = normalizedContributors.length > 0 ? normalizedContributors.join('\n') : 'None.';
-      return `## ${section}\n${content}`;
-    }
-
-    const content = formatSectionContent(sections[section]?.join('\n'));
-    return `## ${section}\n${content}`;
+  return RELEASE_NOTE_SECTIONS.flatMap((section) => {
+    const content = normalizeSectionContent(sections[section]?.join('\n'));
+    return content ? [`## ${section}\n${content}`] : [];
   }).join('\n\n');
 }
 
@@ -193,11 +196,13 @@ export function buildReleaseNotesPrompt(context: ReleaseContext): string {
     `Write user-facing release notes for ${context.tag}.`,
     `Release range: ${context.previousTag}...${context.currentRef}.`,
     'Use only the supplied pull requests below. Do not invent changes or pull in information from elsewhere.',
-    `Required sections: ${RELEASE_NOTE_SECTIONS.map((section) => `## ${section}`).join(', ')}.`,
-    'Each section must be present in the final notes.',
+    `Allowed sections: ${RELEASE_NOTE_SECTIONS.map((section) => `## ${section}`).join(', ')}.`,
+    'Include only sections that have user-visible changes. Omit empty sections entirely; do not write "None", "N/A", or similar placeholder text.',
+    'Do not include a Contributors section.',
     'In this project, CLI commands and adapters are the same thing. Treat any PR that adds, removes, or changes files under clis/** as an adapter change, even if the PR title says "CLI" instead of "adapter".',
     'Put new site adapters/CLIs, adapter promotions, adapter hardening, adapter output changes, selector/API updates, and site-specific workflow improvements in ## Adapters.',
     'Use ## Improvements for non-adapter product, runtime, CLI, docs, or workflow improvements.',
+    'Use ## Reverts only when the release includes actual reverted changes.',
     '',
     `Pull requests included for this release:`,
     prSummaries,

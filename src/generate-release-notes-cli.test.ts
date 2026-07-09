@@ -85,22 +85,50 @@ describe('runGenerateReleaseNotes', () => {
         '## Highlights',
         '- Better summaries.',
         '',
-        '## Improvements',
-        'None.',
-        '',
-        '## Fixes',
-        'None.',
-        '',
-        '## Adapters',
-        'None.',
-        '',
-        '## Contributors',
-        '- @alice',
-        '',
-        '## Reverts',
-        'None.',
-        '',
       ].join('\n'),
+      stderr: '',
+    });
+  });
+
+  it('prints nothing when generated notes only contain empty placeholders', async () => {
+    const { io, read } = createIo();
+    const context: ReleaseContext = {
+      tag: 'v1.2.3',
+      previousTag: 'v1.2.2',
+      currentRef: 'abcdef1',
+      pullRequests: [
+        {
+          number: 42,
+          title: 'chore: no user visible release changes',
+          author: { login: 'alice' },
+          labels: [],
+          files: [],
+          url: 'https://example.com/42',
+        },
+      ],
+    };
+    const loadContext = vi.fn(async () => context);
+    const generateText = vi.fn(async () => [
+      '## Highlights',
+      'None.',
+      '',
+      '## Reverts',
+      'There are no reverts in this release.',
+      '',
+      '## Contributors',
+      '- @alice',
+    ].join('\n'));
+
+    const exitCode = await runGenerateReleaseNotes(
+      ['node', 'script', 'v1.2.3'],
+      { GEMINI_API_KEY: 'test-key' },
+      { loadContext, generateText },
+      io,
+    );
+
+    expect(exitCode).toBe(0);
+    expect(read()).toEqual({
+      stdout: '',
       stderr: '',
     });
   });

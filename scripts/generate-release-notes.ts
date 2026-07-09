@@ -193,10 +193,6 @@ async function generateText(prompt: string, model: string, apiKey: string): Prom
   return text;
 }
 
-function contributorHandles(pullRequests: PullRequestDetails[]): string[] {
-  return pullRequests.flatMap((pr) => (pr.author?.login ? [pr.author.login] : []));
-}
-
 function updateChangelog(tag: string | undefined, notesPath: string | undefined, changelogPath: string | undefined, io: Io): number {
   if (!tag || !notesPath) {
     io.writeStderr('Usage: generate-release-notes --update-changelog <tag> <notes-file> [changelog-file]\n');
@@ -249,8 +245,10 @@ export async function runGenerateReleaseNotes(
     const model = env.GEMINI_RELEASE_NOTES_MODEL || DEFAULT_MODEL;
     const prompt = buildReleaseNotesPrompt(context);
     const raw = await (deps.generateText ?? generateText)(prompt, model, apiKey);
-    const normalized = normalizeReleaseNotes(raw, contributorHandles(context.pullRequests));
-    io.writeStdout(`${normalized}\n`);
+    const normalized = normalizeReleaseNotes(raw);
+    if (normalized) {
+      io.writeStdout(`${normalized}\n`);
+    }
     return 0;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

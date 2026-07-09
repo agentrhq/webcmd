@@ -29,23 +29,41 @@ describe('release notes helpers', () => {
     expect(filterReleasePullRequests(prs).map((pr) => pr.number)).toEqual([1]);
   });
 
-  it('normalizes all required sections and fills empty sections with None', () => {
+  it('normalizes only sections with real release-note content', () => {
     const raw = [
+      '## Highlights',
+      '- Better release notes.',
+      '',
+      '## Improvements',
+      'No improvements.',
+      '',
+      '## Adapters',
+      'No adapter changes.',
+      '',
+      '## Fixes',
+      '- Fixed release fallback.',
+      '',
+      '## Contributors',
+      '- @alice',
+      '',
+      '## Reverts',
+      'There are no reverts in this release.',
+    ].join('\n');
+
+    const normalized = normalizeReleaseNotes(raw);
+
+    expect(RELEASE_NOTE_SECTIONS).toEqual(['Highlights', 'Improvements', 'Fixes', 'Adapters', 'Reverts']);
+    expect(normalized).toBe([
       '## Highlights',
       '- Better release notes.',
       '',
       '## Fixes',
       '- Fixed release fallback.',
-    ].join('\n');
-
-    const normalized = normalizeReleaseNotes(raw, ['alice', 'bob']);
-    for (const section of RELEASE_NOTE_SECTIONS) {
-      expect(normalized).toContain(`## ${section}`);
-    }
-    expect(normalized).toContain('## Adapters\nNone.');
-    expect(normalized).toContain('## Improvements\nNone.');
-    expect(normalized).toContain('## Contributors\n- @alice\n- @bob');
-    expect(normalized).toContain('## Reverts\nNone.');
+    ].join('\n'));
+    expect(normalized).not.toContain('## Improvements');
+    expect(normalized).not.toContain('## Contributors');
+    expect(normalized).not.toContain('## Reverts');
+    expect(normalized).not.toContain('None.');
   });
 
   it('replaces a matching changelog release entry with generated notes', () => {
@@ -109,6 +127,9 @@ describe('release notes helpers', () => {
     expect(prompt).toContain('docs/docs.json');
     expect(prompt).toContain('## Highlights');
     expect(prompt).toContain('## Adapters');
+    expect(prompt).not.toContain('## Contributors');
+    expect(prompt).toContain('Omit empty sections entirely');
+    expect(prompt).toContain('Do not include a Contributors section');
     expect(prompt).toContain('CLI commands and adapters are the same thing');
     expect(prompt).toContain('files under clis/** as an adapter change');
     expect(prompt).toContain('Put new site adapters/CLIs, adapter promotions, adapter hardening');
