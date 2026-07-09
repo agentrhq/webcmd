@@ -2,77 +2,201 @@
 
 ## [0.2.2](https://github.com/agentrhq/webcmd/compare/webcmd-v0.2.1...webcmd-v0.2.2) (2026-07-09)
 
+### Highlights
 
-### Features
+- Bundled Webcmd skills are now much easier to install and refresh through `webcmd skills install` and `webcmd skills update`.
+- Persistent-session commands gained a cleaner authoring model with `freshPage`, which keeps login/profile state while avoiding stale page state.
+- District booking support moved from local-only adapters into the repo.
 
-* add freshPage option for persistent-session commands ([1ff33e9](https://github.com/agentrhq/webcmd/commit/1ff33e98b6374db2a9635f99fe8f069aa8ae9b98))
-* add freshPage option for persistent-session commands ([09b4ec3](https://github.com/agentrhq/webcmd/commit/09b4ec3b0a11f0dbd04834cf837b2eef231c9643))
-* install bundled Webcmd skills ([80d015a](https://github.com/agentrhq/webcmd/commit/80d015a659cac93dbb4a75bd997f41a62ba730b3))
-* install bundled Webcmd skills ([3ce96f4](https://github.com/agentrhq/webcmd/commit/3ce96f485a7d4f7d7bc4053a2a0dfb0856e31bb7))
-* promote district adapters into the repo ([e5b409d](https://github.com/agentrhq/webcmd/commit/e5b409de0ec6b81b0b26dbc12f53f924d36f41f4))
+### Improvements
 
+- Added `freshPage: true` for persistent site-session commands so adapter authors can start from a clean tab without throwing away cookies or profile state.
+- Added bundled Webcmd skill installation and update flows for supported agents.
+- Repaired the plugin-management e2e test by replacing a deleted test plugin repository with a live plugin repository.
+- Refreshed README guidance around the current project positioning.
 
-### Bug Fixes
+### Fixes
 
-* avoid district silent column drops ([78219d7](https://github.com/agentrhq/webcmd/commit/78219d7e5e6214ad96f2cfda9322a049bb287621))
-* preserve freshPage in CLI manifest ([5855760](https://github.com/agentrhq/webcmd/commit/58557605ac9b9d0214ca91351ab9710cc1b6c8e3))
-* quote sitemap author skill frontmatter ([8a4a787](https://github.com/agentrhq/webcmd/commit/8a4a787d1cc3772ae07183f5ee7b2c5bca09d2fc))
+- Preserved `freshPage` in generated CLI manifests.
+- Fixed District output validation so adapter columns such as `number`, `row`, `seat`, and `_score` are not silently dropped.
+- Quoted sitemap author skill frontmatter for strict YAML parsers.
+- Fixed Reddit popular HTML response handling.
+
+### Adapters
+
+- Promoted the District (`district.in`) movie and event booking adapters into `clis/district`.
+- Added and hardened District flows for search, listings, showtimes, seats, checkout, locations, location switching, and auth status checks.
+- Hardened District checkout with clean-start sessions, a login gate before seat selection, stale-session refresh, and payment-handoff behavior.
+- Added the shared site-auth `openLogin(page)` hook for modal-based login flows such as District.
+
+### Contributors
+
+- @ankitranjan7
+- @beubax
+- @ngaurav
+- @nishant
+
+### Reverts
+
+None.
 
 ## [0.2.1](https://github.com/agentrhq/webcmd/compare/webcmd-v0.2.0...webcmd-v0.2.1) (2026-07-07)
 
+### Highlights
 
-### Features
+- Browser profile routing became more forgiving for saved defaults while keeping explicit profile selections strict.
+- Twitter adapter output and deletion workflows became more useful and reliable.
+- Windows command shim handling was fixed for external CLI passthrough.
 
-* **browser:** route default profiles as preferred ([1405780](https://github.com/agentrhq/webcmd/commit/1405780a25cf01916f3a0240b1d19454aa68914a))
-* **twitter:** add quotes and bookmarks to timeline output ([fc63ae0](https://github.com/agentrhq/webcmd/commit/fc63ae0b4673d5e8994af286caeae795780e3678))
-* **twitter:** add quotes and bookmarks to timeline output ([1bafd47](https://github.com/agentrhq/webcmd/commit/1bafd4751d9dde21ad506f6cdf4c674a7f383ccd))
+### Improvements
 
+- Routed default browser profiles as preferred profiles instead of strict requirements.
+- Stabilized headed browser e2e coverage and normalized Cloak profile path expectations.
+- Refreshed README positioning, branding, social links, and agent-focused docs.
 
-### Bug Fixes
+### Fixes
 
-* **external:** handle Windows command shims ([74b7b61](https://github.com/agentrhq/webcmd/commit/74b7b6179904ff93e51f392ff25bca7eb629c904))
-* **twitter:** harden tweet deletion flow ([491ad76](https://github.com/agentrhq/webcmd/commit/491ad76be59763c95db84a15821cef62c7cf8de2))
+- Handled Windows `.cmd` shims for external command execution.
+- Hardened tweet deletion against delayed page loading, stale menus, and runtime response wrappers.
+- Removed the daemon port environment override in favor of the fixed daemon port behavior.
+
+### Adapters
+
+- Added quote and bookmark counts to Twitter timeline output.
+- Hardened the Twitter tweet deletion flow.
+
+### Contributors
+
+- @askadityapandey
+- @beubax
+- @ngaurav
+- @rishabhraj36
+
+### Reverts
+
+None.
 
 ## [0.2.0](https://github.com/agentrhq/webcmd/compare/webcmd-v0.1.2...webcmd-v0.2.0) (2026-07-03)
 
+### Highlights
 
-### Features
+- Added the release-note helper library and Gemini-backed release-note generation flow.
+- Ported upstream transport deadline handling into the Cloak runtime.
+- Moved the repository toward English-first docs, skills, and release materials.
 
-* add release notes helper library ([6d8cc6b](https://github.com/agentrhq/webcmd/commit/6d8cc6b75542f42cda08ac9eb3163a6247a3972d))
-* generate release notes with Gemini ([875d623](https://github.com/agentrhq/webcmd/commit/875d6231d6f3efc2477729dbfdad6aaee4f0f7b2))
+### Improvements
 
+- Added reusable release-note helper utilities.
+- Added Gemini release-note generation with workflow fallback behavior.
+- Scaffolded Mintlify docs and release documentation.
+- Rewrote the README for the Webcmd project direction.
+- Added repository security documentation.
 
-### Bug Fixes
+### Fixes
 
-* address release notes review findings ([4aa6cd1](https://github.com/agentrhq/webcmd/commit/4aa6cd1e038cfe7d46f81d9acfaf235e68a2c8ab))
-* port upstream transport deadlines to cloak runtime ([9e5219d](https://github.com/agentrhq/webcmd/commit/9e5219d1ed7de7e651bfae29c58f851cfb191a16))
-* port upstream transport deadlines to cloak runtime ([9816440](https://github.com/agentrhq/webcmd/commit/981644054bad5045be0caecdef17216208de0cb6))
-* preserve skill guidance during translation ([b5491b5](https://github.com/agentrhq/webcmd/commit/b5491b5f0f74c9b39b0c321b8e9ae09ca7694724))
-* remove stale deleted-adapter references ([c69b017](https://github.com/agentrhq/webcmd/commit/c69b01711cc903444e127f134e654c6d39122cbf))
-* scope release note silence to workflow ([82a6e4d](https://github.com/agentrhq/webcmd/commit/82a6e4d5ecbffe4d1eeec970e6090f45a04b013d))
-* sync npm lockfile peer dependency ([b931d1e](https://github.com/agentrhq/webcmd/commit/b931d1ea7ff19f96b6391aab5db540c62fb1b1fb))
+- Scoped release-note failures so release-please notes remain intact when enhanced generation cannot run.
+- Addressed release-note review findings.
+- Ported upstream transport deadlines to the Cloak runtime.
+- Preserved skill guidance during translation.
+- Synced the npm lockfile peer dependency.
+- Removed stale deleted-adapter references from docs and tests.
+
+### Adapters
+
+- Cleaned up the adapter catalog by removing Chinese-first built-in adapters.
+- Removed references and tests for adapters that had already been deleted.
+
+### Contributors
+
+- @askadityapandey
+- @beubax
+- @ngaurav
+
+### Reverts
+
+None.
 
 ## [0.1.2](https://github.com/agentrhq/webcmd/compare/webcmd-v0.1.1...webcmd-v0.1.2) (2026-07-03)
 
+### Highlights
 
-### Bug Fixes
+- Focused patch release for making the npm package install and execute correctly.
 
-* include executable in npm package ([2ff58bd](https://github.com/agentrhq/webcmd/commit/2ff58bdc0ac3192702da1a746bdeb16fd5bd42ac))
-* parse npm pack json with lifecycle output ([b0f5230](https://github.com/agentrhq/webcmd/commit/b0f52308662fc1aa926f3bfedd3e7b2109838e06))
-* relax doctor runtime version warning ([59098dc](https://github.com/agentrhq/webcmd/commit/59098dc5d8e888f7f4501e52c8dbb1cbfa8e97a1))
+### Improvements
+
+- Relaxed the doctor runtime version warning so compatible runtimes are not reported too aggressively.
+
+### Fixes
+
+- Included the executable in the npm package.
+- Parsed `npm pack` JSON correctly even when lifecycle output is present.
+- Relaxed the doctor runtime version warning.
+
+### Adapters
+
+None.
+
+### Contributors
+
+- @askadityapandey
+- @beubax
+
+### Reverts
+
+None.
 
 ## [0.1.1](https://github.com/agentrhq/webcmd/compare/webcmd-v0.1.0...webcmd-v0.1.1) (2026-07-03)
 
+### Highlights
 
-### Bug Fixes
+- Published the next installable npm version after the initial package release.
 
-* release next publishable npm version ([05c74c2](https://github.com/agentrhq/webcmd/commit/05c74c237ae3f7114280cfd2369a1a5938324252))
+### Improvements
+
+None.
+
+### Fixes
+
+- Released the next publishable npm version.
+
+### Adapters
+
+None.
+
+### Contributors
+
+- @beubax
+
+### Reverts
+
+None.
 
 ## 0.1.0 (2026-07-03)
 
+### Highlights
 
-### Features
+- Initial Webcmd release.
+- Introduced a TypeScript/JavaScript toolkit for turning websites, browser sessions, desktop apps, APIs, and local tools into deterministic CLI commands.
 
-* initialize webcmd ([c08cb27](https://github.com/agentrhq/webcmd/commit/c08cb276187bc32c66c383c2349dc77ec3114821))
+### Improvements
 
-## Changelog
+- Established the core CLI runtime.
+- Added the command registry and manifest foundation.
+- Introduced the adapter/plugin architecture and authoring workflow.
+- Added the Cloak-backed browser automation layer for inspecting pages, executing browser actions, capturing context, and exposing stable command surfaces.
+
+### Fixes
+
+None.
+
+### Adapters
+
+- Introduced the adapter foundation for building repeatable command surfaces over target sites, apps, APIs, and tools.
+
+### Contributors
+
+- @beubax
+
+### Reverts
+
+None.
