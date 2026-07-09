@@ -1,4 +1,11 @@
-export const RELEASE_NOTE_SECTIONS = ['Highlights', 'Improvements', 'Fixes', 'Contributors', 'Reverts'] as const;
+export const RELEASE_NOTE_SECTIONS = [
+  'Highlights',
+  'Adapter Additions and Improvements',
+  'Improvements',
+  'Fixes',
+  'Contributors',
+  'Reverts',
+] as const;
 
 export type ReleaseNoteSection = typeof RELEASE_NOTE_SECTIONS[number];
 
@@ -150,6 +157,8 @@ export function buildReleaseNotesPrompt(context: ReleaseContext): string {
     'Use only the supplied pull requests below. Do not invent changes or pull in information from elsewhere.',
     `Required sections: ${RELEASE_NOTE_SECTIONS.map((section) => `## ${section}`).join(', ')}.`,
     'Each section must be present in the final notes.',
+    'Put new site adapters, adapter promotions, adapter hardening, adapter output changes, selector/API updates, and site-specific workflow improvements in ## Adapter Additions and Improvements.',
+    'Use ## Improvements for non-adapter product, runtime, CLI, docs, or workflow improvements.',
     '',
     `Pull requests included for this release:`,
     prSummaries,

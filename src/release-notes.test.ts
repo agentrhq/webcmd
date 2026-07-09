@@ -41,6 +41,7 @@ describe('release notes helpers', () => {
     for (const section of RELEASE_NOTE_SECTIONS) {
       expect(normalized).toContain(`## ${section}`);
     }
+    expect(normalized).toContain('## Adapter Additions and Improvements\nNone.');
     expect(normalized).toContain('## Improvements\nNone.');
     expect(normalized).toContain('## Contributors\n- @alice\n- @bob');
     expect(normalized).toContain('## Reverts\nNone.');
@@ -70,6 +71,8 @@ describe('release notes helpers', () => {
     expect(prompt).toContain('PR #42: feat: add docs scaffold');
     expect(prompt).toContain('docs/docs.json');
     expect(prompt).toContain('## Highlights');
+    expect(prompt).toContain('## Adapter Additions and Improvements');
+    expect(prompt).toContain('Put new site adapters, adapter promotions, adapter hardening');
     expect(prompt).toContain('## Reverts');
   });
 });
