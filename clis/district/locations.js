@@ -128,19 +128,21 @@ function rowFor(entity, index, query, cities, primaryCity) {
   const dist = Number(entity.distance);
   const samePrimaryCity = primaryCity?.city_id && city.city_id === primaryCity.city_id;
   return {
-    _score: scoreFor(entity, query, index) + (samePrimaryCity ? 450 : 0),
-    rank: index + 1,
-    name: String(entity.title || entity.fullname || '').trim(),
-    kind,
-    city: String(city.city_name || (kind === 'city' ? entity.title : '') || '').trim(),
-    state: String(city.state_name || '').trim(),
-    cityKey: String(city.city_key || '').trim(),
-    cityId: String(city.city_id || '').trim(),
-    placeId,
-    lat: Number(entity.lat || 0),
-    lng: Number(entity.long || 0),
-    distanceKm: Number.isFinite(dist) ? Number((dist / 1000).toFixed(1)) : 0,
-    source: 'district_location_search',
+    score: scoreFor(entity, query, index) + (samePrimaryCity ? 450 : 0),
+    row: {
+      rank: index + 1,
+      name: String(entity.title || entity.fullname || '').trim(),
+      kind,
+      city: String(city.city_name || (kind === 'city' ? entity.title : '') || '').trim(),
+      state: String(city.state_name || '').trim(),
+      cityKey: String(city.city_key || '').trim(),
+      cityId: String(city.city_id || '').trim(),
+      placeId,
+      lat: Number(entity.lat || 0),
+      lng: Number(entity.long || 0),
+      distanceKm: Number.isFinite(dist) ? Number((dist / 1000).toFixed(1)) : 0,
+      source: 'district_location_search',
+    },
   };
 }
 
@@ -201,9 +203,9 @@ cli({
 
     return entities
       .map((entity, index) => rowFor(entity, index, query, cities, primaryCity))
-      .filter((row) => row.name && Number.isFinite(row.lat) && Number.isFinite(row.lng))
-      .sort((a, b) => b._score - a._score)
+      .filter((item) => item.row.name && Number.isFinite(item.row.lat) && Number.isFinite(item.row.lng))
+      .sort((a, b) => b.score - a.score)
       .slice(0, limit)
-      .map(({ _score, ...row }, index) => ({ ...row, rank: index + 1 }));
+      .map((item, index) => ({ ...item.row, rank: index + 1 }));
   },
 });

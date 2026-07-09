@@ -57,18 +57,18 @@ async function selectRequestedSeats(page, requestedSeats, timeout) {
           const aria = el.getAttribute('aria-label') || '';
           const row = ((aria.match(/row\\s+([^,\\s]+)/i) || [])[1] || '').trim().toUpperCase();
           const number = (el.querySelector('label')?.innerText || el.innerText || '').replace(/\\s+/g, '').trim();
-          const status = /selected/i.test(aria)
+          const seatState = /selected/i.test(aria)
             ? 'selected'
             : (/available/i.test(aria) ? 'available' : 'unavailable');
-          return { row, number, seat: row && number ? row + number : '', status };
+          return { label: row && number ? row + number : '', seatState };
         };
         const candidates = [...document.querySelectorAll('#available-seat,[id="selected-seat"] span,[aria-label*="seat"]')];
-        const target = candidates.map((el) => ({ el, parsed: parse(el) })).find((item) => item.parsed.seat === wanted);
+        const target = candidates.map((el) => ({ el, parsed: parse(el) })).find((item) => item.parsed.label === wanted);
         if (!target) return { ok: false, code: 'not_found', message: wanted + ' was not found in the rendered seat map' };
-        if (target.parsed.status === 'selected') return { ok: true, status: 'already_selected', seat: wanted };
-        if (target.parsed.status !== 'available') return { ok: false, code: 'unavailable', message: wanted + ' is not available' };
+        if (target.parsed.seatState === 'selected') return { ok: true, action: 'already_selected' };
+        if (target.parsed.seatState !== 'available') return { ok: false, code: 'unavailable', message: wanted + ' is not available' };
         target.el.click();
-        return { ok: true, status: 'clicked', seat: wanted };
+        return { ok: true, action: 'clicked' };
       })()
     `);
     if (!result?.ok) {
