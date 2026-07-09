@@ -72,7 +72,9 @@ describe('release notes helpers', () => {
     expect(prompt).toContain('docs/docs.json');
     expect(prompt).toContain('## Highlights');
     expect(prompt).toContain('## Adapters');
-    expect(prompt).toContain('Put new site adapters, adapter promotions, adapter hardening');
+    expect(prompt).toContain('CLI commands and adapters are the same thing');
+    expect(prompt).toContain('files under clis/** as an adapter change');
+    expect(prompt).toContain('Put new site adapters/CLIs, adapter promotions, adapter hardening');
     expect(prompt).toContain('## Reverts');
   });
 });
