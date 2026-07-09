@@ -1,6 +1,6 @@
 /**
  * E2E integration tests for plugin management commands.
- * Uses a real GitHub plugin (webcmd-plugin-hot-digest) to verify the full
+ * Uses a real GitHub plugin (webcmd-plugin-bookmyshow) to verify the full
  * install → list → update → uninstall lifecycle in an isolated HOME.
  */
 
@@ -13,8 +13,8 @@ import { runCli, parseJsonOutput } from './helpers.js';
 const TEST_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-plugin-e2e-'));
 const WEBCMD_HOME = path.join(TEST_HOME, '.webcmd');
 const PLUGINS_DIR = path.join(WEBCMD_HOME, 'plugins');
-const PLUGIN_SOURCE = 'github:ByteYue/webcmd-plugin-hot-digest';
-const PLUGIN_NAME = 'hot-digest';
+const PLUGIN_SOURCE = 'github:rishabhraj36/webcmd-plugin-bookmyshow';
+const PLUGIN_NAME = 'bookmyshow';
 const PLUGIN_DIR = path.join(PLUGINS_DIR, PLUGIN_NAME);
 const LOCK_FILE = path.join(WEBCMD_HOME, 'plugins.lock.json');
 
@@ -63,7 +63,7 @@ describe('plugin management E2E', () => {
     expect(lock[PLUGIN_NAME].source).toMatchObject({
       kind: 'git',
     });
-    expect(lock[PLUGIN_NAME].source.url).toContain('webcmd-plugin-hot-digest');
+    expect(lock[PLUGIN_NAME].source.url).toContain('webcmd-plugin-bookmyshow');
     expect(lock[PLUGIN_NAME].installedAt).toBeTruthy();
   }, 60_000);
 
