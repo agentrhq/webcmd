@@ -16115,6 +16115,417 @@
     "siteSession": "persistent"
   },
   {
+    "site": "practo",
+    "name": "appointment",
+    "description": "Show logged-in Practo Drive appointment details",
+    "access": "read",
+    "domain": "drive.practo.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "appointment_id",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Appointment id from `practo appointments`"
+      }
+    ],
+    "columns": [
+      "appointment_id",
+      "status",
+      "summary"
+    ],
+    "type": "js",
+    "modulePath": "practo/appointment.js",
+    "sourceFile": "practo/appointment.js",
+    "navigateBefore": false,
+    "siteSession": "persistent"
+  },
+  {
+    "site": "practo",
+    "name": "appointments",
+    "description": "List logged-in Practo Drive appointments",
+    "access": "read",
+    "domain": "drive.practo.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "appointment_id",
+      "doctor",
+      "practice",
+      "time",
+      "status"
+    ],
+    "type": "js",
+    "modulePath": "practo/appointments.js",
+    "sourceFile": "practo/appointments.js",
+    "navigateBefore": false,
+    "siteSession": "persistent"
+  },
+  {
+    "site": "practo",
+    "name": "book-confirm",
+    "description": "Confirm a Practo clinic visit booking after explicit confirmation",
+    "access": "write",
+    "domain": "www.practo.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "practice_doctor_id",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Practo practice_doctor_id"
+      },
+      {
+        "name": "time",
+        "type": "str",
+        "required": true,
+        "help": "Slot time YYYY-MM-DD HH:mm:ss"
+      },
+      {
+        "name": "profile-url",
+        "type": "str",
+        "required": false,
+        "help": "Doctor profile_url from `practo search`, used to build a canonical booking URL"
+      },
+      {
+        "name": "confirm",
+        "type": "boolean",
+        "default": false,
+        "required": false,
+        "help": "Required. Set --confirm true to create the appointment."
+      }
+    ],
+    "columns": [
+      "status",
+      "practice_doctor_id",
+      "time",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "practo/book-confirm.js",
+    "sourceFile": "practo/book-confirm.js",
+    "navigateBefore": false,
+    "siteSession": "persistent",
+    "defaultWindowMode": "foreground"
+  },
+  {
+    "site": "practo",
+    "name": "book-preview",
+    "description": "Preview Practo booking details for a selected slot without confirming",
+    "access": "read",
+    "domain": "www.practo.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "practice_doctor_id",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Practo practice_doctor_id"
+      },
+      {
+        "name": "time",
+        "type": "str",
+        "required": true,
+        "help": "Slot time YYYY-MM-DD HH:mm:ss"
+      },
+      {
+        "name": "profile-url",
+        "type": "str",
+        "required": false,
+        "help": "Doctor profile_url from `practo search`, used to build a canonical booking URL"
+      }
+    ],
+    "columns": [
+      "practice_doctor_id",
+      "time",
+      "amount",
+      "prepaid",
+      "payment_mode",
+      "requires_payment",
+      "confirm_button",
+      "booking_url"
+    ],
+    "type": "js",
+    "modulePath": "practo/book-preview.js",
+    "sourceFile": "practo/book-preview.js",
+    "navigateBefore": false,
+    "siteSession": "persistent"
+  },
+  {
+    "site": "practo",
+    "name": "booking-link",
+    "description": "Build a Practo booking URL for a selected slot without confirming it",
+    "access": "read",
+    "domain": "www.practo.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "practice_doctor_id",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Practo practice_doctor_id"
+      },
+      {
+        "name": "time",
+        "type": "str",
+        "required": true,
+        "help": "Slot time YYYY-MM-DD HH:mm:ss"
+      },
+      {
+        "name": "profile-url",
+        "type": "str",
+        "required": false,
+        "help": "Doctor profile_url from `practo search`, used to build a canonical booking URL"
+      }
+    ],
+    "columns": [
+      "practice_doctor_id",
+      "time",
+      "booking_url"
+    ],
+    "type": "js",
+    "modulePath": "practo/booking-link.js",
+    "sourceFile": "practo/booking-link.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "practo",
+    "name": "cancel",
+    "description": "Cancel a logged-in Practo Drive appointment after explicit confirmation",
+    "access": "write",
+    "domain": "drive.practo.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "appointment_id",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Appointment id from `practo appointments`"
+      },
+      {
+        "name": "confirm",
+        "type": "boolean",
+        "default": false,
+        "required": false,
+        "help": "Required. Set --confirm true to cancel the appointment."
+      }
+    ],
+    "columns": [
+      "status",
+      "appointment_id"
+    ],
+    "type": "js",
+    "modulePath": "practo/cancel.js",
+    "sourceFile": "practo/cancel.js",
+    "navigateBefore": false,
+    "siteSession": "persistent",
+    "defaultWindowMode": "foreground"
+  },
+  {
+    "site": "practo",
+    "name": "contact",
+    "description": "Get Practo virtual contact number for a practice_doctor_id",
+    "access": "read",
+    "domain": "www.practo.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "practice_doctor_id",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Practo practice_doctor_id from search results"
+      }
+    ],
+    "columns": [
+      "practice_doctor_id",
+      "phone",
+      "raw"
+    ],
+    "type": "js",
+    "modulePath": "practo/contact.js",
+    "sourceFile": "practo/contact.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "practo",
+    "name": "login",
+    "description": "Open Practo login for manual sign-in",
+    "access": "write",
+    "domain": "www.practo.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "status",
+      "site",
+      "message"
+    ],
+    "type": "js",
+    "modulePath": "practo/login.js",
+    "sourceFile": "practo/login.js",
+    "navigateBefore": false,
+    "siteSession": "persistent",
+    "defaultWindowMode": "foreground"
+  },
+  {
+    "site": "practo",
+    "name": "profile",
+    "description": "Read public details from a Practo doctor profile URL",
+    "access": "read",
+    "domain": "www.practo.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "url",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Practo doctor profile URL"
+      }
+    ],
+    "columns": [
+      "name",
+      "specialty",
+      "experience",
+      "fee",
+      "profile_url"
+    ],
+    "type": "js",
+    "modulePath": "practo/profile.js",
+    "sourceFile": "practo/profile.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "practo",
+    "name": "search",
+    "description": "Search Practo doctors by specialty, city, and optional locality",
+    "access": "read",
+    "domain": "www.practo.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "specialty",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Doctor specialty, e.g. orthopedist or dermatologist"
+      },
+      {
+        "name": "city",
+        "type": "str",
+        "default": "bangalore",
+        "required": false,
+        "help": "City, e.g. bangalore"
+      },
+      {
+        "name": "locality",
+        "type": "str",
+        "required": false,
+        "help": "Optional locality, e.g. indiranagar"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Max doctors to return (1-25)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "practice_doctor_id",
+      "doctor_id",
+      "practice_id",
+      "name",
+      "specialty",
+      "experience_years",
+      "locality",
+      "clinic",
+      "fee",
+      "next_available",
+      "profile_url"
+    ],
+    "type": "js",
+    "modulePath": "practo/search.js",
+    "sourceFile": "practo/search.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "practo",
+    "name": "slots",
+    "description": "List available Practo appointment slots for a practice_doctor_id",
+    "access": "read",
+    "domain": "www.practo.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "practice_doctor_id",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Practo practice_doctor_id from search results"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "Max slots to return (1-25)"
+      }
+    ],
+    "columns": [
+      "practice_doctor_id",
+      "time",
+      "available",
+      "amount",
+      "prepaid",
+      "appointment_token"
+    ],
+    "type": "js",
+    "modulePath": "practo/slots.js",
+    "sourceFile": "practo/slots.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "practo",
+    "name": "whoami",
+    "aliases": [
+      "auth-status"
+    ],
+    "description": "Show whether the current browser session is logged into Practo",
+    "access": "read",
+    "domain": "www.practo.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "logged_in",
+      "site",
+      "name"
+    ],
+    "type": "js",
+    "modulePath": "practo/whoami.js",
+    "sourceFile": "practo/whoami.js",
+    "navigateBefore": false,
+    "siteSession": "persistent"
+  },
+  {
     "site": "producthunt",
     "name": "browse",
     "description": "Best products in a Product Hunt category",
