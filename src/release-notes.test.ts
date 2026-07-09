@@ -5,6 +5,7 @@ import {
   extractPullRequestNumber,
   filterReleasePullRequests,
   normalizeReleaseNotes,
+  replaceChangelogReleaseNotes,
   type ReleaseContext,
 } from './release-notes.js';
 
@@ -45,6 +46,42 @@ describe('release notes helpers', () => {
     expect(normalized).toContain('## Improvements\nNone.');
     expect(normalized).toContain('## Contributors\n- @alice\n- @bob');
     expect(normalized).toContain('## Reverts\nNone.');
+  });
+
+  it('replaces a matching changelog release entry with generated notes', () => {
+    const changelog = [
+      '# Changelog',
+      '',
+      '## [0.2.3](https://github.com/agentrhq/webcmd/compare/webcmd-v0.2.2...webcmd-v0.2.3) (2026-07-09)',
+      '',
+      '',
+      '### Features',
+      '',
+      '* release-please generated note',
+      '',
+      '## [0.2.2](https://github.com/agentrhq/webcmd/compare/webcmd-v0.2.1...webcmd-v0.2.2) (2026-07-08)',
+      '',
+      '### Bug Fixes',
+      '',
+      '* older note',
+      '',
+    ].join('\n');
+    const notes = [
+      '## Highlights',
+      '- Better release notes.',
+      '',
+      '## Adapters',
+      '- Improved district checkout.',
+    ].join('\n');
+
+    const updated = replaceChangelogReleaseNotes(changelog, 'webcmd-v0.2.3', notes);
+
+    expect(updated).toContain('## [0.2.3]');
+    expect(updated).toContain('### Highlights\n- Better release notes.');
+    expect(updated).toContain('### Adapters\n- Improved district checkout.');
+    expect(updated).not.toContain('release-please generated note');
+    expect(updated).toContain('## [0.2.2]');
+    expect(updated).toContain('* older note');
   });
 
   it('builds a prompt grounded in the exact release range and PR list', () => {

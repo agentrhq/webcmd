@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { GoogleGenAI } from '@google/genai';
 import {
@@ -6,6 +7,7 @@ import {
   extractPullRequestNumber,
   filterReleasePullRequests,
   normalizeReleaseNotes,
+  replaceChangelogReleaseNotes,
   type PullRequestDetails,
   type ReleaseContext,
 } from '../src/release-notes.js';
@@ -195,12 +197,41 @@ function contributorHandles(pullRequests: PullRequestDetails[]): string[] {
   return pullRequests.flatMap((pr) => (pr.author?.login ? [pr.author.login] : []));
 }
 
+function updateChangelog(tag: string | undefined, notesPath: string | undefined, changelogPath: string | undefined, io: Io): number {
+  if (!tag || !notesPath) {
+    io.writeStderr('Usage: generate-release-notes --update-changelog <tag> <notes-file> [changelog-file]\n');
+    return 1;
+  }
+
+  const targetChangelogPath = changelogPath ?? 'CHANGELOG.md';
+
+  try {
+    const notes = readFileSync(notesPath, 'utf8');
+    const changelog = readFileSync(targetChangelogPath, 'utf8');
+    const updated = replaceChangelogReleaseNotes(changelog, tag, notes);
+    if (updated !== changelog) {
+      writeFileSync(targetChangelogPath, updated);
+    }
+
+    io.writeStdout(`Updated ${targetChangelogPath} for ${tag}\n`);
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    io.writeStderr(`CHANGELOG.md update failed: ${message}\n`);
+    return 1;
+  }
+}
+
 export async function runGenerateReleaseNotes(
   argv: string[] = process.argv,
   env: NodeJS.ProcessEnv = process.env,
   deps: RunDependencies = {},
   io: Io = DEFAULT_IO,
 ): Promise<number> {
+  if (argv[2] === '--update-changelog') {
+    return updateChangelog(argv[3], argv[4], argv[5], io);
+  }
+
   const tag = argv[2];
   if (!tag) {
     io.writeStderr('Usage: generate-release-notes <tag>\n');

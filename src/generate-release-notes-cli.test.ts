@@ -1,4 +1,6 @@
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import type { ReleaseContext } from './release-notes.js';
@@ -123,6 +125,60 @@ describe('runGenerateReleaseNotes', () => {
     });
   });
 
+  it('updates the matching changelog entry from an existing notes file', async () => {
+    const { io, read } = createIo();
+    const tempDir = mkdtempSync(join(tmpdir(), 'webcmd-release-notes-'));
+    const notesPath = join(tempDir, 'release-notes.md');
+    const changelogPath = join(tempDir, 'CHANGELOG.md');
+
+    try {
+      writeFileSync(notesPath, [
+        '## Highlights',
+        '- Better generated notes.',
+        '',
+        '## Adapters',
+        '- Added checkout adapter polish.',
+        '',
+      ].join('\n'));
+      writeFileSync(changelogPath, [
+        '# Changelog',
+        '',
+        '## [0.2.3](https://github.com/agentrhq/webcmd/compare/webcmd-v0.2.2...webcmd-v0.2.3) (2026-07-09)',
+        '',
+        '### Features',
+        '',
+        '* release-please generated note',
+        '',
+        '## [0.2.2](https://github.com/agentrhq/webcmd/compare/webcmd-v0.2.1...webcmd-v0.2.2) (2026-07-08)',
+        '',
+        '### Bug Fixes',
+        '',
+        '* older note',
+        '',
+      ].join('\n'));
+
+      const exitCode = await runGenerateReleaseNotes(
+        ['node', 'script', '--update-changelog', 'webcmd-v0.2.3', notesPath, changelogPath],
+        {},
+        {},
+        io,
+      );
+
+      expect(exitCode).toBe(0);
+      expect(read()).toEqual({
+        stdout: `Updated ${changelogPath} for webcmd-v0.2.3\n`,
+        stderr: '',
+      });
+      const changelog = readFileSync(changelogPath, 'utf8');
+      expect(changelog).toContain('### Highlights\n- Better generated notes.');
+      expect(changelog).toContain('### Adapters\n- Added checkout adapter polish.');
+      expect(changelog).not.toContain('release-please generated note');
+      expect(changelog).toContain('* older note');
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it('loads bounded PR diffs into release context', async () => {
     const gh = vi.fn((args: readonly string[]) => {
       const key = args.join(' ');
@@ -172,6 +228,9 @@ describe('runGenerateReleaseNotes', () => {
     const workflowPath = fileURLToPath(new URL('../.github/workflows/release.yml', import.meta.url));
     const workflow = readFileSync(workflowPath, 'utf8');
 
+    expect(workflow.indexOf('- name: Publish to npm')).toBeLessThan(workflow.indexOf('- name: Update changelog with enhanced release notes'));
+    expect(workflow).toContain('npm --silent run generate-release-notes -- --update-changelog');
+    expect(workflow).toContain('git push origin "HEAD:${{ github.ref_name }}"');
     expect(workflow).toMatch(/if gh release edit "\$\{\{ steps\.release\.outputs\.tag_name \}\}" --notes-file "\$RUNNER_TEMP\/release-notes\.md"; then/);
     expect(workflow).toMatch(/Enhanced release notes could not be applied; keeping release-please notes\./);
   });
