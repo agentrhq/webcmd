@@ -66,6 +66,44 @@ function formatSectionContent(content: string | undefined): string {
   return trimmed && trimmed.length > 0 ? trimmed : 'None.';
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function formatReleaseNotesForChangelog(notes: string): string {
+  const trimmed = notes.trim();
+  if (!trimmed) return '### Highlights\nNone.';
+
+  return trimmed.replace(/^##\s+/gm, '### ');
+}
+
+export function releaseVersionFromTag(tag: string): string {
+  const value = tag.trim();
+  if (value.startsWith('webcmd-v')) return value.slice('webcmd-v'.length);
+  if (value.startsWith('v')) return value.slice(1);
+
+  return value;
+}
+
+export function replaceChangelogReleaseNotes(changelog: string, tag: string, notes: string): string {
+  const version = releaseVersionFromTag(tag);
+  const headingPattern = new RegExp(`^## \\[${escapeRegExp(version)}\\]\\([^\\n]+\\) \\([^\\n]+\\)\\s*$`, 'm');
+  const headingMatch = headingPattern.exec(changelog);
+  if (!headingMatch) {
+    throw new Error(`Could not find CHANGELOG.md entry for ${version}`);
+  }
+
+  const headingEnd = headingMatch.index + headingMatch[0].length;
+  const remaining = changelog.slice(headingEnd);
+  const nextReleaseMatch = /\n## \[/.exec(remaining);
+  const releaseEnd = nextReleaseMatch ? headingEnd + nextReleaseMatch.index : changelog.length;
+  const before = changelog.slice(0, headingEnd).trimEnd();
+  const after = changelog.slice(releaseEnd);
+  const suffix = after ? after.replace(/^\n+/, '\n\n') : '\n';
+
+  return `${before}\n\n${formatReleaseNotesForChangelog(notes)}${suffix}`;
+}
+
 export function extractPullRequestNumber(message: string): number | null {
   const firstLine = message.split(/\r?\n/, 1)[0] ?? message;
   const squashMatch = firstLine.match(SQUASH_MERGE_PR_NUMBER_PATTERN);

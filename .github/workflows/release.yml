@@ -30,6 +30,8 @@ jobs:
       - name: Checkout release commit
         if: ${{ steps.release.outputs.release_created }}
         uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
 
       - name: Setup Node.js
         if: ${{ steps.release.outputs.release_created }}
@@ -93,3 +95,33 @@ jobs:
         run: npm publish --provenance --access public --ignore-scripts
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Update changelog with enhanced release notes
+        if: ${{ steps.release.outputs.release_created }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -s "$RUNNER_TEMP/release-notes.md" ]; then
+            if npm --silent run generate-release-notes -- --update-changelog "${{ steps.release.outputs.tag_name }}" "$RUNNER_TEMP/release-notes.md"; then
+              if git diff --quiet -- CHANGELOG.md; then
+                echo "CHANGELOG.md already matched enhanced release notes."
+              else
+                git config user.name "github-actions[bot]"
+                git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+                git add CHANGELOG.md
+                if git commit -m "docs: update changelog for ${{ steps.release.outputs.tag_name }}"; then
+                  if git push origin "HEAD:${{ github.ref_name }}"; then
+                    echo "CHANGELOG.md was updated with enhanced release notes."
+                  else
+                    echo "::warning::CHANGELOG.md update could not be pushed."
+                  fi
+                else
+                  echo "::warning::CHANGELOG.md update could not be committed."
+                fi
+              fi
+            else
+              echo "::warning::CHANGELOG.md could not be updated with enhanced release notes."
+            fi
+          else
+            echo "Enhanced release notes were not generated; leaving CHANGELOG.md unchanged."
+          fi
