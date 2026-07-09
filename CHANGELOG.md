@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.2.3](https://github.com/agentrhq/webcmd/compare/webcmd-v0.2.2...webcmd-v0.2.3) (2026-07-09)
+
+
+### Features
+
+* add Adapter Additions and Improvements section to release notes and update generation logic ([3f89e8e](https://github.com/agentrhq/webcmd/commit/3f89e8e6714267c1d72a77eadffd75772af7aa0f))
+* add practo adapter ([21e12f7](https://github.com/agentrhq/webcmd/commit/21e12f74d0cb4eb94d1effe1fd391b7a7e702031))
+* implement automated CHANGELOG.md updates with enhanced release notes in release workflow ([f133e9e](https://github.com/agentrhq/webcmd/commit/f133e9ee601eb3eba39f1099b038e0b89b0ac05b))
+
+
+### Bug Fixes
+
+* reconcile district checkout selection with the requested seats ([98c5a58](https://github.com/agentrhq/webcmd/commit/98c5a58306a7a4989d186db6a88a699d0fdd0706))
+* reconcile district checkout selection with the requested seats ([c90649b](https://github.com/agentrhq/webcmd/commit/c90649b1dc96c176c9007c725895f1a3cba1de92))
+
 ## [0.2.2](https://github.com/agentrhq/webcmd/compare/webcmd-v0.2.1...webcmd-v0.2.2) (2026-07-09)
 
 ### Highlights
