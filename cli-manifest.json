@@ -2371,6 +2371,295 @@
     "sourceFile": "binance/trades.js"
   },
   {
+    "site": "blinkit",
+    "name": "add-to-cart",
+    "description": "Add a Blinkit product to cart",
+    "access": "write",
+    "domain": "blinkit.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "productId",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Blinkit product id"
+      },
+      {
+        "name": "quantity",
+        "type": "int",
+        "default": 1,
+        "required": false,
+        "help": "Quantity to add (default 1, max 12)"
+      },
+      {
+        "name": "lat",
+        "type": "str",
+        "required": false,
+        "help": "Delivery latitude (defaults to current Blinkit browser location)"
+      },
+      {
+        "name": "lon",
+        "type": "str",
+        "required": false,
+        "help": "Delivery longitude (defaults to current Blinkit browser location)"
+      }
+    ],
+    "columns": [
+      "status",
+      "productId",
+      "quantity",
+      "itemCount",
+      "itemsTotal",
+      "payable",
+      "message"
+    ],
+    "type": "js",
+    "modulePath": "blinkit/add-to-cart.js",
+    "sourceFile": "blinkit/add-to-cart.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "blinkit",
+    "name": "cart",
+    "description": "Show the current Blinkit cart",
+    "access": "read",
+    "domain": "blinkit.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "status",
+      "productId",
+      "name",
+      "variant",
+      "price",
+      "quantity",
+      "total",
+      "itemCount",
+      "payable",
+      "cartState"
+    ],
+    "type": "js",
+    "modulePath": "blinkit/cart.js",
+    "sourceFile": "blinkit/cart.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "blinkit",
+    "name": "checkout",
+    "description": "Review Blinkit checkout totals and blockers without placing an order",
+    "access": "read",
+    "domain": "blinkit.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "status",
+      "itemCount",
+      "itemsTotal",
+      "deliveryCharge",
+      "handlingCharge",
+      "payable",
+      "cartState",
+      "checkoutBlocked",
+      "validations"
+    ],
+    "type": "js",
+    "modulePath": "blinkit/checkout.js",
+    "sourceFile": "blinkit/checkout.js",
+    "navigateBefore": false,
+    "defaultWindowMode": "foreground"
+  },
+  {
+    "site": "blinkit",
+    "name": "location",
+    "description": "Show the selected Blinkit delivery location",
+    "access": "read",
+    "domain": "blinkit.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "selected",
+      "label",
+      "area",
+      "city",
+      "pincode",
+      "hasCoordinates",
+      "source"
+    ],
+    "type": "js",
+    "modulePath": "blinkit/location.js",
+    "sourceFile": "blinkit/location.js",
+    "navigateBefore": "https://blinkit.com"
+  },
+  {
+    "site": "blinkit",
+    "name": "login",
+    "description": "Open Blinkit login and wait until the browser session is authenticated",
+    "access": "write",
+    "domain": "blinkit.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "timeout",
+        "type": "int",
+        "default": 300,
+        "required": false,
+        "help": "Maximum seconds to wait for the user to finish login"
+      }
+    ],
+    "columns": [
+      "status",
+      "logged_in",
+      "phone",
+      "user_id"
+    ],
+    "type": "js",
+    "modulePath": "blinkit/auth.js",
+    "sourceFile": "blinkit/auth.js",
+    "navigateBefore": false,
+    "siteSession": "persistent",
+    "defaultWindowMode": "foreground"
+  },
+  {
+    "site": "blinkit",
+    "name": "place-order",
+    "description": "Submit the visible Blinkit final order/payment action. Requires --confirm.",
+    "access": "write",
+    "domain": "blinkit.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "confirm",
+        "type": "bool",
+        "default": false,
+        "required": false,
+        "help": "Required acknowledgement that this may place/pay for a real order"
+      }
+    ],
+    "columns": [
+      "status",
+      "confirmed",
+      "itemCount",
+      "payable",
+      "orderId",
+      "url",
+      "message"
+    ],
+    "type": "js",
+    "modulePath": "blinkit/place-order.js",
+    "sourceFile": "blinkit/place-order.js",
+    "navigateBefore": false,
+    "defaultWindowMode": "foreground"
+  },
+  {
+    "site": "blinkit",
+    "name": "product",
+    "description": "Read Blinkit product details for a delivery location",
+    "access": "read",
+    "domain": "blinkit.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "productId",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Blinkit product id"
+      },
+      {
+        "name": "lat",
+        "type": "str",
+        "required": false,
+        "help": "Delivery latitude (defaults to current Blinkit browser location)"
+      },
+      {
+        "name": "lon",
+        "type": "str",
+        "required": false,
+        "help": "Delivery longitude (defaults to current Blinkit browser location)"
+      }
+    ],
+    "columns": [
+      "productId",
+      "name",
+      "brand",
+      "variant",
+      "price",
+      "mrp",
+      "currency",
+      "inventory",
+      "available",
+      "imageUrl",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "blinkit/product.js",
+    "sourceFile": "blinkit/product.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "blinkit",
+    "name": "search",
+    "description": "Search Blinkit products for a delivery location",
+    "access": "read",
+    "domain": "blinkit.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "query",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Search keyword"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "Max results (max 48)"
+      },
+      {
+        "name": "lat",
+        "type": "str",
+        "required": false,
+        "help": "Delivery latitude (defaults to current Blinkit browser location)"
+      },
+      {
+        "name": "lon",
+        "type": "str",
+        "required": false,
+        "help": "Delivery longitude (defaults to current Blinkit browser location)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "productId",
+      "name",
+      "brand",
+      "variant",
+      "price",
+      "mrp",
+      "currency",
+      "inventory",
+      "available",
+      "imageUrl",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "blinkit/search.js",
+    "sourceFile": "blinkit/search.js",
+    "navigateBefore": false
+  },
+  {
     "site": "bloomberg",
     "name": "businessweek",
     "description": "Bloomberg Businessweek top stories",
