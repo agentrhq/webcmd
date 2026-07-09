@@ -1,0 +1,9 @@
+{
+  "name": "webcmd-plugin-skyscanner",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Skyscanner flight search commands for Webcmd",
+  "peerDependencies": {
+    "@agentrhq/webcmd": ">=0.1.2"
+  }
+}

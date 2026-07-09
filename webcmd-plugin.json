@@ -1,0 +1,14 @@
+{
+  "name": "webcmd",
+  "version": "0.2.0",
+  "description": "Webcmd plugin collection",
+  "webcmd": ">=0.2.0",
+  "plugins": {
+    "skyscanner": {
+      "path": "plugins/skyscanner",
+      "version": "0.1.0",
+      "description": "Skyscanner flight search commands for Webcmd",
+      "webcmd": ">=0.2.0"
+    }
+  }
+}
