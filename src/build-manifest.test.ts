@@ -100,6 +100,44 @@ describe('manifest helper rules', () => {
     getRegistry().delete(key);
   });
 
+  it('serializes freshPage for persistent browser commands', async () => {
+    const site = `manifest-fresh-page-${Date.now()}`;
+    const key = `${site}/checkout`;
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-manifest-'));
+    tempDirs.push(dir);
+    const file = path.join(dir, `${site}.ts`);
+    fs.writeFileSync(file, `export const command = cli({ site: '${site}', name: 'checkout', access: 'write' });`);
+
+    const entries = await loadManifestEntries(file, site, async () => ({
+      command: cli({
+        site,
+        name: 'checkout',
+        access: 'write',
+        description: 'checkout command',
+        strategy: Strategy.COOKIE,
+        browser: true,
+        siteSession: 'persistent',
+        freshPage: true,
+      }),
+    }));
+
+    expect(entries).toMatchObject([
+      {
+        site,
+        name: 'checkout',
+        access: 'write',
+        strategy: 'cookie',
+        browser: true,
+        siteSession: 'persistent',
+        freshPage: true,
+        type: 'js',
+        modulePath: `${site}/${site}.js`,
+      },
+    ]);
+
+    getRegistry().delete(key);
+  });
+
   it('falls back to registry delta for side-effect-only cli modules', async () => {
     const site = `manifest-side-effect-${Date.now()}`;
     const key = `${site}/legacy`;

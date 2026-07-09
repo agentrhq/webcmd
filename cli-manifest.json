@@ -6973,6 +6973,7 @@
     "sourceFile": "district/checkout.js",
     "navigateBefore": false,
     "siteSession": "persistent",
+    "freshPage": true,
     "defaultWindowMode": "foreground"
   },
   {

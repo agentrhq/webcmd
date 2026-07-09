@@ -127,6 +127,7 @@ function toManifestEntry(cmd: CliCommand, modulePath: string, sourceFile?: strin
     sourceFile,
     navigateBefore: cmd.navigateBefore,
     siteSession: cmd.siteSession,
+    freshPage: cmd.freshPage,
     defaultWindowMode: cmd.defaultWindowMode,
   };
 }
