@@ -194,6 +194,14 @@ Check these off step by step:
         [ ] `fixtures/<cmd>-<YYYYMMDDHHMM>.json`: save one complete endpoint response sample after removing cookies, tokens, and private user fields. Use it for later field comparison and offline replay.
         [ ] If debugging dumped temporary files in the repo or adapter directory, such as `.dbg-*.html`, `raw-*.json`, or similar, **delete them before commit**. Those belong in `~/.webcmd/sites/<site>/fixtures/` or `/tmp/`.
 
+[ ] 13. **First command for this site? Stop and ask before building more.**
+        [ ] If this was the site's first command, do not silently keep scaffolding more commands. Ask the user what use cases they have in mind for this site — who the persona is, what they're trying to accomplish end to end.
+        [ ] From the use cases, propose the full set of commands you'd recommend adding, not just the obvious next one. Cover the whole journey the use cases imply (discovery, single-item detail, comparison, account/write actions, etc.), not only what's cheapest to build.
+        [ ] If that set is small (roughly ≤6-8 commands), list it flat and ask the user to confirm or trim it.
+        [ ] If it's large, bucket the commands into named groups (e.g. "Discovery", "Single-item evaluation", "Account actions requiring login") and ask the user which bucket(s) to build first — do not dump an unbucketed wall of commands.
+        [ ] Flag any bucket that needs a capability not yet solved (login/OTP, write access, payment) as its own decision point — e.g. "these need login — how do you want to handle auth?" — separate from the command list itself.
+        [ ] Do not scaffold additional commands until the user has confirmed which ones to build.
+
 ---
 
 ## Fallback Paths
@@ -247,6 +255,7 @@ Check these off step by step:
 - **Persistent sessions keep stale DOM between commands.** `siteSession: 'persistent'` shares one tab per site; leftover modals/drawers from the previous command leak into the next one. State-sensitive write commands (checkout flows) should add `freshPage: true` (new tab, same lease — cookies/login/location survive). Verify session-scoped context (login, selected city/date) *before* side effects, and embed such context in URLs/IDs your command emits for sibling commands. See `references/adapter-template.md` and "Persistent Sessions and State Hygiene" in `docs/authoring.mdx`.
 - For private adapters, write `~/.webcmd/clis/<site>/<name>.js` to avoid a build. Copy to `clis/<site>/<name>.js` only when preparing a PR.
 - Write site memory every round: no memory -> use skill -> produce memory -> next time becomes a five-minute task.
+- **After a site's first command passes verify, stop and ask the user for their use cases before recommending next set of commands.** See Runbook Step 13.
 - **Raw dumps, packet captures, and HTML samples from debugging may only be written to `~/.webcmd/sites/<site>/fixtures/` or `/tmp/`. Never leave `.dbg-*.html`, `raw-*.json`, `sample.*`, or similar temporary files in the repo root, `clis/<site>/`, or the current working directory.**
 - **JSDOM unit-test fixtures (`clis/<site>/__fixtures__/<command>.html`) are the exception.** They are intentional review artifacts committed to the repo, not temporary dumps. Because of that, the quality bar is higher: complete the five steps in `references/jsdom-fixture-pattern.md`, including the mandatory `awk 'NF>0'` blank-line tightening, and reverse-validate once to prove the regression guard can fail.
 
