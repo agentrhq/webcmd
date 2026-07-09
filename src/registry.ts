@@ -69,6 +69,16 @@ interface BaseCliCommand {
   navigateBefore?: boolean | string;
   /** Site session lifecycle for adapter commands. */
   siteSession?: SiteSessionMode;
+  /**
+   * Start this command on a freshly created page even when the persistent
+   * site session already has a leased tab. The old tab is closed and a new
+   * one opened under the same lease, so profile state (cookies, localStorage,
+   * login, location) survives while stale DOM (leftover modals, drawers,
+   * half-finished flows from earlier commands) is discarded. Requires
+   * `siteSession: 'persistent'` — ephemeral sessions always start fresh, so
+   * combining them is a contradiction and fails at registration.
+   */
+  freshPage?: boolean;
   /** Default browser window mode for commands whose UX requires visibility. */
   defaultWindowMode?: 'foreground' | 'background';
   /** Override the default CLI output format when the user does not pass -f/--format. */
@@ -147,6 +157,7 @@ export function cli(opts: CliOptions): CliCommand {
     validateArgs: opts.validateArgs,
     navigateBefore: opts.navigateBefore,
     siteSession: opts.siteSession,
+    freshPage: opts.freshPage,
     defaultWindowMode: opts.defaultWindowMode,
     defaultFormat: opts.defaultFormat,
     authStatus: opts.authStatus,
@@ -211,11 +222,13 @@ function assertCommandAccess(cmd: Pick<RawCliCommand, 'site' | 'name'> & { acces
   throw new Error(`Command ${key} must declare access: 'read' | 'write'`);
 }
 
-function assertSiteSession(cmd: Pick<RawCliCommand, 'site' | 'name'> & { siteSession?: unknown }): void {
-  if (cmd.siteSession === undefined) return;
+function assertSiteSession(cmd: Pick<RawCliCommand, 'site' | 'name'> & { siteSession?: unknown; freshPage?: unknown }): void {
   const key = `${cmd.site}/${cmd.name}`;
-  if (cmd.siteSession !== 'ephemeral' && cmd.siteSession !== 'persistent') {
+  if (cmd.siteSession !== undefined && cmd.siteSession !== 'ephemeral' && cmd.siteSession !== 'persistent') {
     throw new Error(`Command ${key} siteSession must be one of: ephemeral, persistent`);
+  }
+  if (cmd.freshPage === true && cmd.siteSession !== 'persistent') {
+    throw new Error(`Command ${key} freshPage requires siteSession: 'persistent' — ephemeral sessions already start on a fresh page`);
   }
 }
 

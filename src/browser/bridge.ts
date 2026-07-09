@@ -25,7 +25,7 @@ export class BrowserBridge implements IBrowserFactory {
     return this._state;
   }
 
-  async connect(opts: { timeout?: number; session?: string; idleTimeout?: number; contextId?: string; preferredContextId?: string; windowMode?: 'foreground' | 'background'; surface?: 'browser' | 'adapter'; siteSession?: 'ephemeral' | 'persistent' } = {}): Promise<IPage> {
+  async connect(opts: { timeout?: number; session?: string; idleTimeout?: number; contextId?: string; preferredContextId?: string; windowMode?: 'foreground' | 'background'; surface?: 'browser' | 'adapter'; siteSession?: 'ephemeral' | 'persistent'; freshPage?: boolean } = {}): Promise<IPage> {
     if (this._state === 'connected' && this._page) return this._page;
     if (this._state === 'connecting') throw new Error('Already connecting');
     if (this._state === 'closing') throw new Error('Session is closing');
@@ -39,7 +39,7 @@ export class BrowserBridge implements IBrowserFactory {
         : profileRouteParams(resolveProfileSelection());
       await this._ensureDaemon(opts.timeout, routing.contextId);
       if (!opts.session?.trim()) throw new Error('Browser session is required');
-      this._page = new Page(opts.session.trim(), opts.idleTimeout, routing.contextId, opts.windowMode, opts.surface, opts.siteSession, routing.preferredContextId);
+      this._page = new Page(opts.session.trim(), opts.idleTimeout, routing.contextId, opts.windowMode, opts.surface, opts.siteSession, routing.preferredContextId, opts.freshPage);
       this._state = 'connected';
       return this._page;
     } catch (err) {

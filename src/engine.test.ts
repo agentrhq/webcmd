@@ -3,6 +3,7 @@ import { discoverClis, discoverPlugins, ensureUserCliCompatShims, ensureUserAdap
 import { executeCommand } from './execution.js';
 import { getRegistry, cli, Strategy } from './registry.js';
 import { clearAllHooks, onAfterExecute } from './hooks.js';
+import * as runtime from './runtime.js';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -75,6 +76,72 @@ cli({
 
       expect(getRegistry().get('fallback-site/hello')).toBeDefined();
     } finally {
+      await fs.promises.rm(tempBuildRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('preserves freshPage from manifest before lazy command import', async () => {
+    const site = `manifest-fresh-${Date.now()}`;
+    const tempBuildRoot = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'webcmd-manifest-fresh-'));
+    const distDir = path.join(tempBuildRoot, 'dist');
+    const siteDir = path.join(distDir, site);
+    const commandPath = path.join(siteDir, 'checkout.js');
+    const manifestPath = path.join(tempBuildRoot, 'cli-manifest.json');
+    const sessionOpts: Array<{ freshPage?: boolean; siteSession?: string; session?: string }> = [];
+    const mockPage = { closeWindow: vi.fn().mockResolvedValue(undefined) } as any;
+
+    try {
+      await fs.promises.mkdir(siteDir, { recursive: true });
+      await fs.promises.writeFile(manifestPath, `${JSON.stringify([
+        {
+          site,
+          name: 'checkout',
+          description: 'fresh checkout',
+          access: 'write',
+          strategy: 'public',
+          browser: true,
+          args: [],
+          type: 'js',
+          modulePath: `${site}/checkout.js`,
+          sourceFile: `${site}/checkout.js`,
+          siteSession: 'persistent',
+          freshPage: true,
+        },
+      ], null, 2)}\n`);
+      await fs.promises.writeFile(commandPath, `
+import { cli, Strategy } from '${pathToFileURL(path.join(process.cwd(), 'src', 'registry.ts')).href}';
+cli({
+  site: '${site}',
+  name: 'checkout', access: 'write',
+  description: 'fresh checkout',
+  browser: true,
+  strategy: Strategy.PUBLIC,
+  siteSession: 'persistent',
+  freshPage: true,
+  func: async () => [{ ok: true }],
+});
+`);
+
+      await discoverClis(distDir);
+      const cmd = getRegistry().get(`${site}/checkout`);
+      expect(cmd?.freshPage).toBe(true);
+
+      vi.spyOn(runtime, 'browserSession').mockImplementation(async (_Factory, fn, opts) => {
+        sessionOpts.push(opts ?? {});
+        return fn(mockPage);
+      });
+
+      await expect(executeCommand(cmd!, {})).resolves.toEqual([{ ok: true }]);
+
+      expect(sessionOpts).toHaveLength(1);
+      expect(sessionOpts[0]).toMatchObject({
+        session: `site:${site}`,
+        siteSession: 'persistent',
+        freshPage: true,
+      });
+    } finally {
+      vi.restoreAllMocks();
+      getRegistry().delete(`${site}/checkout`);
       await fs.promises.rm(tempBuildRoot, { recursive: true, force: true });
     }
   });

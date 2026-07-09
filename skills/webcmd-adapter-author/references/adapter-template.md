@@ -112,6 +112,8 @@ Rules:
 | `args` | Include type, default, and help for every external parameter. |
 | `columns` | Must exactly match row keys, including order. |
 | `pipeline` or `func` | Use the style already established by nearby adapters. |
+| `siteSession` | `'persistent'` shares one tab per site across commands (multi-step flows); `'ephemeral'` gets a fresh isolated tab per run. Persistent tabs keep leftover DOM (modals, drawers) between commands — see "Persistent Sessions and State Hygiene" in docs/authoring.mdx. |
+| `freshPage` | With `siteSession: 'persistent'`, set `true` to start the command on a newly created tab under the same lease: profile state (cookies, login, location) survives, stale DOM does not. Recommended for state-sensitive write commands such as checkout flows. |
 
 ## Strategy Enum Examples
 

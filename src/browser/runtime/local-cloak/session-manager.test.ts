@@ -49,6 +49,70 @@ describe('CloakSessionManager', () => {
     expect(launchPersistentContext.mock.calls[0][0]).toMatchObject({ headless: false });
   });
 
+  it('freshPage closes the existing persistent lease page and creates a new one', async () => {
+    const makePage = () => ({
+      goto: vi.fn().mockResolvedValue(undefined),
+      evaluate: vi.fn().mockResolvedValue('ok'),
+      title: vi.fn().mockResolvedValue('Title'),
+      url: vi.fn().mockReturnValue('about:blank'),
+      isClosed: vi.fn().mockReturnValue(false),
+      close: vi.fn().mockResolvedValue(undefined),
+    });
+    const openPages: ReturnType<typeof makePage>[] = [];
+    const context = {
+      pages: vi.fn(() => openPages),
+      newPage: vi.fn(async () => {
+        const page = makePage();
+        openPages.push(page);
+        return page;
+      }),
+      cookies: vi.fn().mockResolvedValue([]),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      launchPersistentContext: vi.fn().mockResolvedValue(context),
+    });
+    const key = { profileId: 'default', session: 'site:district', surface: 'adapter' as const, siteSession: 'persistent' as const };
+
+    const first = await manager.getPage(key);
+    expect((await manager.getPage(key)).page).toBe(first.page);
+
+    const fresh = await manager.getPage({ ...key, freshPage: true });
+    expect(first.page.close).toHaveBeenCalled();
+    expect(fresh.page).not.toBe(first.page);
+
+    const reused = await manager.getPage(key);
+    expect(reused.page).toBe(fresh.page);
+  });
+
+  it('freshPage never adopts a leftover context tab', async () => {
+    const leftover = {
+      goto: vi.fn(),
+      isClosed: vi.fn().mockReturnValue(false),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+    const created = {
+      goto: vi.fn(),
+      isClosed: vi.fn().mockReturnValue(false),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+    const context = {
+      pages: vi.fn().mockReturnValue([leftover]),
+      newPage: vi.fn().mockResolvedValue(created),
+      cookies: vi.fn().mockResolvedValue([]),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      launchPersistentContext: vi.fn().mockResolvedValue(context),
+    });
+
+    const lease = await manager.getPage({ profileId: 'default', session: 'site:district', surface: 'adapter', siteSession: 'persistent', freshPage: true });
+    expect(lease.page).toBe(created);
+    expect(context.newPage).toHaveBeenCalled();
+  });
+
   it('closes ephemeral adapter sessions when released', async () => {
     const launched = fakeContext();
     const manager = new CloakSessionManager({

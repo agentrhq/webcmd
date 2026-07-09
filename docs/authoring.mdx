@@ -109,3 +109,16 @@ Heal `webcmd acme part ABC-123`. It used to return price and stock, but now stoc
 ```
 
 The agent should avoid creating a second command unless the workflow has truly changed.
+
+## Persistent Sessions and State Hygiene
+
+Commands registered with `siteSession: 'persistent'` share one long-lived browser tab per site (`site:<site>`). That is what lets a multi-step flow (login → set-location → showtimes → checkout) keep cookies, storage, and login across commands — and it is also the main source of flaky adapters: the tab keeps whatever DOM the previous command left behind. Leftover modals, half-open drawers, and abandoned SPA routes all leak into the next command.
+
+Defenses, in order of preference:
+
+1. **`freshPage: true`** on the command registration. The runtime closes the leased tab and opens a new one under the same lease before your `func` runs. Profile state (cookies, localStorage, login, selected city) survives; stale DOM does not. Use it on any state-sensitive write command — checkout flows especially.
+2. **Dismiss-and-renavigate.** When a stale overlay can also appear mid-command, detect it, click it away, and re-`goto` the target URL once before treating it as the page's real state. Treat an error modal as genuine only when the tab is actually on the expected URL (`location.href` check), not merely when its text is present in the body.
+3. **Preconditions before side effects.** Verify login (an identity probe or `authStatus.quickCheck`) and any session-scoped context (selected city, date, currency) *before* doing work the user would have to redo. Fail with `AuthRequiredError` and an actionable message rather than timing out later.
+4. **Self-contained inputs.** If a command consumes a URL or ID produced by a sibling command, make the producer embed every piece of context the consumer needs (dates, city keys) in that output instead of relying on browser state to still match when the consumer runs.
+
+Keep site-wide helpers in one shared module per site (for example `clis/<site>/_lib.js`) so URL builders and state checks cannot drift between commands — a filter param dropped in one copy of a URL builder is indistinguishable from a site outage when it fails.

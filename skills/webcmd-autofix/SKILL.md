@@ -53,6 +53,14 @@ Use this skill when `webcmd <site> <command>` fails with repairable errors:
 
 Proceed only when the empty or missing-selector result is reproducible across retries and alternative entry points.
 
+## Before Repair: An Error Modal Is Not Always the Site's Verdict
+
+Persistent-session adapters (`siteSession: 'persistent'`) share one tab per site, so error text in the body may be inherited or context-scoped rather than real. Before patching code:
+
+- Check the trace screenshot and `location.href`: a modal over a blank page or the wrong URL means the tab carried stale DOM from a previous command, not that the site rejected this request.
+- Check session-scoped context: sites often scope results to a selected city, date, or account. A "closed" / "unavailable" verdict can simply mean the browser's selected context does not match the request (for example, a seat layout opened while the site's location cookie points at another city).
+- Reproduce in a clean tab (`webcmd browser open <url>`) before trusting the verdict. If it only fails in the adapter's persistent tab, fix state handling (`freshPage: true`, dismiss-and-renavigate, context preconditions) instead of selectors.
+
 ## Step 1: Collect Trace Context
 
 Run the failing command with retained trace:

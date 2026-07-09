@@ -373,7 +373,7 @@ export async function executeCommand(
           if (!keepTab) await page.closeWindow?.().catch(() => {});
           throw err;
         }
-      }, { session, cdpEndpoint, ...profileRouting, windowMode, surface: 'adapter', siteSession });
+      }, { session, cdpEndpoint, ...profileRouting, windowMode, surface: 'adapter', siteSession, freshPage: cmd.freshPage === true && siteSession === 'persistent' });
     } else {
       // Non-browser commands: enforce a timeout only when the command exposes
       // a `--timeout` arg (and the resolved value is positive). Without that

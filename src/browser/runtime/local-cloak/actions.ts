@@ -51,6 +51,7 @@ async function resolveLease(manager: CloakSessionManager, command: BrowserRuntim
     surface: command.surface,
     siteSession: command.siteSession,
     idleTimeout: command.idleTimeout,
+    freshPage: command.freshPage,
   });
 }
 

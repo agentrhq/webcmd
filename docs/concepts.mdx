@@ -55,6 +55,10 @@ Each command has a strategy. The strategy describes how the agent or adapter get
 
 You can ask the agent to explain the selected strategy, but you should not need to pick it yourself.
 
+## Sessions
+
+Browser commands run in a site session that controls tab lifecycle. `ephemeral` (the default) gives each run an isolated tab that closes afterward. `persistent` shares one long-lived tab per site, so multi-step flows keep login, location, and cookies across commands — at the cost of also inheriting leftover page state. Commands that need a clean start without losing profile state declare `freshPage: true`, which replaces the shared tab with a new one under the same lease. See "Persistent Sessions and State Hygiene" in [authoring](/authoring) for the failure modes and defenses.
+
 ## Profiles
 
 Profiles keep browser identities and login state separate. They matter for sites that require auth.

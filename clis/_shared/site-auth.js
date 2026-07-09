@@ -46,6 +46,11 @@ export function registerSiteAuthCommands(config) {
   if (!config?.site || !config?.domain || !config?.loginUrl || typeof config.verify !== 'function') {
     throw new Error('registerSiteAuthCommands requires site, domain, loginUrl, and verify(page)');
   }
+  // Sites whose login is a modal/flow rather than a page can pass
+  // openLogin(page) to bring the login UI up; default is a plain navigation.
+  const openLogin = typeof config.openLogin === 'function'
+    ? config.openLogin
+    : async (page) => { await page.goto(config.loginUrl); };
 
   cli({
     site: config.site,
@@ -92,7 +97,7 @@ export function registerSiteAuthCommands(config) {
         if (!isAuthRequired(error)) throw error;
       }
 
-      await page.goto(config.loginUrl);
+      await openLogin(page);
       const timeoutSeconds = Number(kwargs.timeout ?? DEFAULT_TIMEOUT_SECONDS);
       const deadline = Date.now() + timeoutSeconds * 1000;
       let lastAuthMessage = '';

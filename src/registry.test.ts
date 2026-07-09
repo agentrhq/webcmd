@@ -23,6 +23,34 @@ describe('cli() registration', () => {
     expect(cmd.args).toEqual([]);
   });
 
+  it('accepts freshPage with a persistent site session', () => {
+    const cmd = cli({
+      site: 'test-registry',
+      name: 'fresh-ok', access: 'write',
+      description: 'test',
+      siteSession: 'persistent',
+      freshPage: true,
+    });
+    expect(cmd.freshPage).toBe(true);
+  });
+
+  it('rejects freshPage without a persistent site session', () => {
+    expect(() => cli({
+      site: 'test-registry',
+      name: 'fresh-bad', access: 'write',
+      description: 'test',
+      freshPage: true,
+    })).toThrow(/freshPage requires siteSession: 'persistent'/);
+
+    expect(() => cli({
+      site: 'test-registry',
+      name: 'fresh-bad-ephemeral', access: 'write',
+      description: 'test',
+      siteSession: 'ephemeral',
+      freshPage: true,
+    })).toThrow(/freshPage requires siteSession: 'persistent'/);
+  });
+
   it('puts registered command in the registry', () => {
     cli({
       site: 'test-registry',

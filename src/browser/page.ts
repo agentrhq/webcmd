@@ -50,9 +50,20 @@ export class Page extends BasePage {
     private readonly surface: 'browser' | 'adapter' = 'browser',
     private readonly siteSession?: 'ephemeral' | 'persistent',
     public readonly preferredContextId?: string,
+    freshPage?: boolean,
   ) {
     super();
     this._idleTimeout = idleTimeout;
+    this._freshPagePending = freshPage === true;
+  }
+
+  /** When set, the next daemon command asks for a fresh leased page; consumed on first send. */
+  private _freshPagePending: boolean;
+
+  private _freshPageOpts(): { freshPage?: true } {
+    if (!this._freshPagePending) return {};
+    this._freshPagePending = false;
+    return { freshPage: true };
   }
 
   /** Active page identity (targetId), set after navigate and used in all subsequent commands */
@@ -70,6 +81,7 @@ export class Page extends BasePage {
       ...(this._idleTimeout != null && { idleTimeout: this._idleTimeout }),
       ...(this.windowMode && { windowMode: this.windowMode }),
       ...(this.siteSession && { siteSession: this.siteSession }),
+      ...this._freshPageOpts(),
     };
   }
 
@@ -84,6 +96,7 @@ export class Page extends BasePage {
       ...(this._idleTimeout != null && { idleTimeout: this._idleTimeout }),
       ...(this.windowMode && { windowMode: this.windowMode }),
       ...(this.siteSession && { siteSession: this.siteSession }),
+      ...this._freshPageOpts(),
     };
   }
 

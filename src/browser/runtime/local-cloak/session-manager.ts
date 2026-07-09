@@ -13,6 +13,8 @@ export interface SessionKeyInput {
   surface?: BrowserSurface;
   siteSession?: SiteSessionMode;
   idleTimeout?: number;
+  /** Discard the existing leased page (if any) and create a new one under the same lease. */
+  freshPage?: boolean;
 }
 
 type PageEntry = {
@@ -101,16 +103,24 @@ export class CloakSessionManager {
     const surface = normalizeSurface(input.surface);
     const leaseKey = resolveLeaseKey(input);
     const runtime = await this.getProfileRuntime(profileId);
+    const freshPage = input.freshPage === true;
     const existing = runtime.pages.get(leaseKey);
-    if (existing && !pageIsClosed(existing.page)) {
+    if (existing && !pageIsClosed(existing.page) && !freshPage) {
       runtime.lastSeenAt = Date.now();
       existing.idleTimeout = input.idleTimeout;
       this.refreshIdleTimer(runtime, leaseKey, existing);
       return { profileId, leaseKey, context: runtime.context, page: existing.page, pageId: existing.pageId };
     }
+    if (existing && freshPage) {
+      runtime.pages.delete(leaseKey);
+      this.clearIdleTimer(existing);
+      if (runtime.selectedPageId === existing.pageId) runtime.selectedPageId = undefined;
+      if (!pageIsClosed(existing.page)) await existing.page.close().catch(() => {});
+    }
 
     const existingPages = runtime.context.pages();
-    const page = existingPages[0] && runtime.pages.size === 0 ? existingPages[0] : await runtime.context.newPage();
+    // freshPage must never adopt a leftover tab — its whole point is a clean DOM.
+    const page = !freshPage && existingPages[0] && runtime.pages.size === 0 ? existingPages[0] : await runtime.context.newPage();
     const pageId = nextPageId();
     const entry: PageEntry = { page, pageId, session, surface, siteSession: input.siteSession, idleTimeout: input.idleTimeout };
     runtime.pages.set(leaseKey, entry);

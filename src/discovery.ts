@@ -216,6 +216,7 @@ async function loadFromManifest(manifestPath: string, clisDir: string): Promise<
         source: entry.sourceFile ? path.resolve(clisDir, entry.sourceFile) : modulePath,
         navigateBefore: entry.navigateBefore,
         siteSession: entry.siteSession,
+        freshPage: entry.freshPage,
         defaultWindowMode: entry.defaultWindowMode,
         _lazy: true,
         _modulePath: modulePath,

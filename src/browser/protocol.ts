@@ -26,6 +26,8 @@ export interface BrowserRuntimeCommand {
   session?: string;
   surface?: BrowserSurface;
   siteSession?: SiteSessionMode;
+  /** Close any existing leased page and start on a new one (sent on the first action of a command run). */
+  freshPage?: boolean;
   url?: string;
   op?: string;
   index?: number;
