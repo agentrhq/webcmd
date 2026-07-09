@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.3.0](https://github.com/agentrhq/webcmd/compare/webcmd-v0.2.1...webcmd-v0.3.0) (2026-07-09)
+
+
+### Features
+
+* add freshPage option for persistent-session commands ([1ff33e9](https://github.com/agentrhq/webcmd/commit/1ff33e98b6374db2a9635f99fe8f069aa8ae9b98))
+* add freshPage option for persistent-session commands ([09b4ec3](https://github.com/agentrhq/webcmd/commit/09b4ec3b0a11f0dbd04834cf837b2eef231c9643))
+* install bundled Webcmd skills ([80d015a](https://github.com/agentrhq/webcmd/commit/80d015a659cac93dbb4a75bd997f41a62ba730b3))
+* install bundled Webcmd skills ([3ce96f4](https://github.com/agentrhq/webcmd/commit/3ce96f485a7d4f7d7bc4053a2a0dfb0856e31bb7))
+* promote district adapters into the repo ([e5b409d](https://github.com/agentrhq/webcmd/commit/e5b409de0ec6b81b0b26dbc12f53f924d36f41f4))
+
+
+### Bug Fixes
+
+* avoid district silent column drops ([78219d7](https://github.com/agentrhq/webcmd/commit/78219d7e5e6214ad96f2cfda9322a049bb287621))
+* preserve freshPage in CLI manifest ([5855760](https://github.com/agentrhq/webcmd/commit/58557605ac9b9d0214ca91351ab9710cc1b6c8e3))
+* quote sitemap author skill frontmatter ([8a4a787](https://github.com/agentrhq/webcmd/commit/8a4a787d1cc3772ae07183f5ee7b2c5bca09d2fc))
+
 ## [0.2.1](https://github.com/agentrhq/webcmd/compare/webcmd-v0.2.0...webcmd-v0.2.1) (2026-07-07)
 
 
