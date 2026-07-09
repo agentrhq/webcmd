@@ -6913,6 +6913,509 @@
     "navigateBefore": true
   },
   {
+    "site": "district",
+    "name": "checkout",
+    "description": "Select District movie seats and stop at the payment handoff page",
+    "access": "write",
+    "domain": "www.district.in",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "show",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "District seat-layout URL or showId from district showtimes"
+      },
+      {
+        "name": "seats",
+        "type": "str",
+        "required": true,
+        "help": "Comma-separated seat labels to select, e.g. I22,I21"
+      },
+      {
+        "name": "format-id",
+        "type": "str",
+        "required": false,
+        "help": "District formatId from showtimes; required when show is a showId"
+      },
+      {
+        "name": "content-id",
+        "type": "str",
+        "required": false,
+        "help": "District content id; required when show is a showId"
+      },
+      {
+        "name": "timeout",
+        "type": "int",
+        "default": 45,
+        "required": false,
+        "help": "Maximum seconds to wait for selection and review page"
+      }
+    ],
+    "columns": [
+      "status",
+      "movie",
+      "cinema",
+      "date",
+      "time",
+      "seats",
+      "ticketCount",
+      "orderAmount",
+      "bookingCharge",
+      "total",
+      "paymentUrl",
+      "showId"
+    ],
+    "type": "js",
+    "modulePath": "district/checkout.js",
+    "sourceFile": "district/checkout.js",
+    "navigateBefore": false,
+    "siteSession": "persistent",
+    "defaultWindowMode": "foreground"
+  },
+  {
+    "site": "district",
+    "name": "listings",
+    "aliases": [
+      "ls"
+    ],
+    "description": "List public District by Zomato movies, events, and nearby going-out cards",
+    "access": "read",
+    "domain": "www.district.in",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "input",
+        "type": "str",
+        "default": "home",
+        "required": false,
+        "positional": true,
+        "help": "home, movies, events, a district.in URL, or a District path"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "Maximum rows to return (1-100)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "title",
+      "category",
+      "date",
+      "venue",
+      "price",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "district/listings.js",
+    "sourceFile": "district/listings.js"
+  },
+  {
+    "site": "district",
+    "name": "locations",
+    "aliases": [
+      "location-search"
+    ],
+    "description": "Search District-supported cities, areas, malls, and places for booking filters",
+    "access": "read",
+    "domain": "www.district.in",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "query",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "City, area, mall, or locality, for example \"bangalore\" or \"indiranagar\""
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Maximum location rows to return (1-50)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "name",
+      "kind",
+      "city",
+      "state",
+      "cityKey",
+      "cityId",
+      "placeId",
+      "lat",
+      "lng",
+      "distanceKm",
+      "source"
+    ],
+    "type": "js",
+    "modulePath": "district/locations.js",
+    "sourceFile": "district/locations.js"
+  },
+  {
+    "site": "district",
+    "name": "login",
+    "description": "Open district login and wait until the browser session is authenticated",
+    "access": "write",
+    "domain": "www.district.in",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "timeout",
+        "type": "int",
+        "default": 300,
+        "required": false,
+        "help": "Maximum seconds to wait for the user to finish login"
+      }
+    ],
+    "columns": [
+      "status",
+      "logged_in",
+      "site",
+      "user_id",
+      "name",
+      "phone_number",
+      "email"
+    ],
+    "type": "js",
+    "modulePath": "district/auth.js",
+    "sourceFile": "district/auth.js",
+    "navigateBefore": false,
+    "siteSession": "persistent",
+    "defaultWindowMode": "foreground"
+  },
+  {
+    "site": "district",
+    "name": "search",
+    "aliases": [
+      "s"
+    ],
+    "description": "Search District by Zomato across movies, events, dining, stores, activities, and play",
+    "access": "read",
+    "domain": "www.district.in",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "query",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Search query, for example \"hamlet\" or \"arijit\""
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "Maximum rows to return (1-100)"
+      },
+      {
+        "name": "tab",
+        "type": "str",
+        "default": "all",
+        "required": false,
+        "help": "Search tab: all, dining, events, movies, stores, activities, or play"
+      }
+    ],
+    "columns": [
+      "rank",
+      "title",
+      "category",
+      "date",
+      "venue",
+      "price",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "district/search.js",
+    "sourceFile": "district/search.js"
+  },
+  {
+    "site": "district",
+    "name": "seats",
+    "description": "List available seats for a District movie showtime",
+    "access": "read",
+    "domain": "www.district.in",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "show",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "District seat-layout URL or showId from district showtimes"
+      },
+      {
+        "name": "format-id",
+        "type": "str",
+        "required": false,
+        "help": "District formatId from showtimes; required when show is a showId"
+      },
+      {
+        "name": "content-id",
+        "type": "str",
+        "required": false,
+        "help": "District content id; required when show is a showId"
+      },
+      {
+        "name": "class",
+        "type": "str",
+        "required": false,
+        "help": "Optional seat class filter, e.g. premium, premium xl, or recliner"
+      },
+      {
+        "name": "count",
+        "type": "int",
+        "required": false,
+        "help": "Number of seats to choose (1-10); without count, seats are listed normally"
+      },
+      {
+        "name": "together",
+        "type": "str",
+        "required": false,
+        "help": "Require selected seats to be adjacent when count is provided"
+      },
+      {
+        "name": "max-price",
+        "type": "float",
+        "required": false,
+        "help": "Maximum price per seat"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 100,
+        "required": false,
+        "help": "Maximum seats to return (1-300)"
+      },
+      {
+        "name": "timeout",
+        "type": "int",
+        "default": 30,
+        "required": false,
+        "help": "Maximum seconds to wait for the seat map to render"
+      }
+    ],
+    "columns": [
+      "rank",
+      "seat",
+      "row",
+      "number",
+      "column",
+      "seatClass",
+      "price",
+      "status",
+      "flags",
+      "showId",
+      "formatId",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "district/seats.js",
+    "sourceFile": "district/seats.js",
+    "navigateBefore": false,
+    "siteSession": "persistent",
+    "defaultWindowMode": "foreground"
+  },
+  {
+    "site": "district",
+    "name": "set-location",
+    "aliases": [
+      "setlocation"
+    ],
+    "description": "Set the District browser session location for movie booking filters",
+    "access": "write",
+    "domain": "www.district.in",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "location",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "City, area, mall, or locality, for example \"Bangalore\" or \"Indiranagar\""
+      },
+      {
+        "name": "rank",
+        "type": "int",
+        "default": 1,
+        "required": false,
+        "help": "Pick the Nth District location result (1-20), default: 1"
+      },
+      {
+        "name": "timeout",
+        "type": "int",
+        "default": 45,
+        "required": false,
+        "help": "Maximum seconds to wait for the picker and location change"
+      }
+    ],
+    "columns": [
+      "status",
+      "name",
+      "city",
+      "state",
+      "cityKey",
+      "cityId",
+      "placeId",
+      "subzoneId",
+      "lat",
+      "lng",
+      "availableTabs",
+      "source"
+    ],
+    "type": "js",
+    "modulePath": "district/set-location.js",
+    "sourceFile": "district/set-location.js",
+    "navigateBefore": false,
+    "siteSession": "persistent",
+    "defaultWindowMode": "foreground"
+  },
+  {
+    "site": "district",
+    "name": "showtimes",
+    "aliases": [
+      "shows"
+    ],
+    "description": "List District movie showtimes with location, time, cinema, language, price, and format filters",
+    "access": "read",
+    "domain": "www.district.in",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "movie",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Movie name or District movie URL"
+      },
+      {
+        "name": "date",
+        "type": "str",
+        "required": false,
+        "help": "Show date in YYYY-MM-DD format; defaults to District selected date"
+      },
+      {
+        "name": "city",
+        "type": "str",
+        "required": false,
+        "help": "District city name/key, for example Bangalore or Bengaluru"
+      },
+      {
+        "name": "near",
+        "type": "str",
+        "required": false,
+        "help": "Area, mall, or locality to search near, for example Indiranagar"
+      },
+      {
+        "name": "city-key",
+        "type": "str",
+        "required": false,
+        "help": "Legacy District city key override, for example bengaluru"
+      },
+      {
+        "name": "after",
+        "type": "str",
+        "required": false,
+        "help": "Only shows at or after HH:MM, 24-hour time"
+      },
+      {
+        "name": "before",
+        "type": "str",
+        "required": false,
+        "help": "Only shows at or before HH:MM, 24-hour time"
+      },
+      {
+        "name": "cinema",
+        "type": "str",
+        "required": false,
+        "help": "Filter cinema/theatre name, for example PVR, INOX, Orion"
+      },
+      {
+        "name": "language",
+        "type": "str",
+        "required": false,
+        "help": "Filter movie language, for example English, Hindi, Kannada"
+      },
+      {
+        "name": "max-price",
+        "type": "float",
+        "required": false,
+        "help": "Only shows with at least one ticket class at or below this price"
+      },
+      {
+        "name": "quality",
+        "type": "str",
+        "required": false,
+        "help": "Generic format/quality filter, for example 2D, 3D, IMAX, IMAX 3D, 4DX"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 50,
+        "required": false,
+        "help": "Maximum showtime rows to return (1-200)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "movie",
+      "language",
+      "date",
+      "time",
+      "cinema",
+      "format",
+      "priceRange",
+      "available",
+      "showId",
+      "formatId",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "district/showtimes.js",
+    "sourceFile": "district/showtimes.js",
+    "navigateBefore": false,
+    "siteSession": "persistent",
+    "defaultWindowMode": "foreground"
+  },
+  {
+    "site": "district",
+    "name": "whoami",
+    "description": "Show the current logged-in district account",
+    "access": "read",
+    "domain": "www.district.in",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "logged_in",
+      "site",
+      "user_id",
+      "name",
+      "phone_number",
+      "email"
+    ],
+    "type": "js",
+    "modulePath": "district/auth.js",
+    "sourceFile": "district/auth.js",
+    "navigateBefore": false,
+    "siteSession": "persistent"
+  },
+  {
     "site": "dockerhub",
     "name": "image",
     "description": "Fetch a Docker Hub repository's public metadata (stars, pulls, last updated, status)",
