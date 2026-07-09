@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { execFile } from 'node:child_process';
 import type { BrowserContext, Page as PlaywrightPage } from 'playwright-core';
 import { launchPersistentContext as cloakLaunchPersistentContext } from 'cloakbrowser';
 import type { BrowserSurface, SiteSessionMode } from '../../protocol.js';
@@ -6,6 +7,7 @@ import { normalizeProfileId, resolveCloakProfileDir } from './profiles.js';
 import { CloakNetworkCapture } from './network.js';
 
 export type LaunchPersistentContext = typeof cloakLaunchPersistentContext;
+export type RecoverLockedProfile = (userDataDir: string) => Promise<boolean>;
 
 export interface SessionKeyInput {
   profileId?: string;
@@ -58,6 +60,7 @@ interface ProfileRuntime {
 export interface CloakSessionManagerOptions {
   baseDir?: string;
   launchPersistentContext?: LaunchPersistentContext;
+  recoverLockedProfile?: RecoverLockedProfile;
 }
 
 let pageCounter = 0;
@@ -77,10 +80,13 @@ export class CloakSessionManager {
   readonly networkCapture = new CloakNetworkCapture();
 
   private readonly launchPersistentContext: LaunchPersistentContext;
+  private readonly recoverLockedProfile: RecoverLockedProfile;
   private readonly profiles = new Map<string, ProfileRuntime>();
+  private readonly profileLaunches = new Map<string, Promise<ProfileRuntime>>();
 
   constructor(private readonly opts: CloakSessionManagerOptions = {}) {
     this.launchPersistentContext = opts.launchPersistentContext ?? cloakLaunchPersistentContext;
+    this.recoverLockedProfile = opts.recoverLockedProfile ?? recoverLockedCloakProfile;
   }
 
   profileStatuses() {
@@ -296,13 +302,33 @@ export class CloakSessionManager {
   private async getProfileRuntime(profileId: string): Promise<ProfileRuntime> {
     const existing = this.profiles.get(profileId);
     if (existing) return existing;
+    const pending = this.profileLaunches.get(profileId);
+    if (pending) return pending;
+
+    const launch = this.launchProfileRuntime(profileId);
+    this.profileLaunches.set(profileId, launch);
+    try {
+      return await launch;
+    } finally {
+      this.profileLaunches.delete(profileId);
+    }
+  }
+
+  private async launchProfileRuntime(profileId: string): Promise<ProfileRuntime> {
     const userDataDir = resolveCloakProfileDir(profileId, { baseDir: this.opts.baseDir });
     fs.mkdirSync(userDataDir, { recursive: true });
-    const context = await this.launchPersistentContext({
+    const launchOptions = {
       userDataDir,
       headless: false,
       humanize: true,
-    });
+    };
+    let context: BrowserContext;
+    try {
+      context = await this.launchPersistentContext(launchOptions);
+    } catch (err) {
+      if (!isProfileAlreadyInUseError(err) || !(await this.recoverLockedProfile(userDataDir))) throw err;
+      context = await this.launchPersistentContext(launchOptions);
+    }
     const runtime = { context, pages: new Map(), lastSeenAt: Date.now() };
     this.profiles.set(profileId, runtime);
     return runtime;
@@ -354,4 +380,91 @@ function requireSession(session: string | undefined): string {
   const normalized = session?.trim();
   if (!normalized) throw new Error('Browser session is required.');
   return normalized;
+}
+
+function isProfileAlreadyInUseError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return message.includes('Opening in existing browser session')
+    || message.includes('Failed to create a ProcessSingleton for your profile directory');
+}
+
+async function recoverLockedCloakProfile(userDataDir: string): Promise<boolean> {
+  if (process.platform === 'win32') return false;
+  const initial = await findCloakProfileProcesses(userDataDir);
+  if (initial.length === 0) return false;
+
+  signalPids(initial, 'SIGTERM');
+  if (await waitForProfileProcessesToExit(userDataDir, 2500)) return true;
+
+  signalPids(await findCloakProfileProcesses(userDataDir), 'SIGKILL');
+  return waitForProfileProcessesToExit(userDataDir, 1500);
+}
+
+async function waitForProfileProcessesToExit(userDataDir: string, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 100));
+    if ((await findCloakProfileProcesses(userDataDir)).length === 0) return true;
+  }
+  return (await findCloakProfileProcesses(userDataDir)).length === 0;
+}
+
+function signalPids(pids: number[], signal: NodeJS.Signals): void {
+  for (const pid of pids) {
+    try {
+      process.kill(pid, signal);
+    } catch {
+      // Already exited or not signalable; the follow-up poll decides recovery.
+    }
+  }
+}
+
+async function findCloakProfileProcesses(userDataDir: string): Promise<number[]> {
+  const profileDirs = profileDirAliases(userDataDir);
+  const stdout = await psOutput();
+  const pids: number[] = [];
+  for (const line of stdout.split('\n')) {
+    const match = line.match(/^\s*(\d+)\s+(.+)$/);
+    if (!match) continue;
+    const pid = Number(match[1]);
+    const command = match[2];
+    if (!Number.isInteger(pid) || pid === process.pid) continue;
+    if (!isCloakBrowserCommand(command)) continue;
+    if (!commandUsesProfileDir(command, profileDirs)) continue;
+    pids.push(pid);
+  }
+  return [...new Set(pids)];
+}
+
+function commandUsesProfileDir(command: string, profileDirs: string[]): boolean {
+  for (const dir of profileDirs) {
+    const marker = `--user-data-dir=${dir}`;
+    const index = command.indexOf(marker);
+    if (index < 0) continue;
+    const next = command[index + marker.length];
+    if (next === undefined || /\s/.test(next)) return true;
+  }
+  return false;
+}
+
+function profileDirAliases(userDataDir: string): string[] {
+  const aliases = new Set([userDataDir]);
+  try {
+    aliases.add(fs.realpathSync.native(userDataDir));
+  } catch {
+    // The launch path is still useful even if realpath cannot resolve it.
+  }
+  return [...aliases];
+}
+
+function isCloakBrowserCommand(command: string): boolean {
+  return command.includes('/.cloakbrowser/') || command.includes('\\.cloakbrowser\\');
+}
+
+function psOutput(): Promise<string> {
+  return new Promise((resolve) => {
+    execFile('ps', ['-axo', 'pid=,command='], { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, timeout: 2000 }, (err, stdout) => {
+      resolve(err ? '' : String(stdout));
+    });
+  });
 }

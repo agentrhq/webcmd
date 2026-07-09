@@ -241,7 +241,7 @@ describe('BrowserBridge state', () => {
     await expect(bridge.connect({ timeout: 0.1 })).rejects.toThrow('Stale daemon could not be replaced');
   });
 
-  it('falls back to SIGKILL when stale daemon refuses graceful shutdown', async () => {
+  it('falls back to process-group SIGKILL when stale daemon refuses graceful shutdown', async () => {
     vi.spyOn(daemonTransport, 'getDaemonHealth').mockResolvedValue({
       state: 'no-runtime',
       status: {
@@ -258,8 +258,10 @@ describe('BrowserBridge state', () => {
     });
     vi.spyOn(daemonLifecycle.daemonLifecycleHooks, 'requestDaemonShutdown').mockResolvedValue(false);
     // Graceful shutdown short-circuits to false (requestDaemonShutdown -> false).
-    // After SIGKILL the port is released, so the second waitForDaemonStop returns true.
-    vi.spyOn(daemonLifecycle.daemonLifecycleHooks, 'waitForDaemonStop').mockResolvedValue(true);
+    // SIGTERM does not release the port; process-group SIGKILL does.
+    vi.spyOn(daemonLifecycle.daemonLifecycleHooks, 'waitForDaemonStop')
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
     vi.spyOn(daemonLifecycle.daemonLifecycleHooks, 'spawnDaemonProcess').mockReturnValue(null as unknown as ReturnType<typeof daemonLifecycle.spawnDaemonProcess>);
     const killSpy = vi.spyOn(process, 'kill').mockImplementation(() => true);
 
@@ -269,7 +271,9 @@ describe('BrowserBridge state', () => {
     // no-runtime wait (which times out with `timeout: 0.1`), producing the
     // runtime-not-ready error rather than the stale-daemon error.
     await expect(bridge.connect({ timeout: 0.1 })).rejects.toThrow('Browser runtime is not ready');
-    expect(killSpy).toHaveBeenCalledWith(99999, 'SIGKILL');
+    const signalPid = process.platform === 'win32' ? 99999 : -99999;
+    expect(killSpy).toHaveBeenCalledWith(signalPid, 'SIGTERM');
+    expect(killSpy).toHaveBeenCalledWith(signalPid, 'SIGKILL');
   });
 
   it('reports stale daemon error when SIGKILL fails to release the port', async () => {

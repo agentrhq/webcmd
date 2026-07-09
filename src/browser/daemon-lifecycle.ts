@@ -74,8 +74,30 @@ export async function waitForDaemonStatus(timeoutMs: number): Promise<DaemonStat
 export const daemonLifecycleHooks = {
   requestDaemonShutdown,
   spawnDaemonProcess,
+  signalDaemonProcessTree,
   waitForDaemonStop,
 };
+
+export function signalDaemonProcessTree(pid: number, signal: NodeJS.Signals): boolean {
+  let signaled = false;
+  if (process.platform !== 'win32') {
+    try {
+      process.kill(-pid, signal);
+      signaled = true;
+    } catch {
+      // Fall back to the daemon PID below.
+    }
+  }
+  if (!signaled) {
+    try {
+      process.kill(pid, signal);
+      signaled = true;
+    } catch {
+      // The process may have already exited; the caller polls the daemon port.
+    }
+  }
+  return signaled;
+}
 
 export async function restartDaemon(opts: { stopTimeoutMs?: number; startTimeoutMs?: number } = {}): Promise<DaemonRestartResult> {
   const previousStatus = await fetchDaemonStatus();
@@ -120,12 +142,12 @@ export async function ensureBrowserBridgeReady(
     if (!portReleased) {
       const stalePid = health.status?.pid;
       if (typeof stalePid === 'number' && Number.isInteger(stalePid) && stalePid > 0) {
-        try {
-          process.kill(stalePid, 'SIGKILL');
-        } catch {
-          // EPERM / ESRCH are both resolved by polling the fixed daemon port.
+        daemonLifecycleHooks.signalDaemonProcessTree(stalePid, 'SIGTERM');
+        portReleased = await daemonLifecycleHooks.waitForDaemonStop(1000);
+        if (!portReleased) {
+          daemonLifecycleHooks.signalDaemonProcessTree(stalePid, 'SIGKILL');
+          portReleased = await daemonLifecycleHooks.waitForDaemonStop(2000);
         }
-        portReleased = await daemonLifecycleHooks.waitForDaemonStop(2000);
       }
     }
 

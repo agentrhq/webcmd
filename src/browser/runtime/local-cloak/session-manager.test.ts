@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import path from 'node:path';
+import type { BrowserContext } from 'playwright-core';
 import { CloakSessionManager } from './session-manager.js';
 import { dispatchCloakAction } from './actions.js';
 
@@ -47,6 +48,49 @@ describe('CloakSessionManager', () => {
     expect(first.page).toBe(second.page);
     expect(launchPersistentContext).toHaveBeenCalledTimes(1);
     expect(launchPersistentContext.mock.calls[0][0]).toMatchObject({ headless: false });
+  });
+
+  it('coalesces concurrent persistent context launches for the same profile', async () => {
+    const launched = fakeContext();
+    let resolveLaunch!: (context: BrowserContext) => void;
+    const launchPersistentContext = vi.fn(() => new Promise<BrowserContext>((resolve) => {
+      resolveLaunch = resolve;
+    }));
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      launchPersistentContext,
+    });
+
+    const firstPage = manager.getPage({ profileId: 'default', session: 'work', surface: 'browser' });
+    const secondPage = manager.getPage({ profileId: 'default', session: 'work', surface: 'browser' });
+    await Promise.resolve();
+
+    expect(launchPersistentContext).toHaveBeenCalledTimes(1);
+    resolveLaunch(launched.context as unknown as BrowserContext);
+    const [first, second] = await Promise.all([firstPage, secondPage]);
+
+    expect(first.context).toBe(launched.context);
+    expect(second.context).toBe(launched.context);
+    expect(first.page).toBe(second.page);
+  });
+
+  it('clears a stale Cloak profile owner and retries when Chromium reports an existing session', async () => {
+    const launched = fakeContext();
+    const launchPersistentContext = vi.fn()
+      .mockRejectedValueOnce(new Error('browserType.launchPersistentContext: Opening in existing browser session.'))
+      .mockResolvedValueOnce(launched.context);
+    const recoverLockedProfile = vi.fn().mockResolvedValue(true);
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      launchPersistentContext,
+      recoverLockedProfile,
+    });
+
+    const lease = await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser' });
+
+    expect(lease.context).toBe(launched.context);
+    expect(recoverLockedProfile).toHaveBeenCalledWith(expectedProfileDir('default'));
+    expect(launchPersistentContext).toHaveBeenCalledTimes(2);
   });
 
   it('freshPage closes the existing persistent lease page and creates a new one', async () => {
