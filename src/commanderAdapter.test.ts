@@ -388,6 +388,33 @@ describe('commanderAdapter error envelope output', () => {
     stderrSpy.mockRestore();
   });
 
+  it('preserves CliError-like adapter error code and exitCode across module boundaries', async () => {
+    const program = new Command();
+    const siteCmd = program.command('github');
+    registerCommandToProgram(siteCmd, cmd);
+
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const err = new Error('Practo /logged_in_user rejected the current browser session') as Error & {
+      code: string;
+      hint: string;
+      exitCode: number;
+    };
+    err.code = 'AUTH_REQUIRED';
+    err.hint = 'Please open Chrome or Chromium and log in to https://www.practo.com';
+    err.exitCode = 77;
+    mockExecuteCommand.mockRejectedValueOnce(err);
+
+    await program.parseAsync(['node', 'webcmd', 'github', 'issue', '12345']);
+
+    const output = stderrSpy.mock.calls.map(c => String(c[0])).join('');
+    expect(output).toContain('code: AUTH_REQUIRED');
+    expect(output).toContain('exitCode: 77');
+    expect(output).not.toContain('AutoFix: re-run');
+    expect(process.exitCode).toBe(77);
+
+    stderrSpy.mockRestore();
+  });
+
   it('does not add an AutoFix rerun hint when trace is already enabled', async () => {
     const program = new Command();
     const siteCmd = program.command('github');

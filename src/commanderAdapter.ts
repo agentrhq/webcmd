@@ -28,8 +28,8 @@ import {
   siteHelpData,
 } from './help.js';
 import {
-  CliError,
   EXIT_CODES,
+  isCliErrorLike,
   toEnvelope,
 } from './errors.js';
 
@@ -153,7 +153,7 @@ export function registerCommandToProgram(siteCmd: Command, cmd: CliCommand): voi
 // ── Exit code resolution ─────────────────────────────────────────────────────
 
 function resolveExitCode(err: unknown): number {
-  if (err instanceof CliError) return err.exitCode;
+  if (isCliErrorLike(err)) return err.exitCode;
   return EXIT_CODES.GENERIC_ERROR;
 }
 

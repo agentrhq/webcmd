@@ -77,6 +77,16 @@ export function getTraceReceipt(err: unknown): ObservationTraceReceipt | undefin
   return (err as Record<PropertyKey, unknown>)[TRACE_RECEIPT_SYMBOL] as ObservationTraceReceipt | undefined;
 }
 
+export function isCliErrorLike(err: unknown): err is CliError {
+  if (err instanceof CliError) return true;
+  if (!err || (typeof err !== 'object' && typeof err !== 'function')) return false;
+  const value = err as Record<string, unknown>;
+  return typeof value.code === 'string'
+    && value.code.length > 0
+    && typeof value.message === 'string'
+    && Number.isInteger(value.exitCode);
+}
+
 // ── Typed subclasses ─────────────────────────────────────────────────────────
 
 export type BrowserConnectKind = 'daemon-not-running' | 'runtime-not-ready' | 'extension-not-connected' | 'profile-required' | 'profile-disconnected' | 'command-failed' | 'unknown';
@@ -246,13 +256,13 @@ export function toEnvelope(err: unknown): ErrorEnvelope {
     receiptPath: traceReceipt.receiptPath,
     status: traceReceipt.status,
   } : undefined;
-  if (err instanceof CliError) {
+  if (isCliErrorLike(err)) {
     return {
       ok: false,
       error: {
         code: err.code,
         message: err.message,
-        ...(err.hint ? { help: err.hint } : {}),
+        ...(typeof err.hint === 'string' && err.hint ? { help: err.hint } : {}),
         exitCode: err.exitCode,
         ...(cause ? { cause } : {}),
       },
