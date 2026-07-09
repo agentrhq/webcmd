@@ -94,6 +94,63 @@ async function selectRequestedSeats(page, requestedSeats, timeout) {
   return selected;
 }
 
+async function readSelectedSeats(page) {
+  const seats = await page.evaluate(`
+    (() => {
+      return [...document.querySelectorAll('#selected-seat span,[aria-label^="selected class"]')].map((el) => {
+        const aria = el.getAttribute('aria-label') || '';
+        const row = ((aria.match(/row\\s+([^,\\s]+)/i) || [])[1] || '').trim().toUpperCase();
+        const number = (el.querySelector('label')?.innerText || el.innerText || '').replace(/\\s+/g, '').trim();
+        return row && number ? row + number : '';
+      }).filter(Boolean);
+    })()
+  `);
+  return Array.isArray(seats) ? seats : [];
+}
+
+async function toggleSeat(page, seat) {
+  const result = await page.evaluate(`
+    (() => {
+      const wanted = ${JSON.stringify(seat)};
+      const candidates = [...document.querySelectorAll('#available-seat,[id="selected-seat"] span,[aria-label*="seat"]')];
+      const parse = (el) => {
+        const aria = el.getAttribute('aria-label') || '';
+        const row = ((aria.match(/row\\s+([^,\\s]+)/i) || [])[1] || '').trim().toUpperCase();
+        const number = (el.querySelector('label')?.innerText || el.innerText || '').replace(/\\s+/g, '').trim();
+        return row && number ? row + number : '';
+      };
+      const target = candidates.find((el) => parse(el) === wanted);
+      if (!target) return { ok: false, message: wanted + ' was not found in the seat map' };
+      target.click();
+      return { ok: true };
+    })()
+  `);
+  if (!result?.ok) throw new CommandExecutionError(result?.message || `Could not toggle ${seat}`);
+}
+
+/**
+ * District remembers the last ticket quantity per profile and auto-selects
+ * that many adjacent seats on the first click, so the selection can contain
+ * seats nobody asked for. Deselect extras, reselect anything knocked out,
+ * and refuse to proceed until the selection matches the request exactly.
+ */
+async function reconcileSelection(page, requestedSeats, timeout) {
+  const wanted = new Set(requestedSeats);
+  const deadline = Date.now() + timeout * 1000;
+  let selected = await readSelectedSeats(page);
+  while (Date.now() < deadline) {
+    const extras = selected.filter((seat) => !wanted.has(seat));
+    const missing = requestedSeats.filter((seat) => !selected.includes(seat));
+    if (!extras.length && !missing.length) return;
+    for (const seat of [...extras, ...missing]) await toggleSeat(page, seat);
+    await page.wait(0.5);
+    selected = await readSelectedSeats(page);
+  }
+  throw new CommandExecutionError(
+    `District kept the selection at ${selected.join(', ') || 'no seats'} while ${requestedSeats.join(', ')} was requested; a pending booking or sticky ticket count may be interfering — open the browser tab to inspect`,
+  );
+}
+
 async function clickProceed(page, timeout) {
   const result = await page.evaluate(`
     (() => {
@@ -272,7 +329,20 @@ cli({
 
     await dismissSeatDrawer(page);
     const selected = await selectRequestedSeats(page, seats, timeout);
+    await reconcileSelection(page, seats, timeout);
     await clickProceed(page, timeout);
-    return extractReview(page, target, selected, timeout);
+    const review = await extractReview(page, target, selected, timeout);
+
+    // Final contract check: the review page is the last stop before money
+    // moves, so a resumed pending order or re-expanded selection must fail
+    // loudly here rather than hand the user the wrong tickets to pay for.
+    const reviewSeats = String(review.seats || '').split(/\s*,\s*/).filter(Boolean).sort().join(',');
+    const requested = [...seats].sort().join(',');
+    if (reviewSeats && reviewSeats !== requested) {
+      throw new CommandExecutionError(
+        `District review shows seats ${review.seats} but ${seats.join(', ')} was requested; open the browser tab and correct the order before paying`,
+      );
+    }
+    return review;
   },
 });
