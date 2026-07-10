@@ -28,7 +28,7 @@ Continue only when all three answers are yes.
 
 ## Top-Level Decision Tree
 
-**Choose the strategy before writing the adapter.** Every time you reach Step 3 or Step 4, and before writing code, produce a strategy note. Without that note, do not start `clis/<site>/<name>.js`.
+**Choose the strategy before writing the adapter.** Every time you reach Step 3 or Step 4, and before writing code, produce a strategy note. Without that note, do not start an adapter file.
 
 The core question is not whether an API is more elegant than DOM work. The core question is whether the data source has an external contract. Public or official interfaces are usually the most stable. UI/DOM semantics often have a user-visible contract too. Undocumented in-site XHR, GraphQL, or signature endpoints drift the most. Do not move a stable UI/DOM implementation to an uncontracted internal endpoint just to be "API-first."
 
@@ -253,7 +253,7 @@ Check these off step by step:
 - **The `browser:` field determines the `func` signature:** `browser:false -> (args)`, `browser:true -> (page, args)`. If this is reversed, `args` may actually be a debug flag and all external parameters can silently fall back to defaults.
 - Throw the correct typed error for known failures according to [`references/typed-errors.md`](./references/typed-errors.md). **Do not** silently `return []`, **do not** silently `return [{sentinel}]`, and **do not** silently clamp external parameters with `Math.max/min`.
 - **Persistent sessions keep stale DOM between commands.** `siteSession: 'persistent'` shares one tab per site; leftover modals/drawers from the previous command leak into the next one. State-sensitive write commands (checkout flows) should add `freshPage: true` (new tab, same lease — cookies/login/location survive). Verify session-scoped context (login, selected city/date) *before* side effects, and embed such context in URLs/IDs your command emits for sibling commands. See `references/adapter-template.md` and "Persistent Sessions and State Hygiene" in `docs/authoring.mdx`.
-- For private adapters, write `~/.webcmd/clis/<site>/<name>.js` to avoid a build. Copy to `clis/<site>/<name>.js` only when preparing a PR.
+- For private iteration, write `~/.webcmd/clis/<site>/<name>.js` to avoid a build. When the user says to promote a CLI, create a main-repo plugin with `webcmd plugin create <site> --dir plugins/<site>`, copy the real command files into it, delete scaffold sample commands, register it in root `webcmd-plugin.json`, remove the local `~/.webcmd/clis/<site>` shadow, install the plugin, then run `webcmd validate <site>` and smoke commands. See `references/adapter-template.md` for details.
 - Write site memory every round: no memory -> use skill -> produce memory -> next time becomes a five-minute task.
 - **After a site's first command passes verify, stop and ask the user for their use cases before recommending next set of commands.** See Runbook Step 13.
 - **Raw dumps, packet captures, and HTML samples from debugging may only be written to `~/.webcmd/sites/<site>/fixtures/` or `/tmp/`. Never leave `.dbg-*.html`, `raw-*.json`, `sample.*`, or similar temporary files in the repo root, `clis/<site>/`, or the current working directory.**

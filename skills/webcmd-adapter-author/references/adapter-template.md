@@ -16,10 +16,32 @@ Write the working file at:
 ~/.webcmd/clis/<site>/<name>.js
 ```
 
-Copy it to the repo only when preparing a PR:
+Promote a community CLI to the main repo as a plugin:
 
-```text
-clis/<site>/<name>.js
+```bash
+webcmd plugin create <site> --dir plugins/<site> --description "<site> commands for Webcmd"
+cp ~/.webcmd/clis/<site>/*.js plugins/<site>/
+rm plugins/<site>/hello.ts plugins/<site>/greet.ts 2>/dev/null || true
+```
+
+Then add `<site>` to the root `webcmd-plugin.json` `plugins` map:
+
+```json
+"<site>": {
+  "path": "plugins/<site>",
+  "version": "0.1.0",
+  "description": "<site> commands for Webcmd",
+  "webcmd": ">=0.2.0"
+}
+```
+
+Before handing off, remove the private shadow and prove the plugin path works:
+
+```bash
+rm -rf ~/.webcmd/clis/<site>
+webcmd plugin install file://$PWD/plugins/<site>
+webcmd validate <site>
+webcmd <site> <command> --help
 ```
 
 ## Minimal Registry Shape
