@@ -68,7 +68,7 @@ describe('createProgram root help descriptions', () => {
     expect(descriptionFor(program, 'browser')).toContain('verify');
     expect(descriptionFor(program, 'browser')).not.toContain('Browser control');
     expect(descriptionFor(program, 'auth')).toBe('refresh, status');
-    expect(descriptionFor(program, 'plugin')).toBe('create, install, list, uninstall, update');
+    expect(descriptionFor(program, 'plugin')).toBe('catalog, create, install, list, search, uninstall, update');
     expect(descriptionFor(program, 'adapter')).toBe('eject, reset, status');
     expect(descriptionFor(program, 'profile')).toBe('list, rename, use');
     expect(descriptionFor(program, 'daemon')).toBe('restart, status, stop');
@@ -693,7 +693,7 @@ name: 'search',
         description: 'Manage webcmd plugins',
         namespace_options: [],
       });
-      expect(data.commands.map((cmd: any) => cmd.name)).toEqual(['create', 'install', 'list', 'uninstall', 'update']);
+      expect(data.commands.map((cmd: any) => cmd.name)).toEqual(['catalog add', 'catalog list', 'catalog remove', 'create', 'install', 'list', 'search', 'uninstall', 'update']);
       const update = data.commands.find((cmd: any) => cmd.name === 'update');
       expect(update).toMatchObject({
         usage: 'webcmd plugin update [name] [options]',

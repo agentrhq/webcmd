@@ -3272,6 +3272,103 @@ cli({
       console.log();
     });
 
+
+  const catalogCmd = pluginCmd
+    .command('catalog')
+    .description('Manage plugin marketplace sources');
+
+  catalogCmd
+    .command('list')
+    .description('List configured plugin marketplace sources')
+    .option('-f, --format <fmt>', 'Output format: table, json', 'table')
+    .action(async (opts: { format?: string }) => {
+      const { readCatalog } = await import('./plugin-catalog.js');
+      try {
+        const catalog = readCatalog();
+        if (opts.format === 'json') {
+          renderOutput(catalog, { fmt: 'json' });
+          return;
+        }
+        renderOutput(catalog.sources, {
+          fmt: opts.format,
+          columns: ['id', 'source', 'manifestUrl'],
+          title: `${CLI_COMMAND}/plugin-catalog`,
+          source: `${CLI_COMMAND} plugin catalog list`,
+        });
+      } catch (err) {
+        console.error(`Error: ${getErrorMessage(err)}`);
+        process.exitCode = EXIT_CODES.GENERIC_ERROR;
+      }
+    });
+
+  catalogCmd
+    .command('add')
+    .description('Add a plugin marketplace source')
+    .argument('<source>', 'Marketplace source, e.g. github:owner/repo')
+    .option('-f, --format <fmt>', 'Output format: table, json', 'table')
+    .action(async (source: string, opts: { format?: string }) => {
+      const { addCatalogSource } = await import('./plugin-catalog.js');
+      try {
+        const added = await addCatalogSource(source);
+        renderOutput(opts.format === 'json' ? added : [added], {
+          fmt: opts.format,
+          columns: ['id', 'source', 'manifestUrl'],
+          title: `${CLI_COMMAND}/plugin-catalog`,
+          source: `${CLI_COMMAND} plugin catalog add`,
+        });
+      } catch (err) {
+        console.error(`Error: ${getErrorMessage(err)}`);
+        process.exitCode = EXIT_CODES.GENERIC_ERROR;
+      }
+    });
+
+  catalogCmd
+    .command('remove')
+    .description('Remove a plugin marketplace source')
+    .argument('<id>', 'Catalog source id')
+    .action(async (id: string) => {
+      const { removeCatalogSource } = await import('./plugin-catalog.js');
+      try {
+        removeCatalogSource(id);
+        console.log(`✅ Catalog source "${id}" removed.`);
+      } catch (err) {
+        console.error(`Error: ${getErrorMessage(err)}`);
+        process.exitCode = EXIT_CODES.GENERIC_ERROR;
+      }
+    });
+
+  pluginCmd
+    .command('search')
+    .description('Search installable marketplace plugins')
+    .argument('[query]', 'Search query matched against plugin name and description')
+    .option('-f, --format <fmt>', 'Output format: table, json', 'table')
+    .action(async (query: string | undefined, opts: { format?: string }) => {
+      const { readCatalog, searchCatalogPlugins } = await import('./plugin-catalog.js');
+      try {
+        const catalog = readCatalog();
+        const result = await searchCatalogPlugins(catalog, { query });
+        if (opts.format === 'json') {
+          renderOutput(result, { fmt: 'json' });
+        } else {
+          for (const err of result.errors) {
+            console.error(`Warning: ${err.sourceId}: ${err.message}`);
+          }
+          renderOutput(result.plugins, {
+            fmt: opts.format,
+            columns: ['name', 'description', 'version', 'sourceId', 'installSource', 'webcmd'],
+            title: `${CLI_COMMAND}/plugin-search`,
+            source: `${CLI_COMMAND} plugin search`,
+          });
+        }
+        if (catalog.sources.length > 0 && result.errors.length === catalog.sources.length) {
+          process.exitCode = EXIT_CODES.GENERIC_ERROR;
+        }
+      } catch (err) {
+        console.error(`Error: ${getErrorMessage(err)}`);
+        process.exitCode = EXIT_CODES.GENERIC_ERROR;
+      }
+    });
+
   pluginCmd
     .command('create')
     .description('Create a new plugin scaffold')
