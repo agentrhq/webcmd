@@ -1,9 +1,0 @@
-{
-  "name": "webcmd-plugin-bikewale",
-  "version": "0.1.0",
-  "type": "module",
-  "description": "BikeWale motorcycle and scooter commands for Webcmd",
-  "peerDependencies": {
-    "@agentrhq/webcmd": ">=0.2.3"
-  }
-}
