@@ -76,11 +76,11 @@ export function writeCatalog(catalog: PluginCatalog, options: CatalogOptions = {
 }
 
 export function deriveGithubCatalogSource(source: string): PluginCatalogSource {
-  const match = /^github:([\w.-]+)\/([\w.-]+)$/.exec(source);
-  if (!match) throw new Error(`Unsupported catalog source "${source}". Use github:owner/repo.`);
-  const [, owner, repo] = match;
+  const parsed = parseGithubSource(source);
+  if (!parsed) throw new Error(`Unsupported catalog source "${source}". Use github:owner/repo.`);
+  const { owner, repo } = parsed;
   return {
-    id: `${owner}-${repo}`,
+    id: `${owner}/${repo}`,
     source,
     manifestUrl: `https://raw.githubusercontent.com/${owner}/${repo}/main/webcmd-plugin.json`,
   };
@@ -183,7 +183,18 @@ function normalizeCatalogSource(value: unknown, label: string): PluginCatalogSou
   if (typeof value.id !== 'string' || !value.id) throw new Error(`Malformed plugin catalog at ${label}: expected id`);
   if (typeof value.source !== 'string' || !value.source) throw new Error(`Malformed plugin catalog at ${label}: expected source`);
   if (typeof value.manifestUrl !== 'string' || !value.manifestUrl) throw new Error(`Malformed plugin catalog at ${label}: expected manifestUrl`);
-  return { id: value.id, source: value.source, manifestUrl: value.manifestUrl };
+  const github = parseGithubSource(value.source);
+  return {
+    id: github ? `${github.owner}/${github.repo}` : value.id,
+    source: value.source,
+    manifestUrl: value.manifestUrl,
+  };
+}
+
+function parseGithubSource(source: string): { owner: string; repo: string } | null {
+  const match = /^github:([\w.-]+)\/([\w.-]+)$/.exec(source);
+  if (!match) return null;
+  return { owner: match[1], repo: match[2] };
 }
 
 async function fetchManifest(source: PluginCatalogSource, fetchJson: FetchJson = defaultFetchJson): Promise<PluginManifest> {

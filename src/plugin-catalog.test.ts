@@ -27,7 +27,7 @@ describe('plugin catalog', () => {
     fs.writeFileSync(path.join(packageRoot, 'plugin-catalog.json'), JSON.stringify({
       version: 1,
       sources: [{
-        id: 'webcmd-official',
+        id: 'agentrhq/webcmd',
         source: 'github:agentrhq/webcmd',
         manifestUrl: 'https://raw.githubusercontent.com/agentrhq/webcmd/main/webcmd-plugin.json',
       }],
@@ -41,31 +41,45 @@ describe('plugin catalog', () => {
   it('seeds the user catalog from the packaged default', () => {
     const catalog = readCatalog({ packageRoot, homeDir });
 
-    expect(catalog.sources).toEqual([{ id: 'webcmd-official', source: 'github:agentrhq/webcmd', manifestUrl: 'https://raw.githubusercontent.com/agentrhq/webcmd/main/webcmd-plugin.json' }]);
+    expect(catalog.sources).toEqual([{ id: 'agentrhq/webcmd', source: 'github:agentrhq/webcmd', manifestUrl: 'https://raw.githubusercontent.com/agentrhq/webcmd/main/webcmd-plugin.json' }]);
     expect(fs.existsSync(getUserPluginCatalogPath(homeDir))).toBe(true);
   });
 
   it('derives catalog metadata from github shorthand', () => {
     expect(deriveGithubCatalogSource('github:other-org/webcmd-travel-plugins')).toEqual({
-      id: 'other-org-webcmd-travel-plugins',
+      id: 'other-org/webcmd-travel-plugins',
       source: 'github:other-org/webcmd-travel-plugins',
       manifestUrl: 'https://raw.githubusercontent.com/other-org/webcmd-travel-plugins/main/webcmd-plugin.json',
     });
+  });
+
+  it('normalizes legacy github slug ids when reading catalogs', () => {
+    fs.mkdirSync(path.dirname(getUserPluginCatalogPath(homeDir)), { recursive: true });
+    fs.writeFileSync(getUserPluginCatalogPath(homeDir), JSON.stringify({
+      version: 1,
+      sources: [{
+        id: 'rishabhraj36-webcmd-plugin-nasa-images.json',
+        source: 'github:rishabhraj36/webcmd-plugin-nasa-images',
+        manifestUrl: 'https://raw.githubusercontent.com/rishabhraj36/webcmd-plugin-nasa-images/main/webcmd-plugin.json',
+      }],
+    }));
+
+    expect(readCatalog({ packageRoot, homeDir }).sources[0].id).toBe('rishabhraj36/webcmd-plugin-nasa-images');
   });
 
   it('adds and removes catalog sources in the user catalog', async () => {
     const fetchJson = async () => ({ name: 'travel', description: 'Travel tools' });
 
     const added = await addCatalogSource('github:other-org/webcmd-travel-plugins', { packageRoot, homeDir, fetchJson });
-    expect(added.id).toBe('other-org-webcmd-travel-plugins');
+    expect(added.id).toBe('other-org/webcmd-travel-plugins');
 
     expect(readCatalog({ packageRoot, homeDir }).sources.map((source) => source.id)).toEqual([
-      'webcmd-official',
-      'other-org-webcmd-travel-plugins',
+      'agentrhq/webcmd',
+      'other-org/webcmd-travel-plugins',
     ]);
 
-    removeCatalogSource('other-org-webcmd-travel-plugins', { packageRoot, homeDir });
-    expect(readCatalog({ packageRoot, homeDir }).sources.map((source) => source.id)).toEqual(['webcmd-official']);
+    removeCatalogSource('other-org/webcmd-travel-plugins', { packageRoot, homeDir });
+    expect(readCatalog({ packageRoot, homeDir }).sources.map((source) => source.id)).toEqual(['agentrhq/webcmd']);
   });
 
   it('rejects duplicate catalog sources', async () => {
@@ -77,7 +91,7 @@ describe('plugin catalog', () => {
 
   it('flattens monorepo manifests into installable rows', () => {
     const rows = flattenPluginManifest({
-      id: 'webcmd-official',
+      id: 'agentrhq/webcmd',
       source: 'github:agentrhq/webcmd',
       manifestUrl: 'https://example.com/webcmd-plugin.json',
     }, {
@@ -88,7 +102,7 @@ describe('plugin catalog', () => {
       },
     });
 
-    expect(rows).toEqual([{ name: 'skyscanner', description: 'Flights', version: '0.1.0', sourceId: 'webcmd-official', installSource: 'github:agentrhq/webcmd/skyscanner', webcmd: '>=0.2.1' }]);
+    expect(rows).toEqual([{ name: 'skyscanner', description: 'Flights', version: '0.1.0', sourceId: 'agentrhq/webcmd', installSource: 'github:agentrhq/webcmd/skyscanner', webcmd: '>=0.2.1' }]);
   });
 
   it('flattens single-plugin manifests into installable rows', () => {

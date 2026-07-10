@@ -2,7 +2,7 @@
   "version": 1,
   "sources": [
     {
-      "id": "webcmd-official",
+      "id": "agentrhq/webcmd",
       "source": "github:agentrhq/webcmd",
       "manifestUrl": "https://raw.githubusercontent.com/agentrhq/webcmd/main/webcmd-plugin.json"
     }
