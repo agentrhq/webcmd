@@ -1,0 +1,6 @@
+{
+  "name": "bikewale",
+  "version": "0.1.0",
+  "description": "BikeWale motorcycle and scooter commands for Webcmd",
+  "webcmd": ">=0.2.3"
+}

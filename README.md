@@ -258,7 +258,7 @@ webcmd plugin uninstall <name>
 webcmd plugin create <name>
 ```
 
-Use plugins for private company workflows, community adapters, or experiments that are not ready for the built-in registry.
+Use plugins for private company workflows, community adapters, or experiments that are not ready for the built-in registry. This repo is also a plugin monorepo: community CLIs promoted here live under [`plugins/`](./plugins/) and are advertised through [`webcmd-plugin.json`](./webcmd-plugin.json).
 
 ## Writing Adapters
 
@@ -278,7 +278,7 @@ import { cli, Strategy } from '@agentrhq/webcmd/registry';
 import { CommandExecutionError } from '@agentrhq/webcmd/errors';
 ```
 
-Private adapters can live in `~/.webcmd/clis/<site>/<command>.js`; upstream adapters live in [`clis/`](./clis/). For the full authoring workflow, install and use [`webcmd-adapter-author`](./skills/webcmd-adapter-author/SKILL.md).
+Private adapters can live in `~/.webcmd/clis/<site>/<command>.js`; bundled upstream adapters live in [`clis/`](./clis/), while community upstream adapters live as plugins under [`plugins/`](./plugins/). For the full authoring workflow, install and use [`webcmd-adapter-author`](./skills/webcmd-adapter-author/SKILL.md).
 
 ## Configuration
 

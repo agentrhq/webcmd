@@ -7,6 +7,8 @@ description: Use plugins to share adapter packs and skills to teach agents how t
 
 Plugins extend Webcmd with adapter packs. Skills teach agents how to use those adapters, crawl new sites, and repair broken commands.
 
+The Webcmd main repo is also a plugin monorepo: community CLIs promoted to the repo live under `plugins/<name>/` and are listed in the root `webcmd-plugin.json` so `webcmd plugin search` can discover them without bundling them into npm's `clis/` set.
+
 ## Plugins
 
 Use plugins when a set of commands should travel together:
@@ -32,9 +34,18 @@ Create a Webcmd plugin called `webcmd-acme` from my private Acme adapters. Inclu
 Common plugin commands:
 
 ```bash
+webcmd plugin search [query]
 webcmd plugin list
 webcmd plugin update --all
 webcmd plugin uninstall <name>
+```
+
+Marketplace catalog sources control where `plugin search` looks:
+
+```bash
+webcmd plugin catalog list
+webcmd plugin catalog add github:owner/repo
+webcmd plugin catalog remove owner/repo
 ```
 
 Create a plugin scaffold:

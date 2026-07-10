@@ -10,7 +10,7 @@ Webcmd turns websites, Electron desktop apps, and external CLIs into a uniform `
 
 ## The Three Pillars
 
-- **Adapter commands:** `webcmd <site> <command> [...]`. Built-in adapters live in `clis/`; user adapters live in `~/.webcmd/clis/`. Each command has a strategy such as `PUBLIC`, `COOKIE`, `INTERCEPT`, `UI`, or `LOCAL`.
+- **Adapter commands:** `webcmd <site> <command> [...]`. Built-in adapters live in `clis/`; community adapters promoted to the main repo live as plugins under `plugins/`; private iteration adapters live in `~/.webcmd/clis/`. Each command has a strategy such as `PUBLIC`, `COOKIE`, `INTERCEPT`, `UI`, or `LOCAL`.
 - **Browser driving:** `webcmd browser *` subcommands (`open`, `state`, `click`, `type`, `select`, `find`, `extract`, `network`) for ad-hoc interaction when no adapter covers the task. See `webcmd-browser`.
 - **External CLI passthrough:** `webcmd gh`, `webcmd docker`, `webcmd vercel`, and similar wrappers. Manage them with `webcmd external install <name>` or `webcmd external register <name>`.
 
@@ -102,11 +102,13 @@ The error envelope includes a `trace` block pointing at `summary.md`. Patch only
 
 ## Writing An Adapter
 
-Two storage paths:
+Storage paths:
 
 - Private: `~/.webcmd/clis/<site>/<command>.js`
 - Public (official bundle): `clis/<site>/<command>.js`
-- Public (community PRs): `plugins/<site>/<command>.js`
+- Public (community PRs): `plugins/<site>/` plus root `webcmd-plugin.json` registration
+
+The main Webcmd repo is itself a plugin monorepo: promoted community CLIs belong under `plugins/<site>/` and must be registered in the root `webcmd-plugin.json`.
 
 Scaffolding and checks:
 
@@ -127,9 +129,10 @@ webcmd plugin list [-f json]
 webcmd plugin update [name] | --all
 webcmd plugin uninstall <name>
 webcmd plugin create <name>
+webcmd plugin search [query]
 ```
 
-Plugins are third-party extensions pulled from git and separate from the main adapter registry.
+Plugins are installable extensions pulled from git or local paths. Main-repo community CLIs are exposed through the root plugin catalog manifest, not bundled into npm's `clis/` set.
 
 ## External CLI Passthrough
 
