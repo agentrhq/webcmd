@@ -16873,16 +16873,25 @@
   {
     "site": "practo",
     "name": "login",
-    "description": "Open Practo login for manual sign-in",
+    "description": "Open Practo login and wait until the browser session is authenticated",
     "access": "write",
     "domain": "www.practo.com",
     "strategy": "cookie",
     "browser": true,
-    "args": [],
+    "args": [
+      {
+        "name": "timeout",
+        "type": "int",
+        "default": 300,
+        "required": false,
+        "help": "Maximum seconds to wait for the user to finish login"
+      }
+    ],
     "columns": [
       "status",
+      "logged_in",
       "site",
-      "message"
+      "name"
     ],
     "type": "js",
     "modulePath": "practo/login.js",

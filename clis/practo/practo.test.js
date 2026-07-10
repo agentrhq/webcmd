@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ArgumentError } from '@agentrhq/webcmd/errors';
 import { getRegistry } from '@agentrhq/webcmd/registry';
 import './appointment.js';
@@ -122,6 +122,24 @@ describe('practo command registry', () => {
     expect(cancel.access).toBe('write');
     expect(book.args.find((arg) => arg.name === 'confirm')?.type).toBe('boolean');
     expect(cancel.args.find((arg) => arg.name === 'confirm')?.type).toBe('boolean');
+  });
+
+  it('waits for manual login to complete', async () => {
+    const login = getRegistry().get('practo/login');
+    const page = {
+      goto: vi.fn().mockResolvedValue(undefined),
+      wait: vi.fn().mockResolvedValue(undefined),
+      evaluate: vi.fn()
+        .mockResolvedValueOnce({ __error: 'HTTP 401', status: 401 })
+        .mockResolvedValueOnce({ name: 'Ada' }),
+    };
+
+    await expect(login.func(page, { timeout: 1 })).resolves.toEqual([{
+      status: 'login_complete',
+      logged_in: true,
+      site: 'practo',
+      name: 'Ada',
+    }]);
   });
 
   it('refuses real booking without --confirm true', async () => {
