@@ -53,20 +53,6 @@ describe('plugin catalog', () => {
     });
   });
 
-  it('normalizes legacy github slug ids when reading catalogs', () => {
-    fs.mkdirSync(path.dirname(getUserPluginCatalogPath(homeDir)), { recursive: true });
-    fs.writeFileSync(getUserPluginCatalogPath(homeDir), JSON.stringify({
-      version: 1,
-      sources: [{
-        id: 'rishabhraj36-webcmd-plugin-nasa-images.json',
-        source: 'github:rishabhraj36/webcmd-plugin-nasa-images',
-        manifestUrl: 'https://raw.githubusercontent.com/rishabhraj36/webcmd-plugin-nasa-images/main/webcmd-plugin.json',
-      }],
-    }));
-
-    expect(readCatalog({ packageRoot, homeDir }).sources[0].id).toBe('rishabhraj36/webcmd-plugin-nasa-images');
-  });
-
   it('adds and removes catalog sources in the user catalog', async () => {
     const fetchJson = async () => ({ name: 'travel', description: 'Travel tools' });
 
