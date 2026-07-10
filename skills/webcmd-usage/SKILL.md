@@ -105,7 +105,8 @@ The error envelope includes a `trace` block pointing at `summary.md`. Patch only
 Two storage paths:
 
 - Private: `~/.webcmd/clis/<site>/<command>.js`
-- Public / PR: `plugins/<plugin-name>/` (community plugins in the main repo)
+- Public (official bundle): `clis/<site>/<command>.js`
+- Public (community PRs): `plugins/<site>/<command>.js`
 
 Scaffolding and checks:
 

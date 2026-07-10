@@ -19,10 +19,10 @@ Write the working file at:
 Copy it to the repo only when preparing a PR:
 
 ```text
-plugins/<plugin-name>/
+plugins/<site>/<name>.js
 ```
 
-For community CLIs being promoted to the main repo, create a plugin under `plugins/<plugin-name>/` instead of copying into `clis/`. The plugin must include `package.json`, `README.md`, `webcmd-plugin.json`, and the CLI files.
+For community CLIs promoted to the main repo, use `webcmd plugin create` to scaffold a plugin in `plugins/<plugin-name>/`. This sets up all required files (`package.json`, `README.md`, `webcmd-plugin.json`, CLI files) automatically.
 
 
 ## Minimal Registry Shape

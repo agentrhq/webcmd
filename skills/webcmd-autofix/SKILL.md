@@ -18,7 +18,7 @@ Hard stops before any code change:
 
 Scope constraint:
 
-- Modify only the file at `adapterSourcePath` in the trace `summary.md` front matter. That path is authoritative and may be `clis/<site>/...` in the repo or `~/.webcmd/clis/<site>/...` for user-local installs.
+- Modify only the file at `adapterSourcePath` in the trace `summary.md` front matter. That path is authoritative and may be `clis/<site>/...` in the repo or `plugins/<site>/...` in a plugin repo or `~/.webcmd/clis/<site>/...` for user-local installs.
 - Never modify `src/`, `extension/`, `tests/`, `package.json`, or `tsconfig.json` during autofix.
 
 Retry budget: maximum **3 repair rounds** per failure. A round is diagnose -> patch -> retry. If 3 rounds do not resolve it, stop and report what was tried.
