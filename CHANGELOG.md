@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.5](https://github.com/agentrhq/webcmd/compare/webcmd-v0.2.4...webcmd-v0.2.5) (2026-07-10)
+
+
+### Bug Fixes
+
+* document plugin-monorepo promotion flow and catalog commands ([#63](https://github.com/agentrhq/webcmd/issues/63)) ([3d7da5a](https://github.com/agentrhq/webcmd/commit/3d7da5ae0d28a068691570827111ac2c06cceb4a))
+
 ## [0.2.4](https://github.com/agentrhq/webcmd/compare/webcmd-v0.2.3...webcmd-v0.2.4) (2026-07-10)
 
 ### Highlights
