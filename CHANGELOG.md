@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0](https://github.com/agentrhq/webcmd/compare/webcmd-v0.2.3...webcmd-v0.3.0) (2026-07-10)
+
+
+### Features
+
+* added plugin marketplace catalog commands ([#61](https://github.com/agentrhq/webcmd/issues/61)) ([83a4ea3](https://github.com/agentrhq/webcmd/commit/83a4ea3ad1103f6965df1f800ee4a558dc54f09f))
+
+
+### Bug Fixes
+
+* **practo:** wait for login completion ([0cb24b5](https://github.com/agentrhq/webcmd/commit/0cb24b5178b1309effd749b067c7c73615f6dd7f))
+
 ## [0.2.3](https://github.com/agentrhq/webcmd/compare/webcmd-v0.2.2...webcmd-v0.2.3) (2026-07-09)
 
 ### Highlights
