@@ -1148,6 +1148,7 @@ Examples:
     session: string;
     contextId?: string;
     routing: { contextId?: string; preferredContextId?: string };
+    windowMode: BrowserWindowMode;
   };
 
   function browserSessionCommandAction(fn: (ctx: BrowserSessionCommandContext, opts: Record<string, unknown>) => Promise<void>) {
@@ -1160,11 +1161,12 @@ Examples:
       const profileSelection = getBrowserProfileSelection(command);
       const contextId = profileSelection?.contextId;
       const routing = profileRouteParams(profileSelection);
+      const windowMode = getBrowserWindowMode(command, 'foreground');
       try {
         const { BrowserBridge } = await import('./browser/index.js');
         const bridge = new BrowserBridge();
-        await bridge.connect({ timeout: DEFAULT_BROWSER_CONNECT_TIMEOUT, session, surface: 'browser', ...routing });
-        await fn({ session, contextId, routing }, opts);
+        await bridge.connect({ timeout: DEFAULT_BROWSER_CONNECT_TIMEOUT, session, surface: 'browser', ...routing, windowMode });
+        await fn({ session, contextId, routing, windowMode }, opts);
       } catch (err) {
         if (err instanceof BrowserCommandError) {
           emitBrowserCommandErrorEnvelope(err);
@@ -1181,7 +1183,7 @@ Examples:
     .description('Bind an existing Cloak runtime tab to the browser session named by <session>')
     .option('--page <id>', 'Cloak tab page id from `webcmd browser <session> tab list`')
     .option('--index <n>', 'Cloak tab index from `webcmd browser <session> tab list`')
-    .action(browserSessionCommandAction(async ({ session, contextId, routing }, opts) => {
+    .action(browserSessionCommandAction(async ({ session, contextId, routing, windowMode }, opts) => {
       const page = typeof opts.page === 'string' && opts.page.trim() ? opts.page.trim() : undefined;
       const rawIndex = typeof opts.index === 'string' && opts.index.trim() ? opts.index.trim() : undefined;
       if ((page && rawIndex) || (!page && !rawIndex)) {
@@ -1195,7 +1197,7 @@ Examples:
         throw new BrowserCommandError('--index must be a non-negative integer.', 'invalid_request');
       }
       const index = rawIndex === undefined ? undefined : Number.parseInt(rawIndex, 10);
-      const data = await bindTab(session, { ...routing, ...(page && { page }), ...(index !== undefined && { index }) });
+      const data = await bindTab(session, { ...routing, ...(page && { page }), ...(index !== undefined && { index }), windowMode });
       saveBrowserTargetState(undefined, getBrowserScope(session, contextId));
       console.log(JSON.stringify({ session, ...((data && typeof data === 'object') ? data as Record<string, unknown> : { data }) }, null, 2));
     }));

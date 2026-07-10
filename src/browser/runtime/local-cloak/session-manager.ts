@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { execFile } from 'node:child_process';
 import type { BrowserContext, Page as PlaywrightPage } from 'playwright-core';
 import { launchPersistentContext as cloakLaunchPersistentContext } from 'cloakbrowser';
-import type { BrowserSurface, SiteSessionMode } from '../../protocol.js';
+import type { BrowserSurface, BrowserWindowMode, SiteSessionMode } from '../../protocol.js';
 import { normalizeProfileId, resolveCloakProfileDir } from './profiles.js';
 import { CloakNetworkCapture } from './network.js';
 
@@ -15,6 +15,7 @@ export interface SessionKeyInput {
   surface?: BrowserSurface;
   siteSession?: SiteSessionMode;
   idleTimeout?: number;
+  windowMode?: BrowserWindowMode;
   /** Discard the existing leased page (if any) and create a new one under the same lease. */
   freshPage?: boolean;
 }
@@ -210,14 +211,14 @@ export class CloakSessionManager {
     return { profileId, leaseKey, context: runtime.context, page, pageId };
   }
 
-  async selectPage(input: Pick<SessionKeyInput, 'profileId'> & { pageId?: string; index?: number }): Promise<CloakPageLease | null> {
+  async selectPage(input: Pick<SessionKeyInput, 'profileId' | 'windowMode'> & { pageId?: string; index?: number }): Promise<CloakPageLease | null> {
     const profileId = normalizeProfileId(input.profileId);
     const runtime = this.profiles.get(profileId);
     if (!runtime) return null;
     const match = input.pageId ? this.findEntryByPageId(runtime, input.pageId) : this.openEntries(runtime)[input.index ?? -1];
     if (!match) return null;
     const [leaseKey, entry] = match;
-    await entry.page.bringToFront?.().catch(() => {});
+    if (input.windowMode !== 'background') await entry.page.bringToFront?.().catch(() => {});
     runtime.selectedPageId = entry.pageId;
     runtime.lastSeenAt = Date.now();
     return { profileId, leaseKey, context: runtime.context, page: entry.page, pageId: entry.pageId };
@@ -250,7 +251,7 @@ export class CloakSessionManager {
     entry.siteSession = input.siteSession;
     entry.idleTimeout = input.idleTimeout;
     runtime.pages.set(canonicalKey, entry);
-    await entry.page.bringToFront?.().catch(() => {});
+    if (input.windowMode !== 'background') await entry.page.bringToFront?.().catch(() => {});
     this.refreshIdleTimer(runtime, canonicalKey, entry);
     runtime.selectedPageId = entry.pageId;
     runtime.lastSeenAt = Date.now();

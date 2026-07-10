@@ -1187,8 +1187,8 @@ describe('browser tab targeting commands', () => {
 
     await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'bind', '--page', 'tab-2']);
 
-    expect(mockBrowserConnect).toHaveBeenCalledWith({ timeout: 45, session: 'test', surface: 'browser' });
-    expect(mockBindTab).toHaveBeenCalledWith('test', { page: 'tab-2' });
+    expect(mockBrowserConnect).toHaveBeenCalledWith({ timeout: 45, session: 'test', surface: 'browser', windowMode: 'foreground' });
+    expect(mockBindTab).toHaveBeenCalledWith('test', { page: 'tab-2', windowMode: 'foreground' });
     const out = lastJsonLog();
     expect(out.session).toBe('test');
     expect(out.url).toBe('https://user.example/inbox');
@@ -1199,10 +1199,19 @@ describe('browser tab targeting commands', () => {
 
     await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'bind', '--index', '1']);
 
-    expect(mockBrowserConnect).toHaveBeenCalledWith({ timeout: 45, session: 'test', surface: 'browser' });
-    expect(mockBindTab).toHaveBeenCalledWith('test', { index: 1 });
+    expect(mockBrowserConnect).toHaveBeenCalledWith({ timeout: 45, session: 'test', surface: 'browser', windowMode: 'foreground' });
+    expect(mockBindTab).toHaveBeenCalledWith('test', { index: 1, windowMode: 'foreground' });
     const out = lastJsonLog();
     expect(out.session).toBe('test');
+  });
+
+  it('passes background window mode when binding a Cloak tab', async () => {
+    const program = createProgram('', '');
+
+    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', '--window', 'background', 'bind', '--page', 'tab-2']);
+
+    expect(mockBrowserConnect).toHaveBeenCalledWith({ timeout: 45, session: 'test', surface: 'browser', windowMode: 'background' });
+    expect(mockBindTab).toHaveBeenCalledWith('test', { page: 'tab-2', windowMode: 'background' });
   });
 
   it('requires an explicit Cloak tab target for bind', async () => {
@@ -1353,7 +1362,7 @@ describe('browser tab targeting commands', () => {
 
     await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'unbind']);
 
-    expect(mockBrowserConnect).toHaveBeenCalledWith({ timeout: 45, session: 'test', surface: 'browser' });
+    expect(mockBrowserConnect).toHaveBeenCalledWith({ timeout: 45, session: 'test', surface: 'browser', windowMode: 'foreground' });
     expect(mockSendCommand).toHaveBeenCalledWith('close-window', { session: 'test', surface: 'browser' });
     const out = lastJsonLog();
     expect(out).toEqual({ unbound: true, session: 'test' });

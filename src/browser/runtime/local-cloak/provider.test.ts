@@ -277,6 +277,49 @@ describe('LocalCloakRuntimeProvider', () => {
     expect(pages[1].close).toHaveBeenCalled();
   });
 
+  it('does not bring selected tabs to front in background window mode', async () => {
+    const { provider, pages } = makeProviderWithFakePage();
+
+    const created = await provider.dispatch({ id: 'new', action: 'tabs', op: 'new', session: 'work', surface: 'browser', url: 'https://second.example/', profileId: 'default' });
+
+    await expect(provider.dispatch({
+      id: 'select',
+      action: 'tabs',
+      op: 'select',
+      session: 'work',
+      surface: 'browser',
+      page: created.page,
+      profileId: 'default',
+      windowMode: 'background',
+    })).resolves.toMatchObject({ id: 'select', ok: true });
+    expect(pages[1].bringToFront).not.toHaveBeenCalled();
+  });
+
+  it('does not bring bound tabs to front in background window mode', async () => {
+    const { provider, pages } = makeProviderWithFakePage();
+    const created = await provider.dispatch({ id: 'new', action: 'tabs', op: 'new', session: 'source', surface: 'browser', url: 'https://second.example/', profileId: 'default' });
+
+    await expect(provider.dispatch({
+      id: 'bind',
+      action: 'bind',
+      session: 'target',
+      surface: 'browser',
+      page: created.page,
+      profileId: 'default',
+      windowMode: 'background',
+    })).resolves.toMatchObject({ id: 'bind', ok: true });
+    expect(pages[1].bringToFront).not.toHaveBeenCalled();
+  });
+
+  it('brings bound tabs to front by default', async () => {
+    const { provider, pages } = makeProviderWithFakePage();
+    const created = await provider.dispatch({ id: 'new', action: 'tabs', op: 'new', session: 'source', surface: 'browser', url: 'https://second.example/', profileId: 'default' });
+
+    await expect(provider.dispatch({ id: 'bind', action: 'bind', session: 'target', surface: 'browser', page: created.page, profileId: 'default' }))
+      .resolves.toMatchObject({ id: 'bind', ok: true });
+    expect(pages[1].bringToFront).toHaveBeenCalledOnce();
+  });
+
   it('closes a window by page identity when command.page is provided', async () => {
     const { provider, pages } = makeProviderWithFakePage();
     const first = await provider.dispatch({ id: 'first', action: 'navigate', session: 'first', surface: 'browser', url: 'https://first.example/', profileId: 'default' });

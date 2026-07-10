@@ -21,7 +21,7 @@ import {
   type DaemonHealth,
   type DaemonStatus,
 } from './daemon-transport.js';
-import type { BrowserRuntimeCommand, BrowserRuntimeResult } from './protocol.js';
+import type { BrowserRuntimeCommand, BrowserRuntimeResult, BrowserWindowMode } from './protocol.js';
 
 let _idCounter = 0;
 
@@ -250,6 +250,6 @@ export async function sendCommandFull(
   return { data: result.data, page: result.page };
 }
 
-export async function bindTab(session: string, opts: { contextId?: string; preferredContextId?: string; page?: string; index?: number } = {}): Promise<unknown> {
+export async function bindTab(session: string, opts: { contextId?: string; preferredContextId?: string; page?: string; index?: number; windowMode?: BrowserWindowMode } = {}): Promise<unknown> {
   return sendCommand('bind', { session, surface: 'browser', ...opts });
 }

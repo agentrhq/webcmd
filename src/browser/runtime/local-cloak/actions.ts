@@ -52,6 +52,7 @@ async function resolveLease(manager: CloakSessionManager, command: BrowserRuntim
     siteSession: command.siteSession,
     idleTimeout: command.idleTimeout,
     freshPage: command.freshPage,
+    windowMode: command.windowMode,
   });
 }
 
@@ -137,11 +138,12 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
               siteSession: command.siteSession,
               idleTimeout: command.idleTimeout,
               url: command.url,
+              windowMode: command.windowMode,
             });
             return { id: command.id, ok: true, data: { title: await lease.page.title(), url: lease.page.url() }, page: lease.pageId };
           }
           case 'select': {
-            const lease = await manager.selectPage({ profileId: commandProfileId(manager, command), pageId: command.page, index: command.index });
+            const lease = await manager.selectPage({ profileId: commandProfileId(manager, command), pageId: command.page, index: command.index, windowMode: command.windowMode });
             if (!lease) return { id: command.id, ok: false, errorCode: 'runtime_command_failed', error: 'Tab not found' };
             return { id: command.id, ok: true, data: { selected: true, url: lease.page.url() }, page: lease.pageId };
           }
@@ -215,6 +217,7 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
             surface: command.surface,
             siteSession: command.siteSession,
             idleTimeout: command.idleTimeout,
+            windowMode: command.windowMode,
             pageId: command.page,
             index: command.index,
           });
