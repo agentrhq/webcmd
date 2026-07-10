@@ -105,7 +105,6 @@ The error envelope includes a `trace` block pointing at `summary.md`. Patch only
 Storage paths:
 
 - Private: `~/.webcmd/clis/<site>/<command>.js`
-- Public (official bundle): `clis/<site>/<command>.js`
 - Public (community PRs): `plugins/<site>/` plus root `webcmd-plugin.json` registration
 
 The main Webcmd repo is itself a plugin monorepo: promoted community CLIs belong under `plugins/<site>/` and must be registered in the root `webcmd-plugin.json`.
