@@ -134,6 +134,8 @@ webcmd plugin search [query]
 
 Plugins are installable extensions pulled from git or local paths. Main-repo community CLIs are exposed through the root plugin catalog manifest, not bundled into npm's `clis/` set.
 
+> **Note:** The repository's `plugins/` directory is not shipped in the npm package. Find the required plugin with `webcmd plugin search`, then install its `installSource` with `webcmd plugin install <installSource>`.
+
 ## External CLI Passthrough
 
 ```bash
