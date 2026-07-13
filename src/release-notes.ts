@@ -147,9 +147,16 @@ function parseReleaseSemver(tag: string): ReleaseSemver | null {
 
 export function isMajorRelease(context: Pick<ReleaseContext, 'tag' | 'previousTag'>): boolean {
   const current = parseReleaseSemver(context.tag);
-  if (!current || current.major === 0) return false;
+  if (!current) return false;
 
   const previous = parseReleaseSemver(context.previousTag);
+  if (current.major === 0) {
+    if (current.minor === 0 || current.patch !== 0) return false;
+    if (!previous) return true;
+
+    return previous.major === 0 && current.minor > previous.minor;
+  }
+
   if (!previous) return current.minor === 0 && current.patch === 0;
 
   return current.major > previous.major;

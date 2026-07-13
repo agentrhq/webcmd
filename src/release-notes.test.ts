@@ -34,8 +34,11 @@ describe('release notes helpers', () => {
   it('detects major releases from semver tag ranges', () => {
     expect(isMajorRelease({ tag: 'webcmd-v2.0.0', previousTag: 'webcmd-v1.9.9' })).toBe(true);
     expect(isMajorRelease({ tag: 'v3.1.0', previousTag: 'v2.9.9' })).toBe(true);
+    expect(isMajorRelease({ tag: 'webcmd-v0.3.0', previousTag: 'webcmd-v0.2.5' })).toBe(true);
+    expect(isMajorRelease({ tag: 'webcmd-v0.1.0', previousTag: 'webcmd-v0.0.9' })).toBe(true);
     expect(isMajorRelease({ tag: 'webcmd-v2.1.0', previousTag: 'webcmd-v2.0.0' })).toBe(false);
-    expect(isMajorRelease({ tag: 'webcmd-v0.3.0', previousTag: 'webcmd-v0.2.5' })).toBe(false);
+    expect(isMajorRelease({ tag: 'webcmd-v0.3.1', previousTag: 'webcmd-v0.3.0' })).toBe(false);
+    expect(isMajorRelease({ tag: 'webcmd-v0.0.1', previousTag: 'webcmd-v0.0.0' })).toBe(false);
   });
 
   it('deduplicates PR author contributors and excludes service accounts', () => {
@@ -129,9 +132,9 @@ describe('release notes helpers', () => {
 
   it('uses a deterministic major release title fallback when the model omits one', () => {
     const context: ReleaseContext = {
-      tag: 'webcmd-v2.0.0',
-      previousTag: 'webcmd-v1.9.9',
-      currentRef: 'webcmd-v2.0.0',
+      tag: 'webcmd-v0.3.0',
+      previousTag: 'webcmd-v0.2.5',
+      currentRef: 'webcmd-v0.3.0',
       pullRequests: [
         {
           number: 42,
@@ -146,7 +149,7 @@ describe('release notes helpers', () => {
 
     const normalized = normalizeReleaseNotes('## Highlights\n- Added a GitHub adapter.', { context });
 
-    expect(normalized).toContain('# webcmd v2.0.0: The Command Surface Expands');
+    expect(normalized).toContain('# webcmd v0.3.0: The Command Surface Expands');
   });
 
   it('does not add major release title treatment to minor releases', () => {
@@ -221,8 +224,8 @@ describe('release notes helpers', () => {
 
   it('builds a prompt grounded in the exact release range and PR list', () => {
     const context: ReleaseContext = {
-      tag: 'v0.2.0',
-      previousTag: 'v0.1.1',
+      tag: 'v0.2.1',
+      previousTag: 'v0.2.0',
       currentRef: 'abc123',
       pullRequests: [
         {
@@ -239,7 +242,7 @@ describe('release notes helpers', () => {
     };
 
     const prompt = buildReleaseNotesPrompt(context);
-    expect(prompt).toContain('v0.1.1...abc123');
+    expect(prompt).toContain('v0.2.0...abc123');
     expect(prompt).toContain('PR #42: feat: add docs scaffold');
     expect(prompt).toContain('docs/docs.json');
     expect(prompt).toContain('## Highlights');
@@ -256,9 +259,9 @@ describe('release notes helpers', () => {
 
   it('asks for a tasteful H1 title only when building major release notes', () => {
     const context: ReleaseContext = {
-      tag: 'webcmd-v2.0.0',
-      previousTag: 'webcmd-v1.9.9',
-      currentRef: 'webcmd-v2.0.0',
+      tag: 'webcmd-v0.3.0',
+      previousTag: 'webcmd-v0.2.5',
+      currentRef: 'webcmd-v0.3.0',
       pullRequests: [
         {
           number: 42,
@@ -276,7 +279,7 @@ describe('release notes helpers', () => {
     const prompt = buildReleaseNotesPrompt(context);
 
     expect(prompt).toContain('This is a major release');
-    expect(prompt).toContain('# webcmd v2.0.0: <Elegant Release Title>');
+    expect(prompt).toContain('# webcmd v0.3.0: <Elegant Release Title>');
     expect(prompt).toContain('grand enough to feel memorable, but polished rather than loud');
   });
 });

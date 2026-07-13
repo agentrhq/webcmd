@@ -264,7 +264,12 @@ describe('runGenerateReleaseNotes', () => {
     expect(workflow.indexOf('- name: Publish to npm')).toBeLessThan(workflow.indexOf('- name: Update changelog with enhanced release notes'));
     expect(workflow).toContain('npm --silent run generate-release-notes -- --update-changelog');
     expect(workflow).toContain('git push origin "HEAD:${{ github.ref_name }}"');
-    expect(workflow).toMatch(/if gh release edit "\$\{\{ steps\.release\.outputs\.tag_name \}\}" --notes-file "\$RUNNER_TEMP\/release-notes\.md"; then/);
+    expect(workflow).toContain('release_title="$(sed -n');
+    expect(workflow).toContain('release_body_file="$RUNNER_TEMP/release-notes.md"');
+    expect(workflow).toContain('release_body_file="$RUNNER_TEMP/release-body.md"');
+    expect(workflow).toContain('release_edit_args+=(--title "$release_title")');
+    expect(workflow).toContain('release_edit_args+=(--notes-file "$release_body_file")');
+    expect(workflow).toContain('if gh release edit "${{ steps.release.outputs.tag_name }}" "${release_edit_args[@]}"; then');
     expect(workflow).toMatch(/Enhanced release notes could not be applied; keeping release-please notes\./);
   });
 });

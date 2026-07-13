@@ -81,7 +81,16 @@ jobs:
           set -euo pipefail
           npm --silent run generate-release-notes -- "${{ steps.release.outputs.tag_name }}" > "$RUNNER_TEMP/release-notes.md"
           if [ -s "$RUNNER_TEMP/release-notes.md" ]; then
-            if gh release edit "${{ steps.release.outputs.tag_name }}" --notes-file "$RUNNER_TEMP/release-notes.md"; then
+            release_title="$(sed -n 's/^# //p' "$RUNNER_TEMP/release-notes.md" | head -n 1)"
+            release_body_file="$RUNNER_TEMP/release-notes.md"
+            release_edit_args=()
+            if [ -n "$release_title" ]; then
+              release_body_file="$RUNNER_TEMP/release-body.md"
+              tail -n +2 "$RUNNER_TEMP/release-notes.md" | sed '1{/^$/d;}' > "$release_body_file"
+              release_edit_args+=(--title "$release_title")
+            fi
+            release_edit_args+=(--notes-file "$release_body_file")
+            if gh release edit "${{ steps.release.outputs.tag_name }}" "${release_edit_args[@]}"; then
               echo "Enhanced release notes were applied."
             else
               echo "::warning::Enhanced release notes could not be applied; keeping release-please notes."
