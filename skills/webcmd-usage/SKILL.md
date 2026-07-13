@@ -55,7 +55,7 @@ webcmd <site> --help
 webcmd <site> <command> --help
 ```
 
-Run `webcmd` with no arguments to see all installed app and site adapters. Do not hard-code adapter lists: `webcmd list -f json` is the source of truth and emits one entry per command with fields such as `{site, name, aliases, description, strategy, browser, args, columns}`.
+Run `webcmd` with no arguments to see all available functions and installed site adapters. Do not hard-code adapter lists: `webcmd list -f json` is the source of truth and emits one entry per command with fields such as `{site, name, aliases, description, strategy, browser, args, columns}`.
 
 Before falling back to raw `webcmd browser` on high-change authenticated sites, check whether a site adapter already exposes the workflow.
 
