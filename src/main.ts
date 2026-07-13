@@ -62,6 +62,21 @@ if (argv[0] === 'completion' && argv.length >= 2) {
   // Unknown shell — fall through to full path for proper error handling
 }
 
+// Hosted setup and hosted dispatch run before local adapter discovery. This is
+// the mode boundary: hosted mode must not read ~/.webcmd/clis or local site
+// memory just to decide what commands exist.
+if (argv[0] === 'setup') {
+  const { runHostedSetup } = await import('./hosted/setup.js');
+  process.exit(await runHostedSetup());
+}
+
+const { shouldUseHostedMode } = await import('./hosted/config.js');
+if (shouldUseHostedMode()) {
+  const { runHostedCli } = await import('./hosted/runner.js');
+  const result = await runHostedCli(argv);
+  if (result.handled) process.exit(result.exitCode);
+}
+
 // Fast path: --get-completions — read from manifest, skip discovery
 const getCompIdx = process.argv.indexOf('--get-completions');
 if (getCompIdx !== -1) {
