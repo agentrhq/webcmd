@@ -22,19 +22,37 @@ cli({
   );
   if (!res.ok) throw new Error('HTTP ' + res.status + ' - make sure you are logged in to Instagram');
   const data = await res.json();
-  const posts = [];
-  for (const sec of (data?.sectional_items || [])) {
-    for (const m of (sec?.layout_content?.medias || [])) {
-      const media = m?.media;
-      if (media) posts.push({
-        user: media.user?.username || '',
-        caption: (media.caption?.text || '').replace(/\\n/g, ' ').substring(0, 100),
-        likes: media.like_count ?? 0,
-        comments: media.comment_count ?? 0,
-        type: media.media_type === 1 ? 'photo' : media.media_type === 2 ? 'video' : 'carousel',
-      });
+
+  const seen = new Set();
+  const medias = [];
+  const collect = (node, depth) => {
+    if (!node || typeof node !== 'object' || depth > 8) return;
+    if (Array.isArray(node)) {
+      for (const item of node) collect(item, depth + 1);
+      return;
     }
-  }
+    const media = node.media;
+    if (media && typeof media === 'object' && !Array.isArray(media)) {
+      const key = media.pk ?? media.id ?? media.code;
+      if (key != null && !seen.has(key)) {
+        seen.add(key);
+        medias.push(media);
+      }
+    }
+    for (const [key, value] of Object.entries(node)) {
+      if (key === 'media') continue;
+      if (value && typeof value === 'object') collect(value, depth + 1);
+    }
+  };
+  for (const section of (data?.sectional_items || [])) collect(section, 0);
+
+  const posts = medias.map((media) => ({
+    user: media.user?.username || '',
+    caption: (media.caption?.text || '').replace(/\\n/g, ' ').substring(0, 100),
+    likes: media.like_count ?? media.play_count ?? 0,
+    comments: media.comment_count ?? 0,
+    type: media.media_type === 1 ? 'photo' : media.media_type === 2 ? 'video' : 'carousel',
+  }));
   return posts.slice(0, limit).map((p, i) => ({ rank: i + 1, ...p }));
 })()
 ` },
