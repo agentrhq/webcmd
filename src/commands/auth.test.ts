@@ -18,7 +18,7 @@ function registerWhoami(site: string, opts: {
   quick?: boolean;
   quickLoggedIn?: boolean;
   refresh?: 'touched' | 'refreshed';
-  identity?: Record<string, unknown>;
+  identity?: Record<string, unknown> | Record<string, unknown>[];
 } = {}): void {
   cli({
     site,
@@ -92,12 +92,12 @@ describe('auth status collection', () => {
 
   it('runs full whoami with --full and returns a safe identity summary', async () => {
     registerWhoami('gamma', {
-      identity: {
+      identity: [{
         logged_in: true,
         site: 'gamma',
         email: 'hidden@example.com',
         username: 'public-handle',
-      },
+      }],
     });
 
     const rows = await collectAuthStatus({ sites: 'gamma', full: true });
