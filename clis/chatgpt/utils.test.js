@@ -4,7 +4,7 @@ import path from 'node:path';
 import { JSDOM } from 'jsdom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ArgumentError, AuthRequiredError, CommandExecutionError } from '@agentrhq/webcmd/errors';
-import { __test__, getChatGPTDetailRows, getChatGPTImageAssets, getChatGPTResponsePairCounts, getChatGPTVisibleImageUrls, getCurrentChatGPTModel, getCurrentChatGPTTool, isGenerating, navigateToProject, openChatGPTConversation, prepareChatGPTImagePaths, selectChatGPTModel, selectChatGPTTool, sendChatGPTMessage, uploadChatGPTImages, waitForChatGPTDetailRows, waitForChatGPTImages, waitForChatGPTResponse } from './utils.js';
+import { __test__, getChatGPTDetailRows, getChatGPTImageAssets, getChatGPTResponsePairCounts, getChatGPTVisibleImageUrls, getCurrentChatGPTModel, getCurrentChatGPTTool, getVisibleMessages, isGenerating, navigateToProject, openChatGPTConversation, prepareChatGPTImagePaths, selectChatGPTModel, selectChatGPTTool, sendChatGPTMessage, uploadChatGPTImages, waitForChatGPTDetailRows, waitForChatGPTImages, waitForChatGPTResponse } from './utils.js';
 
 const tempDirs = [];
 
@@ -20,6 +20,7 @@ function createPageMock({ location = '', generating = [], imageUrls = [] } = {})
     let imageIndex = 0;
     return {
         wait: vi.fn().mockResolvedValue(undefined),
+        sleep: vi.fn().mockResolvedValue(undefined),
         goto: vi.fn().mockResolvedValue(undefined),
         evaluate: vi.fn((script) => {
             if (script === 'window.location.href') return Promise.resolve(location);
@@ -51,6 +52,7 @@ function createDomEvaluatePage(html) {
         dom,
         goto: vi.fn().mockResolvedValue(undefined),
         wait: vi.fn().mockResolvedValue(undefined),
+        sleep: vi.fn().mockResolvedValue(undefined),
         evaluate: vi.fn((script) => Promise.resolve(dom.window.eval(script))),
     };
 }
@@ -662,6 +664,7 @@ describe('chatgpt detail completion state', () => {
     function createDetailPageMock({ generating = false, messages = [] } = {}) {
         return {
             wait: vi.fn().mockResolvedValue(undefined),
+            sleep: vi.fn().mockResolvedValue(undefined),
             evaluate: vi.fn((script) => {
                 if (script.includes('Stop generating') || script.includes('Thinking')) {
                     return Promise.resolve(generating);
@@ -721,6 +724,7 @@ describe('chatgpt ask response extraction boundary', () => {
         let messageIndex = 0;
         return {
             wait: vi.fn().mockResolvedValue(undefined),
+            sleep: vi.fn().mockResolvedValue(undefined),
             evaluate: vi.fn((script) => {
                 if (script === 'window.location.href') return Promise.resolve(url);
                 if (script.includes('Stop generating') || script.includes('Thinking')) {
@@ -856,6 +860,43 @@ describe('chatgpt ask response extraction boundary', () => {
             conversationUrl: 'https://chatgpt.com/c/demo',
         })).rejects.toThrow(/navigated away from the target conversation/);
     });
+
+    it('polls with pure sleeps instead of DOM-stable numeric waits', async () => {
+        mockAdvancingClock();
+        const page = createResponseWaitPage([[], [], []]);
+
+        await expect(waitForChatGPTResponse(page, 0, 'unmatched prompt', 4, {}))
+            .rejects.toThrow(/chatgpt ask timed out/);
+
+        expect(page.sleep).toHaveBeenCalled();
+        expect(page.wait).not.toHaveBeenCalled();
+    });
+
+    it('uses textContent instead of layout-triggering innerText in text-only polls', async () => {
+        const page = createDomEvaluatePage(`
+            <article data-testid="conversation-turn-2">
+              <div data-message-author-role="assistant">
+                <div class="markdown">done answer</div>
+              </div>
+            </article>
+        `);
+        for (const node of page.dom.window.document.querySelectorAll('*')) {
+            node.getBoundingClientRect = () => ({ width: 120, height: 36 });
+        }
+        Object.defineProperty(page.dom.window.HTMLElement.prototype, 'innerText', {
+            configurable: true,
+            get() {
+                throw new Error('innerText should not be read during text-only polls');
+            },
+        });
+
+        await expect(getVisibleMessages(page, { textOnly: true })).resolves.toEqual([{
+            Index: 1,
+            Role: 'Assistant',
+            Text: 'done answer',
+            Html: '',
+        }]);
+    });
 });
 
 describe('chatgpt generation state', () => {
@@ -868,6 +909,47 @@ describe('chatgpt generation state', () => {
         };
 
         await expect(isGenerating(page)).resolves.toBe(true);
+    });
+
+    it('detects a plain-text Thinking pill in the latest message turn', async () => {
+        const page = createDomEvaluatePage(`
+            <div data-message-author-role="assistant">
+              <div>partial answer</div>
+              <div>Thinking</div>
+            </div>
+        `);
+
+        await expect(isGenerating(page)).resolves.toBe(true);
+    });
+
+    it('stays idle when Thinking is only the selected composer model', async () => {
+        const page = createDomEvaluatePage(`
+            <article data-testid="conversation-turn-2">
+              <div data-message-author-role="assistant"><div class="markdown">done answer</div></div>
+            </article>
+            <form>
+              <div id="prompt-textarea" contenteditable="true"></div>
+              <button aria-label="Thinking">Thinking</button>
+            </form>
+        `);
+
+        await expect(isGenerating(page)).resolves.toBe(false);
+    });
+
+    it('ignores finished answer text that merely mentions Thinking', async () => {
+        const page = createDomEvaluatePage(`
+            <article data-testid="conversation-turn-2">
+              <div data-message-author-role="assistant">
+                <div class="markdown"><p>The answer discusses Thinking mode.</p></div>
+              </div>
+            </article>
+        `);
+        Object.defineProperty(page.dom.window.document.body, 'innerText', {
+            configurable: true,
+            get: () => 'The answer discusses Thinking mode.',
+        });
+
+        await expect(isGenerating(page)).resolves.toBe(false);
     });
 });
 
@@ -1203,6 +1285,7 @@ describe('chatgpt image upload helper', () => {
         const page = {
             setFileInput: vi.fn().mockResolvedValue(undefined),
             wait: vi.fn().mockResolvedValue(undefined),
+            sleep: vi.fn().mockResolvedValue(undefined),
             evaluate: vi.fn().mockResolvedValue(true),
         };
 
@@ -1254,6 +1337,7 @@ describe('chatgpt image upload helper', () => {
         const page = {
             setFileInput: vi.fn().mockRejectedValue(new Error('No element found')),
             wait: vi.fn().mockResolvedValue(undefined),
+            sleep: vi.fn().mockResolvedValue(undefined),
             evaluate: vi.fn((script) => {
                 if (String(script).includes('new DataTransfer()')) {
                     return Promise.resolve({ ok: true });
@@ -1289,6 +1373,7 @@ describe('chatgpt image upload helper', () => {
         const page = {
             setFileInput: vi.fn().mockResolvedValue(undefined),
             wait: vi.fn().mockResolvedValue(undefined),
+            sleep: vi.fn().mockResolvedValue(undefined),
             evaluate: vi.fn((script) => Promise.resolve(dom.window.eval(String(script)))),
         };
 
@@ -1319,6 +1404,7 @@ describe('chatgpt image upload helper', () => {
         const page = {
             setFileInput: vi.fn().mockResolvedValue(undefined),
             wait: vi.fn().mockResolvedValue(undefined),
+            sleep: vi.fn().mockResolvedValue(undefined),
             evaluate: vi.fn((script) => Promise.resolve(dom.window.eval(String(script)))),
         };
 

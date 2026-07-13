@@ -1059,8 +1059,10 @@ export async function sendChatGPTMessage(page, text) {
     return true;
 }
 
-export async function getVisibleMessages(page) {
+export async function getVisibleMessages(page, { textOnly = false } = {}) {
+    const includeHtml = textOnly ? 'false' : 'true';
     const result = requireArrayEvaluateResult(unwrapEvaluateResult(await page.evaluate(`(() => {
+        const includeHtml = ${includeHtml};
         const isVisible = (el) => {
             if (!(el instanceof HTMLElement)) return false;
             const style = window.getComputedStyle(el);
@@ -1097,8 +1099,11 @@ export async function getVisibleMessages(page) {
                 || node.querySelector('.markdown')
                 || node.querySelector('[data-message-author-role]')
                 || node;
-            const html = contentNode instanceof HTMLElement ? (contentNode.innerHTML || '') : '';
-            const text = normalize(contentNode instanceof HTMLElement ? (contentNode.innerText || contentNode.textContent || '') : '');
+            const html = includeHtml && contentNode instanceof HTMLElement ? (contentNode.innerHTML || '') : '';
+            const rawText = contentNode instanceof HTMLElement
+                ? (includeHtml ? (contentNode.innerText || contentNode.textContent || '') : (contentNode.textContent || ''))
+                : '';
+            const text = normalize(rawText);
             if (!text) continue;
             const key = role + '\\n' + text;
             if (seen.has(key)) continue;
@@ -1169,7 +1174,7 @@ export async function waitForChatGPTDetailRows(page, { wantMarkdown = false, tim
             lastKey = key;
             stableStartedAt = 0;
         }
-        await page.wait(3);
+        await page.sleep(3);
     }
 
     throw new TimeoutError(
@@ -1821,7 +1826,7 @@ export async function waitForChatGPTDeepResearchResult(page, { conversationId = 
                 stableStartedAt = Date.now();
             }
         }
-        await page.wait(3);
+        await page.sleep(3);
     }
 
     throw new TimeoutError(
@@ -1912,7 +1917,7 @@ export async function waitForChatGPTResponse(page, baselineCount, prompt, timeou
     const baselinePairCounts = normalizeBaselinePairCounts(options);
 
     while (Date.now() - startTime < timeoutSeconds * 1000) {
-        await page.wait(3);
+        await page.sleep(3);
         if (options.conversationUrl) {
             const currentUrl = await currentChatGPTUrl(page);
             if (currentUrl && !isSameChatGPTConversation(currentUrl, options.conversationUrl)) {
@@ -1926,7 +1931,7 @@ export async function waitForChatGPTResponse(page, baselineCount, prompt, timeou
             continue;
         }
 
-        const messages = await getVisibleMessages(page);
+        const messages = await getVisibleMessages(page, { textOnly: true });
         const candidate = findLatestNewAssistantResponse(messages, prompt, baselinePairCounts);
         if (!candidate || candidate === String(prompt || '').trim()) continue;
 
@@ -2056,7 +2061,7 @@ export async function prepareChatGPTImagePaths(imagePaths) {
 async function waitForChatGPTUploadPreview(page, fileNames) {
     const namesJson = JSON.stringify(fileNames);
     for (let attempt = 0; attempt < 10; attempt += 1) {
-        await page.wait(1);
+        await page.sleep(1);
         const ready = requireBooleanEvaluateResult(unwrapEvaluateResult(await page.evaluate(`
             (() => {
                 const names = ${namesJson};
@@ -2170,15 +2175,36 @@ export async function uploadChatGPTImages(page, imagePaths) {
 export async function isGenerating(page) {
     return requireBooleanEvaluateResult(unwrapEvaluateResult(await page.evaluate(`
         (() => {
-            const text = (document.body?.innerText || '').replace(/\\s+/g, ' ');
-            if (/Thinking|Stop generating|Thinking/.test(text)) return true;
-            return Array.from(document.querySelectorAll('button')).some(b => {
-                const label = b.getAttribute('aria-label') || '';
-                return label === 'Stop generating'
-                    || label.includes('Thinking')
-                    || label.includes('Stop generating')
-                    || label.includes('Thinking');
-            });
+            if (document.querySelector('[data-testid="stop-button"]')) return true;
+
+            const controls = Array.from(document.querySelectorAll('button, [role="button"], [aria-label]'));
+            for (const control of controls) {
+                const label = control.getAttribute('aria-label') || '';
+                if (label.includes('Stop generating')) return true;
+            }
+
+            const scopes = [];
+            const turns = document.querySelectorAll('article[data-testid*="conversation-turn"]');
+            const messages = turns.length ? turns : document.querySelectorAll('[data-message-author-role]');
+            if (messages.length) {
+                scopes.push([messages[messages.length - 1], /Thinking|Stop generating/]);
+            }
+            const composer = document.querySelector('#prompt-textarea, [aria-label="Chat with ChatGPT"]');
+            if (composer) {
+                let root = composer;
+                for (let i = 0; i < 4 && root.parentElement; i += 1) root = root.parentElement;
+                scopes.push([root, /Stop generating/]);
+            }
+
+            for (const [scope, pattern] of scopes) {
+                for (const el of [scope, ...scope.querySelectorAll('*')]) {
+                    if (el.children.length) continue;
+                    if (el.closest('.markdown, pre, code')) continue;
+                    const text = (el.textContent || '').trim();
+                    if (text && text.length <= 40 && pattern.test(text)) return true;
+                }
+            }
+            return false;
         })()
     `)), 'chatgpt generation state');
 }
@@ -2319,7 +2345,7 @@ export async function waitForChatGPTImages(page, beforeUrls, timeoutSeconds, con
     let stableCount = 0;
 
     for (let i = 0; i < maxPolls; i++) {
-        await page.wait(i === 0 ? 3 : pollIntervalSeconds);
+        await page.sleep(i === 0 ? 3 : pollIntervalSeconds);
 
         let currentUrl = '';
         if (convUrl && convUrl.includes('/c/')) {

@@ -1029,6 +1029,16 @@ export abstract class BasePage implements IPage {
     return [];
   }
 
+  /**
+   * Pure client-side sleep with no page evaluation.
+   *
+   * Poll loops that already re-check state should use this instead of
+   * `wait(number)`, whose DOM-stability probe observes the whole document.
+   */
+  async sleep(seconds: number): Promise<void> {
+    await new Promise(resolve => setTimeout(resolve, seconds * 1000));
+  }
+
   async wait(options: number | WaitOptions): Promise<void> {
     if (typeof options === 'number') {
       if (options >= 1) {
