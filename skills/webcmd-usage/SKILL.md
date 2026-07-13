@@ -58,16 +58,12 @@ webcmd <site> <command> --help
 
 Do not hard-code adapter lists. `webcmd list -f json` is the source of truth for installed commands and emits one entry per command with fields such as `{site, name, aliases, description, strategy, browser, args, columns}`.
 
-If a user asks for a site/tool that is missing from `webcmd list`, search installable plugins before saying Webcmd cannot do it or falling back to `webcmd browser`:
+Use this fallback order:
 
-```bash
-webcmd plugin search <site-or-tool> -f json
-webcmd plugin catalog list -f json
-```
-
-If search returns a match, tell the user it is available as a plugin and offer the install command (`webcmd plugin install <source>`). If plugin search errors because catalog sources cannot be fetched, report the catalog/search failure separately from "no plugin exists."
-
-Before falling back to raw `webcmd browser` on high-change authenticated sites, check whether an installed adapter or installable plugin already exposes the workflow.
+1. Run `webcmd list -f json` once.
+2. Check that result against the whole requested workflow, not only a named site. If one installed command covers it, use that command and stop discovery. Do not rerun or shell-filter `webcmd list`.
+3. If none covers it, derive a short plugin query from the missing site or capability and run `webcmd plugin search <query> -f json`. Preserve the user's term when practical: `find flights` becomes `flight`. Do this even when the user names no site.
+4. If plugin search returns a match, offer `webcmd plugin install <installSource>`. If it returns no match and no error, raw `webcmd browser` is allowed. If it errors, run `webcmd plugin catalog list -f json`, report plugin discovery as unavailable, and stop immediately. Do not run more discovery commands such as `webcmd plugin list`, inspect source-checkout manifests, or check unrelated external CLIs.
 
 ## Universal Flags
 
