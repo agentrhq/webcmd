@@ -4,6 +4,14 @@ import { ArgumentError, AuthRequiredError, CommandExecutionError, EmptyResultErr
 import { __test__ } from './profile.js';
 
 describe('twitter profile command', () => {
+    it('serializes the validated screen name before embedding it in page.evaluate', () => {
+        const command = getRegistry().get('twitter/profile');
+        const source = command.func.toString();
+
+        expect(source).toContain('const screenName = ${JSON.stringify(username)};');
+        expect(source).not.toContain('const screenName = "${username}";');
+    });
+
     it('maps current result.core profile fields while preserving legacy fallback fields', () => {
         const rows = __test__.mapTwitterProfileResult({
             core: {
