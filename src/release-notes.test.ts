@@ -106,11 +106,19 @@ describe('release notes helpers', () => {
         },
         {
           number: 43,
+          title: 'feat: improve release presentation',
+          author: { login: 'bob' },
+          labels: [{ name: 'feature' }],
+          files: [{ path: 'src/release-notes.ts' }],
+          url: 'https://github.com/agentrhq/webcmd/pull/43',
+        },
+        {
+          number: 44,
           title: 'chore: release automation',
           author: { login: 'github-actions[bot]' },
           labels: [],
           files: [{ path: '.github/workflows/release.yml' }],
-          url: 'https://github.com/agentrhq/webcmd/pull/43',
+          url: 'https://github.com/agentrhq/webcmd/pull/44',
         },
       ],
     };
@@ -125,8 +133,9 @@ describe('release notes helpers', () => {
 
     expect(normalized).toContain('# webcmd v2.0.0: The Command Surface Opens');
     expect(normalized).toContain('## Contributors');
-    expect(normalized).toContain('<img src="https://github.com/alice.png?size=64" width="64" height="64" alt="@alice" />');
+    expect(normalized).toContain('<img src="https://github.com/alice.png?size=40" width="40" height="40" alt="@alice" /></a> <a href="https://github.com/bob"');
     expect(normalized).toContain('[@alice](https://github.com/alice)');
+    expect(normalized).toContain('[@alice](https://github.com/alice) | [@bob](https://github.com/bob)');
     expect(normalized).not.toContain('github-actions');
   });
 
@@ -204,7 +213,7 @@ describe('release notes helpers', () => {
       '- Improved district checkout.',
       '',
       '## Contributors',
-      '<a href="https://github.com/alice" title="@alice"><img src="https://github.com/alice.png?size=64" width="64" height="64" alt="@alice" /></a>',
+      '<a href="https://github.com/alice" title="@alice"><img src="https://github.com/alice.png?size=40" width="40" height="40" alt="@alice" /></a>',
       '',
       '[@alice](https://github.com/alice)',
     ].join('\n');

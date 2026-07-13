@@ -86,7 +86,7 @@ describe('runGenerateReleaseNotes', () => {
         '- Better summaries.',
         '',
         '## Contributors',
-        '<a href="https://github.com/alice" title="@alice"><img src="https://github.com/alice.png?size=64" width="64" height="64" alt="@alice" /></a>',
+        '<a href="https://github.com/alice" title="@alice"><img src="https://github.com/alice.png?size=40" width="40" height="40" alt="@alice" /></a>',
         '',
         '[@alice](https://github.com/alice)',
         '',

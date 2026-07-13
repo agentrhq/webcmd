@@ -54,6 +54,7 @@ export type GitRunner = (args: readonly string[]) => Promise<string>;
 const SQUASH_MERGE_PR_NUMBER_PATTERN = /\(#(?<number>\d+)\)\s*$/;
 const MERGE_COMMIT_PR_NUMBER_PATTERN = /^Merge pull request #(?<number>\d+) /;
 const RELEASE_PLEASE_TITLE_PATTERN = /^chore(?:\([^)]+\))?: release(?:\s|$)/;
+const CONTRIBUTOR_AVATAR_SIZE = 40;
 const SERVICE_ACCOUNT_HANDLES = new Set([
   'allcontributors',
   'copilot-pull-request-reviewer',
@@ -202,7 +203,7 @@ function formatContributorAvatar(handle: string): string {
   const escapedHandle = escapeHtml(handle);
   const encodedHandle = encodeURIComponent(handle);
 
-  return `<a href="${githubHandleUrl(handle)}" title="@${escapedHandle}"><img src="https://github.com/${encodedHandle}.png?size=64" width="64" height="64" alt="@${escapedHandle}" /></a>`;
+  return `<a href="${githubHandleUrl(handle)}" title="@${escapedHandle}"><img src="https://github.com/${encodedHandle}.png?size=${CONTRIBUTOR_AVATAR_SIZE}" width="${CONTRIBUTOR_AVATAR_SIZE}" height="${CONTRIBUTOR_AVATAR_SIZE}" alt="@${escapedHandle}" /></a>`;
 }
 
 function formatContributorLink(handle: string): string {
@@ -214,7 +215,7 @@ function formatContributorsSection(handles: string[]): string | null {
 
   return [
     '## Contributors',
-    handles.map(formatContributorAvatar).join('\n'),
+    handles.map(formatContributorAvatar).join(' '),
     '',
     handles.map(formatContributorLink).join(' | '),
   ].join('\n');
@@ -223,7 +224,7 @@ function formatContributorsSection(handles: string[]): string | null {
 function stripContributorAvatarLines(notes: string): string {
   return notes
     .split(/\r?\n/)
-    .filter((line) => !(/<img\b/i.test(line) && /https:\/\/github\.com\/[^"'\s>]+\.png\?size=64/.test(line)))
+    .filter((line) => !(/<img\b/i.test(line) && /https:\/\/github\.com\/[^"'\s>]+\.png\?size=\d+/.test(line)))
     .join('\n')
     .replace(/(^|\n)(## Contributors)\n\n/g, '$1$2\n')
     .replace(/\n{3,}/g, '\n\n')
