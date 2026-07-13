@@ -36,14 +36,18 @@ describe('webcmd setup', () => {
 
   it('writes hosted mode and validates with /v1/me', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-'));
-    const answers = ['hosted', 'https://api.example.com', 'wcmd_live_test'];
+    const answers = ['hosted', 'wcmd_live_test'];
     const env = { WEBCMD_CONFIG_DIR: tempDir } as NodeJS.ProcessEnv;
     const requests: Array<{ url: string; authorization: string | null }> = [];
+    const prompts: string[] = [];
 
     const code = await runHostedSetup({
       env,
       now: () => new Date('2026-07-08T00:00:00.000Z'),
-      question: async () => answers.shift() ?? '',
+      question: async (prompt) => {
+        prompts.push(prompt);
+        return answers.shift() ?? '';
+      },
       fetchImpl: async (url, init) => {
         requests.push({
           url: String(url),
@@ -55,11 +59,15 @@ describe('webcmd setup', () => {
     });
 
     expect(code).toBe(0);
-    expect(requests).toEqual([{ url: 'https://api.example.com/v1/me', authorization: 'Bearer wcmd_live_test' }]);
+    expect(prompts).toEqual([
+      'Use hosted Webcmd Cloud or local Webcmd? [hosted/local] ',
+      'Webcmd API key: ',
+    ]);
+    expect(requests).toEqual([{ url: 'https://api.webcmd.dev/v1/me', authorization: 'Bearer wcmd_live_test' }]);
     expect(JSON.parse(await readFile(getConfigPath({ env }), 'utf8'))).toMatchObject({
       mode: 'hosted',
       hosted: {
-        apiBaseUrl: 'https://api.example.com',
+        apiBaseUrl: 'https://api.webcmd.dev',
         apiKey: 'wcmd_live_test',
       },
     });

@@ -34,8 +34,7 @@ export async function runHostedSetup(io: SetupIo = {}): Promise<number> {
       return 0;
     }
 
-    const defaultApi = defaultHostedApiBaseUrl(io.env ?? process.env);
-    const apiBaseUrl = (await ask(`Webcmd Cloud API URL [${defaultApi}] `)).trim() || defaultApi;
+    const apiBaseUrl = defaultHostedApiBaseUrl(io.env ?? process.env);
     const apiKey = (await ask('Webcmd API key: ')).trim();
     if (!apiKey) {
       write('A Webcmd API key is required for hosted mode.\n');
