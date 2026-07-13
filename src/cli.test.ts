@@ -253,6 +253,33 @@ name: 'search',
     }
   });
 
+  it('lists one summary row per adapter with --adapters', async () => {
+    const registry = getRegistry();
+    const snapshot = new Map(registry);
+    const stdoutSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const restoreStdoutSpy = () => stdoutSpy.mockImplementation(() => {});
+    registry.clear();
+    try {
+      cli({ site: 'reddit', name: 'hot', access: 'read', description: 'Hot posts', domain: 'reddit.com', strategy: Strategy.PUBLIC, browser: false });
+      cli({ site: 'reddit', name: 'search', access: 'read', description: 'Search posts', domain: 'reddit.com', strategy: Strategy.PUBLIC, browser: false });
+      cli({ site: 'chatwise', name: 'ask', access: 'write', description: 'Ask Chatwise', domain: 'localhost', strategy: Strategy.UI, browser: true });
+
+      const program = createProgram('', '');
+      await program.parseAsync(['node', 'webcmd', 'list', '--adapters', '-f', 'json']);
+      const rows = JSON.parse(stdoutSpy.mock.calls.flat().join('\n'));
+
+      expect(rows).toEqual([
+        { adapter: 'chatwise', kind: 'app', domain: 'localhost', commands: 1 },
+        { adapter: 'reddit', kind: 'site', domain: 'reddit.com', commands: 2 },
+      ]);
+    } finally {
+      restoreStdoutSpy();
+      stdoutSpy.mockClear();
+      registry.clear();
+      for (const [key, value] of snapshot) registry.set(key, value);
+    }
+  });
+
   it('omits empty list table sections and leaves structured list rows unchanged', async () => {
     const registry = getRegistry();
     const snapshot = new Map(registry);

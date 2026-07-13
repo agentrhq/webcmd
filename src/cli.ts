@@ -789,11 +789,34 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string): Command 
     .command('list')
     .description('List all available CLI commands')
     .option('-f, --format <fmt>', 'Output format: table, json, yaml, md, csv', 'table')
+    .option('--adapters', 'List adapter summaries instead of commands', false)
     .action((opts) => {
       const registry = getRegistry();
       const commands = [...new Set(registry.values())].sort((a, b) => fullName(a).localeCompare(fullName(b)));
       const fmt = opts.format;
       const isStructured = fmt === 'json' || fmt === 'yaml';
+
+      if (opts.adapters) {
+        const grouped = new Map<string, CliCommand[]>();
+        for (const command of commands) {
+          const adapterCommands = grouped.get(command.site) ?? [];
+          adapterCommands.push(command);
+          grouped.set(command.site, adapterCommands);
+        }
+        const rows = [...grouped].map(([adapter, adapterCommands]) => ({
+          adapter,
+          kind: classifyAdapter(adapterCommands[0].domain),
+          domain: adapterCommands[0].domain ?? '',
+          commands: adapterCommands.length,
+        }));
+        renderOutput(rows, {
+          fmt,
+          columns: ['adapter', 'kind', 'domain', 'commands'],
+          title: 'webcmd/adapters',
+          source: 'webcmd list --adapters',
+        });
+        return;
+      }
 
       if (fmt !== 'table') {
         const rows = isStructured
