@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.3.0](https://github.com/agentrhq/webcmd/compare/webcmd-v0.2.5...webcmd-v0.3.0) (2026-07-13)
+
+
+### Features
+
+* add hosted WebCMD thin client ([8618070](https://github.com/agentrhq/webcmd/commit/86180708132dbeba697f27aa4485eda9d867a66d))
+* disable browser bind command in hosted mode and remove from supported action types ([0ebc9b5](https://github.com/agentrhq/webcmd/commit/0ebc9b5edf8cd4e2373120a2aa0852d508845f9b))
+* polish major release notes ([9afb85e](https://github.com/agentrhq/webcmd/commit/9afb85e1aedd4452ce3540136811e0528112abdd))
+
+
+### Bug Fixes
+
+* Clarify plugin discovery fetch failure handling ([5c04a45](https://github.com/agentrhq/webcmd/commit/5c04a45f6100838e7ef56496dfedd49d0a7543eb))
+* Clarify plugin discovery fetch failure handling ([27bfd35](https://github.com/agentrhq/webcmd/commit/27bfd35226c1c2d222a1c0e2d16d861e478a0ccc))
+* honor background mode for Cloak tab targeting ([d13d894](https://github.com/agentrhq/webcmd/commit/d13d894d2a802747f4ed3cd7e96bd15feaac45a7))
+* remove antigravity SKILL.md to prevent skill manager pollution ([802503c](https://github.com/agentrhq/webcmd/commit/802503c3425e10dd2053de5976659f00e07abb87))
+* remove antigravity SKILL.md to prevent skill manager pollution ([7ff0bc9](https://github.com/agentrhq/webcmd/commit/7ff0bc9704cb2106aba84d7bdbf40171c8118706))
+* return auth commands as result rows ([5a46343](https://github.com/agentrhq/webcmd/commit/5a46343e1f043e8130ff768d041c9897259acead))
+
 ## [0.2.5](https://github.com/agentrhq/webcmd/compare/webcmd-v0.2.4...webcmd-v0.2.5) (2026-07-10)
 
 ### Improvements
