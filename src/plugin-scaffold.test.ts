@@ -10,6 +10,7 @@ import { createPluginScaffold } from './plugin-scaffold.js';
 
 describe('createPluginScaffold', () => {
   const createdDirs: string[] = [];
+  const author = { name: 'Rishabh', handle: 'rishabhraj36' };
 
   afterEach(() => {
     for (const dir of createdDirs) {
@@ -22,7 +23,7 @@ describe('createPluginScaffold', () => {
     const dir = path.join(os.tmpdir(), `webcmd-scaffold-${Date.now()}`);
     createdDirs.push(dir);
 
-    const result = createPluginScaffold('my-test', { dir });
+    const result = createPluginScaffold('my-test', { dir, author });
     expect(result.name).toBe('my-test');
     expect(result.dir).toBe(dir);
     expect(result.files).toContain('webcmd-plugin.json');
@@ -41,29 +42,31 @@ describe('createPluginScaffold', () => {
     const dir = path.join(os.tmpdir(), `webcmd-scaffold-${Date.now()}`);
     createdDirs.push(dir);
 
-    createPluginScaffold('test-manifest', { dir, description: 'Test desc' });
+    createPluginScaffold('test-manifest', { dir, description: 'Test desc', author });
     const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'webcmd-plugin.json'), 'utf-8'));
     expect(manifest.name).toBe('test-manifest');
     expect(manifest.version).toBe('0.1.0');
     expect(manifest.description).toBe('Test desc');
     expect(manifest.webcmd).toMatch(/^>=/);
+    expect(manifest.author).toEqual(author);
   });
 
   it('generates ESM package.json', () => {
     const dir = path.join(os.tmpdir(), `webcmd-scaffold-${Date.now()}`);
     createdDirs.push(dir);
 
-    createPluginScaffold('test-pkg', { dir });
+    createPluginScaffold('test-pkg', { dir, author });
     const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf-8'));
     expect(pkg.type).toBe('module');
     expect(pkg.peerDependencies?.['@agentrhq/webcmd']).toBeDefined();
+    expect(pkg.author).toBeUndefined();
   });
 
   it('generates a TS sample that matches the current plugin API', () => {
     const dir = path.join(os.tmpdir(), `webcmd-scaffold-${Date.now()}`);
     createdDirs.push(dir);
 
-    createPluginScaffold('test-ts', { dir });
+    createPluginScaffold('test-ts', { dir, author });
     const tsSample = fs.readFileSync(path.join(dir, 'greet.ts'), 'utf-8');
 
     expect(tsSample).toContain(`import { cli, Strategy } from '@agentrhq/webcmd/registry';`);
@@ -77,15 +80,29 @@ describe('createPluginScaffold', () => {
     const dir = path.join(os.tmpdir(), `webcmd-scaffold-${Date.now()}`);
     createdDirs.push(dir);
 
-    createPluginScaffold('test-readme', { dir });
+    createPluginScaffold('test-readme', { dir, author });
     const readme = fs.readFileSync(path.join(dir, 'README.md'), 'utf-8');
 
     expect(readme).toContain(`webcmd plugin install file://${dir}`);
   });
 
   it('rejects invalid names', () => {
-    expect(() => createPluginScaffold('Bad_Name')).toThrow('Invalid plugin name');
-    expect(() => createPluginScaffold('123start')).toThrow('Invalid plugin name');
+    expect(() => createPluginScaffold('Bad_Name', { author })).toThrow('Invalid plugin name');
+    expect(() => createPluginScaffold('123start', { author })).toThrow('Invalid plugin name');
+  });
+
+  it('rejects missing or malformed author metadata before creating files', () => {
+    const missingDir = path.join(os.tmpdir(), `webcmd-scaffold-missing-author-${Date.now()}`);
+    const malformedDir = path.join(os.tmpdir(), `webcmd-scaffold-malformed-author-${Date.now()}`);
+    createdDirs.push(missingDir, malformedDir);
+
+    expect(() => createPluginScaffold('missing-author', { dir: missingDir } as never)).toThrow('author');
+    expect(() => createPluginScaffold('malformed-author', {
+      dir: malformedDir,
+      author: { name: 'Rishabh', handle: '-wrong' },
+    })).toThrow('author.handle');
+    expect(fs.existsSync(missingDir)).toBe(false);
+    expect(fs.existsSync(malformedDir)).toBe(false);
   });
 
   it('rejects non-empty directory', () => {
@@ -93,6 +110,6 @@ describe('createPluginScaffold', () => {
     createdDirs.push(dir);
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'existing.txt'), 'x');
-    expect(() => createPluginScaffold('test', { dir })).toThrow('not empty');
+    expect(() => createPluginScaffold('test', { dir, author })).toThrow('not empty');
   });
 });

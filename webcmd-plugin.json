@@ -8,7 +8,11 @@
       "path": "plugins/skyscanner",
       "version": "0.1.0",
       "description": "Skyscanner flight search commands for Webcmd",
-      "webcmd": ">=0.2.0"
+      "webcmd": ">=0.2.0",
+      "author": {
+        "name": "Rishabh",
+        "handle": "rishabhraj36"
+      }
     }
   }
 }

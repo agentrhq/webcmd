@@ -36,6 +36,10 @@ jobs:
       - name: Type check
         run: npm run typecheck
 
+      - name: Check community plugin metadata
+        if: runner.os == 'Linux'
+        run: npm run check-community-plugins
+
       - name: Build
         run: npm run build
 

@@ -12,6 +12,13 @@ import { PKG_VERSION } from './version.js';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
+export interface PluginAuthor {
+  /** Display name shown in generated catalogs. */
+  name: string;
+  /** GitHub username used to link the author profile. */
+  handle: string;
+}
+
 export interface SubPluginEntry {
   /** Relative path from repo root to the sub-plugin directory. */
   path: string;
@@ -21,6 +28,8 @@ export interface SubPluginEntry {
   webcmd?: string;
   /** When true, this sub-plugin is skipped during install. */
   disabled?: boolean;
+  /** Plugin author attribution. */
+  author?: PluginAuthor;
 }
 
 export interface PluginManifest {
@@ -32,13 +41,34 @@ export interface PluginManifest {
   webcmd?: string;
   /** Human-readable description. */
   description?: string;
+  /** Plugin author attribution. */
+  author?: PluginAuthor;
   /** Monorepo sub-plugins. Key = logical plugin name. */
   plugins?: Record<string, SubPluginEntry>;
 }
 
 export const MANIFEST_FILENAME = 'webcmd-plugin.json';
+const GITHUB_HANDLE_PATTERN = /^[a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38}$/i;
 
 // ── Read / Validate ─────────────────────────────────────────────────────────
+
+/** Validate explicit plugin author metadata without making a GitHub API call. */
+export function validatePluginAuthor(value: unknown, label = 'author'): PluginAuthor {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(`Invalid ${label}: expected an object`);
+  }
+
+  const author = value as Record<string, unknown>;
+  const name = typeof author.name === 'string' ? author.name.trim() : '';
+  if (!name) throw new Error(`Invalid ${label}.name: expected a non-empty string`);
+
+  const handle = typeof author.handle === 'string' ? author.handle.trim() : '';
+  if (!GITHUB_HANDLE_PATTERN.test(handle)) {
+    throw new Error(`Invalid ${label}.handle: expected a valid GitHub username`);
+  }
+
+  return { name, handle };
+}
 
 /**
  * Read and parse webcmd-plugin.json from a directory.

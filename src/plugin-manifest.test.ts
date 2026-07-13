@@ -13,8 +13,31 @@ import {
   _parseVersion as parseVersion,
   _satisfiesRange as satisfiesRange,
   MANIFEST_FILENAME,
+  validatePluginAuthor,
   type PluginManifest,
 } from './plugin-manifest.js';
+
+// ── Author metadata ─────────────────────────────────────────────────────────
+
+describe('validatePluginAuthor', () => {
+  it('normalizes valid author metadata', () => {
+    expect(validatePluginAuthor({ name: ' Rishabh ', handle: 'rishabhraj36' })).toEqual({
+      name: 'Rishabh',
+      handle: 'rishabhraj36',
+    });
+  });
+
+  it('rejects missing author fields', () => {
+    expect(() => validatePluginAuthor({ name: '', handle: 'rishabhraj36' })).toThrow('author.name');
+    expect(() => validatePluginAuthor({ name: 'Rishabh', handle: '' })).toThrow('author.handle');
+  });
+
+  it('rejects malformed GitHub handles', () => {
+    expect(() => validatePluginAuthor({ name: 'Rishabh', handle: '-wrong' })).toThrow('author.handle');
+    expect(() => validatePluginAuthor({ name: 'Rishabh', handle: 'wrong--handle' })).toThrow('author.handle');
+    expect(() => validatePluginAuthor({ name: 'Rishabh', handle: `${'a'.repeat(39)}b` })).toThrow('author.handle');
+  });
+});
 
 // ── readPluginManifest ──────────────────────────────────────────────────────
 

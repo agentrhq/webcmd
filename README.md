@@ -258,7 +258,17 @@ webcmd plugin uninstall <name>
 webcmd plugin create <name>
 ```
 
-Use plugins for private company workflows, community adapters, or experiments that are not ready for the built-in registry. This repo is also a plugin monorepo: community CLIs promoted here live under [`plugins/`](./plugins/) and are advertised through [`webcmd-plugin.json`](./webcmd-plugin.json).
+`plugin create` prompts for the author's display name and GitHub handle. For non-interactive use, pass `--author-name <name>` and `--author-handle <handle>`.
+
+Use plugins for private company workflows, community adapters, or experiments that are not ready for the built-in registry. This repo is also a plugin monorepo: community plugins promoted here live under [`plugins/`](./plugins/) and are advertised through [`webcmd-plugin.json`](./webcmd-plugin.json).
+
+<!-- webcmd-community-plugins:start -->
+### Community plugins
+
+| Plugin | Description | Author |
+| --- | --- | --- |
+| [`skyscanner`](./plugins/skyscanner/) | Skyscanner flight search commands for Webcmd | [Rishabh](https://github.com/rishabhraj36) |
+<!-- webcmd-community-plugins:end -->
 
 ## Writing Adapters
 

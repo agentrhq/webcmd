@@ -1,0 +1,54 @@
+name: Sync community plugins
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'plugins/*/webcmd-plugin.json'
+      - 'plugin-catalog.json'
+      - 'src/community-plugin-sync.ts'
+      - 'scripts/sync-community-plugins.ts'
+      - 'package.json'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-community-plugins
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Sync community plugin files
+        run: npm run sync-community-plugins
+
+      - name: Commit generated files
+        shell: bash
+        run: |
+          if git diff --quiet -- README.md webcmd-plugin.json; then
+            echo "Community plugin files are already up to date."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md webcmd-plugin.json
+          git commit -m "docs: sync community plugins [skip ci]"
+          git push origin "HEAD:${{ github.ref_name }}"

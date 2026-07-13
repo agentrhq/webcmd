@@ -3377,12 +3377,35 @@ cli({
     .argument('<name>', 'Plugin name (lowercase, hyphens allowed)')
     .option('-d, --dir <path>', 'Output directory (default: ./<name>)')
     .option('--description <text>', 'Plugin description')
-    .action(async (name: string, opts: { dir?: string; description?: string }) => {
+    .option('--author-name <name>', 'Author display name')
+    .option('--author-handle <handle>', 'Author GitHub handle')
+    .action(async (name: string, opts: {
+      dir?: string;
+      description?: string;
+      authorName?: string;
+      authorHandle?: string;
+    }) => {
       const { createPluginScaffold } = await import('./plugin-scaffold.js');
       try {
+        let authorName = opts.authorName?.trim();
+        let authorHandle = opts.authorHandle?.trim();
+        if ((!authorName || !authorHandle) && process.stdin.isTTY && process.stdout.isTTY) {
+          const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+          try {
+            if (!authorName) authorName = (await rl.question('Author name: ')).trim();
+            if (!authorHandle) authorHandle = (await rl.question('GitHub handle: ')).trim();
+          } finally {
+            rl.close();
+          }
+        }
+
         const result = createPluginScaffold(name, {
           dir: opts.dir,
           description: opts.description,
+          author: {
+            name: authorName ?? '',
+            handle: authorHandle ?? '',
+          },
         });
         console.log(`✅ Plugin scaffold created at ${result.dir}`);
         console.log();

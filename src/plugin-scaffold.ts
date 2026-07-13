@@ -14,6 +14,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { validatePluginAuthor, type PluginAuthor } from './plugin-manifest.js';
 import { PKG_VERSION } from './version.js';
 
 export interface ScaffoldOptions {
@@ -21,6 +22,8 @@ export interface ScaffoldOptions {
   dir?: string;
   /** Plugin description */
   description?: string;
+  /** Required author attribution for the generated plugin manifest. */
+  author: PluginAuthor;
 }
 
 export interface ScaffoldResult {
@@ -32,7 +35,7 @@ export interface ScaffoldResult {
 /**
  * Create a new plugin scaffold directory.
  */
-export function createPluginScaffold(name: string, opts: ScaffoldOptions = {}): ScaffoldResult {
+export function createPluginScaffold(name: string, opts: ScaffoldOptions): ScaffoldResult {
   // Validate name
   if (!/^[a-z][a-z0-9-]*$/.test(name)) {
     throw new Error(
@@ -40,6 +43,8 @@ export function createPluginScaffold(name: string, opts: ScaffoldOptions = {}): 
       `Plugin names must start with a lowercase letter and contain only lowercase letters, digits, and hyphens.`
     );
   }
+
+  const author = validatePluginAuthor(opts.author);
 
   const targetDir = opts.dir
     ? path.resolve(opts.dir)
@@ -59,6 +64,7 @@ export function createPluginScaffold(name: string, opts: ScaffoldOptions = {}): 
     version: '0.1.0',
     description: opts.description ?? `A webcmd plugin: ${name}`,
     webcmd: `>=${PKG_VERSION}`,
+    author,
   };
   writeFile(targetDir, 'webcmd-plugin.json', JSON.stringify(manifest, null, 2) + '\n');
   files.push('webcmd-plugin.json');
