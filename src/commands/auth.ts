@@ -180,8 +180,9 @@ function safeIdentityValue(value: unknown): string {
 }
 
 function identitySummary(result: unknown): string {
-  if (!result || typeof result !== 'object' || Array.isArray(result)) return '';
-  const row = result as Record<string, unknown>;
+  const first = Array.isArray(result) ? result[0] : result;
+  if (!first || typeof first !== 'object' || Array.isArray(first)) return '';
+  const row = first as Record<string, unknown>;
   const blocked = /(?:email|phone|real.?name|first.?name|last.?name|cookie|token|session|secret|password|csrf|jwt|bearer|wt2)/i;
   for (const key of ['username', 'handle', 'user_id', 'id', 'name', 'nickname', 'user_type', 'url']) {
     if (blocked.test(key)) continue;

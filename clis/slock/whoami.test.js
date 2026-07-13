@@ -14,10 +14,10 @@ function makePage(authMe, status = 200) {
 describe('slock whoami', () => {
   const command = getRegistry().get('slock/whoami');
 
-  it('returns a normalized identity object from /auth/me on 200', async () => {
+  it('returns a normalized identity row from /auth/me on 200', async () => {
     const page = makePage({ id: 'u1', name: 'Alice', email: 'a@b.c' });
     const identity = await command.func(page, {});
-    expect(identity).toEqual({ logged_in: true, site: 'slock', id: 'u1', name: 'Alice', email: 'a@b.c' });
+    expect(identity).toEqual([{ logged_in: true, site: 'slock', id: 'u1', name: 'Alice', email: 'a@b.c' }]);
     expect(page.goto).toHaveBeenCalled();
   });
 });

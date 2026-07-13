@@ -47,11 +47,11 @@ describe('site auth command helper', () => {
     const cmd = getRegistry().get('auth-helper-whoami/whoami');
     const page = pageMock();
 
-    await expect(cmd.func(page, {})).resolves.toEqual({
+    await expect(cmd.func(page, {})).resolves.toEqual([{
       logged_in: true,
       site: 'auth-helper-whoami',
       username: 'alice',
-    });
+    }]);
     expect(page.goto).not.toHaveBeenCalled();
   });
 
@@ -70,12 +70,12 @@ describe('site auth command helper', () => {
     const cmd = getRegistry().get('auth-helper-login/login');
     const page = pageMock();
 
-    await expect(cmd.func(page, { timeout: 1 })).resolves.toEqual({
+    await expect(cmd.func(page, { timeout: 1 })).resolves.toEqual([{
       status: 'login_complete',
       logged_in: true,
       site: 'auth-helper-login',
       username: 'alice',
-    });
+    }]);
     expect(page.goto).toHaveBeenCalledWith('https://example.com/login');
     expect(page.wait).toHaveBeenCalled();
     expect(poll).toHaveBeenCalledTimes(2);

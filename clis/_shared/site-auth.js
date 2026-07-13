@@ -72,7 +72,7 @@ export function registerSiteAuthCommands(config) {
         ? { refresh: async (page, kwargs) => normalizeRefreshResult(await config.refresh(page, kwargs)) }
         : {}),
     },
-    func: async (page) => tryProbe(config, page, 'identity'),
+    func: async (page) => [await tryProbe(config, page, 'identity')],
   });
 
   cli({
@@ -92,7 +92,7 @@ export function registerSiteAuthCommands(config) {
     columns: ['status', ...commandColumns(config)],
     func: async (page, kwargs) => {
       try {
-        return { status: 'already_logged_in', ...await tryProbe(config, page, 'identity') };
+        return [{ status: 'already_logged_in', ...await tryProbe(config, page, 'identity') }];
       } catch (error) {
         if (!isAuthRequired(error)) throw error;
       }
@@ -106,7 +106,7 @@ export function registerSiteAuthCommands(config) {
         await page.wait(Math.min(POLL_INTERVAL_MS / 1000, Math.max(0.2, (deadline - Date.now()) / 1000)));
         try {
           const identity = await tryProbe(config, page, 'poll');
-          return { status: 'login_complete', ...identity };
+          return [{ status: 'login_complete', ...identity }];
         } catch (error) {
           if (!isAuthRequired(error)) throw error;
           lastAuthMessage = getErrorMessage(error);
