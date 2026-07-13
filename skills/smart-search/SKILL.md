@@ -11,15 +11,16 @@ Route a query to the best webcmd search source based on the topic and context. T
 
 Before every use, do both of these steps:
 
-- Run `webcmd list -f yaml`
+- Run `webcmd list -f json`
 - Use the live registry to confirm that candidate sites exist, and inspect `strategy`, `browser`, and `domain`
 
-If the user explicitly names a site/source and it is missing from `webcmd list`, check installable plugins before marking it unavailable:
+If the user explicitly names a site/source and it is missing from `webcmd list` or when none of the sites cover the query, check installable plugins before marking it unavailable:
 
 ```bash
-webcmd plugin search <site-or-source> -f json
-webcmd plugin catalog list -f json
+webcmd plugin search <site-or-source-or-capability> -f json
 ```
+
+Derive a short plugin query from the missing site or capability. Preserve the user's term when practical: `find flights` becomes `flight`.
 
 If plugin search finds a match, tell the user it is available as a plugin and offer `webcmd plugin install <source>`. If plugin search fails because catalog sources cannot be fetched, report that catalog/search error separately from no plugin match.
 
@@ -51,7 +52,7 @@ First create a site-call ledger. After each real search command, update it immed
 
 Counting rules:
 
-- `webcmd list -f yaml`, `webcmd <site> -h`, and `webcmd <site> <command> -h` are preflight/help commands and do not count as searches.
+- `webcmd list -f json`, `webcmd plugin search <query> -f json`, `webcmd <site> -h`, and `webcmd <site> <command> -h` are preflight/help commands and do not count as searches.
 - One real `webcmd <site> ...` search/query execution counts as 1 call for that site.
 - A failed call caused by an error, timeout, CAPTCHA, anti-bot check, or broken login state still counts as 1 call for that site. Do not retry indefinitely.
 
@@ -143,10 +144,10 @@ Keep a typical query to 1 AI source plus 1-2 specialized sources to avoid result
 When a site is unavailable:
 
 - Do not stop the whole search because one source failed
-- For named missing sites, run `webcmd plugin search <site> -f json` before recording unavailable
+- For a missing site or capability, run `webcmd plugin search <query> -f json` before recording unavailable
 - Record: `Skipped: <site> unavailable`
 - Fall back to another site of the same type, or to one AI source
-- Always trust the actual output of `webcmd list -f yaml`, `webcmd plugin search -f json`, and `webcmd <site> -h`
+- Always trust the actual output of `webcmd list -f json`, `webcmd plugin search -f json`, and `webcmd <site> -h`
 
 Do not assume any site is always available. Even for public sites, trust live help and execution results in the current environment.
 

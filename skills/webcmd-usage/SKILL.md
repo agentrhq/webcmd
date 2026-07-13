@@ -61,9 +61,9 @@ Do not hard-code adapter lists. `webcmd list -f json` is the source of truth for
 Use this fallback order:
 
 1. Run `webcmd list -f json` once.
-2. Check that result against the whole requested workflow, not only a named site. If one installed command covers it, use that command and stop discovery. Do not rerun or shell-filter `webcmd list`.
-3. If none covers it, derive a short plugin query from the missing site or capability and run `webcmd plugin search <query> -f json`. Preserve the user's term when practical: `find flights` becomes `flight`. Do this even when the user names no site.
-4. If plugin search returns a match, offer `webcmd plugin install <installSource>`. If it returns no match and no error, raw `webcmd browser` is allowed. If it errors, run `webcmd plugin catalog list -f json`, report plugin discovery as unavailable, and stop immediately. Do not run more discovery commands such as `webcmd plugin list`, inspect source-checkout manifests, or check unrelated external CLIs.
+2. Check that result against the whole requested workflow, not only a named site. If one installed command covers it, use that command and stop discovery.
+3. If none covers it, derive a short plugin query from the missing site or capability and run `webcmd plugin search <query> -f json`. Preserve the user's term when practical: `find flights` becomes `flight`.
+4. If plugin search returns a match, offer `webcmd plugin install <installSource>`. If it returns no match and no error, raw `webcmd browser` is allowed. If it errors, report plugin discovery as unavailable possibly due to network permissions, and stop immediately.
 
 ## Universal Flags
 
