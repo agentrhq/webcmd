@@ -245,7 +245,7 @@ export async function runGenerateReleaseNotes(
     const model = env.GEMINI_RELEASE_NOTES_MODEL || DEFAULT_MODEL;
     const prompt = buildReleaseNotesPrompt(context);
     const raw = await (deps.generateText ?? generateText)(prompt, model, apiKey);
-    const normalized = normalizeReleaseNotes(raw);
+    const normalized = normalizeReleaseNotes(raw, { context });
     if (normalized) {
       io.writeStdout(`${normalized}\n`);
     }
