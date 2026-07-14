@@ -166,8 +166,17 @@ async function createHostedFixture(outcome: 'success' | 'failure'): Promise<{
   await writeFile(path.join(configDir, 'config.json'), `${JSON.stringify({
     mode: 'hosted',
     updatedAt: '2026-07-14T00:00:00.000Z',
-    hosted: { apiBaseUrl: `http://127.0.0.1:${address.port}`, apiKey: 'wcmd_lifecycle' },
+    hosted: {
+      apiBaseUrl: `http://127.0.0.1:${address.port}`,
+      apiKeyRef: 'wcmd_cred_lifecycle',
+      credentialBackend: 'file-fallback',
+    },
   })}\n`);
+  await writeFile(path.join(configDir, 'hosted-credentials.json'), `${JSON.stringify({
+    version: 1,
+    credentials: { wcmd_cred_lifecycle: 'wcmd_lifecycle' },
+    updatedAt: '2026-07-14T00:00:00.000Z',
+  })}\n`, { mode: 0o600 });
 
   return {
     discoverySentinel,
