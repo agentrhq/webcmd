@@ -7,6 +7,7 @@
 
 import * as fs from 'node:fs';
 import { getCommandCompletionCandidates } from './command-presentation.js';
+import { CliError } from './errors.js';
 import {
   BUILTIN_COMMANDS,
   bashCompletionScript,
@@ -58,6 +59,15 @@ const SHELL_SCRIPTS: Record<string, () => string> = {
 /** Return a generated shell script without taking ownership of stdout. */
 export function getCompletionScriptFast(shell: string): string | undefined {
   return SHELL_SCRIPTS[shell]?.();
+}
+
+/** Return a supported shell script or the canonical local completion error. */
+export function requireCompletionScriptFast(shell: string): string {
+  const script = getCompletionScriptFast(shell);
+  if (script === undefined) {
+    throw new CliError('UNSUPPORTED_SHELL', `Unsupported shell: ${shell}. Supported: bash, zsh, fish`);
+  }
+  return script;
 }
 
 function loadManifestEntries(manifestPaths: string[]): ManifestCompletionEntry[] | null {

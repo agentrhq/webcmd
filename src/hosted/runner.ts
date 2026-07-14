@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Command, CommanderError } from 'commander';
-import { configureListCommandSurface } from '../builtin-command-surface.js';
+import { configureCompletionCommandSurface, configureListCommandSurface } from '../builtin-command-surface.js';
 import { BrowserSessionArgvError, rewriteBrowserArgv } from '../cli-argv-preprocess.js';
 import { CommanderStructuralError, MissingRequiredPositionalError } from '../command-surface.js';
 import { formatRootHelp, getCommandCompletionCandidates } from '../command-presentation.js';
@@ -17,6 +17,7 @@ import { findPackageRoot } from '../package-paths.js';
 import { formatErrorEnvelope, render as renderOutput } from '../output.js';
 import { StreamWriteError, writeToStream } from '../stream-write.js';
 import { PKG_VERSION } from '../version.js';
+import { requireCompletionScriptFast } from '../completion-fast.js';
 import { HostedClient, HostedClientError } from './client.js';
 import { parseHostedInvocation } from './args.js';
 import { HostedBrowserHelp, parseHostedBrowserStructure } from './browser-args.js';
@@ -124,8 +125,14 @@ async function dispatchHosted(
     return;
   }
   const args = normalized.argv;
-  if (args[0] === 'completion' && args.length === 1) {
-    throw new CommanderStructuralError("error: missing required argument 'shell'\n", EXIT_CODES.GENERIC_ERROR);
+  if (args[0] === 'completion') {
+    const parsed = parseHostedCompletionSurface(args.slice(1), normalized.literal);
+    if (parsed.kind === 'help') {
+      await writeToStream(stdout, parsed.output);
+      return;
+    }
+    await writeToStream(stdout, requireCompletionScriptFast(parsed.shell));
+    return;
   }
   if (args[0] === 'daemon') {
     throw new ConfigError(
@@ -190,6 +197,18 @@ async function dispatchHosted(
 
   const command = findHostedCommand(manifest, site, commandName);
   if (!command) {
+    if (!normalized.literal && args.slice(1).some(token => token === '--help' || token === '-h')) {
+      const data = hostedSiteHelpData(manifest, site);
+      if (!data) {
+        throw new CommanderCompatibleError(
+          `error: unknown command '${site}'\n`,
+          EXIT_CODES.USAGE_ERROR,
+          formatRootHelp(HOSTED_ROOT_HELP),
+        );
+      }
+      await writeHostedHelp(stdout, args, data, renderHostedSiteHelp(manifest, site));
+      return;
+    }
     throw new CommanderCompatibleError(`error: unknown command '${commandName}'\n`, EXIT_CODES.GENERIC_ERROR);
   }
   if (isLocalOnlyHostedCommand(command)) {
@@ -530,6 +549,41 @@ function parseHostedListSurface(argv: readonly string[], literal: boolean): Pars
   return { kind: 'run', format: parsedFormat, formatExplicit };
 }
 
+type ParsedHostedCompletionSurface =
+  | { kind: 'help'; output: string }
+  | { kind: 'run'; shell: string };
+
+function parseHostedCompletionSurface(
+  argv: readonly string[],
+  literal: boolean,
+): ParsedHostedCompletionSurface {
+  let stdout = '';
+  let stderr = '';
+  let shell: string | undefined;
+  const root = new Command('webcmd');
+  const completion = configureCompletionCommandSurface(root.command('completion'));
+  const output = {
+    writeOut: (value: string) => { stdout += value; },
+    writeErr: (value: string) => { stderr += value; },
+  };
+  root.exitOverride().configureOutput(output);
+  completion.exitOverride().configureOutput(output).action((value: string) => {
+    shell = value;
+  });
+
+  try {
+    root.parse(literal ? ['--', 'completion', ...argv] : ['completion', ...argv], { from: 'user' });
+  } catch (error) {
+    if (!(error instanceof CommanderError)) throw error;
+    if (error.code === 'commander.helpDisplayed') return { kind: 'help', output: stdout };
+    throw new CommanderStructuralError(stderr || `${error.message}\n`, error.exitCode);
+  }
+  if (shell === undefined) {
+    throw new CommanderStructuralError("error: missing required argument 'shell'\n", 1);
+  }
+  return { kind: 'run', shell };
+}
+
 function parseUnknownSiteRootOptions(
   argv: readonly string[],
   literal: boolean,
@@ -537,7 +591,6 @@ function parseUnknownSiteRootOptions(
   if (literal) return { help: false, version: false };
   let profile: string | undefined;
   let help = false;
-  let version = false;
   for (let i = 1; i < argv.length; i += 1) {
     const token = argv[i]!;
     if (token === '--profile') {
@@ -553,10 +606,12 @@ function parseUnknownSiteRootOptions(
       profile = token.slice('--profile='.length);
       continue;
     }
-    if (token === '--version' || token.startsWith('-V')) version = true;
+    if (token === '--version' || token.startsWith('-V')) {
+      return { help: false, version: true, ...(profile !== undefined ? { profile } : {}) };
+    }
     if (token === '--help' || token === '-h') help = true;
   }
-  return { help, version, ...(profile !== undefined ? { profile } : {}) };
+  return { help, version: false, ...(profile !== undefined ? { profile } : {}) };
 }
 
 function hostedCompletions(manifest: HostedManifest, argv: string[]): string[] {

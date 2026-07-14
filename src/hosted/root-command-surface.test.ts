@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { createProgram } from '../cli.js';
 import { formatRootHelp } from '../command-presentation.js';
 import { HOSTED_ROOT_HELP } from '../completion-shared.js';
+import { CliError } from '../errors.js';
+import { cli, getRegistry, Strategy } from '../registry.js';
 import { PKG_VERSION } from '../version.js';
 import { makeHostedConfig } from './config.js';
 import {
@@ -62,13 +64,25 @@ type LocalRootResult = {
   stdout: string;
   stderr: string;
   errorCode?: string;
+  errorMessage?: string;
 };
 
 async function runActualLocalRoot(argv: string[]): Promise<LocalRootResult> {
   let stdout = '';
   let stderr = '';
   const previousExitCode = process.exitCode;
+  const previousArgv = process.argv;
+  const previousStdoutWrite = process.stdout.write;
+  const previousConsoleError = console.error;
   process.exitCode = undefined;
+  process.argv = ['node', 'webcmd', ...argv];
+  process.stdout.write = ((chunk: string | Uint8Array, encodingOrCallback?: unknown, callback?: unknown) => {
+    stdout += String(chunk);
+    const done = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback;
+    if (typeof done === 'function') done();
+    return true;
+  }) as typeof process.stdout.write;
+  console.error = (...values: unknown[]) => { stderr += `${values.map(String).join(' ')}\n`; };
   const program = createProgram('', '');
   const configureTree = (command: Command): void => {
     command.exitOverride().configureOutput({
@@ -82,10 +96,46 @@ async function runActualLocalRoot(argv: string[]): Promise<LocalRootResult> {
     await program.parseAsync(argv, { from: 'user' });
     return { exitCode: Number(process.exitCode ?? 0), stdout, stderr };
   } catch (error) {
-    if (!(error instanceof CommanderError)) throw error;
-    return { exitCode: error.exitCode, stdout, stderr, errorCode: error.code };
+    if (error instanceof CommanderError) {
+      return { exitCode: error.exitCode, stdout, stderr, errorCode: error.code };
+    }
+    if (error instanceof CliError) {
+      return {
+        exitCode: error.exitCode,
+        stdout,
+        stderr,
+        errorCode: error.code,
+        errorMessage: error.message,
+      };
+    }
+    throw error;
   } finally {
     process.exitCode = previousExitCode;
+    process.argv = previousArgv;
+    process.stdout.write = previousStdoutWrite;
+    console.error = previousConsoleError;
+  }
+}
+
+async function runActualLocalKnownSite(argv: string[]): Promise<LocalRootResult> {
+  const registry = getRegistry();
+  const previous = new Map(registry);
+  registry.clear();
+  cli({
+    site: 'github',
+    name: 'whoami',
+    description: 'Show GitHub identity',
+    access: 'read',
+    strategy: Strategy.PUBLIC,
+    browser: false,
+    args: [],
+    columns: ['username'],
+  });
+  try {
+    return await runActualLocalRoot(argv);
+  } finally {
+    registry.clear();
+    for (const [name, command] of previous) registry.set(name, command);
   }
 }
 
@@ -442,5 +492,170 @@ describe('hosted root preflight call order', () => {
     expect(stdout.text()).toBe(local.stdout);
     expect(stderr.text()).toBe(local.stderr);
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { name: 'unknown child help', argv: ['github', 'bogus', '--help'] },
+    { name: 'unknown option then help', argv: ['github', '--unknown', '--help'] },
+    { name: 'structured format then help', argv: ['github', '-f', 'yaml', '--help'] },
+    { name: 'complete profile then help', argv: ['github', '--profile', 'x', '--help'] },
+  ])('matches local known-site namespace help precedence: $name', async ({ argv }) => {
+    const local = await runActualLocalKnownSite(argv);
+    const stdout = sink();
+    const stderr = sink();
+    const fetchImpl = vi.fn<typeof fetch>(async () => manifestResponse());
+
+    const hosted = await runHostedCli(argv, {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      fetchImpl,
+    });
+
+    expect(local).toMatchObject({ exitCode: 0, stderr: '', errorCode: 'commander.helpDisplayed' });
+    expect(hosted).toEqual({ handled: true, exitCode: local.exitCode });
+    expect(stdout.text()).toBe(local.stdout);
+    expect(stderr.text()).toBe(local.stderr);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(String(fetchImpl.mock.calls[0]![0])).toBe('https://api.example.com/v1/manifest');
+  });
+
+  it('keeps known leaf help authoritative over site help', async () => {
+    const local = await runActualLocalKnownSite(['github', 'whoami', '--help']);
+    const stdout = sink();
+    const stderr = sink();
+    const fetchImpl = vi.fn<typeof fetch>(async () => manifestResponse());
+
+    const hosted = await runHostedCli(['github', 'whoami', '--help'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      fetchImpl,
+    });
+
+    expect(local).toMatchObject({ exitCode: 0, stderr: '', errorCode: 'commander.helpDisplayed' });
+    expect(hosted).toEqual({ handled: true, exitCode: 0 });
+    expect(stdout.text()).toBe(local.stdout);
+    expect(stderr.text()).toBe('');
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    { name: 'help', argv: ['completion', '--help'] },
+    { name: 'leaf version is unknown', argv: ['completion', '-V'] },
+    { name: 'excess shell', argv: ['completion', 'bash', 'extra'] },
+    { name: 'literal missing shell', argv: ['--', 'completion'] },
+  ])('matches local completion structural grammar: $name', async ({ name, argv }) => {
+    const local = await runActualLocalRoot(argv);
+    const stdout = sink();
+    const stderr = sink();
+    const fetchImpl = vi.fn<typeof fetch>();
+
+    const hosted = await runHostedCli(argv, {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      fetchImpl,
+    });
+
+    expect(hosted).toEqual({ handled: true, exitCode: local.exitCode });
+    expect(stdout.text()).toBe(local.stdout);
+    expect(stderr.text()).toBe(local.stderr);
+    if (name === 'help') expect(local.stdout).toHaveLength(181);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { name: 'unsupported shell', argv: ['completion', 'powershell'], shell: 'powershell' },
+    { name: 'literal help-shaped shell', argv: ['--', 'completion', '--help'], shell: '--help' },
+    { name: 'leaf separator help-shaped shell', argv: ['completion', '--', '--help'], shell: '--help' },
+  ])('matches local completion runtime validation: $name', async ({ argv, shell }) => {
+    const local = await runActualLocalRoot(argv);
+    const stdout = sink();
+    const stderr = sink();
+    const fetchImpl = vi.fn<typeof fetch>();
+
+    const hosted = await runHostedCli(argv, {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      fetchImpl,
+    });
+
+    expect(local).toMatchObject({
+      exitCode: 1,
+      stdout: '',
+      stderr: '',
+      errorCode: 'UNSUPPORTED_SHELL',
+      errorMessage: `Unsupported shell: ${shell}. Supported: bash, zsh, fish`,
+    });
+    expect(hosted).toEqual({ handled: true, exitCode: local.exitCode });
+    expect(stdout.text()).toBe('');
+    expect(stderr.text()).toContain('code: UNSUPPORTED_SHELL');
+    expect(stderr.text()).toContain(`message: 'Unsupported shell: ${shell}. Supported: bash, zsh, fish'`);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('matches local literal completion success bytes without Cloud discovery', async () => {
+    const local = await runActualLocalRoot(['--', 'completion', 'bash']);
+    const stdout = sink();
+    const stderr = sink();
+    const fetchImpl = vi.fn<typeof fetch>();
+
+    const hosted = await runHostedCli(['--', 'completion', 'bash'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      fetchImpl,
+    });
+
+    expect(local).toMatchObject({ exitCode: 0, stderr: '' });
+    expect(hosted).toEqual({ handled: true, exitCode: local.exitCode });
+    expect(stdout.text()).toBe(local.stdout);
+    expect(stderr.text()).toBe(local.stderr);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { name: 'version before missing profile', argv: ['missing', '--version', '--profile'], disposition: 'version' },
+    { name: 'profile consumes version', argv: ['missing', '--profile', '--version'], disposition: 'unknown' },
+    { name: 'help before missing profile', argv: ['missing', '--help', '--profile'], disposition: 'missing-profile' },
+    { name: 'profile then help', argv: ['missing', '--profile', 'x', '--help'], disposition: 'help' },
+    { name: 'help then profile', argv: ['missing', '--help', '--profile', 'x'], disposition: 'help' },
+    { name: 'help then version', argv: ['missing', '--help', '--version'], disposition: 'version' },
+    { name: 'version then help', argv: ['missing', '--version', '--help'], disposition: 'version' },
+  ])('matches local unknown-site option precedence: $name', async ({ argv, disposition }) => {
+    const local = await runActualLocalRoot(argv);
+    const stdout = sink();
+    const stderr = sink();
+    const fetchImpl = vi.fn<typeof fetch>(async () => manifestResponse());
+
+    const hosted = await runHostedCli(argv, {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      fetchImpl,
+    });
+
+    expect(hosted.exitCode).toBe(local.exitCode);
+    if (disposition === 'version') {
+      expect(stdout.text()).toBe(local.stdout);
+      expect(stderr.text()).toBe(local.stderr);
+    } else if (disposition === 'missing-profile') {
+      expect(stdout.text()).toBe('');
+      expect(stderr.text()).toBe(local.stderr);
+    } else if (disposition === 'help') {
+      expect(stdout.text()).toBe(formatRootHelp(HOSTED_ROOT_HELP));
+      expect(stderr.text()).toBe('');
+      expect(local.stdout).not.toBe('');
+      expect(local.stderr).toBe('');
+    } else {
+      expect(stdout.text()).toBe(formatRootHelp(HOSTED_ROOT_HELP));
+      expect(stderr.text()).toBe("error: unknown command 'missing'\n");
+      expect(local.stdout).not.toBe('');
+      expect(local.stderr).toBe("error: unknown command 'missing'\n");
+    }
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(String(fetchImpl.mock.calls[0]![0])).toBe('https://api.example.com/v1/manifest');
   });
 });
