@@ -7,6 +7,8 @@
  * and that lives here.
  */
 
+import type { FileArgumentContract } from './hosted/contract.js';
+
 export interface ManifestEntry {
   site: string;
   name: string;
@@ -26,6 +28,7 @@ export interface ManifestEntry {
     positional?: boolean;
     help?: string;
     choices?: string[];
+    file?: FileArgumentContract;
   }>;
   columns?: string[];
   pipeline?: Record<string, unknown>[];

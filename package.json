@@ -32,6 +32,7 @@
     "clis/",
     "skills/**",
     "cli-manifest.json",
+    "hosted-contract.json",
     "plugin-catalog.json",
     "scripts/",
     "README.md",

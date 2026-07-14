@@ -30,6 +30,11 @@ import { fullName, getRegistry, type CliCommand } from './registry.js';
 import { findPackageRoot, getCliManifestPath } from './package-paths.js';
 import type { ManifestEntry } from './manifest-types.js';
 import { isRecord } from './utils.js';
+import {
+  buildHostedContract,
+  serializeHostedContract,
+  type HostedBrowserCommandContract,
+} from './hosted/contract.js';
 
 export type { ManifestEntry } from './manifest-types.js';
 
@@ -37,6 +42,7 @@ const PACKAGE_ROOT = findPackageRoot(fileURLToPath(import.meta.url));
 const CLIS_DIR = path.join(PACKAGE_ROOT, 'clis');
 // Write manifest next to clis/ so both dev and installed runtime can find it.
 const OUTPUT = getCliManifestPath(CLIS_DIR);
+const HOSTED_CONTRACT_OUTPUT = path.join(PACKAGE_ROOT, 'hosted-contract.json');
 
 // Module is treated as a CLI command source if it either:
 //   1. Calls `cli(...)` directly (the common case), or
@@ -83,6 +89,7 @@ function toManifestArgs(args: CliCommand['args']): ManifestEntry['args'] {
     positional: arg.positional || undefined,
     help: arg.help ?? '',
     choices: arg.choices,
+    file: arg.file,
   }));
 }
 
@@ -252,6 +259,24 @@ export function serializeManifest(manifest: ManifestEntry[]): string {
   return `${JSON.stringify(manifest, null, 2)}\n`;
 }
 
+export interface BuildManifestArtifacts {
+  manifestJson: string;
+  hostedContractJson: string;
+}
+
+export function buildManifestArtifacts(
+  entries: ManifestEntry[],
+  packageVersion: string,
+  browserCatalog: readonly HostedBrowserCommandContract[],
+): BuildManifestArtifacts {
+  return {
+    manifestJson: serializeManifest(entries),
+    hostedContractJson: serializeHostedContract(
+      buildHostedContract(entries, browserCatalog, packageVersion),
+    ),
+  };
+}
+
 /**
  * Metadata audit: every positional arg must carry a non-empty `help` string.
  *
@@ -417,9 +442,21 @@ async function main(): Promise<void> {
     }
   }
 
+  const packagePath = path.resolve(PACKAGE_ROOT, 'package.json');
+  const packageMetadata = JSON.parse(fs.readFileSync(packagePath, 'utf8')) as {
+    name?: unknown;
+    version?: unknown;
+  };
+  if (typeof packageMetadata.name !== 'string' || typeof packageMetadata.version !== 'string') {
+    throw new Error(`Package name and version are required in ${packagePath}`);
+  }
+  const artifacts = buildManifestArtifacts(entries, packageMetadata.version, []);
+
   fs.mkdirSync(path.dirname(OUTPUT), { recursive: true });
-  fs.writeFileSync(OUTPUT, serializeManifest(entries));
+  fs.writeFileSync(OUTPUT, artifacts.manifestJson);
+  fs.writeFileSync(HOSTED_CONTRACT_OUTPUT, artifacts.hostedContractJson);
   console.log(`✅ Manifest compiled: ${entries.length} entries → ${OUTPUT}`);
+  console.log(`✅ Hosted contract compiled: ${packageMetadata.name}@${packageMetadata.version} → ${HOSTED_CONTRACT_OUTPUT}`);
 
   // Restore executable permissions on bin entries.
   // tsc does not preserve the +x bit, so after a clean rebuild the CLI

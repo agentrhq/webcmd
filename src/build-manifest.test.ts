@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import { cli, getRegistry, Strategy } from './registry.js';
 import {
   ManifestImportError,
+  buildManifestArtifacts,
   diffRemovedEntries,
   findManifestMetadataIssues,
   loadManifestEntries,
@@ -96,6 +97,64 @@ describe('manifest helper rules', () => {
     // Verify sourceFile is included and stable for manifest consumers.
     expect(entries[0].sourceFile).toBeDefined();
     expect(entries[0].sourceFile).not.toContain('\\');
+
+    getRegistry().delete(key);
+  });
+
+  it('preserves file metadata and builds both artifacts from one normalized snapshot', async () => {
+    const site = `manifest-files-${Date.now()}`;
+    const key = `${site}/upload`;
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-manifest-'));
+    tempDirs.push(dir);
+    const file = path.join(dir, `${site}.ts`);
+    fs.writeFileSync(file, `export const command = cli({ site: '${site}', name: 'upload', access: 'write' });`);
+
+    const entries = await loadManifestEntries(file, site, async () => ({
+      command: cli({
+        site,
+        name: 'upload',
+        access: 'write',
+        description: 'upload a document',
+        strategy: Strategy.PUBLIC,
+        browser: false,
+        args: [{
+          name: 'path',
+          type: 'str',
+          positional: true,
+          required: true,
+          help: 'Document path',
+          file: {
+            direction: 'input',
+            contentTypes: ['application/pdf'],
+            maxBytes: 5_000_000,
+          },
+        }],
+      }),
+    }));
+
+    expect(entries[0].args[0].file).toEqual({
+      direction: 'input',
+      contentTypes: ['application/pdf'],
+      maxBytes: 5_000_000,
+    });
+
+    const artifacts = buildManifestArtifacts(entries, '7.6.5', []);
+    expect(JSON.parse(artifacts.manifestJson)).toEqual(entries);
+    expect(JSON.parse(artifacts.hostedContractJson)).toMatchObject({
+      schemaVersion: 1,
+      webcmdVersion: '7.6.5',
+      commands: [{
+        command: `${site}/upload`,
+        fileArguments: [{
+          name: 'path',
+          direction: 'input',
+          multiple: false,
+          required: true,
+          contentTypes: ['application/pdf'],
+          maxBytes: 5_000_000,
+        }],
+      }],
+    });
 
     getRegistry().delete(key);
   });

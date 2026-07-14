@@ -3,6 +3,7 @@
  */
 
 import type { IPage } from './types.js';
+import type { FileArgumentContract } from './hosted/contract.js';
 
 export enum Strategy {
   PUBLIC = 'public',
@@ -21,6 +22,7 @@ export interface Arg {
   positional?: boolean;
   help?: string;
   choices?: string[];
+  file?: FileArgumentContract;
 }
 
 export type CommandArgs = Record<string, any>;
