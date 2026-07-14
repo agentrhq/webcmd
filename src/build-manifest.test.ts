@@ -125,6 +125,7 @@ describe('manifest helper rules', () => {
           help: 'Document path',
           file: {
             direction: 'input',
+            pathKind: 'file',
             contentTypes: ['application/pdf'],
             maxBytes: 5_000_000,
           },
@@ -134,6 +135,7 @@ describe('manifest helper rules', () => {
 
     expect(entries[0].args[0].file).toEqual({
       direction: 'input',
+      pathKind: 'file',
       contentTypes: ['application/pdf'],
       maxBytes: 5_000_000,
     });
@@ -148,6 +150,7 @@ describe('manifest helper rules', () => {
         fileArguments: [{
           name: 'path',
           direction: 'input',
+          pathKind: 'file',
           multiple: false,
           required: true,
           contentTypes: ['application/pdf'],

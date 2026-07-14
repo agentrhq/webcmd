@@ -194,7 +194,17 @@ cli({
     args: [
         { name: 'url', type: 'string', required: true, positional: true, help: 'The URL of the tweet to reply to' },
         { name: 'text', type: 'string', required: true, positional: true, help: 'The text content of your reply' },
-        { name: 'image', help: 'Optional local image path to attach to the reply' },
+        {
+            name: 'image',
+            help: 'Optional local image path to attach to the reply',
+            file: {
+                direction: 'input',
+                pathKind: 'file',
+                multiple: false,
+                contentTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
+                maxBytes: 26_214_400,
+            },
+        },
         { name: 'image-url', help: 'Optional remote image URL to download and attach to the reply' },
     ],
     columns: ['status', 'message', 'text', 'url'],

@@ -3890,7 +3890,20 @@
         "name": "image",
         "type": "str",
         "required": false,
-        "help": "Local image path to attach before prompting; comma-separated paths are supported"
+        "help": "Local image path to attach before prompting; comma-separated paths are supported",
+        "file": {
+          "direction": "input",
+          "pathKind": "file",
+          "multiple": true,
+          "separator": ",",
+          "contentTypes": [
+            "image/jpeg",
+            "image/png",
+            "image/gif",
+            "image/webp"
+          ],
+          "maxBytes": 26214400
+        }
       },
       {
         "name": "project",
@@ -3903,7 +3916,12 @@
         "name": "op",
         "type": "str",
         "required": false,
-        "help": "Output directory (default: ~/Pictures/chatgpt)"
+        "help": "Output directory (default: ~/Pictures/chatgpt)",
+        "file": {
+          "direction": "output",
+          "pathKind": "directory",
+          "multiple": false
+        }
       },
       {
         "name": "sd",
@@ -4056,7 +4074,25 @@
         "type": "str",
         "required": true,
         "positional": true,
-        "help": "Local file path(s) to upload; comma-separated paths are supported"
+        "help": "Local file path(s) to upload; comma-separated paths are supported",
+        "file": {
+          "direction": "input",
+          "pathKind": "file",
+          "multiple": true,
+          "separator": ",",
+          "contentTypes": [
+            "application/pdf",
+            "text/plain",
+            "text/markdown",
+            "text/csv",
+            "application/json",
+            "image/jpeg",
+            "image/png",
+            "image/gif",
+            "image/webp"
+          ],
+          "maxBytes": 26214400
+        }
       },
       {
         "name": "id",
@@ -4795,7 +4831,24 @@
         "name": "file",
         "type": "str",
         "required": false,
-        "help": "Attach a file (image, PDF, text) with the prompt"
+        "help": "Attach a file (image, PDF, text) with the prompt",
+        "file": {
+          "direction": "input",
+          "pathKind": "file",
+          "multiple": false,
+          "contentTypes": [
+            "application/pdf",
+            "text/plain",
+            "text/markdown",
+            "text/csv",
+            "application/json",
+            "image/jpeg",
+            "image/png",
+            "image/gif",
+            "image/webp"
+          ],
+          "maxBytes": 26214400
+        }
       }
     ],
     "columns": [
@@ -11587,7 +11640,20 @@
         "type": "str",
         "required": false,
         "valueRequired": true,
-        "help": "Comma-separated media paths (images/videos, up to 10)"
+        "help": "Comma-separated media paths (images/videos, up to 10)",
+        "file": {
+          "direction": "input",
+          "pathKind": "file",
+          "multiple": true,
+          "separator": ",",
+          "contentTypes": [
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+            "video/mp4"
+          ],
+          "maxBytes": 262144000
+        }
       },
       {
         "name": "content",
@@ -11659,7 +11725,16 @@
         "type": "str",
         "required": false,
         "valueRequired": true,
-        "help": "Path to a single .mp4 video file"
+        "help": "Path to a single .mp4 video file",
+        "file": {
+          "direction": "input",
+          "pathKind": "file",
+          "multiple": false,
+          "contentTypes": [
+            "video/mp4"
+          ],
+          "maxBytes": 262144000
+        }
       },
       {
         "name": "content",
@@ -14536,7 +14611,20 @@
         "name": "receipt",
         "type": "str",
         "required": true,
-        "help": "Local receipt/proof file path"
+        "help": "Local receipt/proof file path",
+        "file": {
+          "direction": "input",
+          "pathKind": "file",
+          "multiple": false,
+          "contentTypes": [
+            "image/jpeg",
+            "image/png",
+            "image/gif",
+            "image/webp",
+            "application/pdf"
+          ],
+          "maxBytes": 26214400
+        }
       },
       {
         "name": "amount",
@@ -23992,7 +24080,12 @@
         "type": "str",
         "default": "./twitter-downloads",
         "required": false,
-        "help": "Output directory (default ./twitter-downloads). A per-source subdir is created inside."
+        "help": "Output directory (default ./twitter-downloads). A per-source subdir is created inside.",
+        "file": {
+          "direction": "output",
+          "pathKind": "directory",
+          "multiple": false
+        }
       }
     ],
     "columns": [
@@ -24657,7 +24750,20 @@
         "name": "images",
         "type": "string",
         "required": false,
-        "help": "Image paths, comma-separated, max 4 (jpg/png/gif/webp)"
+        "help": "Image paths, comma-separated, max 4 (jpg/png/gif/webp)",
+        "file": {
+          "direction": "input",
+          "pathKind": "file",
+          "multiple": true,
+          "separator": ",",
+          "contentTypes": [
+            "image/jpeg",
+            "image/png",
+            "image/gif",
+            "image/webp"
+          ],
+          "maxBytes": 26214400
+        }
       }
     ],
     "columns": [
@@ -24734,7 +24840,19 @@
         "name": "image",
         "type": "str",
         "required": false,
-        "help": "Optional local image path to attach to the quote tweet"
+        "help": "Optional local image path to attach to the quote tweet",
+        "file": {
+          "direction": "input",
+          "pathKind": "file",
+          "multiple": false,
+          "contentTypes": [
+            "image/jpeg",
+            "image/png",
+            "image/gif",
+            "image/webp"
+          ],
+          "maxBytes": 26214400
+        }
       },
       {
         "name": "image-url",
@@ -24780,7 +24898,19 @@
         "name": "image",
         "type": "str",
         "required": false,
-        "help": "Optional local image path to attach to the reply"
+        "help": "Optional local image path to attach to the reply",
+        "file": {
+          "direction": "input",
+          "pathKind": "file",
+          "multiple": false,
+          "contentTypes": [
+            "image/jpeg",
+            "image/png",
+            "image/gif",
+            "image/webp"
+          ],
+          "maxBytes": 26214400
+        }
       },
       {
         "name": "image-url",

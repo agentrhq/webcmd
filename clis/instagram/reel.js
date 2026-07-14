@@ -738,7 +738,19 @@ cli({
     strategy: Strategy.UI,
     browser: true,
     args: [
-        { name: 'video', required: false, valueRequired: true, help: 'Path to a single .mp4 video file' },
+        {
+            name: 'video',
+            required: false,
+            valueRequired: true,
+            help: 'Path to a single .mp4 video file',
+            file: {
+                direction: 'input',
+                pathKind: 'file',
+                multiple: false,
+                contentTypes: ['video/mp4'],
+                maxBytes: 262_144_000,
+            },
+        },
         { name: 'content', positional: true, required: false, help: 'Caption text' },
         { name: 'timeout', type: 'int', required: false, default: INSTAGRAM_REEL_TIMEOUT_SECONDS, help: `Max seconds for the overall command (default: ${INSTAGRAM_REEL_TIMEOUT_SECONDS})` },
     ],

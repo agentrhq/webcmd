@@ -63,6 +63,7 @@ describe('buildHostedContract', () => {
           help: 'Source document',
           file: {
             direction: 'input',
+            pathKind: 'file',
             contentTypes: ['application/pdf'],
             maxBytes: 2_000_000,
           },
@@ -71,7 +72,7 @@ describe('buildHostedContract', () => {
           name: 'destination',
           type: 'string',
           help: 'Destination file',
-          file: { direction: 'output', multiple: true },
+          file: { direction: 'output', pathKind: 'directory', multiple: true },
         },
         {
           name: 'retries',
@@ -235,6 +236,7 @@ describe('buildHostedContract', () => {
             {
               name: 'source',
               direction: 'input',
+              pathKind: 'file',
               multiple: false,
               required: true,
               contentTypes: ['application/pdf'],
@@ -243,6 +245,7 @@ describe('buildHostedContract', () => {
             {
               name: 'destination',
               direction: 'output',
+              pathKind: 'directory',
               multiple: true,
               required: false,
             },
@@ -340,6 +343,28 @@ describe('buildHostedContract', () => {
     } as unknown as CliCommand;
     expect(() => buildHostedContract([missingDirection], [], '1.0.0'))
       .toThrow('File argument files/transfer source must declare direction');
+
+    const missingPathKind = {
+      ...commands[2],
+      args: [{
+        name: 'source',
+        positional: true,
+        file: { direction: 'input' },
+      }],
+    } as unknown as CliCommand;
+    expect(() => buildHostedContract([missingPathKind], [], '1.0.0'))
+      .toThrow('File argument files/transfer source must declare pathKind');
+
+    const unsupportedSeparator = {
+      ...commands[2],
+      args: [{
+        name: 'source',
+        positional: true,
+        file: { direction: 'input', pathKind: 'file', separator: ':' },
+      }],
+    } as unknown as CliCommand;
+    expect(() => buildHostedContract([unsupportedSeparator], [], '1.0.0'))
+      .toThrow('File argument files/transfer source declares unsupported separator');
 
     const missingPolicy = [{
       command: 'open',

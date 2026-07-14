@@ -13,7 +13,9 @@ export type { HostedAvailability } from './availability.js';
 
 export interface FileArgumentContract {
   direction: 'input' | 'output';
+  pathKind: 'file' | 'directory';
   multiple?: boolean;
+  separator?: ',';
   contentTypes?: string[];
   maxBytes?: number;
 }
@@ -21,8 +23,10 @@ export interface FileArgumentContract {
 export interface HostedFileArgumentContract {
   name: string;
   direction: 'input' | 'output';
+  pathKind: 'file' | 'directory';
   multiple: boolean;
   required: boolean;
+  separator?: ',';
   contentTypes?: string[];
   maxBytes?: number;
 }
@@ -212,11 +216,19 @@ function normalizeFileArguments(command: HostedContractCommandInput): HostedFile
     if (arg.file.direction !== 'input' && arg.file.direction !== 'output') {
       throw new Error(`File argument ${command.site}/${command.name} ${arg.name} must declare direction`);
     }
+    if (arg.file.pathKind !== 'file' && arg.file.pathKind !== 'directory') {
+      throw new Error(`File argument ${command.site}/${command.name} ${arg.name} must declare pathKind`);
+    }
+    if (arg.file.separator !== undefined && arg.file.separator !== ',') {
+      throw new Error(`File argument ${command.site}/${command.name} ${arg.name} declares unsupported separator`);
+    }
     return [{
       name: arg.name,
       direction: arg.file.direction,
+      pathKind: arg.file.pathKind,
       multiple: arg.file.multiple === true,
       required: arg.required === true,
+      ...(arg.file.separator !== undefined ? { separator: arg.file.separator } : {}),
       ...(arg.file.contentTypes?.length ? { contentTypes: [...arg.file.contentTypes] } : {}),
       ...(arg.file.maxBytes !== undefined ? { maxBytes: arg.file.maxBytes } : {}),
     }];

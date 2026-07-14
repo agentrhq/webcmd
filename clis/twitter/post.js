@@ -258,7 +258,20 @@ cli({
     browser: true,
     args: [
         { name: 'text', type: 'string', required: true, positional: true, help: 'The text content of the tweet' },
-        { name: 'images', type: 'string', required: false, help: 'Image paths, comma-separated, max 4 (jpg/png/gif/webp)' },
+        {
+            name: 'images',
+            type: 'string',
+            required: false,
+            help: 'Image paths, comma-separated, max 4 (jpg/png/gif/webp)',
+            file: {
+                direction: 'input',
+                pathKind: 'file',
+                multiple: true,
+                separator: ',',
+                contentTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
+                maxBytes: 26_214_400,
+            },
+        },
     ],
     columns: ['status', 'message', 'text', 'id', 'url'],
     func: async (page, kwargs) => {

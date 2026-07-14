@@ -1403,7 +1403,20 @@ cli({
     strategy: Strategy.UI,
     browser: true,
     args: [
-        { name: 'media', required: false, valueRequired: true, help: `Comma-separated media paths (images/videos, up to ${MAX_MEDIA_ITEMS})` },
+        {
+            name: 'media',
+            required: false,
+            valueRequired: true,
+            help: `Comma-separated media paths (images/videos, up to ${MAX_MEDIA_ITEMS})`,
+            file: {
+                direction: 'input',
+                pathKind: 'file',
+                multiple: true,
+                separator: ',',
+                contentTypes: ['image/jpeg', 'image/png', 'image/webp', 'video/mp4'],
+                maxBytes: 262_144_000,
+            },
+        },
         { name: 'content', positional: true, required: false, help: 'Caption text' },
         { name: 'timeout', type: 'int', required: false, default: 300, help: 'Max seconds for the overall command (default: 300)' },
     ],

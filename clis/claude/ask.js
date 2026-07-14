@@ -23,7 +23,27 @@ export const askCommand = cli({
         { name: 'new', type: 'boolean', default: false, help: 'Start a new chat before sending' },
         { name: 'model', default: 'sonnet', choices: ['sonnet', 'opus', 'haiku'], help: 'Model to use: sonnet, opus, or haiku' },
         { name: 'think', type: 'boolean', default: false, help: 'Enable Adaptive thinking' },
-        { name: 'file', help: 'Attach a file (image, PDF, text) with the prompt' },
+        {
+            name: 'file',
+            help: 'Attach a file (image, PDF, text) with the prompt',
+            file: {
+                direction: 'input',
+                pathKind: 'file',
+                multiple: false,
+                contentTypes: [
+                    'application/pdf',
+                    'text/plain',
+                    'text/markdown',
+                    'text/csv',
+                    'application/json',
+                    'image/jpeg',
+                    'image/png',
+                    'image/gif',
+                    'image/webp',
+                ],
+                maxBytes: 26_214_400,
+            },
+        },
     ],
     columns: ['response'],
 

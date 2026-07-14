@@ -5246,7 +5246,30 @@
       ],
       "aliases": [],
       "defaultFormat": "plain",
-      "fileArguments": [],
+      "fileArguments": [
+        {
+          "name": "image",
+          "direction": "input",
+          "pathKind": "file",
+          "multiple": true,
+          "required": false,
+          "separator": ",",
+          "contentTypes": [
+            "image/jpeg",
+            "image/png",
+            "image/gif",
+            "image/webp"
+          ],
+          "maxBytes": 26214400
+        },
+        {
+          "name": "op",
+          "direction": "output",
+          "pathKind": "directory",
+          "multiple": false,
+          "required": false
+        }
+      ],
       "sessionPolicy": "create-or-reuse",
       "availability": {
         "mode": "hosted"
@@ -5414,7 +5437,28 @@
       ],
       "aliases": [],
       "defaultFormat": "table",
-      "fileArguments": [],
+      "fileArguments": [
+        {
+          "name": "file",
+          "direction": "input",
+          "pathKind": "file",
+          "multiple": true,
+          "required": true,
+          "separator": ",",
+          "contentTypes": [
+            "application/pdf",
+            "text/plain",
+            "text/markdown",
+            "text/csv",
+            "application/json",
+            "image/jpeg",
+            "image/png",
+            "image/gif",
+            "image/webp"
+          ],
+          "maxBytes": 26214400
+        }
+      ],
       "sessionPolicy": "create-or-reuse",
       "availability": {
         "mode": "hosted"
@@ -6109,7 +6153,27 @@
       ],
       "aliases": [],
       "defaultFormat": "table",
-      "fileArguments": [],
+      "fileArguments": [
+        {
+          "name": "file",
+          "direction": "input",
+          "pathKind": "file",
+          "multiple": false,
+          "required": false,
+          "contentTypes": [
+            "application/pdf",
+            "text/plain",
+            "text/markdown",
+            "text/csv",
+            "application/json",
+            "image/jpeg",
+            "image/png",
+            "image/gif",
+            "image/webp"
+          ],
+          "maxBytes": 26214400
+        }
+      ],
       "sessionPolicy": "create-or-reuse",
       "availability": {
         "mode": "hosted"
@@ -14619,7 +14683,23 @@
       ],
       "aliases": [],
       "defaultFormat": "table",
-      "fileArguments": [],
+      "fileArguments": [
+        {
+          "name": "media",
+          "direction": "input",
+          "pathKind": "file",
+          "multiple": true,
+          "required": false,
+          "separator": ",",
+          "contentTypes": [
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+            "video/mp4"
+          ],
+          "maxBytes": 262144000
+        }
+      ],
       "sessionPolicy": "create-or-reuse",
       "availability": {
         "mode": "hosted"
@@ -14707,7 +14787,19 @@
       ],
       "aliases": [],
       "defaultFormat": "table",
-      "fileArguments": [],
+      "fileArguments": [
+        {
+          "name": "video",
+          "direction": "input",
+          "pathKind": "file",
+          "multiple": false,
+          "required": false,
+          "contentTypes": [
+            "video/mp4"
+          ],
+          "maxBytes": 262144000
+        }
+      ],
       "sessionPolicy": "create-or-reuse",
       "availability": {
         "mode": "hosted"
@@ -18329,7 +18421,23 @@
       "aliases": [],
       "defaultFormat": "table",
       "example": "webcmd --profile <profile> mercury reimbursement-draft --receipt /tmp/receipt.png --amount 140.00 --currency CNY --date 2026-06-26 --merchant \"Example Merchant\" --category \"Marketing & Advertising\" --notes \"Example business purpose.\" -f json",
-      "fileArguments": [],
+      "fileArguments": [
+        {
+          "name": "receipt",
+          "direction": "input",
+          "pathKind": "file",
+          "multiple": false,
+          "required": true,
+          "contentTypes": [
+            "image/jpeg",
+            "image/png",
+            "image/gif",
+            "image/webp",
+            "application/pdf"
+          ],
+          "maxBytes": 26214400
+        }
+      ],
       "sessionPolicy": "create-or-reuse",
       "availability": {
         "mode": "hosted"
@@ -30019,7 +30127,15 @@
       ],
       "aliases": [],
       "defaultFormat": "table",
-      "fileArguments": [],
+      "fileArguments": [
+        {
+          "name": "output",
+          "direction": "output",
+          "pathKind": "directory",
+          "multiple": false,
+          "required": false
+        }
+      ],
       "sessionPolicy": "create-or-reuse",
       "availability": {
         "mode": "hosted"
@@ -30838,7 +30954,23 @@
       ],
       "aliases": [],
       "defaultFormat": "table",
-      "fileArguments": [],
+      "fileArguments": [
+        {
+          "name": "images",
+          "direction": "input",
+          "pathKind": "file",
+          "multiple": true,
+          "required": false,
+          "separator": ",",
+          "contentTypes": [
+            "image/jpeg",
+            "image/png",
+            "image/gif",
+            "image/webp"
+          ],
+          "maxBytes": 26214400
+        }
+      ],
       "sessionPolicy": "create-or-reuse",
       "availability": {
         "mode": "hosted"
@@ -30937,7 +31069,22 @@
       ],
       "aliases": [],
       "defaultFormat": "table",
-      "fileArguments": [],
+      "fileArguments": [
+        {
+          "name": "image",
+          "direction": "input",
+          "pathKind": "file",
+          "multiple": false,
+          "required": false,
+          "contentTypes": [
+            "image/jpeg",
+            "image/png",
+            "image/gif",
+            "image/webp"
+          ],
+          "maxBytes": 26214400
+        }
+      ],
       "sessionPolicy": "create-or-reuse",
       "availability": {
         "mode": "hosted"
@@ -30996,7 +31143,22 @@
       ],
       "aliases": [],
       "defaultFormat": "table",
-      "fileArguments": [],
+      "fileArguments": [
+        {
+          "name": "image",
+          "direction": "input",
+          "pathKind": "file",
+          "multiple": false,
+          "required": false,
+          "contentTypes": [
+            "image/jpeg",
+            "image/png",
+            "image/gif",
+            "image/webp"
+          ],
+          "maxBytes": 26214400
+        }
+      ],
       "sessionPolicy": "create-or-reuse",
       "availability": {
         "mode": "hosted"

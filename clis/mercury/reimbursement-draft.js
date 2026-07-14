@@ -26,7 +26,18 @@ cli({
     defaultWindowMode: 'foreground',
     navigateBefore: false,
     args: [
-        { name: 'receipt', required: true, help: 'Local receipt/proof file path' },
+        {
+            name: 'receipt',
+            required: true,
+            help: 'Local receipt/proof file path',
+            file: {
+                direction: 'input',
+                pathKind: 'file',
+                multiple: false,
+                contentTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'],
+                maxBytes: 26_214_400,
+            },
+        },
         { name: 'amount', required: true, help: 'Original-currency amount, e.g. 140.00' },
         { name: 'currency', default: 'CNY', help: 'Original currency code' },
         { name: 'date', required: true, help: 'Expense date as YYYY-MM-DD' },

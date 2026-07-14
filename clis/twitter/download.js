@@ -311,7 +311,12 @@ cli({
         { name: 'username', positional: true, help: 'Twitter username (with or without @) to scan their profile media. Either <username> or --tweet-url is required.' },
         { name: 'tweet-url', help: 'Single tweet URL to download. Use this OR <username>, not both required at once.' },
         { name: 'limit', type: 'int', default: 10, help: 'Maximum number of media items to download when scanning a profile (default 10). Ignored when --tweet-url is used.' },
-        { name: 'output', default: './twitter-downloads', help: 'Output directory (default ./twitter-downloads). A per-source subdir is created inside.' },
+        {
+            name: 'output',
+            default: './twitter-downloads',
+            help: 'Output directory (default ./twitter-downloads). A per-source subdir is created inside.',
+            file: { direction: 'output', pathKind: 'directory', multiple: false },
+        },
     ],
     columns: ['index', 'tweet_id', 'url', 'type', 'status', 'size'],
     func: async (page, kwargs) => {
