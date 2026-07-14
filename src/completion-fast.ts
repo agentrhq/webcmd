@@ -6,6 +6,7 @@
  */
 
 import * as fs from 'node:fs';
+import { getCommandCompletionCandidates } from './command-presentation.js';
 import {
   BUILTIN_COMMANDS,
   bashCompletionScript,
@@ -42,35 +43,8 @@ export function hasAllManifests(manifestPaths: string[]): boolean {
  */
 export function getCompletionsFromManifest(words: string[], cursor: number, manifestPaths: string[]): string[] {
   const entries = loadManifestEntries(manifestPaths);
-  if (entries === null) {
-    return [];
-  }
-
-  if (cursor <= 1) {
-    const sites = new Set<string>();
-    for (const entry of entries) {
-      sites.add(entry.site);
-    }
-    return [...BUILTIN_COMMANDS, ...sites].sort();
-  }
-
-  const site = words[0];
-  if (BUILTIN_COMMANDS.includes(site)) {
-    return [];
-  }
-
-  if (cursor === 2) {
-    const subcommands: string[] = [];
-    for (const entry of entries) {
-      if (entry.site === site) {
-        subcommands.push(entry.name);
-        if (entry.aliases?.length) subcommands.push(...entry.aliases);
-      }
-    }
-    return [...new Set(subcommands)].sort();
-  }
-
-  return [];
+  if (entries === null) return [];
+  return getCommandCompletionCandidates(entries, words, cursor, BUILTIN_COMMANDS);
 }
 
 // ── Shell script generators (re-exported from shared, no registry dependency) ───────

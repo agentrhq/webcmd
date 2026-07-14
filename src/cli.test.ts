@@ -8,7 +8,13 @@ import { BrowserCommandError } from './browser/daemon-client.js';
 import type { IPage } from './types.js';
 import { TargetError } from './browser/target-errors.js';
 import { PKG_VERSION } from './version.js';
-import { classifyAdapter } from './help.js';
+import { classifyAdapter, getInstalledRootHelpPresentation } from './help.js';
+import {
+  commandListPresentation,
+  formatRootHelp,
+  toPresentableCommand,
+} from './command-presentation.js';
+import { render as renderOutput } from './output.js';
 
 const {
   mockBrowserConnect,
@@ -113,6 +119,16 @@ describe('createProgram root help descriptions', () => {
 
     expect(descriptionFor(program, 'list')).toBe('List all available CLI commands');
     expect(descriptionFor(program, 'doctor')).toBe('Diagnose webcmd browser bridge connectivity');
+  });
+
+  it('renders the actual local root through the shared root presentation seam', () => {
+    const program = createProgram('', '');
+    const presentation = getInstalledRootHelpPresentation(program);
+    const commanderHelp = program.createHelp();
+
+    expect(presentation).toBeDefined();
+    expect(presentation!.baseText).toBe(commanderHelp.formatHelp(program, commanderHelp));
+    expect(program.helpInformation()).toBe(formatRootHelp(presentation!));
   });
 
   it('keeps site adapters out of root commands and lists sites in the root help tail', () => {
@@ -300,6 +316,50 @@ name: 'search',
       for (const [key, value] of snapshot) registry.set(key, value);
     }
   });
+
+  it.each(['json', 'yaml', 'yml'])(
+    'renders local list %s through the shared list presentation',
+    async (format) => {
+      const registry = getRegistry();
+      const snapshot = new Map(registry);
+      registry.clear();
+      try {
+        const command = cli({
+          site: 'github',
+          name: 'issues',
+          aliases: ['issue-list'],
+          access: 'read',
+          description: 'List repository issues',
+          strategy: Strategy.PUBLIC,
+          browser: false,
+          args: [{ name: 'limit', type: 'int', default: 20, help: 'Maximum issues' }],
+          columns: ['number', 'title'],
+        });
+        const presentation = commandListPresentation([toPresentableCommand(command)], format);
+
+        const outputSpy = vi.mocked(console.log);
+        outputSpy.mockClear();
+        const program = createProgram('', '');
+        await program.parseAsync(['node', 'webcmd', 'list', '-f', format]);
+        const actual = outputSpy.mock.calls.flat().join('\n');
+
+        outputSpy.mockClear();
+        renderOutput(presentation.rows, {
+          fmt: format,
+          columns: presentation.columns,
+          title: 'webcmd/list',
+          source: 'webcmd list',
+        });
+        const expected = outputSpy.mock.calls.flat().join('\n');
+        outputSpy.mockClear();
+
+        expect(actual).toBe(expected);
+      } finally {
+        registry.clear();
+        for (const [key, value] of snapshot) registry.set(key, value);
+      }
+    },
+  );
 
   it('exposes external_clis / app_adapters / site_adapters in structured help', () => {
     const registry = getRegistry();

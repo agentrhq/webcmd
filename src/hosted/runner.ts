@@ -1,18 +1,26 @@
 import { writeFileSync } from 'node:fs';
 import yaml from 'js-yaml';
 import { BrowserSessionArgvError, rewriteBrowserArgv } from '../cli-argv-preprocess.js';
+import { formatRootHelp, getCommandCompletionCandidates } from '../command-presentation.js';
+import {
+  HOSTED_BUILTIN_COMMANDS,
+  HOSTED_ROOT_HELP,
+  LOCAL_ONLY_COMMAND_HELP,
+} from '../completion-shared.js';
 import { ConfigError, EXIT_CODES, toEnvelope } from '../errors.js';
+import { getRequestedHelpFormat, renderStructuredHelp } from '../help.js';
 import { render as renderOutput } from '../output.js';
 import { HostedClient } from './client.js';
 import { parseHostedInvocation } from './args.js';
 import {
   findHostedCommand,
-  hostedListRows,
+  hostedCommandHelpData,
+  hostedCommands,
+  hostedListPresentation,
+  hostedSiteHelpData,
   isLocalOnlyHostedCommand,
   renderHostedCommandHelp,
   renderHostedSiteHelp,
-  siteNames,
-  commandNamesForSite,
 } from './manifest.js';
 import { isHostedConfig, loadWebcmdConfig, type WebcmdConfig } from './config.js';
 import type { HostedBrowserActionName, HostedBrowserRunActionResponse, HostedManifest } from './types.js';
@@ -56,13 +64,13 @@ async function dispatchHosted(argv: string[], client: HostedClient, stdout: Node
   const normalized = stripGlobalOptions(argv);
   const args = normalized.argv;
   if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
-    stdout.write('Usage: webcmd <site> <command> [options]\n       webcmd list\n       webcmd setup\n');
+    stdout.write(formatRootHelp(HOSTED_ROOT_HELP));
     return;
   }
   if (args[0] === 'daemon') {
     throw new ConfigError(
       'webcmd daemon is local-only. Hosted mode has no local daemon.',
-      'Run `webcmd setup` and choose local mode to manage the local daemon.',
+      LOCAL_ONLY_COMMAND_HELP,
     );
   }
   if (args[0] === 'browser') {
@@ -83,7 +91,9 @@ async function dispatchHosted(argv: string[], client: HostedClient, stdout: Node
   const site = args[0]!;
   const commandName = args[1];
   if (!commandName || commandName === '--help' || commandName === '-h') {
-    stdout.write(renderHostedSiteHelp(manifest, site));
+    const data = hostedSiteHelpData(manifest, site);
+    if (!data) stdout.write(renderHostedSiteHelp(manifest, site));
+    else writeHostedHelp(stdout, args, data, renderHostedSiteHelp(manifest, site));
     return;
   }
 
@@ -94,12 +104,12 @@ async function dispatchHosted(argv: string[], client: HostedClient, stdout: Node
   if (isLocalOnlyHostedCommand(command)) {
     throw new ConfigError(
       `Command ${command.command} is local-only and is not available in hosted mode.`,
-      'Run `webcmd setup` and choose local mode to use local-only commands.',
+      LOCAL_ONLY_COMMAND_HELP,
     );
   }
   const parsed = parseHostedInvocation(command, [...args.slice(2), ...normalized.trailingCommandOptions]);
   if (parsed.help) {
-    stdout.write(renderHostedCommandHelp(command));
+    writeHostedHelp(stdout, args, hostedCommandHelpData(command), renderHostedCommandHelp(command));
     return;
   }
 
@@ -419,15 +429,28 @@ function renderHostedBrowserResponse(
 
 function renderHostedList(manifest: HostedManifest, argv: string[]): void {
   const fmt = readFormat(argv);
-  const structured = fmt === 'json' || fmt === 'yaml' || fmt === 'yml';
-  renderOutput(hostedListRows(manifest, structured), {
+  const presentation = hostedListPresentation(manifest, fmt);
+  if (presentation.displayLines) {
+    for (const line of presentation.displayLines) console.log(line);
+    return;
+  }
+  renderOutput(presentation.rows, {
     fmt,
     fmtExplicit: true,
-    columns: ['command', 'site', 'name', 'aliases', 'description', 'access', 'strategy', 'browser', 'args',
-      ...(structured ? ['columns', 'domain'] : [])],
+    columns: presentation.columns,
     title: 'webcmd/list',
     source: 'webcmd cloud',
   });
+}
+
+function writeHostedHelp(
+  stdout: NodeJS.WritableStream,
+  argv: readonly string[],
+  data: Record<string, unknown>,
+  text: string,
+): void {
+  const format = getRequestedHelpFormat(argv);
+  stdout.write(format ? renderStructuredHelp(data, format) : text);
 }
 
 function readFormat(argv: string[]): string {
@@ -463,10 +486,22 @@ function isCompletionRequest(argv: string[]): boolean {
 
 function hostedCompletions(manifest: HostedManifest, argv: string[]): string[] {
   const index = argv.indexOf('--get-completions');
-  const words = index === -1 ? argv : argv.slice(index + 1).filter((word) => word !== '--cursor');
-  const meaningful = words.filter((word) => !/^\d+$/.test(word));
-  if (meaningful.length <= 1) return ['list', 'setup', ...siteNames(manifest)];
-  return commandNamesForSite(manifest, meaningful[0]!);
+  const rest = index === -1 ? argv : argv.slice(index + 1);
+  const words: string[] = [];
+  let cursor: number | undefined;
+  for (let i = 0; i < rest.length; i += 1) {
+    if (rest[i] === '--cursor' && i + 1 < rest.length) {
+      cursor = Number.parseInt(rest[++i]!, 10);
+    } else {
+      words.push(rest[i]!);
+    }
+  }
+  return getCommandCompletionCandidates(
+    hostedCommands(manifest),
+    words,
+    Number.isFinite(cursor) ? cursor! : words.length,
+    HOSTED_BUILTIN_COMMANDS,
+  );
 }
 
 function errorExitCode(err: unknown): number {

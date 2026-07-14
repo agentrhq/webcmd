@@ -1,5 +1,33 @@
 import { describe, it, expect } from 'vitest';
-import { classifyAdapter, formatRootAdapterHelpText } from './help.js';
+import {
+  classifyAdapter,
+  commandHelpData,
+  formatCommandHelpText,
+  formatRootAdapterHelpText,
+  formatSiteHelpText,
+  siteHelpData,
+} from './help.js';
+import {
+  commandHelpData as sharedCommandHelpData,
+  formatCommandHelp,
+  formatSiteHelp,
+  siteHelpData as sharedSiteHelpData,
+  toPresentableCommand,
+} from './command-presentation.js';
+import { Strategy, type CliCommand } from './registry.js';
+
+const presentableFixture: CliCommand = {
+  site: 'github',
+  name: 'issues',
+  aliases: ['issue-list'],
+  description: 'List repository issues',
+  access: 'read',
+  strategy: Strategy.COOKIE,
+  browser: true,
+  args: [{ name: 'owner', positional: true, required: true, help: 'Repository owner' }],
+  columns: ['number', 'title'],
+  domain: 'github.com',
+};
 
 describe('classifyAdapter', () => {
   it('classifies DNS-style domains as site', () => {
@@ -62,5 +90,21 @@ describe('formatRootAdapterHelpText', () => {
       sites: ['youtube'],
     });
     expect(text).toContain("'webcmd <site> --help -f yaml'");
+  });
+});
+
+describe('shared presentation delegation', () => {
+  it('keeps local site and command text byte-identical to the pure model', () => {
+    const presentable = toPresentableCommand(presentableFixture);
+
+    expect(formatSiteHelpText('github', [presentableFixture])).toBe(formatSiteHelp('github', [presentable]));
+    expect(formatCommandHelpText(presentableFixture)).toBe(formatCommandHelp(presentable));
+  });
+
+  it('keeps local structured help byte-identical to the pure model', () => {
+    const presentable = toPresentableCommand(presentableFixture);
+
+    expect(siteHelpData('github', [presentableFixture])).toEqual(sharedSiteHelpData('github', [presentable]));
+    expect(commandHelpData(presentableFixture)).toEqual(sharedCommandHelpData(presentable));
   });
 });

@@ -12,15 +12,15 @@ import * as readline from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 import { Command, InvalidArgumentError, Option } from 'commander';
 import { findPackageRoot, getBuiltEntryCandidates } from './package-paths.js';
-import { type CliCommand, fullName, getRegistry, strategyLabel } from './registry.js';
-import { serializeCommand, formatArgSummary } from './serialization.js';
+import { type CliCommand, getRegistry } from './registry.js';
+import { commandListPresentation, toPresentableCommand } from './command-presentation.js';
 import { render as renderOutput } from './output.js';
 import { PKG_VERSION } from './version.js';
 import { printCompletionScript } from './completion.js';
 import { loadExternalClis, executeExternalCli, installExternalCli, registerExternalCli, isBinaryInstalled, formatExternalCliLabel } from './external.js';
 import { installWebcmdSkill, listWebcmdSkills, updateWebcmdSkill, type WebcmdSkillInstallResult } from './skills.js';
 import { registerAllCommands } from './commanderAdapter.js';
-import { classifyAdapter, formatRootAdapterHelpText, installCommanderNamespaceStructuredHelp, installStructuredHelp, leadingPositionalFromUsage, rootHelpData, type RootAdapterGroups } from './help.js';
+import { buildRootHelpPresentation, classifyAdapter, installCommanderNamespaceStructuredHelp, installRootPresentationHelp, leadingPositionalFromUsage, rootHelpData, type RootAdapterGroups } from './help.js';
 import { EXIT_CODES, getErrorMessage, BrowserConnectError, CliError, ArgumentError } from './errors.js';
 import { TargetError, type TargetErrorCode } from './browser/target-errors.js';
 import { resolveTargetJs, getTextResolvedJs, getValueResolvedJs, getAttributesResolvedJs, selectResolvedJs, isAutocompleteResolvedJs, type ResolveOptions, type TargetMatchLevel } from './browser/target-resolver.js';
@@ -790,89 +790,28 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string): Command 
     .description('List all available CLI commands')
     .option('-f, --format <fmt>', 'Output format: table, json, yaml, md, csv', 'table')
     .action((opts) => {
-      const registry = getRegistry();
-      const commands = [...new Set(registry.values())].sort((a, b) => fullName(a).localeCompare(fullName(b)));
-      const fmt = opts.format;
-      const isStructured = fmt === 'json' || fmt === 'yaml';
-
-      if (fmt !== 'table') {
-        const rows = isStructured
-          ? commands.map(serializeCommand)
-          : commands.map(c => ({
-              command: fullName(c),
-              site: c.site,
-              name: c.name,
-              aliases: c.aliases?.join(', ') ?? '',
-              description: c.description,
-              access: c.access,
-              strategy: strategyLabel(c),
-              browser: !!c.browser,
-              args: formatArgSummary(c.args),
-            }));
-        renderOutput(rows, {
-          fmt,
-          columns: ['command', 'site', 'name', 'aliases', 'description', 'access', 'strategy', 'browser', 'args',
-                     ...(isStructured ? ['columns', 'domain'] : [])],
-          title: 'webcmd/list',
-          source: 'webcmd list',
-        });
+      const externalClis = opts.format === 'table' ? loadExternalClis() : [];
+      const presentation = commandListPresentation(
+        [...new Set(getRegistry().values())].map(toPresentableCommand),
+        opts.format,
+        {
+          externalClis: externalClis.map((external) => ({
+            label: formatExternalCliLabel(external),
+            installed: isBinaryInstalled(external.binary),
+            ...(external.description ? { description: external.description } : {}),
+          })),
+        },
+      );
+      if (presentation.displayLines) {
+        for (const line of presentation.displayLines) console.log(line);
         return;
       }
-
-      // Table (default) — grouped by adapter kind (app vs site), then by site name.
-      // classifyAdapter() reads the `domain` field: DNS-style domains are sites;
-      // localhost/loopback endpoints and bare app names are apps.
-      const appsBySite = new Map<string, CliCommand[]>();
-      const sitesBySite = new Map<string, CliCommand[]>();
-      for (const cmd of commands) {
-        const target = classifyAdapter(cmd.domain) === 'app' ? appsBySite : sitesBySite;
-        const g = target.get(cmd.site) ?? [];
-        g.push(cmd);
-        target.set(cmd.site, g);
-      }
-
-      const renderSiteGroup = (site: string, cmds: CliCommand[]): void => {
-        console.log(`  ${site}`);
-        for (const cmd of cmds) {
-          const label = strategyLabel(cmd);
-          const tag = label === 'public'
-            ? '[public]'
-            : `[${label}]`;
-          const aliases = cmd.aliases?.length ? ` (aliases: ${cmd.aliases.join(', ')})` : '';
-          console.log(`    ${cmd.name} ${tag}${aliases}${cmd.description ? ` — ${cmd.description}` : ''}`);
-        }
-        console.log();
-      };
-
-      console.log();
-      console.log('  webcmd' + ' — available commands');
-      console.log();
-
-      if (appsBySite.size > 0) {
-        console.log('  App adapters');
-        console.log();
-        for (const [site, cmds] of appsBySite) renderSiteGroup(site, cmds);
-      }
-
-      if (sitesBySite.size > 0) {
-        console.log('  Site adapters');
-        console.log();
-        for (const [site, cmds] of sitesBySite) renderSiteGroup(site, cmds);
-      }
-
-      const externalClis = loadExternalClis();
-      if (externalClis.length > 0) {
-        console.log('  external CLIs');
-        for (const ext of externalClis) {
-          const isInstalled = isBinaryInstalled(ext.binary);
-          const tag = isInstalled ? '[installed]' : '[auto-install]';
-          console.log(`    ${formatExternalCliLabel(ext)} ${tag}${ext.description ? ` — ${ext.description}` : ''}`);
-        }
-        console.log();
-      }
-
-      console.log(`  ${commands.length} built-in commands across ${appsBySite.size} apps + ${sitesBySite.size} sites, ${externalClis.length} external CLIs`);
-      console.log();
+      renderOutput(presentation.rows, {
+        fmt: opts.format,
+        columns: presentation.columns,
+        title: 'webcmd/list',
+        source: 'webcmd list',
+      });
     });
 
   // ── Built-in: validate / verify ───────────────────────────────────────────
@@ -3773,7 +3712,11 @@ cli({
     for (const sub of cmd.commands) applyAncestorAwareUsage(sub);
   }
   applyAncestorAwareUsage(browser);
-  installStructuredHelp(program, () => rootHelpData(program, adapterGroups), () => formatRootAdapterHelpText(adapterGroups));
+  installRootPresentationHelp(
+    program,
+    () => rootHelpData(program, adapterGroups),
+    buildRootHelpPresentation(program, adapterGroups),
+  );
 
   // ── Unknown command fallback ──────────────────────────────────────────────
   // Security: do NOT auto-discover and register arbitrary system binaries.

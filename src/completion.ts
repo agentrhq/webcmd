@@ -8,6 +8,7 @@
 
 import { getRegistry } from './registry.js';
 import { CliError } from './errors.js';
+import { getCommandCompletionCandidates, toPresentableCommand } from './command-presentation.js';
 import {
   BUILTIN_COMMANDS,
   bashCompletionScript,
@@ -28,36 +29,8 @@ export { bashCompletionScript, zshCompletionScript, fishCompletionScript };
  * @param cursor - 1-based position of the word being completed (1 = first arg)
  */
 export function getCompletions(words: string[], cursor: number): string[] {
-  // cursor === 1 → completing the first argument (site name or built-in command)
-  if (cursor <= 1) {
-    const sites = new Set<string>();
-    for (const [, cmd] of getRegistry()) {
-      sites.add(cmd.site);
-    }
-    return [...BUILTIN_COMMANDS, ...sites].sort();
-  }
-
-  const site = words[0];
-
-  // If the first word is a built-in command, no further completion
-  if (BUILTIN_COMMANDS.includes(site)) {
-    return [];
-  }
-
-  // cursor === 2 → completing the sub-command name under a site
-  if (cursor === 2) {
-    const subcommands: string[] = [];
-    for (const [, cmd] of getRegistry()) {
-      if (cmd.site === site) {
-        subcommands.push(cmd.name);
-        if (cmd.aliases?.length) subcommands.push(...cmd.aliases);
-      }
-    }
-    return [...new Set(subcommands)].sort();
-  }
-
-  // cursor >= 3 → no further completion
-  return [];
+  const commands = [...new Set(getRegistry().values())].map(toPresentableCommand);
+  return getCommandCompletionCandidates(commands, words, cursor, BUILTIN_COMMANDS);
 }
 
 // ── Shell script generators ────────────────────────────────────────────────

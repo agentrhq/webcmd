@@ -6,8 +6,13 @@
  */
 
 import type { Arg, CliCommand } from './registry.js';
-import { fullName, strategyLabel } from './registry.js';
-import { CLI_COMMAND } from './brand.js';
+import {
+  commandListRows,
+  formatArgumentSummary,
+  formatPresentableCommandExample,
+  serializePresentableArg,
+  toPresentableCommand,
+} from './command-presentation.js';
 
 // ── Serialization ───────────────────────────────────────────────────────────
 
@@ -24,48 +29,19 @@ export type SerializedArg = {
 
 /** Stable arg schema — every field is always present (no sparse objects). */
 export function serializeArg(a: Arg): SerializedArg {
-  return {
-    name: a.name,
-    type: a.type ?? 'string',
-    required: !!a.required,
-    valueRequired: !!a.valueRequired,
-    positional: !!a.positional,
-    choices: a.choices ?? [],
-    default: a.default ?? null,
-    help: a.help ?? '',
-  };
+  return serializePresentableArg(a) as SerializedArg;
 }
 
 /** Full command metadata for structured output (json/yaml). */
 export function serializeCommand(cmd: CliCommand) {
-  return {
-    command: fullName(cmd),
-    site: cmd.site,
-    name: cmd.name,
-    aliases: cmd.aliases ?? [],
-    description: cmd.description,
-    access: cmd.access,
-    strategy: strategyLabel(cmd),
-    browser: !!cmd.browser,
-    args: cmd.args.map(serializeArg),
-    columns: cmd.columns ?? [],
-    domain: cmd.domain ?? null,
-    example: formatCommandExample(cmd),
-    defaultFormat: cmd.defaultFormat ?? null,
-    siteSession: cmd.siteSession ?? null,
-  };
+  return commandListRows([toPresentableCommand(cmd)], true)[0]!;
 }
 
 // ── Formatting ──────────────────────────────────────────────────────────────
 
 /** Human-readable arg summary: `<required> [optional]` style. */
 export function formatArgSummary(args: Arg[]): string {
-  return args
-    .map(a => {
-      if (a.positional) return a.required ? `<${a.name}>` : `[${a.name}]`;
-      return a.required ? `--${a.name}` : `[--${a.name}]`;
-    })
-    .join(' ');
+  return formatArgumentSummary(args);
 }
 
 function summarizeChoices(choices: string[]): string {
@@ -73,26 +49,9 @@ function summarizeChoices(choices: string[]): string {
   return `${choices.slice(0, 4).join(', ')}, ... (+${choices.length - 4} more)`;
 }
 
-function formatValuePlaceholder(name: string): string {
-  return `<${name}>`;
-}
-
 /** Agent-facing canonical invocation. Adapter authors may override with `example`. */
 export function formatCommandExample(cmd: CliCommand): string {
-  if (cmd.example?.trim()) return cmd.example.trim();
-  const parts = [CLI_COMMAND, cmd.site, cmd.name];
-  for (const arg of cmd.args) {
-    if (arg.positional && arg.required) {
-      parts.push(formatValuePlaceholder(arg.name));
-    }
-  }
-  for (const arg of cmd.args) {
-    if (arg.positional || !arg.required) continue;
-    parts.push(`--${arg.name}`);
-    if (arg.type !== 'bool' && arg.type !== 'boolean') parts.push(formatValuePlaceholder(arg.name));
-  }
-  parts.push('-f', 'yaml');
-  return parts.join(' ');
+  return formatPresentableCommandExample(toPresentableCommand(cmd));
 }
 
 /** Generate the --help appendix showing registry metadata not exposed by Commander. */
