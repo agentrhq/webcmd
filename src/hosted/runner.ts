@@ -331,15 +331,59 @@ async function dispatchHostedBrowser(
   client: HostedClient,
   stdout: NodeJS.WritableStream,
 ): Promise<void> {
+  const args = invocation.action === 'set-file-input'
+    ? materializeHostedBrowserUploadArgs(invocation.args)
+    : invocation.args;
   const response = await client.runBrowserAction(invocation.session, {
     command: invocation.command,
     action: invocation.action,
-    args: invocation.args,
+    args,
     ...(invocation.profile !== undefined ? { profile: invocation.profile } : {}),
     ...(invocation.windowMode !== undefined ? { windowMode: invocation.windowMode } : {}),
     trace: 'off',
   });
   await renderHostedBrowserResponse(stdout, invocation, response);
+}
+
+function materializeHostedBrowserUploadArgs(args: Record<string, unknown>): Record<string, unknown> {
+  const files = args.files;
+  if (!Array.isArray(files)) return args;
+  return {
+    ...args,
+    files: files.map((file) => {
+      if (typeof file !== 'string') return file;
+      const body = readFileSync(file);
+      return {
+        $webcmdBrowserUpload: {
+          filename: path.basename(file),
+          contentType: contentTypeForUpload(file),
+          base64: Buffer.from(body).toString('base64'),
+        },
+      };
+    }),
+  };
+}
+
+function contentTypeForUpload(filePath: string): string {
+  switch (path.extname(filePath).toLowerCase()) {
+    case '.gif':
+      return 'image/gif';
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg';
+    case '.json':
+      return 'application/json';
+    case '.pdf':
+      return 'application/pdf';
+    case '.png':
+      return 'image/png';
+    case '.txt':
+      return 'text/plain';
+    case '.webp':
+      return 'image/webp';
+    default:
+      return 'application/octet-stream';
+  }
 }
 
 function parseHostedBrowserInvocation(argv: string[], profile: string | undefined): ParsedHostedBrowserInvocation {

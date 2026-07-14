@@ -1290,49 +1290,59 @@ describe('runHostedCli', () => {
   });
 
   it('dispatches every catalogued hosted browser command except bind to the cloud command endpoint', async () => {
-    for (const contract of browserCommandCatalog.filter(command => command.command !== 'bind')) {
-      const requests: Array<{ pathname: string; body?: Record<string, unknown> }> = [];
-      const result = await runHostedCli(['browser', 'work', ...contract.command.split('/'), ...sampleBrowserPositionals(contract)], {
-        config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
-        stdout: sink().stream,
-        stderr: sink().stream,
-        fetchImpl: async (url, init) => {
-          const parsedUrl = new URL(String(url));
-          const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined;
-          requests.push({ pathname: parsedUrl.pathname, ...(body ? { body } : {}) });
-          if (parsedUrl.pathname === '/v1/manifest') return manifestResponse();
-          if (parsedUrl.pathname === '/v1/browser/work/commands') {
+    const uploadDir = await mkdtemp(path.join(tmpdir(), 'webcmd-hosted-browser-upload-'));
+    const uploadFile = path.join(uploadDir, 'sample-upload.txt');
+    await writeFile(uploadFile, 'hello browser upload');
+    try {
+      for (const contract of browserCommandCatalog.filter(command => command.command !== 'bind')) {
+        const requests: Array<{ pathname: string; body?: Record<string, unknown> }> = [];
+        const positionals = contract.command === 'upload'
+          ? ['input[type=file]', uploadFile]
+          : sampleBrowserPositionals(contract);
+        const result = await runHostedCli(['browser', 'work', ...contract.command.split('/'), ...positionals], {
+          config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+          stdout: sink().stream,
+          stderr: sink().stream,
+          fetchImpl: async (url, init) => {
+            const parsedUrl = new URL(String(url));
+            const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined;
+            requests.push({ pathname: parsedUrl.pathname, ...(body ? { body } : {}) });
+            if (parsedUrl.pathname === '/v1/manifest') return manifestResponse();
+            if (parsedUrl.pathname === '/v1/browser/work/commands') {
+              return new Response(JSON.stringify({
+                ok: true,
+                result: {},
+                columns: [],
+                trace: null,
+                run: {
+                  executionId: `exec_${contract.command.replaceAll('/', '_')}`,
+                  session: 'work',
+                  profile: { id: 'profile_default', displayName: 'default' },
+                },
+                execution: { id: `exec_${contract.command.replaceAll('/', '_')}`, status: 'succeeded' },
+              }), { status: 200 });
+            }
             return new Response(JSON.stringify({
-              ok: true,
-              result: {},
-              columns: [],
-              trace: null,
-              run: {
-                executionId: `exec_${contract.command.replaceAll('/', '_')}`,
-                session: 'work',
-                profile: { id: 'profile_default', displayName: 'default' },
-              },
-              execution: { id: `exec_${contract.command.replaceAll('/', '_')}`, status: 'succeeded' },
-            }), { status: 200 });
-          }
-          return new Response(JSON.stringify({
-            ok: false,
-            error: { code: 'UNEXPECTED', message: parsedUrl.pathname, exitCode: 1 },
-          }), { status: 500 });
-        },
-      });
+              ok: false,
+              error: { code: 'UNEXPECTED', message: parsedUrl.pathname, exitCode: 1 },
+            }), { status: 500 });
+          },
+        });
 
-      expect({ command: contract.command, result }).toEqual({
-        command: contract.command,
-        result: { handled: true, exitCode: 0 },
-      });
-      expect({
-        command: contract.command,
-        action: requests.find(request => request.pathname === '/v1/browser/work/commands')?.body,
-      }).toMatchObject({
-        command: contract.command,
-        action: { command: `browser/${contract.command}`, action: contract.action },
-      });
+        expect({ command: contract.command, result }).toEqual({
+          command: contract.command,
+          result: { handled: true, exitCode: 0 },
+        });
+        expect({
+          command: contract.command,
+          action: requests.find(request => request.pathname === '/v1/browser/work/commands')?.body,
+        }).toMatchObject({
+          command: contract.command,
+          action: { command: `browser/${contract.command}`, action: contract.action },
+        });
+      }
+    } finally {
+      await rm(uploadDir, { recursive: true, force: true });
     }
   });
 
@@ -1468,13 +1478,6 @@ describe('runHostedCli', () => {
       args: { js: '-script' },
     },
     {
-      name: 'variadic dash-leading positionals behind separator',
-      argv: ['browser', 'work', 'upload', 'input[type=file]', '--', '-one.txt', '-two.txt'],
-      command: 'browser/upload',
-      action: 'set-file-input',
-      args: { selector: 'input[type=file]', files: ['-one.txt', '-two.txt'] },
-    },
-    {
       name: 'repeated namespace window option',
       argv: ['browser', 'work', '--window', 'foreground', '--window=background', 'state'],
       command: 'browser/state',
@@ -1553,6 +1556,53 @@ describe('runHostedCli', () => {
       ...(windowMode ? { windowMode } : {}),
       trace: 'off',
     });
+  });
+
+  it('stages browser upload files without sending local paths to Cloud', async () => {
+    const uploadDir = await mkdtemp(path.join(tmpdir(), 'webcmd-hosted-browser-upload-'));
+    const uploadFile = path.join(uploadDir, '-one.txt');
+    await writeFile(uploadFile, 'one file');
+    const requests: Array<{ url: string; body?: Record<string, unknown> }> = [];
+    try {
+      const result = await runHostedCli(['browser', 'work', 'upload', 'input[type=file]', '--', uploadFile], {
+        config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+        stdout: sink().stream,
+        stderr: sink().stream,
+        fetchImpl: async (url, init) => {
+          const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined;
+          requests.push({ url: String(url), ...(body ? { body } : {}) });
+          if (String(url).endsWith('/v1/manifest')) return manifestResponse();
+          if (String(url).endsWith('/commands')) {
+            return new Response(JSON.stringify({
+              ok: true,
+              result: { uploaded: true, file_names: ['-one.txt'] },
+              columns: ['uploaded', 'file_names'],
+              trace: null,
+              run: {
+                executionId: 'exec_browser_upload',
+                session: 'work',
+                profile: { id: 'profile_default', displayName: 'default' },
+              },
+              execution: { id: 'exec_browser_upload', status: 'succeeded' },
+            }), { status: 200 });
+          }
+          return new Response(JSON.stringify({ ok: false, error: { code: 'UNEXPECTED', message: String(url), exitCode: 1 } }), { status: 500 });
+        },
+      });
+
+      expect(result).toEqual({ handled: true, exitCode: 0 });
+      const files = requests[1]?.body?.args && (requests[1].body.args as Record<string, unknown>).files;
+      expect(JSON.stringify(files)).not.toContain(uploadFile);
+      expect(files).toEqual([{
+        $webcmdBrowserUpload: {
+          filename: '-one.txt',
+          contentType: 'text/plain',
+          base64: Buffer.from('one file').toString('base64'),
+        },
+      }]);
+    } finally {
+      await rm(uploadDir, { recursive: true, force: true });
+    }
   });
 
   it('rejects a browser manifest mismatch before starting a provider run', async () => {
