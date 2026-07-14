@@ -5218,7 +5218,8 @@
           "description": "Output directory (default: ~/Pictures/chatgpt)",
           "positional": false,
           "required": false,
-          "variadic": false
+          "variadic": false,
+          "default": "~/Pictures/chatgpt"
         },
         {
           "name": "sd",

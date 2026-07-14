@@ -3915,6 +3915,7 @@
       {
         "name": "op",
         "type": "str",
+        "default": "~/Pictures/chatgpt",
         "required": false,
         "help": "Output directory (default: ~/Pictures/chatgpt)",
         "file": {
