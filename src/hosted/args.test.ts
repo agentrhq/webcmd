@@ -14,6 +14,7 @@ const command: HostedCommand = {
     { name: 'query', positional: true, required: true, type: 'string' },
     { name: 'limit', type: 'int', default: 10 },
     { name: 'include-forks', type: 'boolean', default: false },
+    { name: 'sort', type: 'string', choices: ['updated', 'stars'] },
   ],
   columns: ['name'],
 };
@@ -27,13 +28,27 @@ describe('parseHostedInvocation', () => {
           limit: 5,
           'include-forks': true,
         },
+        optionSources: {
+          query: 'cli',
+          limit: 'cli',
+          'include-forks': 'cli',
+        },
         format: 'json',
+        formatExplicit: true,
         trace: 'on',
+        verbose: false,
         help: false,
       });
   });
 
   it('rejects missing required positional args', () => {
-    expect(() => parseHostedInvocation(command, [])).toThrow('Missing required argument');
+    expect(() => parseHostedInvocation(command, [])).toThrow(/query.*required/i);
+  });
+
+  it.each([
+    { name: 'partial integers', argv: ['webcmd', '--limit', '12x'], message: /limit.*integer/i },
+    { name: 'invalid choices', argv: ['webcmd', '--sort', 'recent'], message: /sort.*one of.*updated.*stars/i },
+  ])('rejects $name', ({ argv, message }) => {
+    expect(() => parseHostedInvocation(command, argv)).toThrow(message);
   });
 });

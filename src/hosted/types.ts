@@ -1,17 +1,11 @@
+import type { CommandSurfaceMetadata } from '../command-surface.js';
+import type { Arg } from '../registry.js';
+
 export type HostedCommandStrategy = 'PUBLIC' | 'COOKIE' | 'INTERCEPT' | 'UI' | 'LOCAL' | string;
 
-export interface HostedCommandArg {
-  name: string;
-  type?: string;
-  required?: boolean;
-  valueRequired?: boolean;
-  positional?: boolean;
-  default?: unknown;
-  help?: string;
-  choices?: unknown[];
-}
+export interface HostedCommandArg extends Arg {}
 
-export interface HostedCommand {
+export interface HostedCommand extends CommandSurfaceMetadata {
   site: string;
   name: string;
   aliases?: string[];

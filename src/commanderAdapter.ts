@@ -16,6 +16,7 @@ import yaml from 'js-yaml';
 import { type CliCommand, fullName, getRegistry } from './registry.js';
 import { render as renderOutput } from './output.js';
 import { executeCommand, prepareCommandArgs } from './execution.js';
+import { configureCommandSurface } from './command-surface.js';
 import {
   commandHelpData,
   formatCommandHelpText,
@@ -42,31 +43,8 @@ export function registerCommandToProgram(siteCmd: Command, cmd: CliCommand): voi
   const subCmd = siteCmd.command(cmd.name).description(formatSiteCommandDescription(cmd));
   if (cmd.aliases?.length) subCmd.aliases(cmd.aliases);
 
-  // Register positional args first, then named options
-  const positionalArgs: typeof cmd.args = [];
-  for (const arg of cmd.args) {
-    if (arg.positional) {
-      const bracket = arg.required ? `<${arg.name}>` : `[${arg.name}]`;
-      subCmd.argument(bracket, arg.help ?? '');
-      positionalArgs.push(arg);
-    } else {
-      const expectsValue = arg.required || arg.valueRequired;
-      const flag = expectsValue ? `--${arg.name} <value>` : `--${arg.name} [value]`;
-      if (arg.required) subCmd.requiredOption(flag, arg.help ?? '');
-      else if (arg.default != null) subCmd.option(flag, arg.help ?? '', String(arg.default));
-      else subCmd.option(flag, arg.help ?? '');
-    }
-  }
-  subCmd
-    .option('-f, --format <fmt>', 'Output format: table, plain, json, yaml, md, csv', 'table')
-    .option('--trace <mode>', 'Trace capture: off, on, retain-on-failure', 'off')
-    .option('-v, --verbose', 'Debug output', false);
-  if (cmd.browser) {
-    subCmd
-      .option('--window <mode>', 'Browser window mode: foreground or background')
-      .option('--site-session <mode>', 'Adapter site session lifecycle: ephemeral or persistent')
-      .option('--keep-tab <bool>', 'Keep the browser tab lease after the command finishes');
-  }
+  const positionalArgs = cmd.args.filter((arg) => arg.positional);
+  configureCommandSurface(subCmd, cmd);
 
   const originalHelpInformation = subCmd.helpInformation.bind(subCmd);
   subCmd.helpInformation = ((contextOptions?: unknown) => {
