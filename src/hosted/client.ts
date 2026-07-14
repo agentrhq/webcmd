@@ -13,6 +13,7 @@ import type {
   HostedExecution,
   HostedExecuteResponse,
   HostedPrepareExecutionResponse,
+  HostedProfilesResponse,
   HostedUploadArtifactResponse,
   HostedManifest,
   HostedTraceReceipt,
@@ -63,6 +64,14 @@ export class HostedClient {
       throw protocolError('Webcmd Cloud returned an invalid manifest.');
     }
     return body.manifest;
+  }
+
+  async listProfiles(): Promise<HostedProfilesResponse> {
+    const body = await this.request('/v1/profiles');
+    if (!isHostedProfilesResponse(body)) {
+      throw protocolError('Webcmd Cloud returned an invalid profiles response.');
+    }
+    return body;
   }
 
   async execute(input: {
@@ -356,6 +365,22 @@ function isHostedUploadArtifactResponse(
   return hasOnlyKeys(reference, ['id', 'direction', 'filename', 'contentType'])
     && typeof reference.id === 'string'
     && (reference.direction === undefined || reference.direction === 'input');
+}
+
+function isHostedProfilesResponse(value: unknown): value is HostedProfilesResponse {
+  return hasExactKeys(value, ['ok', 'profiles'])
+    && value.ok === true
+    && Array.isArray(value.profiles)
+    && value.profiles.every(isHostedPublicProfile);
+}
+
+function isHostedPublicProfile(value: unknown): boolean {
+  return hasExactKeys(value, ['name', 'default', 'status', 'createdAt', 'lastUsedAt'])
+    && typeof value.name === 'string'
+    && typeof value.default === 'boolean'
+    && value.status === 'available'
+    && typeof value.createdAt === 'string'
+    && typeof value.lastUsedAt === 'string';
 }
 
 function isHostedManifestCommand(value: unknown): boolean {

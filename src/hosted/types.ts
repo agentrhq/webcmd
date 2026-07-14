@@ -42,6 +42,19 @@ export interface HostedManifest {
   commands: HostedCommand[];
 }
 
+export interface HostedPublicProfile {
+  name: string;
+  default: boolean;
+  status: 'available';
+  createdAt: string;
+  lastUsedAt: string;
+}
+
+export interface HostedProfilesResponse {
+  ok: true;
+  profiles: HostedPublicProfile[];
+}
+
 export interface HostedExecution {
   id: string;
   command: string;

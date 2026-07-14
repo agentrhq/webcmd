@@ -108,6 +108,34 @@ describe('HostedClient', () => {
     expect(requests).toEqual([{ url: 'https://api.example.com/v1/manifest', authorization: 'Bearer wcmd_live_test' }]);
   });
 
+  it('parses hosted profile rows without provider identifiers', async () => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'wcmd_live_test',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        profiles: [{
+          name: 'default',
+          default: true,
+          status: 'available',
+          createdAt: '2026-07-08T00:00:00.000Z',
+          lastUsedAt: '2026-07-08T00:00:00.000Z',
+        }],
+      }), { status: 200 }),
+    });
+
+    await expect(client.listProfiles()).resolves.toEqual({
+      ok: true,
+      profiles: [{
+        name: 'default',
+        default: true,
+        status: 'available',
+        createdAt: '2026-07-08T00:00:00.000Z',
+        lastUsedAt: '2026-07-08T00:00:00.000Z',
+      }],
+    });
+  });
+
   it('maps hosted error envelopes to CliError-compatible errors', async () => {
     const client = new HostedClient({
       apiBaseUrl: 'https://api.example.com',
