@@ -16,6 +16,7 @@ import {
 
 const execFile = promisify(execFileCallback);
 const MACOS_KEYCHAIN_SERVICE = 'dev.webcmd.hosted-api-key';
+const MACOS_KEYCHAIN_TIMEOUT_MS = 5_000;
 
 export type HostedCredentialBackend = 'os' | 'file-fallback';
 
@@ -172,9 +173,11 @@ function createCredentialStoreForBackend(
 }
 
 function isMacOsKeychainAvailable(io: HostedCredentialIo): boolean {
-  if (io.env?.WEBCMD_CREDENTIAL_BACKEND === 'file') return false;
+  const env = io.env ?? process.env;
+  if (env.WEBCMD_CREDENTIAL_BACKEND === 'file') return false;
   const platform = io.platform ?? process.platform;
-  return platform === 'darwin' && fs.existsSync('/usr/bin/security');
+  const existsSync = io.existsSync ?? fs.existsSync;
+  return platform === 'darwin' && existsSync('/usr/bin/security');
 }
 
 class MacOsKeychainCredentialStore implements HostedCredentialStore {
@@ -193,7 +196,7 @@ class MacOsKeychainCredentialStore implements HostedCredentialStore {
       '-w',
       secret,
       '-U',
-    ]);
+    ], { timeout: MACOS_KEYCHAIN_TIMEOUT_MS });
   }
 
   async get(reference: string): Promise<string | null> {
@@ -206,7 +209,7 @@ class MacOsKeychainCredentialStore implements HostedCredentialStore {
         '-s',
         MACOS_KEYCHAIN_SERVICE,
         '-w',
-      ]);
+      ], { timeout: MACOS_KEYCHAIN_TIMEOUT_MS });
       return stdout.replace(/\r?\n$/, '');
     } catch {
       return null;
@@ -222,7 +225,7 @@ class MacOsKeychainCredentialStore implements HostedCredentialStore {
         reference,
         '-s',
         MACOS_KEYCHAIN_SERVICE,
-      ]);
+      ], { timeout: MACOS_KEYCHAIN_TIMEOUT_MS });
     } catch {
       // Missing credentials are already deleted for the caller's purposes.
     }
@@ -308,3 +311,5 @@ function validateCredentialReference(reference: string): void {
     throw new Error('Hosted credential reference must be opaque and URL-safe.');
   }
 }
+
+export const _isMacOsKeychainAvailableForTest = isMacOsKeychainAvailable;

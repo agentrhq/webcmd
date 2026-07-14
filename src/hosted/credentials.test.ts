@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  _isMacOsKeychainAvailableForTest,
   getHostedCredentialPath,
   resolveHostedApiKey,
   storeHostedApiKey,
@@ -18,6 +19,20 @@ afterEach(async () => {
 });
 
 describe('hosted credential storage', () => {
+  it('honors process-level file credential backend when no explicit env is injected', () => {
+    const previous = process.env.WEBCMD_CREDENTIAL_BACKEND;
+    process.env.WEBCMD_CREDENTIAL_BACKEND = 'file';
+    try {
+      expect(_isMacOsKeychainAvailableForTest({
+        platform: 'darwin',
+        existsSync: () => true,
+      })).toBe(false);
+    } finally {
+      if (previous === undefined) delete process.env.WEBCMD_CREDENTIAL_BACKEND;
+      else process.env.WEBCMD_CREDENTIAL_BACKEND = previous;
+    }
+  });
+
   it('stores hosted API keys in the protected file fallback', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'webcmd-creds-'));
     const env = {
