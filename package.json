@@ -47,6 +47,7 @@
     "clean-dist": "node scripts/clean-dist.cjs",
     "copy-yaml": "node scripts/copy-yaml.cjs",
     "generate-release-notes": "tsx scripts/generate-release-notes.ts",
+    "docs-sync-review": "tsx scripts/docs-sync-review.ts",
     "start": "node dist/src/main.js",
     "start:bun": "bun dist/src/main.js",
     "preuninstall": "node -e \"fetch('http://127.0.0.1:9777/shutdown',{method:'POST',headers:{'X-Webcmd':'1'},signal:AbortSignal.timeout(3000)}).catch(()=>{})\" || true",
