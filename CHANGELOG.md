@@ -1,5 +1,50 @@
 # Changelog
 
+## [0.3.1](https://github.com/agentrhq/webcmd/compare/webcmd-v0.3.0...webcmd-v0.3.1) (2026-07-15)
+
+
+### Features
+
+* add advisory docs sync review for pull requests ([0fed2ec](https://github.com/agentrhq/webcmd/commit/0fed2ec9608e19b33eb8361d9da4c212919f2db1))
+* add advisory docs sync review for pull requests ([667ed58](https://github.com/agentrhq/webcmd/commit/667ed588087d1fe0af4a9093a1598ef5cac6d359))
+* add advisory docs sync review for pull requests ([8b801d3](https://github.com/agentrhq/webcmd/commit/8b801d3ec5dc2a7cfce2f1dc752917b7dabe9e89))
+* **chatgpt:** report deep research progress ([b1c6b55](https://github.com/agentrhq/webcmd/commit/b1c6b55ce97e4e7efcfca5342de38899daf07a71))
+* declare hosted file arguments ([997016e](https://github.com/agentrhq/webcmd/commit/997016e1ed0bdc40b157f28d9a36b4d4b2d5b39f))
+* improve docs sync review coverage and neutralize provider output ([e1da494](https://github.com/agentrhq/webcmd/commit/e1da49447c1e65e7853d52ae29e0edf578b28848))
+* **linkedin:** add company and connections commands ([8a7fe44](https://github.com/agentrhq/webcmd/commit/8a7fe44fe9379d2d45924371c7f0147f12f2d72e))
+* parse hosted profile rows ([fcd9301](https://github.com/agentrhq/webcmd/commit/fcd930114bb77310bf3b745a40371cd7652d15c9))
+* **plugins:** add community author metadata and README sync ([254985c](https://github.com/agentrhq/webcmd/commit/254985cc42dd7844405410cac55ebde236d9f1c6))
+* **plugins:** add community author metadata and README sync ([6bfb74b](https://github.com/agentrhq/webcmd/commit/6bfb74bcf39c58cfe96d25c135140e9260701661))
+* publish hosted command contract ([a29dbaf](https://github.com/agentrhq/webcmd/commit/a29dbaf2535b690f6a3f982dbbdda736f4b4cfb6))
+* stage hosted browser uploads ([1d6d4c6](https://github.com/agentrhq/webcmd/commit/1d6d4c606b23c99150218054f2019e81e1f8caf9))
+* store hosted credentials by reference ([a0bede3](https://github.com/agentrhq/webcmd/commit/a0bede3cf1189c269bde0786d948c455bf96fd25))
+* transfer declared files in hosted mode ([be832df](https://github.com/agentrhq/webcmd/commit/be832df61f7277756c419c6ee2c357385165b934))
+* use atomic hosted browser commands ([c8ef09b](https://github.com/agentrhq/webcmd/commit/c8ef09bc9af828be0cf8de0fc0ed7bb7ad93ae78))
+
+
+### Bug Fixes
+
+* align hosted namespace grammar ([44ee906](https://github.com/agentrhq/webcmd/commit/44ee9060cf6919075d798dcbfe089a0021a829bf))
+* allow hosted patch-version compatibility ([74a1bba](https://github.com/agentrhq/webcmd/commit/74a1bba6d8f63aa5ca5d36297c31e12697d3ee3e))
+* **browser:** harden clicks against overlays and nested targets ([ccfdc70](https://github.com/agentrhq/webcmd/commit/ccfdc70d28f197361a30b9a80b659ca2032aea39))
+* **chatgpt:** use pure sleeps and cheaper polling checks ([f321b93](https://github.com/agentrhq/webcmd/commit/f321b937c71cc5ba7488d02828692f234d77aa1d))
+* dispatch hosted browser catalog ([08c9b9b](https://github.com/agentrhq/webcmd/commit/08c9b9b89d3134f8dc9363e400767f6f3f922009))
+* **facebook:** support current feed and search layouts ([c5eac86](https://github.com/agentrhq/webcmd/commit/c5eac8689df752f23d27a2167027c78a554479ae))
+* honor hosted credential backend env ([fbcc939](https://github.com/agentrhq/webcmd/commit/fbcc93966f5d5862608d6755fe531dc8fd80b847))
+* **instagram:** support nested Explore layouts ([a0b37da](https://github.com/agentrhq/webcmd/commit/a0b37daf04865c7a710aa121136a115c9905330c))
+* let hosted output flush before exit ([6239db0](https://github.com/agentrhq/webcmd/commit/6239db0654d69638e255564210318c0c4cc93dd4))
+* match hosted root command grammar ([93ebae0](https://github.com/agentrhq/webcmd/commit/93ebae011571d32cedc35c87aecbb310304b892b))
+* **plugin:** disable lifecycle scripts during install ([310fb76](https://github.com/agentrhq/webcmd/commit/310fb767889296fc46e2834292f3a954ed7fac8d))
+* preserve completion and separator parity ([fa33fb1](https://github.com/agentrhq/webcmd/commit/fa33fb1a32c704cfd615ed3f5ba8812316a8957d))
+* preserve hosted output and trace semantics ([7c607f3](https://github.com/agentrhq/webcmd/commit/7c607f3f862ff5d7db021198d6e5df26810ad00a))
+* preserve the local CLI contract ([84dc477](https://github.com/agentrhq/webcmd/commit/84dc477837c506c9e8a18a5a815b57fd24f95837))
+* prevent macOS background cold launch from stealing focus ([c5346f8](https://github.com/agentrhq/webcmd/commit/c5346f8b91f8ace3ba7e41396e357cd43906059a))
+* prevent macOS background cold launch from stealing focus ([209b6b0](https://github.com/agentrhq/webcmd/commit/209b6b0b0376b8a6d1e57b882b9a6f4802341a39))
+* shrink contributor avatars ([c7081da](https://github.com/agentrhq/webcmd/commit/c7081da27d3c135f852627ceaa9f1eff1c8e1b3e))
+* title pre-1 minor releases ([4af288d](https://github.com/agentrhq/webcmd/commit/4af288d1405cb2bc168a713afdd375cca7d63a31))
+* **twitter:** harden article handling and evaluated arguments ([c582298](https://github.com/agentrhq/webcmd/commit/c5822986e36b107e65bf9b6087cf6967c69f83cb))
+* **utils:** detect mixed-case HTML login walls ([3f66a0d](https://github.com/agentrhq/webcmd/commit/3f66a0daf8532c017c2b1af6ddf8f2b73ef6475f))
+
 ## [0.3.0](https://github.com/agentrhq/webcmd/compare/webcmd-v0.2.5...webcmd-v0.3.0) (2026-07-13)
 
 ### Highlights
