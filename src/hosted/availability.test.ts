@@ -15,6 +15,17 @@ const EXPECTED_LOCAL_TOOLS = [
   'antigravity/state-keys',
   'antigravity/workspaces-list',
   'mercury/reimbursement-plan',
+  'spotify/auth',
+  'spotify/next',
+  'spotify/pause',
+  'spotify/play',
+  'spotify/prev',
+  'spotify/queue',
+  'spotify/repeat',
+  'spotify/search',
+  'spotify/shuffle',
+  'spotify/status',
+  'spotify/volume',
   'trae-solo/extensions-list',
   'trae-solo/recent-workspaces',
   'trae-solo/settings-read',
@@ -187,7 +198,7 @@ describe('hosted availability', () => {
     const desktopApps = (byReason.get('desktop-app') ?? []).sort();
     expect(exceptionDiff(localTools, EXPECTED_LOCAL_TOOLS)).toEqual({ added: [], missing: [] });
     expect(exceptionDiff(desktopApps, EXPECTED_DESKTOP_APPS)).toEqual({ added: [], missing: [] });
-    expect(localTools).toHaveLength(19);
+    expect(localTools).toHaveLength(30);
     expect(desktopApps).toHaveLength(111);
   });
 });
