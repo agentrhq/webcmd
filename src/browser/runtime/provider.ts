@@ -6,6 +6,7 @@ export interface RuntimeStatusOptions {
 
 export interface BrowserRuntimeProvider {
   status(opts?: RuntimeStatusOptions): Promise<BrowserRuntimeStatus>;
+  resolveProfileId?(command: BrowserRuntimeCommand): string;
   dispatch(command: BrowserRuntimeCommand): Promise<BrowserRuntimeResult>;
   shutdown(): Promise<void>;
 }

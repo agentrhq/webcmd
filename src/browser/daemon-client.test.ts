@@ -4,11 +4,13 @@ import {
   BrowserCommandError,
   fetchDaemonStatus,
   getDaemonHealth,
+  releaseSiteSessionLease,
   requestDaemonShutdown,
   sendCommand,
   setDaemonCommandTimeoutSeconds,
 } from './daemon-client.js';
 import * as daemonLifecycle from './daemon-lifecycle.js';
+import { clearDaemonRunContext, getDaemonRunContext, setDaemonRunContext } from '../session-lease.js';
 
 describe('daemon-client', () => {
   beforeEach(() => {
@@ -16,6 +18,8 @@ describe('daemon-client', () => {
   });
 
   afterEach(() => {
+    const run = getDaemonRunContext();
+    if (run) clearDaemonRunContext(run.runId);
     if (typeof setDaemonCommandTimeoutSeconds === 'function') {
       setDaemonCommandTimeoutSeconds(null);
     }
@@ -180,6 +184,28 @@ describe('daemon-client', () => {
     expect(ids[0]).not.toBe(ids[1]);
   });
 
+  it('sendCommand binds the active logical run metadata to each daemon operation', async () => {
+    setDaemonRunContext({
+      runId: 'run_4242_1000_1',
+      command: 'example write',
+      access: 'write',
+    });
+    vi.mocked(fetch).mockResolvedValue({
+      status: 200,
+      json: () => Promise.resolve({ id: 'server', ok: true, data: 'ok' }),
+    } as Response);
+
+    await sendCommand('exec', { code: '1' });
+
+    const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body));
+    expect(body).toMatchObject({
+      runId: 'run_4242_1000_1',
+      command: 'example write',
+      access: 'write',
+      pid: process.pid,
+    });
+  });
+
   it('sendCommand forwards WEBCMD_PROFILE as a hard contextId requirement', async () => {
     vi.stubEnv('WEBCMD_PROFILE', 'work');
     vi.spyOn(Date, 'now').mockReturnValue(1_763_000_000_000);
@@ -249,6 +275,49 @@ describe('daemon-client', () => {
       code: 'command_result_unknown',
     } satisfies Partial<BrowserCommandError>);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('maps daemon session_busy conflicts to SessionBusyError without retrying', async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 409,
+      json: () => Promise.resolve({
+        ok: false,
+        code: 'session_busy',
+        holder: {
+          command: 'other write',
+          pid: 4242,
+          acquiredAt: 1_000,
+          heartbeatAt: 2_000,
+        },
+      }),
+    } as Response);
+
+    await expect(sendCommand('exec', { code: '1' })).rejects.toMatchObject({
+      name: 'SessionBusyError',
+      code: 'SESSION_BUSY',
+      message: expect.stringContaining('other write'),
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('releaseSiteSessionLease sends a daemon-local release and ignores failures', async () => {
+    setDaemonRunContext({
+      runId: 'run_9999_newer_2',
+      command: 'newer write',
+      access: 'write',
+    });
+    vi.mocked(fetch).mockRejectedValueOnce(new Error('daemon stopped'));
+
+    await expect(releaseSiteSessionLease('run_4242_1000_1')).resolves.toBeUndefined();
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body));
+    expect(body).toMatchObject({
+      action: 'lease-release',
+      runId: 'run_4242_1000_1',
+    });
   });
 
   it('sendCommand does not retry command_result_unknown even when the message looks transient', async () => {

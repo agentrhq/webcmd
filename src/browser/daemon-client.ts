@@ -5,8 +5,9 @@
  */
 
 import { sleep } from '../utils.js';
-import { BrowserConnectError } from '../errors.js';
+import { BrowserConnectError, SessionBusyError } from '../errors.js';
 import { COMMAND_RESULT_UNKNOWN_CODE, COMMAND_RESULT_UNKNOWN_HINT } from '../daemon-utils.js';
+import { getDaemonRunContext, type SessionLeaseHolder } from '../session-lease.js';
 import { classifyBrowserError } from './errors.js';
 import { profileRouteParams, resolveProfileSelection } from './profile.js';
 import { DEFAULT_BROWSER_CONNECT_TIMEOUT } from './config.js';
@@ -147,6 +148,7 @@ async function sendCommandRaw(
     }
 
     const remainingMs = Math.max(1000, deadlineAt - Date.now());
+    const run = action === 'lease-release' ? undefined : getDaemonRunContext();
     const command: DaemonCommand = {
       id,
       action,
@@ -156,6 +158,12 @@ async function sendCommandRaw(
       ...(contextId && { contextId }),
       ...(preferredContextId && { preferredContextId }),
       ...(windowMode && { windowMode }),
+      ...(run && {
+        runId: run.runId,
+        command: run.command,
+        access: run.access,
+        pid: process.pid,
+      }),
     };
     try {
       const res = await requestDaemon('/command', {
@@ -165,9 +173,16 @@ async function sendCommandRaw(
         timeout: remainingMs + HTTP_TIMEOUT_MARGIN_MS,
       });
 
-      const result = (await res.json()) as DaemonResult;
+      const result = (await res.json()) as DaemonResult & {
+        code?: string;
+        holder?: SessionLeaseHolder;
+      };
 
       if (result.ok) return result;
+
+      if (res.status === 409 && result.code === 'session_busy' && result.holder) {
+        throw new SessionBusyError(result.holder);
+      }
 
       if (result.errorCode && UNKNOWN_OUTCOME_CODES.has(result.errorCode)) {
         throw new BrowserCommandError(result.error ?? 'Browser command result is unknown', result.errorCode, result.errorHint);
@@ -248,6 +263,10 @@ export async function sendCommandFull(
 ): Promise<{ data: unknown; page?: string }> {
   const result = await sendCommandRaw(action, params);
   return { data: result.data, page: result.page };
+}
+
+export async function releaseSiteSessionLease(runId: string): Promise<void> {
+  await sendCommand('lease-release', { runId }).catch(() => undefined);
 }
 
 export async function bindTab(session: string, opts: { contextId?: string; preferredContextId?: string; page?: string; index?: number; windowMode?: BrowserWindowMode } = {}): Promise<unknown> {

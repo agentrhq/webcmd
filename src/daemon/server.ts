@@ -3,6 +3,7 @@ import { DAEMON_HEADER_NAME, DEFAULT_DAEMON_PORT } from '../constants.js';
 import type { BrowserRuntimeCommand, BrowserRuntimeResult } from '../browser/protocol.js';
 import type { BrowserRuntimeProvider } from '../browser/runtime/provider.js';
 import { buildCommandTimeoutFailure, getResponseCorsHeaders } from '../daemon-utils.js';
+import { getSessionLeaseKey, isSessionLeaseCommand, SessionLeaseRegistry } from '../session-lease.js';
 
 const MAX_BODY = 1024 * 1024;
 const LOG_BUFFER_SIZE = 200;
@@ -17,6 +18,12 @@ export interface DaemonServerHandle {
   server: Server;
   listen(): Promise<void>;
   close(): Promise<void>;
+}
+
+interface PendingCommand {
+  promise: Promise<BrowserRuntimeResult>;
+  runId?: string;
+  leaseKey?: string;
 }
 
 function readBody(req: IncomingMessage): Promise<string> {
@@ -57,7 +64,9 @@ export function createDaemonServer(provider: BrowserRuntimeProvider, opts: Daemo
   const port = opts.port ?? DEFAULT_DAEMON_PORT;
   const host = opts.host ?? '127.0.0.1';
   const logBuffer: Array<{ level: string; msg: string; ts: number }> = [];
-  const pending = new Map<string, Promise<BrowserRuntimeResult>>();
+  const pending = new Map<string, PendingCommand>();
+  const leases = new SessionLeaseRegistry();
+  const hasPendingWork = (runId: string) => [...pending.values()].some((entry) => entry.runId === runId);
   let shutdownStarted = false;
 
   function pushLog(level: string, msg: string): void {
@@ -108,6 +117,7 @@ export function createDaemonServer(provider: BrowserRuntimeProvider, opts: Daemo
         daemonVersion: opts.version,
         ...runtime,
         pending: pending.size + runtime.pending,
+        sessionLeases: leases.list(hasPendingWork).map(({ runId: _runId, ...lease }) => lease),
         memoryMB: Math.round(mem.rss / 1024 / 1024 * 10) / 10,
         port,
       });
@@ -147,9 +157,36 @@ export function createDaemonServer(provider: BrowserRuntimeProvider, opts: Daemo
         }
         const existing = pending.get(body.id);
         if (existing) {
-          const result = await existing;
+          const result = await existing.promise;
           jsonResponse(res, result.ok ? 200 : result.errorCode === 'command_result_unknown' ? 408 : 400, result);
           return;
+        }
+        if (body.action === 'lease-release') {
+          const released = typeof body.runId === 'string' ? leases.releaseByRunId(body.runId) : 0;
+          jsonResponse(res, 200, { id: body.id, ok: true, data: { released } });
+          return;
+        }
+        let leaseKey: string | undefined;
+        let runId: string | undefined;
+        if (isSessionLeaseCommand(body)) {
+          const profileId = provider.resolveProfileId?.(body)
+            ?? body.profileId
+            ?? body.contextId
+            ?? body.preferredContextId
+            ?? 'default';
+          leaseKey = getSessionLeaseKey(profileId, body.surface, body.session);
+          runId = body.runId;
+          const acquired = leases.acquire({
+            key: leaseKey,
+            runId,
+            command: body.command ?? body.action,
+            pid: body.pid,
+          }, hasPendingWork);
+          if (!acquired.acquired) {
+            const { key: _key, runId: _runId, ...holder } = acquired.holder;
+            jsonResponse(res, 409, { ok: false, code: 'session_busy', holder });
+            return;
+          }
         }
         const timeoutMs = typeof body.deadlineAt === 'number' && body.deadlineAt > 0
           ? Math.max(1000, body.deadlineAt - Date.now())
@@ -171,9 +208,10 @@ export function createDaemonServer(provider: BrowserRuntimeProvider, opts: Daemo
           }),
         ]).finally(() => {
           if (timeoutId) clearTimeout(timeoutId);
+          if (leaseKey && runId) leases.heartbeat(leaseKey, runId);
           pending.delete(body.id);
         });
-        pending.set(body.id, commandPromise);
+        pending.set(body.id, { promise: commandPromise, runId, leaseKey });
         const result = await commandPromise;
         if (!result.ok) pushLog('warn', `Command ${body.id} failed: ${result.error ?? result.errorCode ?? 'unknown error'}`);
         jsonResponse(res, result.ok ? 200 : result.errorCode === 'command_result_unknown' ? 408 : 400, result);
