@@ -25,11 +25,11 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import { executePipeline } from './pipeline/index.js';
-import { adapterLoadError, ArgumentError, CommandExecutionError, attachTraceReceipt, getErrorMessage } from './errors.js';
+import { adapterLoadError, ArgumentError, CommandExecutionError, TimeoutError, attachTraceReceipt, getErrorMessage } from './errors.js';
 import { shouldUseBrowserSession } from './capabilityRouting.js';
 import { getBrowserFactory, browserSession, runWithTimeout, DEFAULT_BROWSER_COMMAND_TIMEOUT, type BrowserWindowMode } from './runtime.js';
 import { profileRouteParams, resolveProfileSelection } from './browser/profile.js';
-import { setDaemonCommandTimeoutSeconds } from './browser/daemon-client.js';
+import { releaseSiteSessionLease, setDaemonCommandTimeoutSeconds } from './browser/daemon-client.js';
 import { emitHook, type HookContext } from './hooks.js';
 import { log } from './logger.js';
 import { isElectronApp } from './electron-apps.js';
@@ -37,11 +37,17 @@ import { probeCDP, resolveElectronEndpoint } from './launcher.js';
 import { ObservationSession, exportObservationSession, type ObservationExportResult, type ObservationExportStatus } from './observation/index.js';
 import { resolveAdapterSourcePath } from './adapter-source.js';
 import { coerceCommandArguments, TRACE_MODES, type TraceMode } from './command-surface.js';
+import { clearDaemonRunContext, generateRunId, isUnknownOutcomeError, setDaemonRunContext } from './session-lease.js';
 
 const _loadedModules = new Map<string, Promise<void>>();
 /** Track mtime of loaded user adapter files for hot-reload in daemon mode. */
 const _moduleMtimes = new Map<string, number>();
 const _userClisDir = `${os.homedir()}/.webcmd/clis/`;
+
+async function finalizeRun(runId: string, release: boolean): Promise<void> {
+  clearDaemonRunContext(runId);
+  if (release) await releaseSiteSessionLease(runId).catch(() => undefined);
+}
 
 function normalizeTraceMode(raw: unknown): TraceMode {
   if (raw === undefined || raw === null || raw === '' || raw === 'off') return 'off';
@@ -213,7 +219,20 @@ export async function executeCommand(
       const session = resolveAdapterBrowserSession(cmd, siteSession);
       const keepTab = resolveKeepTab(siteSession, opts.keepTab);
       const windowMode = resolveBrowserWindowMode(cmd.defaultWindowMode ?? 'background', opts.windowMode);
-      result = await browserSession(BrowserFactory, async (page) => {
+      const surface = 'adapter' as const;
+      const canonicalCommand = fullName(cmd);
+      const leaseEligible = surface === 'adapter'
+        && siteSession === 'persistent'
+        && cmd.access === 'write';
+      const runId = leaseEligible ? generateRunId() : undefined;
+      let releaseRun = true;
+      let deferRunFinalization = false;
+
+      if (runId) {
+        setDaemonRunContext({ runId, command: canonicalCommand, access: 'write' });
+      }
+
+      const executeAdapter = async (page: IPage): Promise<unknown> => {
         const observation = traceMode === 'off'
           ? null
           : new ObservationSession({
@@ -257,6 +276,7 @@ export async function executeCommand(
               data: { url: preNavUrl },
             });
           } catch (err) {
+            if (runId && isUnknownOutcomeError(err)) releaseRun = false;
             observation?.record({
               stream: 'action',
               name: 'pre_navigate',
@@ -281,13 +301,14 @@ export async function executeCommand(
             throw wrapped;
           }
         }
+        const adapterPromise = Promise.resolve(runCommand(cmd, page, kwargs, debug));
         try {
           const browserTimeout = userTimeoutSec !== null
             ? userTimeoutSec + RUNTIME_TIMEOUT_PADDING_SECONDS
             : DEFAULT_BROWSER_COMMAND_TIMEOUT;
-          const result = await runWithTimeout(runCommand(cmd, page, kwargs, debug), {
+          const result = await runWithTimeout(adapterPromise, {
             timeout: browserTimeout,
-            label: fullName(cmd),
+            label: canonicalCommand,
           });
           observation?.record({
             stream: 'action',
@@ -304,6 +325,14 @@ export async function executeCommand(
           if (!keepTab) await page.closeWindow?.().catch(() => {});
           return result;
         } catch (err) {
+          if (runId && isUnknownOutcomeError(err)) releaseRun = false;
+          if (runId && err instanceof TimeoutError) {
+            releaseRun = false;
+            deferRunFinalization = true;
+            void adapterPromise
+              .finally(() => finalizeRun(runId, false))
+              .catch(() => undefined);
+          }
           if (observation) {
             observation.record({
               stream: 'action',
@@ -327,7 +356,16 @@ export async function executeCommand(
           if (!keepTab) await page.closeWindow?.().catch(() => {});
           throw err;
         }
-      }, { session, cdpEndpoint, ...profileRouting, windowMode, surface: 'adapter', siteSession, freshPage: cmd.freshPage === true && siteSession === 'persistent' });
+      };
+
+      try {
+        result = await browserSession(BrowserFactory, executeAdapter, { session, cdpEndpoint, ...profileRouting, windowMode, surface, siteSession, freshPage: cmd.freshPage === true && siteSession === 'persistent' });
+      } catch (err) {
+        if (runId && isUnknownOutcomeError(err)) releaseRun = false;
+        throw err;
+      } finally {
+        if (runId && !deferRunFinalization) await finalizeRun(runId, releaseRun);
+      }
     } else {
       // Non-browser commands: enforce a timeout only when the command exposes
       // a `--timeout` arg (and the resolved value is positive). Without that

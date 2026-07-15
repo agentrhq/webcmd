@@ -1,10 +1,11 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type { CliCommand } from './registry.js';
 
-const { mockSetDaemonCommandTimeoutSeconds } = vi.hoisted(() => ({
+const { mockReleaseSiteSessionLease, mockSetDaemonCommandTimeoutSeconds } = vi.hoisted(() => ({
+  mockReleaseSiteSessionLease: vi.fn().mockResolvedValue(undefined),
   mockSetDaemonCommandTimeoutSeconds: vi.fn(),
 }));
 
@@ -12,6 +13,7 @@ vi.mock('./browser/daemon-client.js', async () => {
   const actual = await vi.importActual<typeof import('./browser/daemon-client.js')>('./browser/daemon-client.js');
   return {
     ...actual,
+    releaseSiteSessionLease: mockReleaseSiteSessionLease,
     setDaemonCommandTimeoutSeconds: mockSetDaemonCommandTimeoutSeconds,
   };
 });
@@ -22,6 +24,21 @@ import { cli, Strategy } from './registry.js';
 import { withTimeoutMs } from './runtime.js';
 import * as runtime from './runtime.js';
 import * as capRouting from './capabilityRouting.js';
+import { clearDaemonRunContext, getDaemonRunContext } from './session-lease.js';
+
+function deferred<T = void>(): {
+  promise: Promise<T>;
+  resolve: (value: T | PromiseLike<T>) => void;
+  reject: (reason?: unknown) => void;
+} {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
 
 describe('executeCommand — non-browser timeout', () => {
   it('applies the user --timeout arg as the ceiling for non-browser commands', async () => {
@@ -178,6 +195,293 @@ describe('executeCommand — non-browser timeout', () => {
       label: 'test-execution/browser-no-timeout',
     });
     vi.restoreAllMocks();
+  });
+
+  describe('persistent write run ownership', () => {
+    afterEach(() => {
+      const activeRun = getDaemonRunContext();
+      if (activeRun) clearDaemonRunContext(activeRun.runId);
+      mockReleaseSiteSessionLease.mockReset().mockResolvedValue(undefined);
+      vi.restoreAllMocks();
+    });
+
+    it('binds a run only for browser-backed persistent writes', async () => {
+      const seen = new Map<string, ReturnType<typeof getDaemonRunContext>>();
+      const mockPage = { closeWindow: vi.fn().mockResolvedValue(undefined) } as any;
+
+      vi.spyOn(capRouting, 'shouldUseBrowserSession').mockImplementation(cmd => cmd.browser !== false);
+      vi.spyOn(runtime, 'browserSession').mockImplementation(async (_Factory, fn) => fn(mockPage));
+
+      const makeCommand = (
+        name: string,
+        access: 'read' | 'write',
+        browser: boolean,
+        siteSession: 'ephemeral' | 'persistent',
+      ) => cli({
+        site: 'test-execution',
+        name,
+        access,
+        description: 'test logical run eligibility',
+        browser,
+        strategy: Strategy.PUBLIC,
+        siteSession,
+        func: async () => {
+          seen.set(name, getDaemonRunContext());
+          return [{ ok: true }];
+        },
+      } as Parameters<typeof cli>[0]);
+
+      await executeCommand(makeCommand('run-eligible', 'write', true, 'persistent'), {});
+      await executeCommand(makeCommand('run-read', 'read', true, 'persistent'), {});
+      await executeCommand(makeCommand('run-ephemeral', 'write', true, 'ephemeral'), {});
+      await executeCommand(makeCommand('run-non-browser', 'write', false, 'persistent'), {});
+
+      const eligibleRun = seen.get('run-eligible');
+      expect(eligibleRun).toMatchObject({
+        runId: expect.stringMatching(/^run_/),
+        command: 'test-execution/run-eligible',
+        access: 'write',
+      });
+      expect(seen.get('run-read')).toBeUndefined();
+      expect(seen.get('run-ephemeral')).toBeUndefined();
+      expect(seen.get('run-non-browser')).toBeUndefined();
+      expect(mockReleaseSiteSessionLease).toHaveBeenCalledOnce();
+      expect(mockReleaseSiteSessionLease).toHaveBeenCalledWith(eligibleRun?.runId);
+    });
+
+    it('binds one canonical run before session setup, pre-navigation, and adapter execution', async () => {
+      const seen: Array<{ stage: string; run: ReturnType<typeof getDaemonRunContext> }> = [];
+      const capture = (stage: string) => seen.push({ stage, run: getDaemonRunContext() });
+      const mockPage = {
+        closeWindow: vi.fn().mockResolvedValue(undefined),
+        getCurrentUrl: vi.fn().mockImplementation(async () => {
+          capture('current-url');
+          return 'about:blank';
+        }),
+        goto: vi.fn().mockImplementation(async () => capture('pre-navigation')),
+      } as any;
+
+      vi.spyOn(capRouting, 'shouldUseBrowserSession').mockReturnValue(true);
+      vi.spyOn(runtime, 'browserSession').mockImplementation(async (_Factory, fn) => {
+        capture('session');
+        return fn(mockPage);
+      });
+
+      const cmd = cli({
+        site: 'test-execution',
+        name: 'run-bound-before-operations',
+        access: 'write',
+        description: 'test one run spans the complete adapter execution',
+        browser: true,
+        strategy: Strategy.COOKIE,
+        domain: 'example.com',
+        siteSession: 'persistent',
+        func: async () => {
+          capture('adapter');
+          return [{ ok: true }];
+        },
+      });
+
+      await expect(executeCommand(cmd, {})).resolves.toEqual([{ ok: true }]);
+
+      expect(seen.map(entry => entry.stage)).toEqual([
+        'session',
+        'current-url',
+        'pre-navigation',
+        'adapter',
+      ]);
+      const runId = seen[0]?.run?.runId;
+      expect(runId).toMatch(/^run_/);
+      for (const entry of seen) {
+        expect(entry.run).toEqual({
+          runId,
+          command: 'test-execution/run-bound-before-operations',
+          access: 'write',
+        });
+      }
+      expect(getDaemonRunContext()).toBeUndefined();
+      expect(mockReleaseSiteSessionLease).toHaveBeenCalledOnce();
+      expect(mockReleaseSiteSessionLease).toHaveBeenCalledWith(runId);
+    });
+
+    it('clears and releases the run once after an ordinary adapter error', async () => {
+      let runId: string | undefined;
+      const mockPage = { closeWindow: vi.fn().mockResolvedValue(undefined) } as any;
+      vi.spyOn(capRouting, 'shouldUseBrowserSession').mockReturnValue(true);
+      vi.spyOn(runtime, 'browserSession').mockImplementation(async (_Factory, fn) => fn(mockPage));
+
+      const cmd = cli({
+        site: 'test-execution',
+        name: 'run-ordinary-error',
+        access: 'write',
+        description: 'test ordinary errors release run ownership',
+        browser: true,
+        strategy: Strategy.PUBLIC,
+        siteSession: 'persistent',
+        func: async () => {
+          runId = getDaemonRunContext()?.runId;
+          throw new Error('ordinary adapter failure');
+        },
+      });
+
+      await expect(executeCommand(cmd, {})).rejects.toThrow('ordinary adapter failure');
+
+      expect(runId).toMatch(/^run_/);
+      expect(getDaemonRunContext()).toBeUndefined();
+      expect(mockReleaseSiteSessionLease).toHaveBeenCalledOnce();
+      expect(mockReleaseSiteSessionLease).toHaveBeenCalledWith(runId);
+    });
+
+    it('clears but does not release a run when an error cause has unknown outcome', async () => {
+      let runId: string | undefined;
+      const mockPage = { closeWindow: vi.fn().mockResolvedValue(undefined) } as any;
+      vi.spyOn(capRouting, 'shouldUseBrowserSession').mockReturnValue(true);
+      vi.spyOn(runtime, 'browserSession').mockImplementation(async (_Factory, fn) => fn(mockPage));
+
+      const unknownOutcome = new Error('wrapped adapter failure') as Error & { cause?: unknown };
+      unknownOutcome.cause = { code: 'COMMAND_RESULT_UNKNOWN' };
+      const cmd = cli({
+        site: 'test-execution',
+        name: 'run-unknown-outcome',
+        access: 'write',
+        description: 'test unknown outcomes retain the daemon lease',
+        browser: true,
+        strategy: Strategy.PUBLIC,
+        siteSession: 'persistent',
+        func: async () => {
+          runId = getDaemonRunContext()?.runId;
+          throw unknownOutcome;
+        },
+      });
+
+      await expect(executeCommand(cmd, {})).rejects.toBe(unknownOutcome);
+
+      expect(runId).toMatch(/^run_/);
+      expect(getDaemonRunContext()).toBeUndefined();
+      expect(mockReleaseSiteSessionLease).not.toHaveBeenCalled();
+    });
+
+    it('does not release a run when pre-navigation has unknown outcome', async () => {
+      let runId: string | undefined;
+      const unknownOutcome = new Error('navigation result unknown') as Error & { cause?: unknown };
+      unknownOutcome.cause = { errorCode: 'COMMAND_LOST' };
+      const mockPage = {
+        closeWindow: vi.fn().mockResolvedValue(undefined),
+        getCurrentUrl: vi.fn().mockResolvedValue('about:blank'),
+        goto: vi.fn().mockImplementation(async () => {
+          runId = getDaemonRunContext()?.runId;
+          throw unknownOutcome;
+        }),
+      } as any;
+      vi.spyOn(capRouting, 'shouldUseBrowserSession').mockReturnValue(true);
+      vi.spyOn(runtime, 'browserSession').mockImplementation(async (_Factory, fn) => fn(mockPage));
+
+      const cmd = cli({
+        site: 'test-execution',
+        name: 'run-unknown-prenavigation',
+        access: 'write',
+        description: 'test unknown pre-navigation retains the daemon lease',
+        browser: true,
+        strategy: Strategy.COOKIE,
+        domain: 'example.com',
+        siteSession: 'persistent',
+        func: async () => [{ ok: true }],
+      });
+
+      await expect(executeCommand(cmd, {})).rejects.toThrow('Pre-navigation');
+
+      expect(runId).toMatch(/^run_/);
+      expect(getDaemonRunContext()).toBeUndefined();
+      expect(mockReleaseSiteSessionLease).not.toHaveBeenCalled();
+    });
+
+    it('keeps the run bound after timeout until the underlying adapter settles', async () => {
+      const adapter = deferred<void>();
+      let runId: string | undefined;
+      const mockPage = { closeWindow: vi.fn().mockResolvedValue(undefined) } as any;
+      vi.spyOn(capRouting, 'shouldUseBrowserSession').mockReturnValue(true);
+      vi.spyOn(runtime, 'browserSession').mockImplementation(async (_Factory, fn) => fn(mockPage));
+      vi.spyOn(runtime, 'runWithTimeout').mockRejectedValueOnce(new TimeoutError('logical run', 1));
+
+      const cmd = cli({
+        site: 'test-execution',
+        name: 'run-timeout',
+        access: 'write',
+        description: 'test timeout defers local run cleanup',
+        browser: true,
+        strategy: Strategy.PUBLIC,
+        siteSession: 'persistent',
+        func: () => {
+          runId = getDaemonRunContext()?.runId;
+          return adapter.promise;
+        },
+      });
+
+      await expect(executeCommand(cmd, {})).rejects.toBeInstanceOf(TimeoutError);
+
+      expect(runId).toMatch(/^run_/);
+      expect(getDaemonRunContext()?.runId).toBe(runId);
+      expect(mockReleaseSiteSessionLease).not.toHaveBeenCalled();
+
+      adapter.resolve();
+      await vi.waitFor(() => expect(getDaemonRunContext()).toBeUndefined());
+      expect(mockReleaseSiteSessionLease).not.toHaveBeenCalled();
+    });
+
+    it('does not let deferred timeout cleanup clear a later run', async () => {
+      const firstAdapter = deferred<void>();
+      const secondAdapter = deferred<void>();
+      let firstRunId: string | undefined;
+      let secondRunId: string | undefined;
+      const mockPage = { closeWindow: vi.fn().mockResolvedValue(undefined) } as any;
+      vi.spyOn(capRouting, 'shouldUseBrowserSession').mockReturnValue(true);
+      vi.spyOn(runtime, 'browserSession').mockImplementation(async (_Factory, fn) => fn(mockPage));
+      vi.spyOn(runtime, 'runWithTimeout')
+        .mockRejectedValueOnce(new TimeoutError('first logical run', 1))
+        .mockImplementationOnce(async promise => promise);
+
+      const firstCommand = cli({
+        site: 'test-execution',
+        name: 'run-timeout-first',
+        access: 'write',
+        description: 'test deferred cleanup for an older run',
+        browser: true,
+        strategy: Strategy.PUBLIC,
+        siteSession: 'persistent',
+        func: () => {
+          firstRunId = getDaemonRunContext()?.runId;
+          return firstAdapter.promise;
+        },
+      });
+      const secondCommand = cli({
+        site: 'test-execution',
+        name: 'run-timeout-second',
+        access: 'write',
+        description: 'test a newer run survives old deferred cleanup',
+        browser: true,
+        strategy: Strategy.PUBLIC,
+        siteSession: 'persistent',
+        func: () => {
+          secondRunId = getDaemonRunContext()?.runId;
+          return secondAdapter.promise;
+        },
+      });
+
+      await expect(executeCommand(firstCommand, {})).rejects.toBeInstanceOf(TimeoutError);
+      const secondExecution = executeCommand(secondCommand, {});
+      await vi.waitFor(() => expect(secondRunId).toMatch(/^run_/));
+      expect(secondRunId).not.toBe(firstRunId);
+
+      firstAdapter.resolve();
+      await firstAdapter.promise;
+      await vi.waitFor(() => expect(getDaemonRunContext()?.runId).toBe(secondRunId));
+
+      secondAdapter.resolve();
+      await expect(secondExecution).resolves.toBeUndefined();
+      expect(getDaemonRunContext()).toBeUndefined();
+      expect(mockReleaseSiteSessionLease).toHaveBeenCalledOnce();
+      expect(mockReleaseSiteSessionLease).toHaveBeenCalledWith(secondRunId);
+    });
   });
 
   it('reuses a persistent site browser session and keeps the tab lease open', async () => {
