@@ -21317,7 +21317,7 @@
     "name": "auth",
     "description": "Authenticate with Spotify (OAuth — run once)",
     "access": "write",
-    "strategy": "public",
+    "strategy": "local",
     "browser": false,
     "args": [],
     "columns": [
@@ -21332,7 +21332,7 @@
     "name": "next",
     "description": "Skip to next track",
     "access": "write",
-    "strategy": "public",
+    "strategy": "local",
     "browser": false,
     "args": [],
     "columns": [
@@ -21347,7 +21347,7 @@
     "name": "pause",
     "description": "Pause playback",
     "access": "write",
-    "strategy": "public",
+    "strategy": "local",
     "browser": false,
     "args": [],
     "columns": [
@@ -21362,7 +21362,7 @@
     "name": "play",
     "description": "Resume playback or search and play a track/artist",
     "access": "write",
-    "strategy": "public",
+    "strategy": "local",
     "browser": false,
     "args": [
       {
@@ -21388,7 +21388,7 @@
     "name": "prev",
     "description": "Skip to previous track",
     "access": "write",
-    "strategy": "public",
+    "strategy": "local",
     "browser": false,
     "args": [],
     "columns": [
@@ -21403,7 +21403,7 @@
     "name": "queue",
     "description": "Add a track to the playback queue",
     "access": "write",
-    "strategy": "public",
+    "strategy": "local",
     "browser": false,
     "args": [
       {
@@ -21428,7 +21428,7 @@
     "name": "repeat",
     "description": "Set repeat mode (off / track / context)",
     "access": "write",
-    "strategy": "public",
+    "strategy": "local",
     "browser": false,
     "args": [
       {
@@ -21457,7 +21457,7 @@
     "name": "search",
     "description": "Search for tracks",
     "access": "read",
-    "strategy": "public",
+    "strategy": "local",
     "browser": false,
     "args": [
       {
@@ -21490,7 +21490,7 @@
     "name": "shuffle",
     "description": "Toggle shuffle on/off",
     "access": "write",
-    "strategy": "public",
+    "strategy": "local",
     "browser": false,
     "args": [
       {
@@ -21518,7 +21518,7 @@
     "name": "status",
     "description": "Show current playback status",
     "access": "read",
-    "strategy": "public",
+    "strategy": "local",
     "browser": false,
     "args": [],
     "columns": [
@@ -21537,7 +21537,7 @@
     "name": "volume",
     "description": "Set playback volume (0-100)",
     "access": "write",
-    "strategy": "public",
+    "strategy": "local",
     "browser": false,
     "args": [
       {
