@@ -104,6 +104,13 @@ webcmd <site> <command> [args...] --trace retain-on-failure
 
 The error envelope includes a `trace` block pointing at `summary.md`. Patch only `adapterSourcePath` from that summary and retry. Maximum 3 repair rounds. See `webcmd-autofix`.
 
+## Report A Webcmd Defect
+
+After a reproducible Webcmd failure has been diagnosed or the `webcmd-autofix`
+retry budget is exhausted, load `webcmd-autofix` and follow its Step 6 reporting
+flow. Do not report expected authentication, configuration, CAPTCHA, rate-limit,
+argument, transient, or unreproduced failures.
+
 ## Writing An Adapter
 
 Storage paths:

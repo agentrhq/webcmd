@@ -1,6 +1,6 @@
 ---
 name: webcmd-autofix
-description: Automatically fix broken Webcmd adapters when commands fail. Load this skill when a webcmd command fails; it guides you through collecting a trace artifact, patching the adapter, retrying, and filing an upstream GitHub issue after a verified fix. Works with any AI agent.
+description: Automatically fix broken Webcmd adapters when commands fail. Load this skill when a webcmd command fails; it guides you through collecting a trace artifact, patching the adapter, retrying, and safely reporting reproducible upstream defects. Works with any AI agent.
 allowed-tools: Bash(webcmd:*), Bash(gh:*), Read, Edit, Write
 ---
 
@@ -204,54 +204,41 @@ webcmd <site> <command> [args...]
 
 If it still fails, collect a fresh trace and start another round. Stop after 3 rounds.
 
-## Step 6: File An Upstream Issue
+## Step 6: Report A Reproducible Upstream Defect
 
-If the retry passes, prepare an upstream issue so the local fix can flow back to `agentrhq/webcmd`.
+Offer to file an upstream issue after either outcome:
 
-Do not file for:
+- A local adapter repair was verified and should be contributed upstream.
+- A Webcmd defect remains reproducible after the three-round retry budget.
 
-- `AUTH_REQUIRED`, `BROWSER_CONNECT`, `ARGUMENT`, or `CONFIG`
-- CAPTCHA or rate limiting
-- failures you could not fix
+Do not file for `AUTH_REQUIRED`, `BROWSER_CONNECT`, `ARGUMENT`, or `CONFIG`;
+CAPTCHA, rate limiting, IP blocking, site policy restrictions, successful empty
+results, invalid input, transient network failures, or unreproduced failures.
 
-Only file after a verified local fix.
+Include the sanitized command, reproduction steps, expected and actual behavior,
+error code/excerpt, Webcmd/Node/OS versions, trace ID, and any verified local fix.
+Remove credentials, cookies, authorization headers, browser session data,
+private content, personal data, and raw trace artifacts.
 
-Draft:
-
-```markdown
-## Summary
-Webcmd autofix repaired this adapter locally, and the retry passed.
-
-## Adapter
-- Site: `<site>`
-- Command: `<command>`
-- Webcmd version: `<version from webcmd --version>`
-
-## Original failure
-- Error code: `<error_code>`
-
-~~~
-<error_message>
-~~~
-
-## Local fix summary
-
-~~~
-<1-2 sentence description of what changed and why>
-~~~
-
-_Issue filed by Webcmd autofix after a verified local repair._
-```
-
-Ask the user before filing. Show the draft title and body. If they approve and `gh auth status` succeeds:
+Show the title and body to the user and get approval unless automatic filing was
+already authorized. Then check their existing GitHub login:
 
 ```bash
-gh issue create --repo agentrhq/webcmd \
-  --title "[autofix] <site>/<command>: <error_code>" \
-  --body "<the body above>"
+gh auth status
 ```
 
-If `gh` is unavailable or unauthenticated, tell the user and skip issue creation.
+If `gh` is unavailable or unauthenticated, explain that sign-in is required and
+stop without requesting a token. Otherwise, submit the approved, redacted draft:
+
+```bash
+gh issue create \
+  --repo "${WEBCMD_FEEDBACK_REPO:-agentrhq/webcmd}" \
+  --title "[Bug]: <site>/<command>: <short failure summary>" \
+  --body "<approved, sanitized draft>"
+```
+
+Report the issue URL after GitHub confirms creation. If submission fails, show
+the error without retrying.
 
 ## When To Stop
 
@@ -266,6 +253,8 @@ Soft stops:
 - 3 repair rounds exhausted.
 - Feature completely removed.
 - Major redesign requiring `webcmd-adapter-author`.
+
+For a reproducible Webcmd defect at a soft stop, offer the Step 6 reporting flow.
 
 In all stop cases, clearly report the situation instead of making speculative patches.
 
