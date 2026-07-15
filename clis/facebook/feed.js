@@ -24,7 +24,26 @@ function buildFeedExtractScript(limit) {
     const limit = ${limit};
 
     function clean(value) {
-      return String(value || '').replace(/\\s+/g, ' ').trim();
+      // Strip zero-width / bidi control chars first: Facebook injects them into
+      // decoy nodes to poison scrapers. See issue #2089.
+      return String(value || '')
+        .replace(/[\\u200b-\\u200f\\u202a-\\u202e\\u2060\\ufeff]/g, '')
+        .replace(/\\s+/g, ' ')
+        .trim();
+    }
+
+    // FB anti-scrape decoys: long spaceless digit runs, spaced single-char
+    // strings ("a b c d e"), and hidden-domain .com spam. Real author/content
+    // text never looks like this.
+    function isDecoyText(text) {
+      if (!text) return true;
+      if (/^\\d{8,}$/.test(text)) return true;
+      if (/^(?:\\S ){4,}\\S$/.test(text) && text.replace(/\\s/g, '').length <= 12) return true;
+      return false;
+    }
+
+    function isReelsOrCarouselChrome(text) {
+      return /^(Reels|Reels and short videos|People you may know)/i.test(text);
     }
 
     function textOf(el) {
@@ -39,36 +58,35 @@ function buildFeedExtractScript(limit) {
       const path = window.location && window.location.pathname ? window.location.pathname : '';
       const body = textOf(document.body);
       return /^\\/(login|checkpoint)(\\/|$|\\.php)/.test(path)
-        || /^(Log in to Facebook|FacebookLog in|Log in Facebook)/i.test(body)
+        || /^(Log in to Facebook|Facebook Log in|Log in Facebook)/i.test(body)
         || /You must log in to continue/i.test(body);
     }
 
     function isExplicitEmptyFeed() {
       const body = textOf(document.body);
-      return /No posts available|Nothing to show|No posts available|No more posts|No posts yet/i.test(body);
+      return /No posts available|Nothing to show|No more posts|No posts yet/i.test(body);
     }
 
     function isSuggestionOrChrome(text) {
-      return /^(People you may know|People You May Know|People you may know?|People you may know?)/i.test(text)
-        || /^(Suggested for you|Suggested Groups|Suggested groups|Suggested content)/i.test(text);
+      return /^(People you may know|People You May Know)/i.test(text)
+        || /^(Suggested for you|Suggested Groups|Suggested content)/i.test(text);
     }
 
     function isSponsored(text) {
-      return /(^|\\s)(Sponsored|Sponsored|Advertisement)(\\s|$)/i.test(text);
+      return /(^|\\s)(Sponsored|Advertisement)(\\s|$)/i.test(text);
     }
 
     function isActionText(text) {
-      return /^(Like|Comment|Share|Send|Follow|Like|Comment|Share|Send|Follow)$/i.test(text);
+      return /^(Like|Comment|Share|Send|Follow)$/i.test(text);
     }
 
     function isMetricText(text) {
       return /^(All:|All reactions:)/i.test(text)
         || /\\b(likes?|reactions?|comments?|shares?)\\b/i.test(text)
-        || /(comments|shares)$/.test(text);
     }
 
     function isTimestampText(text) {
-      return /^(\\d+\\s*(s|m|h|d|w|mo|yr|min|sec|second|minute|hour|day|week|month|year)s?|Just now|Yesterday|just now|yesterday|\\d+hours|\\d+days)(\\s*[\u00b7•.])?$/i.test(text);
+      return /^(\\d+\\s*(s|m|h|d|w|mo|yr|min|sec|second|minute|hour|day|week|month|year)s?|Just now|Yesterday)(\\s*[·•.])?$/i.test(text);
     }
 
     function postUrlFrom(root) {
@@ -86,9 +104,9 @@ function buildFeedExtractScript(limit) {
       const kinds = new Set();
       for (const el of root.querySelectorAll('[aria-label]')) {
         const label = labelOf(el);
-        if (/^(Like|Like)$/i.test(label)) kinds.add('like');
-        if (/^(Comment|Comment)$/i.test(label)) kinds.add('comment');
-        if (/^(Share|Share)$/i.test(label)) kinds.add('share');
+        if (/^(Like)$/i.test(label)) kinds.add('like');
+        if (/^(Comment)$/i.test(label)) kinds.add('comment');
+        if (/^(Share)$/i.test(label)) kinds.add('share');
       }
       return kinds;
     }
@@ -116,6 +134,8 @@ function buildFeedExtractScript(limit) {
           && !isActionText(text)
           && !isMetricText(text)
           && !isTimestampText(text)
+          && !isDecoyText(text)
+          && !/^[\\d\\s.,-]+$/.test(text)   // reject all-digit decoy names, but keep "Class of 2024" (#2089)
           && !/\\/groups\\/|\\/watch\\/|\\/reel\\/|\\/events\\/|\\/friends\\//i.test(href)) {
           return text;
         }
@@ -129,7 +149,8 @@ function buildFeedExtractScript(limit) {
         if (text.length <= 10) return false;
         if (isSuggestionOrChrome(text) || isSponsored(text)) return false;
         if (isActionText(text) || isMetricText(text) || isTimestampText(text)) return false;
-        if (/^(See more|See more|More)$/i.test(text)) return false;
+        if (isDecoyText(text) || isReelsOrCarouselChrome(text)) return false;
+        if (/^(See more|More)$/i.test(text)) return false;
         return true;
       });
     }
@@ -147,13 +168,11 @@ function buildFeedExtractScript(limit) {
       if (!author && !content) return null;
       if (!content && !postUrl && kinds.size < 2) return null;
 
-      const likesMatch = fullText.match(/All reactions:\\s*(\\d[\\d,.\\slocalized textKMk]*)/)
+      const likesMatch = fullText.match(/All reactions:\\s*(\\d[\\d,.\\sKMk]*)/)
         || fullText.match(/All:\\s*(\\d[\\d,.KMk]*)/)
         || fullText.match(/(\\d[\\d,.KMk]*)\\s*(?:likes?|reactions?)/i);
-      const commentsMatch = fullText.match(/([\\d,.]+\\s*[localized text]?)\\s*comments/)
-        || fullText.match(/(\\d[\\d,.KMk]*)\\s*comments?/i);
-      const sharesMatch = fullText.match(/([\\d,.]+\\s*[localized text]?)\\s*shares/)
-        || fullText.match(/(\\d[\\d,.KMk]*)\\s*shares?/i);
+      const commentsMatch = fullText.match(/(\\d[\\d,.KMk]*)\\s*comments?/i);
+      const sharesMatch = fullText.match(/(\\d[\\d,.KMk]*)\\s*shares?/i);
 
       return {
         index,
@@ -170,10 +189,51 @@ function buildFeedExtractScript(limit) {
         .filter((el) => textOf(el).length > 30);
     }
 
+    // Modern Facebook no longer wraps posts in [role="article"] nor exposes the
+    // Like/Comment/Share aria-labels the fallback keyed on. Every post still
+    // carries one "Actions for this post" control (the ⋯ menu). Anchor on it and
+    // walk up to the HIGHEST ancestor that still contains exactly one such
+    // control — that bounds the node to a single post. See issue #2089.
+    function actionMenuAnchors() {
+      // Post menus only — NOT "Actions for this comment", so the anchor set,
+      // countMenus, and loadFeedPosts all key on the same thing (#2089).
+      return Array.from(document.querySelectorAll('[aria-label]')).filter((el) =>
+        /^(Actions for this post)$/i.test(labelOf(el)));
+    }
+
+    function actionAnchoredContainers() {
+      const menus = actionMenuAnchors();
+      const seen = new WeakSet();
+      const containers = [];
+      const countMenus = (node) => {
+        let n = 0;
+        for (const el of node.querySelectorAll('[aria-label]')) {
+          if (/^(Actions for this post)$/i.test(labelOf(el))) n += 1;
+        }
+        return n;
+      };
+      const LANDMARK_ROLES = new Set(['main', 'feed', 'banner', 'navigation', 'complementary', 'contentinfo', 'region']);
+      for (const menu of menus) {
+        let node = menu.parentElement;
+        let best = null;
+        for (let depth = 0; depth < 22 && node && node !== document.body && node !== document.documentElement; depth += 1, node = node.parentElement) {
+          // Never let a single-post page climb the container up to a page
+          // landmark (role=main/feed/...) and emit the whole region as a post.
+          if (LANDMARK_ROLES.has(node.getAttribute('role') || '')) break;
+          if (countMenus(node) === 1) best = node; else break;
+        }
+        if (best && !seen.has(best) && textOf(best).length > 30) {
+          seen.add(best);
+          containers.push(best);
+        }
+      }
+      return containers;
+    }
+
     function fallbackContainers() {
       const main = document.querySelector('[role="main"]');
       if (!main) return [];
-      const buttons = Array.from(main.querySelectorAll('[aria-label="Like"], [aria-label="Like"], [aria-label="Comment"], [aria-label="Comment"], [aria-label="Share"], [aria-label="Share"]'));
+      const buttons = Array.from(main.querySelectorAll('[aria-label="Like"], [aria-label="Comment"], [aria-label="Share"]'));
       const seen = new WeakSet();
       const containers = [];
       for (const button of buttons) {
@@ -210,7 +270,8 @@ function buildFeedExtractScript(limit) {
     if (isAuthPage()) return { status: 'auth', rows: [], diagnostics: {} };
 
     const primary = primaryContainers();
-    const combined = dedupe([...primary, ...fallbackContainers()]);
+    const actionAnchored = actionAnchoredContainers();
+    const combined = dedupe([...primary, ...actionAnchored, ...fallbackContainers()]);
     const rows = [];
     for (const container of combined) {
       const row = extractPost(container, rows.length + 1);
@@ -224,11 +285,34 @@ function buildFeedExtractScript(limit) {
       diagnostics: {
         articleCount: document.querySelectorAll('[role="article"]').length,
         primaryCount: primary.length,
-        fallbackActionCount: document.querySelectorAll('[role="main"] [aria-label="Like"], [role="main"] [aria-label="Like"], [role="main"] [aria-label="Comment"], [role="main"] [aria-label="Comment"]').length,
+        actionMenuCount: actionMenuAnchors().length,
+        fallbackActionCount: document.querySelectorAll('[role="main"] [aria-label="Like"], [role="main"] [aria-label="Comment"]').length,
         mainTextLength: textOf(document.querySelector('[role="main"]')).length,
       },
     };
   })()`;
+}
+
+// Facebook streams feed posts in lazily as you scroll, so a single extraction
+// off the initial viewport under-returns. Scroll a bounded number of times
+// until enough post action-menus are present (or we stop growing). See #2089.
+async function loadFeedPosts(page, limit) {
+  const scrollStep = `(async () => {
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    window.scrollTo(0, document.body.scrollHeight);
+    await sleep(800);
+    return document.querySelectorAll('[aria-label]').length
+      ? document.querySelectorAll('[role="article"]').length
+        + Array.from(document.querySelectorAll('[aria-label]')).filter((el) => /^(Actions for this post)$/i.test((el.getAttribute('aria-label') || '').trim())).length
+      : 0;
+  })()`;
+  let prev = -1;
+  for (let i = 0; i < 8; i += 1) {
+    let count = 0;
+    try { count = Number(unwrapBrowserResult(await page.evaluate(scrollStep))) || 0; } catch { break; }
+    if (count >= limit || count === prev) break;
+    prev = count;
+  }
 }
 
 async function getFacebookFeed(page, kwargs) {
@@ -238,9 +322,11 @@ async function getFacebookFeed(page, kwargs) {
   } catch (err) {
     throw new CommandExecutionError(
       `Failed to navigate to facebook feed: ${err instanceof Error ? err.message : err}`,
-      'Check that facebook.com is reachable and the browser extension is connected.',
+      'Check that facebook.com is reachable and the Cloak browser session is running.',
     );
   }
+
+  await loadFeedPosts(page, limit);
 
   let payload;
   try {
@@ -257,7 +343,7 @@ async function getFacebookFeed(page, kwargs) {
   }
 
   if (payload.status === 'auth') {
-    throw new AuthRequiredError('www.facebook.com', 'Open Chrome and log in to Facebook before retrying.');
+    throw new AuthRequiredError('www.facebook.com', 'Log in to Facebook in the active Cloak browser session before retrying.');
   }
 
   if (payload.rows.length > 0) {
@@ -269,7 +355,7 @@ async function getFacebookFeed(page, kwargs) {
   }
 
   const diagnostics = payload.diagnostics || {};
-  if (diagnostics.articleCount || diagnostics.fallbackActionCount || diagnostics.mainTextLength > 200) {
+  if (diagnostics.articleCount || diagnostics.actionMenuCount || diagnostics.fallbackActionCount || diagnostics.mainTextLength > 200) {
     throw new CommandExecutionError(
       'facebook feed page rendered but no feed rows could be extracted',
       `Diagnostics: articles=${diagnostics.articleCount || 0}, actions=${diagnostics.fallbackActionCount || 0}, mainTextLength=${diagnostics.mainTextLength || 0}.`,

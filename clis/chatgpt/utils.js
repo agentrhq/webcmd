@@ -1059,8 +1059,10 @@ export async function sendChatGPTMessage(page, text) {
     return true;
 }
 
-export async function getVisibleMessages(page) {
+export async function getVisibleMessages(page, { textOnly = false } = {}) {
+    const includeHtml = textOnly ? 'false' : 'true';
     const result = requireArrayEvaluateResult(unwrapEvaluateResult(await page.evaluate(`(() => {
+        const includeHtml = ${includeHtml};
         const isVisible = (el) => {
             if (!(el instanceof HTMLElement)) return false;
             const style = window.getComputedStyle(el);
@@ -1097,8 +1099,11 @@ export async function getVisibleMessages(page) {
                 || node.querySelector('.markdown')
                 || node.querySelector('[data-message-author-role]')
                 || node;
-            const html = contentNode instanceof HTMLElement ? (contentNode.innerHTML || '') : '';
-            const text = normalize(contentNode instanceof HTMLElement ? (contentNode.innerText || contentNode.textContent || '') : '');
+            const html = includeHtml && contentNode instanceof HTMLElement ? (contentNode.innerHTML || '') : '';
+            const rawText = contentNode instanceof HTMLElement
+                ? (includeHtml ? (contentNode.innerText || contentNode.textContent || '') : (contentNode.textContent || ''))
+                : '';
+            const text = normalize(rawText);
             if (!text) continue;
             const key = role + '\\n' + text;
             if (seen.has(key)) continue;
@@ -1169,7 +1174,7 @@ export async function waitForChatGPTDetailRows(page, { wantMarkdown = false, tim
             lastKey = key;
             stableStartedAt = 0;
         }
-        await page.wait(3);
+        await page.sleep(3);
     }
 
     throw new TimeoutError(
@@ -1255,23 +1260,169 @@ function extractDeepResearchSourcesFromReportMessage(reportMessage) {
     return [...byUrl.values()].slice(0, 200);
 }
 
-function extractDeepResearchFromWidgetState(widgetState, source = 'conversation-widget-state') {
+function pickFirstObject(...values) {
+    for (const value of values) {
+        const parsed = parseJsonMaybe(value);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+    }
+    return {};
+}
+
+function stringOrEmpty(value) {
+    return value === undefined || value === null ? '' : String(value);
+}
+
+function compactDeepResearchPlanSteps(plan, stepStatusesByPlan) {
+    const steps = Array.isArray(plan?.steps) ? plan.steps : [];
+    return steps.slice(0, 50).map((step, index) => {
+        const id = stringOrEmpty(step?.id || step?.step_id || step?.plan_step_id || step?.key || index);
+        return {
+            id,
+            title: stringOrEmpty(step?.title || step?.name || step?.summary || step?.description),
+            status: stringOrEmpty(step?.status || step?.step_status || stepStatusesByPlan?.[id] || ''),
+        };
+    }).filter((step) => step.id || step.title || step.status);
+}
+
+function deepResearchProgressStatus(progress) {
+    const venusStatus = String(progress.venusStatus || '').toLowerCase();
+    if (/waiting_for_user|user_response/.test(venusStatus)) return 'waiting_for_user';
+    if (/needs_user|user_action|action_required|requires_action/.test(venusStatus)) return 'needs_user_action';
+    if (/running|in_progress|loading|generating|researching|queued|started|processing/.test(venusStatus)) return 'running';
+
+    const venusMessageType = String(progress.venusMessageType || '').toLowerCase();
+    if (/loading|running|generating|research|progress/.test(venusMessageType)) return 'running';
+
+    if (progress.asyncTaskConversationId
+        || progress.widgetSessionId
+        || progress.asyncStatus !== undefined
+        || progress.venusStatus
+        || progress.planId
+        || progress.planTitle) {
+        return 'not_ready';
+    }
+    return '';
+}
+
+function buildDeepResearchProgressResult(state, responseMetadata, source) {
+    const widgetState = state && typeof state === 'object' ? state : {};
+    const response = responseMetadata && typeof responseMetadata === 'object' ? responseMetadata : {};
+    const plan = pickFirstObject(widgetState.plan, widgetState.current_plan, widgetState.research_plan);
+    const stepStatusesByPlan = pickFirstObject(
+        widgetState.step_statuses_by_plan,
+        widgetState.stepStatusesByPlan,
+        widgetState.step_statuses,
+    );
+    const progress = {
+        asyncTaskConversationId: stringOrEmpty(
+            response.async_task_conversation_id
+            || response.asyncTaskConversationId
+            || response['openai/asyncTaskConversationId'],
+        ),
+        widgetSessionId: stringOrEmpty(
+            response['openai/widgetSessionId']
+            || response.widget_session_id
+            || response.widgetSessionId,
+        ),
+        asyncStatus: response['openai/asyncStatus'] ?? response.async_status ?? response.asyncStatus,
+        venusMessageType: stringOrEmpty(response.venus_message_type || response.venusMessageType),
+        venusStatus: stringOrEmpty(widgetState.status || widgetState.venus_status || widgetState.venusStatus),
+        waitingForUserUntil: stringOrEmpty(
+            widgetState.waiting_for_user_response_on_plan_until
+            || widgetState.waitingForUserResponseOnPlanUntil
+            || widgetState.waiting_for_user_until,
+        ),
+        planId: stringOrEmpty(plan.plan_id || plan.planId || plan.id),
+        planTitle: stringOrEmpty(plan.title || plan.name),
+        planSteps: compactDeepResearchPlanSteps(plan, stepStatusesByPlan),
+        stepStatusesByPlan,
+    };
+    const status = deepResearchProgressStatus(progress);
+    if (!status) return null;
+
+    if (/^completed$/i.test(progress.venusStatus)
+        && !progress.asyncTaskConversationId
+        && !progress.widgetSessionId
+        && progress.asyncStatus === undefined
+        && !progress.venusMessageType
+        && !progress.planId
+        && !progress.planTitle
+        && !progress.planSteps.length
+        && !Object.keys(progress.stepStatusesByPlan || {}).length) {
+        return null;
+    }
+
+    return {
+        status,
+        report: '',
+        html: '',
+        method: source.includes('widget-state') ? source.replace('widget-state', 'widget-progress') : `${source}-progress`,
+        sources: [],
+        progress,
+        asyncTaskConversationId: progress.asyncTaskConversationId,
+        widgetSessionId: progress.widgetSessionId,
+        asyncStatus: progress.asyncStatus,
+        venusMessageType: progress.venusMessageType,
+        venusStatus: progress.venusStatus,
+        waitingForUserUntil: progress.waitingForUserUntil,
+        planId: progress.planId,
+        planTitle: progress.planTitle,
+    };
+}
+
+function deepResearchCandidateScore(candidate) {
+    if (!candidate) return 0;
+    if (candidate.status === 'completed') return 1000000 + (candidate.reportLength || candidate.report?.length || 0);
+    if (candidate.status === 'waiting_for_user' || candidate.status === 'needs_user_action') return 500000;
+    if (candidate.status === 'running') return 400000;
+    if (candidate.status === 'not_ready') return 300000;
+    return 1;
+}
+
+function selectDeepResearchCandidate(candidates, payload, mapping) {
+    if (!candidates.length) return null;
+    const lineage = new Set();
+    let nodeId = String(payload.current_node || payload.currentNode || '');
+    while (nodeId && !lineage.has(nodeId)) {
+        lineage.add(nodeId);
+        nodeId = String(mapping[nodeId]?.parent || '');
+    }
+    const currentBranch = lineage.size
+        ? candidates.filter((candidate) => lineage.has(candidate.conversationMessageId))
+        : [];
+    const pool = currentBranch.length ? currentBranch : candidates;
+    pool.sort((a, b) => {
+        const createdDelta = b._createdAt - a._createdAt;
+        if (createdDelta) return createdDelta;
+        const orderDelta = b._candidateOrder - a._candidateOrder;
+        if (currentBranch.length && orderDelta) return orderDelta;
+        const scoreDelta = deepResearchCandidateScore(b) - deepResearchCandidateScore(a);
+        return scoreDelta || orderDelta;
+    });
+    const { _createdAt, _candidateOrder, ...selected } = pool[0];
+    return selected;
+}
+
+function extractDeepResearchFromWidgetState(widgetState, source = 'conversation-widget-state', responseMetadata = null) {
     const state = parseJsonMaybe(widgetState);
-    if (!state || typeof state !== 'object') return null;
-    const reportMessage = state.report_message || state.reportMessage || null;
+    if ((!state || typeof state !== 'object') && !responseMetadata) return null;
+    const widgetStateObject = state && typeof state === 'object' ? state : {};
+    const reportMessage = widgetStateObject.report_message || widgetStateObject.reportMessage || null;
     const parts = Array.isArray(reportMessage?.content?.parts) ? reportMessage.content.parts : [];
     const report = normalizeDeepResearchText(parts.filter((part) => typeof part === 'string').join('\n\n'));
-    if (!looksLikeDeepResearchReport(report)) return null;
-    return {
-        status: 'completed',
-        report,
-        html: '',
-        method: source,
-        sources: extractDeepResearchSourcesFromReportMessage(reportMessage),
-        widgetStatus: String(state.status || ''),
-        reportMessageId: String(reportMessage?.id || ''),
-        reportLength: report.length,
-    };
+    if (looksLikeDeepResearchReport(report)) {
+        return {
+            status: 'completed',
+            report,
+            html: '',
+            method: source,
+            sources: extractDeepResearchSourcesFromReportMessage(reportMessage),
+            widgetStatus: String(widgetStateObject.status || ''),
+            reportMessageId: String(reportMessage?.id || ''),
+            reportLength: report.length,
+        };
+    }
+    return buildDeepResearchProgressResult(widgetStateObject, pickFirstObject(responseMetadata), source);
 }
 
 function extractDeepResearchFromConversationPayload(payload, { expectedConversationId = '' } = {}) {
@@ -1291,24 +1442,33 @@ function extractDeepResearchFromConversationPayload(payload, { expectedConversat
     const candidates = [];
     for (const [messageId, node] of Object.entries(mapping)) {
         const message = node?.message || {};
-        const sdk = message?.metadata?.chatgpt_sdk;
+        const metadata = message?.metadata || {};
+        const sdk = metadata?.chatgpt_sdk || {};
+        const responseMetadata = pickFirstObject(
+            sdk?.response_metadata,
+            sdk?.responseMetadata,
+            metadata?.response_metadata,
+            metadata?.responseMetadata,
+        );
         for (const widgetState of [
             sdk?.widget_state,
             sdk?.widgetState,
-            message?.metadata?.widget_state,
-            message?.metadata?.widgetState,
+            metadata?.widget_state,
+            metadata?.widgetState,
         ]) {
-            const extracted = extractDeepResearchFromWidgetState(widgetState);
+            if (widgetState === undefined || widgetState === null) continue;
+            const extracted = extractDeepResearchFromWidgetState(widgetState, 'conversation-widget-state', responseMetadata);
             if (extracted) {
                 candidates.push({
                     ...extracted,
                     conversationMessageId: messageId,
+                    _createdAt: Number(message.create_time || message.createTime || metadata.create_time || 0) || 0,
+                    _candidateOrder: candidates.length,
                 });
             }
         }
     }
-    candidates.sort((a, b) => b.report.length - a.report.length);
-    return candidates[0] || null;
+    return selectDeepResearchCandidate(candidates, payload, mapping);
 }
 
 function conversationIdFromBackendConversationUrl(url) {
@@ -1331,12 +1491,14 @@ function extractDeepResearchFromNetworkEntries(entries, { expectedConversationId
         if (extracted) {
             candidates.push({
                 ...extracted,
-                method: 'network-conversation-widget-state',
+                method: extracted.status === 'completed'
+                    ? 'network-conversation-widget-state'
+                    : 'network-conversation-widget-progress',
                 networkUrl: url,
             });
         }
     }
-    candidates.sort((a, b) => b.report.length - a.report.length);
+    candidates.sort((a, b) => deepResearchCandidateScore(b) - deepResearchCandidateScore(a));
     return candidates[0] || null;
 }
 
@@ -1570,6 +1732,7 @@ export async function getChatGPTDeepResearchResult(page, { conversationId = '', 
             );
         }
     }
+    let progressCandidate = null;
     const diagnostics = {
         iframeCount: Array.isArray(iframeState.iframes) ? iframeState.iframes.length : 0,
         iframe: iframe ? {
@@ -1605,19 +1768,26 @@ export async function getChatGPTDeepResearchResult(page, { conversationId = '', 
             const extracted = extractDeepResearchFromNetworkEntries(relevantEntries, { expectedConversationId: conversationId });
             if (extracted) {
                 diagnostics.networkConversation = {
-                    foundReport: true,
+                    foundReport: extracted.status === 'completed',
+                    foundProgress: extracted.status !== 'completed',
+                    status: extracted.status,
                     reportLength: extracted.reportLength || extracted.report.length,
                     sourceCount: Array.isArray(extracted.sources) ? extracted.sources.length : 0,
+                    venusStatus: extracted.venusStatus || '',
+                    asyncTaskConversationId: extracted.asyncTaskConversationId || '',
                 };
-                return {
-                    status: 'completed',
-                    report: extracted.report,
-                    html: '',
-                    url: iframeState.url,
-                    method: extracted.method,
-                    sources: extracted.sources || [],
-                    diagnostics,
-                };
+                if (extracted.status === 'completed') {
+                    return {
+                        status: 'completed',
+                        report: extracted.report,
+                        html: '',
+                        url: iframeState.url,
+                        method: extracted.method,
+                        sources: extracted.sources || [],
+                        diagnostics,
+                    };
+                }
+                progressCandidate = extracted;
             }
         } catch (error) {
             if (error instanceof CommandExecutionError) throw error;
@@ -1640,12 +1810,16 @@ export async function getChatGPTDeepResearchResult(page, { conversationId = '', 
                     status: conversation?.status || 0,
                     contentType: conversation?.contentType || '',
                     transport: conversation?.transport || '',
-                    foundReport: !!extracted,
+                    foundReport: extracted?.status === 'completed',
+                    foundProgress: !!extracted && extracted.status !== 'completed',
+                    deepResearchStatus: extracted?.status || '',
                     reportLength: extracted?.reportLength || 0,
                     widgetStatus: extracted?.widgetStatus || '',
+                    venusStatus: extracted?.venusStatus || '',
+                    asyncTaskConversationId: extracted?.asyncTaskConversationId || '',
                     sourceCount: Array.isArray(extracted?.sources) ? extracted.sources.length : 0,
                 };
-                if (extracted) {
+                if (extracted?.status === 'completed') {
                     return {
                         status: 'completed',
                         report: extracted.report,
@@ -1656,11 +1830,20 @@ export async function getChatGPTDeepResearchResult(page, { conversationId = '', 
                         diagnostics,
                     };
                 }
+                if (extracted) progressCandidate = extracted;
             }
         } catch (error) {
             if (error instanceof CommandExecutionError) throw error;
             diagnostics.conversationError = String(error?.message || error);
         }
+    }
+
+    if (progressCandidate) {
+        return {
+            ...progressCandidate,
+            url: iframeState.url,
+            diagnostics,
+        };
     }
 
     if (iframe?.text && looksLikeDeepResearchReport(iframe.text)) {
@@ -1820,8 +2003,10 @@ export async function waitForChatGPTDeepResearchResult(page, { conversationId = 
                 lastReport = result.report;
                 stableStartedAt = Date.now();
             }
+        } else if (result.status === 'waiting_for_user' || result.status === 'needs_user_action') {
+            return result;
         }
-        await page.wait(3);
+        await page.sleep(3);
     }
 
     throw new TimeoutError(
@@ -1912,7 +2097,7 @@ export async function waitForChatGPTResponse(page, baselineCount, prompt, timeou
     const baselinePairCounts = normalizeBaselinePairCounts(options);
 
     while (Date.now() - startTime < timeoutSeconds * 1000) {
-        await page.wait(3);
+        await page.sleep(3);
         if (options.conversationUrl) {
             const currentUrl = await currentChatGPTUrl(page);
             if (currentUrl && !isSameChatGPTConversation(currentUrl, options.conversationUrl)) {
@@ -1926,7 +2111,7 @@ export async function waitForChatGPTResponse(page, baselineCount, prompt, timeou
             continue;
         }
 
-        const messages = await getVisibleMessages(page);
+        const messages = await getVisibleMessages(page, { textOnly: true });
         const candidate = findLatestNewAssistantResponse(messages, prompt, baselinePairCounts);
         if (!candidate || candidate === String(prompt || '').trim()) continue;
 
@@ -2056,7 +2241,7 @@ export async function prepareChatGPTImagePaths(imagePaths) {
 async function waitForChatGPTUploadPreview(page, fileNames) {
     const namesJson = JSON.stringify(fileNames);
     for (let attempt = 0; attempt < 10; attempt += 1) {
-        await page.wait(1);
+        await page.sleep(1);
         const ready = requireBooleanEvaluateResult(unwrapEvaluateResult(await page.evaluate(`
             (() => {
                 const names = ${namesJson};
@@ -2170,15 +2355,36 @@ export async function uploadChatGPTImages(page, imagePaths) {
 export async function isGenerating(page) {
     return requireBooleanEvaluateResult(unwrapEvaluateResult(await page.evaluate(`
         (() => {
-            const text = (document.body?.innerText || '').replace(/\\s+/g, ' ');
-            if (/Thinking|Stop generating|Thinking/.test(text)) return true;
-            return Array.from(document.querySelectorAll('button')).some(b => {
-                const label = b.getAttribute('aria-label') || '';
-                return label === 'Stop generating'
-                    || label.includes('Thinking')
-                    || label.includes('Stop generating')
-                    || label.includes('Thinking');
-            });
+            if (document.querySelector('[data-testid="stop-button"]')) return true;
+
+            const controls = Array.from(document.querySelectorAll('button, [role="button"], [aria-label]'));
+            for (const control of controls) {
+                const label = control.getAttribute('aria-label') || '';
+                if (label.includes('Stop generating')) return true;
+            }
+
+            const scopes = [];
+            const turns = document.querySelectorAll('article[data-testid*="conversation-turn"]');
+            const messages = turns.length ? turns : document.querySelectorAll('[data-message-author-role]');
+            if (messages.length) {
+                scopes.push([messages[messages.length - 1], /Thinking|Stop generating/]);
+            }
+            const composer = document.querySelector('#prompt-textarea, [aria-label="Chat with ChatGPT"]');
+            if (composer) {
+                let root = composer;
+                for (let i = 0; i < 4 && root.parentElement; i += 1) root = root.parentElement;
+                scopes.push([root, /Stop generating/]);
+            }
+
+            for (const [scope, pattern] of scopes) {
+                for (const el of [scope, ...scope.querySelectorAll('*')]) {
+                    if (el.children.length) continue;
+                    if (el.closest('.markdown, pre, code')) continue;
+                    const text = (el.textContent || '').trim();
+                    if (text && text.length <= 40 && pattern.test(text)) return true;
+                }
+            }
+            return false;
         })()
     `)), 'chatgpt generation state');
 }
@@ -2319,7 +2525,7 @@ export async function waitForChatGPTImages(page, beforeUrls, timeoutSeconds, con
     let stableCount = 0;
 
     for (let i = 0; i < maxPolls; i++) {
-        await page.wait(i === 0 ? 3 : pollIntervalSeconds);
+        await page.sleep(i === 0 ? 3 : pollIntervalSeconds);
 
         let currentUrl = '';
         if (convUrl && convUrl.includes('/c/')) {

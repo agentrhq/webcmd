@@ -2871,6 +2871,29 @@ describe('browser click/type commands', () => {
     expect(lastJsonLog()).toEqual({ clicked: true, target: '#save', matches_n: 1, match_level: 'exact' });
   });
 
+  it('surfaces click hit-testing diagnostics', async () => {
+    (browserState.page!.click as any).mockResolvedValueOnce({
+      matches_n: 1,
+      match_level: 'exact',
+      click_method: 'js',
+      hit: 'other',
+      retargeted: true,
+    });
+    const program = createProgram('', '');
+
+    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'click', '#covered']);
+
+    expect(lastJsonLog()).toEqual({
+      clicked: true,
+      target: '#covered',
+      matches_n: 1,
+      match_level: 'exact',
+      click_method: 'js',
+      hit: 'other',
+      retargeted: true,
+    });
+  });
+
   it('clicks a unique semantic locator without a prior state call', async () => {
     (browserState.page!.evaluate as any).mockResolvedValueOnce({
       matches_n: 1,

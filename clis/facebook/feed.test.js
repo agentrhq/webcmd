@@ -166,4 +166,66 @@ describe('facebook feed', () => {
     await expect(__test__.command.func(createPage({ rows: null }), { limit: 1 }))
       .rejects.toBeInstanceOf(CommandExecutionError);
   });
+
+  it('extracts modern feed posts anchored on the Actions for this post menu', () => {
+    const payload = runExtract(`
+      <main role="main">
+        <div>
+          <div>
+            <h3><a role="link" href="https://www.facebook.com/carol">Carol Poster</a></h3>
+            <div dir="auto">A modern feed post with no article wrapper anywhere on it.</div>
+            <a href="https://www.facebook.com/carol/posts/999">2h</a>
+            <div aria-label="Actions for this post" role="button"></div>
+          </div>
+          <div>
+            <h3><a role="link" href="https://www.facebook.com/dave">Dave Danger</a></h3>
+            <div dir="auto">Second streamed post body that should also be extracted.</div>
+            <div aria-label="Actions for this post" role="button"></div>
+          </div>
+        </div>
+      </main>
+    `);
+
+    expect(payload.status).toBe('ok');
+    expect(payload.diagnostics.actionMenuCount).toBe(2);
+    expect(payload.rows.map((row) => row.author)).toEqual(['Carol Poster', 'Dave Danger']);
+    expect(payload.rows[0].content).toContain('modern feed post');
+  });
+
+  it('does not climb to the main landmark on a single-post page', () => {
+    const payload = runExtract(`
+      <main role="main">
+        <div>
+          <div>
+            <h3><a role="link" href="https://www.facebook.com/solo">Solo Poster</a></h3>
+            <div dir="auto">The only post on the page must remain bounded to its own card.</div>
+            <div aria-label="Actions for this post" role="button"></div>
+          </div>
+        </div>
+      </main>
+    `);
+
+    expect(payload.rows).toHaveLength(1);
+    expect(payload.rows[0].author).toBe('Solo Poster');
+  });
+
+  it('keeps legitimate numeric names while dropping hidden and numeric decoys', () => {
+    const payload = runExtract(`
+      <main role="main">
+        <div>
+          <div>
+            <h3><a role="link" href="https://www.facebook.com/class2024">Class of 2024</a></h3>
+            <span>\u200b\u200b\u200b</span>
+            <div dir="auto">Genuine reunion post content that survives decoy filtering.</div>
+            <div dir="auto">1234567890123</div>
+            <div aria-label="Actions for this post" role="button"></div>
+          </div>
+        </div>
+      </main>
+    `);
+
+    expect(payload.status).toBe('ok');
+    expect(payload.rows[0].author).toBe('Class of 2024');
+    expect(payload.rows[0].content).not.toContain('1234567890123');
+  });
 });

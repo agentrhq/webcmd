@@ -3733,7 +3733,7 @@
   {
     "site": "chatgpt",
     "name": "deep-research-result",
-    "description": "Read a completed ChatGPT Deep Research report from the conversation payload",
+    "description": "Read a ChatGPT Deep Research report or progress from the conversation payload",
     "access": "read",
     "domain": "chatgpt.com",
     "strategy": "cookie",
@@ -3773,6 +3773,15 @@
       "status",
       "report",
       "sources",
+      "progress",
+      "asyncTaskConversationId",
+      "widgetSessionId",
+      "asyncStatus",
+      "venusMessageType",
+      "venusStatus",
+      "waitingForUserUntil",
+      "planTitle",
+      "planId",
       "url",
       "method",
       "diagnostics"
@@ -8495,7 +8504,7 @@
     "type": "js",
     "modulePath": "facebook/search.js",
     "sourceFile": "facebook/search.js",
-    "navigateBefore": "https://www.facebook.com"
+    "navigateBefore": false
   },
   {
     "site": "facebook",
@@ -12672,6 +12681,40 @@
   },
   {
     "site": "linkedin",
+    "name": "company",
+    "description": "Read a LinkedIn company page: industry, size, HQ, founded, website, followers, and about text",
+    "access": "read",
+    "domain": "www.linkedin.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "company",
+        "type": "string",
+        "required": true,
+        "positional": true,
+        "help": "Company universal name, /company/<name> path, or full URL"
+      }
+    ],
+    "columns": [
+      "name",
+      "industry",
+      "size",
+      "headquarters",
+      "founded",
+      "website",
+      "specialties",
+      "followers",
+      "about",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "linkedin/company.js",
+    "sourceFile": "linkedin/company.js",
+    "navigateBefore": "https://www.linkedin.com"
+  },
+  {
+    "site": "linkedin",
     "name": "connect",
     "description": "Fail-closed LinkedIn connection request sender that verifies the exact profile before optionally sending a note",
     "access": "write",
@@ -12727,6 +12770,36 @@
     "modulePath": "linkedin/connect.js",
     "sourceFile": "linkedin/connect.js",
     "navigateBefore": true
+  },
+  {
+    "site": "linkedin",
+    "name": "connections",
+    "description": "List your LinkedIn first-degree connections with names, headlines, and profile URLs",
+    "access": "read",
+    "domain": "www.linkedin.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "Number of connections to return (max 500)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "name",
+      "occupation",
+      "public_id",
+      "connected_at",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "linkedin/connections.js",
+    "sourceFile": "linkedin/connections.js",
+    "navigateBefore": "https://www.linkedin.com"
   },
   {
     "site": "linkedin",

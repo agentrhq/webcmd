@@ -565,7 +565,10 @@ function installDependencies(dir: string): void {
   if (!fs.existsSync(pkgJsonPath)) return;
 
   try {
-    execFileSync('npm', ['install', '--omit=dev'], {
+    // Plugin repositories and their transitive dependencies are untrusted.
+    // Webcmd adapters do not require install-time lifecycle scripts, so deny
+    // preinstall/install/postinstall execution with the user's privileges.
+    execFileSync('npm', ['install', '--omit=dev', '--ignore-scripts'], {
       cwd: dir,
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'pipe'],
