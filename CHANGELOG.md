@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.2](https://github.com/agentrhq/webcmd/compare/webcmd-v0.3.1...webcmd-v0.3.2) (2026-07-15)
+
+
+### Bug Fixes
+
+* restore hosted adapter availability and Product Hunt ([039d08f](https://github.com/agentrhq/webcmd/commit/039d08fb987dde6cf0a50b8b7a4719365aa453f4))
+* restore hosted adapter availability and Product Hunt ([a6e772d](https://github.com/agentrhq/webcmd/commit/a6e772d96b7169003813815f365a805709e5ed71))
+
 ## [0.3.1](https://github.com/agentrhq/webcmd/compare/webcmd-v0.3.0...webcmd-v0.3.1) (2026-07-15)
 
 ### Improvements
