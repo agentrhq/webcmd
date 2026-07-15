@@ -166,13 +166,19 @@ jobs:
       - name: Verify packed CLI executables
         run: npm run check:package-bin
 
+      - name: Validate diagnostics safety self-test
+        shell: pwsh
+        run: ./scripts/collect-ci-diagnostics.ps1 -SelfTest
+
       - name: Run real Cloak lifecycle smoke
         run: npx vitest run --project e2e tests/e2e/cloak-runtime.test.ts
 
       - name: Collect sanitized diagnostics
         if: failure()
         shell: pwsh
-        run: ./scripts/collect-ci-diagnostics.ps1
+        run: |
+          ./scripts/collect-ci-diagnostics.ps1 -SelfTest
+          ./scripts/collect-ci-diagnostics.ps1
 
       - uses: actions/upload-artifact@v4
         if: failure()
