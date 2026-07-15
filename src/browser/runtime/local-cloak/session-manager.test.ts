@@ -50,6 +50,48 @@ describe('CloakSessionManager', () => {
     expect(launchPersistentContext.mock.calls[0][0]).toMatchObject({ headless: false });
   });
 
+  it.each([
+    { platform: 'darwin', windowMode: 'background', backgroundCalls: 1, normalCalls: 0 },
+    { platform: 'darwin', windowMode: 'foreground', backgroundCalls: 0, normalCalls: 1 },
+    { platform: 'linux', windowMode: 'background', backgroundCalls: 0, normalCalls: 1 },
+  ] as const)('routes a cold $platform $windowMode launch', async ({ platform, windowMode, backgroundCalls, normalCalls }) => {
+    const launched = fakeContext();
+    const launchPersistentContext = vi.fn().mockResolvedValue(launched.context);
+    const launchBackgroundPersistentContext = vi.fn().mockResolvedValue(launched.context);
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      platform,
+      launchPersistentContext,
+      launchBackgroundPersistentContext,
+    });
+
+    await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser', windowMode });
+
+    expect(launchBackgroundPersistentContext).toHaveBeenCalledTimes(backgroundCalls);
+    expect(launchPersistentContext).toHaveBeenCalledTimes(normalCalls);
+  });
+
+  it('reactivates a background-launched context for foreground tab selection', async () => {
+    const launched = fakeContext();
+    const activateBackgroundContext = vi.fn().mockResolvedValue(undefined);
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      platform: 'darwin',
+      launchBackgroundPersistentContext: vi.fn().mockResolvedValue(launched.context),
+      activateBackgroundContext,
+    });
+    const lease = await manager.getPage({
+      profileId: 'default',
+      session: 'work',
+      surface: 'browser',
+      windowMode: 'background',
+    });
+
+    await manager.selectPage({ profileId: 'default', pageId: lease.pageId, windowMode: 'foreground' });
+
+    expect(activateBackgroundContext).toHaveBeenCalledWith(launched.context);
+  });
+
   it('coalesces concurrent persistent context launches for the same profile', async () => {
     const launched = fakeContext();
     let resolveLaunch!: (context: BrowserContext) => void;

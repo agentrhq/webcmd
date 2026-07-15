@@ -3,6 +3,7 @@ import { execFile } from 'node:child_process';
 import type { BrowserContext, Page as PlaywrightPage } from 'playwright-core';
 import { launchPersistentContext as cloakLaunchPersistentContext } from 'cloakbrowser';
 import type { BrowserSurface, BrowserWindowMode, SiteSessionMode } from '../../protocol.js';
+import { activateDarwinBackgroundContext, launchDarwinBackgroundPersistentContext } from './darwin-background-launch.js';
 import { normalizeProfileId, resolveCloakProfileDir } from './profiles.js';
 import { CloakNetworkCapture } from './network.js';
 
@@ -61,7 +62,10 @@ interface ProfileRuntime {
 export interface CloakSessionManagerOptions {
   baseDir?: string;
   launchPersistentContext?: LaunchPersistentContext;
+  launchBackgroundPersistentContext?: LaunchPersistentContext;
+  activateBackgroundContext?: typeof activateDarwinBackgroundContext;
   recoverLockedProfile?: RecoverLockedProfile;
+  platform?: NodeJS.Platform;
 }
 
 let pageCounter = 0;
@@ -81,12 +85,18 @@ export class CloakSessionManager {
   readonly networkCapture = new CloakNetworkCapture();
 
   private readonly launchPersistentContext: LaunchPersistentContext;
+  private readonly launchBackgroundPersistentContext: LaunchPersistentContext;
+  private readonly activateBackgroundContext: typeof activateDarwinBackgroundContext;
+  private readonly platform: NodeJS.Platform;
   private readonly recoverLockedProfile: RecoverLockedProfile;
   private readonly profiles = new Map<string, ProfileRuntime>();
   private readonly profileLaunches = new Map<string, Promise<ProfileRuntime>>();
 
   constructor(private readonly opts: CloakSessionManagerOptions = {}) {
     this.launchPersistentContext = opts.launchPersistentContext ?? cloakLaunchPersistentContext;
+    this.launchBackgroundPersistentContext = opts.launchBackgroundPersistentContext ?? launchDarwinBackgroundPersistentContext;
+    this.activateBackgroundContext = opts.activateBackgroundContext ?? activateDarwinBackgroundContext;
+    this.platform = opts.platform ?? process.platform;
     this.recoverLockedProfile = opts.recoverLockedProfile ?? recoverLockedCloakProfile;
   }
 
@@ -109,7 +119,7 @@ export class CloakSessionManager {
     const session = requireSession(input.session);
     const surface = normalizeSurface(input.surface);
     const leaseKey = resolveLeaseKey(input);
-    const runtime = await this.getProfileRuntime(profileId);
+    const runtime = await this.getProfileRuntime(profileId, input.windowMode);
     const freshPage = input.freshPage === true;
     const existing = runtime.pages.get(leaseKey);
     if (existing && !pageIsClosed(existing.page) && !freshPage) {
@@ -197,7 +207,7 @@ export class CloakSessionManager {
     const profileId = normalizeProfileId(input.profileId);
     const session = requireSession(input.session);
     const surface = normalizeSurface(input.surface);
-    const runtime = await this.getProfileRuntime(profileId);
+    const runtime = await this.getProfileRuntime(profileId, input.windowMode);
     const page = await runtime.context.newPage();
     if (input.url) {
       await page.goto(input.url, { waitUntil: 'load' });
@@ -218,7 +228,10 @@ export class CloakSessionManager {
     const match = input.pageId ? this.findEntryByPageId(runtime, input.pageId) : this.openEntries(runtime)[input.index ?? -1];
     if (!match) return null;
     const [leaseKey, entry] = match;
-    if (input.windowMode !== 'background') await entry.page.bringToFront?.().catch(() => {});
+    if (input.windowMode !== 'background') {
+      await entry.page.bringToFront?.().catch(() => {});
+      await this.activateBackgroundContext(runtime.context);
+    }
     runtime.selectedPageId = entry.pageId;
     runtime.lastSeenAt = Date.now();
     return { profileId, leaseKey, context: runtime.context, page: entry.page, pageId: entry.pageId };
@@ -251,7 +264,10 @@ export class CloakSessionManager {
     entry.siteSession = input.siteSession;
     entry.idleTimeout = input.idleTimeout;
     runtime.pages.set(canonicalKey, entry);
-    if (input.windowMode !== 'background') await entry.page.bringToFront?.().catch(() => {});
+    if (input.windowMode !== 'background') {
+      await entry.page.bringToFront?.().catch(() => {});
+      await this.activateBackgroundContext(runtime.context);
+    }
     this.refreshIdleTimer(runtime, canonicalKey, entry);
     runtime.selectedPageId = entry.pageId;
     runtime.lastSeenAt = Date.now();
@@ -300,13 +316,13 @@ export class CloakSessionManager {
     this.profiles.clear();
   }
 
-  private async getProfileRuntime(profileId: string): Promise<ProfileRuntime> {
+  private async getProfileRuntime(profileId: string, windowMode?: BrowserWindowMode): Promise<ProfileRuntime> {
     const existing = this.profiles.get(profileId);
     if (existing) return existing;
     const pending = this.profileLaunches.get(profileId);
     if (pending) return pending;
 
-    const launch = this.launchProfileRuntime(profileId);
+    const launch = this.launchProfileRuntime(profileId, windowMode);
     this.profileLaunches.set(profileId, launch);
     try {
       return await launch;
@@ -315,7 +331,7 @@ export class CloakSessionManager {
     }
   }
 
-  private async launchProfileRuntime(profileId: string): Promise<ProfileRuntime> {
+  private async launchProfileRuntime(profileId: string, windowMode?: BrowserWindowMode): Promise<ProfileRuntime> {
     const userDataDir = resolveCloakProfileDir(profileId, { baseDir: this.opts.baseDir });
     fs.mkdirSync(userDataDir, { recursive: true });
     const launchOptions = {
@@ -323,12 +339,15 @@ export class CloakSessionManager {
       headless: false,
       humanize: true,
     };
+    const launchPersistentContext = this.platform === 'darwin' && windowMode === 'background'
+      ? this.launchBackgroundPersistentContext
+      : this.launchPersistentContext;
     let context: BrowserContext;
     try {
-      context = await this.launchPersistentContext(launchOptions);
+      context = await launchPersistentContext(launchOptions);
     } catch (err) {
       if (!isProfileAlreadyInUseError(err) || !(await this.recoverLockedProfile(userDataDir))) throw err;
-      context = await this.launchPersistentContext(launchOptions);
+      context = await launchPersistentContext(launchOptions);
     }
     const runtime = { context, pages: new Map(), lastSeenAt: Date.now() };
     this.profiles.set(profileId, runtime);
