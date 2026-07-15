@@ -1,4 +1,5 @@
-<img width="2054" height="766" alt="Webcmd banner" src="https://github.com/user-attachments/assets/3e5b9702-5ffd-43bd-ab1b-2319a8cc0e2a" />
+<<img width="2056" height="765" alt="ChatGPT Image Jul 15, 2026, 12_14_45 PM" src="https://github.com/user-attachments/assets/5bcba7ee-588c-4839-9927-4f151055cdf6" />
+
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@agentrhq/webcmd">
