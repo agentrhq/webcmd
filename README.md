@@ -8,6 +8,9 @@
   <a href="https://www.npmjs.com/package/@agentrhq/webcmd">
     <img alt="NPM downloads" src="https://img.shields.io/npm/dt/@agentrhq/webcmd.svg?style=for-the-badge&color=1E88E5&labelColor=000000">
   </a>
+  <a href="https://webcmd.dev/docs">
+    <img alt="Documentation" src="https://img.shields.io/badge/docs-webcmd.dev-1E88E5.svg?style=for-the-badge&labelColor=000000">
+  </a>
   <a href="https://github.com/agentrhq/webcmd/blob/main/LICENSE">
     <img alt="License" src="https://img.shields.io/badge/license-Apache%202.0-1E88E5.svg?style=for-the-badge&labelColor=000000">
   </a>
@@ -24,6 +27,8 @@
 **Self-learning browser infra for AI agents.**
 
 WebCMD learns the navigational context of websites as agents use them, then compiles that knowledge into deterministic commands for faster, cheaper, more reliable browser automation. The goal is simple: stop making agents rediscover the same sites on every run and cut browser-agent token spend by up to 90%.
+
+📖 **Full documentation: [webcmd.dev/docs](https://webcmd.dev/docs)**
 
 On top of live browser control, WebCMD adds 3 layers of learnings. Each layer collapses cost and variance for the layer above it.
 
