@@ -222,34 +222,38 @@ export class CloakSessionManager {
     const profileId = normalizeProfileId(input.profileId);
     const session = requireSession(input.session);
     const surface = normalizeSurface(input.surface);
-    const lease = await this.createPageWithRecovery(
+    const acquired = await this.createPageWithRecovery(
       profileId,
       input.windowMode,
       (candidate) => candidate.context.newPage(),
-      (candidate, page) => {
-        const pageId = nextPageId();
-        const leaseKey = `${resolveLeaseKey(input)}\u0000${pageId}`;
-        const entry: PageEntry = { page, pageId, session, surface, siteSession: input.siteSession, idleTimeout: input.idleTimeout };
-        candidate.pages.set(leaseKey, entry);
-        this.refreshIdleTimer(candidate, leaseKey, entry);
-        candidate.lastSeenAt = Date.now();
-        return { profileId, leaseKey, context: candidate.context, page, pageId };
-      },
+      (runtime, page) => ({ runtime, page }),
     );
     if (input.url) {
       try {
-        await lease.page.goto(input.url, { waitUntil: 'load' });
+        await acquired.page.goto(input.url, { waitUntil: 'load' });
       } catch (error) {
-        const runtime = this.profiles.get(profileId);
-        const entry = runtime?.pages.get(lease.leaseKey);
-        if (runtime && entry?.page === lease.page) {
-          runtime.pages.delete(lease.leaseKey);
-          this.clearIdleTimer(entry);
-        }
+        if (!pageIsClosed(acquired.page)) await acquired.page.close().catch(() => {});
         throw error;
       }
     }
-    return lease;
+    if (this.profiles.get(profileId) !== acquired.runtime) {
+      if (!pageIsClosed(acquired.page)) await acquired.page.close().catch(() => {});
+      throw new Error('Target page, context or browser has been closed');
+    }
+    const pageId = nextPageId();
+    const leaseKey = `${resolveLeaseKey(input)}\u0000${pageId}`;
+    const entry: PageEntry = {
+      page: acquired.page,
+      pageId,
+      session,
+      surface,
+      siteSession: input.siteSession,
+      idleTimeout: input.idleTimeout,
+    };
+    acquired.runtime.pages.set(leaseKey, entry);
+    this.refreshIdleTimer(acquired.runtime, leaseKey, entry);
+    acquired.runtime.lastSeenAt = Date.now();
+    return { profileId, leaseKey, context: acquired.runtime.context, page: acquired.page, pageId };
   }
 
   async selectPage(input: Pick<SessionKeyInput, 'profileId' | 'windowMode'> & { pageId?: string; index?: number }): Promise<CloakPageLease | null> {
@@ -419,8 +423,7 @@ export class CloakSessionManager {
     }
     if (this.profiles.get(profileId) !== runtime) {
       if (!pageIsClosed(page)) await page.close().catch(() => {});
-      if (attempt !== 0) throw new Error('Target page, context or browser has been closed');
-      return this.createPageWithRecovery(profileId, windowMode, createPage, commitPage, 1);
+      throw new Error('Target page, context or browser has been closed');
     }
     return commitPage(runtime, page);
   }

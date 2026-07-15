@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import path from 'node:path';
-import type { BrowserContext } from 'playwright-core';
+import type { BrowserContext, Page as PlaywrightPage } from 'playwright-core';
 import { CloakSessionManager } from './session-manager.js';
 import { dispatchCloakAction } from './actions.js';
 
@@ -199,7 +199,7 @@ describe('CloakSessionManager', () => {
     expect(leases[1].context).toBe(replacement.context);
   });
 
-  it('retries when page creation finishes after its runtime closes', async () => {
+  it('discards a page created after its runtime closes and defers recovery to the next command', async () => {
     const first = fakeContext();
     first.context.pages.mockReturnValue([]);
     let resolveFirstPage!: (page: typeof first.page) => void;
@@ -225,10 +225,13 @@ describe('CloakSessionManager', () => {
     first.context.emit('close');
     resolveFirstPage(first.page);
 
-    const lease = await pendingLease;
+    await expect(pendingLease).rejects.toThrow('Target page, context or browser has been closed');
     expect(first.page.close).toHaveBeenCalled();
+    expect(manager.activeProfileIds()).toEqual([]);
+    expect(launchPersistentContext).toHaveBeenCalledTimes(1);
+
+    const lease = await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser' });
     expect(lease.context).toBe(replacement.context);
-    expect(manager.activeProfileIds()).toEqual(['default']);
     expect(launchPersistentContext).toHaveBeenCalledTimes(2);
   });
 
@@ -315,6 +318,47 @@ describe('CloakSessionManager', () => {
     expect(launchPersistentContext).toHaveBeenCalledTimes(2);
   });
 
+  it('keeps an explicitly navigated page untracked until navigation succeeds', async () => {
+    vi.useFakeTimers();
+    const launched = fakeContext();
+    let resolveNavigation!: () => void;
+    let markNavigationStarted!: () => void;
+    const navigationStarted = new Promise<void>((resolve) => {
+      markNavigationStarted = resolve;
+    });
+    launched.page.goto.mockImplementation(() => {
+      markNavigationStarted();
+      return new Promise<void>((resolve) => {
+        resolveNavigation = resolve;
+      });
+    });
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
+    });
+
+    const pendingLease = manager.newPage({
+      profileId: 'default',
+      session: 'work',
+      surface: 'browser',
+      idleTimeout: 25,
+      url: 'https://example.com/',
+    });
+    await navigationStarted;
+    const pagesDuringNavigation = await manager.listPages({ profileId: 'default' });
+    const pageIdDuringNavigation = manager.pageIdFor(launched.page as unknown as PlaywrightPage);
+    const timersDuringNavigation = vi.getTimerCount();
+    resolveNavigation();
+    const lease = await pendingLease;
+
+    expect(pagesDuringNavigation).toEqual([]);
+    expect(pageIdDuringNavigation).toBeUndefined();
+    expect(timersDuringNavigation).toBe(0);
+    expect(manager.pageIdFor(launched.page as unknown as PlaywrightPage)).toBe(lease.pageId);
+    expect(await manager.listPages({ profileId: 'default' })).toHaveLength(1);
+    expect(vi.getTimerCount()).toBe(1);
+  });
+
   it('does not retry or retain a page when navigation fails after creation', async () => {
     const navigationFailure = new Error('Target page, context or browser has been closed');
     const launched = fakeContext();
@@ -330,6 +374,9 @@ describe('CloakSessionManager', () => {
     })).rejects.toBe(navigationFailure);
 
     expect(launchPersistentContext).toHaveBeenCalledTimes(1);
+    expect(launched.context.newPage).toHaveBeenCalledTimes(1);
+    expect(launched.page.goto).toHaveBeenCalledTimes(1);
+    expect(launched.page.close).toHaveBeenCalledTimes(1);
     expect(await manager.listPages({ profileId: 'default' })).toEqual([]);
   });
 
