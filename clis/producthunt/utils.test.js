@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parseFeed, pickVoteCount, PRODUCTHUNT_CATEGORY_SLUGS } from './utils.js';
+import * as productHuntUtils from './utils.js';
 const SAMPLE_ATOM = `<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <title>Product Hunt</title>
@@ -60,5 +61,12 @@ describe('parseFeed', () => {
     it('shares category slugs across commands', () => {
         expect(PRODUCTHUNT_CATEGORY_SLUGS).toContain('developer-tools');
         expect(PRODUCTHUNT_CATEGORY_SLUGS).toContain('ai-agents');
+    });
+    it('recognizes explicit Product Hunt verification signals', () => {
+        expect(productHuntUtils.isProductHuntVerificationPage).toBeTypeOf('function');
+        expect(productHuntUtils.isProductHuntVerificationPage({ title: 'Just a moment...', body: '', cloudflare: false })).toBe(true);
+        expect(productHuntUtils.isProductHuntVerificationPage({ title: 'Product Hunt', body: 'Performing security verification', cloudflare: false })).toBe(true);
+        expect(productHuntUtils.isProductHuntVerificationPage({ title: 'Product Hunt', body: '', cloudflare: true })).toBe(true);
+        expect(productHuntUtils.isProductHuntVerificationPage({ title: 'Product Hunt', body: 'Discover your next favorite thing', cloudflare: false })).toBe(false);
     });
 });
