@@ -7,14 +7,10 @@ Use this after recon, endpoint verification, field decoding, output design, and 
 For private iteration:
 
 ```bash
-webcmd browser init <site>/<name> --strategy <strategy>
+webcmd browser init <site>/<name>
 ```
 
-Write the working file at:
-
-```text
-~/.webcmd/clis/<site>/<name>.js
-```
+This scaffolds `~/.webcmd/clis/<site>/<name>.js` with a `Strategy.PUBLIC` placeholder — `init` takes no flags, so set the real `strategy:` value (and the other `TODO` fields) by hand once the file exists.
 
 Promote a community CLI to the main repo as a plugin:
 

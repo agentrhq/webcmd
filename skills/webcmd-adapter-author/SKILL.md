@@ -175,7 +175,7 @@ Check these off step by step:
        [ ] Order: identifier columns -> business numbers -> metadata.
 
 [ ] 9. Write the adapter (`adapter-template.md`):
-       [ ] `webcmd browser init <site>/<name> --strategy <strategy>`
+       [ ] `webcmd browser init <site>/<name>`, then set `strategy: Strategy.<strategy>` in the generated file
        [ ] Find the closest same-site or same-type adapter and copy it.
        [ ] Edit name, URL, and field mapping.
 
