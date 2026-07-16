@@ -275,6 +275,7 @@ Use plugins for private company workflows, community adapters, or experiments th
 
 | Plugin | Description | Author |
 | --- | --- | --- |
+| [`bikewale`](./plugins/bikewale/) | Anonymous BikeWale bike search commands for Webcmd | [WebCMD Agent](https://github.com/agentrhq) |
 | [`skyscanner`](./plugins/skyscanner/) | Skyscanner flight search commands for Webcmd | [Rishabh](https://github.com/rishabhraj36) |
 <!-- webcmd-community-plugins:end -->
 

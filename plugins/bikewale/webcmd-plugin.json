@@ -1,0 +1,10 @@
+{
+  "name": "bikewale",
+  "version": "0.1.0",
+  "description": "Anonymous BikeWale bike search commands for Webcmd",
+  "webcmd": ">=0.2.0",
+  "author": {
+    "name": "WebCMD Agent",
+    "handle": "agentrhq"
+  }
+}
