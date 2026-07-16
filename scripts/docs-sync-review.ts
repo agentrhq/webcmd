@@ -223,7 +223,7 @@ export async function generateGeminiReview(
       responseMimeType: 'application/json',
       responseJsonSchema: REVIEW_JSON_SCHEMA,
       temperature: 0.1,
-      abortSignal: AbortSignal.timeout(60_000),
+      abortSignal: AbortSignal.timeout(180_000),
     },
   });
   const text = response.text?.trim();
