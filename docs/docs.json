@@ -25,7 +25,8 @@
               "agent-prompts",
               "cli-reference",
               "agent-runtime",
-              "generated-clis"
+              "generated-clis",
+              "x-session-cli"
             ]
           },
           {
