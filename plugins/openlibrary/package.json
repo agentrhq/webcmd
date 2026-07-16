@@ -1,0 +1,9 @@
+{
+  "name": "webcmd-plugin-openlibrary",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Anonymous Open Library catalog commands for Webcmd",
+  "peerDependencies": {
+    "@agentrhq/webcmd": ">=0.2.0"
+  }
+}
