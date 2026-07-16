@@ -73,6 +73,9 @@ if (!fastPathHandled) {
   if (argv[0] === 'setup') {
     const { runHostedSetup } = await import('./hosted/setup.js');
     process.exitCode = await runHostedSetup();
+  } else if (argv[0] === 'skills') {
+    const { createProgram } = await import('./cli.js');
+    await createProgram(BUILTIN_CLIS, USER_CLIS).parseAsync(argv, { from: 'user' });
   } else {
     const { shouldUseHostedMode } = await import('./hosted/config.js');
     if (shouldUseHostedMode()) {
