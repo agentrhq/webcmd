@@ -5,7 +5,7 @@
  */
 import { cli, Strategy } from '@agentrhq/webcmd/registry';
 import { CliError } from '@agentrhq/webcmd/errors';
-import { pickVoteCount } from './utils.js';
+import { assertProductHuntAccessible, pickVoteCount } from './utils.js';
 cli({
     site: 'producthunt',
     name: 'hot',
@@ -21,6 +21,7 @@ cli({
         const count = Math.min(Number(args.limit) || 20, 50);
         await page.goto('https://www.producthunt.com');
         await page.wait(2);
+        await assertProductHuntAccessible(page);
         const domItems = await page.evaluate(`
       (() => {
         const seen = new Set();

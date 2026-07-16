@@ -6,7 +6,7 @@
  */
 import { cli, Strategy } from '@agentrhq/webcmd/registry';
 import { CliError } from '@agentrhq/webcmd/errors';
-import { PRODUCTHUNT_CATEGORY_SLUGS } from './utils.js';
+import { assertProductHuntAccessible, PRODUCTHUNT_CATEGORY_SLUGS } from './utils.js';
 cli({
     site: 'producthunt',
     name: 'browse',
@@ -30,7 +30,14 @@ cli({
         const slug = String(args.category || '').trim().toLowerCase();
         await page.installInterceptor('producthunt.com');
         await page.goto(`https://www.producthunt.com/categories/${slug}`);
-        await page.waitForCapture(5);
+        try {
+            await page.waitForCapture(5);
+        }
+        catch (error) {
+            await assertProductHuntAccessible(page);
+            throw error;
+        }
+        await assertProductHuntAccessible(page);
         const domItems = await page.evaluate(`
       (() => {
         const seen = new Set();

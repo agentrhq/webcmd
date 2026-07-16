@@ -31,6 +31,7 @@ export interface HostedCommand extends CommandSurfaceMetadata {
   columns: string[];
   domain?: string | null;
   defaultFormat?: string | null;
+  freshPage?: boolean;
 }
 
 export interface HostedManifest {
