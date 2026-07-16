@@ -106,7 +106,7 @@ None.
 
 ### Highlights
 
-- Bundled Webcmd skills are now much easier to install and refresh through `webcmd skills install` and `webcmd skills update`.
+- Bundled Webcmd skills are now much easier to add and refresh through `webcmd skills add` and `webcmd skills update`.
 - Persistent-session commands gained a cleaner authoring model with `freshPage`, which keeps login/profile state while avoiding stale page state.
 - District booking support moved from local-only adapters into the repo.
 

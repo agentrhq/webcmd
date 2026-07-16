@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import yaml from 'js-yaml';
 import { describe, expect, it } from 'vitest';
 import { ArgumentError } from './errors.js';
-import { installWebcmdSkill, listWebcmdSkills, updateWebcmdSkill } from './skills.js';
+import { addWebcmdSkills, listWebcmdSkills, removeWebcmdSkills, updateWebcmdSkill } from './skills.js';
 
 function makePackageRoot(label = 'current'): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), `webcmd-skills-${label}-`));
@@ -89,20 +89,20 @@ describe('webcmd skills content', () => {
     ]);
   });
 
-  it('installs bundled skills once and refreshes them after package updates', () => {
+  it('adds bundled skills once and refreshes them after package updates', () => {
     const firstRoot = makePackageRoot('first');
     const secondRoot = makePackageRoot('second');
     const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-home-'));
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-project-'));
 
-    const installed = installWebcmdSkill({ packageRoot: firstRoot, homeDir, cwd, provider: 'codex', scope: 'project' });
+    const added = addWebcmdSkills({ packageRoot: firstRoot, homeDir, cwd, provider: 'codex', scope: 'project' });
 
-    expect(installed).toMatchObject({
+    expect(added).toMatchObject({
       provider: 'codex',
       scope: 'project',
     });
-    expect(installed.skills.map((skill) => skill.name)).toEqual(['smart-search', 'webcmd-autofix', 'webcmd-browser']);
-    for (const skill of installed.skills) {
+    expect(added.skills.map((skill) => skill.name)).toEqual(['smart-search', 'webcmd-autofix', 'webcmd-browser']);
+    for (const skill of added.skills) {
       expect(skill.source).toBe(path.join(firstRoot, 'skills', skill.name));
       expect(skill.stableLink).toBe(path.join(homeDir, '.webcmd', 'skills', skill.name));
       expect(skill.destination).toBe(path.join(cwd, '.codex', 'skills', skill.name));
@@ -112,25 +112,25 @@ describe('webcmd skills content', () => {
     const updated = updateWebcmdSkill({ packageRoot: secondRoot, homeDir });
 
     expect(updated.skills.every((skill) => skill.destination === undefined)).toBe(true);
-    for (const skill of installed.skills) {
+    for (const skill of added.skills) {
       expect(real(skill.destination!)).toBe(real(path.join(secondRoot, 'skills', skill.name)));
     }
   });
 
-  it('installs bundled skills into a custom skills directory', () => {
+  it('adds bundled skills into a custom skills directory', () => {
     const packageRoot = makePackageRoot();
     const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-home-'));
     const customPath = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-custom-skills-'));
 
-    const installed = installWebcmdSkill({ packageRoot, homeDir, customPath });
+    const added = addWebcmdSkills({ packageRoot, homeDir, customPath });
 
-    expect(installed.provider).toBeUndefined();
-    expect(installed.skills.map((skill) => skill.destination)).toEqual([
+    expect(added.provider).toBeUndefined();
+    expect(added.skills.map((skill) => skill.destination)).toEqual([
       path.join(customPath, 'smart-search'),
       path.join(customPath, 'webcmd-autofix'),
       path.join(customPath, 'webcmd-browser'),
     ]);
-    for (const skill of installed.skills) {
+    for (const skill of added.skills) {
       expect(real(skill.destination!)).toBe(real(skill.source));
     }
   });
@@ -142,5 +142,39 @@ describe('webcmd skills content', () => {
     fs.mkdirSync(stablePath, { recursive: true });
 
     expect(() => updateWebcmdSkill({ packageRoot, homeDir })).toThrow(ArgumentError);
+  });
+
+  it('removes bundled skill links from every supported location', () => {
+    const packageRoot = makePackageRoot();
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-home-'));
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-project-'));
+    const customPath = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-custom-skills-'));
+
+    for (const provider of ['agents', 'codex', 'claude']) {
+      addWebcmdSkills({ packageRoot, homeDir, cwd, provider, scope: 'user' });
+      addWebcmdSkills({ packageRoot, homeDir, cwd, provider, scope: 'project' });
+    }
+    addWebcmdSkills({ packageRoot, homeDir, cwd, customPath });
+
+    const result = removeWebcmdSkills({ packageRoot, homeDir, cwd, customPath });
+
+    expect(result.removed).toHaveLength(24);
+    for (const linkPath of result.removed) {
+      expect(() => fs.lstatSync(linkPath)).toThrow();
+    }
+    expect(removeWebcmdSkills({ packageRoot, homeDir, cwd, customPath })).toEqual({ removed: [] });
+  });
+
+  it('refuses removal before deleting any links when a destination is not a symlink', () => {
+    const packageRoot = makePackageRoot();
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-home-'));
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-project-'));
+    const added = addWebcmdSkills({ packageRoot, homeDir, cwd, provider: 'agents', scope: 'user' });
+    const blocker = path.join(cwd, '.codex', 'skills', 'smart-search');
+    fs.mkdirSync(blocker, { recursive: true });
+
+    expect(() => removeWebcmdSkills({ packageRoot, homeDir, cwd })).toThrow(ArgumentError);
+    expect(fs.lstatSync(added.skills[0].destination!).isSymbolicLink()).toBe(true);
+    expect(fs.lstatSync(blocker).isDirectory()).toBe(true);
   });
 });

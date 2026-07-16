@@ -81,6 +81,13 @@ describe('createProgram root help descriptions', () => {
     expect(descriptionFor(program, 'external')).toBe('install, list, register');
   });
 
+  it('exposes add and remove without an install command', () => {
+    const skills = createProgram('', '').commands.find((command) => command.name() === 'skills')!;
+
+    expect(skills.commands.map((command) => command.name())).toEqual(['list', 'add', 'update', 'remove']);
+    expect(skills.commands.find((command) => command.name() === 'add')?.aliases()).toEqual([]);
+  });
+
   it('renders auth namespace structured help', () => {
     const argv = process.argv;
     try {

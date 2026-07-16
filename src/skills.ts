@@ -15,7 +15,7 @@ export interface WebcmdSkillInfo {
   path: string;
 }
 
-export interface WebcmdSkillInstallOptions {
+export interface WebcmdSkillOptions {
   provider?: string;
   scope?: string;
   customPath?: string;
@@ -31,10 +31,14 @@ export interface WebcmdSkillLink {
   destination?: string;
 }
 
-export interface WebcmdSkillInstallResult {
+export interface WebcmdSkillAddResult {
   provider?: SkillProvider;
   scope?: SkillScope;
   skills: WebcmdSkillLink[];
+}
+
+export interface WebcmdSkillRemoveResult {
+  removed: string[];
 }
 
 interface SkillFrontmatter {
@@ -61,7 +65,7 @@ export function listWebcmdSkills(packageRoot?: string): WebcmdSkillInfo[] {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export function installWebcmdSkill(options: WebcmdSkillInstallOptions = {}): WebcmdSkillInstallResult {
+export function addWebcmdSkills(options: WebcmdSkillOptions = {}): WebcmdSkillAddResult {
   const provider = options.customPath === undefined ? normalizeProvider(options.provider) : undefined;
   const scope = normalizeScope(options.scope);
   const skills = updateStableSkillLinks(options)
@@ -73,7 +77,7 @@ export function installWebcmdSkill(options: WebcmdSkillInstallOptions = {}): Web
   return { provider, scope, skills };
 }
 
-export function updateWebcmdSkill(options: WebcmdSkillInstallOptions = {}): WebcmdSkillInstallResult {
+export function updateWebcmdSkill(options: WebcmdSkillOptions = {}): WebcmdSkillAddResult {
   const skills = updateStableSkillLinks(options);
   if (options.provider === undefined && options.scope === undefined && options.customPath === undefined) return { skills };
 
@@ -90,7 +94,37 @@ export function updateWebcmdSkill(options: WebcmdSkillInstallOptions = {}): Webc
   };
 }
 
-function updateStableSkillLinks(options: WebcmdSkillInstallOptions): WebcmdSkillLink[] {
+export function removeWebcmdSkills(options: WebcmdSkillOptions = {}): WebcmdSkillRemoveResult {
+  const homeDir = options.homeDir ?? os.homedir();
+  const cwd = options.cwd ?? process.cwd();
+  const roots = new Set([
+    ...['.agents', '.codex', '.claude'].flatMap((dir) => [
+      path.join(homeDir, dir, 'skills'),
+      path.join(cwd, dir, 'skills'),
+    ]),
+    ...(options.customPath === undefined ? [] : [expandHomePath(options.customPath)]),
+    path.join(homeDir, '.webcmd', 'skills'),
+  ]);
+  const skills = listWebcmdSkills(options.packageRoot);
+  const removed: string[] = [];
+
+  for (const root of roots) {
+    for (const skill of skills) {
+      const linkPath = path.join(root, skill.name);
+      const current = safeLstat(linkPath);
+      if (!current) continue;
+      if (!current.isSymbolicLink()) {
+        throw new ArgumentError(`Refusing to remove non-symlink path: ${linkPath}`, 'Remove it manually if it is no longer needed.');
+      }
+      removed.push(linkPath);
+    }
+  }
+
+  for (const linkPath of removed) fs.unlinkSync(linkPath);
+  return { removed };
+}
+
+function updateStableSkillLinks(options: WebcmdSkillOptions): WebcmdSkillLink[] {
   const skillsRoot = getSkillsRoot(options.packageRoot);
   const skills = listWebcmdSkills(options.packageRoot);
   if (skills.length === 0) {
@@ -105,7 +139,7 @@ function updateStableSkillLinks(options: WebcmdSkillInstallOptions): WebcmdSkill
   });
 }
 
-function destinationFor(name: string, provider: SkillProvider | undefined, scope: SkillScope, options: WebcmdSkillInstallOptions): string {
+function destinationFor(name: string, provider: SkillProvider | undefined, scope: SkillScope, options: WebcmdSkillOptions): string {
   if (options.customPath !== undefined) return path.join(expandHomePath(options.customPath), name);
   const base = scope === 'project' ? options.cwd ?? process.cwd() : options.homeDir ?? os.homedir();
   const agentDir = provider === 'claude' ? '.claude' : provider === 'codex' ? '.codex' : '.agents';

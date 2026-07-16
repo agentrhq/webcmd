@@ -128,15 +128,17 @@ Agents usually want `-f json`; humans usually want table (default) or yaml.
 
 Webcmd is designed to be driven by coding agents such as Codex, Claude Code, Cursor, and similar tools.
 
-## Install skills (also refreshes existing installs)
+## Add skills (also refreshes existing links)
 
-Install Webcmd skills into your agent environment:
+Add Webcmd skills to your agent environment:
 
 ```bash
-webcmd skills install
+webcmd skills add
 ```
 
-The installer asks whether to install globally or locally, then asks for the coding agent (`agents`, `codex`, `claude`) or a custom skills path. For scripts, pass flags such as `--scope project --provider codex` or `--path ./my-skills`.
+The command asks whether to add globally or locally, then asks for the coding agent (`agents`, `codex`, `claude`) or a custom skills path. For scripts, pass flags such as `--scope project --provider codex` or `--path ./my-skills`.
+
+Remove Webcmd skill symlinks from all supported global and current-project locations with `webcmd skills remove`. Pass `--path ./my-skills` to include a custom directory.
 
 ### Which skill to use
 
@@ -317,8 +319,8 @@ Common paths:
 | `~/.webcmd/clis/` | Private adapters. |
 | `~/.webcmd/cache/browser-network/` | Cached browser network captures. |
 | `~/.webcmd/external-clis.yaml` | User external CLI registry entries. |
-| `~/.agents/skills/` | Common global skills install target for agent skill managers. |
-| `.agents/skills/` | Common workspace-local skills install target. |
+| `~/.agents/skills/` | Common global skills directory for agent skill managers. |
+| `.agents/skills/` | Common workspace-local skills directory. |
 
 ## Troubleshooting
 

@@ -78,15 +78,17 @@ Prompt example:
 Use the Webcmd adapter-author skill to create this command. If the site changes while testing, use the autofix workflow before finishing.
 ```
 
-## Installing Skills for Agents
+## Adding Skills for Agents
 
-Install the bundled Webcmd skills and answer the prompts for global/local scope and agent target.
+Add the bundled Webcmd skills and answer the prompts for global/local scope and agent target.
 
 ```bash
-webcmd skills install
+webcmd skills add
 ```
 
 For automation, pass `--scope`, `--provider`, or `--path`.
+
+Run `webcmd skills remove` to remove the bundled skill symlinks from supported global and current-project locations. Pass `--path` to include a custom directory.
 
 ```text
 Before working on this site, load the Webcmd usage and adapter-author skills. Prefer an existing adapter if one exists.
