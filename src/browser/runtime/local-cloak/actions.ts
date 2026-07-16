@@ -81,7 +81,10 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
       case 'navigate': {
         if (!command.url) return invalidRequest(command, 'Missing url');
         const lease = await resolveLease(manager, command);
-        await lease.page.goto(command.url, { waitUntil: 'load' });
+        // 'none' maps to Playwright's 'commit': sites that stream analytics forever
+        // never fire the load event, so adapters gating readiness on their own
+        // selector waits must be able to skip it.
+        await lease.page.goto(command.url, { waitUntil: command.waitUntil === 'none' ? 'commit' : 'load' });
         return { id: command.id, ok: true, data: { title: await lease.page.title(), url: lease.page.url(), timedOut: false }, page: lease.pageId };
       }
       case 'exec': {

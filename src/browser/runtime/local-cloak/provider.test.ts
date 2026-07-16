@@ -71,6 +71,21 @@ describe('LocalCloakRuntimeProvider', () => {
     expect(page.goto).toHaveBeenCalledWith('https://example.com/', expect.objectContaining({ waitUntil: 'load' }));
   });
 
+  it("maps waitUntil 'none' to a commit-only navigation wait", async () => {
+    const { provider, page } = makeProviderWithFakePage();
+    const result = await provider.dispatch({
+      id: 'cmd-1',
+      action: 'navigate',
+      session: 'work',
+      surface: 'browser',
+      url: 'https://example.com/',
+      waitUntil: 'none',
+      profileId: 'default',
+    });
+    expect(result).toMatchObject({ id: 'cmd-1', ok: true, page: expect.any(String) });
+    expect(page.goto).toHaveBeenCalledWith('https://example.com/', expect.objectContaining({ waitUntil: 'commit' }));
+  });
+
   it('evaluates JavaScript in the resolved page', async () => {
     const { provider } = makeProviderWithFakePage();
     const nav = await provider.dispatch({ id: 'nav', action: 'navigate', session: 'work', surface: 'browser', url: 'https://example.com/', profileId: 'default' });
