@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.4.0](https://github.com/agentrhq/webcmd/compare/webcmd-v0.3.2...webcmd-v0.4.0) (2026-07-16)
+
+
+### Features
+
+* add persistent session lease domain ([b18f849](https://github.com/agentrhq/webcmd/commit/b18f849fbbec683654e5fc18745cb4e1d971a280))
+* add skills add and remove commands ([c6dff29](https://github.com/agentrhq/webcmd/commit/c6dff29525bf032604705c13e1b0bb542f7b0773))
+* add skills add and remove commands ([3951675](https://github.com/agentrhq/webcmd/commit/3951675a93a434105e7a46432cc255c13eac3449))
+* add support for local command execution in hosted mode ([98c232c](https://github.com/agentrhq/webcmd/commit/98c232cdb03e17cc6b4bb108e535e5245d6ea3d2))
+* arbitrate persistent writes in Cloak daemon ([fa0997f](https://github.com/agentrhq/webcmd/commit/fa0997fbbeeebc1d6c6928868af4111ea3ca6c2c))
+* hold session lease for logical adapter runs ([342a22e](https://github.com/agentrhq/webcmd/commit/342a22e67882b7f501a632db15b1c9248b2ce538))
+* remove bundled skill links ([9eddc7b](https://github.com/agentrhq/webcmd/commit/9eddc7bd1e18dbd757847d8ad10ab013992fdc55))
+* update HOSTED_LOCAL_COMMANDS to derive from HOSTED_ROOT_HELP for consistency ([a26fbd7](https://github.com/agentrhq/webcmd/commit/a26fbd7ba13f4036ea543463aa066354c2107bdc))
+
+
+### Bug Fixes
+
+* accept hosted freshPage metadata ([ef732b1](https://github.com/agentrhq/webcmd/commit/ef732b1fcffa73e13423ff2533acb206f18b2a6d))
+* allow docs sync review to comment on pull requests ([77b26b2](https://github.com/agentrhq/webcmd/commit/77b26b295884a68b9d22019188bdb9c07f57f89f))
+* classify Product Hunt verification pages ([671f4d5](https://github.com/agentrhq/webcmd/commit/671f4d58152b146414f61185fb488601bdbfe70f))
+* extend docs sync review model timeout ([f3d8584](https://github.com/agentrhq/webcmd/commit/f3d85846d48005dffc0f7c3df2bc6b3416b8a528))
+* isolate logical adapter run contexts ([2555450](https://github.com/agentrhq/webcmd/commit/25554502652efb0892f4d13c6ddb6f60173b9792))
+* keep hosted commands on cloud ([b09cfbe](https://github.com/agentrhq/webcmd/commit/b09cfbee5e76d29203fdf09905ff00ff9d03169f))
+* keep site-blocked errors edge-safe ([67cf5c8](https://github.com/agentrhq/webcmd/commit/67cf5c817fa64be67e325010d02404b3ad47334b))
+* make session release best effort ([9b7fef3](https://github.com/agentrhq/webcmd/commit/9b7fef31ed92e01f3a49436bc888bbbb6b263f17))
+* preserve cloud parity for blocked sites and fresh pages ([164d1ec](https://github.com/agentrhq/webcmd/commit/164d1eccbbc27820ff48121d078fa6152868f85f))
+* preserve hosted routing for local-only commands ([d58db4d](https://github.com/agentrhq/webcmd/commit/d58db4d6b58f378467c9652bed8a6b5922d074b2))
+* recover Cloak sessions and arbitrate persistent writes ([118cfff](https://github.com/agentrhq/webcmd/commit/118cfff4760778324bb63cd6b42c7d3e42c19db8))
+* recover closed Cloak profile contexts ([3a44f36](https://github.com/agentrhq/webcmd/commit/3a44f36d50b8322adca9e1c555c842debd6e16b3))
+* release safe late adapter outcomes ([46ace0b](https://github.com/agentrhq/webcmd/commit/46ace0b4e79725effd46bc200c8d6bf7a8854957))
+* resolve cloak browser version in LocalCloakRuntimeProvider and CloakSessionManager ([#102](https://github.com/agentrhq/webcmd/issues/102)) ([115447b](https://github.com/agentrhq/webcmd/commit/115447b0a4d4838ae4dc17446f7a25ff8ef863ab))
+* restrict Windows diagnostic artifacts ([89e0915](https://github.com/agentrhq/webcmd/commit/89e091553989834a799c2c284562b75a48ab59b3))
+* retain daemon liveness after response timeout ([b5aca5a](https://github.com/agentrhq/webcmd/commit/b5aca5aaea7d5d8083e2de162ae80b063d52ea36))
+* run package bin checks through Windows shell ([a94574c](https://github.com/agentrhq/webcmd/commit/a94574cc6cfe2a19b85eaaacc7d8d35ea83e38ac))
+* tighten Cloak page recovery boundaries ([dad0d3b](https://github.com/agentrhq/webcmd/commit/dad0d3b86ec6e7046c984af48032937e77f77e54))
+* validate session lease process ids ([7f76cf5](https://github.com/agentrhq/webcmd/commit/7f76cf5c76490643be32892bbc4cf866d3ed6995))
+
 ## [0.3.2](https://github.com/agentrhq/webcmd/compare/webcmd-v0.3.1...webcmd-v0.3.2) (2026-07-15)
 
 ### Adapters
