@@ -18,6 +18,7 @@
     "./utils": "./dist/src/utils.js",
     "./logger": "./dist/src/logger.js",
     "./launcher": "./dist/src/launcher.js",
+    "./browser/ax-snapshot": "./dist/src/browser/ax-snapshot.js",
     "./browser/cdp": "./dist/src/browser/cdp.js",
     "./browser/page": "./dist/src/browser/page.js",
     "./browser/utils": "./dist/src/browser/utils.js",

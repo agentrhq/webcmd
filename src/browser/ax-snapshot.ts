@@ -130,7 +130,7 @@ function renderAxTree(
   const rawNodes = Array.isArray((axTree as { nodes?: unknown[] } | null)?.nodes)
     ? ((axTree as { nodes: unknown[] }).nodes as AxNode[])
     : [];
-  const nodes = rawNodes.filter((node) => node && !node.ignored);
+  const nodes = rawNodes.filter((node) => node);
   const byId = new Map<string, AxNode>();
   const parentIds = new Set<string>();
   for (const node of nodes) {
@@ -145,11 +145,20 @@ function renderAxTree(
   });
   const root = roots[0] ?? nodes[0];
   const maxDepth = Math.max(1, Math.min(Number(opts.maxDepth) || 50, 200));
+  const maxTraversalHops = 200;
   const roleNameCounts = countRoleNames(nodes);
   const roleNameSeen = new Map<string, number>();
 
-  function render(node: AxNode | undefined, depth: number): boolean {
-    if (!node || depth > maxDepth) return false;
+  function render(node: AxNode | undefined, depth: number, hops: number, path: Set<AxNode>): boolean {
+    if (!node || depth > maxDepth || hops > maxTraversalHops || path.has(node)) return false;
+    const nextPath = new Set(path).add(node);
+    if (node.ignored) {
+      let hasVisibleChild = false;
+      for (const childId of node.childIds ?? []) {
+        if (render(byId.get(childId), depth, hops + 1, nextPath)) hasVisibleChild = true;
+      }
+      return hasVisibleChild;
+    }
     const role = axString(node.role) || 'generic';
     const name = cleanText(axString(node.name));
     const value = cleanText(axString(node.value) || propertyValue(node, 'value'));
@@ -168,7 +177,7 @@ function renderAxTree(
     const childStart = lines.length;
     let hasVisibleChild = false;
     for (const childId of node.childIds ?? []) {
-      if (render(byId.get(childId), depth + 1)) hasVisibleChild = true;
+      if (render(byId.get(childId), depth + 1, hops + 1, nextPath)) hasVisibleChild = true;
     }
 
     if (!shouldShowSelf && !hasVisibleChild) {
@@ -207,7 +216,7 @@ function renderAxTree(
     return true;
   }
 
-  render(root, opts.baseDepth);
+  render(root, opts.baseDepth, 0, new Set());
   return nextRef;
 }
 
