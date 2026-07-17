@@ -1,7 +1,17 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { buildAxSnapshot, buildAxSnapshotFromTrees, findAxRefReplacement } from './ax-snapshot.js';
 
 describe('AX snapshot prototype', () => {
+  it('publishes the AX snapshot builder as a package subpath', () => {
+    const packageJson = JSON.parse(
+      readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
+    ) as { exports?: Record<string, string> };
+
+    expect(packageJson.exports?.['./browser/ax-snapshot'])
+      .toBe('./dist/src/browser/ax-snapshot.js');
+  });
+
   it('builds compact refs from Accessibility.getFullAXTree output', () => {
     const result = buildAxSnapshot({
       nodes: [
