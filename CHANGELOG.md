@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.3.4](https://github.com/agentrhq/webcmd/compare/webcmd-v0.3.3...webcmd-v0.3.4) (2026-07-17)
+
+
+### Features
+
+* export AX snapshot helpers ([98a0338](https://github.com/agentrhq/webcmd/commit/98a033893dd471082c1bd7655e8f4d8568af2aba))
+
+
+### Bug Fixes
+
+* bound AX tree traversal ([9016cd6](https://github.com/agentrhq/webcmd/commit/9016cd6bd48f949b778c333ae51ad0ae9d9ee338))
+* make webcmd discovery truncation-safe ([6ec6ecd](https://github.com/agentrhq/webcmd/commit/6ec6ecdaa7e2570fce9750512a35cd8878e6dd26))
+* make Webcmd discovery truncation-safe ([da888ab](https://github.com/agentrhq/webcmd/commit/da888ab94d572a672cfe9b8088c2dc3db021d9a9))
+* traverse ignored AX intermediaries ([91a1ff8](https://github.com/agentrhq/webcmd/commit/91a1ff8ef699cdc6947db8f469f857b54b17e412))
+
 ## [0.3.3](https://github.com/agentrhq/webcmd/compare/webcmd-v0.3.2...webcmd-v0.3.3) (2026-07-16)
 
 ### Highlights
