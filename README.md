@@ -9,13 +9,13 @@
     <img alt="NPM downloads" src="https://img.shields.io/npm/dt/@agentrhq/webcmd.svg?style=for-the-badge&color=1E88E5&labelColor=000000">
   </a>
   <a href="https://docs.webcmd.dev">
-    <img alt="Documentation" src="https://img.shields.io/badge/docs-webcmd.dev-1E88E5.svg?style=for-the-badge&labelColor=000000">
+    <img alt="Documentation" src="https://img.shields.io/badge/docs-webcmd.dev-7C3AED.svg?style=for-the-badge&labelColor=000000">
   </a>
   <a href="https://github.com/agentrhq/webcmd/blob/main/LICENSE">
     <img alt="License" src="https://img.shields.io/badge/license-Apache%202.0-1E88E5.svg?style=for-the-badge&labelColor=000000">
   </a>
   <a href="https://discord.gg/9YP2C9tvMp">
-    <img alt="Join the community on Discord" src="https://img.shields.io/badge/Join%20the%20community-7C3AED.svg?style=for-the-badge&logo=discord&logoColor=white&labelColor=000000&logoWidth=20">
+    <img alt="Join the community on Discord" src="https://img.shields.io/badge/Join%20the%20community-5865F2.svg?style=for-the-badge&logo=discord&logoColor=white&labelColor=000000&logoWidth=20">
   </a>
   <a href="https://x.com/agentrhq">
     <img alt="Follow AgentR on X" src="https://img.shields.io/badge/Built%20by%20%40agentrhq-000000.svg?style=for-the-badge&logo=x&logoColor=white&labelColor=000000&logoWidth=20">
@@ -27,8 +27,6 @@
 **Self-learning browser infra for AI agents.**
 
 WebCMD learns the navigational context of websites as agents use them, then compiles that knowledge into deterministic commands for faster, cheaper, more reliable browser automation. The goal is simple: stop making agents rediscover the same sites on every run and cut browser-agent token spend by up to 90%.
-
-📖 **Full documentation: [docs.webcmd.dev](https://docs.webcmd.dev)**
 
 On top of live browser control, WebCMD adds 3 layers of learnings. Each layer collapses cost and variance for the layer above it.
 
