@@ -24,7 +24,7 @@ User adapters, plugins, cache, traces, and site memory live under `~/.webcmd`.
 
 ## Documentation
 
-The published docs at [docs.webcmd.dev](https://docs.webcmd.dev) are built by Mintlify from the `docs/` directory in this repo. To change the published docs, edit the `.mdx` pages under `docs/` (and `docs/docs.json` for navigation) — do not edit the site directly.
+The published docs at [webcmd.dev/docs](https://webcmd.dev/docs) are built by Mintlify from the `docs/` directory in this repo. To change the published docs, edit the `.mdx` pages under `docs/` (and `docs/docs.json` for navigation) — do not edit the site directly.
 
 ## Documentation Sync Review
 

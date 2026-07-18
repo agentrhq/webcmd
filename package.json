@@ -78,7 +78,7 @@
   ],
   "author": "AgentR",
   "license": "Apache-2.0",
-  "homepage": "https://docs.webcmd.dev",
+  "homepage": "https://webcmd.dev/docs",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/agentrhq/webcmd.git"
