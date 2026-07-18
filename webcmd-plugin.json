@@ -4,6 +4,16 @@
   "description": "Webcmd plugin collection",
   "webcmd": ">=0.2.0",
   "plugins": {
+    "bikewale": {
+      "path": "plugins/bikewale",
+      "version": "0.1.0",
+      "description": "BikeWale bike search, news, featured lists, and variant prices for Webcmd",
+      "webcmd": ">=0.2.0",
+      "author": {
+        "name": "Rishabh",
+        "handle": "rishabhraj36"
+      }
+    },
     "skyscanner": {
       "path": "plugins/skyscanner",
       "version": "0.1.0",
