@@ -1,7 +1,7 @@
 import type { BrowserRuntimeCommand, BrowserRuntimeResult } from '../../protocol.js';
 import { waitForDownload } from './downloads.js';
 import type { CloakSessionManager } from './session-manager.js';
-import type { Frame, Page as PlaywrightPage } from 'playwright-core';
+import type { BrowserContext, Frame, Page as PlaywrightPage } from 'playwright-core';
 
 class CloakActionError extends Error {
   constructor(
@@ -63,16 +63,45 @@ function execTarget(page: PlaywrightPage, frameIndex: number | undefined, pageId
   return frame;
 }
 
-async function applyScreenshotViewport(page: PlaywrightPage, command: BrowserRuntimeCommand): Promise<{ width: number; height: number } | null> {
+async function captureScreenshot(page: PlaywrightPage, context: BrowserContext, command: BrowserRuntimeCommand): Promise<Buffer> {
   const width = Number.isFinite(command.width) && command.width! > 0 ? Math.ceil(command.width!) : undefined;
   const height = !command.fullPage && Number.isFinite(command.height) && command.height! > 0 ? Math.ceil(command.height!) : undefined;
-  if (width === undefined && height === undefined) return null;
+  const options = {
+    type: command.format ?? 'png',
+    quality: command.format === 'jpeg' ? command.quality : undefined,
+    fullPage: command.fullPage,
+  } as const;
+  if (width === undefined && height === undefined) return page.screenshot(options);
+
   const current = page.viewportSize();
-  await page.setViewportSize({
-    width: width ?? current?.width ?? 1280,
-    height: height ?? current?.height ?? 720,
-  });
-  return current;
+  if (current) {
+    // Emulated viewport: override for the shot, then restore the prior fixed size.
+    await page.setViewportSize({ width: width ?? current.width, height: height ?? current.height });
+    try {
+      return await page.screenshot(options);
+    } finally {
+      await page.setViewportSize(current);
+    }
+  }
+
+  // Real-window context (viewport: null): setViewportSize can't return to a windowed
+  // state, so override reversibly via CDP and clear it so the override is per-shot only.
+  const windowSize = width === undefined || height === undefined
+    ? await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }))
+    : { width: 0, height: 0 };
+  const cdp = await context.newCDPSession(page);
+  try {
+    await cdp.send('Emulation.setDeviceMetricsOverride', {
+      width: width ?? windowSize.width,
+      height: height ?? windowSize.height,
+      deviceScaleFactor: 0,
+      mobile: false,
+    });
+    return await page.screenshot(options);
+  } finally {
+    await cdp.send('Emulation.clearDeviceMetricsOverride').catch(() => {});
+    await cdp.detach().catch(() => {});
+  }
 }
 
 export async function dispatchCloakAction(manager: CloakSessionManager, command: BrowserRuntimeCommand): Promise<BrowserRuntimeResult> {
@@ -99,17 +128,8 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
       }
       case 'screenshot': {
         const lease = await resolveLease(manager, command);
-        const previousViewport = await applyScreenshotViewport(lease.page, command);
-        try {
-          const buffer = await lease.page.screenshot({
-            type: command.format ?? 'png',
-            quality: command.format === 'jpeg' ? command.quality : undefined,
-            fullPage: command.fullPage,
-          });
-          return { id: command.id, ok: true, data: buffer.toString('base64'), page: lease.pageId };
-        } finally {
-          if (previousViewport) await lease.page.setViewportSize(previousViewport);
-        }
+        const buffer = await captureScreenshot(lease.page, lease.context, command);
+        return { id: command.id, ok: true, data: buffer.toString('base64'), page: lease.pageId };
       }
       case 'close-window': {
         if (command.page) {

@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { LocalCloakRuntimeProvider } from './provider.js';
 
-function fakePage(url: string) {
+function fakePage(url: string, initialViewport: { width: number; height: number } | null = { width: 1280, height: 720 }) {
   let closed = false;
-  let viewportSize = { width: 1280, height: 720 };
+  let viewportSize = initialViewport;
   return {
     isClosed: vi.fn(() => closed),
     goto: vi.fn(async (nextUrl: string) => {
@@ -26,8 +26,9 @@ function fakePage(url: string) {
   };
 }
 
-function makeProviderWithFakePage() {
-  const pages = [fakePage('https://example.com/')];
+function makeProviderWithFakePage(initialViewport: { width: number; height: number } | null = { width: 1280, height: 720 }) {
+  const pages = [fakePage('https://example.com/', initialViewport)];
+  const cdpSession = { send: vi.fn().mockResolvedValue(undefined), detach: vi.fn().mockResolvedValue(undefined) };
   const context = {
     on: vi.fn(),
     pages: vi.fn(() => pages.filter((page) => !page.isClosed())),
@@ -36,6 +37,7 @@ function makeProviderWithFakePage() {
       pages.push(page);
       return page;
     }),
+    newCDPSession: vi.fn().mockResolvedValue(cdpSession),
     cookies: vi.fn().mockResolvedValue([{ name: 'sid', value: '1', domain: 'example.com', path: '/' }]),
     close: vi.fn().mockResolvedValue(undefined),
   };
@@ -43,7 +45,7 @@ function makeProviderWithFakePage() {
     baseDir: '/tmp/webcmd-test',
     launchPersistentContext: vi.fn().mockResolvedValue(context),
   });
-  return { provider, page: pages[0], pages, context };
+  return { provider, page: pages[0], pages, context, cdpSession };
 }
 
 describe('LocalCloakRuntimeProvider', () => {
@@ -170,6 +172,21 @@ describe('LocalCloakRuntimeProvider', () => {
 
     expect(page.setViewportSize).toHaveBeenNthCalledWith(1, { width: 900, height: 480 });
     expect(page.setViewportSize).toHaveBeenNthCalledWith(2, { width: 1280, height: 720 });
+    expect(page.screenshot).toHaveBeenCalledTimes(1);
+  });
+
+  it('reversibly overrides via CDP and never pins the viewport when the context has no fixed viewport', async () => {
+    const { provider, page, cdpSession } = makeProviderWithFakePage(null);
+    const nav = await provider.dispatch({ id: 'nav', action: 'navigate', session: 'work', surface: 'browser', url: 'https://example.com/', profileId: 'default' });
+
+    await provider.dispatch({ id: 'shot', action: 'screenshot', session: 'work', surface: 'browser', page: nav.page, format: 'png', width: 375, height: 812, profileId: 'default' });
+
+    // The override must not permanently pin the real window via setViewportSize (#120).
+    expect(page.setViewportSize).not.toHaveBeenCalled();
+    expect(cdpSession.send).toHaveBeenCalledWith('Emulation.setDeviceMetricsOverride', expect.objectContaining({ width: 375, height: 812 }));
+    // ...and it must be cleared afterward so the override is per-shot only.
+    expect(cdpSession.send).toHaveBeenCalledWith('Emulation.clearDeviceMetricsOverride');
+    expect(cdpSession.detach).toHaveBeenCalledTimes(1);
     expect(page.screenshot).toHaveBeenCalledTimes(1);
   });
 
