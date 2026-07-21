@@ -19,17 +19,17 @@
   },
   "background": {
     "color": {
-      "light": "#F1EFE7",
-      "dark": "#0D0F11"
+      "light": "#F8F6F1",
+      "dark": "#0F0F0F"
     }
   },
   "fonts": {
     "heading": {
       "family": "Newsreader",
-      "weight": 500
+      "weight": 600
     },
     "body": {
-      "family": "Manrope",
+      "family": "Inter",
       "weight": 400
     }
   },
