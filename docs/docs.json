@@ -4,7 +4,34 @@
   "name": "Webcmd",
   "description": "An agent runtime for turning websites, apps, APIs, and local tools into deterministic CLIs.",
   "colors": {
-    "primary": "#1E88E5"
+    "primary": "#006B9A",
+    "light": "#56C5FF",
+    "dark": "#006B9A"
+  },
+  "logo": {
+    "light": "/webcmd.svg",
+    "dark": "/webcmd.svg",
+    "href": "https://webcmd.dev"
+  },
+  "favicon": "/webcmd.svg",
+  "appearance": {
+    "default": "dark"
+  },
+  "background": {
+    "color": {
+      "light": "#F1EFE7",
+      "dark": "#0D0F11"
+    }
+  },
+  "fonts": {
+    "heading": {
+      "family": "Newsreader",
+      "weight": 500
+    },
+    "body": {
+      "family": "Manrope",
+      "weight": 400
+    }
   },
   "navigation": {
     "tabs": [

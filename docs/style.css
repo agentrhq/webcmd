@@ -1,0 +1,17 @@
+@import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&display=swap");
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-weight: 500 !important;
+}
+
+code,
+pre,
+kbd,
+samp {
+  font-family: "DM Mono", "SFMono-Regular", Consolas, monospace !important;
+}
