@@ -1,0 +1,40 @@
+---
+title: Local or Cloud
+description: Choose where Webcmd runs and configure the Webcmd Cloud alpha when hosted browser infrastructure is useful.
+---
+
+# Local or Cloud
+
+## Choose a Mode
+
+| Choose local when | Choose Cloud alpha when |
+| --- | --- |
+| The task needs desktop apps, local tools, local adapters, or a browser on this machine. | You want Webcmd to run supported commands and browser sessions on hosted infrastructure. |
+
+The CLI grammar remains the same in either mode.
+
+## Local Mode
+
+Local mode runs Webcmd against this machine's tools, adapters, and browser. Choose it for desktop workflows or work that depends on local state.
+
+## Webcmd Cloud Alpha
+
+Webcmd Cloud alpha is for supported commands and browser sessions on hosted infrastructure. Kernel provides the hosted browser infrastructure behind Webcmd.
+
+## Set Up Hosted Mode
+
+1. Create an account at `https://api.webcmd.dev/account/signup`.
+2. Create and copy an API key from the account page.
+3. Run `webcmd setup`, choose hosted mode, and paste the key when prompted.
+
+Hosted browser tasks can use named profiles. When sign-in is required, Webcmd returns a Webcmd-owned live authentication view; complete sign-in there, then let the agent continue. See [Authentication and Profiles](/authentication-and-profiles).
+
+View hosted usage on the account page.
+
+## What Stays Separate
+
+Local and hosted profiles, adapters, site memory, and traces do not sync. Treat each mode as its own working environment.
+
+## Current Boundaries
+
+Cloud is alpha. Billing is not presented as generally available; use hosted mode when its supported infrastructure fits the workflow.

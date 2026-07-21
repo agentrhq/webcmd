@@ -1,0 +1,28 @@
+---
+title: Browser and Sitemap Memory
+description: How agents explore unfamiliar sites, retain useful navigation knowledge, and decide when to create an adapter.
+---
+
+# Browser and Sitemap Memory
+
+## Start With Existing Commands
+
+An agent first checks whether an installed command already covers the outcome. Reuse is faster and more reliable than rediscovering a site.
+
+## Explore an Unfamiliar Surface
+
+When no suitable command exists or one is broken, the agent uses a browser to inspect the live surface and complete the immediate task. Live browser state is the source of truth.
+
+## Retain Sitemap Knowledge
+
+Useful, verified navigation and workflow knowledge can be retained as sitemap memory. It gives future browser work a starting point, but agents update or bypass it when the live site has changed.
+
+## When to Create an Adapter
+
+Create or repair an adapter when the workflow is likely to repeat and can be verified as a stable command. Keep one-off or changing work in the browser until reuse is justified.
+
+## Ask for the Right Outcome
+
+```text
+Use Webcmd to complete this task on example.com. Reuse an existing adapter if one fits. Otherwise explore the site, preserve useful sitemap knowledge, and propose a reusable command only if this workflow is likely to repeat.
+```

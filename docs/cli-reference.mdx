@@ -5,7 +5,7 @@ description: The Webcmd commands agents use for discovery, adapter execution, pl
 
 # Command Surface
 
-This page helps you understand what an agent is doing when it uses Webcmd. You do not need to run every command yourself.
+Most people should start with the [Prompt Cookbook](/agent-prompts) and let an agent use these commands. This page is the detailed surface for debugging, authoring, and advanced manual use.
 
 ## Discovery
 
@@ -39,6 +39,7 @@ Agents should prefer existing adapters before browser exploration. That keeps ta
 | Command | Purpose |
 | --- | --- |
 | `list` | Show registered built-in, user, plugin, and external commands. |
+| `setup` | Choose local or hosted mode interactively. |
 | `doctor` | Diagnose browser bridge and daemon connectivity. |
 | `browser` | Agent-facing browser runtime for exploration and verification. |
 | `profile` | List, rename, and select browser runtime profiles. |

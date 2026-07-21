@@ -19,9 +19,15 @@ The agent will usually start with:
 webcmd doctor -v
 ```
 
-## Runtime or Browser Bridge Fails
+## Hosted Mode Is Unavailable
 
-Prompt:
+```text
+Diagnose my Webcmd Cloud connection. Check whether hosted mode is selected, whether the saved API key is available, and whether the Cloud service can be reached. Do not print or replace the key unless I approve it.
+```
+
+For switching modes, see [Local or Cloud](/local-or-cloud).
+
+## Runtime or Browser Bridge Fails
 
 ```text
 Webcmd says the browser bridge is unavailable. Diagnose the daemon and runtime, restart what is safe to restart, and explain whether public adapters still work.
@@ -35,7 +41,7 @@ Public adapters may still work. Authenticated, intercepted, UI, and browser-back
 Webcmd found multiple browser profiles. List them, recommend which one to use for this task, and set the default only after I confirm.
 ```
 
-Profiles matter when commands depend on login state.
+Profiles matter when commands depend on login state. See [Authentication and Profiles](/authentication-and-profiles) for profile and sign-in help.
 
 ## Authenticated Commands Return Empty Results
 
@@ -43,7 +49,7 @@ Profiles matter when commands depend on login state.
 `webcmd acme invoices` returns empty rows, but I can see invoices in the browser. Check whether this is a login/profile issue or an adapter issue. Preserve the output schema.
 ```
 
-The agent may ask you to sign in once. It should not store credentials in code.
+The agent may ask you to sign in once. It should not store credentials in code. See [Authentication and Profiles](/authentication-and-profiles) for the sign-in flow.
 
 ## Adapter Returns Wrong or Empty Data
 
@@ -75,6 +81,10 @@ This Webcmd plugin is installed but its commands do not appear in `webcmd list -
 
 ## Node Fails on Startup
 
+```text
+Check my Node version and Webcmd installation. If Node is too old, tell me the exact upgrade needed before changing anything.
+```
+
 Webcmd requires Node.js 20 or newer:
 
 ```bash
@@ -83,13 +93,9 @@ node --version
 
 Upgrade Node.js, reinstall Webcmd, then retry.
 
-Prompt:
+## Advanced Diagnostics
 
-```text
-Check my Node version and Webcmd installation. If Node is too old, tell me the exact upgrade needed before changing anything.
-```
-
-## Useful Environment Variables
+Useful environment variables:
 
 | Variable | Purpose |
 | --- | --- |

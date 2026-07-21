@@ -5,114 +5,45 @@ description: Learn how to turn an authenticated X browser session into reusable 
 
 # Turn Your X Session into a CLI for AI Agents
 
-## Overview
+## The Outcome
 
-AI agents are increasingly used to automate research, monitor trends, and interact with social platforms. However, relying on an agent to open a browser, log in, navigate a complex UI, and parse the DOM every single time is highly inefficient.
+Authenticate to X once, show an agent a workflow once, then reuse it as a command.
 
-Repeatedly exploring the same browser workflow wastes valuable time and AI tokens. It introduces latency, increases the likelihood of failures due to minor layout changes, and forces you to repeatedly deal with CAPTCHAs and session timeouts.
+Before, every request asks the agent to rediscover the X interface:
 
-Webcmd is designed specifically for browser workflows and authenticated sessions. It solves this problem by allowing you to authenticate once, execute the workflow, and then wrap that interaction into a reusable CLI command.
+```text
+Open X, find my bookmarks, and give me the first five posts as JSON.
+```
 
-## What You'll End Up With
-
-Instead of asking your AI agent to repeatedly navigate X, you'll be able to run reusable commands like:
+After, it can use a small, repeatable surface:
 
 ```bash
-webcmd x bookmarks
+webcmd x bookmarks -f json
 webcmd x profile openai
 webcmd x search "browser automation"
 ```
 
-These commands can be executed directly by AI agents, scripts, or CI pipelines without repeating browser exploration.
+You need Webcmd, an active X account, and a terminal where the agent can run commands.
 
-## Why Not Just Write a Playwright Script?
+## 1. Ask the Agent to Use Your X Session
 
-When automating web workflows, developers often reach for Puppeteer or Playwright. However, building and maintaining custom automation scripts has significant hidden costs:
-
-- **Brittle Selectors:** Modern web applications frequently update their DOM structures and CSS classes, instantly breaking hardcoded selectors.
-- **Maintenance Costs:** Every custom script requires dedicated error handling, retry logic, and boilerplate parsing.
-- **Repeated Login:** Scripts typically boot a fresh, empty browser profile. This forces you to repeatedly handle passwords, 2FA, and authentication flows on every run.
-
-Webcmd abstracts away these maintenance costs. It persists browser state for you and provides a standardized way to convert successful browser interactions into declarative, stable commands.
-
-## Prerequisites
-
-- Node.js 20 or newer
-- Webcmd installed globally (`npm install -g @agentrhq/webcmd`)
-- An active X account
-- A terminal where your AI agent can execute commands
-
-## Step 1
-
-Create an authenticated browser profile.
-
-Webcmd uses named browser profiles to securely maintain login state. Instead of hardcoding credentials, you log in interactively once. Ask your agent:
+Create a profile named `social` and sign in once:
 
 ```text
 Use Webcmd to open a foreground browser with a profile named 'social'. Wait for me to log in to X.
 ```
 
-A Chromium window will appear. Complete the standard login process and handle any 2FA prompts. Your session cookies are now securely cached in the `social` profile.
+Complete X's normal login and any 2FA prompts in the browser. The profile keeps that session available for later tasks. See [Authentication and Profiles](/authentication-and-profiles) for profile and sign-in details.
 
-## Step 2
+## 2. Complete the Workflow Once
 
-Reuse the browser session.
-
-Now that the profile is authenticated, you can instruct your agent to use it for data extraction without repeating the login flow.
+Ask the agent to use that authenticated session for the real task:
 
 ```text
 Use the 'social' profile in Webcmd to navigate to my X bookmarks. Extract the first 5 bookmarks as a JSON array.
 ```
 
-Webcmd will launch the browser using your cached session. It bypasses the login screen completely and goes straight to the requested workflow.
-
-```mermaid
-flowchart TD
-    Agent[AI Agent] -->|Executes CLI Command| Webcmd
-    Webcmd -->|Loads Cached Profile| Profile[(Browser Profile)]
-    Webcmd -->|Uses Session| Website[Target Website]
-```
-
-## Step 3
-
-Generate reusable commands.
-
-Once the agent successfully extracts the data, turn that ephemeral workflow into a permanent CLI command. Ask the agent to author an adapter:
-
-```text
-Create a private Webcmd adapter for X bookmarks.
-Command: webcmd x bookmarks
-Profile: 'social'
-Output: JSON array with text, author, and url.
-Verify the command works.
-```
-
-> 💡 **Think of adapters as reusable skills your AI agent can execute on demand.**
-
-The agent will write an adapter (saved in `~/.webcmd/clis/x/bookmarks.js`) that formalizes how the data is fetched.
-
-```mermaid
-flowchart LR
-    A[Agent Explores UI] --> B[Webcmd Captures Network/DOM]
-    B --> C[Adapter Generated]
-    C --> D[Stable CLI Command]
-```
-
-## Step 4
-
-Execute commands.
-
-Your agent (or any other tool sharing the environment) can now execute the command instantly.
-
-```bash
-webcmd x bookmarks -f json
-```
-
-Because the adapter defines a highly specific strategy (like intercepting the exact background API request for bookmarks), Webcmd can fetch the data quickly without necessarily rendering the full page.
-
-## Expected Output
-
-The command returns clean, structured JSON designed for machine consumption:
+Confirm the result is the data you want to reuse:
 
 ```json
 [
@@ -124,40 +55,40 @@ The command returns clean, structured JSON designed for machine consumption:
 ]
 ```
 
-## How It Works
+## 3. Turn It into a Reusable Command
 
-To understand why this is more reliable than standard scripting, let's look under the hood:
+Once the workflow works, ask the agent to make it a private adapter:
 
-- **Browser Sessions:** Webcmd locally manages Chromium profiles. When you specify a profile, Webcmd mounts that exact directory, injecting the valid cookies and session tokens automatically.
-- **Adapters:** An adapter is the underlying code that defines the command. It tells Webcmd exactly *how* to retrieve the data (e.g., via the `COOKIE`, `INTERCEPT`, or `UI` strategies).
-- **Generated CLIs:** Formalizing workflows into CLIs means agents can discover them natively using `webcmd list -f json`. They don't need to write code to fetch data; they just execute the available commands.
+```text
+Create a private Webcmd adapter for X bookmarks.
+Command: webcmd x bookmarks
+Profile: 'social'
+Output: JSON array with text, author, and url.
+Verify the command works.
+```
 
-## Applying This Pattern Elsewhere
+The adapter records the working approach behind `webcmd x bookmarks` so the agent can use it again. For more ways to create and maintain adapters, see [Authoring](/authoring).
 
-The pattern of authenticating once and generating an adapter works for virtually **any authenticated website**. You can use Webcmd to build stable CLIs for:
+## 4. Reuse the Result
 
-- **Internal Dashboards:** Extract metrics from Grafana or Datadog without wrangling API tokens.
-- **Jira:** Update tickets or fetch sprint progress using your existing SSO session.
-- **SAP:** Automate heavy enterprise accounting software that lacks accessible APIs.
-- **Salesforce:** Extract leads or update records without hitting API rate limits.
-- **Legacy Enterprise Software:** Wrap ancient intranet portals into modern JSON interfaces.
+The next request can be concise:
 
-> 💡 **This guide uses X as an example.**
->
-> The same workflow applies to Jira, Salesforce, SAP, Grafana, internal dashboards, banking portals, and virtually any authenticated website.
+```text
+Run `webcmd x bookmarks -f json` with the 'social' profile and summarize the first five saved posts.
+```
 
-## Why This Matters for AI Agents
+The agent uses the saved session and command instead of starting browser exploration from scratch.
 
-The first run teaches Webcmd how to perform the task.
+## What Changed
 
-Future runs simply execute a stable command.
+- Before: the agent had to navigate X and interpret the UI on every request.
+- After: a successful workflow is available as a stable command with structured output.
 
-Instead of repeatedly reasoning about the UI, the agent executes a deterministic interface.
+## Apply the Pattern Elsewhere
 
-## Next Steps
+Use the same sequence for authenticated dashboards, Jira, Salesforce, Grafana, legacy intranets, or any site where a useful browser workflow repeats:
 
-Now that you understand how to turn an authenticated session into a CLI, explore these related concepts:
-
-- [Concepts](/concepts) - Learn more about Adapters and Strategies.
-- [Authoring](/authoring) - Learn how to instruct agents to build perfect adapters.
-- [Generated CLIs](/generated-clis) - Understand how generated commands are stored and managed.
+1. Sign in with a named profile.
+2. Have the agent complete and verify the workflow once.
+3. Ask it to turn the workflow into a command.
+4. Reuse that command in future prompts.
