@@ -43,6 +43,8 @@ https://github.com/user-attachments/assets/04eceadc-d398-4303-984d-ae3197bfa664
 
 ## Quick Start
 
+Webcmd requires Node.js 20+.
+
 ```bash
 npm install -g @agentrhq/webcmd
 webcmd skills add
@@ -74,6 +76,8 @@ It creates a stable command that returns the requested bookmark fields.
 Later agents reuse that command instead of repeating browser exploration; learn the pattern in [X → CLI](https://webcmd.dev/docs/x-session-cli).
 
 ## Where Webcmd Works
+
+Beyond website adapters, Webcmd can work through authenticated browser sessions, APIs, desktop apps, and local tools.
 
 | Group | Supported surfaces | Representative outcomes |
 | --- | --- | --- |
