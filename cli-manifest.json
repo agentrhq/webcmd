@@ -15952,6 +15952,45 @@
     "sourceFile": "openfda/food-recall.js"
   },
   {
+    "site": "openlibrary",
+    "name": "search",
+    "description": "Search Open Library books by title, author, ISBN, or keyword",
+    "access": "read",
+    "domain": "openlibrary.org",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "query",
+        "type": "string",
+        "required": true,
+        "positional": true,
+        "help": "Book title, author, ISBN, or keyword"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Max results (1-50)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "workId",
+      "title",
+      "authors",
+      "firstPublishYear",
+      "editionCount",
+      "isbn",
+      "languages",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "openlibrary/search.js",
+    "sourceFile": "openlibrary/search.js"
+  },
+  {
     "site": "openreview",
     "name": "author",
     "description": "List OpenReview submissions by an author profile id (newest first)",
