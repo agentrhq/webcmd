@@ -71,7 +71,7 @@ Use my logged-in `social` profile to collect my recent X bookmarks, then turn th
 
 The agent explores the X workflow once using the logged-in profile.
 It creates a stable command that returns the requested bookmark fields.
-Later agents reuse that command instead of repeating browser exploration; learn the pattern in [X → CLI](/x-session-cli).
+Later agents reuse that command instead of repeating browser exploration; learn the pattern in [X → CLI](https://webcmd.dev/docs/x-session-cli).
 
 ## Where Webcmd Works
 
@@ -88,12 +88,12 @@ This list is illustrative; agents can use `webcmd-usage` to discover the current
 
 Webcmd Cloud can run supported commands and browser sessions on hosted infrastructure. It is in active development and is not yet stable.
 
-- [Prompt Cookbook](/agent-prompts)
-- [How Webcmd Works](/concepts)
-- [Local or Cloud](/local-or-cloud)
-- [Publish a Community Plugin](/publish-community-plugin)
-- [X → CLI](/x-session-cli)
-- [Command Surface](/cli-reference)
+- [Prompt Cookbook](https://webcmd.dev/docs/agent-prompts)
+- [How Webcmd Works](https://webcmd.dev/docs/concepts)
+- [Local or Cloud](https://webcmd.dev/docs/local-or-cloud)
+- [Publish a Community Plugin](https://webcmd.dev/docs/publish-community-plugin)
+- [X → CLI](https://webcmd.dev/docs/x-session-cli)
+- [Command Surface](https://webcmd.dev/docs/cli-reference)
 
 ## Community
 
