@@ -2246,6 +2246,45 @@
     "navigateBefore": "https://www.bigbasket.com"
   },
   {
+    "site": "bikewale",
+    "name": "search",
+    "description": "Search BikeWale public bike and scooter suggestions",
+    "access": "read",
+    "domain": "www.bikewale.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "query",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Bike, scooter, brand, or keyword (e.g. \"activa\", \"royal enfield\")"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Maximum suggestions to return (1-20)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "name",
+      "make",
+      "model",
+      "type",
+      "additionalInfo",
+      "modelId",
+      "makeId",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "bikewale/search.js",
+    "sourceFile": "bikewale/search.js"
+  },
+  {
     "site": "binance",
     "name": "asks",
     "description": "Order book ask prices for a trading pair",
