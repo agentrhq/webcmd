@@ -1,0 +1,28 @@
+---
+title: Create a Plugin
+description: Ask an agent to package related Webcmd adapters into a reusable plugin.
+---
+
+# Create a Plugin
+
+## When a Plugin Is Worthwhile
+
+A plugin is worthwhile when related adapters should travel together or be shared with a team. Keep a one-off personal workflow as a private adapter instead.
+
+## Ask an Agent to Create It
+
+```text
+Create a Webcmd plugin called `webcmd-acme` for our Acme workflows. Package the existing Acme adapters, add a valid plugin manifest and README, include representative prompts and expected outputs, install it locally, and verify that its commands are discoverable and work. Keep it private for now.
+```
+
+## What the Agent Should Deliver
+
+The handoff should include the plugin location, commands, Webcmd compatibility version, verification result, and installation path. Its README should show representative prompts and expected outputs.
+
+## Verify the Plugin
+
+Ask the agent to install the plugin locally, confirm its commands with `webcmd list -f json`, and run a representative command. A plugin is not ready until its commands are discoverable and work.
+
+## Keep It Private or Publish It
+
+Keep internal workflows private until they are useful beyond your team. When they are ready for repository review, prepare a community plugin contribution.
