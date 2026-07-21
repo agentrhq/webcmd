@@ -1,4 +1,6 @@
 import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import type { BrowserContext, Page as PlaywrightPage } from 'playwright-core';
 import { launchPersistentContext as cloakLaunchPersistentContext } from 'cloakbrowser';
@@ -6,6 +8,22 @@ import type { BrowserSurface, BrowserWindowMode, SiteSessionMode } from '../../p
 import { activateDarwinBackgroundContext, launchDarwinBackgroundPersistentContext } from './darwin-background-launch.js';
 import { normalizeProfileId, resolveCloakProfileDir } from './profiles.js';
 import { CloakNetworkCapture } from './network.js';
+import { findPackageRoot } from '../../../package-paths.js';
+
+let cloakBrowserVersion: string | undefined | null = null;
+
+/** Installed `cloakbrowser` package version, for doctor/status display. Cached — it can't change mid-process. */
+export function resolveCloakBrowserVersion(): string | undefined {
+  if (cloakBrowserVersion !== null) return cloakBrowserVersion;
+  try {
+    const entryPath = fileURLToPath(import.meta.resolve('cloakbrowser'));
+    const pkg = JSON.parse(fs.readFileSync(path.join(findPackageRoot(entryPath), 'package.json'), 'utf-8'));
+    cloakBrowserVersion = typeof pkg.version === 'string' ? pkg.version : undefined;
+  } catch {
+    cloakBrowserVersion = undefined;
+  }
+  return cloakBrowserVersion ?? undefined;
+}
 
 export type LaunchPersistentContext = typeof cloakLaunchPersistentContext;
 export type RecoverLockedProfile = (userDataDir: string) => Promise<boolean>;
@@ -55,7 +73,6 @@ interface ProfileRuntime {
   context: BrowserContext;
   pages: Map<string, PageEntry>;
   selectedPageId?: string;
-  runtimeVersion?: string;
   lastSeenAt: number;
 }
 
@@ -104,7 +121,7 @@ export class CloakSessionManager {
     return [...this.profiles.entries()].map(([contextId, runtime]) => ({
       contextId,
       runtimeConnected: true,
-      runtimeVersion: runtime.runtimeVersion,
+      runtimeVersion: resolveCloakBrowserVersion(),
       pending: 0,
       lastSeenAt: runtime.lastSeenAt,
     }));

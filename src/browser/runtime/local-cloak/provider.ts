@@ -2,7 +2,7 @@ import type { BrowserRuntimeCommand, BrowserRuntimeResult, BrowserRuntimeStatus 
 import type { BrowserRuntimeProvider, RuntimeStatusOptions } from '../provider.js';
 import { dispatchCloakAction } from './actions.js';
 import type { LaunchPersistentContext } from './session-manager.js';
-import { CloakSessionManager } from './session-manager.js';
+import { CloakSessionManager, resolveCloakBrowserVersion } from './session-manager.js';
 
 export interface LocalCloakRuntimeProviderOptions {
   baseDir?: string;
@@ -21,7 +21,7 @@ export class LocalCloakRuntimeProvider implements BrowserRuntimeProvider {
     return {
       runtimeConnected: true,
       runtimeName: 'cloak',
-      runtimeVersion: undefined,
+      runtimeVersion: resolveCloakBrowserVersion(),
       profiles,
       pending: 0,
       commandResultUnknown: 0,
