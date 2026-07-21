@@ -43,34 +43,56 @@
             "pages": [
               "index",
               "quickstart",
-              "concepts"
+              "agent-prompts"
             ]
           },
           {
-            "group": "Work With Agents",
+            "group": "Understand Webcmd",
             "pages": [
-              "agent-prompts",
-              "cli-reference",
-              "agent-runtime",
-              "generated-clis",
+              "concepts",
+              "authentication-and-profiles",
+              "local-or-cloud",
+              "browser-and-sitemap-memory",
+              "skills"
+            ]
+          },
+          {
+            "group": "Build and Share",
+            "pages": [
+              "authoring",
+              "create-plugin",
+              "publish-community-plugin"
+            ]
+          },
+          {
+            "group": "Use Cases",
+            "pages": [
               "x-session-cli"
             ]
           },
           {
-            "group": "Extend",
+            "group": "Reference and Support",
             "pages": [
-              "authoring",
-              "plugins-and-skills"
-            ]
-          },
-          {
-            "group": "Support",
-            "pages": [
+              "cli-reference",
               "troubleshooting"
             ]
           }
         ]
       }
     ]
-  }
+  },
+  "redirects": [
+    {
+      "source": "/agent-runtime",
+      "destination": "/concepts"
+    },
+    {
+      "source": "/generated-clis",
+      "destination": "/authoring"
+    },
+    {
+      "source": "/plugins-and-skills",
+      "destination": "/skills"
+    }
+  ]
 }
