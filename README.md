@@ -58,12 +58,12 @@ Use the webcmd-usage skill to find the best way to research the latest discussio
 
 ## What You Can Ask
 
-- “Use `webcmd-usage` to find an existing adapter for this research task and return title, URL, and source.”
-- “Complete this unfamiliar-site task, keep it read-only, and return the requested fields with source links.”
-- “Create a reusable Webcmd CLI for this supplier portal that returns price, stock, MOQ, lead time, and product URL.”
-- “Use my logged-in `work` profile for this dashboard task; pause if I need to sign in and never store credentials.”
-- “Repair this broken Webcmd command, preserve its output schema, verify it, and explain the fix.”
-- “Create a reusable plugin for these workflows, run its checks, and prepare it for community publishing without merging or publishing it.”
+- “Use `webcmd-usage` to find an existing PubMed adapter, research agentic browser automation, and return the title, authors, publication date, abstract, and URL for each result.”
+- “Explore the YC company directory, find active AI infrastructure companies, keep the work read-only, and return company, batch, description, location, profile URL, and source links.”
+- “Create a reusable Webcmd CLI for Grainger part lookup by part number that returns price, stock, minimum order quantity, lead time, and product URL.”
+- “Use my logged-in `work` profile to summarize unread LinkedIn messages from the last seven days, return sender, subject or opening text, received time, and conversation URL, pause for sign-in, and never store credentials.”
+- “Repair `webcmd reddit popular --limit 10`, preserve title, subreddit, score, comment count, and URL, then verify and explain the fix.”
+- “Package Grainger part lookup and SAP Ariba purchase-order status into `webcmd-procurement`, run checks, and prepare a community PR without merging or publishing it.”
 
 ## See It in Action: X → CLI
 
