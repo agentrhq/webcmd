@@ -21,6 +21,12 @@ Profiles separate browser identities and their login state. Use a named profile 
 
 When a profile needs interactive sign-in, complete it directly in the browser; never share credentials through chat.
 
+`webcmd <site> login` returns one of three states:
+
+- `already_logged_in`: Webcmd verified the account.
+- `in_progress`: managed reauthentication is running without current user action. The agent should not poll.
+- `action_required`: the agent must stop browser writes and wait for you to complete the requested step.
+
 ## Credential Safety
 
 Credentials never belong in prompts or adapter code. Ask the agent to use an authenticated profile and pause for a sign-in handoff instead of sharing passwords, cookies, or API keys.
@@ -29,4 +35,6 @@ Credentials never belong in prompts or adapter code. Ask the agent to use an aut
 
 In local mode, `webcmd <site> login` opens the foreground Webcmd browser and returns `action_required` immediately. Complete sign-in in that browser, tell the agent when you are done, and let it run `webcmd <site> whoami` before retrying the original task. Never send credentials, OTPs, cookies, or recovery codes through chat.
 
-Hosted mode is a separate future-facing flow. It will return a Webcmd-owned live authentication view, where you complete the interactive sign-in before the agent continues.
+In hosted mode, login uses managed authentication when available. An `action_required` result can include an `action_url` for sign-in and a `view_url` for the interactive browser. Normal hosted browser commands print the same viewing surface as `Webcmd browser: <URL>`. These short-lived Webcmd-owned links let you watch or override browser activity without exposing the underlying browser provider.
+
+After you report that sign-in or a CAPTCHA is complete, the agent must run the returned `verify_command`—normally `webcmd <site> whoami`—and inspect fresh browser state before resuming. If authentication state needs an explicit refresh, `webcmd auth refresh` uses the active mode's implementation; hosted mode does not start a local refresh scheduler.

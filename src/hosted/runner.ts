@@ -172,7 +172,7 @@ async function dispatchHosted(
     const invocation = parseHostedBrowserInvocation(args, normalized.profile);
     const manifest = await client.getManifest();
     validateManifestContractIdentity(manifest);
-    await dispatchHostedBrowser(invocation, client, stdout);
+    await dispatchHostedBrowser(invocation, client, stdout, stderr);
     return;
   }
 
@@ -285,6 +285,9 @@ async function dispatchHosted(
       stdout,
     });
   }
+  if (response.viewUrl) {
+    await writeToStream(stderr, `Webcmd browser: ${response.viewUrl}\n`);
+  }
   if (parsed.trace === 'on' && response.trace) {
     await writeToStream(stderr, `Webcmd trace artifact: ${response.trace.receipt}\n`);
   }
@@ -347,6 +350,7 @@ async function dispatchHostedBrowser(
   invocation: ParsedHostedBrowserInvocation,
   client: HostedClient,
   stdout: NodeJS.WritableStream,
+  stderr: NodeJS.WritableStream,
 ): Promise<void> {
   const args = invocation.action === 'set-file-input'
     ? materializeHostedBrowserUploadArgs(invocation.args)
@@ -360,6 +364,9 @@ async function dispatchHostedBrowser(
     trace: 'off',
   });
   await renderHostedBrowserResponse(stdout, invocation, response);
+  if (response.run.liveViewUrl) {
+    await writeToStream(stderr, `Webcmd browser: ${response.run.liveViewUrl}\n`);
+  }
 }
 
 function materializeHostedBrowserUploadArgs(args: Record<string, unknown>): Record<string, unknown> {

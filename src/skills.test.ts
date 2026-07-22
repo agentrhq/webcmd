@@ -111,6 +111,17 @@ describe('webcmd skills content', () => {
     expect(browser).not.toMatch(/browser login type/i);
     expect(usage).toContain('AUTH_REQUIRED');
     expect(usage).toContain('action_required');
+    for (const skill of [browser, usage]) {
+      expect(skill).toContain('already_logged_in');
+      expect(skill).toContain('in_progress');
+      expect(skill).toContain('action_url');
+      expect(skill).toContain('view_url');
+      expect(skill).toContain('webcmd auth refresh');
+      expect(skill).toMatch(/in_progress[^\n]*(?:no current user action|do not ask the user)/i);
+      expect(skill).toMatch(/action_required[^\n]*(?:hard stop|stop browser writes)/i);
+      expect(skill).toMatch(/(?:show|give|send|share)[^\n]*action_url[^\n]*view_url[^\n]*user/i);
+      expect(skill).toMatch(/whoami[\s\S]{0,500}fresh browser state[\s\S]{0,500}(?:resume|retry)/i);
+    }
     expect(autofix).toContain('webcmd <site> login');
     expect(author).toContain('registerSiteAuthCommands');
     for (const skill of skills) {

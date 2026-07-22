@@ -68,6 +68,7 @@ function executionResponse(input: {
   columns?: string[];
   trace?: Record<string, unknown>;
   command?: string;
+  viewUrl?: string;
 }): Response {
   return new Response(JSON.stringify({
     ok: true,
@@ -75,6 +76,41 @@ function executionResponse(input: {
     ...(input.columns ? { columns: input.columns } : {}),
     execution: { id: 'exec_success', command: input.command ?? 'github/whoami', status: 'succeeded' },
     ...(input.trace ? { trace: input.trace } : {}),
+    ...(input.viewUrl ? { viewUrl: input.viewUrl } : {}),
+  }), { status: 200 });
+}
+
+function authManifestResponse(): Response {
+  return new Response(JSON.stringify({
+    ok: true,
+    manifest: {
+      ...manifest,
+      commands: [
+        ...manifest.commands,
+        {
+          site: 'github',
+          name: 'login',
+          command: 'github/login',
+          description: 'Authenticate GitHub',
+          access: 'write',
+          strategy: 'UI',
+          browser: true,
+          args: [],
+          columns: ['status', 'logged_in', 'site', 'action', 'verify_command', 'action_url', 'view_url', 'expires_at'],
+        },
+        {
+          site: 'auth',
+          name: 'refresh',
+          command: 'auth/refresh',
+          description: 'Refresh hosted authentication',
+          access: 'write',
+          strategy: 'UI',
+          browser: true,
+          args: [],
+          columns: ['status', 'logged_in', 'site', 'action', 'verify_command', 'action_url', 'view_url', 'expires_at'],
+        },
+      ],
+    },
   }), { status: 200 });
 }
 
@@ -1096,6 +1132,90 @@ describe('runHostedCli', () => {
     expect(stdout.text()).not.toContain('trace_receipt');
   });
 
+  it('prints an adapter viewer capability to stderr exactly once after rendering the result', async () => {
+    const stdout = sink();
+    const stderr = sink();
+    const viewUrl = 'https://api.example.com/account/live/adapter-token';
+    await runHostedCli(['github', 'whoami', '-f', 'json'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      fetchImpl: async (url) => String(url).endsWith('/v1/manifest')
+        ? manifestResponse()
+        : executionResponse({ result: [{ username: 'octocat' }], viewUrl }),
+    });
+
+    expect(stdout.text()).toContain('octocat');
+    expect(stderr.text()).toBe(`Webcmd browser: ${viewUrl}\n`);
+  });
+
+  it.each([
+    ['already_logged_in', 'json'],
+    ['in_progress', 'yaml'],
+    ['action_required', 'table'],
+  ])('passes through hosted login state %s in %s output', async (status, format) => {
+    const stdout = sink(format === 'table');
+    const actionUrl = 'https://api.example.com/account/auth/action-token';
+    const viewUrl = 'https://api.example.com/account/live/view-token';
+    const row = {
+      status,
+      logged_in: status === 'already_logged_in',
+      site: 'github',
+      action: status === 'action_required' ? 'Complete sign-in.' : '',
+      verify_command: 'webcmd github whoami',
+      action_url: actionUrl,
+      view_url: viewUrl,
+      expires_at: '2026-07-22T12:00:00.000Z',
+    };
+    await runHostedCli(['github', 'login', '-f', format], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      stderr: sink().stream,
+      fetchImpl: async (url) => String(url).endsWith('/v1/manifest')
+        ? authManifestResponse()
+        : executionResponse({
+            command: 'github/login',
+            result: [row],
+            columns: ['status', 'logged_in', 'site', 'action', 'verify_command', 'action_url', 'view_url', 'expires_at'],
+          }),
+    });
+
+    expect(stdout.text()).toContain(status);
+    expect(stdout.text()).toContain('webcmd github whoami');
+    expect(stdout.text()).toContain(actionUrl);
+    expect(stdout.text()).toContain(viewUrl);
+    expect(stdout.text()).toContain('2026-07-22T12:00:00.000Z');
+  });
+
+  it('dispatches auth/refresh from the hosted manifest through the execute endpoint', async () => {
+    const requests: Array<{ pathname: string; body?: unknown }> = [];
+    const result = await runHostedCli(['--profile', 'work', 'auth', 'refresh', '-f', 'json'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: sink().stream,
+      stderr: sink().stream,
+      fetchImpl: async (url, init) => {
+        const pathname = new URL(String(url)).pathname;
+        requests.push({ pathname, ...(init?.body ? { body: JSON.parse(String(init.body)) } : {}) });
+        return pathname === '/v1/manifest'
+          ? authManifestResponse()
+          : executionResponse({ command: 'auth/refresh', result: [] });
+      },
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 0 });
+    expect(requests).toEqual([
+      { pathname: '/v1/manifest' },
+      {
+        pathname: '/v1/execute',
+        body: { command: 'auth/refresh', args: {}, format: 'json', trace: 'off', profile: 'work' },
+      },
+    ]);
+  });
+
+  it('does not present manifest-backed auth as a local-only command', () => {
+    expect(HOSTED_ROOT_HELP.localOnlyCommands).not.toContainEqual(expect.objectContaining({ name: 'auth' }));
+  });
+
   it.each(['off', 'retain-on-failure'])('does not write a success trace notice for trace=%s', async (trace) => {
     const stderr = sink();
     await runHostedCli(['github', 'whoami', '--trace', trace, '-f', 'json'], {
@@ -1424,6 +1544,36 @@ describe('runHostedCli', () => {
         },
       },
     ]);
+  });
+
+  it('prints a raw-browser viewer capability to stderr exactly once', async () => {
+    const stdout = sink();
+    const stderr = sink();
+    const liveViewUrl = 'https://api.example.com/account/live/browser-token';
+    const result = await runHostedCli(['browser', 'work', 'state'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      fetchImpl: async (url) => String(url).endsWith('/v1/manifest')
+        ? manifestResponse()
+        : new Response(JSON.stringify({
+            ok: true,
+            result: { url: 'https://github.com', snapshot: 'GitHub' },
+            columns: [],
+            trace: null,
+            run: {
+              executionId: 'exec_browser_view',
+              session: 'work',
+              profile: { id: 'profile_default', displayName: 'default' },
+              liveViewUrl,
+            },
+            execution: { id: 'exec_browser_view', status: 'succeeded' },
+          }), { status: 200 }),
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 0 });
+    expect(stdout.text()).toContain('GitHub');
+    expect(stderr.text()).toBe(`Webcmd browser: ${liveViewUrl}\n`);
   });
 
   it('uses the canonical Commander value for a dash-leading browser option in the Cloud request', async () => {

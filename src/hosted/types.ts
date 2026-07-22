@@ -74,6 +74,7 @@ export interface HostedTraceReceipt {
 export interface HostedExecuteResponse {
   ok: true;
   result: unknown;
+  viewUrl?: string;
   columns?: string[];
   footerExtra?: string;
   execution: HostedExecution;

@@ -86,7 +86,7 @@ export class HostedClient {
       method: 'POST',
       body: JSON.stringify(input),
     }, { command: input.command, traceMode });
-    if (!isHostedExecuteResponse(body, input.command, traceMode)) {
+    if (!isHostedExecuteResponse(body, input.command, traceMode, this.apiBaseUrl)) {
       throw protocolError('Webcmd Cloud returned an invalid execution response.');
     }
     return body;
@@ -144,7 +144,7 @@ export class HostedClient {
         ...(input.profile !== undefined ? { profile: input.profile } : {}),
       }),
     }, { command: input.command, traceMode });
-    if (!isHostedExecuteResponse(body, input.command, traceMode)) {
+    if (!isHostedExecuteResponse(body, input.command, traceMode, this.apiBaseUrl)) {
       throw protocolError('Webcmd Cloud returned an invalid execution response.');
     }
     return body;
@@ -187,7 +187,7 @@ export class HostedClient {
       method: 'POST',
       body: JSON.stringify(input),
     });
-    if (!isHostedBrowserRunResponse(body, session)) {
+    if (!isHostedBrowserRunResponse(body, session, this.apiBaseUrl)) {
       throw protocolError('Webcmd Cloud returned an invalid browser run response.');
     }
     return body;
@@ -232,7 +232,7 @@ export class HostedClient {
       method: 'POST',
       body: JSON.stringify(input),
     });
-    if (!isHostedBrowserRunActionResponse(body, session)) {
+    if (!isHostedBrowserRunActionResponse(body, session, this.apiBaseUrl)) {
       throw protocolError('Webcmd Cloud returned an invalid browser action response.');
     }
     return body;
@@ -321,8 +321,9 @@ function isHostedExecuteResponse(
   value: unknown,
   requestedCommand: string,
   traceMode: HostedTraceMode,
+  apiBaseUrl: string,
 ): value is HostedExecuteResponse {
-  if (!hasOnlyKeys(value, ['ok', 'result', 'columns', 'footerExtra', 'execution', 'trace', 'artifacts'])
+  if (!hasOnlyKeys(value, ['ok', 'result', 'viewUrl', 'columns', 'footerExtra', 'execution', 'trace', 'artifacts'])
     || value.ok !== true
     || !Object.prototype.hasOwnProperty.call(value, 'result')) return false;
   if (!isHostedExecution(value.execution) || value.execution.status !== 'succeeded') return false;
@@ -331,6 +332,7 @@ function isHostedExecuteResponse(
     return false;
   }
   if (value.footerExtra !== undefined && typeof value.footerExtra !== 'string') return false;
+  if (value.viewUrl !== undefined && !isPublicLiveViewUrl(value.viewUrl, apiBaseUrl)) return false;
   if (value.artifacts !== undefined && (!Array.isArray(value.artifacts) || !value.artifacts.every(isHostedArtifactReceipt))) return false;
   if (value.trace !== undefined && !isHostedTraceReceipt(value.trace)) return false;
   if (value.trace && value.trace.executionId !== value.execution.id) return false;
@@ -471,17 +473,27 @@ function isSafeRelativeArtifactPath(value: unknown): value is string {
     && !value.split('/').some(segment => !segment || segment === '.' || segment === '..' || segment.includes('\0'));
 }
 
-function isHostedBrowserRunResponse(value: unknown, requestedSession: string): value is HostedBrowserRunResponse {
-  return hasExactKeys(value, ['ok', 'run']) && value.ok === true && isHostedBrowserRunPayload(value.run, requestedSession);
+function isHostedBrowserRunResponse(
+  value: unknown,
+  requestedSession: string,
+  apiBaseUrl: string,
+): value is HostedBrowserRunResponse {
+  return hasExactKeys(value, ['ok', 'run'])
+    && value.ok === true
+    && isHostedBrowserRunPayload(value.run, requestedSession, apiBaseUrl);
 }
 
-function isHostedBrowserRunPayload(value: unknown, requestedSession: string): value is HostedBrowserRunResponse['run'] {
+function isHostedBrowserRunPayload(
+  value: unknown,
+  requestedSession: string,
+  apiBaseUrl: string,
+): value is HostedBrowserRunResponse['run'] {
   const run = value;
   if (!hasOnlyKeys(run, ['executionId', 'session', 'profile', 'liveViewUrl'])) return false;
   if (typeof run.executionId !== 'string' || run.session !== requestedSession) return false;
   if (!hasExactKeys(run.profile, ['id', 'displayName'])) return false;
   if (typeof run.profile.id !== 'string' || typeof run.profile.displayName !== 'string') return false;
-  return run.liveViewUrl === undefined || typeof run.liveViewUrl === 'string';
+  return run.liveViewUrl === undefined || isPublicLiveViewUrl(run.liveViewUrl, apiBaseUrl);
 }
 
 function isHostedBrowserActionResponse(value: unknown): value is HostedBrowserActionResponse {
@@ -490,11 +502,15 @@ function isHostedBrowserActionResponse(value: unknown): value is HostedBrowserAc
   return value.trace === null || isHostedBrowserActionTrace(value.trace);
 }
 
-function isHostedBrowserRunActionResponse(value: unknown, requestedSession: string): value is HostedBrowserRunActionResponse {
+function isHostedBrowserRunActionResponse(
+  value: unknown,
+  requestedSession: string,
+  apiBaseUrl: string,
+): value is HostedBrowserRunActionResponse {
   if (!hasExactKeys(value, ['ok', 'result', 'columns', 'trace', 'run', 'execution']) || value.ok !== true) return false;
   if (!Array.isArray(value.columns) || !value.columns.every(column => typeof column === 'string')) return false;
   if (value.trace !== null && !isHostedBrowserActionTrace(value.trace)) return false;
-  if (!isHostedBrowserRunPayload(value.run, requestedSession)) return false;
+  if (!isHostedBrowserRunPayload(value.run, requestedSession, apiBaseUrl)) return false;
   return hasExactKeys(value.execution, ['id', 'status'])
     && typeof value.execution.id === 'string'
     && value.execution.id === value.run.executionId
@@ -552,6 +568,25 @@ function publicExecutionBase(executionId: string): string | undefined {
 
 function optionalExactPath(value: unknown, expected: string): boolean {
   return value === undefined || value === expected;
+}
+
+function isPublicLiveViewUrl(value: unknown, apiBaseUrl: string): value is string {
+  if (typeof value !== 'string' || value.includes('?') || value.includes('#')) return false;
+  try {
+    const url = new URL(value);
+    const api = new URL(apiBaseUrl);
+    const loopback = api.hostname === 'localhost' || api.hostname === '127.0.0.1' || api.hostname === '[::1]';
+    return url.href === value
+      && url.origin === api.origin
+      && !url.username
+      && !url.password
+      && (url.protocol === 'https:' || (url.protocol === 'http:' && loopback))
+      && url.search === ''
+      && url.hash === ''
+      && /^\/account\/live\/[A-Za-z0-9_-]+$/.test(url.pathname);
+  } catch {
+    return false;
+  }
 }
 
 function isSafeReceiptToken(value: unknown): value is string {

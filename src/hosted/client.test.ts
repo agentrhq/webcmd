@@ -70,6 +70,22 @@ const validTraceUrlCases = [
   { field: 'replayUrl', suffix: 'replay', executionId: 'exec_trace' },
 ] as const;
 
+const invalidViewerUrlCases = [
+  ['raw Kernel URL', 'https://kernel.example/session/secret'],
+  ['wrong origin', 'https://other.example.com/account/live/token'],
+  ['credentials', 'https://user:pass@api.example.com/account/live/token'],
+  ['query string', 'https://api.example.com/account/live/token?secret=1'],
+  ['empty query string', 'https://api.example.com/account/live/token?'],
+  ['fragment', 'https://api.example.com/account/live/token#secret'],
+  ['empty fragment', 'https://api.example.com/account/live/token#'],
+  ['surrounding control characters', '\nhttps://api.example.com/account/live/token\n'],
+  ['protocol-relative URL', '//api.example.com/account/live/token'],
+  ['wrong path', 'https://api.example.com/v1/executions/exec/live'],
+  ['empty token', 'https://api.example.com/account/live/'],
+  ['nested token path', 'https://api.example.com/account/live/token/extra'],
+  ['insecure production URL', 'http://api.example.com/account/live/token'],
+] as const;
+
 describe('HostedClient', () => {
   it('sends bearer auth and parses hosted manifest', async () => {
     const requests: Array<{ url: string; authorization: string | null }> = [];
@@ -662,6 +678,95 @@ describe('HostedClient', () => {
       execution: { id: 'exec_success', status: 'succeeded' },
       trace: { receipt: 'trace_receipt' },
     });
+  });
+
+  it('accepts an absolute Webcmd-owned adapter viewer capability', async () => {
+    const viewUrl = 'https://api.example.com/account/live/opaque-token_123';
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        result: [],
+        viewUrl,
+        execution: { id: 'exec_view', command: 'github/whoami', status: 'succeeded' },
+      }), { status: 200 }),
+    });
+
+    await expect(client.execute({ command: 'github/whoami', args: {} })).resolves.toMatchObject({ viewUrl });
+  });
+
+  it.each(invalidViewerUrlCases)('rejects adapter viewer capability with %s', async (_name, viewUrl) => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        result: [],
+        viewUrl,
+        execution: { id: 'exec_view', command: 'github/whoami', status: 'succeeded' },
+      }), { status: 200 }),
+    });
+
+    await expect(client.execute({ command: 'github/whoami', args: {} })).rejects.toMatchObject({
+      code: 'HOSTED_PROTOCOL',
+    });
+  });
+
+  it.each(invalidViewerUrlCases)('rejects raw-browser viewer capability with %s', async (_name, liveViewUrl) => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        result: {},
+        columns: [],
+        trace: null,
+        run: {
+          executionId: 'exec_view',
+          session: 'work',
+          profile: { id: 'profile_default', displayName: 'default' },
+          liveViewUrl,
+        },
+        execution: { id: 'exec_view', status: 'succeeded' },
+      }), { status: 200 }),
+    });
+
+    await expect(client.runBrowserAction('work', {
+      command: 'browser/state',
+      action: 'snapshot',
+      args: {},
+    })).rejects.toMatchObject({ code: 'HOSTED_PROTOCOL' });
+  });
+
+  it.each([
+    ['HTTPS production', 'https://api.example.com', 'https://api.example.com/account/live/token'],
+    ['HTTP localhost', 'http://localhost:8787', 'http://localhost:8787/account/live/token'],
+    ['HTTP IPv4 loopback', 'http://127.0.0.1:8787', 'http://127.0.0.1:8787/account/live/token'],
+  ])('accepts a raw-browser viewer capability on %s', async (_name, apiBaseUrl, liveViewUrl) => {
+    const client = new HostedClient({
+      apiBaseUrl,
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        result: {},
+        columns: [],
+        trace: null,
+        run: {
+          executionId: 'exec_view',
+          session: 'work',
+          profile: { id: 'profile_default', displayName: 'default' },
+          liveViewUrl,
+        },
+        execution: { id: 'exec_view', status: 'succeeded' },
+      }), { status: 200 }),
+    });
+
+    await expect(client.runBrowserAction('work', {
+      command: 'browser/state',
+      action: 'snapshot',
+      args: {},
+    })).resolves.toMatchObject({ run: { liveViewUrl } });
   });
 
   it.each([

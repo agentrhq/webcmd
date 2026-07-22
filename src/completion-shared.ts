@@ -48,7 +48,6 @@ export const HOSTED_ROOT_HELP: RootHelpPresentation = {
   localOnlyCommands: [
     { name: 'adapter', description: 'Manage adapters installed on this computer' },
     { name: 'antigravity', description: 'Run the local Antigravity proxy' },
-    { name: 'auth', description: 'Inspect credentials in the local browser runtime' },
     { name: 'convention-audit', description: 'Audit adapter source files on this computer' },
     { name: 'daemon', description: 'Manage the local Webcmd daemon' },
     { name: 'doctor', description: 'Diagnose local browser bridge connectivity' },
