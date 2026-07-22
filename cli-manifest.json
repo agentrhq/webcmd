@@ -3517,6 +3517,43 @@
     "sourceFile": "bluesky/user.js"
   },
   {
+    "site": "bmwblog",
+    "name": "search",
+    "description": "Search BMWBLOG articles by keyword",
+    "access": "read",
+    "domain": "www.bmwblog.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "query",
+        "type": "string",
+        "required": true,
+        "positional": true,
+        "help": "Search keywords, e.g. iX3"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Number of articles to return (1-50)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "id",
+      "title",
+      "slug",
+      "published",
+      "excerpt",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "bmwblog/search.js",
+    "sourceFile": "bmwblog/search.js"
+  },
+  {
     "site": "booking",
     "name": "search",
     "description": "Search Booking.com hotels by destination and dates (server-rendered card scrape).",
