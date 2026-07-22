@@ -52,7 +52,7 @@ webcmd skills add
 
 When prompted, choose a supported harness such as Codex or Claude, or enter a custom skills path.
 
-Then ask your agent naturally—“use webcmd to…” is enough.
+In your agent harness, load or tag `webcmd-usage`, then describe the outcome you want.
 
 ```text
 Use webcmd to research the latest discussions about browser automation across Hacker News and Reddit, then return a concise comparison with source links.
