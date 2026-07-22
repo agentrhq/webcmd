@@ -55,22 +55,22 @@ When prompted, choose a supported harness such as Codex or Claude, or enter a cu
 In your agent harness, load or tag `webcmd-usage`, then describe the outcome you want.
 
 ```text
-Use the webcmd-usage skill to find the best way to research the latest discussions about browser automation across Hacker News and Reddit. Reuse existing adapters where possible and return a concise comparison with source links.
+Use webcmd to research the latest discussions about browser automation across Hacker News and Reddit, then return a concise comparison with source links.
 ```
 
 ## What You Can Ask
 
-- “Use `webcmd-usage` to find an existing PubMed adapter, research agentic browser automation, and return the title, authors, publication date, abstract, and URL for each result.”
-- “Explore the YC company directory, find active AI infrastructure companies, keep the work read-only, and return company, batch, description, location, profile URL, and source links.”
-- “Create a reusable Webcmd CLI for Grainger part lookup by part number that returns price, stock, minimum order quantity, lead time, and product URL.”
-- “Use my logged-in `work` profile to summarize unread LinkedIn messages from the last seven days, return sender, subject or opening text, received time, and conversation URL, pause for sign-in, and never store credentials.”
-- “Repair `webcmd reddit popular --limit 10`, preserve title, subreddit, score, comment count, and URL, then verify and explain the fix.”
-- “Package Grainger part lookup and SAP Ariba purchase-order status into `webcmd-procurement`, run checks, and prepare a community PR without merging or publishing it.”
+- “Use webcmd to research agentic browser automation on PubMed and return the title, authors, publication date, abstract, and URL for each result.”
+- “Use webcmd to find active AI infrastructure companies in the YC company directory and return the company, batch, description, location, profile URL, and source links. Keep it read-only.”
+- “Use webcmd to look up parts on Grainger by part number and return price, stock, minimum order quantity, lead time, and product URL.”
+- “Use webcmd with my logged-in `work` profile to summarize unread LinkedIn messages from the last seven days and return the sender, subject or opening text, received time, and conversation URL.”
+- “Repair `webcmd reddit popular --limit 10` and keep returning the title, subreddit, score, comment count, and URL.”
+- “Use webcmd to check Grainger part prices and SAP Ariba purchase-order status, then return a combined summary.”
 
 ## See It in Action: X → CLI
 
 ```text
-Use my logged-in `social` profile to collect my recent X bookmarks, then turn the successful workflow into a reusable Webcmd command that returns author, text, and URL. Verify it before finishing.
+Use webcmd with my logged-in `social` profile to collect my recent X bookmarks and return the author, text, and URL.
 ```
 
 The agent explores the X workflow once using the logged-in profile.
@@ -88,7 +88,7 @@ Beyond website adapters, Webcmd can work through authenticated browser sessions,
 | AI tools | ChatGPT, Claude, Gemini, NotebookLM | Retrieve conversations, research outputs, notebooks, and generated materials from the tools you already use. |
 | shopping and bookings | Amazon, Blinkit, Zepto, BigBasket, District, Practo | Compare products, availability, prices, appointments, events, and delivery options. |
 
-This list is illustrative; agents can use `webcmd-usage` to discover the current surface.
+This list is illustrative; ask your agent to use webcmd to discover what is currently available.
 
 ## Learn More
 
