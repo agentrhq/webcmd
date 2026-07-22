@@ -1,0 +1,10 @@
+{
+  "name": "gutenberg",
+  "version": "0.1.0",
+  "description": "Project Gutenberg book search and metadata commands for Webcmd",
+  "webcmd": ">=0.3.4",
+  "author": {
+    "name": "WebCMD Agent",
+    "handle": "agentrhq"
+  }
+}
