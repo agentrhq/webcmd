@@ -27,4 +27,6 @@ Credentials never belong in prompts or adapter code. Ask the agent to use an aut
 
 ## Local and Hosted Authentication
 
-Local mode can open a local browser for sign-in. Hosted mode returns a Webcmd-owned live authentication view, where you complete the interactive sign-in before the agent continues.
+In local mode, `webcmd <site> login` opens the foreground Webcmd browser and returns `action_required` immediately. Complete sign-in in that browser, tell the agent when you are done, and let it run `webcmd <site> whoami` before retrying the original task. Never send credentials, OTPs, cookies, or recovery codes through chat.
+
+Hosted mode is a separate future-facing flow. It will return a Webcmd-owned live authentication view, where you complete the interactive sign-in before the agent continues.

@@ -28,7 +28,7 @@ Create a private Webcmd CLI for this supplier portal. Given a part number, retur
 ## Use a Logged-In Website
 
 ```text
-Use my logged-in `work` browser profile to read invoices from the Acme billing dashboard. Return invoice_id, customer, due_date, amount, status, and detail_url; pause if I need to sign in, do not store credentials in code, and do not change any invoice or account data.
+Use my logged-in `work` browser profile to read invoices from the Acme billing dashboard. Return invoice_id, customer, due_date, amount, status, and detail_url; if authentication is required, run `webcmd acme login`, pause while I complete sign-in or a CAPTCHA in the foreground browser, and never enter or request credentials in chat. After I confirm it is complete, run `webcmd acme whoami` before retrying the invoice command. Do not change any invoice or account data.
 ```
 
 ## Extend an Existing CLI

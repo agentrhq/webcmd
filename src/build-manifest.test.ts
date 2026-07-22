@@ -482,4 +482,20 @@ describe('manifest helper rules', () => {
     // Unknown flags are ignored.
     expect(parseBuildManifestArgs(['--something-else']).allowRemovals).toBe(0);
   });
+
+  it('keeps every browser login on the local handoff contract', () => {
+    const manifest = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'cli-manifest.json'), 'utf8')) as ManifestEntry[];
+    const logins = manifest.filter((entry) => entry.browser === true && entry.name === 'login');
+    const keys = new Set(manifest.map((entry) => `${entry.site}/${entry.name}`));
+
+    expect(logins.length).toBeGreaterThan(0);
+    for (const login of logins) {
+      expect(login.args.some((arg) => arg.name === 'timeout'), `${login.site}/login`).toBe(false);
+      expect(login.description, `${login.site}/login`).not.toMatch(/wait until/i);
+      expect(login.columns, `${login.site}/login`).toEqual(expect.arrayContaining([
+        'status', 'logged_in', 'site', 'action', 'verify_command',
+      ]));
+      expect(keys.has(`${login.site}/whoami`), `${login.site}/whoami`).toBe(true);
+    }
+  });
 });
