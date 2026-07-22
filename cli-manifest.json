@@ -3517,6 +3517,42 @@
     "sourceFile": "bluesky/user.js"
   },
   {
+    "site": "bmwblog",
+    "name": "search",
+    "description": "Search published BMWBLOG articles",
+    "access": "read",
+    "domain": "www.bmwblog.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "query",
+        "type": "string",
+        "required": true,
+        "positional": true,
+        "help": "Article search query, for example \"BMW M3\""
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Maximum articles to return (1-50)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "id",
+      "title",
+      "date",
+      "excerpt",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "bmwblog/search.js",
+    "sourceFile": "bmwblog/search.js"
+  },
+  {
     "site": "booking",
     "name": "search",
     "description": "Search Booking.com hotels by destination and dates (server-rendered card scrape).",
