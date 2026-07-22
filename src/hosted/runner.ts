@@ -113,7 +113,7 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
       ...toEnvelope(err),
       ...(handoff ? { handoff } : {}),
     }, {
-      cmdName: hostedCommandName(argv),
+      cmdName: handoff ? undefined : hostedCommandName(argv),
       traceMode: hostedTraceMode(argv),
     }));
     return {

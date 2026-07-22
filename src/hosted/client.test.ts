@@ -468,6 +468,73 @@ describe('HostedClient', () => {
     });
   });
 
+  it('rejects a handoff from a timed-out execution', async () => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: false,
+        error: { code: 'TIMEOUT', message: 'Timed out', exitCode: 75 },
+        execution: { id: 'exec_timeout', command: 'github/whoami', status: 'timed_out' },
+        handoff: {
+          status: 'action_required',
+          action: 'Complete the challenge.',
+          viewUrl: 'https://api.example.com/account/live/token',
+        },
+      }), { status: 504 }),
+    });
+
+    await expect(client.execute({ command: 'github/whoami', args: {} })).rejects.toMatchObject({
+      code: 'HOSTED_PROTOCOL',
+      exitCode: 1,
+    });
+  });
+
+  it('rejects a prepared-execution handoff for a different execution id', async () => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: false,
+        error: { code: 'AUTH_REQUIRED', message: 'Sign in first', exitCode: 77 },
+        execution: { id: 'exec_other', command: 'github/whoami', status: 'failed' },
+        handoff: {
+          status: 'action_required',
+          action: 'Complete sign-in.',
+          viewUrl: 'https://api.example.com/account/live/token',
+        },
+      }), { status: 401 }),
+    });
+
+    await expect(client.runPreparedExecution({
+      executionId: 'exec_expected',
+      command: 'github/whoami',
+      args: {},
+    })).rejects.toMatchObject({ code: 'HOSTED_PROTOCOL', exitCode: 1 });
+  });
+
+  it('rejects a handoff on an artifact download failure', async () => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: false,
+        error: { code: 'AUTH_REQUIRED', message: 'Sign in first', exitCode: 77 },
+        execution: { id: 'exec_files', command: 'github/whoami', status: 'failed' },
+        handoff: {
+          status: 'action_required',
+          action: 'Complete sign-in.',
+          viewUrl: 'https://api.example.com/account/live/token',
+        },
+      }), { status: 401 }),
+    });
+
+    await expect(client.downloadExecutionArtifact({
+      executionId: 'exec_files',
+      artifactId: 'artifact_out',
+    })).rejects.toMatchObject({ code: 'HOSTED_PROTOCOL', exitCode: 1 });
+  });
+
   it.each(['success', 'failure'].flatMap(phase => invalidTraceUrlCases.map(testCase => ({
     phase,
     ...testCase,

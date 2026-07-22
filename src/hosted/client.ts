@@ -146,7 +146,7 @@ export class HostedClient {
         ...(input.trace !== undefined ? { trace: input.trace } : {}),
         ...(input.profile !== undefined ? { profile: input.profile } : {}),
       }),
-    }, { command: input.command, traceMode });
+    }, { command: input.command, traceMode, executionId: input.executionId });
     if (!isHostedExecuteResponse(body, input.command, traceMode, this.apiBaseUrl)) {
       throw protocolError('Webcmd Cloud returned an invalid execution response.');
     }
@@ -169,7 +169,9 @@ export class HostedClient {
     if (!response.ok) {
       const text = await response.text();
       const body = text ? parseJson(text) : {};
-      if (!isHostedError(body, this.apiBaseUrl)) throw protocolError('Webcmd Cloud returned an invalid artifact download failure.');
+      if (!isHostedError(body, this.apiBaseUrl) || body.handoff) {
+        throw protocolError('Webcmd Cloud returned an invalid artifact download failure.');
+      }
       const error = body.error;
       throw new HostedClientError(
         error.code,
@@ -179,7 +181,6 @@ export class HostedClient {
         {
           ...(body.execution ? { execution: body.execution } : {}),
           ...(body.trace ? { trace: body.trace } : {}),
-          ...(body.handoff ? { handoff: body.handoff } : {}),
         },
       );
     }
@@ -305,7 +306,7 @@ function isHostedError(value: unknown, apiBaseUrl: string): value is HostedError
   if (value.execution !== undefined && !isHostedExecution(value.execution)) return false;
   if (value.trace !== undefined && !isHostedTraceReceipt(value.trace)) return false;
   if (value.handoff !== undefined && !isHostedFailureHandoff(value.handoff, apiBaseUrl)) return false;
-  if (value.handoff && !value.execution) return false;
+  if (value.handoff && value.execution?.status !== 'failed') return false;
   if (value.execution?.status === 'succeeded') return false;
   if (value.trace && (!value.execution || value.trace.executionId !== value.execution.id)) return false;
   return true;
@@ -646,6 +647,7 @@ type HostedTraceMode = 'off' | 'on' | 'retain-on-failure';
 interface ExecutionExpectation {
   command: string;
   traceMode: HostedTraceMode;
+  executionId?: string;
 }
 
 function normalizeTraceMode(value: string | undefined): HostedTraceMode {
@@ -658,6 +660,7 @@ function isValidExecutedFailure(
 ): boolean {
   if (!value.execution || !expectation || value.error.exitCode === undefined) return false;
   if (value.execution.command !== expectation.command) return false;
+  if (expectation.executionId !== undefined && value.execution.id !== expectation.executionId) return false;
   const traceRequired = expectation.traceMode === 'on' || expectation.traceMode === 'retain-on-failure';
   return traceRequired ? value.trace !== undefined : value.trace === undefined;
 }

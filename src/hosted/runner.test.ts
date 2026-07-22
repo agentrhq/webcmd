@@ -1303,6 +1303,40 @@ describe('runHostedCli', () => {
     ].join('\n'));
   });
 
+  it('suppresses AutoFix guidance when a failed command includes a handoff', async () => {
+    const stdout = sink();
+    const stderr = sink();
+    const viewUrl = 'https://api.example.com/account/live/selector-token';
+    const result = await runHostedCli(['github', 'whoami'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      fetchImpl: async (url) => {
+        if (String(url).endsWith('/v1/manifest')) return manifestResponse();
+        return new Response(JSON.stringify({
+          ok: false,
+          error: { code: 'SELECTOR', message: 'Sign-in control blocked the page', exitCode: 1 },
+          execution: { id: 'exec_failure', command: 'github/whoami', status: 'failed' },
+          handoff: {
+            status: 'action_required',
+            action: 'Complete sign-in in the hosted browser.',
+            viewUrl,
+            verifyCommand: 'webcmd github whoami',
+          },
+        }), { status: 500 });
+      },
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 1 });
+    expect(stdout.text()).toBe('');
+    expect(stderr.text().match(/^Webcmd browser:/gm)).toHaveLength(1);
+    expect(stderr.text()).toContain('code: SELECTOR');
+    expect(stderr.text()).toContain('handoff:');
+    expect(stderr.text()).toContain(`viewUrl: ${viewUrl}`);
+    expect(stderr.text()).not.toContain('AutoFix');
+    expect(stderr.text()).not.toContain('--trace retain-on-failure');
+  });
+
   it.each(['success', 'failure'])('rejects a raw provider trace URL before $phase output or attachment', async (phase) => {
     const rawUrl = 'https://kernel.example/session/private?token=kernel-secret-token';
     const stdout = sink();
