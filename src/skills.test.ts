@@ -102,6 +102,11 @@ describe('webcmd skills content', () => {
     const autofixAuthRequired = autofix.match(/^- \*\*`AUTH_REQUIRED`\*\*[\s\S]*?(?=\n- \*\*)/m)?.[0] ?? '';
     const autofixAuthRequiredRow = autofix.split('\n')
       .find((line) => line.startsWith('| AUTH_REQUIRED |')) ?? '';
+    const autofixCaptcha = autofix.match(/^- \*\*CAPTCHA \/ raw-browser user takeover:\*\*[\s\S]*?(?=\n- \*\*)/m)?.[0] ?? '';
+    const authenticationDocs = fs.readFileSync(
+      path.join(process.cwd(), 'docs', 'authentication-and-profiles.mdx'),
+      'utf8',
+    );
 
     expect(browser).toContain('webcmd <site> login');
     expect(browser).toContain('webcmd <site> whoami');
@@ -147,6 +152,10 @@ describe('webcmd skills content', () => {
     expect(autofixHandoff).toMatch(/handoff\.viewUrl[\s\S]*user[\s\S]*(?:wait|pause)/i);
     expect(autofixHandoff).toMatch(/never[\s\S]{0,150}(?:enter|type)[\s\S]{0,150}(?:credentials|password)[\s\S]{0,150}CAPTCHA/i);
     expect(autofixHandoff).toMatch(/verifyCommand[\s\S]{0,300}fresh browser state[\s\S]{0,300}(?:resume|retry)/i);
+    expect(autofixHandoff).toMatch(/without (?:a )?`?verifyCommand`?[\s\S]{0,300}fresh browser state[\s\S]{0,300}intended post-action state[\s\S]{0,200}before (?:any )?retry/i);
+    expect(autofixCaptcha).toContain('verifyCommand');
+    expect(autofixCaptcha).not.toContain('verify_command');
+    expect(authenticationDocs).toMatch(/If no verifier is returned[\s\S]{0,300}fresh browser state[\s\S]{0,300}intended post-action state[\s\S]{0,200}before (?:any )?retry/i);
     expect(autofix.indexOf('Hosted failure handoff')).toBeLessThan(autofix.indexOf('## Step 1: Collect Trace Context'));
   });
 
