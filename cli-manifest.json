@@ -14854,6 +14854,36 @@
     "sourceFile": "mercury/reimbursement-plan.js"
   },
   {
+    "site": "ndtv",
+    "name": "top-stories",
+    "description": "NDTV top stories from the public RSS feed",
+    "access": "read",
+    "domain": "www.ndtv.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 5,
+        "required": false,
+        "help": "Number of top stories to return (1-50, default 5)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "title",
+      "description",
+      "pubDate",
+      "id",
+      "url"
+    ],
+    "defaultFormat": "table",
+    "type": "js",
+    "modulePath": "ndtv/top-stories.js",
+    "sourceFile": "ndtv/top-stories.js"
+  },
+  {
     "site": "notebooklm",
     "name": "add-source",
     "description": "Add a URL, text, or local file source to an existing NotebookLM notebook",
