@@ -37,4 +37,6 @@ In local mode, `webcmd <site> login` opens the foreground Webcmd browser and ret
 
 In hosted mode, login uses managed authentication when available. An `action_required` result can include an `action_url` for sign-in and a `view_url` for the interactive browser. Normal hosted browser commands print the same viewing surface as `Webcmd browser: <URL>`. These short-lived Webcmd-owned links let you watch or override browser activity without exposing the underlying browser provider.
 
+A failed hosted command can also return an `action_required` handoff. The agent must stop instead of attempting AutoFix, show the `Webcmd browser: <viewUrl>` link, and wait for your confirmation. It may resume only after running the returned `verifyCommand` when present and checking fresh browser state.
+
 After you report that sign-in or a CAPTCHA is complete, the agent must run the returned `verify_command`—normally `webcmd <site> whoami`—and inspect fresh browser state before resuming. If authentication state needs an explicit refresh, `webcmd auth refresh` uses the active mode's implementation; hosted mode does not start a local refresh scheduler.

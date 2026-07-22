@@ -371,6 +371,103 @@ describe('HostedClient', () => {
     } satisfies Partial<HostedClientError>);
   });
 
+  it('preserves a validated failed-execution handoff', async () => {
+    const handoff = {
+      status: 'action_required',
+      action: 'Complete sign-in in the hosted browser.',
+      viewUrl: 'https://api.example.com/account/live/handoff-token',
+      expiresAt: '2026-07-23T12:00:00.000Z',
+      verifyCommand: 'webcmd github whoami',
+    } as const;
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: false,
+        error: { code: 'AUTH_REQUIRED', message: 'Sign in first', exitCode: 77 },
+        execution: { id: 'exec_failure', command: 'github/whoami', status: 'failed' },
+        handoff,
+      }), { status: 401 }),
+    });
+
+    await expect(client.execute({ command: 'github/whoami', args: {} })).rejects.toMatchObject({
+      code: 'AUTH_REQUIRED',
+      exitCode: 77,
+      handoff,
+    } satisfies Partial<HostedClientError>);
+  });
+
+  it.each(invalidViewerUrlCases)('rejects failure handoff viewer capability with %s without echoing it', async (_name, viewUrl) => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: false,
+        error: { code: 'AUTH_REQUIRED', message: 'Sign in first', exitCode: 77 },
+        execution: { id: 'exec_failure', command: 'github/whoami', status: 'failed' },
+        handoff: { status: 'action_required', action: 'Complete sign-in.', viewUrl },
+      }), { status: 401 }),
+    });
+
+    const error = await client.execute({ command: 'github/whoami', args: {} })
+      .then(() => undefined, caught => caught as HostedClientError);
+
+    expect(error).toMatchObject({ code: 'HOSTED_PROTOCOL', exitCode: 1 });
+    expect(error?.handoff).toBeUndefined();
+    expect(`${error?.message ?? ''}\n${error?.hint ?? ''}`).not.toContain(viewUrl);
+  });
+
+  it.each([
+    ['unknown key', { status: 'action_required', action: 'Complete sign-in.', viewUrl: 'https://api.example.com/account/live/token', extra: true }],
+    ['wrong status', { status: 'in_progress', action: 'Complete sign-in.', viewUrl: 'https://api.example.com/account/live/token' }],
+    ['missing action', { status: 'action_required', viewUrl: 'https://api.example.com/account/live/token' }],
+    ['blank action', { status: 'action_required', action: '   ', viewUrl: 'https://api.example.com/account/live/token' }],
+    ['control character in action', { status: 'action_required', action: 'Sign in.\ninjected', viewUrl: 'https://api.example.com/account/live/token' }],
+    ['blank expiry', { status: 'action_required', action: 'Complete sign-in.', viewUrl: 'https://api.example.com/account/live/token', expiresAt: '' }],
+    ['control character in expiry', { status: 'action_required', action: 'Complete sign-in.', viewUrl: 'https://api.example.com/account/live/token', expiresAt: 'soon\ninjected' }],
+    ['non-string expiry', { status: 'action_required', action: 'Complete sign-in.', viewUrl: 'https://api.example.com/account/live/token', expiresAt: 42 }],
+    ['blank verifier', { status: 'action_required', action: 'Complete sign-in.', viewUrl: 'https://api.example.com/account/live/token', verifyCommand: '' }],
+    ['control character in verifier', { status: 'action_required', action: 'Complete sign-in.', viewUrl: 'https://api.example.com/account/live/token', verifyCommand: 'webcmd github whoami\ninjected' }],
+    ['non-string verifier', { status: 'action_required', action: 'Complete sign-in.', viewUrl: 'https://api.example.com/account/live/token', verifyCommand: 42 }],
+  ])('rejects failure handoff with %s', async (_name, handoff) => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: false,
+        error: { code: 'AUTH_REQUIRED', message: 'Sign in first', exitCode: 77 },
+        execution: { id: 'exec_failure', command: 'github/whoami', status: 'failed' },
+        handoff,
+      }), { status: 401 }),
+    });
+
+    await expect(client.execute({ command: 'github/whoami', args: {} })).rejects.toMatchObject({
+      code: 'HOSTED_PROTOCOL',
+      exitCode: 1,
+    });
+  });
+
+  it('rejects a handoff without a failed execution', async () => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: false,
+        error: { code: 'AUTH_REQUIRED', message: 'Sign in first', exitCode: 77 },
+        handoff: {
+          status: 'action_required',
+          action: 'Complete sign-in.',
+          viewUrl: 'https://api.example.com/account/live/token',
+        },
+      }), { status: 401 }),
+    });
+
+    await expect(client.execute({ command: 'github/whoami', args: {} })).rejects.toMatchObject({
+      code: 'HOSTED_PROTOCOL',
+      exitCode: 1,
+    });
+  });
+
   it.each(['success', 'failure'].flatMap(phase => invalidTraceUrlCases.map(testCase => ({
     phase,
     ...testCase,

@@ -12,6 +12,7 @@ import type {
   HostedErrorResponse,
   HostedExecution,
   HostedExecuteResponse,
+  HostedFailureHandoff,
   HostedPrepareExecutionResponse,
   HostedProfilesResponse,
   HostedUploadArtifactResponse,
@@ -28,17 +29,19 @@ export interface HostedClientOptions {
 export class HostedClientError extends CliError {
   readonly execution?: HostedExecution;
   readonly trace?: HostedTraceReceipt;
+  readonly handoff?: HostedFailureHandoff;
 
   constructor(
     code: string,
     message: string,
     help?: string,
     exitCode: ExitCode = EXIT_CODES.GENERIC_ERROR,
-    metadata: { execution?: HostedExecution; trace?: HostedTraceReceipt } = {},
+    metadata: { execution?: HostedExecution; trace?: HostedTraceReceipt; handoff?: HostedFailureHandoff } = {},
   ) {
     super(code, message, help, exitCode);
     this.execution = metadata.execution;
     this.trace = metadata.trace;
+    this.handoff = metadata.handoff;
     if (metadata.trace) attachTraceReceipt(this, metadata.trace);
   }
 }
@@ -166,7 +169,7 @@ export class HostedClient {
     if (!response.ok) {
       const text = await response.text();
       const body = text ? parseJson(text) : {};
-      if (!isHostedError(body)) throw protocolError('Webcmd Cloud returned an invalid artifact download failure.');
+      if (!isHostedError(body, this.apiBaseUrl)) throw protocolError('Webcmd Cloud returned an invalid artifact download failure.');
       const error = body.error;
       throw new HostedClientError(
         error.code,
@@ -176,6 +179,7 @@ export class HostedClient {
         {
           ...(body.execution ? { execution: body.execution } : {}),
           ...(body.trace ? { trace: body.trace } : {}),
+          ...(body.handoff ? { handoff: body.handoff } : {}),
         },
       );
     }
@@ -258,7 +262,7 @@ export class HostedClient {
       throw protocolError('Webcmd Cloud returned an invalid response envelope.');
     }
     if (body.ok === false) {
-      if (!isHostedError(body)) throw protocolError('Webcmd Cloud returned an invalid failure response.');
+      if (!isHostedError(body, this.apiBaseUrl)) throw protocolError('Webcmd Cloud returned an invalid failure response.');
       if (body.execution && !isValidExecutedFailure(body, executionExpectation)) {
         throw protocolError('Webcmd Cloud returned an invalid executed failure response.');
       }
@@ -274,6 +278,7 @@ export class HostedClient {
         {
           ...(body.execution ? { execution: body.execution } : {}),
           ...(body.trace ? { trace: body.trace } : {}),
+          ...(body.handoff ? { handoff: body.handoff } : {}),
         },
       );
     }
@@ -290,8 +295,8 @@ function parseJson(text: string): unknown {
   }
 }
 
-function isHostedError(value: unknown): value is HostedErrorResponse {
-  if (!hasOnlyKeys(value, ['ok', 'error', 'execution', 'trace']) || value.ok !== false || !isRecord(value.error)) return false;
+function isHostedError(value: unknown, apiBaseUrl: string): value is HostedErrorResponse {
+  if (!hasOnlyKeys(value, ['ok', 'error', 'execution', 'trace', 'handoff']) || value.ok !== false || !isRecord(value.error)) return false;
   if (!hasOnlyKeys(value.error, ['code', 'message', 'help', 'exitCode'])) return false;
   if (typeof value.error.code !== 'string' || typeof value.error.message !== 'string') return false;
   if (value.error.exitCode !== undefined
@@ -299,9 +304,20 @@ function isHostedError(value: unknown): value is HostedErrorResponse {
   if (value.error.help !== undefined && typeof value.error.help !== 'string') return false;
   if (value.execution !== undefined && !isHostedExecution(value.execution)) return false;
   if (value.trace !== undefined && !isHostedTraceReceipt(value.trace)) return false;
+  if (value.handoff !== undefined && !isHostedFailureHandoff(value.handoff, apiBaseUrl)) return false;
+  if (value.handoff && !value.execution) return false;
   if (value.execution?.status === 'succeeded') return false;
   if (value.trace && (!value.execution || value.trace.executionId !== value.execution.id)) return false;
   return true;
+}
+
+function isHostedFailureHandoff(value: unknown, apiBaseUrl: string): value is HostedFailureHandoff {
+  return hasOnlyKeys(value, ['status', 'action', 'viewUrl', 'expiresAt', 'verifyCommand'])
+    && value.status === 'action_required'
+    && isSafeGuidance(value.action)
+    && isPublicLiveViewUrl(value.viewUrl, apiBaseUrl)
+    && (value.expiresAt === undefined || isSafeGuidance(value.expiresAt))
+    && (value.verifyCommand === undefined || isSafeGuidance(value.verifyCommand));
 }
 
 function isHostedManifest(value: unknown): value is HostedManifest {
@@ -592,6 +608,12 @@ function isPublicLiveViewUrl(value: unknown, apiBaseUrl: string): value is strin
 function isSafeReceiptToken(value: unknown): value is string {
   return typeof value === 'string'
     && value.length > 0
+    && !/[\u0000-\u001f\u007f\u2028\u2029]/u.test(value);
+}
+
+function isSafeGuidance(value: unknown): value is string {
+  return typeof value === 'string'
+    && value.trim().length > 0
     && !/[\u0000-\u001f\u007f\u2028\u2029]/u.test(value);
 }
 

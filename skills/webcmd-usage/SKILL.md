@@ -120,6 +120,8 @@ The error envelope includes a `trace` block pointing at `summary.md`. Patch only
 
 ## Authentication and Human Handoff
 
+If a failed hosted command returns a handoff with `status: action_required`, treat it as a hard stop, not AutoFix. Show `Webcmd browser: <viewUrl>` to the user and wait for their confirmation. Then run `verifyCommand` when present and inspect fresh browser state before retrying.
+
 `AUTH_REQUIRED` is not an adapter failure. Run `webcmd <site> login` and branch on the result: `already_logged_in` is verified; `in_progress` means automatic reauthentication is running with no current user action, so do not poll; `action_required` is a hard stop for browser writes. For `action_required`, show the returned `action_url` and `view_url` to the user when present, then pause. Locally the foreground browser is already visible; hosted browser commands also print `Webcmd browser: <URL>`.
 
 Run the returned `verify_command` (normally `webcmd <site> whoami`) only after the user reports done; verification must succeed. Then take fresh browser state and resume or retry the original command. If the result remains `in_progress`, perform a later explicit `whoami` or task retry instead of polling; use `webcmd auth refresh` when an explicit auth-state refresh is needed. If the site has no login command, ask the user to sign in in the current visible browser or hosted viewer, then use fresh browser state plus an identity check or verified post-action state before retrying. Their report alone is not verification. Never request, type, echo, store, or automate passwords, OTPs, recovery codes, cookies, session secrets, or CAPTCHA answers. CAPTCHA stops automation; unresolved CAPTCHA requires the same viewer handoff and pause.

@@ -337,6 +337,8 @@ webcmd browser hn open "https://news.ycombinator.com" \
 
 ### Authentication and human handoff
 
+If a failed hosted command returns a handoff with `status: action_required`, treat it as a hard stop, not AutoFix. Show `Webcmd browser: <viewUrl>` to the user and wait for their confirmation. Then run `verifyCommand` when present and inspect fresh browser state before retrying.
+
 1. On a clear login redirect or auth wall, stop browser writes.
 2. If the site exposes a login command, run `webcmd <site> login` and branch on its status: `already_logged_in` is verified; `in_progress` means automatic reauthentication is running with no current user action, so do not poll; `action_required` is a hard stop for browser writes.
 3. For `action_required`, show the returned `action_url` and `view_url` to the user when present, then pause. Locally, the foreground browser is already visible. Hosted browser commands also print `Webcmd browser: <URL>` for the interactive viewer.

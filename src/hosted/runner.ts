@@ -107,7 +107,12 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
       await writeToStream(stderr, `error: missing required argument '${err.argumentName}'\n`);
       return { handled: true, exitCode: EXIT_CODES.GENERIC_ERROR };
     }
-    await writeToStream(stderr, formatErrorEnvelope(toEnvelope(err), {
+    const handoff = err instanceof HostedClientError ? err.handoff : undefined;
+    if (handoff) await writeToStream(stderr, `Webcmd browser: ${handoff.viewUrl}\n`);
+    await writeToStream(stderr, formatErrorEnvelope({
+      ...toEnvelope(err),
+      ...(handoff ? { handoff } : {}),
+    }, {
       cmdName: hostedCommandName(argv),
       traceMode: hostedTraceMode(argv),
     }));

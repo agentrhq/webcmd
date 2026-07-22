@@ -236,4 +236,13 @@ export interface HostedErrorResponse {
   };
   execution?: HostedExecution;
   trace?: HostedTraceReceipt;
+  handoff?: HostedFailureHandoff;
+}
+
+export interface HostedFailureHandoff {
+  status: 'action_required';
+  action: string;
+  viewUrl: string;
+  expiresAt?: string;
+  verifyCommand?: string;
 }

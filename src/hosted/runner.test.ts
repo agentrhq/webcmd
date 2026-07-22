@@ -1257,6 +1257,52 @@ describe('runHostedCli', () => {
     expect(stderr.text()).not.toContain('Webcmd trace artifact:');
   });
 
+  it.each(['table', 'json', 'yaml', 'csv', 'md', 'plain'])('renders a failed-execution handoff on stderr only for %s output', async (format) => {
+    const stdout = sink();
+    const stderr = sink();
+    const viewUrl = 'https://api.example.com/account/live/failure-token';
+    const handoff = {
+      status: 'action_required',
+      action: 'Complete sign-in in the hosted browser.',
+      viewUrl,
+      expiresAt: '2026-07-23T12:00:00.000Z',
+      verifyCommand: 'webcmd github whoami',
+    };
+    const result = await runHostedCli(['github', 'whoami', '-f', format], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      fetchImpl: async (url) => {
+        if (String(url).endsWith('/v1/manifest')) return manifestResponse();
+        return new Response(JSON.stringify({
+          ok: false,
+          error: { code: 'AUTH_REQUIRED', message: 'Sign in first', exitCode: 77 },
+          execution: { id: 'exec_failure', command: 'github/whoami', status: 'failed' },
+          handoff,
+        }), { status: 401 });
+      },
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 77 });
+    expect(stdout.text()).toBe('');
+    expect(stderr.text().match(/^Webcmd browser:/gm)).toHaveLength(1);
+    expect(stderr.text()).toBe([
+      `Webcmd browser: ${viewUrl}`,
+      'ok: false',
+      'error:',
+      '  code: AUTH_REQUIRED',
+      '  message: Sign in first',
+      '  exitCode: 77',
+      'handoff:',
+      '  status: action_required',
+      '  action: Complete sign-in in the hosted browser.',
+      `  viewUrl: ${viewUrl}`,
+      "  expiresAt: '2026-07-23T12:00:00.000Z'",
+      '  verifyCommand: webcmd github whoami',
+      '',
+    ].join('\n'));
+  });
+
   it.each(['success', 'failure'])('rejects a raw provider trace URL before $phase output or attachment', async (phase) => {
     const rawUrl = 'https://kernel.example/session/private?token=kernel-secret-token';
     const stdout = sink();

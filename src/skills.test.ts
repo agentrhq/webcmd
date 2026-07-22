@@ -121,6 +121,9 @@ describe('webcmd skills content', () => {
       expect(skill).toMatch(/action_required[^\n]*(?:hard stop|stop browser writes)/i);
       expect(skill).toMatch(/(?:show|give|send|share)[^\n]*action_url[^\n]*view_url[^\n]*user/i);
       expect(skill).toMatch(/whoami[\s\S]{0,500}fresh browser state[\s\S]{0,500}(?:resume|retry)/i);
+      expect(skill).toMatch(/failed (?:hosted )?command[\s\S]{0,300}action_required[\s\S]{0,300}hard stop/i);
+      expect(skill).toMatch(/action_required[\s\S]{0,300}not AutoFix/i);
+      expect(skill).toMatch(/Webcmd browser:[\s\S]{0,300}user[\s\S]{0,300}(?:fresh verification|fresh browser state)/i);
     }
     expect(autofix).toContain('webcmd <site> login');
     expect(author).toContain('registerSiteAuthCommands');
