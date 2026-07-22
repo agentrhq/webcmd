@@ -108,6 +108,7 @@ Webcmd Cloud can run supported commands and browser sessions on hosted infrastru
 
 | Plugin | Description | Author |
 | --- | --- | --- |
+| [`openlibrary`](./plugins/openlibrary/) | Open Library search and metadata commands for Webcmd | [WebCMD Agent](https://github.com/agentrhq) |
 | [`skyscanner`](./plugins/skyscanner/) | Skyscanner flight search commands for Webcmd | [Rishabh](https://github.com/rishabhraj36) |
 <!-- webcmd-community-plugins:end -->
 
