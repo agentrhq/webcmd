@@ -1,4 +1,4 @@
-<img width="2056" height="765" alt="ChatGPT Image Jul 15, 2026, 12_14_45 PM" src="https://github.com/user-attachments/assets/5bcba7ee-588c-4839-9927-4f151055cdf6" />
+<img width="1280" height="640" alt="Webcmd — stop paying agents to rediscover the web" src="docs/readme-hero.png" />
 
 
 <p align="center">
