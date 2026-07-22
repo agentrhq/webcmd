@@ -118,6 +118,10 @@ webcmd <site> <command> [args...] --trace retain-on-failure
 
 The error envelope includes a `trace` block pointing at `summary.md`. Patch only `adapterSourcePath` from that summary and retry. Maximum 3 repair rounds. See `webcmd-autofix`.
 
+## Authentication and Human Handoff
+
+`AUTH_REQUIRED` is not an adapter failure. Run `webcmd <site> login`, return the `action_required` instructions to the user, wait for the user to finish in the visible browser, verify with `webcmd <site> whoami`, then retry the original command. If the site has no login command, ask the user to sign in in the current Webcmd browser. Never request, type, echo, store, or automate passwords, OTPs, recovery codes, cookies, or session secrets; CAPTCHA always requires the user to act.
+
 ## Report A Webcmd Defect
 
 After a reproducible Webcmd failure has been diagnosed or the `webcmd-autofix`

@@ -10,6 +10,8 @@ You are an agent writing an adapter for a site. The goal of this skill is a 30-m
 
 Use the existing tools throughout: `webcmd browser *`, `webcmd doctor`, `webcmd browser init`, and `webcmd browser verify`. This skill does not introduce new commands.
 
+Browser-profile auth commands must reuse `registerSiteAuthCommands`. Keep only site-specific `verify` and `openLogin` logic in the adapter. Credentials, MFA, and CAPTCHA always use human handoff; adapter code must not collect or type secrets.
+
 When debugging browser-backed adapters, start with `--trace on --keep-tab true --window foreground`. `--trace on` writes a trace artifact every round, and `summary.md` is the entry point for reviewing both failures and successes. `--keep-tab true --window foreground` keeps the tab lease alive and puts the browser window in front so you can inspect the final page state.
 
 ---

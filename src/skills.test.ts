@@ -45,6 +45,10 @@ function real(filePath: string): string {
   return fs.realpathSync(filePath);
 }
 
+function bundledSkill(name: string): string {
+  return fs.readFileSync(path.join(process.cwd(), 'skills', name, 'SKILL.md'), 'utf8');
+}
+
 describe('webcmd skills content', () => {
   it('keeps bundled skill frontmatter valid yaml', () => {
     const skillsRoot = path.join(process.cwd(), 'skills');
@@ -87,6 +91,24 @@ describe('webcmd skills content', () => {
       'webcmd-sitemap-author',
       'webcmd-usage',
     ]);
+  });
+
+  it('enforces local authentication and human handoff policy', () => {
+    const browser = bundledSkill('webcmd-browser');
+    const usage = bundledSkill('webcmd-usage');
+    const autofix = bundledSkill('webcmd-autofix');
+    const author = bundledSkill('webcmd-adapter-author');
+
+    expect(browser).toContain('webcmd <site> login');
+    expect(browser).toContain('webcmd <site> whoami');
+    expect(browser).toContain('CAPTCHA');
+    expect(browser).toContain('fresh browser state');
+    expect(browser).not.toContain('hunter2');
+    expect(browser).not.toMatch(/browser login type/i);
+    expect(usage).toContain('AUTH_REQUIRED');
+    expect(usage).toContain('action_required');
+    expect(autofix).toContain('webcmd <site> login');
+    expect(author).toContain('registerSiteAuthCommands');
   });
 
   it('adds bundled skills once and refreshes them after package updates', () => {
