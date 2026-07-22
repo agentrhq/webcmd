@@ -1,0 +1,9 @@
+{
+  "name": "webcmd-plugin-unsora",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Read-only Unsora product, creative tools, and pricing commands for Webcmd",
+  "peerDependencies": {
+    "@agentrhq/webcmd": ">=0.1.2"
+  }
+}

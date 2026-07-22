@@ -109,6 +109,7 @@ Webcmd Cloud can run supported commands and browser sessions on hosted infrastru
 | Plugin | Description | Author |
 | --- | --- | --- |
 | [`skyscanner`](./plugins/skyscanner/) | Skyscanner flight search commands for Webcmd | [Rishabh](https://github.com/rishabhraj36) |
+| [`unsora`](./plugins/unsora/) | Read-only Unsora product, creative tools, and pricing commands for Webcmd | [WebCMD Agent](https://github.com/agentrhq) |
 <!-- webcmd-community-plugins:end -->
 
 ## Contributing
