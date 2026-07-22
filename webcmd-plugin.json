@@ -4,6 +4,16 @@
   "description": "Webcmd plugin collection",
   "webcmd": ">=0.2.0",
   "plugins": {
+    "bmwblog": {
+      "path": "plugins/bmwblog",
+      "version": "0.1.0",
+      "description": "BMWBLOG article discovery commands for Webcmd",
+      "webcmd": ">=0.3.4",
+      "author": {
+        "name": "WebCMD Agent",
+        "handle": "agentrhq"
+      }
+    },
     "skyscanner": {
       "path": "plugins/skyscanner",
       "version": "0.1.0",
