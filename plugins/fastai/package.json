@@ -1,0 +1,9 @@
+{
+  "name": "webcmd-plugin-fastai",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "fast.ai forum discovery and reading commands for Webcmd",
+  "peerDependencies": {
+    "@agentrhq/webcmd": ">=0.3.4"
+  }
+}
