@@ -142,6 +142,12 @@ describe('webcmd skills content', () => {
     expect(autofixAuthRequired).toMatch(/no site login command[\s\S]*stop (?:browser )?writes[\s\S]*visible browser[\s\S]*fresh browser state[\s\S]*(?:identity check|post-action state)[\s\S]*before retry[\s\S]*report alone is not verification/i);
     expect(autofixAuthRequiredRow).toMatch(/conditional[^|]*Safety Boundaries|no site login command/i);
     expect(autofix).toMatch(/CAPTCHA[\s\S]{0,250}stop automation[\s\S]{0,250}verification must succeed/i);
+    const autofixHandoff = autofix.match(/^- \*\*Hosted failure handoff:\*\*[\s\S]*?(?=\n- \*\*)/m)?.[0] ?? '';
+    expect(autofixHandoff).toMatch(/handoff\.status[\s\S]*action_required[\s\S]*hard stop[\s\S]*(?:trace|AutoFix)/i);
+    expect(autofixHandoff).toMatch(/handoff\.viewUrl[\s\S]*user[\s\S]*(?:wait|pause)/i);
+    expect(autofixHandoff).toMatch(/never[\s\S]{0,150}(?:enter|type)[\s\S]{0,150}(?:credentials|password)[\s\S]{0,150}CAPTCHA/i);
+    expect(autofixHandoff).toMatch(/verifyCommand[\s\S]{0,300}fresh browser state[\s\S]{0,300}(?:resume|retry)/i);
+    expect(autofix.indexOf('Hosted failure handoff')).toBeLessThan(autofix.indexOf('## Step 1: Collect Trace Context'));
   });
 
   it('adds bundled skills once and refreshes them after package updates', () => {

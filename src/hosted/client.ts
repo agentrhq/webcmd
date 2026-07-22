@@ -26,6 +26,8 @@ export interface HostedClientOptions {
   fetchImpl?: typeof fetch;
 }
 
+const HOSTED_CLIENT_CAPABILITIES = 'hosted-execution-viewer-v1, hosted-failure-handoff-v1';
+
 export class HostedClientError extends CliError {
   readonly execution?: HostedExecution;
   readonly trace?: HostedTraceReceipt;
@@ -163,6 +165,7 @@ export class HostedClient {
         headers: {
           accept: 'application/octet-stream',
           authorization: `Bearer ${this.apiKey}`,
+          'x-webcmd-client-capabilities': HOSTED_CLIENT_CAPABILITIES,
         },
       },
     );
@@ -254,6 +257,7 @@ export class HostedClient {
         accept: 'application/json',
         ...(init.body ? { 'content-type': 'application/json' } : {}),
         authorization: `Bearer ${this.apiKey}`,
+        'x-webcmd-client-capabilities': HOSTED_CLIENT_CAPABILITIES,
         ...(init.headers ?? {}),
       },
     });
@@ -615,7 +619,7 @@ function isSafeReceiptToken(value: unknown): value is string {
 function isSafeGuidance(value: unknown): value is string {
   return typeof value === 'string'
     && value.trim().length > 0
-    && !/[\u0000-\u001f\u007f\u2028\u2029]/u.test(value);
+    && !/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

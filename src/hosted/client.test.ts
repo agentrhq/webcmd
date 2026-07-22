@@ -124,6 +124,46 @@ describe('HostedClient', () => {
     expect(requests).toEqual([{ url: 'https://api.example.com/v1/manifest', authorization: 'Bearer wcmd_live_test' }]);
   });
 
+  it('negotiates hosted viewer and failure handoff capabilities for execution requests', async () => {
+    const requests: Array<{ path: string; capabilities: string | null }> = [];
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async (url, init) => {
+        const path = new URL(String(url)).pathname;
+        requests.push({
+          path,
+          capabilities: new Headers(init?.headers).get('x-webcmd-client-capabilities'),
+        });
+        const command = path === '/v1/execute' ? 'github/whoami' : 'twitter/post';
+        const id = path === '/v1/execute' ? 'exec_execute' : 'exec_prepared';
+        return new Response(JSON.stringify({
+          ok: true,
+          result: [],
+          execution: { id, command, status: 'succeeded' },
+        }), { status: 200 });
+      },
+    });
+
+    await client.execute({ command: 'github/whoami', args: {} });
+    await client.runPreparedExecution({
+      executionId: 'exec_prepared',
+      command: 'twitter/post',
+      args: {},
+    });
+
+    expect(requests).toEqual([
+      {
+        path: '/v1/execute',
+        capabilities: 'hosted-execution-viewer-v1, hosted-failure-handoff-v1',
+      },
+      {
+        path: '/v1/executions/exec_prepared/run',
+        capabilities: 'hosted-execution-viewer-v1, hosted-failure-handoff-v1',
+      },
+    ]);
+  });
+
   it('accepts boolean freshPage command metadata', async () => {
     const client = new HostedClient({
       apiBaseUrl: 'https://api.example.com',
@@ -423,6 +463,7 @@ describe('HostedClient', () => {
     ['missing action', { status: 'action_required', viewUrl: 'https://api.example.com/account/live/token' }],
     ['blank action', { status: 'action_required', action: '   ', viewUrl: 'https://api.example.com/account/live/token' }],
     ['control character in action', { status: 'action_required', action: 'Sign in.\ninjected', viewUrl: 'https://api.example.com/account/live/token' }],
+    ['C1 control character in action', { status: 'action_required', action: 'Sign in.\u009binjected', viewUrl: 'https://api.example.com/account/live/token' }],
     ['blank expiry', { status: 'action_required', action: 'Complete sign-in.', viewUrl: 'https://api.example.com/account/live/token', expiresAt: '' }],
     ['control character in expiry', { status: 'action_required', action: 'Complete sign-in.', viewUrl: 'https://api.example.com/account/live/token', expiresAt: 'soon\ninjected' }],
     ['non-string expiry', { status: 'action_required', action: 'Complete sign-in.', viewUrl: 'https://api.example.com/account/live/token', expiresAt: 42 }],
