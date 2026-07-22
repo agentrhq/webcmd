@@ -99,6 +99,9 @@ describe('webcmd skills content', () => {
     const autofix = bundledSkill('webcmd-autofix');
     const author = bundledSkill('webcmd-adapter-author');
     const skills = [browser, usage, autofix, author];
+    const autofixAuthRequired = autofix.match(/^- \*\*`AUTH_REQUIRED`\*\*[\s\S]*?(?=\n- \*\*)/m)?.[0] ?? '';
+    const autofixAuthRequiredRow = autofix.split('\n')
+      .find((line) => line.startsWith('| AUTH_REQUIRED |')) ?? '';
 
     expect(browser).toContain('webcmd <site> login');
     expect(browser).toContain('webcmd <site> whoami');
@@ -121,6 +124,9 @@ describe('webcmd skills content', () => {
     for (const skill of [browser, usage, autofix]) {
       expect(skill).toMatch(/no (?:site )?login command[\s\S]{0,500}fresh browser state[\s\S]{0,500}(?:identity check|post-action state)[\s\S]{0,250}before retry/i);
     }
+    expect(autofixAuthRequired).toMatch(/if (?:a|the) site login command exists[\s\S]*webcmd <site> login[\s\S]*returned `verify_command`[\s\S]*verification must succeed[\s\S]*retry/i);
+    expect(autofixAuthRequired).toMatch(/no site login command[\s\S]*stop (?:browser )?writes[\s\S]*visible browser[\s\S]*fresh browser state[\s\S]*(?:identity check|post-action state)[\s\S]*before retry[\s\S]*report alone is not verification/i);
+    expect(autofixAuthRequiredRow).toMatch(/conditional[^|]*Safety Boundaries|no site login command/i);
     expect(autofix).toMatch(/CAPTCHA[\s\S]{0,250}stop automation[\s\S]{0,250}verification must succeed/i);
   });
 
