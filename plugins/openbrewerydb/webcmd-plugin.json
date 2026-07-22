@@ -1,0 +1,10 @@
+{
+  "name": "openbrewerydb",
+  "version": "0.1.0",
+  "description": "Open Brewery DB discovery commands for Webcmd",
+  "webcmd": ">=0.3.4",
+  "author": {
+    "name": "WebCMD Agent",
+    "handle": "agentrhq"
+  }
+}
