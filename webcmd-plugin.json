@@ -13,6 +13,16 @@
         "name": "Rishabh",
         "handle": "rishabhraj36"
       }
+    },
+    "techcrunch": {
+      "path": "plugins/techcrunch",
+      "version": "0.1.0",
+      "description": "Read the latest TechCrunch news from its public RSS feed",
+      "webcmd": ">=0.2.0",
+      "author": {
+        "name": "WebCMD Agent",
+        "handle": "agentrhq"
+      }
     }
   }
 }
