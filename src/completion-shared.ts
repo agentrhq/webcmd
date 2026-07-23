@@ -43,6 +43,7 @@ export const HOSTED_ROOT_HELP: RootHelpPresentation = {
     { name: 'browser', description: 'Browser control through a hosted browser session' },
     { name: 'completion <shell>', description: 'Output a shell completion script' },
     { name: 'list', description: 'List all available hosted CLI commands' },
+    { name: 'profile', description: 'Manage hosted browser profiles' },
     { name: 'setup', description: 'Configure local or hosted mode' },
   ],
   localOnlyCommands: [
@@ -54,7 +55,6 @@ export const HOSTED_ROOT_HELP: RootHelpPresentation = {
     { name: 'doctor', description: 'Diagnose local browser bridge connectivity' },
     { name: 'external', description: 'Manage local CLI passthrough commands' },
     { name: 'plugin', description: 'Manage plugins installed on this computer' },
-    { name: 'profile', description: 'Manage profiles in the local browser runtime' },
     { name: 'skills', description: 'Manage bundled skills on this computer' },
     { name: 'validate', description: 'Validate local CLI definitions' },
     { name: 'verify', description: 'Validate and smoke-test local adapters' },

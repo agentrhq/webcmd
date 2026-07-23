@@ -174,32 +174,87 @@ describe('HostedClient', () => {
     await expect(client.getManifest()).rejects.toMatchObject({ code: 'HOSTED_PROTOCOL' });
   });
 
-  it('parses hosted profile rows without provider identifiers', async () => {
+  it('manages public hosted profiles over the authenticated HTTP API', async () => {
+    const requests: Array<{ url: string; method: string; body?: string }> = [];
+    const profile = {
+      id: 'profile_work',
+      name: 'Work',
+      userId: 'user_64256',
+      default: false,
+      status: 'available',
+      createdAt: '2026-07-08T00:00:00.000Z',
+      updatedAt: '2026-07-08T00:00:00.000Z',
+      lastUsedAt: '2026-07-08T00:00:00.000Z',
+    };
     const client = new HostedClient({
       apiBaseUrl: 'https://api.example.com',
       apiKey: 'wcmd_live_test',
-      fetchImpl: async () => new Response(JSON.stringify({
-        ok: true,
-        profiles: [{
-          name: 'default',
-          default: true,
-          status: 'available',
-          createdAt: '2026-07-08T00:00:00.000Z',
-          lastUsedAt: '2026-07-08T00:00:00.000Z',
-        }],
-      }), { status: 200 }),
+      fetchImpl: async (url, init) => {
+        requests.push({
+          url: String(url),
+          method: init?.method ?? 'GET',
+          ...(init?.body ? { body: String(init.body) } : {}),
+        });
+        const path = new URL(String(url)).pathname;
+        if (path === '/v1/profiles' && init?.method === 'POST') {
+          return new Response(JSON.stringify({ ok: true, profile }), { status: 201 });
+        }
+        if (path.startsWith('/v1/profiles/') && init?.method === 'DELETE') {
+          return new Response(JSON.stringify({ ok: true, deleted: true }));
+        }
+        if (path.startsWith('/v1/profiles/')) {
+          return new Response(JSON.stringify({ ok: true, profile }));
+        }
+        return new Response(JSON.stringify({ ok: true, profiles: [profile] }));
+      },
     });
 
-    await expect(client.listProfiles()).resolves.toEqual({
-      ok: true,
-      profiles: [{
-        name: 'default',
-        default: true,
-        status: 'available',
-        createdAt: '2026-07-08T00:00:00.000Z',
-        lastUsedAt: '2026-07-08T00:00:00.000Z',
-      }],
+    await expect(client.listProfiles({ name: 'Work', userId: 'user_64256' }))
+      .resolves.toEqual({ ok: true, profiles: [profile] });
+    await expect(client.createProfile({ name: 'Work', userId: 'user_64256' }))
+      .resolves.toMatchObject({ profile: { id: 'profile_work', status: 'available' } });
+    await expect(client.getProfile('profile_work')).resolves.toMatchObject({
+      profile: { id: 'profile_work' },
     });
+    await expect(client.deleteProfile('profile/work')).resolves.toEqual({ ok: true, deleted: true });
+
+    expect(requests).toEqual([
+      { url: 'https://api.example.com/v1/profiles?name=Work&userId=user_64256', method: 'GET' },
+      {
+        url: 'https://api.example.com/v1/profiles',
+        method: 'POST',
+        body: JSON.stringify({ name: 'Work', userId: 'user_64256' }),
+      },
+      { url: 'https://api.example.com/v1/profiles/profile_work', method: 'GET' },
+      { url: 'https://api.example.com/v1/profiles/profile%2Fwork', method: 'DELETE' },
+    ]);
+  });
+
+  it.each([
+    { name: 'private provider field', change: { kernelProfileId: 'private' } },
+    { name: 'missing updatedAt', change: { updatedAt: undefined } },
+    { name: 'non-nullable name shape', change: { name: 7 } },
+    { name: 'non-nullable user ID shape', change: { userId: false } },
+  ])('rejects a hosted profile with $name', async ({ change }) => {
+    const profile: Record<string, unknown> = {
+      id: 'profile_work',
+      name: null,
+      userId: null,
+      default: false,
+      status: 'pending',
+      createdAt: '2026-07-08T00:00:00.000Z',
+      updatedAt: '2026-07-08T00:00:00.000Z',
+      lastUsedAt: '2026-07-08T00:00:00.000Z',
+      ...change,
+    };
+    if (change.updatedAt === undefined) delete profile.updatedAt;
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({ ok: true, profiles: [profile] })),
+    });
+
+    await expect(client.listProfiles()).rejects.toMatchObject({ code: 'HOSTED_PROTOCOL' });
   });
 
   it('maps hosted error envelopes to CliError-compatible errors', async () => {

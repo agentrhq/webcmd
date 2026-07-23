@@ -173,6 +173,14 @@ const generatedTerminalCorpus = profileForms.flatMap(profile =>
 );
 
 describe('hosted root command surface', () => {
+  it('advertises hosted profile management as a root command, not a local-only namespace', () => {
+    expect(HOSTED_ROOT_HELP.commands).toContainEqual({
+      name: 'profile',
+      description: 'Manage hosted browser profiles',
+    });
+    expect(HOSTED_ROOT_HELP.localOnlyCommands?.some(command => command.name === 'profile')).toBe(false);
+  });
+
   it.each([
     { name: 'no args', argv: [], expected: { kind: 'help', exitCode: 1 } },
     { name: 'profile only', argv: ['--profile', 'work'], expected: { kind: 'help', exitCode: 1 } },

@@ -11,7 +11,7 @@ import { createProgram } from '../cli.js';
 import { formatRootHelp } from '../command-presentation.js';
 import { HOSTED_ROOT_HELP } from '../completion-shared.js';
 import { PKG_VERSION } from '../version.js';
-import { makeHostedConfig } from './config.js';
+import { makeHostedConfig, makeLocalConfig } from './config.js';
 import { runHostedCli } from './runner.js';
 
 const [packageMajor, packageMinor] = PKG_VERSION.split('.');
@@ -248,6 +248,143 @@ function captureLocalBrowserStructure(argv: string[]): {
 }
 
 describe('runHostedCli', () => {
+  const publicProfile = {
+    id: 'profile_work',
+    name: 'Work',
+    userId: 'user_64256',
+    default: false,
+    status: 'available',
+    createdAt: '2026-07-24T00:00:00.000Z',
+    updatedAt: '2026-07-24T00:00:00.000Z',
+    lastUsedAt: '2026-07-24T00:00:00.000Z',
+  };
+
+  it('lists, creates, resolves, gets, and deletes hosted profiles without fetching the manifest', async () => {
+    const requests: Array<{ url: string; method: string; body?: unknown }> = [];
+    const fetchImpl = vi.fn<typeof fetch>(async (url, init) => {
+      const request = {
+        url: String(url),
+        method: init?.method ?? 'GET',
+        ...(init?.body ? { body: JSON.parse(String(init.body)) } : {}),
+      };
+      requests.push(request);
+      if (request.method === 'POST') {
+        return new Response(JSON.stringify({ ok: true, profile: publicProfile }), { status: 201 });
+      }
+      if (request.method === 'DELETE') {
+        return new Response(JSON.stringify({ ok: true, deleted: true }));
+      }
+      return new Response(JSON.stringify({ ok: true, profiles: [publicProfile] }));
+    });
+
+    for (const argv of [
+      ['profile', 'list', '-f', 'json'],
+      ['profile', 'create', 'Work', '--user-id', 'user_64256', '-f', 'json'],
+      ['profile', 'get', 'Work', '-f', 'json'],
+      ['profile', 'get', 'user_64256', '-f', 'json'],
+      ['profile', 'get', 'profile_work', '-f', 'json'],
+      ['profile', 'delete', 'profile_work', '-f', 'json'],
+    ]) {
+      const stdout = sink();
+      const stderr = sink();
+      const result = await runHostedCli(argv, {
+        config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+        stdout: stdout.stream,
+        stderr: stderr.stream,
+        fetchImpl,
+      });
+      expect(result).toEqual({ handled: true, exitCode: 0 });
+      expect(stderr.text()).toBe('');
+      expect(stdout.text()).toContain(argv[1] === 'delete' ? '"deleted": true' : '"id": "profile_work"');
+    }
+
+    expect(requests).toEqual([
+      { url: 'https://api.example.com/v1/profiles', method: 'GET' },
+      {
+        url: 'https://api.example.com/v1/profiles',
+        method: 'POST',
+        body: { name: 'Work', userId: 'user_64256' },
+      },
+      { url: 'https://api.example.com/v1/profiles', method: 'GET' },
+      { url: 'https://api.example.com/v1/profiles', method: 'GET' },
+      { url: 'https://api.example.com/v1/profiles', method: 'GET' },
+      { url: 'https://api.example.com/v1/profiles/profile_work', method: 'DELETE' },
+    ]);
+    expect(requests.some(request => request.url.endsWith('/v1/manifest'))).toBe(false);
+  });
+
+  it('deduplicates universal profile matches and rejects missing or ambiguous selectors', async () => {
+    const cases = [
+      {
+        selector: 'same',
+        profiles: [{ ...publicProfile, id: 'profile_same', name: 'same', userId: 'same' }],
+        exitCode: 0,
+        stdout: '"id": "profile_same"',
+        stderr: '',
+      },
+      {
+        selector: 'missing',
+        profiles: [publicProfile],
+        exitCode: 66,
+        stdout: '',
+        stderr: 'code: PROFILE_NOT_FOUND',
+      },
+      {
+        selector: 'shared',
+        profiles: [
+          { ...publicProfile, id: 'profile_one', name: 'shared' },
+          { ...publicProfile, id: 'profile_two', name: 'Other', userId: 'shared' },
+        ],
+        exitCode: 75,
+        stdout: '',
+        stderr: 'code: AMBIGUOUS_PROFILE',
+      },
+    ];
+
+    for (const testCase of cases) {
+      const stdout = sink();
+      const stderr = sink();
+      const fetchImpl = vi.fn<typeof fetch>(async () =>
+        new Response(JSON.stringify({ ok: true, profiles: testCase.profiles })));
+      const result = await runHostedCli(['profile', 'get', testCase.selector, '-f', 'json'], {
+        config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+        stdout: stdout.stream,
+        stderr: stderr.stream,
+        fetchImpl,
+      });
+
+      expect(result.exitCode).toBe(testCase.exitCode);
+      expect(stdout.text()).toContain(testCase.stdout);
+      expect(stderr.text()).toContain(testCase.stderr);
+      if (testCase.selector === 'shared') {
+        expect(stderr.text()).toContain('Use the immutable profile ID returned by webcmd profile list.');
+      }
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it.each(['rename', 'use'])('rejects local-only profile %s in hosted mode without an API call', async (command) => {
+    const stderr = sink();
+    const fetchImpl = vi.fn<typeof fetch>();
+    const result = await runHostedCli(['profile', command, 'value'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stderr: stderr.stream,
+      fetchImpl,
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 78 });
+    expect(stderr.text()).toContain(`webcmd profile ${command} is not available in hosted mode.`);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it.each(['list', 'rename', 'use'])('leaves profile %s to the existing local command surface', async (command) => {
+    const result = await runHostedCli(['profile', command, 'value'], {
+      config: makeLocalConfig(),
+    });
+
+    expect(result).toEqual({ handled: false, exitCode: 0 });
+  });
+
   it.each([
     ['missing-site'],
     ['missing-site', 'child'],
