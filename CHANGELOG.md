@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.4.0](https://github.com/agentrhq/webcmd/compare/webcmd-v0.3.4...webcmd-v0.4.0) (2026-07-23)
+
+
+### Features
+
+* add grayscale color palette variables to root stylesheet ([7fc2b0a](https://github.com/agentrhq/webcmd/commit/7fc2b0ae3a8b6777a5c7b4e812241569de0e4df2))
+* add local auth handoff protocol ([ea93b63](https://github.com/agentrhq/webcmd/commit/ea93b630a1835fbd65478ae28050a714ca770510))
+* enhance screenshot functionality to restore viewport size and support CDP overrides ([0ba71d6](https://github.com/agentrhq/webcmd/commit/0ba71d66dcfebde9d0ab70d1ecb8491ec417e714))
+* enhance screenshot functionality to restore viewport size and support CDP overrides ([6caae1b](https://github.com/agentrhq/webcmd/commit/6caae1b8924da5f5821a21db7f31fa2d9fe5d128))
+* return local login handoffs immediately ([9749f3f](https://github.com/agentrhq/webcmd/commit/9749f3fcef5ea9a65f0312d8edb52be956b61bb0))
+* update documentation theme with custom styling, typography, and site logo ([b51153b](https://github.com/agentrhq/webcmd/commit/b51153b6e5559c3a2f545853844b00a8ba4261a2))
+
+
+### Bug Fixes
+
+* condition autofix auth handoff ([423966e](https://github.com/agentrhq/webcmd/commit/423966ed2232db915184fd0f8c5990d7f8bbeb84))
+* **docs:** show navigation logo ([bffe1e5](https://github.com/agentrhq/webcmd/commit/bffe1e5f49856f2515f477ca78b57c2a48865f40))
+* **docs:** show navigation logo ([1b9fad7](https://github.com/agentrhq/webcmd/commit/1b9fad74fe0e343c6e193f644090a8b47416c36b))
+* harden local auth handoff ([f08ce77](https://github.com/agentrhq/webcmd/commit/f08ce7702c64a8b507e7eca299052e5683cfb462))
+* keep auth handoff skills mode neutral ([60dc2f5](https://github.com/agentrhq/webcmd/commit/60dc2f58c7d38a7d459d69260464261463bfcba5))
+* keep pack JSON stdout clean ([087a398](https://github.com/agentrhq/webcmd/commit/087a3984c155f1fb577bbb5b3dff002cb9cf5353))
+* normalize Hacker News job URLs ([98ca921](https://github.com/agentrhq/webcmd/commit/98ca921a177a046594df9fe28c4688647fe71c4e))
+* require auth handoff verification ([79fc72f](https://github.com/agentrhq/webcmd/commit/79fc72fe9d5cc900be456b3548c2546ea6a3677b))
+
 ## [0.3.4](https://github.com/agentrhq/webcmd/compare/webcmd-v0.3.3...webcmd-v0.3.4) (2026-07-17)
 
 ### Improvements
