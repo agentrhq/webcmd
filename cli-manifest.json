@@ -74,25 +74,19 @@
   {
     "site": "amazon",
     "name": "login",
-    "description": "Open amazon login and wait until the browser session is authenticated",
+    "description": "Open amazon login",
     "access": "write",
     "domain": "amazon.com",
     "strategy": "cookie",
     "browser": true,
-    "args": [
-      {
-        "name": "timeout",
-        "type": "int",
-        "default": 300,
-        "required": false,
-        "help": "Maximum seconds to wait for the user to finish login"
-      }
-    ],
+    "args": [],
     "columns": [
       "status",
       "logged_in",
       "site",
-      "user_name"
+      "user_name",
+      "action",
+      "verify_command"
     ],
     "type": "js",
     "modulePath": "amazon/auth.js",
@@ -1592,25 +1586,19 @@
   {
     "site": "band",
     "name": "login",
-    "description": "Open band login and wait until the browser session is authenticated",
+    "description": "Open band login",
     "access": "write",
     "domain": "band.us",
     "strategy": "cookie",
     "browser": true,
-    "args": [
-      {
-        "name": "timeout",
-        "type": "int",
-        "default": 300,
-        "required": false,
-        "help": "Maximum seconds to wait for the user to finish login"
-      }
-    ],
+    "args": [],
     "columns": [
       "status",
       "logged_in",
       "site",
-      "user_id"
+      "user_id",
+      "action",
+      "verify_command"
     ],
     "type": "js",
     "modulePath": "band/auth.js",
@@ -2720,25 +2708,20 @@
   {
     "site": "blinkit",
     "name": "login",
-    "description": "Open Blinkit login and wait until the browser session is authenticated",
+    "description": "Open blinkit login",
     "access": "write",
     "domain": "blinkit.com",
     "strategy": "cookie",
     "browser": true,
-    "args": [
-      {
-        "name": "timeout",
-        "type": "int",
-        "default": 300,
-        "required": false,
-        "help": "Maximum seconds to wait for the user to finish login"
-      }
-    ],
+    "args": [],
     "columns": [
       "status",
       "logged_in",
+      "site",
       "phone",
-      "user_id"
+      "user_id",
+      "action",
+      "verify_command"
     ],
     "type": "js",
     "modulePath": "blinkit/auth.js",
@@ -2880,6 +2863,27 @@
     "modulePath": "blinkit/search.js",
     "sourceFile": "blinkit/search.js",
     "navigateBefore": false
+  },
+  {
+    "site": "blinkit",
+    "name": "whoami",
+    "description": "Show the current logged-in blinkit account",
+    "access": "read",
+    "domain": "blinkit.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "logged_in",
+      "site",
+      "phone",
+      "user_id"
+    ],
+    "type": "js",
+    "modulePath": "blinkit/auth.js",
+    "sourceFile": "blinkit/auth.js",
+    "navigateBefore": false,
+    "siteSession": "persistent"
   },
   {
     "site": "bloomberg",
@@ -3963,26 +3967,20 @@
   {
     "site": "chatgpt",
     "name": "login",
-    "description": "Open chatgpt login and wait until the browser session is authenticated",
+    "description": "Open chatgpt login",
     "access": "write",
     "domain": "chatgpt.com",
     "strategy": "cookie",
     "browser": true,
-    "args": [
-      {
-        "name": "timeout",
-        "type": "int",
-        "default": 300,
-        "required": false,
-        "help": "Maximum seconds to wait for the user to finish login"
-      }
-    ],
+    "args": [],
     "columns": [
       "status",
       "logged_in",
       "site",
       "user_id",
-      "name"
+      "name",
+      "action",
+      "verify_command"
     ],
     "type": "js",
     "modulePath": "chatgpt/auth.js",
@@ -4930,27 +4928,21 @@
   {
     "site": "claude",
     "name": "login",
-    "description": "Open claude login and wait until the browser session is authenticated",
+    "description": "Open claude login",
     "access": "write",
     "domain": "claude.ai",
     "strategy": "cookie",
     "browser": true,
-    "args": [
-      {
-        "name": "timeout",
-        "type": "int",
-        "default": 300,
-        "required": false,
-        "help": "Maximum seconds to wait for the user to finish login"
-      }
-    ],
+    "args": [],
     "columns": [
       "status",
       "logged_in",
       "site",
       "user_id",
       "org_name",
-      "org_uuid"
+      "org_uuid",
+      "action",
+      "verify_command"
     ],
     "type": "js",
     "modulePath": "claude/auth.js",
@@ -6144,25 +6136,19 @@
   {
     "site": "coupang",
     "name": "login",
-    "description": "Open coupang login and wait until the browser session is authenticated",
+    "description": "Open coupang login",
     "access": "write",
     "domain": "coupang.com",
     "strategy": "cookie",
     "browser": true,
-    "args": [
-      {
-        "name": "timeout",
-        "type": "int",
-        "default": 300,
-        "required": false,
-        "help": "Maximum seconds to wait for the user to finish login"
-      }
-    ],
+    "args": [],
     "columns": [
       "status",
       "logged_in",
       "site",
-      "name"
+      "name",
+      "action",
+      "verify_command"
     ],
     "type": "js",
     "modulePath": "coupang/auth.js",
@@ -7639,20 +7625,12 @@
   {
     "site": "district",
     "name": "login",
-    "description": "Open district login and wait until the browser session is authenticated",
+    "description": "Open district login",
     "access": "write",
     "domain": "www.district.in",
     "strategy": "cookie",
     "browser": true,
-    "args": [
-      {
-        "name": "timeout",
-        "type": "int",
-        "default": 300,
-        "required": false,
-        "help": "Maximum seconds to wait for the user to finish login"
-      }
-    ],
+    "args": [],
     "columns": [
       "status",
       "logged_in",
@@ -7660,7 +7638,9 @@
       "user_id",
       "name",
       "phone_number",
-      "email"
+      "email",
+      "action",
+      "verify_command"
     ],
     "type": "js",
     "modulePath": "district/auth.js",
@@ -8347,27 +8327,21 @@
   {
     "site": "facebook",
     "name": "login",
-    "description": "Open facebook login and wait until the browser session is authenticated",
+    "description": "Open facebook login",
     "access": "write",
     "domain": "facebook.com",
     "strategy": "cookie",
     "browser": true,
-    "args": [
-      {
-        "name": "timeout",
-        "type": "int",
-        "default": 300,
-        "required": false,
-        "help": "Maximum seconds to wait for the user to finish login"
-      }
-    ],
+    "args": [],
     "columns": [
       "status",
       "logged_in",
       "site",
       "user_id",
       "vanity",
-      "profile_url"
+      "profile_url",
+      "action",
+      "verify_command"
     ],
     "type": "js",
     "modulePath": "facebook/auth.js",
@@ -8931,25 +8905,19 @@
   {
     "site": "gemini",
     "name": "login",
-    "description": "Open gemini login and wait until the browser session is authenticated",
+    "description": "Open gemini login",
     "access": "write",
     "domain": "gemini.google.com",
     "strategy": "cookie",
     "browser": true,
-    "args": [
-      {
-        "name": "timeout",
-        "type": "int",
-        "default": 300,
-        "required": false,
-        "help": "Maximum seconds to wait for the user to finish login"
-      }
-    ],
+    "args": [],
     "columns": [
       "status",
       "logged_in",
       "site",
-      "name"
+      "name",
+      "action",
+      "verify_command"
     ],
     "type": "js",
     "modulePath": "gemini/auth.js",
@@ -9330,20 +9298,12 @@
   {
     "site": "github",
     "name": "login",
-    "description": "Open github login and wait until the browser session is authenticated",
+    "description": "Open github login",
     "access": "write",
     "domain": "github.com",
     "strategy": "cookie",
     "browser": true,
-    "args": [
-      {
-        "name": "timeout",
-        "type": "int",
-        "default": 300,
-        "required": false,
-        "help": "Maximum seconds to wait for the user to finish login"
-      }
-    ],
+    "args": [],
     "columns": [
       "status",
       "logged_in",
@@ -9351,7 +9311,9 @@
       "id",
       "username",
       "name",
-      "url"
+      "url",
+      "action",
+      "verify_command"
     ],
     "type": "js",
     "modulePath": "github/auth.js",
@@ -10087,26 +10049,20 @@
   {
     "site": "grok",
     "name": "login",
-    "description": "Open grok login and wait until the browser session is authenticated",
+    "description": "Open grok login",
     "access": "write",
     "domain": "grok.com",
     "strategy": "cookie",
     "browser": true,
-    "args": [
-      {
-        "name": "timeout",
-        "type": "int",
-        "default": 300,
-        "required": false,
-        "help": "Maximum seconds to wait for the user to finish login"
-      }
-    ],
+    "args": [],
     "columns": [
       "status",
       "logged_in",
       "site",
       "user_id",
-      "name"
+      "name",
+      "action",
+      "verify_command"
     ],
     "type": "js",
     "modulePath": "grok/auth.js",
@@ -10646,27 +10602,21 @@
   {
     "site": "hf",
     "name": "login",
-    "description": "Open hf login and wait until the browser session is authenticated",
+    "description": "Open hf login",
     "access": "write",
     "domain": "huggingface.co",
     "strategy": "cookie",
     "browser": true,
-    "args": [
-      {
-        "name": "timeout",
-        "type": "int",
-        "default": 300,
-        "required": false,
-        "help": "Maximum seconds to wait for the user to finish login"
-      }
-    ],
+    "args": [],
     "columns": [
       "status",
       "logged_in",
       "site",
       "username",
       "fullname",
-      "type"
+      "type",
+      "action",
+      "verify_command"
     ],
     "type": "js",
     "modulePath": "hf/auth.js",
@@ -11573,27 +11523,21 @@
   {
     "site": "instagram",
     "name": "login",
-    "description": "Open instagram login and wait until the browser session is authenticated",
+    "description": "Open instagram login",
     "access": "write",
     "domain": "instagram.com",
     "strategy": "cookie",
     "browser": true,
-    "args": [
-      {
-        "name": "timeout",
-        "type": "int",
-        "default": 300,
-        "required": false,
-        "help": "Maximum seconds to wait for the user to finish login"
-      }
-    ],
+    "args": [],
     "columns": [
       "status",
       "logged_in",
       "site",
       "user_id",
       "username",
-      "full_name"
+      "full_name",
+      "action",
+      "verify_command"
     ],
     "type": "js",
     "modulePath": "instagram/auth.js",
@@ -12978,27 +12922,21 @@
   {
     "site": "linkedin",
     "name": "login",
-    "description": "Open linkedin login and wait until the browser session is authenticated",
+    "description": "Open linkedin login",
     "access": "write",
     "domain": "www.linkedin.com",
     "strategy": "cookie",
     "browser": true,
-    "args": [
-      {
-        "name": "timeout",
-        "type": "int",
-        "default": 300,
-        "required": false,
-        "help": "Maximum seconds to wait for the user to finish login"
-      }
-    ],
+    "args": [],
     "columns": [
       "status",
       "logged_in",
       "site",
       "public_id",
       "plain_id",
-      "name"
+      "name",
+      "action",
+      "verify_command"
     ],
     "type": "js",
     "modulePath": "linkedin/auth.js",
@@ -13820,27 +13758,21 @@
   {
     "site": "linkedin-learning",
     "name": "login",
-    "description": "Open linkedin-learning login and wait until the browser session is authenticated",
+    "description": "Open linkedin-learning login",
     "access": "write",
     "domain": "linkedin.com",
     "strategy": "cookie",
     "browser": true,
-    "args": [
-      {
-        "name": "timeout",
-        "type": "int",
-        "default": 300,
-        "required": false,
-        "help": "Maximum seconds to wait for the user to finish login"
-      }
-    ],
+    "args": [],
     "columns": [
       "status",
       "logged_in",
       "site",
       "public_id",
       "plain_id",
-      "name"
+      "name",
+      "action",
+      "verify_command"
     ],
     "type": "js",
     "modulePath": "linkedin-learning/auth.js",
@@ -14261,26 +14193,20 @@
   {
     "site": "manus",
     "name": "login",
-    "description": "Open manus login and wait until the browser session is authenticated",
+    "description": "Open manus login",
     "access": "write",
     "domain": "manus.im",
     "strategy": "cookie",
     "browser": true,
-    "args": [
-      {
-        "name": "timeout",
-        "type": "int",
-        "default": 300,
-        "required": false,
-        "help": "Maximum seconds to wait for the user to finish login"
-      }
-    ],
+    "args": [],
     "columns": [
       "status",
       "logged_in",
       "site",
       "user_id",
-      "name"
+      "name",
+      "action",
+      "verify_command"
     ],
     "type": "js",
     "modulePath": "manus/auth.js",
@@ -15134,26 +15060,20 @@
   {
     "site": "notebooklm",
     "name": "login",
-    "description": "Open notebooklm login and wait until the browser session is authenticated",
+    "description": "Open notebooklm login",
     "access": "write",
     "domain": "google.com",
     "strategy": "cookie",
     "browser": true,
-    "args": [
-      {
-        "name": "timeout",
-        "type": "int",
-        "default": 300,
-        "required": false,
-        "help": "Maximum seconds to wait for the user to finish login"
-      }
-    ],
+    "args": [],
     "columns": [
       "status",
       "logged_in",
       "site",
       "name",
-      "authuser"
+      "authuser",
+      "action",
+      "verify_command"
     ],
     "type": "js",
     "modulePath": "notebooklm/auth.js",
@@ -16575,26 +16495,20 @@
   {
     "site": "pixiv",
     "name": "login",
-    "description": "Open pixiv login and wait until the browser session is authenticated",
+    "description": "Open pixiv login",
     "access": "write",
     "domain": "pixiv.net",
     "strategy": "cookie",
     "browser": true,
-    "args": [
-      {
-        "name": "timeout",
-        "type": "int",
-        "default": 300,
-        "required": false,
-        "help": "Maximum seconds to wait for the user to finish login"
-      }
-    ],
+    "args": [],
     "columns": [
       "status",
       "logged_in",
       "site",
       "user_id",
-      "name"
+      "name",
+      "action",
+      "verify_command"
     ],
     "type": "js",
     "modulePath": "pixiv/auth.js",
@@ -17035,25 +16949,19 @@
   {
     "site": "practo",
     "name": "login",
-    "description": "Open Practo login and wait until the browser session is authenticated",
+    "description": "Open practo login",
     "access": "write",
     "domain": "www.practo.com",
     "strategy": "cookie",
     "browser": true,
-    "args": [
-      {
-        "name": "timeout",
-        "type": "int",
-        "default": 300,
-        "required": false,
-        "help": "Maximum seconds to wait for the user to finish login"
-      }
-    ],
+    "args": [],
     "columns": [
       "status",
       "logged_in",
       "site",
-      "name"
+      "name",
+      "action",
+      "verify_command"
     ],
     "type": "js",
     "modulePath": "practo/login.js",
@@ -17190,7 +17098,7 @@
     "aliases": [
       "auth-status"
     ],
-    "description": "Show whether the current browser session is logged into Practo",
+    "description": "Show the current logged-in practo account",
     "access": "read",
     "domain": "www.practo.com",
     "strategy": "cookie",
@@ -17202,8 +17110,8 @@
       "name"
     ],
     "type": "js",
-    "modulePath": "practo/whoami.js",
-    "sourceFile": "practo/whoami.js",
+    "modulePath": "practo/login.js",
+    "sourceFile": "practo/login.js",
     "navigateBefore": false,
     "siteSession": "persistent"
   },
@@ -18546,26 +18454,20 @@
   {
     "site": "reddit",
     "name": "login",
-    "description": "Open reddit login and wait until the browser session is authenticated",
+    "description": "Open reddit login",
     "access": "write",
     "domain": "reddit.com",
     "strategy": "cookie",
     "browser": true,
-    "args": [
-      {
-        "name": "timeout",
-        "type": "int",
-        "default": 300,
-        "required": false,
-        "help": "Maximum seconds to wait for the user to finish login"
-      }
-    ],
+    "args": [],
     "columns": [
       "status",
       "logged_in",
       "site",
       "username",
-      "id"
+      "id",
+      "action",
+      "verify_command"
     ],
     "type": "js",
     "modulePath": "reddit/auth.js",
@@ -19315,26 +19217,20 @@
   {
     "site": "reuters",
     "name": "login",
-    "description": "Open reuters login and wait until the browser session is authenticated",
+    "description": "Open reuters login",
     "access": "write",
     "domain": "reuters.com",
     "strategy": "cookie",
     "browser": true,
-    "args": [
-      {
-        "name": "timeout",
-        "type": "int",
-        "default": 300,
-        "required": false,
-        "help": "Maximum seconds to wait for the user to finish login"
-      }
-    ],
+    "args": [],
     "columns": [
       "status",
       "logged_in",
       "site",
       "user_id",
-      "subscribed"
+      "subscribed",
+      "action",
+      "verify_command"
     ],
     "type": "js",
     "modulePath": "reuters/auth.js",
@@ -20409,27 +20305,21 @@
   {
     "site": "slock",
     "name": "login",
-    "description": "Open slock login and wait until the browser session is authenticated",
+    "description": "Open slock login",
     "access": "write",
     "domain": "app.slock.ai",
     "strategy": "cookie",
     "browser": true,
-    "args": [
-      {
-        "name": "timeout",
-        "type": "int",
-        "default": 300,
-        "required": false,
-        "help": "Maximum seconds to wait for the user to finish login"
-      }
-    ],
+    "args": [],
     "columns": [
       "status",
       "logged_in",
       "site",
       "id",
       "name",
-      "email"
+      "email",
+      "action",
+      "verify_command"
     ],
     "type": "js",
     "modulePath": "slock/whoami.js",
@@ -22329,26 +22219,20 @@
   {
     "site": "suno",
     "name": "login",
-    "description": "Open suno login and wait until the browser session is authenticated",
+    "description": "Open suno login",
     "access": "write",
     "domain": "suno.com",
     "strategy": "cookie",
     "browser": true,
-    "args": [
-      {
-        "name": "timeout",
-        "type": "int",
-        "default": 300,
-        "required": false,
-        "help": "Maximum seconds to wait for the user to finish login"
-      }
-    ],
+    "args": [],
     "columns": [
       "status",
       "logged_in",
       "site",
       "user_id",
-      "name"
+      "name",
+      "action",
+      "verify_command"
     ],
     "type": "js",
     "modulePath": "suno/auth.js",
@@ -22663,27 +22547,21 @@
   {
     "site": "tiktok",
     "name": "login",
-    "description": "Open tiktok login and wait until the browser session is authenticated",
+    "description": "Open tiktok login",
     "access": "write",
     "domain": "tiktok.com",
     "strategy": "cookie",
     "browser": true,
-    "args": [
-      {
-        "name": "timeout",
-        "type": "int",
-        "default": 300,
-        "required": false,
-        "help": "Maximum seconds to wait for the user to finish login"
-      }
-    ],
+    "args": [],
     "columns": [
       "status",
       "logged_in",
       "site",
       "sec_uid",
       "username",
-      "nickname"
+      "nickname",
+      "action",
+      "verify_command"
     ],
     "type": "js",
     "modulePath": "tiktok/auth.js",
@@ -24747,26 +24625,20 @@
   {
     "site": "twitter",
     "name": "login",
-    "description": "Open twitter login and wait until the browser session is authenticated",
+    "description": "Open twitter login",
     "access": "write",
     "domain": "x.com",
     "strategy": "cookie",
     "browser": true,
-    "args": [
-      {
-        "name": "timeout",
-        "type": "int",
-        "default": 300,
-        "required": false,
-        "help": "Maximum seconds to wait for the user to finish login"
-      }
-    ],
+    "args": [],
     "columns": [
       "status",
       "logged_in",
       "site",
       "username",
-      "url"
+      "url",
+      "action",
+      "verify_command"
     ],
     "type": "js",
     "modulePath": "twitter/auth.js",
@@ -25707,26 +25579,20 @@
   {
     "site": "upwork",
     "name": "login",
-    "description": "Open upwork login and wait until the browser session is authenticated",
+    "description": "Open upwork login",
     "access": "write",
     "domain": "upwork.com",
     "strategy": "cookie",
     "browser": true,
-    "args": [
-      {
-        "name": "timeout",
-        "type": "int",
-        "default": 300,
-        "required": false,
-        "help": "Maximum seconds to wait for the user to finish login"
-      }
-    ],
+    "args": [],
     "columns": [
       "status",
       "logged_in",
       "site",
       "user_id",
-      "ciphertext"
+      "ciphertext",
+      "action",
+      "verify_command"
     ],
     "type": "js",
     "modulePath": "upwork/auth.js",
@@ -27104,25 +26970,19 @@
   {
     "site": "youtube",
     "name": "login",
-    "description": "Open youtube login and wait until the browser session is authenticated",
+    "description": "Open youtube login",
     "access": "write",
     "domain": "www.youtube.com",
     "strategy": "cookie",
     "browser": true,
-    "args": [
-      {
-        "name": "timeout",
-        "type": "int",
-        "default": 300,
-        "required": false,
-        "help": "Maximum seconds to wait for the user to finish login"
-      }
-    ],
+    "args": [],
     "columns": [
       "status",
       "logged_in",
       "site",
-      "name"
+      "name",
+      "action",
+      "verify_command"
     ],
     "type": "js",
     "modulePath": "youtube/auth.js",
@@ -27554,24 +27414,18 @@
   {
     "site": "zepto",
     "name": "login",
-    "description": "Open Zepto login and wait until the browser session is authenticated",
+    "description": "Open zepto login",
     "access": "write",
     "domain": "www.zepto.com",
     "strategy": "cookie",
     "browser": true,
-    "args": [
-      {
-        "name": "timeout",
-        "type": "int",
-        "default": 300,
-        "required": false,
-        "help": "Maximum seconds to wait for the user to finish login"
-      }
-    ],
+    "args": [],
     "columns": [
       "status",
       "logged_in",
-      "site"
+      "site",
+      "action",
+      "verify_command"
     ],
     "type": "js",
     "modulePath": "zepto/auth.js",
@@ -27678,6 +27532,25 @@
     "modulePath": "zepto/search.js",
     "sourceFile": "zepto/search.js",
     "navigateBefore": false
+  },
+  {
+    "site": "zepto",
+    "name": "whoami",
+    "description": "Show the current logged-in zepto account",
+    "access": "read",
+    "domain": "www.zepto.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "logged_in",
+      "site"
+    ],
+    "type": "js",
+    "modulePath": "zepto/auth.js",
+    "sourceFile": "zepto/auth.js",
+    "navigateBefore": false,
+    "siteSession": "persistent"
   },
   {
     "site": "zlibrary",

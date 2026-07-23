@@ -335,18 +335,17 @@ webcmd browser hn open "https://news.ycombinator.com" \
 
 ## Recipes
 
-### Fill a login form
+### Authentication and human handoff
 
-```bash
-webcmd browser login open "https://example.com/login"
-webcmd browser login state                          # find [N] for email, password, submit
-webcmd browser login type 4 "me@example.com"
-webcmd browser login type 5 "hunter2"
-webcmd browser login get value 4                    # verify (autocomplete can eat chars)
-webcmd browser login click 6                        # submit
-webcmd browser login wait selector "[data-testid=account-menu]" --timeout 15000
-webcmd browser login state                          # fresh refs on the logged-in page
-```
+1. On a clear login redirect or auth wall, stop browser writes.
+2. If the site exposes a login command, run `webcmd <site> login` and read its `action_required` result and returned `verify_command` (normally `webcmd <site> whoami`).
+3. Tell the user to complete sign-in in the visible browser. If there is no site login command, use the current browser.
+4. Never ask for or type passwords, OTPs, recovery codes, cookies, or session secrets.
+5. If login returned a `verify_command`, run that exact command after the user reports done; verification must succeed before retrying the original workflow.
+6. With no site login command and therefore no returned verifier, take fresh browser state and use an available identity check or verify the intended post-action state; that verification must succeed before retrying.
+7. Continue only from fresh browser state; refs from before handoff are stale.
+
+For a CAPTCHA or user takeover, stop automation and let the user act in the visible browser. After the user reports done, apply the same conditional verification policy above; their report alone is not verification. Keep CAPTCHA outside automated retries.
 
 ### Pick from a long dropdown
 

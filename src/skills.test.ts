@@ -45,6 +45,10 @@ function real(filePath: string): string {
   return fs.realpathSync(filePath);
 }
 
+function bundledSkill(name: string): string {
+  return fs.readFileSync(path.join(process.cwd(), 'skills', name, 'SKILL.md'), 'utf8');
+}
+
 describe('webcmd skills content', () => {
   it('keeps bundled skill frontmatter valid yaml', () => {
     const skillsRoot = path.join(process.cwd(), 'skills');
@@ -87,6 +91,43 @@ describe('webcmd skills content', () => {
       'webcmd-sitemap-author',
       'webcmd-usage',
     ]);
+  });
+
+  it('enforces local authentication and human handoff policy', () => {
+    const browser = bundledSkill('webcmd-browser');
+    const usage = bundledSkill('webcmd-usage');
+    const autofix = bundledSkill('webcmd-autofix');
+    const author = bundledSkill('webcmd-adapter-author');
+    const skills = [browser, usage, autofix, author];
+    const autofixAuthRequired = autofix.match(/^- \*\*`AUTH_REQUIRED`\*\*[\s\S]*?(?=\n- \*\*)/m)?.[0] ?? '';
+    const autofixAuthRequiredRow = autofix.split('\n')
+      .find((line) => line.startsWith('| AUTH_REQUIRED |')) ?? '';
+
+    expect(browser).toContain('webcmd <site> login');
+    expect(browser).toContain('webcmd <site> whoami');
+    expect(browser).toContain('CAPTCHA');
+    expect(browser).toContain('fresh browser state');
+    expect(browser).not.toContain('hunter2');
+    expect(browser).not.toMatch(/browser login type/i);
+    expect(usage).toContain('AUTH_REQUIRED');
+    expect(usage).toContain('action_required');
+    expect(autofix).toContain('webcmd <site> login');
+    expect(author).toContain('registerSiteAuthCommands');
+    for (const skill of skills) {
+      expect(skill).toContain('action_required');
+      expect(skill).toContain('verify_command');
+      expect(skill).toMatch(/verify_command[\s\S]{0,250}verification must succeed[\s\S]{0,250}retry/i);
+      expect(skill).toMatch(/verify_command[\s\S]{0,250}user[\s\S]{0,250}(?:done|complet)/i);
+      expect(skill).toMatch(/CAPTCHA[\s\S]{0,250}(?:human handoff|stop(?:s)? automation)/i);
+      expect(skill).toMatch(/(?:must not|never).*?(?:password|secret|credential)/i);
+    }
+    for (const skill of [browser, usage, autofix]) {
+      expect(skill).toMatch(/no (?:site )?login command[\s\S]{0,500}fresh browser state[\s\S]{0,500}(?:identity check|post-action state)[\s\S]{0,250}before retry/i);
+    }
+    expect(autofixAuthRequired).toMatch(/if (?:a|the) site login command exists[\s\S]*webcmd <site> login[\s\S]*returned `verify_command`[\s\S]*verification must succeed[\s\S]*retry/i);
+    expect(autofixAuthRequired).toMatch(/no site login command[\s\S]*stop (?:browser )?writes[\s\S]*visible browser[\s\S]*fresh browser state[\s\S]*(?:identity check|post-action state)[\s\S]*before retry[\s\S]*report alone is not verification/i);
+    expect(autofixAuthRequiredRow).toMatch(/conditional[^|]*Safety Boundaries|no site login command/i);
+    expect(autofix).toMatch(/CAPTCHA[\s\S]{0,250}stop automation[\s\S]{0,250}verification must succeed/i);
   });
 
   it('adds bundled skills once and refreshes them after package updates', () => {

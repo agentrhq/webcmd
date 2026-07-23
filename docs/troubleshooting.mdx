@@ -51,6 +51,12 @@ Profiles matter when commands depend on login state. See [Authentication and Pro
 
 The agent may ask you to sign in once. It should not store credentials in code. See [Authentication and Profiles](/authentication-and-profiles) for the sign-in flow.
 
+## Sign In and Retry an Authenticated Command
+
+```text
+original command -> AUTH_REQUIRED -> webcmd <site> login -> user signs in -> webcmd <site> whoami -> retry original command
+```
+
 ## Adapter Returns Wrong or Empty Data
 
 ```text

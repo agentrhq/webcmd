@@ -53,10 +53,4 @@ registerSiteAuthCommands({
   columns: ['public_id', 'plain_id', 'name'],
   quickCheck: hasLinkedinSessionCookie,
   verify: verifyLinkedinIdentity,
-  poll: async (page) => {
-    if (!await hasLinkedinSessionCookie(page)) {
-      throw new AuthRequiredError('linkedin.com', 'Waiting for LinkedIn li_at cookie');
-    }
-    return verifyLinkedinIdentity(page);
-  },
 });

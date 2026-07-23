@@ -56,10 +56,4 @@ registerSiteAuthCommands({
   columns: ['sec_uid', 'username', 'nickname'],
   quickCheck: hasTiktokSessionCookie,
   verify: verifyTiktokIdentity,
-  poll: async (page) => {
-    if (!await hasTiktokSessionCookie(page)) {
-      throw new AuthRequiredError('www.tiktok.com', 'Waiting for TikTok session cookies');
-    }
-    return verifyTiktokIdentity(page);
-  },
 });

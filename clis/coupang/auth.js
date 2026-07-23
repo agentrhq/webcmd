@@ -39,10 +39,4 @@ registerSiteAuthCommands({
   loginUrl: 'https://login.coupang.com/login/login.pang',
   columns: ['name'],
   verify: verifyCoupangIdentity,
-  poll: async (page) => {
-    if (!await hasCoupangSessionCookie(page)) {
-      throw new AuthRequiredError('coupang.com', 'Waiting for Coupang session cookies');
-    }
-    return verifyCoupangIdentity(page);
-  },
 });

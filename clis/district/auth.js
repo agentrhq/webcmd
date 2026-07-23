@@ -37,8 +37,6 @@ registerSiteAuthCommands({
     await page.wait(1);
     return profileProbe(page);
   },
-  // While the OTP modal is open, probe without navigating away from it.
-  poll: async (page) => profileProbe(page),
   quickCheck: async (page) => {
     try {
       return { logged_in: true, ...await profileProbe(page) };

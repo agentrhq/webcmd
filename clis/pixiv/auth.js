@@ -4,7 +4,7 @@ import { registerSiteAuthCommands } from '../_shared/site-auth.js';
 async function hasPixivSessionCookie(page) {
   const cookies = await page.getCookies({ url: 'https://www.pixiv.net' });
   // Anonymous PHPSESSID is a bare hash; logged-in form is `<userId>_<hash>`.
-  // Require the numeric uid prefix so the login poll doesn't navigate away
+  // Require the numeric uid prefix so identity verification does not navigate away
   // from accounts.pixiv.net while the user is still signing in.
   return cookies.some(c => c.name === 'PHPSESSID' && /^\d+_/.test(c.value || ''));
 }
@@ -55,10 +55,4 @@ registerSiteAuthCommands({
   columns: ['user_id', 'name'],
   quickCheck: hasPixivSessionCookie,
   verify: verifyPixivIdentity,
-  poll: async (page) => {
-    if (!await hasPixivSessionCookie(page)) {
-      throw new AuthRequiredError('pixiv.net', 'Waiting for Pixiv PHPSESSID cookie');
-    }
-    return verifyPixivIdentity(page);
-  },
 });

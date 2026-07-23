@@ -1,5 +1,5 @@
-import { AuthRequiredError, TimeoutError } from '@agentrhq/webcmd/errors';
-import { cli, Strategy } from '@agentrhq/webcmd/registry';
+import { AuthRequiredError } from '@agentrhq/webcmd/errors';
+import { registerSiteAuthCommands } from '../_shared/site-auth.js';
 import { DOMAIN, HOME_URL, SITE, ZEPTO_NAV_OPTIONS, safeGoto } from './utils.js';
 
 function authEvaluate() {
@@ -23,36 +23,23 @@ function openLoginEvaluate() {
   `;
 }
 
-cli({
+async function verifyZeptoIdentity(page) {
+  await safeGoto(page, HOME_URL, 'zepto login', ZEPTO_NAV_OPTIONS);
+  const result = await page.evaluate(authEvaluate());
+  if (!result.loggedIn) throw new AuthRequiredError(DOMAIN, 'Zepto login is required');
+  return {};
+}
+
+registerSiteAuthCommands({
   site: SITE,
-  name: 'login',
-  access: 'write',
-  description: 'Open Zepto login and wait until the browser session is authenticated',
   domain: DOMAIN,
-  strategy: Strategy.COOKIE,
-  browser: true,
-  navigateBefore: false,
-  defaultWindowMode: 'foreground',
-  siteSession: 'persistent',
-  args: [
-    { name: 'timeout', type: 'int', default: 300, help: 'Maximum seconds to wait for the user to finish login' },
-  ],
-  columns: ['status', 'logged_in', 'site'],
-  func: async (page, kwargs) => {
+  loginUrl: HOME_URL,
+  columns: [],
+  verify: verifyZeptoIdentity,
+  openLogin: async (page) => {
     await safeGoto(page, HOME_URL, 'zepto login', ZEPTO_NAV_OPTIONS);
-    if ((await page.evaluate(authEvaluate()).catch(() => ({ loggedIn: false }))).loggedIn) {
-      return [{ status: 'already_logged_in', logged_in: true, site: SITE }];
-    }
-    await page.evaluate(openLoginEvaluate()).catch(() => false);
-    const timeout = Number(kwargs.timeout ?? 300);
-    const deadline = Date.now() + timeout * 1000;
-    while (Date.now() < deadline) {
-      await page.wait(2);
-      if ((await page.evaluate(authEvaluate()).catch(() => ({ loggedIn: false }))).loggedIn) {
-        return [{ status: 'login_complete', logged_in: true, site: SITE }];
-      }
-    }
-    throw new TimeoutError('zepto login', timeout, 'Run webcmd zepto login and complete the login dialog in the browser.');
+    const opened = await page.evaluate(openLoginEvaluate());
+    if (!opened) throw new Error('Zepto login dialog did not open');
   },
 });
 

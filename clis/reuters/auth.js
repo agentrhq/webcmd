@@ -50,18 +50,4 @@ registerSiteAuthCommands({
   loginUrl: 'https://www.reuters.com/account/sign-in/',
   columns: ['user_id', 'subscribed'],
   verify: verifyReutersIdentity,
-  // No-navigation poll: check localStorage on the current page so login-flow
-  // polling doesn't bounce the user off the sign-in page every interval.
-  poll: async (page) => {
-    const loggedIn = await page.evaluate(`(() => {
-      try {
-        const raw = localStorage.getItem('rcom-subscription-state');
-        return raw ? JSON.parse(raw).isLoggedIn === true : false;
-      } catch { return false; }
-    })()`);
-    if (!loggedIn) {
-      throw new AuthRequiredError('reuters.com', 'Waiting for Reuters login');
-    }
-    return verifyReutersIdentity(page);
-  },
 });

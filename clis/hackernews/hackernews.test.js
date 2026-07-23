@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getRegistry } from '@agentrhq/webcmd/registry';
 import { ArgumentError, EmptyResultError } from '@agentrhq/webcmd/errors';
+import { executePipeline } from '@agentrhq/webcmd/pipeline';
 import './top.js';
 import './best.js';
 import './ask.js';
@@ -34,8 +35,26 @@ describe('hackernews listing adapters expose item id', () => {
     expect(cmd?.columns).toEqual(['rank', 'id', 'title', 'author', 'url']);
     expect(cmd?.pipeline?.[5]?.map).toMatchObject({
       id: '${{ item.id }}',
-      url: '${{ item.url }}',
+      url: '${{ item.url || "https://news.ycombinator.com/item?id=" + item.id }}',
     });
+  });
+
+  it('hackernews/jobs preserves external URLs and falls back to item pages', async () => {
+    const jobs = {
+      48995037: { id: 48995037, title: 'Text-only job', by: 'author' },
+      48954074: { id: 48954074, title: 'External job', by: 'author', url: 'https://example.com/job' },
+    };
+    vi.stubGlobal('fetch', vi.fn(async (url) => new Response(JSON.stringify(
+      String(url).endsWith('jobstories.json') ? [48995037, 48954074] : jobs[String(url).match(/item\/(\d+)\.json$/)?.[1]],
+    ), { status: 200 })));
+
+    const cmd = getRegistry().get('hackernews/jobs');
+    const result = await executePipeline(null, cmd?.pipeline ?? [], { args: { limit: 2 } });
+
+    expect(result).toEqual([
+      { rank: 1, id: 48995037, title: 'Text-only job', author: 'author', url: 'https://news.ycombinator.com/item?id=48995037' },
+      { rank: 2, id: 48954074, title: 'External job', author: 'author', url: 'https://example.com/job' },
+    ]);
   });
 
   it('hackernews/search surfaces id (algolia objectID) alongside the existing columns', () => {

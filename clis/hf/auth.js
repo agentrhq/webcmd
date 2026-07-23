@@ -1,8 +1,8 @@
 import { AuthRequiredError, CommandExecutionError } from '@agentrhq/webcmd/errors';
 import { registerSiteAuthCommands } from '../_shared/site-auth.js';
 
-// Hugging Face's `token` cookie is httpOnly; gate the login poll on the
-// documented /api/whoami-v2 endpoint (401 when anonymous) via a no-nav probe.
+// Hugging Face's `token` cookie is httpOnly; use the documented
+// /api/whoami-v2 endpoint (401 when anonymous) via a no-nav probe.
 const WHOAMI_PROBE = `(async () => {
   try {
     const r = await fetch('/api/whoami-v2', { credentials: 'include', headers: { Accept: 'application/json' } });
@@ -33,9 +33,4 @@ registerSiteAuthCommands({
   loginUrl: 'https://huggingface.co/login',
   columns: ['username', 'fullname', 'type'],
   verify: verifyHfIdentity,
-  poll: async (page) => {
-    const probe = await page.evaluate(WHOAMI_PROBE);
-    if (!probe?.ok) throw new AuthRequiredError('huggingface.co', 'Waiting for Hugging Face login');
-    return { username: probe.username, fullname: probe.fullname, type: probe.type };
-  },
 });

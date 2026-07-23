@@ -44,10 +44,4 @@ registerSiteAuthCommands({
   columns: ['user_name'],
   quickCheck: hasAmazonSessionCookies,
   verify: verifyAmazonIdentity,
-  poll: async (page) => {
-    if (!await hasAmazonSessionCookies(page)) {
-      throw new AuthRequiredError('amazon.com', 'Waiting for Amazon at-main / x-main cookie');
-    }
-    return verifyAmazonIdentity(page);
-  },
 });

@@ -39,10 +39,4 @@ registerSiteAuthCommands({
   columns: ['name'],
   quickCheck: hasGoogleSessionCookie,
   verify: verifyGeminiIdentity,
-  poll: async (page) => {
-    if (!await hasGoogleSessionCookie(page)) {
-      throw new AuthRequiredError('gemini.google.com', 'Waiting for Google session cookies');
-    }
-    return verifyGeminiIdentity(page);
-  },
 });

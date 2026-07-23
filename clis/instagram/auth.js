@@ -48,10 +48,4 @@ registerSiteAuthCommands({
   columns: ['user_id', 'username', 'full_name'],
   quickCheck: hasInstagramSessionCookie,
   verify: verifyInstagramIdentity,
-  poll: async (page) => {
-    if (!await hasInstagramSessionCookie(page)) {
-      throw new AuthRequiredError('www.instagram.com', 'Waiting for Instagram sessionid cookie');
-    }
-    return verifyInstagramIdentity(page);
-  },
 });

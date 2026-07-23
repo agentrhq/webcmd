@@ -32,10 +32,4 @@ registerSiteAuthCommands({
   columns: ['username', 'url'],
   quickCheck: hasTwitterSessionCookies,
   verify: verifyTwitterIdentity,
-  poll: async (page) => {
-    if (!await hasTwitterSessionCookies(page)) {
-      throw new AuthRequiredError('x.com', 'Waiting for Twitter/X auth cookies');
-    }
-    return verifyTwitterIdentity(page);
-  },
 });
