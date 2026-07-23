@@ -32,6 +32,8 @@ export interface BrowserRuntimeCommand {
   /** Close any existing leased page and start on a new one (sent on the first action of a command run). */
   freshPage?: boolean;
   url?: string;
+  /** Navigation wait condition: 'none' returns once navigation commits instead of waiting for the load event. */
+  waitUntil?: 'load' | 'none';
   op?: string;
   index?: number;
   domain?: string;

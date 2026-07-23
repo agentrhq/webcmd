@@ -102,9 +102,13 @@ export class Page extends BasePage {
 
   async goto(url: string, options?: { waitUntil?: 'load' | 'none'; settleMs?: number }): Promise<void> {
     let result: { data: unknown; page?: string };
+    const navigateParams = {
+      url,
+      ...(options?.waitUntil && { waitUntil: options.waitUntil }),
+    };
     try {
       result = await sendCommandFull('navigate', {
-        url,
+        ...navigateParams,
         ...this._cmdOpts(),
       });
     } catch (err) {
@@ -116,7 +120,7 @@ export class Page extends BasePage {
       if (!isStalePageIdentityError(err) || this._page === undefined) throw err;
       this._page = undefined;
       result = await sendCommandFull('navigate', {
-        url,
+        ...navigateParams,
         ...this._cmdOpts(),
       });
     }

@@ -96,4 +96,20 @@ describe('CDPBridge cookies', () => {
       ['Page.getLayoutMetrics', {}],
     ]);
   });
+
+  it("only waits for the load event when waitUntil is not 'none'", async () => {
+    vi.stubEnv('WEBCMD_CDP_ENDPOINT', 'ws://127.0.0.1:9222/devtools/page/1');
+
+    const bridge = new CDPBridge();
+    vi.spyOn(bridge, 'send').mockResolvedValue({});
+    const waitForEvent = vi.spyOn(bridge, 'waitForEvent').mockResolvedValue({});
+    const page = await bridge.connect();
+
+    await page.goto('https://example.com/fast', { waitUntil: 'none' });
+    expect(waitForEvent).not.toHaveBeenCalled();
+
+    await page.goto('https://example.com/full', { settleMs: 0 });
+    expect(waitForEvent).toHaveBeenCalledOnce();
+    expect(waitForEvent).toHaveBeenCalledWith('Page.loadEventFired', 30_000);
+  });
 });

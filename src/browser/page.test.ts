@@ -64,6 +64,7 @@ describe('Page.getCurrentUrl', () => {
       session: 'site:chatgpt',
       surface: 'adapter',
       siteSession: 'persistent',
+      waitUntil: 'none',
     }));
     expect(sendCommandMock).toHaveBeenCalledWith('exec', expect.objectContaining({
       session: 'site:chatgpt',
