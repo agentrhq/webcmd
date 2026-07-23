@@ -1,0 +1,9 @@
+{
+  "name": "webcmd-plugin-techcrunch",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Read the latest TechCrunch news from its public RSS feed",
+  "peerDependencies": {
+    "@agentrhq/webcmd": ">=0.1.2"
+  }
+}
