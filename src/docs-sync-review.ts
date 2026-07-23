@@ -186,7 +186,7 @@ const HOSTED_DOCUMENTATION = [
   'docs/local-or-cloud.mdx',
 ];
 
-const HOSTED_PROFILE_PATHS = /^src\/hosted\/(?:browser-args|client|runner|types)\.ts$/;
+const HOSTED_PROFILE_PATHS = /^(?:src\/completion-shared|src\/hosted\/(?:browser-args|client|runner|types))\.ts$/;
 
 const ADAPTER_DOCUMENTATION = [
   'README.md',
