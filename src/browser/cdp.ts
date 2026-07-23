@@ -211,7 +211,9 @@ class CDPPage extends BasePage {
       await this.bridge.send('Page.enable');
       this._pageEnabled = true;
     }
-    const loadPromise = this.bridge.waitForEvent('Page.loadEventFired', 30_000).catch(() => {});
+    const loadPromise = options?.waitUntil === 'none'
+      ? undefined
+      : this.bridge.waitForEvent('Page.loadEventFired', 30_000).catch(() => {});
     await this.bridge.send('Page.navigate', { url });
     await loadPromise;
     this._lastUrl = url;
