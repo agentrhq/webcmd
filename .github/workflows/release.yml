@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      publish_tag:
+        description: Existing release tag to test and publish
+        type: string
+        required: false
 
 permissions:
   contents: write
@@ -20,6 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Create or finalize release PR
+        if: ${{ inputs.publish_tag == '' }}
         uses: googleapis/release-please-action@v4
         id: release
         with:
@@ -28,13 +34,14 @@ jobs:
           manifest-file: .release-please-manifest.json
 
       - name: Checkout release commit
-        if: ${{ steps.release.outputs.release_created }}
+        if: ${{ steps.release.outputs.release_created || inputs.publish_tag != '' }}
         uses: actions/checkout@v6
         with:
           token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
+          ref: ${{ inputs.publish_tag || github.ref }}
 
       - name: Setup Node.js
-        if: ${{ steps.release.outputs.release_created }}
+        if: ${{ steps.release.outputs.release_created || inputs.publish_tag != '' }}
         uses: actions/setup-node@v6
         with:
           node-version: '22'
@@ -42,27 +49,31 @@ jobs:
           registry-url: https://registry.npmjs.org
 
       - name: Install dependencies
-        if: ${{ steps.release.outputs.release_created }}
+        if: ${{ steps.release.outputs.release_created || inputs.publish_tag != '' }}
         run: npm ci
 
+      - name: Verify existing release tag
+        if: ${{ inputs.publish_tag != '' }}
+        run: test "${{ inputs.publish_tag }}" = "webcmd-v$(node -p "require('./package.json').version")"
+
       - name: Type check
-        if: ${{ steps.release.outputs.release_created }}
+        if: ${{ steps.release.outputs.release_created || inputs.publish_tag != '' }}
         run: npm run typecheck
 
       - name: Build package
-        if: ${{ steps.release.outputs.release_created }}
+        if: ${{ steps.release.outputs.release_created || inputs.publish_tag != '' }}
         run: npm run build
 
       - name: Check generated contract artifacts
-        if: ${{ steps.release.outputs.release_created }}
+        if: ${{ steps.release.outputs.release_created || inputs.publish_tag != '' }}
         run: npm run check:hosted-contract
 
       - name: Run tests
-        if: ${{ steps.release.outputs.release_created }}
+        if: ${{ steps.release.outputs.release_created || inputs.publish_tag != '' }}
         run: npm test
 
       - name: Check npm package executable
-        if: ${{ steps.release.outputs.release_created }}
+        if: ${{ steps.release.outputs.release_created || inputs.publish_tag != '' }}
         run: npm run check:package-bin
 
       - name: Generate enhanced release notes
@@ -95,7 +106,7 @@ jobs:
           fi
 
       - name: Publish to npm
-        if: ${{ steps.release.outputs.release_created }}
+        if: ${{ steps.release.outputs.release_created || inputs.publish_tag != '' }}
         run: npm publish --provenance --access public --ignore-scripts
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
