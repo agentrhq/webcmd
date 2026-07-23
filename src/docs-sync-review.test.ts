@@ -135,6 +135,15 @@ describe('review context', () => {
     ]);
   });
 
+  it('does not select profile documentation for unrelated hosted changes', () => {
+    expect(selectDocumentationPaths([changed('src/hosted/files.ts')])).toEqual([
+      'README.md',
+      'docs/cli-reference.mdx',
+      'docs/concepts.mdx',
+      'skills/webcmd-usage/SKILL.md',
+    ]);
+  });
+
   it('selects adapter and plugin documentation', () => {
     expect(selectDocumentationPaths([changed('clis/reddit/search.js')])).toEqual([
       'README.md',

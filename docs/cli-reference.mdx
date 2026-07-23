@@ -83,7 +83,7 @@ webcmd profile delete profile_abc123
 
 In local mode, arbitrary `--profile <name>` values lazily create separate local state; local `list`, `rename`, and `use` are unchanged. In hosted mode, only an omitted selector or `--profile default` lazily creates the default profile. Create custom hosted profiles first; unknown custom selectors fail.
 
-Hosted `get` and `--profile` accept one exact scalar selector: profile ID, name, or public `userId`. If it matches more than one profile, run `webcmd profile list` and use its immutable ID. Use that immutable ID for `delete` too: deletion permanently removes hosted browser state. Hosted output exposes only `id`, `name`, `userId`, `default`, `status`, `createdAt`, `updatedAt`, and `lastUsedAt`; `status` is `pending` or `available`. `userId` is an external reference, not internal ownership, and Kernel IDs or names are never exposed.
+Hosted `get` and `--profile` accept one exact scalar selector: profile ID, name, or public `userId`. If it matches more than one profile, run `webcmd profile list` and use its immutable ID. Use that immutable ID for `delete` too: deletion permanently removes hosted browser state. `list` returns profile rows; `create` and `get` each return one public profile with `id`, `name`, `userId`, `default`, `status`, `createdAt`, `updatedAt`, and `lastUsedAt`; `delete` returns `{ "ok": true, "deleted": true }`. `status` is `pending` or `available`. `userId` is an external reference, not internal ownership, and Kernel IDs or names are never exposed.
 
 Prompt example:
 

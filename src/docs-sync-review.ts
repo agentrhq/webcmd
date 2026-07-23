@@ -186,6 +186,8 @@ const HOSTED_DOCUMENTATION = [
   'docs/local-or-cloud.mdx',
 ];
 
+const HOSTED_PROFILE_PATHS = /^src\/hosted\/(?:browser-args|client|runner|types)\.ts$/;
+
 const ADAPTER_DOCUMENTATION = [
   'README.md',
   'docs/authoring.mdx',
@@ -199,7 +201,7 @@ export function selectDocumentationPaths(files: ChangedFile[]): string[] {
   const selected = new Set<string>();
 
   for (const file of files) {
-    const paths = /^src\/hosted\//.test(file.path)
+    const paths = HOSTED_PROFILE_PATHS.test(file.path)
       ? HOSTED_DOCUMENTATION
       : /^src\/browser\//.test(file.path)
       ? BROWSER_DOCUMENTATION

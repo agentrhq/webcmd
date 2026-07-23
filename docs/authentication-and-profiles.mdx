@@ -40,7 +40,7 @@ webcmd --profile profile_abc123 github whoami
 
 `userId` is your public external-user reference, not Webcmd's internal account ownership. A profile selector is one scalar value: an immutable ID, exact name, or exact `userId`. If one downstream user has several named profiles, their `userId` is ambiguous. Run `webcmd profile list` and use the returned immutable profile ID.
 
-Hosted `profile list`, `create`, `get`, and `delete` return public profile fields: `id`, `name`, `userId`, `default`, `status`, `createdAt`, `updatedAt`, and `lastUsedAt`. `status` is `pending` while the hosted profile is being provisioned and `available` once it is ready. Kernel identifiers and names are never Webcmd API fields.
+Hosted `profile list` returns profile rows; `create` and `get` each return one public profile with `id`, `name`, `userId`, `default`, `status`, `createdAt`, `updatedAt`, and `lastUsedAt`; `delete` returns `{ "ok": true, "deleted": true }`. `status` is `pending` while the hosted profile is being provisioned and `available` once it is ready. Kernel identifiers and names are never Webcmd API fields.
 
 Delete hosted profiles only by immutable ID:
 
