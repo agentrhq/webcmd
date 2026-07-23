@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.1](https://github.com/agentrhq/webcmd/compare/webcmd-v0.4.0...webcmd-v0.4.1) (2026-07-23)
+
+
+### Bug Fixes
+
+* allow publishing an existing release tag ([7ac250b](https://github.com/agentrhq/webcmd/commit/7ac250b7a6fb174ed8271065d6f20e7a67dc4873))
+* keep hosted tests compatible with release version ([33b4eae](https://github.com/agentrhq/webcmd/commit/33b4eae02318deaaa8b5345391c456fc514c7b5c))
+
 ## [0.4.0](https://github.com/agentrhq/webcmd/compare/webcmd-v0.3.4...webcmd-v0.4.0) (2026-07-23)
 
 
