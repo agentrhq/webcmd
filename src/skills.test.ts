@@ -102,6 +102,11 @@ describe('webcmd skills content', () => {
     const autofixAuthRequired = autofix.match(/^- \*\*`AUTH_REQUIRED`\*\*[\s\S]*?(?=\n- \*\*)/m)?.[0] ?? '';
     const autofixAuthRequiredRow = autofix.split('\n')
       .find((line) => line.startsWith('| AUTH_REQUIRED |')) ?? '';
+    const autofixCaptcha = autofix.match(/^- \*\*CAPTCHA \/ raw-browser user takeover:\*\*[\s\S]*?(?=\n- \*\*)/m)?.[0] ?? '';
+    const authenticationDocs = fs.readFileSync(
+      path.join(process.cwd(), 'docs', 'authentication-and-profiles.mdx'),
+      'utf8',
+    );
 
     expect(browser).toContain('webcmd <site> login');
     expect(browser).toContain('webcmd <site> whoami');
@@ -111,6 +116,20 @@ describe('webcmd skills content', () => {
     expect(browser).not.toMatch(/browser login type/i);
     expect(usage).toContain('AUTH_REQUIRED');
     expect(usage).toContain('action_required');
+    for (const skill of [browser, usage]) {
+      expect(skill).toContain('already_logged_in');
+      expect(skill).toContain('in_progress');
+      expect(skill).toContain('action_url');
+      expect(skill).toContain('view_url');
+      expect(skill).toContain('webcmd auth refresh');
+      expect(skill).toMatch(/in_progress[^\n]*(?:no current user action|do not ask the user)/i);
+      expect(skill).toMatch(/action_required[^\n]*(?:hard stop|stop browser writes)/i);
+      expect(skill).toMatch(/(?:show|give|send|share)[^\n]*action_url[^\n]*view_url[^\n]*user/i);
+      expect(skill).toMatch(/whoami[\s\S]{0,500}fresh browser state[\s\S]{0,500}(?:resume|retry)/i);
+      expect(skill).toMatch(/failed (?:hosted )?command[\s\S]{0,300}action_required[\s\S]{0,300}hard stop/i);
+      expect(skill).toMatch(/action_required[\s\S]{0,300}not AutoFix/i);
+      expect(skill).toMatch(/Webcmd browser:[\s\S]{0,300}user[\s\S]{0,300}(?:fresh verification|fresh browser state)/i);
+    }
     expect(autofix).toContain('webcmd <site> login');
     expect(author).toContain('registerSiteAuthCommands');
     for (const skill of skills) {
@@ -128,6 +147,16 @@ describe('webcmd skills content', () => {
     expect(autofixAuthRequired).toMatch(/no site login command[\s\S]*stop (?:browser )?writes[\s\S]*visible browser[\s\S]*fresh browser state[\s\S]*(?:identity check|post-action state)[\s\S]*before retry[\s\S]*report alone is not verification/i);
     expect(autofixAuthRequiredRow).toMatch(/conditional[^|]*Safety Boundaries|no site login command/i);
     expect(autofix).toMatch(/CAPTCHA[\s\S]{0,250}stop automation[\s\S]{0,250}verification must succeed/i);
+    const autofixHandoff = autofix.match(/^- \*\*Hosted failure handoff:\*\*[\s\S]*?(?=\n- \*\*)/m)?.[0] ?? '';
+    expect(autofixHandoff).toMatch(/handoff\.status[\s\S]*action_required[\s\S]*hard stop[\s\S]*(?:trace|AutoFix)/i);
+    expect(autofixHandoff).toMatch(/handoff\.viewUrl[\s\S]*user[\s\S]*(?:wait|pause)/i);
+    expect(autofixHandoff).toMatch(/never[\s\S]{0,150}(?:enter|type)[\s\S]{0,150}(?:credentials|password)[\s\S]{0,150}CAPTCHA/i);
+    expect(autofixHandoff).toMatch(/verifyCommand[\s\S]{0,300}fresh browser state[\s\S]{0,300}(?:resume|retry)/i);
+    expect(autofixHandoff).toMatch(/without (?:a )?`?verifyCommand`?[\s\S]{0,300}fresh browser state[\s\S]{0,300}intended post-action state[\s\S]{0,200}before (?:any )?retry/i);
+    expect(autofixCaptcha).toContain('verifyCommand');
+    expect(autofixCaptcha).not.toContain('verify_command');
+    expect(authenticationDocs).toMatch(/If no verifier is returned[\s\S]{0,300}fresh browser state[\s\S]{0,300}intended post-action state[\s\S]{0,200}before (?:any )?retry/i);
+    expect(autofix.indexOf('Hosted failure handoff')).toBeLessThan(autofix.indexOf('## Step 1: Collect Trace Context'));
   });
 
   it('adds bundled skills once and refreshes them after package updates', () => {

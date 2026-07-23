@@ -12,6 +12,7 @@ import type {
   HostedErrorResponse,
   HostedExecution,
   HostedExecuteResponse,
+  HostedFailureHandoff,
   HostedPrepareExecutionResponse,
   HostedProfilesResponse,
   HostedUploadArtifactResponse,
@@ -25,20 +26,24 @@ export interface HostedClientOptions {
   fetchImpl?: typeof fetch;
 }
 
+const HOSTED_CLIENT_CAPABILITIES = 'hosted-execution-viewer-v1, hosted-failure-handoff-v1';
+
 export class HostedClientError extends CliError {
   readonly execution?: HostedExecution;
   readonly trace?: HostedTraceReceipt;
+  readonly handoff?: HostedFailureHandoff;
 
   constructor(
     code: string,
     message: string,
     help?: string,
     exitCode: ExitCode = EXIT_CODES.GENERIC_ERROR,
-    metadata: { execution?: HostedExecution; trace?: HostedTraceReceipt } = {},
+    metadata: { execution?: HostedExecution; trace?: HostedTraceReceipt; handoff?: HostedFailureHandoff } = {},
   ) {
     super(code, message, help, exitCode);
     this.execution = metadata.execution;
     this.trace = metadata.trace;
+    this.handoff = metadata.handoff;
     if (metadata.trace) attachTraceReceipt(this, metadata.trace);
   }
 }
@@ -86,7 +91,7 @@ export class HostedClient {
       method: 'POST',
       body: JSON.stringify(input),
     }, { command: input.command, traceMode });
-    if (!isHostedExecuteResponse(body, input.command, traceMode)) {
+    if (!isHostedExecuteResponse(body, input.command, traceMode, this.apiBaseUrl)) {
       throw protocolError('Webcmd Cloud returned an invalid execution response.');
     }
     return body;
@@ -143,8 +148,8 @@ export class HostedClient {
         ...(input.trace !== undefined ? { trace: input.trace } : {}),
         ...(input.profile !== undefined ? { profile: input.profile } : {}),
       }),
-    }, { command: input.command, traceMode });
-    if (!isHostedExecuteResponse(body, input.command, traceMode)) {
+    }, { command: input.command, traceMode, executionId: input.executionId });
+    if (!isHostedExecuteResponse(body, input.command, traceMode, this.apiBaseUrl)) {
       throw protocolError('Webcmd Cloud returned an invalid execution response.');
     }
     return body;
@@ -160,13 +165,16 @@ export class HostedClient {
         headers: {
           accept: 'application/octet-stream',
           authorization: `Bearer ${this.apiKey}`,
+          'x-webcmd-client-capabilities': HOSTED_CLIENT_CAPABILITIES,
         },
       },
     );
     if (!response.ok) {
       const text = await response.text();
       const body = text ? parseJson(text) : {};
-      if (!isHostedError(body)) throw protocolError('Webcmd Cloud returned an invalid artifact download failure.');
+      if (!isHostedError(body, this.apiBaseUrl) || body.handoff) {
+        throw protocolError('Webcmd Cloud returned an invalid artifact download failure.');
+      }
       const error = body.error;
       throw new HostedClientError(
         error.code,
@@ -187,7 +195,7 @@ export class HostedClient {
       method: 'POST',
       body: JSON.stringify(input),
     });
-    if (!isHostedBrowserRunResponse(body, session)) {
+    if (!isHostedBrowserRunResponse(body, session, this.apiBaseUrl)) {
       throw protocolError('Webcmd Cloud returned an invalid browser run response.');
     }
     return body;
@@ -232,7 +240,7 @@ export class HostedClient {
       method: 'POST',
       body: JSON.stringify(input),
     });
-    if (!isHostedBrowserRunActionResponse(body, session)) {
+    if (!isHostedBrowserRunActionResponse(body, session, this.apiBaseUrl)) {
       throw protocolError('Webcmd Cloud returned an invalid browser action response.');
     }
     return body;
@@ -249,6 +257,7 @@ export class HostedClient {
         accept: 'application/json',
         ...(init.body ? { 'content-type': 'application/json' } : {}),
         authorization: `Bearer ${this.apiKey}`,
+        'x-webcmd-client-capabilities': HOSTED_CLIENT_CAPABILITIES,
         ...(init.headers ?? {}),
       },
     });
@@ -258,7 +267,7 @@ export class HostedClient {
       throw protocolError('Webcmd Cloud returned an invalid response envelope.');
     }
     if (body.ok === false) {
-      if (!isHostedError(body)) throw protocolError('Webcmd Cloud returned an invalid failure response.');
+      if (!isHostedError(body, this.apiBaseUrl)) throw protocolError('Webcmd Cloud returned an invalid failure response.');
       if (body.execution && !isValidExecutedFailure(body, executionExpectation)) {
         throw protocolError('Webcmd Cloud returned an invalid executed failure response.');
       }
@@ -274,6 +283,7 @@ export class HostedClient {
         {
           ...(body.execution ? { execution: body.execution } : {}),
           ...(body.trace ? { trace: body.trace } : {}),
+          ...(body.handoff ? { handoff: body.handoff } : {}),
         },
       );
     }
@@ -290,8 +300,8 @@ function parseJson(text: string): unknown {
   }
 }
 
-function isHostedError(value: unknown): value is HostedErrorResponse {
-  if (!hasOnlyKeys(value, ['ok', 'error', 'execution', 'trace']) || value.ok !== false || !isRecord(value.error)) return false;
+function isHostedError(value: unknown, apiBaseUrl: string): value is HostedErrorResponse {
+  if (!hasOnlyKeys(value, ['ok', 'error', 'execution', 'trace', 'handoff']) || value.ok !== false || !isRecord(value.error)) return false;
   if (!hasOnlyKeys(value.error, ['code', 'message', 'help', 'exitCode'])) return false;
   if (typeof value.error.code !== 'string' || typeof value.error.message !== 'string') return false;
   if (value.error.exitCode !== undefined
@@ -299,9 +309,20 @@ function isHostedError(value: unknown): value is HostedErrorResponse {
   if (value.error.help !== undefined && typeof value.error.help !== 'string') return false;
   if (value.execution !== undefined && !isHostedExecution(value.execution)) return false;
   if (value.trace !== undefined && !isHostedTraceReceipt(value.trace)) return false;
+  if (value.handoff !== undefined && !isHostedFailureHandoff(value.handoff, apiBaseUrl)) return false;
+  if (value.handoff && value.execution?.status !== 'failed') return false;
   if (value.execution?.status === 'succeeded') return false;
   if (value.trace && (!value.execution || value.trace.executionId !== value.execution.id)) return false;
   return true;
+}
+
+function isHostedFailureHandoff(value: unknown, apiBaseUrl: string): value is HostedFailureHandoff {
+  return hasOnlyKeys(value, ['status', 'action', 'viewUrl', 'expiresAt', 'verifyCommand'])
+    && value.status === 'action_required'
+    && isSafeGuidance(value.action)
+    && isPublicLiveViewUrl(value.viewUrl, apiBaseUrl)
+    && (value.expiresAt === undefined || isSafeGuidance(value.expiresAt))
+    && (value.verifyCommand === undefined || isSafeGuidance(value.verifyCommand));
 }
 
 function isHostedManifest(value: unknown): value is HostedManifest {
@@ -321,8 +342,9 @@ function isHostedExecuteResponse(
   value: unknown,
   requestedCommand: string,
   traceMode: HostedTraceMode,
+  apiBaseUrl: string,
 ): value is HostedExecuteResponse {
-  if (!hasOnlyKeys(value, ['ok', 'result', 'columns', 'footerExtra', 'execution', 'trace', 'artifacts'])
+  if (!hasOnlyKeys(value, ['ok', 'result', 'viewUrl', 'columns', 'footerExtra', 'execution', 'trace', 'artifacts'])
     || value.ok !== true
     || !Object.prototype.hasOwnProperty.call(value, 'result')) return false;
   if (!isHostedExecution(value.execution) || value.execution.status !== 'succeeded') return false;
@@ -331,6 +353,7 @@ function isHostedExecuteResponse(
     return false;
   }
   if (value.footerExtra !== undefined && typeof value.footerExtra !== 'string') return false;
+  if (value.viewUrl !== undefined && !isPublicLiveViewUrl(value.viewUrl, apiBaseUrl)) return false;
   if (value.artifacts !== undefined && (!Array.isArray(value.artifacts) || !value.artifacts.every(isHostedArtifactReceipt))) return false;
   if (value.trace !== undefined && !isHostedTraceReceipt(value.trace)) return false;
   if (value.trace && value.trace.executionId !== value.execution.id) return false;
@@ -471,17 +494,27 @@ function isSafeRelativeArtifactPath(value: unknown): value is string {
     && !value.split('/').some(segment => !segment || segment === '.' || segment === '..' || segment.includes('\0'));
 }
 
-function isHostedBrowserRunResponse(value: unknown, requestedSession: string): value is HostedBrowserRunResponse {
-  return hasExactKeys(value, ['ok', 'run']) && value.ok === true && isHostedBrowserRunPayload(value.run, requestedSession);
+function isHostedBrowserRunResponse(
+  value: unknown,
+  requestedSession: string,
+  apiBaseUrl: string,
+): value is HostedBrowserRunResponse {
+  return hasExactKeys(value, ['ok', 'run'])
+    && value.ok === true
+    && isHostedBrowserRunPayload(value.run, requestedSession, apiBaseUrl);
 }
 
-function isHostedBrowserRunPayload(value: unknown, requestedSession: string): value is HostedBrowserRunResponse['run'] {
+function isHostedBrowserRunPayload(
+  value: unknown,
+  requestedSession: string,
+  apiBaseUrl: string,
+): value is HostedBrowserRunResponse['run'] {
   const run = value;
   if (!hasOnlyKeys(run, ['executionId', 'session', 'profile', 'liveViewUrl'])) return false;
   if (typeof run.executionId !== 'string' || run.session !== requestedSession) return false;
   if (!hasExactKeys(run.profile, ['id', 'displayName'])) return false;
   if (typeof run.profile.id !== 'string' || typeof run.profile.displayName !== 'string') return false;
-  return run.liveViewUrl === undefined || typeof run.liveViewUrl === 'string';
+  return run.liveViewUrl === undefined || isPublicLiveViewUrl(run.liveViewUrl, apiBaseUrl);
 }
 
 function isHostedBrowserActionResponse(value: unknown): value is HostedBrowserActionResponse {
@@ -490,11 +523,15 @@ function isHostedBrowserActionResponse(value: unknown): value is HostedBrowserAc
   return value.trace === null || isHostedBrowserActionTrace(value.trace);
 }
 
-function isHostedBrowserRunActionResponse(value: unknown, requestedSession: string): value is HostedBrowserRunActionResponse {
+function isHostedBrowserRunActionResponse(
+  value: unknown,
+  requestedSession: string,
+  apiBaseUrl: string,
+): value is HostedBrowserRunActionResponse {
   if (!hasExactKeys(value, ['ok', 'result', 'columns', 'trace', 'run', 'execution']) || value.ok !== true) return false;
   if (!Array.isArray(value.columns) || !value.columns.every(column => typeof column === 'string')) return false;
   if (value.trace !== null && !isHostedBrowserActionTrace(value.trace)) return false;
-  if (!isHostedBrowserRunPayload(value.run, requestedSession)) return false;
+  if (!isHostedBrowserRunPayload(value.run, requestedSession, apiBaseUrl)) return false;
   return hasExactKeys(value.execution, ['id', 'status'])
     && typeof value.execution.id === 'string'
     && value.execution.id === value.run.executionId
@@ -554,10 +591,35 @@ function optionalExactPath(value: unknown, expected: string): boolean {
   return value === undefined || value === expected;
 }
 
+function isPublicLiveViewUrl(value: unknown, apiBaseUrl: string): value is string {
+  if (typeof value !== 'string' || value.includes('?') || value.includes('#')) return false;
+  try {
+    const url = new URL(value);
+    const api = new URL(apiBaseUrl);
+    const loopback = api.hostname === 'localhost' || api.hostname === '127.0.0.1' || api.hostname === '[::1]';
+    return url.href === value
+      && url.origin === api.origin
+      && !url.username
+      && !url.password
+      && (url.protocol === 'https:' || (url.protocol === 'http:' && loopback))
+      && url.search === ''
+      && url.hash === ''
+      && /^\/account\/live\/[A-Za-z0-9_-]+$/.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
 function isSafeReceiptToken(value: unknown): value is string {
   return typeof value === 'string'
     && value.length > 0
     && !/[\u0000-\u001f\u007f\u2028\u2029]/u.test(value);
+}
+
+function isSafeGuidance(value: unknown): value is string {
+  return typeof value === 'string'
+    && value.trim().length > 0
+    && !/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -589,6 +651,7 @@ type HostedTraceMode = 'off' | 'on' | 'retain-on-failure';
 interface ExecutionExpectation {
   command: string;
   traceMode: HostedTraceMode;
+  executionId?: string;
 }
 
 function normalizeTraceMode(value: string | undefined): HostedTraceMode {
@@ -601,6 +664,7 @@ function isValidExecutedFailure(
 ): boolean {
   if (!value.execution || !expectation || value.error.exitCode === undefined) return false;
   if (value.execution.command !== expectation.command) return false;
+  if (expectation.executionId !== undefined && value.execution.id !== expectation.executionId) return false;
   const traceRequired = expectation.traceMode === 'on' || expectation.traceMode === 'retain-on-failure';
   return traceRequired ? value.trace !== undefined : value.trace === undefined;
 }

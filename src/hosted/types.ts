@@ -74,6 +74,7 @@ export interface HostedTraceReceipt {
 export interface HostedExecuteResponse {
   ok: true;
   result: unknown;
+  viewUrl?: string;
   columns?: string[];
   footerExtra?: string;
   execution: HostedExecution;
@@ -235,4 +236,13 @@ export interface HostedErrorResponse {
   };
   execution?: HostedExecution;
   trace?: HostedTraceReceipt;
+  handoff?: HostedFailureHandoff;
+}
+
+export interface HostedFailureHandoff {
+  status: 'action_required';
+  action: string;
+  viewUrl: string;
+  expiresAt?: string;
+  verifyCommand?: string;
 }

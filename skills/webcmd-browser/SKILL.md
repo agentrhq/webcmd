@@ -337,15 +337,17 @@ webcmd browser hn open "https://news.ycombinator.com" \
 
 ### Authentication and human handoff
 
-1. On a clear login redirect or auth wall, stop browser writes.
-2. If the site exposes a login command, run `webcmd <site> login` and read its `action_required` result and returned `verify_command` (normally `webcmd <site> whoami`).
-3. Tell the user to complete sign-in in the visible browser. If there is no site login command, use the current browser.
-4. Never ask for or type passwords, OTPs, recovery codes, cookies, or session secrets.
-5. If login returned a `verify_command`, run that exact command after the user reports done; verification must succeed before retrying the original workflow.
-6. With no site login command and therefore no returned verifier, take fresh browser state and use an available identity check or verify the intended post-action state; that verification must succeed before retrying.
-7. Continue only from fresh browser state; refs from before handoff are stale.
+If a failed hosted command returns a handoff with `status: action_required`, treat it as a hard stop, not AutoFix. Show `Webcmd browser: <viewUrl>` to the user and wait for their confirmation. Then run `verifyCommand` when present and inspect fresh browser state before retrying.
 
-For a CAPTCHA or user takeover, stop automation and let the user act in the visible browser. After the user reports done, apply the same conditional verification policy above; their report alone is not verification. Keep CAPTCHA outside automated retries.
+1. On a clear login redirect or auth wall, stop browser writes.
+2. If the site exposes a login command, run `webcmd <site> login` and branch on its status: `already_logged_in` is verified; `in_progress` means automatic reauthentication is running with no current user action, so do not poll; `action_required` is a hard stop for browser writes.
+3. For `action_required`, show the returned `action_url` and `view_url` to the user when present, then pause. Locally, the foreground browser is already visible. Hosted browser commands also print `Webcmd browser: <URL>` for the interactive viewer.
+4. Never ask for or type passwords, OTPs, recovery codes, cookies, session secrets, or CAPTCHA answers.
+5. Run the returned `verify_command` (normally `webcmd <site> whoami`) only after the user reports done; verification must succeed. Then take fresh browser state and resume or retry the original workflow. Their report alone is not verification.
+6. If the login result remains `in_progress`, perform a later explicit `whoami` or task retry; do not create a polling loop. Use `webcmd auth refresh` when an explicit auth-state refresh is needed.
+7. With no site login command and therefore no returned verifier, ask the user to sign in through the current visible browser or hosted viewer. After they report done, take fresh browser state and use an available identity check or verify the intended post-action state before retrying.
+
+For a CAPTCHA or user takeover, stop automation. In hosted mode let the provider solver try first; if human action remains necessary, show the current viewer URL and pause. After the user reports done, apply the same conditional verification policy above. Keep CAPTCHA outside automated retries.
 
 ### Pick from a long dropdown
 

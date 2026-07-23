@@ -70,6 +70,22 @@ const validTraceUrlCases = [
   { field: 'replayUrl', suffix: 'replay', executionId: 'exec_trace' },
 ] as const;
 
+const invalidViewerUrlCases = [
+  ['raw Kernel URL', 'https://kernel.example/session/secret'],
+  ['wrong origin', 'https://other.example.com/account/live/token'],
+  ['credentials', 'https://user:pass@api.example.com/account/live/token'],
+  ['query string', 'https://api.example.com/account/live/token?secret=1'],
+  ['empty query string', 'https://api.example.com/account/live/token?'],
+  ['fragment', 'https://api.example.com/account/live/token#secret'],
+  ['empty fragment', 'https://api.example.com/account/live/token#'],
+  ['surrounding control characters', '\nhttps://api.example.com/account/live/token\n'],
+  ['protocol-relative URL', '//api.example.com/account/live/token'],
+  ['wrong path', 'https://api.example.com/v1/executions/exec/live'],
+  ['empty token', 'https://api.example.com/account/live/'],
+  ['nested token path', 'https://api.example.com/account/live/token/extra'],
+  ['insecure production URL', 'http://api.example.com/account/live/token'],
+] as const;
+
 describe('HostedClient', () => {
   it('sends bearer auth and parses hosted manifest', async () => {
     const requests: Array<{ url: string; authorization: string | null }> = [];
@@ -106,6 +122,46 @@ describe('HostedClient', () => {
       commands: [],
     });
     expect(requests).toEqual([{ url: 'https://api.example.com/v1/manifest', authorization: 'Bearer wcmd_live_test' }]);
+  });
+
+  it('negotiates hosted viewer and failure handoff capabilities for execution requests', async () => {
+    const requests: Array<{ path: string; capabilities: string | null }> = [];
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async (url, init) => {
+        const path = new URL(String(url)).pathname;
+        requests.push({
+          path,
+          capabilities: new Headers(init?.headers).get('x-webcmd-client-capabilities'),
+        });
+        const command = path === '/v1/execute' ? 'github/whoami' : 'twitter/post';
+        const id = path === '/v1/execute' ? 'exec_execute' : 'exec_prepared';
+        return new Response(JSON.stringify({
+          ok: true,
+          result: [],
+          execution: { id, command, status: 'succeeded' },
+        }), { status: 200 });
+      },
+    });
+
+    await client.execute({ command: 'github/whoami', args: {} });
+    await client.runPreparedExecution({
+      executionId: 'exec_prepared',
+      command: 'twitter/post',
+      args: {},
+    });
+
+    expect(requests).toEqual([
+      {
+        path: '/v1/execute',
+        capabilities: 'hosted-execution-viewer-v1, hosted-failure-handoff-v1',
+      },
+      {
+        path: '/v1/executions/exec_prepared/run',
+        capabilities: 'hosted-execution-viewer-v1, hosted-failure-handoff-v1',
+      },
+    ]);
   });
 
   it('accepts boolean freshPage command metadata', async () => {
@@ -353,6 +409,171 @@ describe('HostedClient', () => {
       execution,
       trace,
     } satisfies Partial<HostedClientError>);
+  });
+
+  it('preserves a validated failed-execution handoff', async () => {
+    const handoff = {
+      status: 'action_required',
+      action: 'Complete sign-in in the hosted browser.',
+      viewUrl: 'https://api.example.com/account/live/handoff-token',
+      expiresAt: '2026-07-23T12:00:00.000Z',
+      verifyCommand: 'webcmd github whoami',
+    } as const;
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: false,
+        error: { code: 'AUTH_REQUIRED', message: 'Sign in first', exitCode: 77 },
+        execution: { id: 'exec_failure', command: 'github/whoami', status: 'failed' },
+        handoff,
+      }), { status: 401 }),
+    });
+
+    await expect(client.execute({ command: 'github/whoami', args: {} })).rejects.toMatchObject({
+      code: 'AUTH_REQUIRED',
+      exitCode: 77,
+      handoff,
+    } satisfies Partial<HostedClientError>);
+  });
+
+  it.each(invalidViewerUrlCases)('rejects failure handoff viewer capability with %s without echoing it', async (_name, viewUrl) => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: false,
+        error: { code: 'AUTH_REQUIRED', message: 'Sign in first', exitCode: 77 },
+        execution: { id: 'exec_failure', command: 'github/whoami', status: 'failed' },
+        handoff: { status: 'action_required', action: 'Complete sign-in.', viewUrl },
+      }), { status: 401 }),
+    });
+
+    const error = await client.execute({ command: 'github/whoami', args: {} })
+      .then(() => undefined, caught => caught as HostedClientError);
+
+    expect(error).toMatchObject({ code: 'HOSTED_PROTOCOL', exitCode: 1 });
+    expect(error?.handoff).toBeUndefined();
+    expect(`${error?.message ?? ''}\n${error?.hint ?? ''}`).not.toContain(viewUrl);
+  });
+
+  it.each([
+    ['unknown key', { status: 'action_required', action: 'Complete sign-in.', viewUrl: 'https://api.example.com/account/live/token', extra: true }],
+    ['wrong status', { status: 'in_progress', action: 'Complete sign-in.', viewUrl: 'https://api.example.com/account/live/token' }],
+    ['missing action', { status: 'action_required', viewUrl: 'https://api.example.com/account/live/token' }],
+    ['blank action', { status: 'action_required', action: '   ', viewUrl: 'https://api.example.com/account/live/token' }],
+    ['control character in action', { status: 'action_required', action: 'Sign in.\ninjected', viewUrl: 'https://api.example.com/account/live/token' }],
+    ['C1 control character in action', { status: 'action_required', action: 'Sign in.\u009binjected', viewUrl: 'https://api.example.com/account/live/token' }],
+    ['blank expiry', { status: 'action_required', action: 'Complete sign-in.', viewUrl: 'https://api.example.com/account/live/token', expiresAt: '' }],
+    ['control character in expiry', { status: 'action_required', action: 'Complete sign-in.', viewUrl: 'https://api.example.com/account/live/token', expiresAt: 'soon\ninjected' }],
+    ['non-string expiry', { status: 'action_required', action: 'Complete sign-in.', viewUrl: 'https://api.example.com/account/live/token', expiresAt: 42 }],
+    ['blank verifier', { status: 'action_required', action: 'Complete sign-in.', viewUrl: 'https://api.example.com/account/live/token', verifyCommand: '' }],
+    ['control character in verifier', { status: 'action_required', action: 'Complete sign-in.', viewUrl: 'https://api.example.com/account/live/token', verifyCommand: 'webcmd github whoami\ninjected' }],
+    ['non-string verifier', { status: 'action_required', action: 'Complete sign-in.', viewUrl: 'https://api.example.com/account/live/token', verifyCommand: 42 }],
+  ])('rejects failure handoff with %s', async (_name, handoff) => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: false,
+        error: { code: 'AUTH_REQUIRED', message: 'Sign in first', exitCode: 77 },
+        execution: { id: 'exec_failure', command: 'github/whoami', status: 'failed' },
+        handoff,
+      }), { status: 401 }),
+    });
+
+    await expect(client.execute({ command: 'github/whoami', args: {} })).rejects.toMatchObject({
+      code: 'HOSTED_PROTOCOL',
+      exitCode: 1,
+    });
+  });
+
+  it('rejects a handoff without a failed execution', async () => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: false,
+        error: { code: 'AUTH_REQUIRED', message: 'Sign in first', exitCode: 77 },
+        handoff: {
+          status: 'action_required',
+          action: 'Complete sign-in.',
+          viewUrl: 'https://api.example.com/account/live/token',
+        },
+      }), { status: 401 }),
+    });
+
+    await expect(client.execute({ command: 'github/whoami', args: {} })).rejects.toMatchObject({
+      code: 'HOSTED_PROTOCOL',
+      exitCode: 1,
+    });
+  });
+
+  it('rejects a handoff from a timed-out execution', async () => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: false,
+        error: { code: 'TIMEOUT', message: 'Timed out', exitCode: 75 },
+        execution: { id: 'exec_timeout', command: 'github/whoami', status: 'timed_out' },
+        handoff: {
+          status: 'action_required',
+          action: 'Complete the challenge.',
+          viewUrl: 'https://api.example.com/account/live/token',
+        },
+      }), { status: 504 }),
+    });
+
+    await expect(client.execute({ command: 'github/whoami', args: {} })).rejects.toMatchObject({
+      code: 'HOSTED_PROTOCOL',
+      exitCode: 1,
+    });
+  });
+
+  it('rejects a prepared-execution handoff for a different execution id', async () => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: false,
+        error: { code: 'AUTH_REQUIRED', message: 'Sign in first', exitCode: 77 },
+        execution: { id: 'exec_other', command: 'github/whoami', status: 'failed' },
+        handoff: {
+          status: 'action_required',
+          action: 'Complete sign-in.',
+          viewUrl: 'https://api.example.com/account/live/token',
+        },
+      }), { status: 401 }),
+    });
+
+    await expect(client.runPreparedExecution({
+      executionId: 'exec_expected',
+      command: 'github/whoami',
+      args: {},
+    })).rejects.toMatchObject({ code: 'HOSTED_PROTOCOL', exitCode: 1 });
+  });
+
+  it('rejects a handoff on an artifact download failure', async () => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: false,
+        error: { code: 'AUTH_REQUIRED', message: 'Sign in first', exitCode: 77 },
+        execution: { id: 'exec_files', command: 'github/whoami', status: 'failed' },
+        handoff: {
+          status: 'action_required',
+          action: 'Complete sign-in.',
+          viewUrl: 'https://api.example.com/account/live/token',
+        },
+      }), { status: 401 }),
+    });
+
+    await expect(client.downloadExecutionArtifact({
+      executionId: 'exec_files',
+      artifactId: 'artifact_out',
+    })).rejects.toMatchObject({ code: 'HOSTED_PROTOCOL', exitCode: 1 });
   });
 
   it.each(['success', 'failure'].flatMap(phase => invalidTraceUrlCases.map(testCase => ({
@@ -662,6 +883,95 @@ describe('HostedClient', () => {
       execution: { id: 'exec_success', status: 'succeeded' },
       trace: { receipt: 'trace_receipt' },
     });
+  });
+
+  it('accepts an absolute Webcmd-owned adapter viewer capability', async () => {
+    const viewUrl = 'https://api.example.com/account/live/opaque-token_123';
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        result: [],
+        viewUrl,
+        execution: { id: 'exec_view', command: 'github/whoami', status: 'succeeded' },
+      }), { status: 200 }),
+    });
+
+    await expect(client.execute({ command: 'github/whoami', args: {} })).resolves.toMatchObject({ viewUrl });
+  });
+
+  it.each(invalidViewerUrlCases)('rejects adapter viewer capability with %s', async (_name, viewUrl) => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        result: [],
+        viewUrl,
+        execution: { id: 'exec_view', command: 'github/whoami', status: 'succeeded' },
+      }), { status: 200 }),
+    });
+
+    await expect(client.execute({ command: 'github/whoami', args: {} })).rejects.toMatchObject({
+      code: 'HOSTED_PROTOCOL',
+    });
+  });
+
+  it.each(invalidViewerUrlCases)('rejects raw-browser viewer capability with %s', async (_name, liveViewUrl) => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        result: {},
+        columns: [],
+        trace: null,
+        run: {
+          executionId: 'exec_view',
+          session: 'work',
+          profile: { id: 'profile_default', displayName: 'default' },
+          liveViewUrl,
+        },
+        execution: { id: 'exec_view', status: 'succeeded' },
+      }), { status: 200 }),
+    });
+
+    await expect(client.runBrowserAction('work', {
+      command: 'browser/state',
+      action: 'snapshot',
+      args: {},
+    })).rejects.toMatchObject({ code: 'HOSTED_PROTOCOL' });
+  });
+
+  it.each([
+    ['HTTPS production', 'https://api.example.com', 'https://api.example.com/account/live/token'],
+    ['HTTP localhost', 'http://localhost:8787', 'http://localhost:8787/account/live/token'],
+    ['HTTP IPv4 loopback', 'http://127.0.0.1:8787', 'http://127.0.0.1:8787/account/live/token'],
+  ])('accepts a raw-browser viewer capability on %s', async (_name, apiBaseUrl, liveViewUrl) => {
+    const client = new HostedClient({
+      apiBaseUrl,
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        result: {},
+        columns: [],
+        trace: null,
+        run: {
+          executionId: 'exec_view',
+          session: 'work',
+          profile: { id: 'profile_default', displayName: 'default' },
+          liveViewUrl,
+        },
+        execution: { id: 'exec_view', status: 'succeeded' },
+      }), { status: 200 }),
+    });
+
+    await expect(client.runBrowserAction('work', {
+      command: 'browser/state',
+      action: 'snapshot',
+      args: {},
+    })).resolves.toMatchObject({ run: { liveViewUrl } });
   });
 
   it.each([

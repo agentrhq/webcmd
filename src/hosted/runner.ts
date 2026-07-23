@@ -107,8 +107,13 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
       await writeToStream(stderr, `error: missing required argument '${err.argumentName}'\n`);
       return { handled: true, exitCode: EXIT_CODES.GENERIC_ERROR };
     }
-    await writeToStream(stderr, formatErrorEnvelope(toEnvelope(err), {
-      cmdName: hostedCommandName(argv),
+    const handoff = err instanceof HostedClientError ? err.handoff : undefined;
+    if (handoff) await writeToStream(stderr, `Webcmd browser: ${handoff.viewUrl}\n`);
+    await writeToStream(stderr, formatErrorEnvelope({
+      ...toEnvelope(err),
+      ...(handoff ? { handoff } : {}),
+    }, {
+      cmdName: handoff ? undefined : hostedCommandName(argv),
       traceMode: hostedTraceMode(argv),
     }));
     return {
@@ -172,7 +177,7 @@ async function dispatchHosted(
     const invocation = parseHostedBrowserInvocation(args, normalized.profile);
     const manifest = await client.getManifest();
     validateManifestContractIdentity(manifest);
-    await dispatchHostedBrowser(invocation, client, stdout);
+    await dispatchHostedBrowser(invocation, client, stdout, stderr);
     return;
   }
 
@@ -285,6 +290,9 @@ async function dispatchHosted(
       stdout,
     });
   }
+  if (response.viewUrl) {
+    await writeToStream(stderr, `Webcmd browser: ${response.viewUrl}\n`);
+  }
   if (parsed.trace === 'on' && response.trace) {
     await writeToStream(stderr, `Webcmd trace artifact: ${response.trace.receipt}\n`);
   }
@@ -347,6 +355,7 @@ async function dispatchHostedBrowser(
   invocation: ParsedHostedBrowserInvocation,
   client: HostedClient,
   stdout: NodeJS.WritableStream,
+  stderr: NodeJS.WritableStream,
 ): Promise<void> {
   const args = invocation.action === 'set-file-input'
     ? materializeHostedBrowserUploadArgs(invocation.args)
@@ -360,6 +369,9 @@ async function dispatchHostedBrowser(
     trace: 'off',
   });
   await renderHostedBrowserResponse(stdout, invocation, response);
+  if (response.run.liveViewUrl) {
+    await writeToStream(stderr, `Webcmd browser: ${response.run.liveViewUrl}\n`);
+  }
 }
 
 function materializeHostedBrowserUploadArgs(args: Record<string, unknown>): Record<string, unknown> {
