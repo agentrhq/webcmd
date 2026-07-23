@@ -54,10 +54,4 @@ registerSiteAuthCommands({
   columns: ['user_id', 'name'],
   quickCheck: hasSunoClerkCookie,
   verify: verifySunoIdentity,
-  poll: async (page) => {
-    if (!await hasSunoClerkCookie(page)) {
-      throw new AuthRequiredError('suno.com', 'Waiting for Suno Clerk __session/__client cookie');
-    }
-    return verifySunoIdentity(page);
-  },
 });

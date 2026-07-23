@@ -44,10 +44,4 @@ registerSiteAuthCommands({
   columns: ['user_id', 'ciphertext'],
   quickCheck: hasUpworkSessionCookie,
   verify: verifyUpworkIdentity,
-  poll: async (page) => {
-    if (!await hasUpworkSessionCookie(page)) {
-      throw new AuthRequiredError('upwork.com', 'Waiting for Upwork session cookies');
-    }
-    return verifyUpworkIdentity(page);
-  },
 });

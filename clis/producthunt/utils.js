@@ -1,6 +1,8 @@
 /**
  * Product Hunt shared helpers.
  */
+import { CliError, EXIT_CODES } from '@agentrhq/webcmd/errors';
+
 export const PRODUCTHUNT_CATEGORY_SLUGS = [
     'ai-agents',
     'ai-coding-agents',
@@ -19,6 +21,31 @@ export const PRODUCTHUNT_CATEGORY_SLUGS = [
     'engineering-development',
 ];
 const UA = 'Mozilla/5.0 (compatible; webcmd/1.0)';
+
+export function isProductHuntVerificationPage(value) {
+    const title = String(value?.title ?? '');
+    const body = String(value?.body ?? '');
+    return value?.cloudflare === true
+        || /just a moment|security verification/i.test(title)
+        || /performing security verification|verify you are human|enable javascript and cookies/i.test(body);
+}
+
+export async function assertProductHuntAccessible(page) {
+    const state = await page.evaluate(`(() => ({
+      title: document.title || '',
+      body: (document.body?.innerText || '').slice(0, 2000),
+      cloudflare: !!document.querySelector('[id^="cf-"], [class*="cf-challenge"]')
+    }))()`);
+    if (!isProductHuntVerificationPage(state))
+        return;
+    throw new CliError(
+        'SITE_BLOCKED',
+        'Product Hunt served a security verification page',
+        'Complete permitted verification in the active browser when available, then retry. Webcmd will not bypass site verification.',
+        EXIT_CODES.SERVICE_UNAVAIL,
+    );
+}
+
 /**
  * Fetch Product Hunt Atom RSS feed.
  * @param category  Optional category slug (e.g. "ai", "developer-tools")

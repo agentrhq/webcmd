@@ -43,10 +43,4 @@ registerSiteAuthCommands({
   columns: ['user_id', 'name'],
   quickCheck: hasChatgptSessionCookie,
   verify: verifyChatgptIdentity,
-  poll: async (page) => {
-    if (!await hasChatgptSessionCookie(page)) {
-      throw new AuthRequiredError('chatgpt.com', 'Waiting for ChatGPT session cookie');
-    }
-    return verifyChatgptIdentity(page);
-  },
 });

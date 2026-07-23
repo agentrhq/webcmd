@@ -1,0 +1,94 @@
+---
+title: X → CLI
+description: Learn how to turn an authenticated X browser session into reusable CLI commands that AI agents can execute without repeated browser automation.
+---
+
+# Turn Your X Session into a CLI for AI Agents
+
+## The Outcome
+
+Authenticate to X once, show an agent a workflow once, then reuse it as a command.
+
+Before, every request asks the agent to rediscover the X interface:
+
+```text
+Open X, find my bookmarks, and give me the first five posts as JSON.
+```
+
+After, it can use a small, repeatable surface:
+
+```bash
+webcmd x bookmarks -f json
+webcmd x profile openai
+webcmd x search "browser automation"
+```
+
+You need Webcmd, an active X account, and a terminal where the agent can run commands.
+
+## 1. Ask the Agent to Use Your X Session
+
+Create a profile named `social` and sign in once:
+
+```text
+Use Webcmd to open a foreground browser with a profile named 'social'. Wait for me to log in to X.
+```
+
+Complete X's normal login and any 2FA prompts in the browser. The profile keeps that session available for later tasks. See [Authentication and Profiles](/authentication-and-profiles) for profile and sign-in details.
+
+## 2. Complete the Workflow Once
+
+Ask the agent to use that authenticated session for the real task:
+
+```text
+Use the 'social' profile in Webcmd to navigate to my X bookmarks. Extract the first 5 bookmarks as a JSON array.
+```
+
+Confirm the result is the data you want to reuse:
+
+```json
+[
+  {
+    "author": "@agentrhq",
+    "text": "Announcing Webcmd v0.2.1...",
+    "url": "https://x.com/agentrhq/status/12345"
+  }
+]
+```
+
+## 3. Turn It into a Reusable Command
+
+Once the workflow works, ask the agent to make it a private adapter:
+
+```text
+Create a private Webcmd adapter for X bookmarks.
+Command: webcmd x bookmarks
+Profile: 'social'
+Output: JSON array with text, author, and url.
+Verify the command works.
+```
+
+The adapter records the working approach behind `webcmd x bookmarks` so the agent can use it again. For more ways to create and maintain adapters, see [Authoring](/authoring).
+
+## 4. Reuse the Result
+
+The next request can be concise:
+
+```text
+Run `webcmd x bookmarks -f json` with the 'social' profile and summarize the first five saved posts.
+```
+
+The agent uses the saved session and command instead of starting browser exploration from scratch.
+
+## What Changed
+
+- Before: the agent had to navigate X and interpret the UI on every request.
+- After: a successful workflow is available as a stable command with structured output.
+
+## Apply the Pattern Elsewhere
+
+Use the same sequence for authenticated dashboards, Jira, Salesforce, Grafana, legacy intranets, or any site where a useful browser workflow repeats:
+
+1. Sign in with a named profile.
+2. Have the agent complete and verify the workflow once.
+3. Ask it to turn the workflow into a command.
+4. Reuse that command in future prompts.

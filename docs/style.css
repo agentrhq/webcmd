@@ -1,0 +1,90 @@
+@import url("https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&display=swap");
+
+h5 {
+  font-family: "Inter", sans-serif;
+}
+
+code,
+kbd,
+samp,
+pre,
+pre code {
+  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+::selection {
+  background: #006b9a;
+  color: #f8f6f1;
+}
+
+.dark ::selection {
+  background: #56c5ff;
+  color: #0f0f0f;
+}
+
+#content-area :is(h1, h2, h3, h4, h5, h6) {
+  font-weight: 700;
+}
+
+.dark #content-area :is(h1, h2, h3, h4, h5, h6) {
+  color: rgb(215 215 215);
+}
+
+.dark #content-area .prose a {
+  border-bottom-color: #fff;
+  color: #fff;
+}
+
+.dark a.nav-tabs-item[aria-current="location"] {
+  border-bottom-color: #fff;
+}
+
+.dark #sidebar a[aria-current="page"] {
+  background-color: rgb(255 255 255 / 8%);
+  color: #fff;
+}
+
+.dark main a[aria-current="location"] {
+  color: #fff;
+}
+
+[data-component-part="card-title"] {
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+[data-component-part="card-title"] + .prose {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  margin-top: 0.625rem;
+}
+
+:root {
+  --webcmd-radius: 0.375rem;
+  --webcmd-sidebar-radius: 0.125rem;
+  --gray-50: 243 243 243;
+  --gray-100: 238 238 238;
+  --gray-200: 223 223 223;
+  --gray-300: 206 206 206;
+  --gray-400: 159 159 159;
+  --gray-500: 112 112 112;
+  --gray-600: 80 80 80;
+  --gray-700: 63 63 63;
+  --gray-800: 37 37 37;
+  --gray-900: 23 23 23;
+  --gray-950: 10 10 10;
+  --rounded-lg: var(--webcmd-radius);
+  --rounded-xl: var(--webcmd-radius);
+  --rounded-2xl: var(--webcmd-radius);
+  --rounded-3xl: var(--webcmd-radius);
+}
+
+[data-component-part="code-group-tab-content"],
+[data-component-part="code-group-tab-content"] [data-component-part="code-block-root"] {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+#sidebar a,
+.nav-tag-pill-text[data-nav-tag] {
+  border-radius: var(--webcmd-sidebar-radius);
+}

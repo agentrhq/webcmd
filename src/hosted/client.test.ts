@@ -108,6 +108,72 @@ describe('HostedClient', () => {
     expect(requests).toEqual([{ url: 'https://api.example.com/v1/manifest', authorization: 'Bearer wcmd_live_test' }]);
   });
 
+  it('accepts boolean freshPage command metadata', async () => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        manifest: {
+          userId: 'user_demo',
+          metadata: {
+            contractSchemaVersion: 1,
+            webcmdPackageVersion: '0.3.0',
+            generatedAt: 'now',
+          },
+          commands: [{
+            site: 'district',
+            name: 'checkout',
+            command: 'district/checkout',
+            description: 'Checkout',
+            access: 'write',
+            strategy: 'UI',
+            browser: true,
+            args: [],
+            columns: [],
+            freshPage: true,
+          }],
+        },
+      }), { status: 200 }),
+    });
+
+    await expect(client.getManifest()).resolves.toMatchObject({
+      commands: [expect.objectContaining({ freshPage: true })],
+    });
+  });
+
+  it('rejects non-boolean freshPage command metadata', async () => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        manifest: {
+          userId: 'user_demo',
+          metadata: {
+            contractSchemaVersion: 1,
+            webcmdPackageVersion: '0.3.0',
+            generatedAt: 'now',
+          },
+          commands: [{
+            site: 'district',
+            name: 'checkout',
+            command: 'district/checkout',
+            description: 'Checkout',
+            access: 'write',
+            strategy: 'UI',
+            browser: true,
+            args: [],
+            columns: [],
+            freshPage: 'yes',
+          }],
+        },
+      }), { status: 200 }),
+    });
+
+    await expect(client.getManifest()).rejects.toMatchObject({ code: 'HOSTED_PROTOCOL' });
+  });
+
   it('parses hosted profile rows without provider identifiers', async () => {
     const client = new HostedClient({
       apiBaseUrl: 'https://api.example.com',

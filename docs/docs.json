@@ -4,7 +4,34 @@
   "name": "Webcmd",
   "description": "An agent runtime for turning websites, apps, APIs, and local tools into deterministic CLIs.",
   "colors": {
-    "primary": "#1E88E5"
+    "primary": "#006B9A",
+    "light": "#56C5FF",
+    "dark": "#006B9A"
+  },
+  "logo": {
+    "light": "/webcmd-logo-light.svg",
+    "dark": "/webcmd-logo-dark.svg",
+    "href": "https://webcmd.dev"
+  },
+  "favicon": "/webcmd.svg",
+  "appearance": {
+    "default": "dark"
+  },
+  "background": {
+    "color": {
+      "light": "#F8F6F1",
+      "dark": "#0F0F0F"
+    }
+  },
+  "fonts": {
+    "heading": {
+      "family": "Newsreader",
+      "weight": 700
+    },
+    "body": {
+      "family": "Inter",
+      "weight": 400
+    }
   },
   "navigation": {
     "tabs": [
@@ -16,33 +43,56 @@
             "pages": [
               "index",
               "quickstart",
-              "concepts"
+              "agent-prompts"
             ]
           },
           {
-            "group": "Work With Agents",
+            "group": "Understand Webcmd",
             "pages": [
-              "agent-prompts",
-              "cli-reference",
-              "agent-runtime",
-              "generated-clis"
+              "concepts",
+              "authentication-and-profiles",
+              "local-or-cloud",
+              "browser-and-sitemap-memory",
+              "skills"
             ]
           },
           {
-            "group": "Extend",
+            "group": "Build and Share",
             "pages": [
               "authoring",
-              "plugins-and-skills"
+              "create-plugin",
+              "publish-community-plugin"
             ]
           },
           {
-            "group": "Support",
+            "group": "Use Cases",
             "pages": [
+              "x-session-cli"
+            ]
+          },
+          {
+            "group": "Reference and Support",
+            "pages": [
+              "cli-reference",
               "troubleshooting"
             ]
           }
         ]
       }
     ]
-  }
+  },
+  "redirects": [
+    {
+      "source": "/agent-runtime",
+      "destination": "/concepts"
+    },
+    {
+      "source": "/generated-clis",
+      "destination": "/authoring"
+    },
+    {
+      "source": "/plugins-and-skills",
+      "destination": "/skills"
+    }
+  ]
 }

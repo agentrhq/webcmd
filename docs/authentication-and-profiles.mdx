@@ -1,0 +1,32 @@
+---
+title: Authentication and Profiles
+description: Ask agents to use logged-in websites without putting credentials in adapters or prompts.
+---
+
+# Authentication and Profiles
+
+## Ask for an Authenticated Workflow
+
+Name the profile and the outcome you need:
+
+```text
+Use Webcmd with my `work` profile to complete this task on Acme Billing. If the profile is not authenticated, pause and give me the sign-in link or browser handoff. Never store credentials in the adapter.
+```
+
+## Named Profiles
+
+Profiles separate browser identities and their login state. Use a named profile when work and personal accounts, customers, or environments must stay separate.
+
+## When You Need to Sign In
+
+When a profile needs interactive sign-in, complete it directly in the browser; never share credentials through chat.
+
+## Credential Safety
+
+Credentials never belong in prompts or adapter code. Ask the agent to use an authenticated profile and pause for a sign-in handoff instead of sharing passwords, cookies, or API keys.
+
+## Local and Hosted Authentication
+
+In local mode, `webcmd <site> login` opens the foreground Webcmd browser and returns `action_required` immediately. Complete sign-in in that browser, tell the agent when you are done, and let it run `webcmd <site> whoami` before retrying the original task. Never send credentials, OTPs, cookies, or recovery codes through chat.
+
+Hosted mode is a separate future-facing flow. It will return a Webcmd-owned live authentication view, where you complete the interactive sign-in before the agent continues.

@@ -11,10 +11,24 @@ Route a query to the best webcmd search source based on the topic and context. T
 
 Before every use, do both of these steps:
 
-- Run `webcmd list -f json`
-- Use the live registry to confirm that candidate sites exist, and inspect `strategy`, `browser`, and `domain`
+- Derive literal workflow terms from the requested action, entity, output fields, and any explicitly named site, then filter the live registry before it reaches bounded agent output:
 
-If the user explicitly names a site/source and it is missing from `webcmd list` or when none of the sites cover the query, check installable plugins before marking it unavailable:
+  ```bash
+  WORKFLOW_TERMS='["requested action", "output field", "named site"]'
+  webcmd list -f json | jq --argjson terms "$WORKFLOW_TERMS" '
+    [.[] | select(
+      ([.site, .name, .description, ((.columns // []) | join(" "))]
+        | map(. // "") | join(" ") | ascii_downcase) as $text
+      | any($terms[]; . as $term | $text | contains($term | ascii_downcase))
+    )]
+  '
+  ```
+
+- Use the complete, non-truncated filtered registry to confirm that candidate sites exist, and inspect `strategy`, `browser`, and `domain`
+
+Any truncation warning from registry or plugin output means the inspection is incomplete. Narrow the filter or query and inspect again; absence from truncated output never proves a site, command, or plugin is unavailable. Do not search plugins until a complete filtered registry result for the missing capability is exactly `[]`, and do not use raw browser fallback until plugin output is also complete and non-truncated.
+
+If the user explicitly names a site/source, or no installed command covers the query, refine the filter for that missing site or capability. Only when the complete filtered result is `[]`, check installable plugins before marking it unavailable:
 
 ```bash
 webcmd plugin search <site-or-source-or-capability> -f json
@@ -22,7 +36,7 @@ webcmd plugin search <site-or-source-or-capability> -f json
 
 Derive a short plugin query from the missing site or capability. Preserve the user's term when practical: `find flights` becomes `flight`.
 
-If plugin search finds a match, tell the user it is available as a plugin and offer `webcmd plugin install <source>`. If plugin search fails because catalog sources cannot be fetched, report that catalog/search error separately from no plugin match.
+If a complete, non-truncated plugin search finds a match, tell the user it is available as a plugin and offer `webcmd plugin install <source>`. If plugin search is truncated, refine it before fallback. If it fails because catalog sources cannot be fetched, report that catalog/search error separately from no plugin match.
 
 After choosing a site, do both of these steps:
 
@@ -144,12 +158,12 @@ Keep a typical query to 1 AI source plus 1-2 specialized sources to avoid result
 When a site is unavailable:
 
 - Do not stop the whole search because one source failed
-- For a missing site or capability, run `webcmd plugin search <query> -f json` before recording unavailable
+- For a missing site or capability, first require a complete filtered registry result of `[]`, then run `webcmd plugin search <query> -f json` before recording unavailable
 - Record: `Skipped: <site> unavailable`
 - Fall back to another site of the same type, or to one AI source
 - Always trust the actual output of `webcmd list -f json`, `webcmd plugin search -f json`, and `webcmd <site> -h`
 
-Do not assume any site is always available. Even for public sites, trust live help and execution results in the current environment.
+Do not assume any site is always available. Even for public sites, trust complete, non-truncated live registry and plugin output, live help, and execution results in the current environment. Raw browser fallback requires both the complete `[]` registry result and a complete, non-truncated plugin search that returned no match and no error.
 
 ## Reference Files
 

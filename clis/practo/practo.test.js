@@ -12,7 +12,6 @@ import './login.js';
 import './profile.js';
 import './search.js';
 import './slots.js';
-import './whoami.js';
 import { __test__ } from './utils.js';
 
 const {
@@ -124,22 +123,27 @@ describe('practo command registry', () => {
     expect(cancel.args.find((arg) => arg.name === 'confirm')?.type).toBe('boolean');
   });
 
-  it('waits for manual login to complete', async () => {
+  it('opens login without waiting for manual authentication', async () => {
     const login = getRegistry().get('practo/login');
+    const whoami = getRegistry().get('practo/whoami');
     const page = {
       goto: vi.fn().mockResolvedValue(undefined),
       wait: vi.fn().mockResolvedValue(undefined),
       evaluate: vi.fn()
-        .mockResolvedValueOnce({ __error: 'HTTP 401', status: 401 })
-        .mockResolvedValueOnce({ name: 'Ada' }),
+        .mockResolvedValueOnce({ __error: 'HTTP 401', status: 401 }),
     };
 
-    await expect(login.func(page, { timeout: 1 })).resolves.toEqual([{
-      status: 'login_complete',
-      logged_in: true,
+    expect(login.args).toEqual([]);
+    expect(login.columns).toEqual(expect.arrayContaining(['action', 'verify_command']));
+    expect(whoami).toBeDefined();
+    expect(getRegistry().get('practo/auth-status')).toBe(whoami);
+    await expect(login.func(page, {})).resolves.toEqual([expect.objectContaining({
+      status: 'action_required',
+      logged_in: false,
       site: 'practo',
-      name: 'Ada',
-    }]);
+      verify_command: 'webcmd practo whoami',
+    })]);
+    expect(page.wait).not.toHaveBeenCalledWith(2);
   });
 
   it('refuses real booking without --confirm true', async () => {

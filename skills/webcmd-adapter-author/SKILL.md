@@ -10,6 +10,8 @@ You are an agent writing an adapter for a site. The goal of this skill is a 30-m
 
 Use the existing tools throughout: `webcmd browser *`, `webcmd doctor`, `webcmd browser init`, and `webcmd browser verify`. This skill does not introduce new commands.
 
+Browser-profile auth commands must reuse `registerSiteAuthCommands`. Keep only site-specific `verify` and `openLogin` logic in the adapter. The login row must return `action_required` and `verify_command` (normally `webcmd <site> whoami`); after the user reports done, agents run that returned command and verification must succeed before retrying the original workflow. Credentials, MFA, and CAPTCHA always use human handoff: CAPTCHA stops automation until the user reports done and verification succeeds, and adapter code must not collect or type passwords or secrets.
+
 When debugging browser-backed adapters, start with `--trace on --keep-tab true --window foreground`. `--trace on` writes a trace artifact every round, and `summary.md` is the entry point for reviewing both failures and successes. `--keep-tab true --window foreground` keeps the tab lease alive and puts the browser window in front so you can inspect the final page state.
 
 ---
@@ -175,7 +177,7 @@ Check these off step by step:
        [ ] Order: identifier columns -> business numbers -> metadata.
 
 [ ] 9. Write the adapter (`adapter-template.md`):
-       [ ] `webcmd browser init <site>/<name> --strategy <strategy>`
+       [ ] `webcmd browser init <site>/<name>`, then set `strategy: Strategy.<strategy>` in the generated file
        [ ] Find the closest same-site or same-type adapter and copy it.
        [ ] Edit name, URL, and field mapping.
 

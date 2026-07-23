@@ -45,10 +45,4 @@ registerSiteAuthCommands({
   columns: ['name'],
   quickCheck: hasGoogleSessionCookie,
   verify: verifyYoutubeIdentity,
-  poll: async (page) => {
-    if (!await hasGoogleSessionCookie(page)) {
-      throw new AuthRequiredError('www.youtube.com', 'Waiting for Google session cookies');
-    }
-    return verifyYoutubeIdentity(page);
-  },
 });

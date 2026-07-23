@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AuthRequiredError, TimeoutError } from '@agentrhq/webcmd/errors';
+import { AuthRequiredError } from '@agentrhq/webcmd/errors';
 import { getRegistry } from '@agentrhq/webcmd/registry';
 import { registerSiteAuthCommands } from './site-auth.js';
 
@@ -11,12 +11,13 @@ function pageMock() {
 }
 
 describe('site auth command helper', () => {
-  it('registers whoami and foreground login commands', () => {
+  it('registers whoami aliases and foreground login columns', () => {
     registerSiteAuthCommands({
       site: 'auth-helper-registration',
       domain: 'example.com',
       loginUrl: 'https://example.com/login',
       columns: ['username'],
+      whoamiAliases: ['auth-status'],
       verify: async () => ({ username: 'alice' }),
     });
 
@@ -24,16 +25,23 @@ describe('site auth command helper', () => {
       access: 'read',
       browser: true,
       navigateBefore: false,
+      aliases: ['auth-status'],
       columns: ['logged_in', 'site', 'username'],
     });
-    expect(getRegistry().get('auth-helper-registration/login')).toMatchObject({
+    expect(getRegistry().get('auth-helper-registration/auth-status'))
+      .toBe(getRegistry().get('auth-helper-registration/whoami'));
+    const login = getRegistry().get('auth-helper-registration/login');
+    expect(login).toMatchObject({
       access: 'write',
       browser: true,
       navigateBefore: false,
       defaultWindowMode: 'foreground',
       siteSession: 'persistent',
-      columns: ['status', 'logged_in', 'site', 'username'],
     });
+    expect(login.args).toEqual([]);
+    expect(login.columns).toEqual([
+      'status', 'logged_in', 'site', 'username', 'action', 'verify_command',
+    ]);
   });
 
   it('whoami returns normalized identity without opening login', async () => {
@@ -55,44 +63,123 @@ describe('site auth command helper', () => {
     expect(page.goto).not.toHaveBeenCalled();
   });
 
-  it('login opens the login URL and polls until authenticated', async () => {
-    const poll = vi.fn()
-      .mockRejectedValueOnce(new AuthRequiredError('example.com', 'not yet'))
-      .mockResolvedValueOnce({ username: 'alice' });
+  it('login returns the existing authenticated identity', async () => {
+    registerSiteAuthCommands({
+      site: 'auth-helper-authenticated',
+      domain: 'example.com',
+      loginUrl: 'https://example.com/login',
+      columns: ['username'],
+      verify: async () => ({ username: 'alice' }),
+    });
+    const login = getRegistry().get('auth-helper-authenticated/login');
+    const page = pageMock();
+
+    await expect(login.func(page, {})).resolves.toEqual([{
+      status: 'already_logged_in',
+      logged_in: true,
+      site: 'auth-helper-authenticated',
+      username: 'alice',
+      action: '',
+      verify_command: '',
+    }]);
+    expect(page.goto).not.toHaveBeenCalled();
+  });
+
+  it('completes and canonicalizes successful identity rows', async () => {
+    registerSiteAuthCommands({
+      site: 'auth-helper-canonical',
+      domain: 'example.com',
+      loginUrl: 'https://example.com/login',
+      columns: ['username', 'name'],
+      verify: async () => ({
+        logged_in: false,
+        site: 'wrong-site',
+        username: 'alice',
+        extra: 'preserved',
+      }),
+    });
+    const page = pageMock();
+    const identity = {
+      logged_in: true,
+      site: 'auth-helper-canonical',
+      username: 'alice',
+      name: '',
+      extra: 'preserved',
+    };
+
+    await expect(getRegistry().get('auth-helper-canonical/whoami').func(page, {}))
+      .resolves.toEqual([identity]);
+    await expect(getRegistry().get('auth-helper-canonical/login').func(page, {}))
+      .resolves.toEqual([{
+        status: 'already_logged_in',
+        ...identity,
+        action: '',
+        verify_command: '',
+      }]);
+  });
+
+  it('opens the default login URL and returns an immediate handoff', async () => {
     registerSiteAuthCommands({
       site: 'auth-helper-login',
       domain: 'example.com',
       loginUrl: 'https://example.com/login',
       columns: ['username'],
       verify: async () => { throw new AuthRequiredError('example.com', 'missing'); },
-      poll,
     });
-    const cmd = getRegistry().get('auth-helper-login/login');
+    const login = getRegistry().get('auth-helper-login/login');
     const page = pageMock();
 
-    await expect(cmd.func(page, { timeout: 1 })).resolves.toEqual([{
-      status: 'login_complete',
-      logged_in: true,
+    expect(login.args).toEqual([]);
+    expect(login.columns).toEqual([
+      'status', 'logged_in', 'site', 'username', 'action', 'verify_command',
+    ]);
+    await expect(login.func(page, {})).resolves.toEqual([{
+      status: 'action_required',
+      logged_in: false,
       site: 'auth-helper-login',
-      username: 'alice',
+      username: '',
+      action: 'Complete sign-in in the opened Webcmd browser, then tell the agent when you are done.',
+      verify_command: 'webcmd auth-helper-login whoami',
     }]);
     expect(page.goto).toHaveBeenCalledWith('https://example.com/login');
-    expect(page.wait).toHaveBeenCalled();
-    expect(poll).toHaveBeenCalledTimes(2);
+    expect(page.wait).not.toHaveBeenCalled();
   });
 
-  it('login times out when auth never completes', async () => {
+  it('uses a custom opener for the immediate handoff', async () => {
+    const openLogin = vi.fn().mockResolvedValue(undefined);
     registerSiteAuthCommands({
-      site: 'auth-helper-timeout',
+      site: 'auth-helper-custom-login',
       domain: 'example.com',
       loginUrl: 'https://example.com/login',
       verify: async () => { throw new AuthRequiredError('example.com', 'missing'); },
-      poll: async () => { throw new AuthRequiredError('example.com', 'still missing'); },
+      openLogin,
     });
-    const cmd = getRegistry().get('auth-helper-timeout/login');
+    const login = getRegistry().get('auth-helper-custom-login/login');
     const page = pageMock();
 
-    await expect(cmd.func(page, { timeout: 0 })).rejects.toBeInstanceOf(TimeoutError);
-    expect(page.goto).toHaveBeenCalledWith('https://example.com/login');
+    await login.func(page, {});
+    expect(openLogin).toHaveBeenCalledOnce();
+    expect(page.goto).not.toHaveBeenCalled();
+  });
+
+  it('propagates non-auth probe and opener errors', async () => {
+    registerSiteAuthCommands({
+      site: 'auth-helper-probe-error',
+      domain: 'example.com',
+      loginUrl: 'https://example.com/login',
+      verify: async () => { throw new Error('probe broke'); },
+    });
+    registerSiteAuthCommands({
+      site: 'auth-helper-open-error',
+      domain: 'example.com',
+      loginUrl: 'https://example.com/login',
+      verify: async () => { throw new AuthRequiredError('example.com', 'missing'); },
+      openLogin: async () => { throw new Error('open broke'); },
+    });
+
+    await expect(getRegistry().get('auth-helper-probe-error/login').func(pageMock(), {}))
+      .rejects.toThrow('probe broke');
+    await expect(getRegistry().get('auth-helper-open-error/login').func(pageMock(), {}))
+      .rejects.toThrow('open broke');
   });
 });

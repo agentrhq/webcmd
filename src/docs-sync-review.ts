@@ -172,7 +172,7 @@ const GENERAL_DOCUMENTATION = [
 const BROWSER_DOCUMENTATION = [
   'README.md',
   'docs/agent-prompts.mdx',
-  'docs/agent-runtime.mdx',
+  'docs/browser-and-sitemap-memory.mdx',
   'docs/cli-reference.mdx',
   'docs/concepts.mdx',
   'skills/webcmd-browser-sitemap/SKILL.md',
@@ -184,7 +184,7 @@ const ADAPTER_DOCUMENTATION = [
   'README.md',
   'docs/authoring.mdx',
   'docs/cli-reference.mdx',
-  'docs/plugins-and-skills.mdx',
+  'docs/skills.mdx',
   'skills/webcmd-adapter-author/SKILL.md',
   'skills/webcmd-usage/SKILL.md',
 ];

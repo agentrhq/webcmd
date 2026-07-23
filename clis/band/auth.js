@@ -53,10 +53,4 @@ registerSiteAuthCommands({
   columns: ['user_id'],
   quickCheck: hasBandSessionCookie,
   verify: verifyBandIdentity,
-  poll: async (page) => {
-    if (!await hasBandSessionCookie(page)) {
-      throw new AuthRequiredError('band.us', 'Waiting for Band band_session cookie');
-    }
-    return verifyBandIdentity(page);
-  },
 });

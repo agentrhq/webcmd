@@ -1,8 +1,6 @@
-import { AuthRequiredError, TimeoutError } from '@agentrhq/webcmd/errors';
-import { cli, Strategy } from '@agentrhq/webcmd/registry';
+import { AuthRequiredError } from '@agentrhq/webcmd/errors';
+import { registerSiteAuthCommands } from '../_shared/site-auth.js';
 import { BASE, DOMAIN } from './utils.js';
-
-const DEFAULT_TIMEOUT_SECONDS = 300;
 
 async function probeBlinkitIdentity(page) {
   const probe = await page.evaluate(`
@@ -50,46 +48,21 @@ function buildOpenLoginEvaluate() {
   `;
 }
 
-cli({
+registerSiteAuthCommands({
   site: 'blinkit',
-  name: 'login',
-  access: 'write',
-  description: 'Open Blinkit login and wait until the browser session is authenticated',
   domain: DOMAIN,
-  strategy: Strategy.COOKIE,
-  browser: true,
-  navigateBefore: false,
-  defaultWindowMode: 'foreground',
-  siteSession: 'persistent',
-  args: [
-    { name: 'timeout', type: 'int', default: DEFAULT_TIMEOUT_SECONDS, help: 'Maximum seconds to wait for the user to finish login' },
-  ],
-  columns: ['status', 'logged_in', 'phone', 'user_id'],
-  func: async (page, kwargs) => {
+  loginUrl: BASE,
+  columns: ['phone', 'user_id'],
+  verify: async (page) => {
     await page.goto(BASE);
     await page.wait(1);
-    try {
-      const identity = await probeBlinkitIdentity(page);
-      return [{ status: 'already_logged_in', logged_in: true, ...identity }];
-    } catch (error) {
-      if (!(error instanceof AuthRequiredError)) throw error;
-    }
-
-    const opened = await page.evaluate(buildOpenLoginEvaluate()).catch(() => null);
-    const timeoutSeconds = Number(kwargs.timeout ?? DEFAULT_TIMEOUT_SECONDS);
-    const deadline = Date.now() + timeoutSeconds * 1000;
-    let lastMessage = opened?.opened ? '' : opened?.detail || '';
-    while (Date.now() < deadline) {
-      await page.wait(2);
-      try {
-        const identity = await probeBlinkitIdentity(page);
-        return [{ status: 'login_complete', logged_in: true, ...identity }];
-      } catch (error) {
-        if (!(error instanceof AuthRequiredError)) throw error;
-        lastMessage = error.message;
-      }
-    }
-    throw new TimeoutError('blinkit login', timeoutSeconds, lastMessage || 'Finish OTP login in the opened Blinkit tab and retry.');
+    return probeBlinkitIdentity(page);
+  },
+  openLogin: async (page) => {
+    await page.goto(BASE);
+    await page.wait(1);
+    const result = await page.evaluate(buildOpenLoginEvaluate());
+    if (!result?.opened) throw new Error(`Blinkit login dialog did not open: ${result?.detail || 'unknown reason'}`);
   },
 });
 

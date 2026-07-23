@@ -46,10 +46,4 @@ registerSiteAuthCommands({
   columns: ['name', 'authuser'],
   quickCheck: hasNotebookLmSsoCookies,
   verify: verifyNotebookLmIdentity,
-  poll: async (page) => {
-    if (!await hasNotebookLmSsoCookies(page)) {
-      throw new AuthRequiredError('notebooklm.google.com', 'Waiting for Google SSO cookies (SID + SAPISID)');
-    }
-    return verifyNotebookLmIdentity(page);
-  },
 });

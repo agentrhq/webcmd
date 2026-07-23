@@ -46,10 +46,4 @@ registerSiteAuthCommands({
   columns: ['user_id', 'org_name', 'org_uuid'],
   quickCheck: hasClaudeSessionCookie,
   verify: verifyClaudeIdentity,
-  poll: async (page) => {
-    if (!await hasClaudeSessionCookie(page)) {
-      throw new AuthRequiredError('claude.ai', 'Waiting for Claude sessionKey cookie');
-    }
-    return verifyClaudeIdentity(page);
-  },
 });

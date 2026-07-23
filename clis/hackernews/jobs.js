@@ -22,7 +22,7 @@ cli({
                 id: '${{ item.id }}',
                 title: '${{ item.title }}',
                 author: '${{ item.by }}',
-                url: '${{ item.url }}',
+                url: '${{ item.url || "https://news.ycombinator.com/item?id=" + item.id }}',
             } },
         { limit: '${{ args.limit }}' },
     ],

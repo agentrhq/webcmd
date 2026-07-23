@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.3.4](https://github.com/agentrhq/webcmd/compare/webcmd-v0.3.3...webcmd-v0.3.4) (2026-07-17)
+
+### Improvements
+*   The accessibility tree snapshot now reveals actionable elements even when their parent containers are ignored by assistive technologies, providing a more complete view of the page.
+*   Documentation has been updated with safer patterns for adapter discovery, recommending that users filter the `webcmd list` command to prevent incomplete results from truncated output.
+*   Accessibility snapshot helpers are now exported for developers using `webcmd` as a library.
+
+### Fixes
+*   The accessibility tree snapshot is now more robust and will no longer hang when processing malformed pages that contain cycles or very deep chains of ignored elements.
+
+### Contributors
+[@beubax](https://github.com/beubax)
+
+## [0.3.3](https://github.com/agentrhq/webcmd/compare/webcmd-v0.3.2...webcmd-v0.3.3) (2026-07-16)
+
+### Highlights
+*   Skill management has been improved with new and renamed commands. Use `webcmd skills add` (formerly `install`) to add bundled skills to your agent environment, and the new `webcmd skills remove` to safely remove them.
+
+### Improvements
+*   Browser sessions are now more robust. `webcmd` can recover sessions after an unexpected closure and will prevent multiple commands from writing to the same persistent session at the same time. Blocked commands will now exit with a status code of 75 to signal that the session is busy.
+*   Commands can now be authored with `freshPage: true` metadata, allowing them to run in a new, clean browser tab while preserving an existing login session.
+*   The project's `README.md` now includes prominent links to the full documentation site at [webcmd.dev/docs](https://webcmd.dev/docs).
+*   Corrected the adapter authoring documentation for `webcmd browser init` to remove a non-existent `--strategy` flag.
+
+### Fixes
+*   The `webcmd doctor` command now correctly reports the installed version of the Cloak browser runtime instead of "version unknown".
+*   Local-only commands, such as `webcmd skills`, now run correctly when `webcmd` is configured for hosted (cloud) mode.
+
+### Adapters
+*   The `producthunt` adapter now correctly detects and reports security verification pages, preventing commands from failing unexpectedly.
+
+### Contributors
+[@ankitranjan7](https://github.com/ankitranjan7) | [@beubax](https://github.com/beubax) | [@rajarshidattapy](https://github.com/rajarshidattapy)
+
 ## [0.3.2](https://github.com/agentrhq/webcmd/compare/webcmd-v0.3.1...webcmd-v0.3.2) (2026-07-15)
 
 ### Adapters
@@ -106,7 +140,7 @@ None.
 
 ### Highlights
 
-- Bundled Webcmd skills are now much easier to install and refresh through `webcmd skills install` and `webcmd skills update`.
+- Bundled Webcmd skills are now much easier to add and refresh through `webcmd skills add` and `webcmd skills update`.
 - Persistent-session commands gained a cleaner authoring model with `freshPage`, which keeps login/profile state while avoiding stale page state.
 - District booking support moved from local-only adapters into the repo.
 

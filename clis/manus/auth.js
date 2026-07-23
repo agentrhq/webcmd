@@ -45,10 +45,4 @@ registerSiteAuthCommands({
   loginUrl: 'https://manus.im/login',
   columns: ['user_id', 'name'],
   verify: verifyManusIdentity,
-  poll: async (page) => {
-    if (!await hasManusSessionCookie(page)) {
-      throw new AuthRequiredError('manus.im', 'Waiting for Manus session cookies');
-    }
-    return verifyManusIdentity(page);
-  },
 });

@@ -111,7 +111,7 @@ describe('review context', () => {
     ])).toEqual([
       'README.md',
       'docs/agent-prompts.mdx',
-      'docs/agent-runtime.mdx',
+      'docs/browser-and-sitemap-memory.mdx',
       'docs/cli-reference.mdx',
       'docs/concepts.mdx',
       'skills/webcmd-browser-sitemap/SKILL.md',
@@ -125,7 +125,7 @@ describe('review context', () => {
       'README.md',
       'docs/authoring.mdx',
       'docs/cli-reference.mdx',
-      'docs/plugins-and-skills.mdx',
+      'docs/skills.mdx',
       'skills/webcmd-adapter-author/SKILL.md',
       'skills/webcmd-usage/SKILL.md',
     ]);

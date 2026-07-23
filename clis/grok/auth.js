@@ -43,10 +43,4 @@ registerSiteAuthCommands({
   columns: ['user_id', 'name'],
   quickCheck: hasGrokSessionCookie,
   verify: verifyGrokIdentity,
-  poll: async (page) => {
-    if (!await hasGrokSessionCookie(page)) {
-      throw new AuthRequiredError('grok.com', 'Waiting for Grok session cookie');
-    }
-    return verifyGrokIdentity(page);
-  },
 });

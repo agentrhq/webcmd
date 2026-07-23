@@ -43,10 +43,4 @@ registerSiteAuthCommands({
   columns: ['username', 'id'],
   quickCheck: hasRedditSessionCookie,
   verify: verifyRedditIdentity,
-  poll: async (page) => {
-    if (!await hasRedditSessionCookie(page)) {
-      throw new AuthRequiredError('reddit.com', 'Waiting for Reddit reddit_session cookie');
-    }
-    return verifyRedditIdentity(page);
-  },
 });

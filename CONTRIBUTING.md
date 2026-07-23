@@ -22,6 +22,10 @@ import { CommandExecutionError, EmptyResultError } from '@agentrhq/webcmd/errors
 
 User adapters, plugins, cache, traces, and site memory live under `~/.webcmd`.
 
+## Documentation
+
+The published docs at [webcmd.dev/docs](https://webcmd.dev/docs) are built by Mintlify from the `docs/` directory in this repo. To change the published docs, edit the `.mdx` pages under `docs/` (and `docs/docs.json` for navigation) — do not edit the site directly.
+
 ## Documentation Sync Review
 
 Every pull request receives one advisory comment checking whether user-facing changes are reflected in `README.md`, `docs/`, and bundled `skills/`. The comment is updated after new commits and reports one of three verdicts:

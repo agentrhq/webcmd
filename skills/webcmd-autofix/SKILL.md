@@ -12,9 +12,10 @@ When a `webcmd` command fails because a website changed its DOM, API, or respons
 
 Hard stops before any code change:
 
-- **`AUTH_REQUIRED`** (exit code 77): stop. Tell the user to log into the site in Chrome or the webcmd-managed browser profile.
+- **`AUTH_REQUIRED`** (exit code 77): if a site login command exists, run `webcmd <site> login`, return its `action_required` instructions and `verify_command` (normally `webcmd <site> whoami`) to the user, and wait for them to report done in the visible browser. Run the returned `verify_command`; verification must succeed before retrying the original command. If no site login command exists, stop browser writes, hand the visible browser to the user, and wait. After they report done, take fresh browser state and use an available identity check or verify the intended post-action state before retrying. Their report alone is not verification. Never request, type, echo, store, or automate passwords, OTPs, recovery codes, cookies, or session secrets.
 - **`BROWSER_CONNECT`** (exit code 69): stop. Tell the user to run `webcmd doctor`.
-- **CAPTCHA / rate limiting / IP block:** stop. This is not an adapter issue.
+- **CAPTCHA / raw-browser user takeover:** stop automation and let the user act in the visible browser. If handoff returned a `verify_command`, run it; verification must succeed before retrying. With no site login command and therefore no returned verifier, take fresh browser state and use an available identity check or verify the intended post-action state before retrying. The user's report alone is not verification. CAPTCHA is not an adapter issue.
+- **Rate limiting / IP block:** stop. This is not an adapter issue.
 
 Scope constraint:
 
@@ -124,7 +125,7 @@ Read the trace summary and adapter source. Classify root cause:
 | SELECTOR | DOM restructured or class/id changed | Explore current DOM and find a stable selector |
 | EMPTY_RESULT | API response schema changed, data moved, or real empty result | Check network and visible page before patching |
 | API_ERROR | Endpoint URL changed or new params required | Discover current API through network evidence |
-| AUTH_REQUIRED | Login flow changed or cookies expired | Stop; ask user to log in |
+| AUTH_REQUIRED | Login flow changed or cookies expired | Follow the conditional AUTH_REQUIRED policy in Safety Boundaries: use the site login command and its returned verifier when available; otherwise use human handoff plus fresh-state supported verification. |
 | TIMEOUT | Page loads differently or lazy-load signal changed | Update wait conditions |
 | PAGE_CHANGED | Major redesign | May need full adapter rewrite through `webcmd-adapter-author` |
 

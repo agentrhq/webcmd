@@ -1,28 +1,15 @@
 ---
-title: Authoring
-description: What to ask an agent for when it creates, updates, or verifies Webcmd adapters.
+title: Create and Maintain CLIs
+description: Ask an agent to turn a useful workflow into a stable Webcmd command, extend it, or repair it when the target changes.
 ---
 
-# Authoring
+# Create and Maintain CLIs
 
-Authoring is agent work. Users describe the CLI they want; agents crawl, inspect, implement, and verify.
+Describe the workflow you want. The agent can turn it into a command, keep its output compatible, and verify the result.
 
-Use this page to understand what to ask for and what a good result should include.
+## Start With a Workflow
 
-## What to Specify
-
-A strong authoring prompt includes:
-
-- Target site, app, API, or local tool.
-- Command name.
-- Inputs and options.
-- Output columns or JSON schema.
-- Login/profile requirements.
-- Whether the adapter should be private, plugin-based, or upstream-ready.
-- Verification expectations.
-- Safety constraints, especially for write actions.
-
-Example:
+Use a command when a workflow is useful enough to repeat. Private adapters are the default for personal workflows.
 
 ```text
 Create a private Webcmd adapter for the Acme supplier portal.
@@ -31,94 +18,44 @@ Output: part_number, title, price, currency, stock, moq, lead_time, product_url
 Use my `work` profile if login is needed. Read-only only. Verify with two part numbers and return JSON examples.
 ```
 
-## What the Agent Should Do
+## What to Put in the Prompt
 
-The agent should:
-
-1. Check the existing Webcmd registry.
-2. Reuse or extend an existing adapter if possible.
-3. Explore the target only when needed.
-4. Choose the simplest reliable strategy.
-5. Implement the adapter.
-6. Validate and verify it.
-7. Summarize command usage, output shape, auth assumptions, and changed files.
-
-## Strategy Selection
-
-| Strategy | Use when |
-| --- | --- |
-| `PUBLIC` | Data is available from public HTML or APIs. |
-| `COOKIE` | Login cookies are enough for authenticated reads. |
-| `INTERCEPT` | Browser-derived request context is needed for reliable data. |
-| `UI` | The only stable path is driving the page. |
-| `LOCAL` | The command wraps a local app, daemon, or binary. |
-
-The agent should choose this, not the user. It should explain the tradeoff briefly.
-
-## Output Design
-
-Ask for output that another agent can consume:
+Specify the target, command name, inputs, login needs, safety limits, and verification expectations. Name the JSON fields you need: stable JSON fields are the contract for people and other agents that consume the command.
 
 ```text
 Return JSON rows with stable keys. Use null for missing optional fields. Do not rename existing fields in future updates unless I explicitly ask for a breaking change.
 ```
 
-Good command output is:
+## What the Agent Should Do
 
-- Small enough to inspect.
-- Structured enough for automation.
-- Stable across site changes.
-- Explicit about errors and empty states.
+The agent should check the existing registry first, reuse or extend a matching adapter, explore only when needed, implement the simplest reliable command, and validate it. When updating or healing a command, it preserves compatible inputs and output fields unless you request a breaking change.
 
-## Create a New Adapter
+## What a Good Handoff Includes
 
-```text
-Create a Webcmd command for this site that searches grants. Inputs: query, optional funder, optional date range. Output: title, funder, amount, deadline, eligibility, url. Keep it private and verify it.
-```
+A finished command should include:
 
-## Extend an Adapter
+- Command usage and output schema.
+- Adapter location and strategy used.
+- Verification result and JSON examples.
+- Known limitations and any required authentication.
+- Clear next steps if authentication or site access blocked the work.
 
-```text
-Extend the existing PubMed adapter with a command that returns related articles for a PMID. Match the style of existing PubMed commands and add parser tests.
-```
-
-## Prepare for Upstream
+## Extend an Existing Command
 
 ```text
-Make this adapter upstream-ready. Follow existing Webcmd conventions, add tests, run validation, and summarize any site-specific limitations.
+Extend the existing PubMed adapter with a command that returns related articles for a PMID. Match the style of existing PubMed commands and preserve existing command compatibility.
 ```
 
-## Acceptance Criteria
+## Repair Instead of Duplicating
 
-A finished adapter should come with:
-
-- Command usage.
-- Output schema.
-- Adapter location.
-- Strategy used.
-- Verification result.
-- Known limitations.
-- Clear next steps if auth or site access blocked the work.
-
-## Healing Existing Adapters
-
-When something breaks, ask the agent to repair the existing command.
+When a command breaks, repair the existing command instead of creating a near-duplicate.
 
 ```text
 Heal `webcmd acme part ABC-123`. It used to return price and stock, but now stock is null. Preserve the output schema, repair the adapter, and explain the root cause.
 ```
 
-The agent should avoid creating a second command unless the workflow has truly changed.
+Only add a new command when the workflow itself has changed.
 
-## Persistent Sessions and State Hygiene
+## Private, Plugin, or Upstream
 
-Commands registered with `siteSession: 'persistent'` share one long-lived browser tab per site (`site:<site>`). That is what lets a multi-step flow (login → set-location → showtimes → checkout) keep cookies, storage, and login across commands — and it is also the main source of flaky adapters: the tab keeps whatever DOM the previous command left behind. Leftover modals, half-open drawers, and abandoned SPA routes all leak into the next command.
-
-Defenses, in order of preference:
-
-1. **`freshPage: true`** on the command registration. The runtime closes the leased tab and opens a new one under the same lease before your `func` runs. Profile state (cookies, localStorage, login, selected city) survives; stale DOM does not. Use it on any state-sensitive write command — checkout flows especially.
-2. **Dismiss-and-renavigate.** When a stale overlay can also appear mid-command, detect it, click it away, and re-`goto` the target URL once before treating it as the page's real state. Treat an error modal as genuine only when the tab is actually on the expected URL (`location.href` check), not merely when its text is present in the body.
-3. **Preconditions before side effects.** Verify login (an identity probe or `authStatus.quickCheck`) and any session-scoped context (selected city, date, currency) *before* doing work the user would have to redo. Fail with `AuthRequiredError` and an actionable message rather than timing out later.
-4. **Self-contained inputs.** If a command consumes a URL or ID produced by a sibling command, make the producer embed every piece of context the consumer needs (dates, city keys) in that output instead of relying on browser state to still match when the consumer runs.
-
-Keep site-wide helpers in one shared module per site (for example `clis/<site>/_lib.js`) so URL builders and state checks cannot drift between commands — a filter param dropped in one copy of a URL builder is indistinguishable from a site outage when it fails.
+Keep personal or company workflows as private adapters. Package related adapters as a plugin when they should travel together or be shared. Prepare an adapter for upstream only when it is broadly useful and ready for repository review.

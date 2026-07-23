@@ -50,19 +50,33 @@ Run commands instead of reading static docs:
 
 ```bash
 webcmd
-webcmd list -f json
 webcmd <site> --help
 webcmd <site> <command> --help
 ```
 
 Run `webcmd` with no arguments to see all available functions and installed site adapters. Do not hard-code adapter lists: `webcmd list -f json` is the source of truth for installed commands and emits one entry per command with fields such as `{site, name, aliases, description, strategy, browser, args, columns}`.
 
+Large registries can exceed an agent or tool output budget. Filter the JSON stream before it is emitted, using broad literal terms derived from the whole requested workflow:
+
+```bash
+WORKFLOW_TERMS='["requested action", "output field", "named site"]'
+webcmd list -f json | jq --argjson terms "$WORKFLOW_TERMS" '
+  [.[] | select(
+    ([.site, .name, .description, ((.columns // []) | join(" "))]
+      | map(. // "") | join(" ") | ascii_downcase) as $text
+    | any($terms[]; . as $term | $text | contains($term | ascii_downcase))
+  )]
+'
+```
+
+Replace `WORKFLOW_TERMS` with terms from the current request: the requested action, entity, output fields, and any explicitly named site. Literal matching avoids regex errors from terms such as `C++` or `[foo]`. Do not maintain a site or category allowlist. Match across `site`, `name`, `description`, and `columns`. If any layer reports truncated output, the inspection is incomplete. Narrow the filter and inspect again. Never treat absence from truncated output as proof that an adapter or plugin is missing, and do not proceed to the next fallback stage from that evidence.
+
 Use this fallback order:
 
-1. Run `webcmd list -f json` once.
-2. Check that result against the whole requested workflow, not only a named site. If one installed command covers it, use that command and stop discovery.
-3. If none covers it, derive a short plugin query from the missing site or capability and run `webcmd plugin search <query> -f json`. Preserve the user's term when practical: `find flights` becomes `flight`.
-4. If plugin search returns a match, offer `webcmd plugin install <installSource>`. If it returns no match and no error, raw `webcmd browser` is allowed. If it errors, report plugin discovery as unavailable and stop. If `fetch failed` appears in `errors[].message`, report plugin discovery as unavailable due to network/reachability and ask the user whether to rerun with network/escalated permissions. Do not retry unless they approve.
+1. Run `webcmd list -f json` through a workflow-derived filter before returning its output to the agent.
+2. Check the complete, non-truncated filtered result against the whole requested workflow. If one installed command covers it, use that command and stop discovery. If candidates do not cover the missing capability, refine the capability filter until its complete result is exactly `[]`.
+3. Only after that complete filtered result is `[]`, derive a short plugin query from the missing site or capability and run `webcmd plugin search <query> -f json`. Preserve the user's term when practical: `find flights` becomes `flight`.
+4. If the complete, non-truncated plugin search returns a match, offer `webcmd plugin install <installSource>`. Only if that complete result returns no match and no error is raw `webcmd browser` allowed. Both plugin search and raw browser fallback require the prior complete filtered registry result to be `[]`. A truncated plugin result is incomplete evidence: refine the query or output before fallback. If plugin search errors, report plugin discovery as unavailable and stop. If `fetch failed` appears in `errors[].message`, report plugin discovery as unavailable due to network/reachability and ask the user whether to rerun with network/escalated permissions. Do not retry unless they approve.
 
 ## Universal Flags
 
@@ -103,6 +117,10 @@ webcmd <site> <command> [args...] --trace retain-on-failure
 ```
 
 The error envelope includes a `trace` block pointing at `summary.md`. Patch only `adapterSourcePath` from that summary and retry. Maximum 3 repair rounds. See `webcmd-autofix`.
+
+## Authentication and Human Handoff
+
+`AUTH_REQUIRED` is not an adapter failure. Run `webcmd <site> login`, return its `action_required` instructions and `verify_command` (normally `webcmd <site> whoami`) to the user, then wait for the user to report done in the visible browser. Run the returned `verify_command`; verification must succeed before retrying the original command. If the site has no login command, ask the user to sign in in the current Webcmd browser; after they report done, take fresh browser state and use an available identity check or verify the intended post-action state before retrying. Their report alone is not verification. Never request, type, echo, store, or automate passwords, OTPs, recovery codes, cookies, or session secrets; CAPTCHA stops automation and follows the same conditional verification rule.
 
 ## Report A Webcmd Defect
 
@@ -194,6 +212,7 @@ Do not invoke these removed commands:
 
 ## Do Not
 
-- Do not paste static command lists into plans; call `webcmd list -f json`.
+- Do not paste static command lists into plans; query `webcmd list -f json` through a workflow-derived filter.
+- Do not emit a large unfiltered registry into a bounded output or infer absence from a truncation warning; filter at the source and narrow until the result is complete.
 - Do not assume every adapter needs a browser; check `strategy`.
 - Do not silently fall back from a failing adapter to hand-rolled `fetch`; use `--trace retain-on-failure` first.

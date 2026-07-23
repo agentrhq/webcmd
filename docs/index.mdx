@@ -1,54 +1,31 @@
 ---
 title: Webcmd
-description: Help agents turn websites, apps, APIs, and local tools into deterministic CLI commands.
+description: Give your agent reusable command surfaces for websites, browser sessions, apps, APIs, and local tools.
 ---
 
 # Webcmd
 
-Webcmd is an agent runtime for creating CLIs out of websites, apps, APIs, browser sessions, and local tools.
+Webcmd helps your agent reuse a command when one already fits the job, explore an unfamiliar surface when it does not, and turn successful work into a reusable CLI.
 
-The user gives an agent a goal. The agent uses Webcmd to crawl the target, understand the UI and browser state, discover useful requests or workflows, and turn that knowledge into repeatable commands.
+## Start in Two Commands
 
-## Why It Exists
-
-Most useful software does not expose the exact CLI an agent needs. It might be a website, a logged-in dashboard, a desktop app, a JSON endpoint hidden behind browser state, or a local binary with awkward output.
-
-Webcmd gives agents a standard way to:
-
-- Explore those surfaces safely.
-- Create deterministic commands from repeated workflows.
-- Reuse existing commands before crawling again.
-- Package commands into plugins.
-- Heal commands when sites change.
-
-## Who Uses Webcmd
-
-Humans do not need to inspect network requests, write selectors, or manually drive browser sessions.
-
-Humans use Webcmd by prompting an agent:
-
-```text
-Create a Webcmd CLI for this supplier portal. Given a part number, return price, stock, MOQ, lead time, and product URL as JSON. Keep it private and verify it.
+```bash
+npm install -g @agentrhq/webcmd
+webcmd skills add
 ```
 
-The agent does the implementation work and reports the final command.
+## Then Ask for an Outcome
 
-## Recommended Path
-
-1. Start with the [Quickstart](/quickstart) to install Webcmd and connect it to your agent workflow.
-2. Read [Concepts](/concepts) to understand adapters, strategies, plugins, and profiles.
-3. Use [Agent Prompts](/agent-prompts) for copyable prompts that create, update, and heal CLIs.
-4. Read [Authoring](/authoring) to understand what the agent should deliver.
-5. Use [Plugins and Skills](/plugins-and-skills) when you want reusable adapter packs or better agent behavior.
-
-## Core Idea
-
-Agents should not repeat fragile browser work forever.
-
-Webcmd turns successful exploration into a command:
+In your agent harness, load or tag `webcmd-usage`, then describe the result you need, the fields to return, and any read-only or approval boundaries.
 
 ```text
-Prompt -> agent explores -> adapter is created -> command is verified -> future runs use the CLI
+Use the webcmd-usage skill to find the best way to research the latest discussions about browser automation across Hacker News and Reddit. Reuse existing adapters where possible and return a concise comparison with source links.
 ```
 
-The goal is a stable command surface that humans and agents can both trust.
+## What Your Agent Can Do
+
+Your agent can find an existing adapter, complete a one-off browser task, use a logged-in profile, create or repair a stable CLI, and package useful workflows as a plugin. The same outcome-led prompt works across websites, browser sessions, apps, APIs, and local tools.
+
+## Where to Go Next
+
+Continue with the [Quickstart](/quickstart), then copy a task from the [Prompt Cookbook](/agent-prompts). Read [How Webcmd Works](/concepts) when you want the deeper model behind adapters, browser sessions, and stable output.

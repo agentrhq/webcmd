@@ -1,0 +1,25 @@
+---
+title: Skills
+description: Start with webcmd-usage and let your agent select the specialized Webcmd workflow it needs.
+---
+
+# Skills
+
+## Start With webcmd-usage
+
+Ask the agent to load `webcmd-usage` at the start of a Webcmd task. It discovers existing commands, understands common output and strategy choices, and selects the right specialized workflow.
+
+## Specialized Skills
+
+| Skill | Outcome |
+| --- | --- |
+| `smart-search` | Finds the right Webcmd-backed source for a research or search task. |
+| `webcmd-browser` | Completes a one-off task in a live browser when no existing command fits. |
+| `webcmd-browser-sitemap` | Uses retained site navigation knowledge while checking it against the live page. |
+| `webcmd-sitemap-author` | Records durable, verified navigation and workflow knowledge for later browser work. |
+| `webcmd-adapter-author` | Turns a repeatable website or app workflow into a verified command. |
+| `webcmd-autofix` | Diagnoses and repairs a broken adapter after a site changes. |
+
+## Refresh Installed Skills
+
+Run `webcmd skills add` to install or refresh the bundled Webcmd skills for your agent. The agent can then start with `webcmd-usage` and load the specialized skill that matches the outcome.

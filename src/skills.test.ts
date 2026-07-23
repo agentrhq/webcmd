@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import yaml from 'js-yaml';
 import { describe, expect, it } from 'vitest';
 import { ArgumentError } from './errors.js';
-import { installWebcmdSkill, listWebcmdSkills, updateWebcmdSkill } from './skills.js';
+import { addWebcmdSkills, listWebcmdSkills, removeWebcmdSkills, updateWebcmdSkill } from './skills.js';
 
 function makePackageRoot(label = 'current'): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), `webcmd-skills-${label}-`));
@@ -43,6 +43,10 @@ function makePackageRoot(label = 'current'): string {
 
 function real(filePath: string): string {
   return fs.realpathSync(filePath);
+}
+
+function bundledSkill(name: string): string {
+  return fs.readFileSync(path.join(process.cwd(), 'skills', name, 'SKILL.md'), 'utf8');
 }
 
 describe('webcmd skills content', () => {
@@ -89,20 +93,57 @@ describe('webcmd skills content', () => {
     ]);
   });
 
-  it('installs bundled skills once and refreshes them after package updates', () => {
+  it('enforces local authentication and human handoff policy', () => {
+    const browser = bundledSkill('webcmd-browser');
+    const usage = bundledSkill('webcmd-usage');
+    const autofix = bundledSkill('webcmd-autofix');
+    const author = bundledSkill('webcmd-adapter-author');
+    const skills = [browser, usage, autofix, author];
+    const autofixAuthRequired = autofix.match(/^- \*\*`AUTH_REQUIRED`\*\*[\s\S]*?(?=\n- \*\*)/m)?.[0] ?? '';
+    const autofixAuthRequiredRow = autofix.split('\n')
+      .find((line) => line.startsWith('| AUTH_REQUIRED |')) ?? '';
+
+    expect(browser).toContain('webcmd <site> login');
+    expect(browser).toContain('webcmd <site> whoami');
+    expect(browser).toContain('CAPTCHA');
+    expect(browser).toContain('fresh browser state');
+    expect(browser).not.toContain('hunter2');
+    expect(browser).not.toMatch(/browser login type/i);
+    expect(usage).toContain('AUTH_REQUIRED');
+    expect(usage).toContain('action_required');
+    expect(autofix).toContain('webcmd <site> login');
+    expect(author).toContain('registerSiteAuthCommands');
+    for (const skill of skills) {
+      expect(skill).toContain('action_required');
+      expect(skill).toContain('verify_command');
+      expect(skill).toMatch(/verify_command[\s\S]{0,250}verification must succeed[\s\S]{0,250}retry/i);
+      expect(skill).toMatch(/verify_command[\s\S]{0,250}user[\s\S]{0,250}(?:done|complet)/i);
+      expect(skill).toMatch(/CAPTCHA[\s\S]{0,250}(?:human handoff|stop(?:s)? automation)/i);
+      expect(skill).toMatch(/(?:must not|never).*?(?:password|secret|credential)/i);
+    }
+    for (const skill of [browser, usage, autofix]) {
+      expect(skill).toMatch(/no (?:site )?login command[\s\S]{0,500}fresh browser state[\s\S]{0,500}(?:identity check|post-action state)[\s\S]{0,250}before retry/i);
+    }
+    expect(autofixAuthRequired).toMatch(/if (?:a|the) site login command exists[\s\S]*webcmd <site> login[\s\S]*returned `verify_command`[\s\S]*verification must succeed[\s\S]*retry/i);
+    expect(autofixAuthRequired).toMatch(/no site login command[\s\S]*stop (?:browser )?writes[\s\S]*visible browser[\s\S]*fresh browser state[\s\S]*(?:identity check|post-action state)[\s\S]*before retry[\s\S]*report alone is not verification/i);
+    expect(autofixAuthRequiredRow).toMatch(/conditional[^|]*Safety Boundaries|no site login command/i);
+    expect(autofix).toMatch(/CAPTCHA[\s\S]{0,250}stop automation[\s\S]{0,250}verification must succeed/i);
+  });
+
+  it('adds bundled skills once and refreshes them after package updates', () => {
     const firstRoot = makePackageRoot('first');
     const secondRoot = makePackageRoot('second');
     const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-home-'));
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-project-'));
 
-    const installed = installWebcmdSkill({ packageRoot: firstRoot, homeDir, cwd, provider: 'codex', scope: 'project' });
+    const added = addWebcmdSkills({ packageRoot: firstRoot, homeDir, cwd, provider: 'codex', scope: 'project' });
 
-    expect(installed).toMatchObject({
+    expect(added).toMatchObject({
       provider: 'codex',
       scope: 'project',
     });
-    expect(installed.skills.map((skill) => skill.name)).toEqual(['smart-search', 'webcmd-autofix', 'webcmd-browser']);
-    for (const skill of installed.skills) {
+    expect(added.skills.map((skill) => skill.name)).toEqual(['smart-search', 'webcmd-autofix', 'webcmd-browser']);
+    for (const skill of added.skills) {
       expect(skill.source).toBe(path.join(firstRoot, 'skills', skill.name));
       expect(skill.stableLink).toBe(path.join(homeDir, '.webcmd', 'skills', skill.name));
       expect(skill.destination).toBe(path.join(cwd, '.codex', 'skills', skill.name));
@@ -112,25 +153,25 @@ describe('webcmd skills content', () => {
     const updated = updateWebcmdSkill({ packageRoot: secondRoot, homeDir });
 
     expect(updated.skills.every((skill) => skill.destination === undefined)).toBe(true);
-    for (const skill of installed.skills) {
+    for (const skill of added.skills) {
       expect(real(skill.destination!)).toBe(real(path.join(secondRoot, 'skills', skill.name)));
     }
   });
 
-  it('installs bundled skills into a custom skills directory', () => {
+  it('adds bundled skills into a custom skills directory', () => {
     const packageRoot = makePackageRoot();
     const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-home-'));
     const customPath = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-custom-skills-'));
 
-    const installed = installWebcmdSkill({ packageRoot, homeDir, customPath });
+    const added = addWebcmdSkills({ packageRoot, homeDir, customPath });
 
-    expect(installed.provider).toBeUndefined();
-    expect(installed.skills.map((skill) => skill.destination)).toEqual([
+    expect(added.provider).toBeUndefined();
+    expect(added.skills.map((skill) => skill.destination)).toEqual([
       path.join(customPath, 'smart-search'),
       path.join(customPath, 'webcmd-autofix'),
       path.join(customPath, 'webcmd-browser'),
     ]);
-    for (const skill of installed.skills) {
+    for (const skill of added.skills) {
       expect(real(skill.destination!)).toBe(real(skill.source));
     }
   });
@@ -142,5 +183,39 @@ describe('webcmd skills content', () => {
     fs.mkdirSync(stablePath, { recursive: true });
 
     expect(() => updateWebcmdSkill({ packageRoot, homeDir })).toThrow(ArgumentError);
+  });
+
+  it('removes bundled skill links from every supported location', () => {
+    const packageRoot = makePackageRoot();
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-home-'));
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-project-'));
+    const customPath = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-custom-skills-'));
+
+    for (const provider of ['agents', 'codex', 'claude']) {
+      addWebcmdSkills({ packageRoot, homeDir, cwd, provider, scope: 'user' });
+      addWebcmdSkills({ packageRoot, homeDir, cwd, provider, scope: 'project' });
+    }
+    addWebcmdSkills({ packageRoot, homeDir, cwd, customPath });
+
+    const result = removeWebcmdSkills({ packageRoot, homeDir, cwd, customPath });
+
+    expect(result.removed).toHaveLength(24);
+    for (const linkPath of result.removed) {
+      expect(() => fs.lstatSync(linkPath)).toThrow();
+    }
+    expect(removeWebcmdSkills({ packageRoot, homeDir, cwd, customPath })).toEqual({ removed: [] });
+  });
+
+  it('refuses removal before deleting any links when a destination is not a symlink', () => {
+    const packageRoot = makePackageRoot();
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-home-'));
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-project-'));
+    const added = addWebcmdSkills({ packageRoot, homeDir, cwd, provider: 'agents', scope: 'user' });
+    const blocker = path.join(cwd, '.codex', 'skills', 'smart-search');
+    fs.mkdirSync(blocker, { recursive: true });
+
+    expect(() => removeWebcmdSkills({ packageRoot, homeDir, cwd })).toThrow(ArgumentError);
+    expect(fs.lstatSync(added.skills[0].destination!).isSymbolicLink()).toBe(true);
+    expect(fs.lstatSync(blocker).isDirectory()).toBe(true);
   });
 });

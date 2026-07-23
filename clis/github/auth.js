@@ -35,10 +35,4 @@ registerSiteAuthCommands({
   columns: ['id', 'username', 'name', 'url'],
   quickCheck: hasGithubSessionCookies,
   verify: verifyGithubIdentity,
-  poll: async (page) => {
-    if (!await hasGithubSessionCookies(page)) {
-      throw new AuthRequiredError('github.com', 'Waiting for GitHub session cookies');
-    }
-    return verifyGithubIdentity(page);
-  },
 });

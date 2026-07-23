@@ -455,8 +455,8 @@ async function main(): Promise<void> {
   fs.mkdirSync(path.dirname(OUTPUT), { recursive: true });
   fs.writeFileSync(OUTPUT, artifacts.manifestJson);
   fs.writeFileSync(HOSTED_CONTRACT_OUTPUT, artifacts.hostedContractJson);
-  console.log(`✅ Manifest compiled: ${entries.length} entries → ${OUTPUT}`);
-  console.log(`✅ Hosted contract compiled: ${packageMetadata.name}@${packageMetadata.version} → ${HOSTED_CONTRACT_OUTPUT}`);
+  console.error(`✅ Manifest compiled: ${entries.length} entries → ${OUTPUT}`);
+  console.error(`✅ Hosted contract compiled: ${packageMetadata.name}@${packageMetadata.version} → ${HOSTED_CONTRACT_OUTPUT}`);
 
   // Restore executable permissions on bin entries.
   // tsc does not preserve the +x bit, so after a clean rebuild the CLI
@@ -474,7 +474,7 @@ async function main(): Promise<void> {
         const abs = path.resolve(projectRoot, binPath);
         if (fs.existsSync(abs)) {
           fs.chmodSync(abs, 0o755);
-          console.log(`✅ Restored executable permission: ${binPath}`);
+          console.error(`✅ Restored executable permission: ${binPath}`);
         }
       }
     } catch {

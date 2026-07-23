@@ -1,0 +1,9 @@
+<svg width="126" height="40" viewBox="0 0 126 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <g transform="translate(20 20) scale(1.77) translate(-20 -20)">
+    <path d="M28.6 10.4H11.4C10.4059 10.4 9.6 11.2059 9.6 12.2V27.8C9.6 28.7941 10.4059 29.6 11.4 29.6H28.6C29.5941 29.6 30.4 28.7941 30.4 27.8V12.2C30.4 11.2059 29.5941 10.4 28.6 10.4Z" stroke="#56C5FF" stroke-width="0.7"/>
+    <path d="M9.6 15H30.4" stroke="#56C5FF" stroke-width="0.5"/>
+    <circle cx="12" cy="12.7" r="0.55" fill="#56C5FF"/><circle cx="14.2" cy="12.7" r="0.55" fill="#56C5FF"/><circle cx="16.4" cy="12.7" r="0.55" fill="#56C5FF"/>
+    <path d="M15 19.6L18.2 22.4L15 25.2M19.8 25.2H25" stroke="white" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="48" y="26.3" fill="white" font-family="Courier New, Courier, monospace" font-size="18" font-weight="700">web</text><text x="80.4" y="26.3" fill="#56C5FF" font-family="Courier New, Courier, monospace" font-size="18" font-weight="700">cmd</text>
+</svg>
