@@ -27,13 +27,23 @@ Webcmd Cloud alpha is for supported commands and browser sessions on hosted infr
 2. Create and copy an API key from the account page.
 3. Run `webcmd setup`, choose hosted mode, and paste the key when prompted.
 
-Hosted browser tasks can use named profiles. When sign-in is required, Webcmd returns a Webcmd-owned live authentication view; complete sign-in there, then let the agent continue. See [Authentication and Profiles](/authentication-and-profiles).
+Hosted browser tasks can use named profiles. In Cloud, omitted `--profile` (and `--profile default`) is the only lazy profile: it creates the hosted default profile. Create a custom profile with `webcmd profile create <name>` before selecting it. Unknown custom selectors fail instead of creating browser state.
+
+```bash
+# Builder-created customer profile; retain the returned immutable profile ID.
+webcmd profile create customer --user-id user_64256 -f json
+webcmd --profile profile_abc123 github whoami
+```
+
+`userId` is a public external-user reference. It may match multiple profiles, so use `webcmd profile list` and the immutable ID when a selector is ambiguous. `webcmd profile delete <profile-id>` permanently removes hosted browser state. When sign-in is required, Webcmd returns a Webcmd-owned live authentication view; complete sign-in there, then let the agent continue. See [Authentication and Profiles](/authentication-and-profiles).
 
 View hosted usage on the account page.
 
 ## What Stays Separate
 
 Local and hosted profiles, adapters, site memory, and traces do not sync. Treat each mode as its own working environment.
+
+Local profile behavior is unchanged: an arbitrary `--profile <name>` lazily creates separate local browser state. Local `webcmd profile list`, `rename`, and `use` continue to manage that local state; they do not create or manage hosted profiles.
 
 ## Current Boundaries
 

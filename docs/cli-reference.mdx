@@ -65,12 +65,25 @@ Agents should use JSON unless they are presenting output to a human.
 
 ## Profiles
 
-Profiles keep login state separate:
+Profiles keep login state separate. The profile surface depends on the selected mode.
 
 ```bash
+# Local: existing local profile management
 webcmd profile list
+webcmd profile rename <context-id> work
 webcmd profile use work
+
+# Hosted: explicit custom profile creation and public profile management
+webcmd profile create Work
+webcmd profile create customer --user-id user_64256 -f json
+webcmd profile list
+webcmd profile get Work
+webcmd profile delete profile_abc123
 ```
+
+In local mode, arbitrary `--profile <name>` values lazily create separate local state; local `list`, `rename`, and `use` are unchanged. In hosted mode, only an omitted selector or `--profile default` lazily creates the default profile. Create custom hosted profiles first; unknown custom selectors fail.
+
+Hosted `get` and `--profile` accept one exact scalar selector: profile ID, name, or public `userId`. If it matches more than one profile, run `webcmd profile list` and use its immutable ID. Use that immutable ID for `delete` too: deletion permanently removes hosted browser state. Hosted output exposes only `id`, `name`, `userId`, `default`, `status`, `createdAt`, `updatedAt`, and `lastUsedAt`; `status` is `pending` or `available`. `userId` is an external reference, not internal ownership, and Kernel IDs or names are never exposed.
 
 Prompt example:
 

@@ -120,6 +120,21 @@ describe('review context', () => {
     ]);
   });
 
+  it('selects profile documentation for hosted profile changes', () => {
+    expect(selectDocumentationPaths([changed('src/hosted/runner.ts')])).toEqual([
+      'README.md',
+      'docs/agent-prompts.mdx',
+      'docs/authentication-and-profiles.mdx',
+      'docs/browser-and-sitemap-memory.mdx',
+      'docs/cli-reference.mdx',
+      'docs/concepts.mdx',
+      'docs/local-or-cloud.mdx',
+      'skills/webcmd-browser-sitemap/SKILL.md',
+      'skills/webcmd-browser/SKILL.md',
+      'skills/webcmd-usage/SKILL.md',
+    ]);
+  });
+
   it('selects adapter and plugin documentation', () => {
     expect(selectDocumentationPaths([changed('clis/reddit/search.js')])).toEqual([
       'README.md',
