@@ -120,7 +120,11 @@ The error envelope includes a `trace` block pointing at `summary.md`. Patch only
 
 ## Authentication and Human Handoff
 
-`AUTH_REQUIRED` is not an adapter failure. Run `webcmd <site> login`, return its `action_required` instructions and `verify_command` (normally `webcmd <site> whoami`) to the user, then wait for the user to report done in the visible browser. Run the returned `verify_command`; verification must succeed before retrying the original command. If the site has no login command, ask the user to sign in in the current Webcmd browser; after they report done, take fresh browser state and use an available identity check or verify the intended post-action state before retrying. Their report alone is not verification. Never request, type, echo, store, or automate passwords, OTPs, recovery codes, cookies, or session secrets; CAPTCHA stops automation and follows the same conditional verification rule.
+If a failure returns `handoff.status === action_required`, stop before AutoFix. Give the user `handoff.action` and any `Webcmd browser:` or `handoff.viewUrl` link, then wait. After the user reports done, run `handoff.verifyCommand` when present; verification must succeed before retrying.
+
+`AUTH_REQUIRED` is not an adapter failure. Run `webcmd <site> login`: `already_logged_in` is verified; `in_progress` means no current user action, so do not ask the user or wait for confirmation, and do not poll; `action_required` is a hard stop. For `action_required`, give the user its instructions and any returned `action_url` or `view_url`, then wait. If Webcmd returned no URL, use the current visible browser.
+
+Run the returned `verify_command` (normally `webcmd <site> whoami`) or `handoff.verifyCommand` only after the user reports done; verification must succeed before retrying. Without a verifier, take fresh browser state and verify the intended post-action state before any retry, especially for write commands. Use `webcmd auth refresh` only when an explicit auth-state refresh is needed. Their report alone is not verification. Never request, type, echo, store, or automate passwords, OTPs, recovery codes, cookies, session secrets, or CAPTCHA answers; CAPTCHA stops automation and follows the same verification rule.
 
 ## Report A Webcmd Defect
 

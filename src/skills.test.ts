@@ -93,12 +93,13 @@ describe('webcmd skills content', () => {
     ]);
   });
 
-  it('enforces local authentication and human handoff policy', () => {
+  it('enforces mode-neutral authentication and human handoff policy', () => {
     const browser = bundledSkill('webcmd-browser');
     const usage = bundledSkill('webcmd-usage');
     const autofix = bundledSkill('webcmd-autofix');
     const author = bundledSkill('webcmd-adapter-author');
     const skills = [browser, usage, autofix, author];
+    const handoffSkills = [browser, usage, autofix];
     const autofixAuthRequired = autofix.match(/^- \*\*`AUTH_REQUIRED`\*\*[\s\S]*?(?=\n- \*\*)/m)?.[0] ?? '';
     const autofixAuthRequiredRow = autofix.split('\n')
       .find((line) => line.startsWith('| AUTH_REQUIRED |')) ?? '';
@@ -113,6 +114,21 @@ describe('webcmd skills content', () => {
     expect(usage).toContain('action_required');
     expect(autofix).toContain('webcmd <site> login');
     expect(author).toContain('registerSiteAuthCommands');
+    for (const skill of handoffSkills) {
+      expect(skill).toContain('handoff.status');
+      expect(skill).toContain('handoff.viewUrl');
+      expect(skill).toContain('handoff.verifyCommand');
+      expect(skill).toContain('Webcmd browser:');
+      expect(skill).not.toMatch(/\bhosted\b|\bKernel\b|\blocal mode\b|\blocally\b/i);
+    }
+    for (const skill of [browser, usage]) {
+      expect(skill).toContain('already_logged_in');
+      expect(skill).toContain('in_progress');
+      expect(skill).toContain('action_url');
+      expect(skill).toContain('view_url');
+      expect(skill).toMatch(/in_progress[^\n]*(?:do not ask the user|do not wait for user confirmation)/i);
+      expect(skill).toMatch(/(?:action_url|view_url|handoff\.viewUrl|Webcmd browser:)[\s\S]{0,300}user/i);
+    }
     for (const skill of skills) {
       expect(skill).toContain('action_required');
       expect(skill).toContain('verify_command');
@@ -122,7 +138,7 @@ describe('webcmd skills content', () => {
       expect(skill).toMatch(/(?:must not|never).*?(?:password|secret|credential)/i);
     }
     for (const skill of [browser, usage, autofix]) {
-      expect(skill).toMatch(/no (?:site )?login command[\s\S]{0,500}fresh browser state[\s\S]{0,500}(?:identity check|post-action state)[\s\S]{0,250}before retry/i);
+      expect(skill).toMatch(/(?:no (?:site )?login command|without a verifier)[\s\S]{0,500}fresh browser state[\s\S]{0,500}(?:identity check|post-action state)[\s\S]{0,250}before (?:any )?retry/i);
     }
     expect(autofixAuthRequired).toMatch(/if (?:a|the) site login command exists[\s\S]*webcmd <site> login[\s\S]*returned `verify_command`[\s\S]*verification must succeed[\s\S]*retry/i);
     expect(autofixAuthRequired).toMatch(/no site login command[\s\S]*stop (?:browser )?writes[\s\S]*visible browser[\s\S]*fresh browser state[\s\S]*(?:identity check|post-action state)[\s\S]*before retry[\s\S]*report alone is not verification/i);
