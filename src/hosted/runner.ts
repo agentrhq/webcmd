@@ -36,7 +36,12 @@ import {
 import { isHostedConfig, loadWebcmdConfig, type WebcmdConfig } from './config.js';
 import { resolveHostedApiKey, type HostedCredentialStore } from './credentials.js';
 import { parseHostedRootCommandSurface } from '../root-command-surface.js';
-import type { HostedBrowserActionName, HostedBrowserRunActionResponse, HostedManifest } from './types.js';
+import type {
+  HostedBrowserActionName,
+  HostedBrowserRunActionResponse,
+  HostedManifest,
+  HostedPublicProfile,
+} from './types.js';
 import type { HostedBrowserCommandContract } from './contract.js';
 
 export interface HostedRunnerOptions {
@@ -185,6 +190,22 @@ async function dispatchHosted(
     const manifest = await client.getManifest();
     validateManifestContractIdentity(manifest);
     await renderHostedList(manifest, parsed.format, parsed.formatExplicit, stdout);
+    return;
+  }
+
+  if (args[0] === 'profile') {
+    if (args[1] === 'rename' || args[1] === 'use') {
+      throw new ConfigError(
+        `webcmd profile ${args[1]} is not available in hosted mode.`,
+        'Hosted mode supports: webcmd profile list, create, get, and delete.',
+      );
+    }
+    const parsed = parseHostedProfileSurface(args.slice(1), normalized.literal);
+    if (parsed.kind === 'help') {
+      await writeToStream(stdout, parsed.output);
+      return;
+    }
+    await dispatchHostedProfile(parsed, client, stdout);
     return;
   }
 
@@ -689,6 +710,120 @@ function parseHostedListSurface(argv: readonly string[], literal: boolean): Pars
   }
   if (!actionRan) throw new CommanderStructuralError("error: command 'list' did not run\n", 1);
   return { kind: 'run', format: parsedFormat, formatExplicit };
+}
+
+type HostedProfileCommand = 'list' | 'create' | 'get' | 'delete';
+
+type ParsedHostedProfileSurface =
+  | { kind: 'help'; output: string }
+  | {
+      kind: 'run';
+      command: HostedProfileCommand;
+      format: string;
+      formatExplicit: boolean;
+      value?: string;
+      userId?: string;
+    };
+
+function parseHostedProfileSurface(
+  argv: readonly string[],
+  literal: boolean,
+): ParsedHostedProfileSurface {
+  let stdout = '';
+  let stderr = '';
+  let parsed: Exclude<ParsedHostedProfileSurface, { kind: 'help' }> | undefined;
+  const root = new Command('webcmd');
+  const profile = root.command('profile').description('Manage hosted browser profiles');
+  const output = {
+    writeOut: (value: string) => { stdout += value; },
+    writeErr: (value: string) => { stderr += value; },
+  };
+  root.exitOverride().configureOutput(output);
+  profile.exitOverride().configureOutput(output);
+
+  const configureFormat = (command: Command): Command =>
+    command.option('-f, --format <fmt>', 'Output format: table, json, yaml, md, csv', 'table');
+  const setParsed = (
+    command: HostedProfileCommand,
+    surface: Command,
+    value?: string,
+    userId?: string,
+  ): void => {
+    const options = surface.opts<{ format: string }>();
+    parsed = {
+      kind: 'run',
+      command,
+      format: options.format,
+      formatExplicit: surface.getOptionValueSource('format') === 'cli',
+      ...(value !== undefined ? { value } : {}),
+      ...(userId !== undefined ? { userId } : {}),
+    };
+  };
+
+  const list = configureFormat(profile.command('list'));
+  list.exitOverride().configureOutput(output).action(() => setParsed('list', list));
+  const create = configureFormat(profile.command('create').argument('<name>').option('--user-id <id>'));
+  create.exitOverride().configureOutput(output).action((name: string, options: { userId?: string }) =>
+    setParsed('create', create, name, options.userId));
+  const get = configureFormat(profile.command('get').argument('<profile>'));
+  get.exitOverride().configureOutput(output).action((selector: string) => setParsed('get', get, selector));
+  const remove = configureFormat(profile.command('delete').argument('<profile-id>'));
+  remove.exitOverride().configureOutput(output).action((profileId: string) => setParsed('delete', remove, profileId));
+
+  try {
+    root.parse(literal ? ['--', 'profile', ...argv] : ['profile', ...argv], { from: 'user' });
+  } catch (error) {
+    if (!(error instanceof CommanderError)) throw error;
+    if (error.code === 'commander.helpDisplayed') return { kind: 'help', output: stdout };
+    throw new CommanderStructuralError(stderr || `${error.message}\n`, error.exitCode);
+  }
+  if (!parsed) {
+    throw new CommanderStructuralError("error: command 'profile' did not run\n", 1);
+  }
+  return parsed;
+}
+
+async function dispatchHostedProfile(
+  parsed: Exclude<ParsedHostedProfileSurface, { kind: 'help' }>,
+  client: HostedClient,
+  stdout: NodeJS.WritableStream,
+): Promise<void> {
+  let result: unknown;
+  if (parsed.command === 'list') {
+    result = (await client.listProfiles()).profiles;
+  } else if (parsed.command === 'create') {
+    result = (await client.createProfile({
+      name: parsed.value!,
+      ...(parsed.userId !== undefined ? { userId: parsed.userId } : {}),
+    })).profile;
+  } else if (parsed.command === 'get') {
+    result = resolveHostedProfile((await client.listProfiles()).profiles, parsed.value!);
+  } else {
+    result = await client.deleteProfile(parsed.value!);
+  }
+  await renderOutput(result, {
+    fmt: parsed.format,
+    fmtExplicit: parsed.formatExplicit,
+    stdout,
+  });
+}
+
+function resolveHostedProfile(profiles: HostedPublicProfile[], selector: string): HostedPublicProfile {
+  const matches = profiles.filter(profile =>
+    profile.id === selector || profile.name === selector || profile.userId === selector);
+  const distinct = [...new Map(matches.map(profile => [profile.id, profile])).values()];
+  if (distinct.length === 0) {
+    throw new CliError('PROFILE_NOT_FOUND', 'Profile was not found.', undefined, EXIT_CODES.EMPTY_RESULT);
+  }
+  if (distinct.length > 1) {
+    throw new CliError(
+      'AMBIGUOUS_PROFILE',
+      'The profile selector matched multiple profiles.',
+      'Use the immutable profile ID returned by webcmd profile list.',
+      EXIT_CODES.TEMPFAIL,
+    );
+  }
+  return distinct[0]!;
 }
 
 type ParsedHostedCompletionSurface =

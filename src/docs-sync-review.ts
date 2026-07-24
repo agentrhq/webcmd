@@ -180,6 +180,14 @@ const BROWSER_DOCUMENTATION = [
   'skills/webcmd-usage/SKILL.md',
 ];
 
+const HOSTED_DOCUMENTATION = [
+  ...BROWSER_DOCUMENTATION,
+  'docs/authentication-and-profiles.mdx',
+  'docs/local-or-cloud.mdx',
+];
+
+const HOSTED_PROFILE_PATHS = /^(?:src\/completion-shared|src\/hosted\/(?:browser-args|client|runner|types))\.ts$/;
+
 const ADAPTER_DOCUMENTATION = [
   'README.md',
   'docs/authoring.mdx',
@@ -193,7 +201,9 @@ export function selectDocumentationPaths(files: ChangedFile[]): string[] {
   const selected = new Set<string>();
 
   for (const file of files) {
-    const paths = /^(?:src\/browser\/|src\/hosted\/)/.test(file.path)
+    const paths = HOSTED_PROFILE_PATHS.test(file.path)
+      ? HOSTED_DOCUMENTATION
+      : /^src\/browser\//.test(file.path)
       ? BROWSER_DOCUMENTATION
       : /^(?:clis\/|plugins\/|src\/plugin)/.test(file.path)
         ? ADAPTER_DOCUMENTATION

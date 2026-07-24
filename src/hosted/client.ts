@@ -13,6 +13,7 @@ import type {
   HostedExecution,
   HostedExecuteResponse,
   HostedPrepareExecutionResponse,
+  HostedProfileResponse,
   HostedProfilesResponse,
   HostedUploadArtifactResponse,
   HostedManifest,
@@ -66,12 +67,43 @@ export class HostedClient {
     return body.manifest;
   }
 
-  async listProfiles(): Promise<HostedProfilesResponse> {
-    const body = await this.request('/v1/profiles');
+  async listProfiles(filters: { name?: string; userId?: string } = {}): Promise<HostedProfilesResponse> {
+    const params = new URLSearchParams();
+    if (filters.name !== undefined) params.set('name', filters.name);
+    if (filters.userId !== undefined) params.set('userId', filters.userId);
+    const query = params.toString();
+    const body = await this.request(`/v1/profiles${query ? `?${query}` : ''}`);
     if (!isHostedProfilesResponse(body)) {
       throw protocolError('Webcmd Cloud returned an invalid profiles response.');
     }
     return body;
+  }
+
+  async createProfile(input: { name: string; userId?: string }): Promise<HostedProfileResponse> {
+    const body = await this.request('/v1/profiles', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+    if (!isHostedProfileResponse(body)) {
+      throw protocolError('Webcmd Cloud returned an invalid profile response.');
+    }
+    return body;
+  }
+
+  async getProfile(profileId: string): Promise<HostedProfileResponse> {
+    const body = await this.request(`/v1/profiles/${encodeURIComponent(profileId)}`);
+    if (!isHostedProfileResponse(body)) {
+      throw protocolError('Webcmd Cloud returned an invalid profile response.');
+    }
+    return body;
+  }
+
+  async deleteProfile(profileId: string): Promise<{ ok: true; deleted: true }> {
+    const body = await this.request(`/v1/profiles/${encodeURIComponent(profileId)}`, { method: 'DELETE' });
+    if (!hasExactKeys(body, ['ok', 'deleted']) || body.ok !== true || body.deleted !== true) {
+      throw protocolError('Webcmd Cloud returned an invalid profile deletion response.');
+    }
+    return { ok: true, deleted: true };
   }
 
   async execute(input: {
@@ -374,12 +406,24 @@ function isHostedProfilesResponse(value: unknown): value is HostedProfilesRespon
     && value.profiles.every(isHostedPublicProfile);
 }
 
+function isHostedProfileResponse(value: unknown): value is HostedProfileResponse {
+  return hasExactKeys(value, ['ok', 'profile'])
+    && value.ok === true
+    && isHostedPublicProfile(value.profile);
+}
+
 function isHostedPublicProfile(value: unknown): boolean {
-  return hasExactKeys(value, ['name', 'default', 'status', 'createdAt', 'lastUsedAt'])
-    && typeof value.name === 'string'
+  return hasExactKeys(value, [
+    'id', 'name', 'userId', 'default', 'status',
+    'createdAt', 'updatedAt', 'lastUsedAt',
+  ])
+    && typeof value.id === 'string'
+    && (value.name === null || typeof value.name === 'string')
+    && (value.userId === null || typeof value.userId === 'string')
     && typeof value.default === 'boolean'
-    && value.status === 'available'
+    && (value.status === 'pending' || value.status === 'available')
     && typeof value.createdAt === 'string'
+    && typeof value.updatedAt === 'string'
     && typeof value.lastUsedAt === 'string';
 }
 

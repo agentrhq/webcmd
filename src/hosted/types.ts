@@ -45,16 +45,24 @@ export interface HostedManifest {
 }
 
 export interface HostedPublicProfile {
-  name: string;
+  id: string;
+  name: string | null;
+  userId: string | null;
   default: boolean;
-  status: 'available';
+  status: 'pending' | 'available';
   createdAt: string;
+  updatedAt: string;
   lastUsedAt: string;
 }
 
 export interface HostedProfilesResponse {
   ok: true;
   profiles: HostedPublicProfile[];
+}
+
+export interface HostedProfileResponse {
+  ok: true;
+  profile: HostedPublicProfile;
 }
 
 export interface HostedExecution {

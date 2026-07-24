@@ -122,6 +122,7 @@ describe('hosted manifest helpers', () => {
     expect(result).toEqual({ handled: true, exitCode: 0 });
     expect(stdout.text()).toBe(formatRootHelp(HOSTED_ROOT_HELP));
     expect(stdout.text()).toContain('completion');
+    expect(stdout.text()).toMatch(/profile\s+Manage hosted browser profiles/);
     expect(stdout.text()).toContain('--profile <name>');
     expect(stdout.text()).toContain('Local-only commands:');
     expect(stdout.text()).toContain('Run `webcmd setup` and choose local mode to use local-only commands.');
@@ -198,6 +199,6 @@ describe('hosted manifest helpers', () => {
       fetchImpl: async () => new Response(JSON.stringify({ ok: true, manifest }), { status: 200 }),
     });
 
-    expect(stdout.text().trim().split('\n')).toEqual(['browser', 'completion', 'github', 'list', 'setup']);
+    expect(stdout.text().trim().split('\n')).toEqual(['browser', 'completion', 'github', 'list', 'profile', 'setup']);
   });
 });

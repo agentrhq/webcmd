@@ -17,6 +17,39 @@ Use Webcmd with my `work` profile to complete this task on Acme Billing. If the 
 
 Profiles separate browser identities and their login state. Use a named profile when work and personal accounts, customers, or environments must stay separate.
 
+## Hosted Profiles
+
+In Webcmd Cloud, no profile selector (or `--profile default`) lazily creates only the hosted default profile. Create every custom hosted profile explicitly. An unknown custom selector fails; it never creates a hosted profile.
+
+```bash
+# B2C: after choosing hosted mode and saving an account API key
+webcmd github whoami
+
+# Optional named identity
+webcmd profile create Work
+webcmd --profile Work github whoami
+```
+
+Builders can attach a public external user reference when creating a profile:
+
+```bash
+webcmd profile create customer_name --user-id customer_id -f json
+# Retain the returned immutable ID, for example profile_abc123.
+webcmd --profile profile_abc123 github whoami
+```
+
+`userId` is your public external-user reference, not Webcmd's internal account ownership. A profile selector is one scalar value: an immutable ID, exact name, or exact `userId`. If one downstream user has several named profiles, their `userId` is ambiguous. Run `webcmd profile list` and use the returned immutable profile ID.
+
+Hosted `profile list` returns profile rows; `create` and `get` each return one public profile with `id`, `name`, `userId`, `default`, `status`, `createdAt`, `updatedAt`, and `lastUsedAt`; `delete` returns `{ "ok": true, "deleted": true }`. `status` is `pending` while the hosted profile is being provisioned and `available` once it is ready. Kernel identifiers and names are never Webcmd API fields.
+
+Delete hosted profiles only by immutable ID:
+
+```bash
+webcmd profile delete profile_abc123
+```
+
+Deletion permanently removes that hosted browser state and its saved sign-in state.
+
 ## When You Need to Sign In
 
 When a profile needs interactive sign-in, complete it directly in the browser; never share credentials through chat.
@@ -29,4 +62,4 @@ Credentials never belong in prompts or adapter code. Ask the agent to use an aut
 
 In local mode, `webcmd <site> login` opens the foreground Webcmd browser and returns `action_required` immediately. Complete sign-in in that browser, tell the agent when you are done, and let it run `webcmd <site> whoami` before retrying the original task. Never send credentials, OTPs, cookies, or recovery codes through chat.
 
-Hosted mode is a separate future-facing flow. It will return a Webcmd-owned live authentication view, where you complete the interactive sign-in before the agent continues.
+Hosted mode returns a Webcmd-owned live authentication view when interactive sign-in is required. Complete the sign-in there before the agent continues.
