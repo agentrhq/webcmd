@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.0](https://github.com/agentrhq/webcmd/compare/webcmd-v0.4.0...webcmd-v0.5.0) (2026-07-24)
+
+
+### Features
+
+* add hosted builder profile commands ([53c6c89](https://github.com/agentrhq/webcmd/commit/53c6c89226aab2d0fe7d59c819bdb25388ed1839))
+* manage hosted profiles from cli ([8a5494d](https://github.com/agentrhq/webcmd/commit/8a5494d6fea286b7425a1fa70225418223f64329))
+
+
+### Bug Fixes
+
+* sync hosted profile docs for completion ([aa0805c](https://github.com/agentrhq/webcmd/commit/aa0805cf18cd3a6f0c308136093dd1bae9c8bd87))
+
 ## [0.4.0](https://github.com/agentrhq/webcmd/compare/webcmd-v0.3.4...webcmd-v0.4.0) (2026-07-23)
 
 
