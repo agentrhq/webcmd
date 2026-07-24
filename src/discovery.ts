@@ -294,7 +294,7 @@ async function discoverPluginDir(dir: string, site: string): Promise<void> {
     if (file.endsWith('.js') && !file.endsWith('.d.js')) {
       if (!(await isCliModule(filePath))) return;
       await import(pathToFileURL(filePath).href).catch((err) => {
-        log.warn(`Plugin ${site}/${file}: ${getErrorMessage(err)}`);
+        log.verbose(`Plugin ${site}/${file}: ${getErrorMessage(err)}`);
       });
     } else if (
       file.endsWith('.ts') && !file.endsWith('.d.ts') && !file.endsWith('.test.ts')
@@ -304,7 +304,7 @@ async function discoverPluginDir(dir: string, site: string): Promise<void> {
       if (fileSet.has(jsFile)) return;
       // No compiled .js found — cannot import raw .ts in production Node.js.
       // This typically means esbuild transpilation failed during plugin install.
-      log.warn(
+      log.verbose(
         `Plugin ${site}/${file}: no compiled .js found. ` +
         `Run "webcmd plugin update ${site}" to re-transpile, or install esbuild.`
       );
