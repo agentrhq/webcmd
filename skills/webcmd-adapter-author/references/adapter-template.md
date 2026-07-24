@@ -14,28 +14,25 @@ This scaffolds `~/.webcmd/clis/<site>/<name>.js` with a `Strategy.PUBLIC` placeh
 
 Promote a community CLI to the main repo as a plugin:
 
+Determine the plugin name (default to `<site>`) and collect the author's display name and GitHub handle if they are not already known.
+
 ```bash
-webcmd plugin create <site> --dir plugins/<site> --description "<site> commands for Webcmd"
-cp ~/.webcmd/clis/<site>/*.js plugins/<site>/
-rm plugins/<site>/hello.ts plugins/<site>/greet.ts 2>/dev/null || true
+webcmd plugin create <plugin-name> \
+  --dir plugins/<plugin-name> \
+  --description "<site> commands for Webcmd" \
+  --author-name "<author-name>" \
+  --author-handle "<github-handle>"
+cp ~/.webcmd/clis/<site>/*.js plugins/<plugin-name>/
+rm plugins/<plugin-name>/hello.ts plugins/<plugin-name>/greet.ts 2>/dev/null || true
 ```
 
-Then add `<site>` to the root `webcmd-plugin.json` `plugins` map:
-
-```json
-"<site>": {
-  "path": "plugins/<site>",
-  "version": "0.1.0",
-  "description": "<site> commands for Webcmd",
-  "webcmd": ">=0.2.0"
-}
-```
+Do not hand-edit the root `webcmd-plugin.json` or the generated community-plugin section in `README.md`. After merge, the community-plugin sync discovers `plugins/*/webcmd-plugin.json`, validates the author metadata, and updates both generated catalogs.
 
 Before handing off, remove the private shadow and prove the plugin path works:
 
 ```bash
 rm -rf ~/.webcmd/clis/<site>
-webcmd plugin install file://$PWD/plugins/<site>
+webcmd plugin install file://$PWD/plugins/<plugin-name>
 webcmd validate <site>
 webcmd <site> <command> --help
 ```

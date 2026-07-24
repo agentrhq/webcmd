@@ -139,9 +139,9 @@ Storage paths:
 
 - Private: `~/.webcmd/clis/<site>/<command>.js`
 - Public (official bundle): `clis/<site>/<command>.js`
-- Public (community PRs): `plugins/<site>/` plus root `webcmd-plugin.json` registration
+- Public (community PRs): `plugins/<site>/` with its own `webcmd-plugin.json`
 
-The main Webcmd repo is itself a plugin monorepo: promoted community CLIs belong under `plugins/<site>/` and must be registered in the root `webcmd-plugin.json`.
+The main Webcmd repo is itself a plugin monorepo: promoted community CLIs belong under `plugins/<site>/`. Do not hand-edit the root `webcmd-plugin.json` or generated README catalog; after merge, the community-plugin sync discovers each plugin manifest and updates both automatically.
 
 Scaffolding and checks:
 
