@@ -1266,6 +1266,7 @@ Examples:
   // ── Inspect ──
 
   addBrowserTabOption(browser.command('state').description('Page state: URL, title, interactive elements with [N] indices')
+    .addOption(new Option('-f, --format <fmt>', 'Output format: json').choices(['json']))
     .option('--source <source>', 'Snapshot backend: dom (default) or ax prototype', 'dom')
     .option('--compare-sources', 'Print DOM vs AX snapshot metrics for observation promotion decisions', false))
     .action(browserAction(async (page, opts) => {
@@ -1293,6 +1294,10 @@ Examples:
       }
       const snapshot = await page.snapshot({ viewportExpand: 2000, source: source as 'dom' | 'ax' });
       const url = await page.getCurrentUrl?.() ?? '';
+      if (opts.format === 'json') {
+        console.log(JSON.stringify({ url, snapshot }, null, 2));
+        return;
+      }
       console.log(`URL: ${url}\n`);
       console.log(typeof snapshot === 'string' ? snapshot : JSON.stringify(snapshot, null, 2));
     }));
@@ -2511,6 +2516,7 @@ Examples:
 
   addBrowserTabOption(
     browser.command('extract')
+      .addOption(new Option('-f, --format <fmt>', 'Output format: json').choices(['json']))
       .option('--selector <css>', 'CSS selector scope; defaults to <main>/<article>/<body>')
       .option('--chunk-size <chars>', 'Target chunk size in chars', '20000')
       .option('--start <char>', 'Start offset (use next_start_char from a previous extract)', '0')
