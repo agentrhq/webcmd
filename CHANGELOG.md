@@ -2,16 +2,15 @@
 
 ## [0.4.1](https://github.com/agentrhq/webcmd/compare/webcmd-v0.4.0...webcmd-v0.4.1) (2026-07-24)
 
+### Highlights
+- **Hosted Profile Management**: The `webcmd profile` command now manages hosted browser profiles in Webcmd Cloud.
+  - Create named profiles with `webcmd profile create <name>`. You can also associate a public external user ID using the `--user-id` flag.
+  - View profiles with `webcmd profile list` and `webcmd profile get <selector>`. Profiles can be looked up by their immutable ID, name, or external user ID.
+  - Delete profiles with `webcmd profile delete <id>`. Deletion requires the profile's immutable ID to prevent accidental data loss.
+  - Unlike in local mode, custom hosted profiles must be created before use. An unknown `--profile` selector will fail instead of creating a new profile on the fly.
 
-### Features
-
-* add hosted builder profile commands ([53c6c89](https://github.com/agentrhq/webcmd/commit/53c6c89226aab2d0fe7d59c819bdb25388ed1839))
-* manage hosted profiles from cli ([8a5494d](https://github.com/agentrhq/webcmd/commit/8a5494d6fea286b7425a1fa70225418223f64329))
-
-
-### Bug Fixes
-
-* sync hosted profile docs for completion ([aa0805c](https://github.com/agentrhq/webcmd/commit/aa0805cf18cd3a6f0c308136093dd1bae9c8bd87))
+### Contributors
+[@beubax](https://github.com/beubax)
 
 ## [0.4.0](https://github.com/agentrhq/webcmd/compare/webcmd-v0.3.4...webcmd-v0.4.0) (2026-07-23)
 
