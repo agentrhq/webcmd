@@ -212,6 +212,7 @@ describe('ensureUserAdapters', () => {
 describe('discoverPlugins', () => {
   const testPluginDir = path.join(PLUGINS_DIR, '__test-plugin__');
   const yamlPath = path.join(testPluginDir, 'greeting.yaml');
+  const brokenPluginPath = path.join(testPluginDir, 'broken.js');
   const symlinkTargetDir = path.join(os.tmpdir(), '__test-plugin-symlink-target__');
   const symlinkPluginDir = path.join(PLUGINS_DIR, '__test-plugin-symlink__');
   const brokenSymlinkDir = path.join(PLUGINS_DIR, '__test-plugin-broken__');
@@ -244,6 +245,52 @@ browser: false
   it('handles non-existent plugins directory gracefully', async () => {
     // discoverPlugins should not throw if ~/.webcmd/plugins/ does not exist
     await expect(discoverPlugins()).resolves.not.toThrow();
+  });
+
+  it('keeps broken plugin diagnostics quiet unless verbose logging is enabled', async () => {
+    await fs.promises.mkdir(testPluginDir, { recursive: true });
+    await fs.promises.writeFile(brokenPluginPath, `
+throw new Error('broken plugin fixture');
+// cli(
+`);
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    try {
+      delete process.env.WEBCMD_VERBOSE;
+      await discoverPlugins();
+      expect(stderrSpy.mock.calls.flat().join('')).not.toContain('broken plugin fixture');
+
+      stderrSpy.mockClear();
+      process.env.WEBCMD_VERBOSE = '1';
+      await discoverPlugins();
+      expect(stderrSpy.mock.calls.flat().join('')).toContain(
+        '[verbose] Plugin __test-plugin__/broken.js: broken plugin fixture',
+      );
+    } finally {
+      delete process.env.WEBCMD_VERBOSE;
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('continues registering commands from valid installed plugins', async () => {
+    const commandName = `working-${Date.now()}`;
+    const commandPath = path.join(testPluginDir, 'working.js');
+    await fs.promises.mkdir(testPluginDir, { recursive: true });
+    await fs.promises.writeFile(commandPath, `
+import { cli, Strategy } from '${pathToFileURL(path.join(process.cwd(), 'src', 'registry.ts')).href}';
+cli({
+  site: '__test-plugin__',
+  name: '${commandName}', access: 'read',
+  description: 'working plugin command',
+  strategy: Strategy.PUBLIC,
+  browser: false,
+  func: async () => [{ ok: true }],
+});
+`);
+
+    await discoverPlugins();
+
+    expect(getRegistry().get(`__test-plugin__/${commandName}`)).toBeDefined();
   });
 
   it('ignores YAML files in symlinked plugin directories (YAML format removed)', async () => {
