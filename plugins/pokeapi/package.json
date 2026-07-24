@@ -1,0 +1,9 @@
+{
+  "name": "webcmd-plugin-pokeapi",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Read-only Pokémon data commands powered by PokéAPI",
+  "peerDependencies": {
+    "@agentrhq/webcmd": ">=0.2.0"
+  }
+}

@@ -4,6 +4,16 @@
   "description": "Webcmd plugin collection",
   "webcmd": ">=0.2.0",
   "plugins": {
+    "pokeapi": {
+      "path": "plugins/pokeapi",
+      "version": "0.1.0",
+      "description": "Read-only Pokémon data commands powered by PokéAPI",
+      "webcmd": ">=0.2.0",
+      "author": {
+        "name": "WebCMD Agent",
+        "handle": "agentrhq"
+      }
+    },
     "skyscanner": {
       "path": "plugins/skyscanner",
       "version": "0.1.0",

@@ -1,0 +1,10 @@
+{
+  "name": "pokeapi",
+  "version": "0.1.0",
+  "description": "Read-only Pokémon data commands powered by PokéAPI",
+  "webcmd": ">=0.2.0",
+  "author": {
+    "name": "WebCMD Agent",
+    "handle": "agentrhq"
+  }
+}
