@@ -269,7 +269,7 @@ describe('runGenerateReleaseNotes', () => {
     expect(workflow).toContain('release_body_file="$RUNNER_TEMP/release-body.md"');
     expect(workflow).toContain('release_edit_args+=(--title "$release_title")');
     expect(workflow).toContain('release_edit_args+=(--notes-file "$release_body_file")');
-    expect(workflow).toContain('if gh release edit "${{ steps.release.outputs.tag_name }}" "${release_edit_args[@]}"; then');
+    expect(workflow).toContain('if gh release edit "${{ steps.release.outputs.tag_name || inputs.publish_tag }}" "${release_edit_args[@]}"; then');
     expect(workflow).toMatch(/Enhanced release notes could not be applied; keeping release-please notes\./);
   });
 });
