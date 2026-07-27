@@ -13,6 +13,7 @@ webcmd plugin install github:agentrhq/webcmd/plugins/ycombinator
 | Command | Description |
 |---------|-------------|
 | `ycombinator companies [query]` | Search public YC companies, optionally filtering and sorting by launch date |
+| `ycombinator company <slug-or-url>` | Read one public YC company profile |
 
 ## Examples
 
@@ -25,4 +26,7 @@ webcmd ycombinator companies AI --batch "Spring 2026" --recent
 
 # Browse an industry
 webcmd ycombinator companies --industry B2B --limit 15
+
+# Inspect one company
+webcmd ycombinator company fenrock-ai
 ```
