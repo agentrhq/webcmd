@@ -18,6 +18,8 @@ export interface RenderOptions {
   elapsed?: number;
   source?: string;
   footerExtra?: string;
+  noun?: string;
+  help?: string[];
 }
 
 export interface ErrorRenderOptions {
@@ -42,10 +44,11 @@ function resolveColumns(rows: Record<string, unknown>[], opts: RenderOptions): s
 /** Format output without writing to process-global streams. */
 export function formatOutput(data: unknown, opts: RenderOptions = {}): string {
   let fmt = opts.fmt ?? 'table';
-  if (!opts.fmtExplicit && fmt === 'table' && !opts.isTTY) fmt = 'yaml';
+  if (!opts.fmtExplicit && fmt === 'table' && !opts.isTTY) fmt = 'toon';
   if (data === null || data === undefined) return `${String(data)}\n`;
 
   switch (fmt) {
+    case 'toon': return formatToon(data, opts);
     case 'json': return `${JSON.stringify(data, null, 2)}\n`;
     case 'plain': return formatPlain(data);
     case 'md':
@@ -76,7 +79,7 @@ export async function render(data: unknown, opts: StreamRenderOptions = {}): Pro
 
 /** Serialize the local error envelope without writing to process-global stderr. */
 export function formatErrorEnvelope(envelope: ErrorEnvelope, opts: ErrorRenderOptions = {}): string {
-  let output = yaml.dump(envelope, { sortKeys: false, lineWidth: 120, noRefs: true });
+  const envOut: any = { ...envelope };
   const code = envelope.error.code;
   if (
     opts.cmdName
@@ -85,10 +88,61 @@ export function formatErrorEnvelope(envelope: ErrorEnvelope, opts: ErrorRenderOp
     && (code === 'SELECTOR' || code === 'EMPTY_RESULT' || code === 'ADAPTER_LOAD' || code === 'UNKNOWN')
   ) {
     const runnable = opts.cmdName.replace('/', ' ');
-    output += '# AutoFix: re-run with --trace=retain-on-failure for trace artifact\n';
-    output += `# webcmd ${runnable} --trace retain-on-failure\n`;
+    envOut.help = 're-run with --trace=retain-on-failure for trace artifact';
+    envOut.suggestion = `webcmd ${runnable} --trace retain-on-failure`;
   }
-  return output;
+  return yaml.dump(envOut, { sortKeys: false, lineWidth: 120, noRefs: true });
+}
+
+function formatToon(data: unknown, opts: RenderOptions): string {
+  const rows = normalizeRows(data);
+  const noun = opts.noun ?? 'items';
+  
+  if (!rows.length) return `${noun}: 0 found\n`;
+
+  const columns = resolveColumns(rows, opts);
+  let out = '';
+  
+  const isFull = process.argv.includes('--full');
+  let truncated = false;
+
+  const formatValue = (raw: unknown): string => {
+    // ponytail: JSON-stringify nested objects, proper TOON nesting if schema gets complex.
+    let val = typeof raw === 'object' && raw !== null ? JSON.stringify(raw) : String(raw ?? '');
+    if (!isFull && val.length > 1500) {
+      val = val.substring(0, 1500) + `... (truncated, ${val.length} chars total)`;
+      truncated = true;
+    }
+    return val;
+  };
+
+  if (rows.length === 1 && !Array.isArray(data)) {
+    for (const col of columns) {
+      out += `${col}: ${formatValue(rows[0]![col]).replace(/\n/g, '\\n')}\n`;
+    }
+  } else {
+    out += `${noun}[${rows.length}]{${columns.join(',')}}:\n`;
+    for (const row of rows) {
+      out += '  ' + columns.map(c => {
+        let val = formatValue(row[c]);
+        val = val.includes(',') || val.includes('\n') || val.includes('"') 
+          ? `"${val.replace(/"/g, '""')}"` 
+          : val;
+        return val.replace(/\n/g, '\\n');
+      }).join(',') + '\n';
+    }
+  }
+  
+  const help = opts.help ? [...opts.help] : [];
+  if (truncated) {
+    help.push('Run with --full to see complete content');
+  }
+  
+  if (help.length > 0) {
+    out += `help[${help.length}]:\n` + help.map(h => `  - ${h}`).join('\n') + '\n';
+  }
+  
+  return out;
 }
 
 function formatTable(data: unknown, opts: RenderOptions): string {

@@ -1325,6 +1325,50 @@ describe('browser tab targeting commands', () => {
     expect(browserState.page?.snapshot).toHaveBeenCalled();
   });
 
+  it('preserves the default browser state text output', async () => {
+    const program = createProgram('', '');
+
+    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'state']);
+
+    expect(consoleLogSpy.mock.calls).toEqual([
+      ['URL: https://one.example\n'],
+      ['snapshot'],
+    ]);
+  });
+
+  it('emits a JSON envelope for browser state with -f json', async () => {
+    const program = createProgram('', '');
+
+    await program.parseAsync([
+      'node', 'webcmd', 'browser', '--session', 'test', 'state', '-f', 'json',
+    ]);
+
+    expect(lastJsonLog()).toEqual({
+      url: 'https://one.example',
+      snapshot: 'snapshot',
+    });
+  });
+
+  it('accepts -f json for the existing browser extract JSON envelope', async () => {
+    browserState.page!.evaluate = vi.fn().mockResolvedValue({
+      ok: true,
+      url: 'https://one.example',
+      title: 'Example',
+      html: '<main><p>Hello</p></main>',
+    });
+    const program = createProgram('', '');
+
+    await program.parseAsync([
+      'node', 'webcmd', 'browser', '--session', 'test', 'extract', '-f', 'json',
+    ]);
+
+    expect(lastJsonLog()).toMatchObject({
+      url: 'https://one.example',
+      title: 'Example',
+      content: expect.stringContaining('Hello'),
+    });
+  });
+
   it('passes browser --window through Commander options without relying on env pre-processing', async () => {
     const program = createProgram('', '');
 

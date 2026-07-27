@@ -66,6 +66,7 @@ const BROWSER_OPTION_VALUE_NAMES: Readonly<Record<string, string>> = {
   depth: 'n',
   detail: 'key',
   filter: 'fields',
+  format: 'fmt',
   frame: 'index',
   fromLabel: 'text',
   fromName: 'text',
@@ -112,6 +113,7 @@ export function browserOptionFlags(option: HostedArgumentContract): string {
   if (option.type === 'boolean') return option.name === 'fixture' ? '--no-fixture' : `--${longName}`;
   const valueName = BROWSER_OPTION_VALUE_NAMES[option.name];
   if (!valueName) throw new Error(`Browser option --${longName} is missing its Commander value name`);
+  if (option.name === 'format') return `-f, --${longName} <${valueName}>`;
   return `--${longName} <${valueName}>`;
 }
 
@@ -279,6 +281,7 @@ export const browserCommandCatalog: readonly HostedBrowserCommandContract[] = [
     'extract',
     [],
     [
+      option('format', 'Output format: json', { choices: ['json'] }),
       option('selector', 'CSS selector scope; defaults to <main>/<article>/<body>'),
       option('chunkSize', 'Target chunk size in chars', { default: '20000' }),
       option('start', 'Start offset (use next_start_char from a previous extract)', { default: '0' }),
@@ -437,6 +440,7 @@ export const browserCommandCatalog: readonly HostedBrowserCommandContract[] = [
     'snapshot',
     [],
     [
+      option('format', 'Output format: json', { choices: ['json'] }),
       option('source', 'Snapshot backend: dom (default) or ax prototype', { default: 'dom' }),
       flag('compareSources', 'Print DOM vs AX snapshot metrics for observation promotion decisions', false),
       tabOption,

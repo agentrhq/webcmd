@@ -12,6 +12,7 @@ hosted-contract.json
 .DS_Store
 
 # Local-only research, examples, and agent planning artifacts
+docs/
 autoresearch/
 cases/
 designs/

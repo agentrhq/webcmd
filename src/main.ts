@@ -35,6 +35,12 @@ const USER_CLIS = path.join(os.homedir(), CONFIG_DIR_NAME, 'clis');
 // These are high-frequency or trivial paths that must not pay the startup tax.
 const argv = process.argv.slice(2);
 
+// Plugin discovery runs before Commander parses command options, so enable
+// verbose diagnostics early when the CLI flag is present.
+if (argv.includes('-v') || argv.includes('--verbose')) {
+  process.env.WEBCMD_VERBOSE = '1';
+}
+
 if (typeof (globalThis as { Bun?: unknown }).Bun === 'undefined' && !isSupportedNodeVersion(process.version)) {
   process.stderr.write(
     [

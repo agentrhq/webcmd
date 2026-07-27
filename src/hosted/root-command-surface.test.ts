@@ -231,9 +231,9 @@ describe('hosted root command surface', () => {
   });
 
   it.each([
-    { argv: [], localCode: 'commander.help', hostedKind: 'help' },
-    { argv: ['--profile', 'work'], localCode: 'commander.help', hostedKind: 'help' },
-    { argv: ['--'], localCode: 'commander.help', hostedKind: 'help' },
+    { argv: [], localCode: undefined, hostedKind: 'help' },
+    { argv: ['--profile', 'work'], localCode: undefined, hostedKind: 'help' },
+    { argv: ['--'], localCode: undefined, hostedKind: 'help' },
     { argv: ['--help'], localCode: 'commander.helpDisplayed', hostedKind: 'help' },
     { argv: ['--unknown', '--help'], localCode: 'commander.helpDisplayed', hostedKind: 'help' },
     { argv: ['--unknown', 'list', '--help'], localCode: 'commander.helpDisplayed', hostedKind: 'help' },
@@ -244,8 +244,14 @@ describe('hosted root command surface', () => {
     const hosted = parseHostedRootCommandSurface(argv);
     expect(local.errorCode).toBe(localCode);
     expect(classifyHosted(hosted)).toBe(hostedKind);
-    expect(local.exitCode).toBe(localCode === 'commander.help' ? 1 : 0);
+    expect(local.exitCode).toBe(localCode === 'commander.help' ? 1 : localCode === 'commander.excessArguments' ? 1 : 0);
     if (localCode === 'commander.help') {
+      expect(local.stdout).toBe('');
+      expect(local.stderr).not.toBe('');
+    } else if (localCode === undefined) {
+      expect(local.stdout).not.toBe('');
+      expect(local.stderr).toBe('');
+    } else if (localCode === 'commander.excessArguments') {
       expect(local.stdout).toBe('');
       expect(local.stderr).not.toBe('');
     } else if (localCode === 'commander.helpDisplayed') {

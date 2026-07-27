@@ -1163,7 +1163,7 @@ describe('runHostedCli', () => {
     await run(implicit, ['github', 'whoami']);
     await run(explicit, ['github', 'whoami', '-f', 'table']);
 
-    expect(implicit.text()).toBe('- username: octocat\n\n');
+    expect(implicit.text()).toBe('items[1]{username}:\n  octocat\n');
     expect(explicit.text()).toContain('octocat');
     expect(explicit.text()).not.toContain('username: octocat');
   });
@@ -1839,8 +1839,8 @@ describe('runHostedCli', () => {
     });
 
     expect(result.exitCode).toBe(1);
-    expect(stderr.text()).toContain('# webcmd github whoami --trace retain-on-failure');
-    expect(stderr.text()).not.toContain('# webcmd default github');
+    expect(stderr.text()).toContain('suggestion: webcmd github whoami --trace retain-on-failure');
+    expect(stderr.text()).not.toContain('webcmd default github');
   });
 
   it('rejects the retired hosted browser --session flag', async () => {

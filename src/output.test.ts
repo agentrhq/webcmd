@@ -53,12 +53,12 @@ describe('formatOutput', () => {
     );
   });
 
-  it('uses YAML for an implicit table format on a non-TTY stream', () => {
+  it('uses TOON for an implicit table format on a non-TTY stream', () => {
     expect(rendered([{ name: 'alice', score: 10 }], {
       fmt: 'table',
       fmtExplicit: false,
       columns: ['name', 'score'],
-    }, false)).toBe('- name: alice\n  score: 10\n\n');
+    }, false)).toBe('items[1]{name,score}:\n  alice,10\n');
   });
 
   it('uses a table for an implicit table format on a TTY stream', () => {
@@ -137,10 +137,43 @@ describe('formatOutput', () => {
       isTTY: false,
     })).toBe('# Title\n\nBody\n');
   });
+
+  describe('formatToon', () => {
+    it('serializes nested objects safely', () => {
+      expect(formatOutput([{ name: 'bob', profile: { age: 30 } }], {
+        fmt: 'toon',
+        fmtExplicit: true,
+        columns: ['name', 'profile'],
+      })).toBe('items[1]{name,profile}:\n  bob,"{""age"":30}"\n');
+    });
+
+    it('preserves single item root structure', () => {
+      expect(formatOutput({ name: 'alice', active: true }, {
+        fmt: 'toon',
+        fmtExplicit: true,
+        columns: ['name', 'active'],
+      })).toBe('name: alice\nactive: true\n');
+    });
+
+    it('escapes newlines in values', () => {
+      expect(formatOutput([{ note: 'hello\nworld' }], {
+        fmt: 'toon',
+        fmtExplicit: true,
+        columns: ['note'],
+      })).toBe('items[1]{note}:\n  "hello\\nworld"\n');
+    });
+
+    it('supports custom nouns for empty states and root arrays', () => {
+      expect(formatOutput([], { fmt: 'toon', fmtExplicit: true, noun: 'tasks' }))
+        .toBe('tasks: 0 found\n');
+      expect(formatOutput([{ id: 1 }], { fmt: 'toon', fmtExplicit: true, noun: 'tasks', columns: ['id'] }))
+        .toBe('tasks[1]{id}:\n  1\n');
+    });
+  });
 });
 
 describe('formatErrorEnvelope', () => {
-  it('returns the local YAML envelope bytes without writing to stderr', () => {
+  it('returns the local TOON/YAML envelope bytes without writing to stderr', () => {
     expect(formatErrorEnvelope({
       ok: false,
       error: {
