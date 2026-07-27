@@ -23675,6 +23675,566 @@
     "sourceFile": "trae-solo/workspaces-fs.js"
   },
   {
+    "site": "trip",
+    "name": "attraction",
+    "description": "Search Trip.com attractions and experiences by destination keyword",
+    "access": "read",
+    "domain": "trip.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "query",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Destination or attraction keyword (e.g. Tokyo / Paris / Louvre)"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "Number of results (1-50)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "name",
+      "rating",
+      "reviews",
+      "booked",
+      "price",
+      "currency",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "trip/attraction.js",
+    "sourceFile": "trip/attraction.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "trip",
+    "name": "car",
+    "description": "List Trip.com car-rental vehicles for a city (category, model, seats, daily price)",
+    "access": "read",
+    "domain": "trip.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "city",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Numeric Trip.com carhire city id (discover via the carhire search box)"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "Number of vehicles (1-50)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "category",
+      "vehicle",
+      "seats",
+      "price",
+      "currency",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "trip/car.js",
+    "sourceFile": "trip/car.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "trip",
+    "name": "deals",
+    "description": "List Trip.com live promotions from the Top Deals hub: campaign title, offer, discount, and link",
+    "access": "read",
+    "domain": "trip.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "Number of deals (1-50)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "title",
+      "offer",
+      "discount",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "trip/deals.js",
+    "sourceFile": "trip/deals.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "trip",
+    "name": "flight",
+    "description": "Search Trip.com one-way flights by IATA route + departure date",
+    "access": "read",
+    "domain": "trip.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "from",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Departure IATA code (e.g. LON / LHR)"
+      },
+      {
+        "name": "to",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Arrival IATA code (e.g. NYC / JFK)"
+      },
+      {
+        "name": "date",
+        "type": "str",
+        "required": true,
+        "help": "Departure date (YYYY-MM-DD)"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "Number of flights (1-50)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "airline",
+      "departureTime",
+      "departureAirport",
+      "arrivalTime",
+      "arrivalAirport",
+      "duration",
+      "stops",
+      "price",
+      "currency",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "trip/flight.js",
+    "sourceFile": "trip/flight.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "trip",
+    "name": "flight-round",
+    "description": "Search Trip.com round-trip flights by IATA route + depart/return dates",
+    "access": "read",
+    "domain": "trip.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "from",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Departure IATA code (e.g. LON / LHR)"
+      },
+      {
+        "name": "to",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Arrival IATA code (e.g. NYC / JFK)"
+      },
+      {
+        "name": "depart",
+        "type": "str",
+        "required": true,
+        "help": "Outbound date (YYYY-MM-DD)"
+      },
+      {
+        "name": "return",
+        "type": "str",
+        "required": true,
+        "help": "Return date (YYYY-MM-DD)"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "Number of flights (1-50)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "airline",
+      "departureTime",
+      "departureAirport",
+      "arrivalTime",
+      "arrivalAirport",
+      "duration",
+      "stops",
+      "price",
+      "currency",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "trip/flight-round.js",
+    "sourceFile": "trip/flight-round.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "trip",
+    "name": "hotel",
+    "description": "Show a Trip.com hotel detail by id (rating breakdown, amenities, check-in/out policy)",
+    "access": "read",
+    "domain": "trip.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "id",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Numeric Trip.com hotel id (discover via the hotels list; e.g. 715233)"
+      }
+    ],
+    "columns": [
+      "hotelId",
+      "name",
+      "enName",
+      "star",
+      "score",
+      "scoreLabel",
+      "reviewCount",
+      "ratingBreakdown",
+      "facilities",
+      "checkInOut",
+      "cityName",
+      "address",
+      "lat",
+      "lon",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "trip/hotel.js",
+    "sourceFile": "trip/hotel.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "trip",
+    "name": "hotel-search",
+    "description": "List Trip.com hotels for a city id + check-in/out date range",
+    "access": "read",
+    "domain": "trip.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "city",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Numeric Trip.com city id (discover via the hotels search box; e.g. 338 for London)"
+      },
+      {
+        "name": "checkin",
+        "type": "str",
+        "required": true,
+        "help": "Check-in date (YYYY-MM-DD)"
+      },
+      {
+        "name": "checkout",
+        "type": "str",
+        "required": true,
+        "help": "Check-out date (YYYY-MM-DD)"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "Number of hotels (1-50)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "name",
+      "score",
+      "reviewLabel",
+      "reviews",
+      "location",
+      "room",
+      "price",
+      "currency",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "trip/hotel-search.js",
+    "sourceFile": "trip/hotel-search.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "trip",
+    "name": "package",
+    "description": "Search Trip.com flight+hotel packages by route + dates; lists the package flight options priced at the bundle rate",
+    "access": "read",
+    "domain": "trip.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "from",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Origin city keyword (e.g. Seoul / London / Bangkok)"
+      },
+      {
+        "name": "to",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Destination city keyword (e.g. Tokyo / Paris / Singapore)"
+      },
+      {
+        "name": "depart",
+        "type": "str",
+        "required": true,
+        "help": "Outbound date (YYYY-MM-DD)"
+      },
+      {
+        "name": "return",
+        "type": "str",
+        "required": true,
+        "help": "Return date (YYYY-MM-DD)"
+      },
+      {
+        "name": "adults",
+        "type": "int",
+        "default": 2,
+        "required": false,
+        "help": "Number of adults (1-9, default 2)"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "Number of packages (1-50)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "airline",
+      "flightNo",
+      "from",
+      "to",
+      "departure",
+      "arrival",
+      "stops",
+      "price",
+      "currency"
+    ],
+    "type": "js",
+    "modulePath": "trip/package.js",
+    "sourceFile": "trip/package.js"
+  },
+  {
+    "site": "trip",
+    "name": "search",
+    "description": "Suggest Trip.com destinations (cities, airports) for a keyword; resolves the ids the other commands take",
+    "access": "read",
+    "domain": "trip.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "query",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Destination keyword (e.g. Tokyo / Bali / London)"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "Number of suggestions (1-50)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "name",
+      "type",
+      "cityId",
+      "airportCode",
+      "province",
+      "country"
+    ],
+    "type": "js",
+    "modulePath": "trip/search.js",
+    "sourceFile": "trip/search.js"
+  },
+  {
+    "site": "trip",
+    "name": "tour",
+    "description": "Search Trip.com tour packages by destination keyword (private or group tours)",
+    "access": "read",
+    "domain": "trip.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "query",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Destination or tour keyword (e.g. Tokyo / Kyoto / Bali)"
+      },
+      {
+        "name": "type",
+        "type": "str",
+        "default": "private",
+        "required": false,
+        "help": "Tour line: private or group (default private)"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "Number of tours (1-50)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "name",
+      "type",
+      "rating",
+      "reviews",
+      "price",
+      "currency",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "trip/tour.js",
+    "sourceFile": "trip/tour.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "trip",
+    "name": "train",
+    "description": "Show a Trip.com train route timetable (departure/arrival times, duration, changes)",
+    "access": "read",
+    "domain": "trip.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "from",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Departure city (e.g. London / Paris / Shanghai)"
+      },
+      {
+        "name": "to",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Arrival city (e.g. Manchester / Lyon / Beijing)"
+      },
+      {
+        "name": "country",
+        "type": "str",
+        "required": true,
+        "help": "Route country slug (e.g. uk / france / italy / spain / germany / china)"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "Number of journeys (1-50)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "departureTime",
+      "fromStation",
+      "arrivalTime",
+      "toStation",
+      "duration",
+      "changes",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "trip/train.js",
+    "sourceFile": "trip/train.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "trip",
+    "name": "transfer",
+    "description": "List Trip.com airport-transfer vehicles for a city + airport (type, seats, from-price)",
+    "access": "read",
+    "domain": "trip.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "city",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Airport city (e.g. Bangkok / Beijing / Da Nang)"
+      },
+      {
+        "name": "airport",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "3-letter airport IATA code (e.g. DMK / PKX / DAD)"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "Number of vehicles (1-50)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "type",
+      "passengers",
+      "luggage",
+      "price",
+      "currency",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "trip/transfer.js",
+    "sourceFile": "trip/transfer.js",
+    "navigateBefore": false
+  },
+  {
     "site": "tvmaze",
     "name": "search",
     "description": "TVmaze TV show search by title (returns id, name, network, premiered/ended, rating)",
