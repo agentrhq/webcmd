@@ -1,7 +1,7 @@
 {
   "name": "techcrunch",
   "version": "0.1.0",
-  "description": "Read the latest TechCrunch news from its public RSS feed",
+  "description": "Search and read TechCrunch stories from its public API",
   "webcmd": ">=0.2.0",
   "author": {
     "name": "WebCMD Agent",

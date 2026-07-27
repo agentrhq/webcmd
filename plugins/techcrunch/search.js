@@ -48,5 +48,5 @@ cli({
         { name: 'limit', type: 'int', default: 20, help: 'Maximum stories to return (1-50)' },
     ],
     columns: ['rank', 'title', 'author', 'publishedAt', 'description', 'url'],
-    func: searchTechCrunch,
+    func: args => searchTechCrunch(args),
 });

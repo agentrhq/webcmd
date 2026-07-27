@@ -3,17 +3,8 @@ import { ArgumentError, CommandExecutionError } from '@agentrhq/webcmd/errors';
 const POSTS_URL = 'https://techcrunch.com/wp-json/wp/v2/posts';
 const MAX_LIMIT = 50;
 
-export function parseLimit(raw) {
-    const value = raw === undefined || raw === null || raw === '' ? 20 : Number(raw);
-    if (!Number.isInteger(value) || value < 1 || value > MAX_LIMIT) {
-        throw new ArgumentError(`--limit must be an integer between 1 and ${MAX_LIMIT}`);
-    }
-    return value;
-}
-
-export function plainText(value) {
+function decodeHtml(value) {
     return String(value ?? '')
-        .replace(/<[^>]+>/g, ' ')
         .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
         .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(Number.parseInt(code, 16)))
         .replace(/&amp;/g, '&')
@@ -24,8 +15,34 @@ export function plainText(value) {
         .replace(/&#8220;|&#8221;/g, '"')
         .replace(/&#8211;/g, '–')
         .replace(/&#8212;/g, '—')
-        .replace(/&nbsp;|&#160;/g, ' ')
+        .replace(/&nbsp;|&#160;/g, ' ');
+}
+
+export function parseLimit(raw) {
+    const value = raw === undefined || raw === null || raw === '' ? 20 : Number(raw);
+    if (!Number.isInteger(value) || value < 1 || value > MAX_LIMIT) {
+        throw new ArgumentError(`--limit must be an integer between 1 and ${MAX_LIMIT}`);
+    }
+    return value;
+}
+
+export function plainText(value) {
+    return decodeHtml(String(value ?? '').replace(/<[^>]+>/g, ' '))
         .replace(/\s+/g, ' ')
+        .trim();
+}
+
+export function articleText(value) {
+    const html = String(value ?? '')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/(?:p|div|h[1-6]|blockquote)>/gi, '\n\n')
+        .replace(/<li(?:\s[^>]*)?>/gi, '- ')
+        .replace(/<\/li>/gi, '\n')
+        .replace(/<[^>]+>/g, '');
+    return decodeHtml(html)
+        .replace(/[ \t]+/g, ' ')
+        .replace(/ *\n */g, '\n')
+        .replace(/\n{3,}/g, '\n\n')
         .trim();
 }
 
@@ -38,7 +55,10 @@ export async function fetchPosts(params, request = fetch) {
     let response;
     try {
         response = await request(url, {
-            headers: { Accept: 'application/json' },
+            headers: {
+                Accept: 'application/json',
+                'User-Agent': 'webcmd/0.3 (+https://github.com/agentrhq/webcmd)',
+            },
         });
     } catch (error) {
         throw new CommandExecutionError(`TechCrunch request failed: ${error.message}`);

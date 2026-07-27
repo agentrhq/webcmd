@@ -31,7 +31,7 @@
 - Produces: `parseLimit(raw)`, `plainText(html)`, `fetchPosts(params, request)`, and `postSummary(post, rank)` from `lib/api.js`.
 - Produces: `searchTechCrunch(args, request)` from `search.js`.
 
-- [ ] **Step 1: Write failing search tests**
+- [x] **Step 1: Write failing search tests**
 
 Add Node tests asserting:
 
@@ -57,7 +57,7 @@ assert.match(request.calls[0], /orderby=relevance/);
 Also assert that `--latest` emits `orderby=date` without a `search` parameter
 and that invalid limits are rejected.
 
-- [ ] **Step 2: Run the search tests and verify RED**
+- [x] **Step 2: Run the search tests and verify RED**
 
 Run:
 
@@ -67,7 +67,7 @@ node --test plugins/techcrunch/test/techcrunch.test.js
 
 Expected: FAIL because `search.js` does not exist.
 
-- [ ] **Step 3: Implement the minimum search path**
+- [x] **Step 3: Implement the minimum search path**
 
 Create the shared helpers and register:
 
@@ -90,7 +90,7 @@ cli({
 Use `https://techcrunch.com/wp-json/wp/v2/posts`, `orderby=relevance` for a
 query, and `orderby=date&order=desc` for `--latest`. Remove `latest.js`.
 
-- [ ] **Step 4: Run the search tests and verify GREEN**
+- [x] **Step 4: Run the search tests and verify GREEN**
 
 Run:
 
@@ -100,7 +100,7 @@ node --test plugins/techcrunch/test/techcrunch.test.js
 
 Expected: all search tests pass.
 
-- [ ] **Step 5: Commit the search command**
+- [x] **Step 5: Commit the search command**
 
 ```bash
 git add plugins/techcrunch
@@ -122,7 +122,7 @@ git commit -m "feat(techcrunch): replace latest with search"
 - Consumes: `plainText(html)` and `fetchPosts(params, request)` from `lib/api.js`.
 - Produces: `articleTechCrunch(args, request)` from `article.js`.
 
-- [ ] **Step 1: Write failing article tests**
+- [x] **Step 1: Write failing article tests**
 
 Add Node tests asserting:
 
@@ -143,7 +143,7 @@ assert.match(request.calls[0], /slug=ai-story/);
 
 Also assert an empty API result raises `EmptyResultError`.
 
-- [ ] **Step 2: Run the article tests and verify RED**
+- [x] **Step 2: Run the article tests and verify RED**
 
 Run:
 
@@ -153,14 +153,14 @@ node --test plugins/techcrunch/test/techcrunch.test.js
 
 Expected: FAIL because `article.js` does not exist.
 
-- [ ] **Step 3: Implement the minimum article path**
+- [x] **Step 3: Implement the minimum article path**
 
 Validate the URL with `URL`, accept only `techcrunch.com` and
 `www.techcrunch.com`, fetch one post by slug, derive categories from the
 `NewsArticle.articleSection` schema field, and convert the returned article
 HTML into readable plain text with paragraph breaks.
 
-- [ ] **Step 4: Run article tests and verify GREEN**
+- [x] **Step 4: Run article tests and verify GREEN**
 
 Run:
 
@@ -170,7 +170,7 @@ node --test plugins/techcrunch/test/techcrunch.test.js
 
 Expected: all TechCrunch tests pass.
 
-- [ ] **Step 5: Sync and verify the plugin**
+- [x] **Step 5: Sync and verify the plugin**
 
 Run:
 
@@ -189,7 +189,7 @@ webcmd techcrunch article "https://techcrunch.com/2026/07/26/are-brain-waves-the
 Expected: checks pass; help lists only `article` and `search`; live commands
 return readable rows.
 
-- [ ] **Step 6: Commit the completed plugin**
+- [x] **Step 6: Commit the completed plugin**
 
 ```bash
 git add plugins/techcrunch README.md webcmd-plugin.json
