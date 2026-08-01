@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { Command, CommanderError } from 'commander';
 import { configureCompletionCommandSurface, configureListCommandSurface, configurePluginInstallSurface, configurePluginSearchSurface } from '../builtin-command-surface.js';
 import { BrowserSessionArgvError, rewriteBrowserArgv } from '../cli-argv-preprocess.js';
-import { CommanderStructuralError, MissingRequiredPositionalError } from '../command-surface.js';
+import { CommanderStructuralError, MissingRequiredPositionalError, OUTPUT_FORMAT_HELP } from '../command-surface.js';
 import { filterCommandsByTag, formatRootHelp, getCommandCompletionCandidates } from '../command-presentation.js';
 import {
   HOSTED_BUILTIN_COMMANDS,
@@ -779,7 +779,7 @@ function parseHostedProfileSurface(
   profile.exitOverride().configureOutput(output);
 
   const configureFormat = (command: Command): Command =>
-    command.option('-f, --format <fmt>', 'Output format: table, json, yaml, md, csv', 'table');
+    command.option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
   const setParsed = (
     command: HostedProfileCommand,
     surface: Command,

@@ -1,4 +1,5 @@
 import { CLI_COMMAND } from './brand.js';
+import { OUTPUT_FORMAT_HELP, OUTPUT_FORMATS } from './command-surface.js';
 import type { Arg } from './registry.js';
 
 export interface PresentableCommand {
@@ -88,9 +89,9 @@ const COMMON_OPTIONS = [
   {
     flags: '-f, --format <fmt>',
     name: 'format',
-    help: 'Output format: table, plain, json, yaml, md, csv',
+    help: OUTPUT_FORMAT_HELP,
     default: 'table',
-    choices: ['table', 'plain', 'json', 'yaml', 'md', 'csv'],
+    choices: [...OUTPUT_FORMATS],
   },
   {
     flags: '--trace <mode>',
