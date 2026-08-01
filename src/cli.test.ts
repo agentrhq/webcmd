@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -3700,5 +3700,139 @@ describe('renderVerifyPreview', () => {
     // cell gets truncated
     expect(out).toContain('xxxxxxxxxx');
     expect(out).not.toContain('xxxxxxxxxxx'); // never 11 consecutive
+  });
+});
+
+describe('output format normalization across builtin command families', () => {
+  let stdoutSpy: ReturnType<typeof vi.spyOn>;
+  let stderrSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    process.exitCode = undefined;
+    stdoutSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    process.exitCode = undefined;
+    stdoutSpy.mockClear();
+    stderrSpy.mockClear();
+  });
+
+  async function run(...args: string[]) {
+    stdoutSpy.mockClear();
+    stderrSpy.mockClear();
+    await createProgram('', '').parseAsync(['node', 'webcmd', ...args]);
+    return {
+      stdout: stdoutSpy.mock.calls.flat().join('\n'),
+      stderr: stderrSpy.mock.calls.flat().join('\n'),
+      exitCode: process.exitCode,
+    };
+  }
+
+  it('skills list renders YAML implicitly on non-TTY and stays a table with explicit -f table', async () => {
+    const implicit = await run('skills', 'list');
+    expect(implicit.exitCode).toBeUndefined();
+    const rows = yaml.load(implicit.stdout) as Array<Record<string, unknown>>;
+    expect(Array.isArray(rows)).toBe(true);
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows[0]).toHaveProperty('name');
+
+    const explicit = await run('skills', 'list', '-f', 'table');
+    expect(explicit.exitCode).toBeUndefined();
+    expect(explicit.stdout).toContain('webcmd/skills/list');
+    expect(explicit.stdout).toContain('items | webcmd skills list');
+  });
+
+  it('skills list -f json emits a JSON array', async () => {
+    const { stdout, exitCode } = await run('skills', 'list', '-f', 'json');
+    expect(exitCode).toBeUndefined();
+    const rows = JSON.parse(stdout);
+    expect(Array.isArray(rows)).toBe(true);
+    expect(rows[0]).toHaveProperty('name');
+  });
+
+  it.each(['xml', 'jsonl'])('skills list rejects the unsupported %s format with a usage error', async (format) => {
+    const { stderr, exitCode } = await run('skills', 'list', '-f', format);
+    expect(exitCode).toBe(2);
+    expect(stderr).toContain(`Unknown output format "${format}"`);
+    expect(stderr).toContain('Supported formats: table, plain, json, yaml, md, csv');
+  });
+
+  it('plugin list -f json emits valid JSON and -f yaml emits valid YAML', async () => {
+    const json = await run('plugin', 'list', '-f', 'json');
+    expect(json.exitCode).toBeUndefined();
+    expect(Array.isArray(JSON.parse(json.stdout))).toBe(true);
+
+    const yamlOut = await run('plugin', 'list', '-f', 'yaml');
+    expect(yamlOut.exitCode).toBeUndefined();
+    expect(Array.isArray(yaml.load(yamlOut.stdout))).toBe(true);
+  });
+
+  it('plugin list rejects an unsupported format with a usage error', async () => {
+    const { stderr, exitCode } = await run('plugin', 'list', '-f', 'xml');
+    expect(exitCode).toBe(2);
+    expect(stderr).toContain('Unknown output format "xml"');
+  });
+
+  it('plugin search rejects an unsupported format before any network call', async () => {
+    const { stderr, exitCode } = await run('plugin', 'search', '-f', 'xml');
+    expect(exitCode).toBe(2);
+    expect(stderr).toContain('Unknown output format "xml"');
+  });
+
+  it('plugin catalog list -f json emits the catalog object and -f yaml the sources', async () => {
+    const json = await run('plugin', 'catalog', 'list', '-f', 'json');
+    expect(json.exitCode).toBeUndefined();
+    const catalog = JSON.parse(json.stdout);
+    expect(Array.isArray(catalog.sources)).toBe(true);
+
+    const yamlOut = await run('plugin', 'catalog', 'list', '-f', 'yaml');
+    expect(yamlOut.exitCode).toBeUndefined();
+    const sources = yaml.load(yamlOut.stdout) as Array<Record<string, unknown>>;
+    expect(Array.isArray(sources)).toBe(true);
+    expect(sources[0]).toHaveProperty('id');
+  });
+
+  it('external list renders YAML implicitly on non-TTY and stays a table with explicit -f table', async () => {
+    const implicit = await run('external', 'list');
+    expect(implicit.exitCode).toBeUndefined();
+    const rows = yaml.load(implicit.stdout) as Array<Record<string, unknown>>;
+    expect(Array.isArray(rows)).toBe(true);
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows[0]).toHaveProperty('name');
+
+    const explicit = await run('external', 'list', '-f', 'table');
+    expect(explicit.exitCode).toBeUndefined();
+    expect(explicit.stdout).toContain('items | webcmd external list');
+  });
+
+  it('convention-audit renders structured JSON through the shared renderer', async () => {
+    const { stdout, exitCode } = await run('convention-audit', '-f', 'json');
+    expect(exitCode).toBeUndefined();
+    const report = JSON.parse(stdout);
+    expect(report).toHaveProperty('ok');
+    expect(report).toHaveProperty('summary');
+  });
+
+  it('convention-audit rejects an unsupported format with a usage error', async () => {
+    const { stderr, exitCode } = await run('convention-audit', '-f', 'xml');
+    expect(exitCode).toBe(2);
+    expect(stderr).toContain('Unknown output format "xml"');
+  });
+
+  it('advertises the canonical format list across builtin and shared surfaces', () => {
+    const program = createProgram('', '');
+    const list = program.commands.find(cmd => cmd.name() === 'list')!;
+    const plugin = program.commands.find(cmd => cmd.name() === 'plugin')!;
+    const search = plugin.commands.find(cmd => cmd.name() === 'search')!;
+    const skillsList = program.commands.find(cmd => cmd.name() === 'skills')!.commands.find(cmd => cmd.name() === 'list')!;
+
+    for (const cmd of [list, search, skillsList]) {
+      const help = cmd.helpInformation();
+      expect(help).toContain('Output format: table, plain, json, yaml, md, csv');
+      expect(help).not.toContain('markdown');
+      expect(help).not.toContain('yml');
+    }
   });
 });
