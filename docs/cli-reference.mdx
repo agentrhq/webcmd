@@ -77,6 +77,7 @@ The old `web read` command has been renamed to `web fetch-browser`.
 
 ```bash
 webcmd hackernews top -f table
+webcmd hackernews top -f plain
 webcmd hackernews top -f json
 webcmd hackernews top -f yaml
 webcmd hackernews top -f md
@@ -131,9 +132,13 @@ webcmd plugin install github:agentrhq/webcmd/plugins/ycombinator
 
 Hosted mode supports the same `plugin search` and `plugin install` grammar for Webcmd-verified marketplace adapters. Other plugin management commands remain local-only in hosted mode.
 
+`plugin list`, `plugin search`, and the `plugin catalog` commands honor the universal `-f/--format` flag from the [Output Formats](#output-formats) section. For example, `webcmd plugin list -f json` returns a JSON array of installed plugins (or `[]` when none are installed) and `-f yaml` emits YAML. Unknown format names are rejected with a usage error.
+
 ## External CLIs
 
 Agents can expose local tools through Webcmd, such as `gh`, `docker`, `vercel`, or internal CLIs.
+
+`external list` honors the universal `-f/--format` flag (for example `webcmd external list -f json` or `-f yaml`). Without an explicit `-f`, it emits a table on a TTY and YAML when output is not a TTY.
 
 Prompt example:
 
