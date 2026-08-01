@@ -3821,6 +3821,17 @@ describe('output format normalization across builtin command families', () => {
     expect(stderr).toContain('Unknown output format "xml"');
   });
 
+  it.each(['status', 'refresh'] as const)('auth %s validates the output format and renders JSON on -f json', async (subcommand) => {
+    const unsupported = await run('auth', subcommand, '-f', 'xml');
+    expect(unsupported.exitCode).toBe(2);
+    expect(unsupported.stderr).toContain('Unknown output format "xml"');
+
+    process.exitCode = undefined;
+    const json = await run('auth', subcommand, '-f', 'json');
+    expect(json.exitCode).toBeUndefined();
+    expect(Array.isArray(JSON.parse(json.stdout))).toBe(true);
+  });
+
   it('advertises the canonical format list across builtin and shared surfaces', () => {
     const program = createProgram('', '');
     const list = program.commands.find(cmd => cmd.name() === 'list')!;

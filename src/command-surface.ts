@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { ArgumentError } from './errors.js';
+import { ArgumentError, CliError, EXIT_CODES } from './errors.js';
 import type { Arg } from './registry.js';
 
 /** Canonical output format names accepted by the shared renderer. */
@@ -260,6 +260,24 @@ export function parseOutputFormat(value: unknown): OutputFormat {
     throw new ArgumentError(`Unknown output format "${raw}". Supported formats: ${OUTPUT_FORMATS.join(', ')}.`);
   }
   return normalized;
+}
+
+/**
+ * Validate and normalize an `-f/--format` value for a CLI action. Returns the
+ * canonical format, or `null` after emitting a usage error when the value is
+ * unsupported.
+ */
+export function resolveOutputFormat(raw: string | undefined): string | null {
+  try {
+    return parseOutputFormat(raw);
+  } catch (err) {
+    if (err instanceof CliError) {
+      console.error(`error: ${err.message}`);
+      process.exitCode = EXIT_CODES.USAGE_ERROR;
+      return null;
+    }
+    throw err;
+  }
 }
 
 function parseTraceMode(value: unknown): TraceMode {

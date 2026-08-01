@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Command, InvalidArgumentError, Option } from 'commander';
-import { OUTPUT_FORMAT_HELP } from '../command-surface.js';
+import { OUTPUT_FORMAT_HELP, resolveOutputFormat } from '../command-surface.js';
 import { AuthRequiredError, CliError, getErrorMessage } from '../errors.js';
 import { executeCommand } from '../execution.js';
 import {
@@ -477,7 +477,8 @@ export function registerAuthCommands(program: Command): Command {
         only: opts.only,
         profile: typeof globals.profile === 'string' && globals.profile.trim() ? globals.profile.trim() : undefined,
       });
-      const fmt = typeof opts.format === 'string' ? opts.format : 'table';
+      const fmt = resolveOutputFormat(opts.format);
+      if (fmt === null) return;
       renderOutput(rows, {
         fmt,
         fmtExplicit: status.getOptionValueSource('format') === 'cli',
@@ -504,7 +505,8 @@ export function registerAuthCommands(program: Command): Command {
         timeout: opts.timeout,
         profile: typeof globals.profile === 'string' && globals.profile.trim() ? globals.profile.trim() : undefined,
       });
-      const fmt = typeof opts.format === 'string' ? opts.format : 'table';
+      const fmt = resolveOutputFormat(opts.format);
+      if (fmt === null) return;
       renderOutput(rows, {
         fmt,
         fmtExplicit: refresh.getOptionValueSource('format') === 'cli',

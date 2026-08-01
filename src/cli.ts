@@ -15,7 +15,7 @@ import { findPackageRoot, getBuiltEntryCandidates } from './package-paths.js';
 import { type CliCommand, getRegistry } from './registry.js';
 import { commandListPresentation, filterCommandsByTag, toPresentableCommand } from './command-presentation.js';
 import { configureCompletionCommandSurface, configureListCommandSurface, configurePluginInstallSurface, configurePluginSearchSurface } from './builtin-command-surface.js';
-import { OUTPUT_FORMAT_HELP, parseOutputFormat } from './command-surface.js';
+import { OUTPUT_FORMAT_HELP, resolveOutputFormat } from './command-surface.js';
 import { render as renderOutput } from './output.js';
 import { PKG_VERSION } from './version.js';
 import { printCompletionScript } from './completion.js';
@@ -67,24 +67,6 @@ type BrowserNetworkItem = {
   /** Epoch milliseconds when the request was observed. */
   timestamp?: number;
 };
-
-/**
- * Validate the `-f/--format` value for a local builtin command. Returns the
- * normalized canonical format, or `null` after emitting a Commander-style
- * usage error when the value is unsupported.
- */
-function resolveOutputFormat(raw: string | undefined): string | null {
-  try {
-    return parseOutputFormat(raw);
-  } catch (err) {
-    if (err instanceof CliError) {
-      console.error(`error: ${err.message}`);
-      process.exitCode = EXIT_CODES.USAGE_ERROR;
-      return null;
-    }
-    throw err;
-  }
-}
 
 function parseDurationMs(raw: unknown, flagName: string): number | null | { error: string } {
   if (raw === undefined || raw === null || raw === '') return null;
