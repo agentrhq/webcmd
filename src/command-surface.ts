@@ -253,9 +253,10 @@ export function coerceCommandArguments(
 
 export function parseOutputFormat(value: unknown): OutputFormat {
   const raw = String(value);
-  const normalized = Object.prototype.hasOwnProperty.call(OUTPUT_FORMAT_ALIASES, raw)
-    ? OUTPUT_FORMAT_ALIASES[raw]!
-    : raw;
+  const lower = raw.toLowerCase();
+  const normalized = Object.prototype.hasOwnProperty.call(OUTPUT_FORMAT_ALIASES, lower)
+    ? OUTPUT_FORMAT_ALIASES[lower]!
+    : lower;
   if (!OUTPUT_FORMATS.includes(normalized as (typeof OUTPUT_FORMATS)[number])) {
     throw new ArgumentError(`Unknown output format "${raw}". Supported formats: ${OUTPUT_FORMATS.join(', ')}.`);
   }

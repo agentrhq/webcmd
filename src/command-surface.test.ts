@@ -109,6 +109,13 @@ describe('parseCommandSurface', () => {
       .toThrow(/Unknown output format ".*". Supported formats: table, plain, json, yaml, md, csv/);
   });
 
+  it.each(['JSON', 'YAML', 'Yml', 'Markdown', 'Md'])('accepts the %s output format case-insensitively', (format) => {
+    expect(() => parseCommandSurface(metadata, ['needle', '--format', format])).not.toThrow();
+    expect(parseOutputFormat(format).toLowerCase()).toBe(
+      parseOutputFormat(format.toLowerCase()),
+    );
+  });
+
   it.each<TraceMode>(['off', 'on', 'retain-on-failure'])('accepts the %s trace mode', (trace) => {
     expect(parseCommandSurface(metadata, ['needle', '--trace', trace])).toMatchObject({ trace });
   });

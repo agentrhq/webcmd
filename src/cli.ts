@@ -794,10 +794,12 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string): Command 
 
   configureListCommandSurface(program.command('list'))
     .action((opts) => {
-      const externalClis = opts.format === 'table' ? loadExternalClis() : [];
+      const fmt = resolveOutputFormat(opts.format);
+      if (fmt === null) return;
+      const externalClis = fmt === 'table' ? loadExternalClis() : [];
       const presentation = commandListPresentation(
         filterCommandsByTag([...new Set(getRegistry().values())].map(toPresentableCommand), opts.tag),
-        opts.format,
+        fmt,
         {
           externalClis: externalClis.map((external) => ({
             label: formatExternalCliLabel(external),
@@ -811,7 +813,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string): Command 
         return;
       }
       renderOutput(presentation.rows, {
-        fmt: opts.format,
+        fmt,
         columns: presentation.columns,
         title: 'webcmd/list',
         source: 'webcmd list',

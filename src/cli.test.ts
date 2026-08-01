@@ -14,6 +14,7 @@ import {
   formatRootHelp,
   toPresentableCommand,
 } from './command-presentation.js';
+import { parseOutputFormat } from './command-surface.js';
 import { render as renderOutput } from './output.js';
 
 const {
@@ -366,7 +367,7 @@ name: 'search',
     }
   });
 
-  it.each(['json', 'yaml', 'yml'])(
+  it.each(['json', 'yaml', 'yml', 'md', 'csv', 'plain'])(
     'renders local list %s through the shared list presentation',
     async (format) => {
       const registry = getRegistry();
@@ -384,7 +385,8 @@ name: 'search',
           args: [{ name: 'limit', type: 'int', default: 20, help: 'Maximum issues' }],
           columns: ['number', 'title'],
         });
-        const presentation = commandListPresentation([toPresentableCommand(command)], format);
+        const normalized = parseOutputFormat(format);
+        const presentation = commandListPresentation([toPresentableCommand(command)], normalized);
 
         const outputSpy = vi.mocked(console.log);
         outputSpy.mockClear();
@@ -394,7 +396,7 @@ name: 'search',
 
         outputSpy.mockClear();
         renderOutput(presentation.rows, {
-          fmt: format,
+          fmt: normalized,
           columns: presentation.columns,
           title: 'webcmd/list',
           source: 'webcmd list',
@@ -3830,6 +3832,23 @@ describe('output format normalization across builtin command families', () => {
     const json = await run('auth', subcommand, '-f', 'json');
     expect(json.exitCode).toBeUndefined();
     expect(Array.isArray(JSON.parse(json.stdout))).toBe(true);
+  });
+
+  it('webcmd list rejects an unsupported format with a usage error', async () => {
+    const { stderr, exitCode } = await run('list', '-f', 'xml');
+    expect(exitCode).toBe(2);
+    expect(stderr).toContain('Unknown output format "xml"');
+  });
+
+  it('webcmd list and convention-audit accept case-insensitive and aliased formats', async () => {
+    const yamlList = await run('list', '-f', 'yaml');
+    const upperList = await run('list', '-f', 'YAML');
+    expect(upperList.exitCode).toBeUndefined();
+    expect(upperList.stdout).toBe(yamlList.stdout);
+
+    const audit = await run('convention-audit', '-f', 'YAML');
+    expect(audit.exitCode).toBeUndefined();
+    expect(yaml.load(audit.stdout)).toMatchObject({ summary: expect.anything() });
   });
 
   it('advertises the canonical format list across builtin and shared surfaces', () => {
