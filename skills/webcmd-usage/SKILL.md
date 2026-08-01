@@ -117,6 +117,7 @@ Command-specific flags such as `--limit`, `--tab`, and `--filter` are not univer
 - `yaml`: default when output is not a TTY and `-f` is not explicit.
 - `table`: color-coded and grouped for humans.
 - `md`, `csv`: tabular dumps.
+- Unsupported format names are rejected with a usage error; `yml` and `markdown` are accepted aliases for `yaml` and `md`.
 
 Some commands override the default through `cmd.defaultFormat`; read `--help`.
 
@@ -191,7 +192,7 @@ webcmd plugin catalog add <source>
 webcmd plugin catalog remove <id>
 ```
 
-Plugins are installable extensions pulled from git or local paths. Use `plugin search` for marketplace discovery and `plugin list` for already-installed plugins. Main-repo community CLIs are exposed through the root plugin catalog manifest, not bundled into npm's `clis/` set.
+Plugins are installable extensions pulled from git or local paths. Use `plugin search` for marketplace discovery and `plugin list` for already-installed plugins. `webcmd plugin list -f json` returns an empty array `[]` when no plugins are installed. Main-repo community CLIs are exposed through the root plugin catalog manifest, not bundled into npm's `clis/` set.
 
 > **Note:** The repository's `plugins/` directory is not shipped in the npm package. Find the required plugin with `webcmd plugin search`, then install its `installSource` with `webcmd plugin install <installSource>`.
 
