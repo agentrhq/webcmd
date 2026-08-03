@@ -192,7 +192,7 @@ webcmd plugin catalog add <source>
 webcmd plugin catalog remove <id>
 ```
 
-Plugins are installable extensions pulled from git or local paths. Use `plugin search` for marketplace discovery and `plugin list` for already-installed plugins. `webcmd plugin list -f json` returns an empty array `[]` when no plugins are installed. Main-repo community CLIs are exposed through the root plugin catalog manifest, not bundled into npm's `clis/` set.
+Plugins are installable extensions pulled from git or local paths. Use `plugin search` for marketplace discovery and `plugin list` for already-installed plugins. `webcmd plugin list -f json` returns an empty array `[]` when no plugins are installed. Note: `plugin list` renders its human-friendly grouped listing whenever the effective format is `table` (default or explicit, TTY or non-TTY); use `-f json` or `-f yaml` for machine-readable output. Main-repo community CLIs are exposed through the root plugin catalog manifest, not bundled into npm's `clis/` set.
 
 > **Note:** The repository's `plugins/` directory is not shipped in the npm package. Find the required plugin with `webcmd plugin search`, then install its `installSource` with `webcmd plugin install <installSource>`.
 
