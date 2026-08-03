@@ -792,7 +792,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string): Command 
 
   // ── Built-in: list ────────────────────────────────────────────────────────
 
-  configureListCommandSurface(program.command('list'))
+  const listCmd = configureListCommandSurface(program.command('list'))
     .action((opts) => {
       const fmt = resolveOutputFormat(opts.format);
       if (fmt === null) return;
@@ -814,6 +814,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string): Command 
       }
       renderOutput(presentation.rows, {
         fmt,
+        fmtExplicit: listCmd.getOptionValueSource('format') === 'cli',
         columns: presentation.columns,
         title: 'webcmd/list',
         source: 'webcmd list',
