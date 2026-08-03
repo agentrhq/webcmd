@@ -268,7 +268,7 @@ export function parseOutputFormat(value: unknown): OutputFormat {
  * canonical format, or `null` after emitting a usage error when the value is
  * unsupported.
  */
-export function resolveOutputFormat(raw: string | undefined): string | null {
+export function resolveOutputFormat(raw: string | undefined): OutputFormat | null {
   try {
     return parseOutputFormat(raw);
   } catch (err) {
