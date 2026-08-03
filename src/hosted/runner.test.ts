@@ -357,6 +357,45 @@ describe('runHostedCli', () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['plugin search'],
+    ['profile list'],
+    ['list'],
+  ])('rejects an unknown hosted %s format without an API call', async (argvCommand) => {
+    const stdout = sink();
+    const stderr = sink();
+    const fetchImpl = vi.fn<typeof fetch>();
+    const argv = argvCommand === 'list'
+      ? ['list', '-f', 'xml']
+      : [...argvCommand.split(' '), '-f', 'xml'];
+    const result = await runHostedCli(argv, {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      fetchImpl,
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 2 });
+    expect(stderr.text()).toContain('error: Unknown output format "xml"');
+    expect(stdout.text()).toBe('');
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('normalizes hosted list output format aliases and case', async () => {
+    const stdout = sink();
+    const stderr = sink();
+    const result = await runHostedCli(['list', '-f', 'JSON'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      fetchImpl: async () => manifestResponse(),
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 0 });
+    expect(stderr.text()).toBe('');
+    expect(JSON.parse(stdout.text())).toEqual([expect.objectContaining({ command: 'github/whoami' })]);
+  });
+
   it('lists and deletes hosted profiles without fetching the manifest', async () => {
     const requests: Array<{ url: string; method: string; body?: unknown }> = [];
     const fetchImpl = vi.fn<typeof fetch>(async (url, init) => {
