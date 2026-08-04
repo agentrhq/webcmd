@@ -26,7 +26,7 @@ export function resolveCloakBrowserVersion(): string | undefined {
   if (cachedCloakBrowserVersion !== UNRESOLVED) return cachedCloakBrowserVersion;
   try {
     const entryPath = fileURLToPath(import.meta.resolve('cloakbrowser'));
-    const pkg = JSON.parse(fs.readFileSync(path.join(findPackageRoot(entryPath), 'package.json'), 'utf-8'));
+    const pkg = JSON.parse(fs.readFileSync(path.join(findPackageRoot(entryPath), 'package.json'), 'utf-8')) as { version?: unknown };
     cachedCloakBrowserVersion = typeof pkg.version === 'string' ? pkg.version : undefined;
   } catch {
     cachedCloakBrowserVersion = undefined;
