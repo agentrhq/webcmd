@@ -77,11 +77,14 @@ The old `web read` command has been renamed to `web fetch-browser`.
 
 ```bash
 webcmd hackernews top -f table
+webcmd hackernews top -f plain
 webcmd hackernews top -f json
 webcmd hackernews top -f yaml
 webcmd hackernews top -f md
 webcmd hackernews top -f csv
 ```
+
+`plain` prints `key: value` lines instead of a table, and prints the bare value when a command returns a single field named `response`, `content`, `markdown`, `text`, or `value`. It suits chat-style commands. `yml` and `markdown` are accepted aliases for `yaml` and `md`.
 
 Agents should use JSON unless they are presenting output to a human.
 
