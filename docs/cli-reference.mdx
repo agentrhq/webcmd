@@ -134,6 +134,19 @@ webcmd plugin install github:agentrhq/webcmd/plugins/ycombinator
 
 Hosted mode supports the same `plugin search` and `plugin install` grammar for Webcmd-verified marketplace adapters. Other plugin management commands remain local-only in hosted mode.
 
+## Skills
+
+Bundled agent skills ship with the package. `webcmd skills add` links them into an agent harness and is part of first-time setup.
+
+```bash
+webcmd skills list
+webcmd skills add
+webcmd skills update
+webcmd skills remove
+```
+
+On a TTY, `skills add` prompts for whichever of scope and harness you did not pass. Use `--scope <user|project>` and `--provider <agents|codex|claude>` to skip the prompts, or `--path <skills-dir>` to link into a custom directory. Outside a TTY, and with `--json`, it never prompts. Run `skills update` after upgrading the package to refresh the links.
+
 ## External CLIs
 
 Agents can expose local tools through Webcmd, such as `gh`, `docker`, `vercel`, or internal CLIs.
