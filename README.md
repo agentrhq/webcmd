@@ -132,7 +132,7 @@ Webcmd Cloud can run supported commands and browser sessions on hosted infrastru
 | [`hft`](./plugins/hft/) | HFT Stuttgart postgraduate course export adapter | [WebCMD Agent](https://github.com/agentrhq) |
 | [`iit`](./plugins/iit/) | Illinois Institute of Technology postgraduate course export adapter | [WebCMD Agent](https://github.com/agentrhq) |
 | [`jhu`](./plugins/jhu/) | Johns Hopkins University postgraduate course export adapter | [WebCMD Agent](https://github.com/agentrhq) |
-| [`luma`](./plugins/luma/) | Manage hosted Luma events, registration questions, and guests | [Webcmd](https://github.com/webcmd) |
+| [`luma`](./plugins/luma/) | Manage hosted Luma events, registration questions, and guests | [WebCMD Agent](https://github.com/agentrhq) |
 | [`pypi`](./plugins/pypi/) | Inspect public Python package metadata and releases from PyPI | [Kemal Kaya](https://github.com/yoldaolmak) |
 | [`skyscanner`](./plugins/skyscanner/) | Skyscanner flight search commands for Webcmd | [Rishabh](https://github.com/rishabhraj36) |
 | [`techcrunch`](./plugins/techcrunch/) | Search and read TechCrunch stories from its public API | [WebCMD Agent](https://github.com/agentrhq) |
