@@ -1,6 +1,6 @@
 import type { BrowserRuntimeCommand, BrowserRuntimeResult } from '../../protocol.js';
 import { waitForDownload } from './downloads.js';
-import type { CloakSessionManager } from './session-manager.js';
+import { toGotoWaitUntil, type CloakSessionManager } from './session-manager.js';
 import type { BrowserContext, Frame, Page as PlaywrightPage } from 'playwright-core';
 
 class CloakActionError extends Error {
@@ -110,10 +110,7 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
       case 'navigate': {
         if (!command.url) return invalidRequest(command, 'Missing url');
         const lease = await resolveLease(manager, command);
-        // 'none' maps to Playwright's 'commit': sites that stream analytics forever
-        // never fire the load event, so adapters gating readiness on their own
-        // selector waits must be able to skip it.
-        await lease.page.goto(command.url, { waitUntil: command.waitUntil === 'none' ? 'commit' : 'load' });
+        await lease.page.goto(command.url, { waitUntil: toGotoWaitUntil(command.waitUntil) });
         return { id: command.id, ok: true, data: { title: await lease.page.title(), url: lease.page.url(), timedOut: false }, page: lease.pageId };
       }
       case 'exec': {
@@ -161,6 +158,7 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
               siteSession: command.siteSession,
               idleTimeout: command.idleTimeout,
               url: command.url,
+              waitUntil: command.waitUntil,
               windowMode: command.windowMode,
             });
             return { id: command.id, ok: true, data: { title: await lease.page.title(), url: lease.page.url() }, page: lease.pageId };

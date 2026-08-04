@@ -21,6 +21,17 @@ export function resolveCloakBrowserVersion(): string | undefined {
   }
 }
 
+/**
+ * Map the protocol's navigation wait condition onto Playwright's `goto` option.
+ * 'none' becomes 'commit': sites that stream analytics forever never fire the
+ * load event, so callers gating readiness on their own selector waits must be
+ * able to skip it. Every `goto` in this runtime routes through here so a new
+ * call site cannot quietly reintroduce a hardcoded 'load'.
+ */
+export function toGotoWaitUntil(waitUntil?: 'load' | 'none'): 'load' | 'commit' {
+  return waitUntil === 'none' ? 'commit' : 'load';
+}
+
 export type LaunchPersistentContext = typeof cloakLaunchPersistentContext;
 export type RecoverLockedProfile = (userDataDir: string) => Promise<boolean>;
 
@@ -234,7 +245,7 @@ export class CloakSessionManager {
     })));
   }
 
-  async newPage(input: SessionKeyInput & { url?: string }): Promise<CloakPageLease> {
+  async newPage(input: SessionKeyInput & { url?: string; waitUntil?: 'load' | 'none' }): Promise<CloakPageLease> {
     const profileId = normalizeProfileId(input.profileId);
     const session = requireSession(input.session);
     const surface = normalizeSurface(input.surface);
@@ -246,7 +257,7 @@ export class CloakSessionManager {
     );
     if (input.url) {
       try {
-        await acquired.page.goto(input.url, { waitUntil: 'load' });
+        await acquired.page.goto(input.url, { waitUntil: toGotoWaitUntil(input.waitUntil) });
       } catch (error) {
         if (!pageIsClosed(acquired.page)) await acquired.page.close().catch(() => {});
         throw error;
