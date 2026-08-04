@@ -50,6 +50,7 @@ import { configureRootCommandSurface } from './root-command-surface.js';
 
 const CLI_FILE = fileURLToPath(import.meta.url);
 const BROWSER_TAB_OPTION_DESCRIPTION = 'Target tab/page identity returned by "browser open", "browser tab new", or "browser tab list"';
+const BROWSER_WAIT_UNTIL_DESCRIPTION = 'Wait condition for [url]: load (default) waits for the load event, none returns as soon as navigation commits';
 const FOLLOW_POLL_MS = 1_000;
 
 type BrowserNetworkItem = {
@@ -745,6 +746,13 @@ async function snapshotSourceMetrics(page: IPage, source: SnapshotSource): Promi
   }
 }
 
+function resolveBrowserWaitUntil(opts?: { waitUntil?: string } | Command): 'load' | 'none' | undefined {
+  const raw = opts instanceof Command ? opts.opts().waitUntil : opts?.waitUntil;
+  if (raw === undefined || raw === '') return undefined;
+  if (raw === 'load' || raw === 'none') return raw;
+  throw new Error(`--wait-until must be one of: load, none. Received: "${String(raw)}"`);
+}
+
 function resolveBrowserTabTarget(targetId?: string, opts?: { tab?: string } | Command): string | undefined {
   if (typeof targetId === 'string' && targetId.trim()) return targetId.trim();
   const tab = opts instanceof Command ? opts.opts().tab : opts?.tab;
@@ -1172,12 +1180,14 @@ Examples:
 
   browserTab.command('new')
     .argument('[url]', 'Optional URL to open in the new tab')
+    .option('--wait-until <mode>', BROWSER_WAIT_UNTIL_DESCRIPTION)
     .description('Create a new tab and print its target ID')
-    .action(browserAction(async (page, url?: string) => {
+    .action(browserAction(async (page, url?: string, opts?: { waitUntil?: string } | Command) => {
       if (!page.newTab) {
         throw new Error('This browser session does not support creating tabs');
       }
-      const createdPage = await page.newTab(url);
+      const waitUntil = resolveBrowserWaitUntil(opts);
+      const createdPage = await page.newTab(url, waitUntil ? { waitUntil } : undefined);
       console.log(JSON.stringify({
         page: createdPage,
         url: url ?? null,

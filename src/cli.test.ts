@@ -1597,8 +1597,24 @@ describe('browser tab targeting commands', () => {
 
     await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'tab', 'new', 'https://three.example']);
 
-    expect(browserState.page?.newTab).toHaveBeenCalledWith('https://three.example');
+    expect(browserState.page?.newTab).toHaveBeenCalledWith('https://three.example', undefined);
     expect(consoleLogSpy.mock.calls.flat().join('\n')).toContain('"page": "tab-3"');
+  });
+
+  it('passes --wait-until through to the new tab navigation', async () => {
+    const program = createProgram('', '');
+
+    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'tab', 'new', 'https://three.example', '--wait-until', 'none']);
+
+    expect(browserState.page?.newTab).toHaveBeenCalledWith('https://three.example', { waitUntil: 'none' });
+  });
+
+  it('rejects an unsupported --wait-until value on tab new', async () => {
+    const program = createProgram('', '');
+
+    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'tab', 'new', 'https://three.example', '--wait-until', 'networkidle']);
+
+    expect(browserState.page?.newTab).not.toHaveBeenCalled();
   });
 
   it('prints the resolved target ID when browser open creates or navigates a tab', async () => {
@@ -1637,7 +1653,7 @@ describe('browser tab targeting commands', () => {
     await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'tab', 'new', 'https://three.example']);
     await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'eval', 'document.title']);
 
-    expect(browserState.page?.newTab).toHaveBeenCalledWith('https://three.example');
+    expect(browserState.page?.newTab).toHaveBeenCalledWith('https://three.example', undefined);
     expect(browserState.page?.setActivePage).not.toHaveBeenCalled();
     expect(browserState.page?.evaluate).toHaveBeenCalledWith('document.title');
   });

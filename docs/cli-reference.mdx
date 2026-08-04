@@ -55,6 +55,20 @@ webcmd web fetch-browser --url https://example.com/app-shell
 
 The old `web read` command has been renamed to `web fetch-browser`.
 
+## Browser Runtime
+
+`webcmd browser <session> <command>` drives a real browser tab. Run `webcmd browser --help` for the full surface; the bundled `webcmd-browser` skill is the agent-facing reference.
+
+```bash
+webcmd browser work open https://example.com
+webcmd browser work tab new https://example.com
+webcmd browser work tab new https://example.com --wait-until none
+```
+
+| Option | Purpose |
+| --- | --- |
+| `tab new --wait-until <mode>` | `load` (default) waits for the load event; `none` returns as soon as navigation commits, for pages that stream and never finish loading. |
+
 ## Top-Level Commands
 
 | Command | Purpose |

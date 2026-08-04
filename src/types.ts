@@ -110,7 +110,7 @@ export interface IPage {
   waitForDownload?(pattern?: string, timeoutMs?: number): Promise<BrowserDownloadWaitResult>;
   tabs(): Promise<any>;
   closeTab?(target?: number | string): Promise<void>;
-  newTab?(url?: string): Promise<string | undefined>;
+  newTab?(url?: string, options?: { waitUntil?: 'load' | 'none' }): Promise<string | undefined>;
   selectTab(target: number | string): Promise<void>;
   networkRequests(includeStatic?: boolean): Promise<any>;
   consoleMessages(level?: string): Promise<any>;

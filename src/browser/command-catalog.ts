@@ -103,6 +103,7 @@ const BROWSER_OPTION_VALUE_NAMES: Readonly<Record<string, string>> = {
   trace: 'mode',
   ttl: 'ms',
   until: 'duration',
+  waitUntil: 'mode',
   width: 'n',
 };
 
@@ -455,6 +456,7 @@ export const browserCommandCatalog: readonly HostedBrowserCommandContract[] = [
     'Create a new tab and print its target ID',
     'tabs',
     [positional('url', 'Optional URL to open in the new tab')],
+    [option('waitUntil', 'Wait condition for [url]: load (default) waits for the load event, none returns as soon as navigation commits')],
   ),
   command(
     'tab/select',

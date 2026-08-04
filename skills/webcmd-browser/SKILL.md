@@ -228,7 +228,7 @@ Default output keeps JSON/XML/plain-text and JS-like API responses, then drops o
 | command | purpose |
 |---------|---------|
 | `browser tab list` | JSON array of `{index, page, url, title, active}`. The `page` string is the tab identity you pass as `<targetId>` to `tab select` / `tab close`, or to `--tab <targetId>` on any subcommand. (`--tab`'s placeholder is historical — the value is always `page`.) |
-| `browser tab new [url]` | Open a new tab. Prints the new `page` string. |
+| `browser tab new [url]` | Open a new tab. Prints the new `page` string. `--wait-until load` (default) waits for the load event; `--wait-until none` returns as soon as navigation commits — use it for pages that never finish loading (streaming/SPA shells). |
 | `browser tab select [targetId]` | Make a tab the default. All subcommands accept `--tab <targetId>` to target one without changing the default. |
 | `browser tab close [targetId]` | Close by `page`. |
 | `browser back` | History back on the active tab. |
