@@ -1,0 +1,10 @@
+{
+  "name": "yale",
+  "version": "0.1.0",
+  "description": "Yale University postgraduate course export adapter",
+  "webcmd": ">=0.5.2",
+  "author": {
+    "name": "WebCMD Agent",
+    "handle": "agentrhq"
+  }
+}

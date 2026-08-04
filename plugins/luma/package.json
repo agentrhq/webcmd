@@ -1,0 +1,9 @@
+{
+  "name": "webcmd-plugin-luma",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Manage hosted Luma events, registration questions, and guests",
+  "peerDependencies": {
+    "@agentrhq/webcmd": ">=0.5.2"
+  }
+}

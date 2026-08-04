@@ -1,0 +1,9 @@
+{
+  "name": "webcmd-plugin-goettingen",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "University of Göttingen postgraduate course export adapter",
+  "peerDependencies": {
+    "@agentrhq/webcmd": ">=0.5.2"
+  }
+}
