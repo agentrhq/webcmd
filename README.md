@@ -26,9 +26,9 @@
 
 **Self-learning browser infra for AI agents.**
 
-WebCMD learns the navigational context of websites as agents use them, then compiles that knowledge into deterministic commands for faster, cheaper, more reliable browser automation. The goal is simple: stop making agents rediscover the same sites on every run and cut browser-agent token spend by up to 90%.
+Webcmd learns the navigational context of websites as agents use them, then compiles that knowledge into deterministic commands for faster, cheaper, more reliable browser automation. The goal is simple: stop making agents rediscover the same sites on every run and cut browser-agent token spend by up to 90%.
 
-On top of live browser control, WebCMD adds 3 layers of learnings. Each layer collapses cost and variance for the layer above it.
+On top of live browser control, Webcmd adds 3 layers of learnings. Each layer collapses cost and variance for the layer above it.
 
 | Layer | Scenario | What Webcmd Helps With |
 | --- | --- | --- |
