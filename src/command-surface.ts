@@ -1,8 +1,13 @@
 import { Command } from 'commander';
-import { ArgumentError } from './errors.js';
+import { ArgumentError, CliError, EXIT_CODES } from './errors.js';
 import type { Arg } from './registry.js';
 
-export const OUTPUT_FORMATS = ['table', 'plain', 'json', 'yaml', 'yml', 'md', 'markdown', 'csv'] as const;
+/** Canonical output format names accepted by the shared renderer. */
+export const OUTPUT_FORMATS = ['table', 'plain', 'json', 'yaml', 'md', 'csv'] as const;
+/** Accepted aliases that normalize onto the canonical names above. */
+export const OUTPUT_FORMAT_ALIASES: Readonly<Record<string, string>> = { yml: 'yaml', markdown: 'md' };
+/** Shared option description so every `-f/--format` flag advertises the same formats. */
+export const OUTPUT_FORMAT_HELP = `Output format: ${OUTPUT_FORMATS.join(', ')}`;
 export const TRACE_MODES = ['off', 'on', 'retain-on-failure'] as const;
 
 const BROWSER_WINDOW_MODES = ['foreground', 'background'] as const;
@@ -69,7 +74,7 @@ export function configureCommandSurface(command: Command, metadata: CommandSurfa
   }
 
   command
-    .option('-f, --format <fmt>', `Output format: ${OUTPUT_FORMATS.join(', ')}`, 'table')
+    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table')
     .option('--trace <mode>', `Trace capture: ${TRACE_MODES.join(', ')}`, 'off')
     .option('-v, --verbose', 'Debug output', false);
 
@@ -247,9 +252,33 @@ export function coerceCommandArguments(
 }
 
 export function parseOutputFormat(value: unknown): OutputFormat {
-  // Preserve the long-standing local behavior: unknown format names flow to
-  // output.ts, whose default switch branch renders a table.
-  return String(value);
+  const raw = String(value);
+  const lower = raw.toLowerCase();
+  const normalized = Object.prototype.hasOwnProperty.call(OUTPUT_FORMAT_ALIASES, lower)
+    ? OUTPUT_FORMAT_ALIASES[lower]!
+    : lower;
+  if (!OUTPUT_FORMATS.includes(normalized as (typeof OUTPUT_FORMATS)[number])) {
+    throw new ArgumentError(`Unknown output format "${raw}". Supported formats: ${OUTPUT_FORMATS.join(', ')}.`);
+  }
+  return normalized;
+}
+
+/**
+ * Validate and normalize an `-f/--format` value for a CLI action. Returns the
+ * canonical format, or `null` after emitting a usage error when the value is
+ * unsupported.
+ */
+export function resolveOutputFormat(raw: string | undefined): OutputFormat | null {
+  try {
+    return parseOutputFormat(raw);
+  } catch (err) {
+    if (err instanceof CliError) {
+      console.error(`error: ${err.message}`);
+      process.exitCode = EXIT_CODES.USAGE_ERROR;
+      return null;
+    }
+    throw err;
+  }
 }
 
 function parseTraceMode(value: unknown): TraceMode {

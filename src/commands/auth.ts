@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Command, InvalidArgumentError, Option } from 'commander';
+import { OUTPUT_FORMAT_HELP, resolveOutputFormat } from '../command-surface.js';
 import { AuthRequiredError, CliError, getErrorMessage } from '../errors.js';
 import { executeCommand } from '../execution.js';
 import {
@@ -465,7 +466,7 @@ export function registerAuthCommands(program: Command): Command {
     .option('--concurrency <n>', 'Maximum sites to check at once')
     .option('--timeout <seconds>', 'Per-site timeout in seconds')
     .addOption(new Option('--only <status>', 'Filter rows by status').choices(['all', 'logged-in', 'not-logged-in', 'unknown', 'error']).default('all'))
-    .option('-f, --format <fmt>', 'Output format: table, plain, json, yaml, md, csv', 'table')
+    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table')
     .action(async (opts) => {
       const globals = typeof status.optsWithGlobals === 'function' ? status.optsWithGlobals() as Record<string, unknown> : {};
       const rows = await collectAuthStatus({
@@ -476,7 +477,8 @@ export function registerAuthCommands(program: Command): Command {
         only: opts.only,
         profile: typeof globals.profile === 'string' && globals.profile.trim() ? globals.profile.trim() : undefined,
       });
-      const fmt = typeof opts.format === 'string' ? opts.format : 'table';
+      const fmt = resolveOutputFormat(opts.format);
+      if (fmt === null) return;
       renderOutput(rows, {
         fmt,
         fmtExplicit: status.getOptionValueSource('format') === 'cli',
@@ -493,7 +495,7 @@ export function registerAuthCommands(program: Command): Command {
     .option('--all', 'Ignore the 24h refresh throttle and force every selected site', false)
     .option('--concurrency <n>', 'Maximum sites to refresh at once')
     .option('--timeout <seconds>', 'Per-site timeout in seconds')
-    .option('-f, --format <fmt>', 'Output format: table, plain, json, yaml, md, csv', 'table')
+    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table')
     .action(async (opts) => {
       const globals = typeof refresh.optsWithGlobals === 'function' ? refresh.optsWithGlobals() as Record<string, unknown> : {};
       const rows = await collectAuthRefresh({
@@ -503,7 +505,8 @@ export function registerAuthCommands(program: Command): Command {
         timeout: opts.timeout,
         profile: typeof globals.profile === 'string' && globals.profile.trim() ? globals.profile.trim() : undefined,
       });
-      const fmt = typeof opts.format === 'string' ? opts.format : 'table';
+      const fmt = resolveOutputFormat(opts.format);
+      if (fmt === null) return;
       renderOutput(rows, {
         fmt,
         fmtExplicit: refresh.getOptionValueSource('format') === 'cli',

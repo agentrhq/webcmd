@@ -4,7 +4,12 @@ import { fileURLToPath } from 'node:url';
 import { Command, CommanderError } from 'commander';
 import { configureCompletionCommandSurface, configureListCommandSurface, configurePluginInstallSurface, configurePluginSearchSurface } from '../builtin-command-surface.js';
 import { BrowserSessionArgvError, rewriteBrowserArgv } from '../cli-argv-preprocess.js';
-import { CommanderStructuralError, MissingRequiredPositionalError } from '../command-surface.js';
+import {
+  CommanderStructuralError,
+  MissingRequiredPositionalError,
+  OUTPUT_FORMAT_HELP,
+  parseOutputFormat,
+} from '../command-surface.js';
 import { filterCommandsByTag, formatRootHelp, getCommandCompletionCandidates } from '../command-presentation.js';
 import {
   HOSTED_BUILTIN_COMMANDS,
@@ -72,6 +77,23 @@ class CommanderCompatibleError extends Error {
     readonly stdoutOutput?: string,
   ) {
     super(output.trimEnd());
+  }
+}
+
+/**
+ * Validate and normalize an `-f/--format` value for the hosted surfaces that
+ * build their own Commander grammar (`webcmd list`, `profile`, `plugin search`).
+ * Mirrors the local CLI behavior: an unsupported format is a usage error with
+ * Commander-style lowercase output and exit code 2.
+ */
+function validateHostedFormat(raw: string): string {
+  try {
+    return parseOutputFormat(raw);
+  } catch (err) {
+    if (err instanceof CliError) {
+      throw new CommanderStructuralError(`error: ${err.message}\n`, EXIT_CODES.USAGE_ERROR);
+    }
+    throw err;
   }
 }
 
@@ -760,7 +782,7 @@ function parseHostedListSurface(argv: readonly string[], literal: boolean): Pars
   root.exitOverride().configureOutput(output);
   list.exitOverride().configureOutput(output).action((options: { format: string; tag?: string }) => {
     actionRan = true;
-    parsedFormat = options.format;
+    parsedFormat = validateHostedFormat(options.format);
     parsedTag = options.tag;
     formatExplicit = list.getOptionValueSource('format') === 'cli';
   });
@@ -805,7 +827,7 @@ function parseHostedProfileSurface(
   profile.exitOverride().configureOutput(output);
 
   const configureFormat = (command: Command): Command =>
-    command.option('-f, --format <fmt>', 'Output format: table, json, yaml, md, csv', 'table');
+    command.option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
   const setParsed = (
     command: HostedProfileCommand,
     surface: Command,
@@ -815,7 +837,7 @@ function parseHostedProfileSurface(
     parsed = {
       kind: 'run',
       command,
-      format: options.format,
+      format: validateHostedFormat(options.format),
       formatExplicit: surface.getOptionValueSource('format') === 'cli',
       ...(value !== undefined ? { value } : {}),
     };
@@ -877,7 +899,7 @@ function parseHostedPluginSurface(
 
   const search = configurePluginSearchSurface(plugin.command('search'));
   search.exitOverride().configureOutput(output).action((query: string | undefined, options: { format: string }) => {
-    parsed = { kind: 'run', command: 'search', ...(query !== undefined ? { query } : {}), format: options.format };
+    parsed = { kind: 'run', command: 'search', ...(query !== undefined ? { query } : {}), format: validateHostedFormat(options.format) };
   });
   const install = configurePluginInstallSurface(plugin.command('install'));
   install.exitOverride().configureOutput(output).action((source: string) => {

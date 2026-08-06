@@ -1,7 +1,8 @@
+import { OUTPUT_FORMAT_HELP } from './command-surface.js';
 import type { Command } from 'commander';
 
 export const LIST_COMMAND_DESCRIPTION = 'List all available CLI commands';
-export const LIST_FORMAT_DESCRIPTION = 'Output format: table, json, yaml, md, csv';
+export const LIST_FORMAT_DESCRIPTION = OUTPUT_FORMAT_HELP;
 export const COMPLETION_COMMAND_DESCRIPTION = 'Output shell completion script';
 export const COMPLETION_SHELL_DESCRIPTION = 'Shell type: bash, zsh, or fish';
 
@@ -25,7 +26,7 @@ export function configurePluginSearchSurface(command: Command): Command {
   return command
     .description('Search installable marketplace plugins')
     .argument('[query]', 'Search query matched against plugin name and description')
-    .option('-f, --format <fmt>', 'Output format: table, json', 'table');
+    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
 }
 
 /** Configure plugin installation grammar shared by local and hosted runtimes. */

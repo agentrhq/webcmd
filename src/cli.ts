@@ -15,6 +15,7 @@ import { findPackageRoot, getBuiltEntryCandidates } from './package-paths.js';
 import { type CliCommand, getRegistry } from './registry.js';
 import { commandListPresentation, filterCommandsByTag, toPresentableCommand } from './command-presentation.js';
 import { configureCompletionCommandSurface, configureListCommandSurface, configurePluginInstallSurface, configurePluginSearchSurface } from './builtin-command-surface.js';
+import { OUTPUT_FORMAT_HELP, resolveOutputFormat } from './command-surface.js';
 import { render as renderOutput } from './output.js';
 import { PKG_VERSION } from './version.js';
 import { printCompletionScript } from './completion.js';
@@ -578,12 +579,14 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string): Command 
 
   // ── Built-in: list ────────────────────────────────────────────────────────
 
-  configureListCommandSurface(program.command('list'))
+  const listCmd = configureListCommandSurface(program.command('list'))
     .action((opts) => {
-      const externalClis = opts.format === 'table' ? loadExternalClis() : [];
+      const fmt = resolveOutputFormat(opts.format);
+      if (fmt === null) return;
+      const externalClis = fmt === 'table' ? loadExternalClis() : [];
       const presentation = commandListPresentation(
         filterCommandsByTag([...new Set(getRegistry().values())].map(toPresentableCommand), opts.tag),
-        opts.format,
+        fmt,
         {
           externalClis: externalClis.map((external) => ({
             label: formatExternalCliLabel(external),
@@ -597,7 +600,8 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string): Command 
         return;
       }
       renderOutput(presentation.rows, {
-        fmt: opts.format,
+        fmt,
+        fmtExplicit: listCmd.getOptionValueSource('format') === 'cli',
         columns: presentation.columns,
         title: 'webcmd/list',
         source: 'webcmd list',
@@ -641,20 +645,22 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string): Command 
       });
     });
 
-  skillsCmd
+  const skillsListCmd = skillsCmd
     .command('list')
     .description('List bundled Webcmd skills')
-    .option('-f, --format <fmt>', 'Output format: table, json, yaml, md, csv', 'table')
-    .action((opts) => {
-      const rows = listWebcmdSkills();
-      renderOutput(rows, {
-        fmt: opts.format,
-        fmtExplicit: !!opts.format,
-        columns: ['name', 'description', 'version', 'path'],
-        title: 'webcmd/skills/list',
-        source: 'webcmd skills list',
-      });
+    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
+  skillsListCmd.action((opts) => {
+    const fmt = resolveOutputFormat(opts.format);
+    if (fmt === null) return;
+    const rows = listWebcmdSkills();
+    renderOutput(rows, {
+      fmt,
+      fmtExplicit: skillsListCmd.getOptionValueSource('format') === 'cli',
+      columns: ['name', 'description', 'version', 'path'],
+      title: 'webcmd/skills/list',
+      source: 'webcmd skills list',
     });
+  });
 
   skillsCmd
     .command('add')
@@ -732,28 +738,29 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string): Command 
 
   const authCmd = registerAuthCommands(program);
 
-  program
+  const conventionAuditCmd = program
     .command('convention-audit')
     .description('Scan adapters for agent-native convention violations')
     .argument('[target]', 'site or site/name')
     .option('--site <site>', 'Limit audit to one site')
-    .option('-f, --format <fmt>', 'Output format: table, json, yaml', 'table')
-    .option('--strict', 'Exit non-zero when violations are found', false)
-    .action(async (target, opts) => {
-      const { runConventionAudit, renderConventionAuditText } = await import('./convention-audit.js');
-      const report = runConventionAudit({
-        projectRoot: findPackageRoot(CLI_FILE),
-        target,
-        site: opts.site,
-      });
-      const fmt = String(opts.format ?? 'table').toLowerCase();
-      if (fmt === 'json' || fmt === 'yaml' || fmt === 'yml') {
-        renderOutput(report, { fmt });
-      } else {
-        console.log(renderConventionAuditText(report));
-      }
-      if (opts.strict && !report.ok) process.exitCode = EXIT_CODES.GENERIC_ERROR;
+    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table')
+    .option('--strict', 'Exit non-zero when violations are found', false);
+  conventionAuditCmd.action(async (target, opts) => {
+    const fmt = resolveOutputFormat(opts.format);
+    if (fmt === null) return;
+    const { runConventionAudit, renderConventionAuditText } = await import('./convention-audit.js');
+    const report = runConventionAudit({
+      projectRoot: findPackageRoot(CLI_FILE),
+      target,
+      site: opts.site,
     });
+    if (fmt === 'table') {
+      console.log(renderConventionAuditText(report));
+    } else {
+      renderOutput(report, { fmt });
+    }
+    if (opts.strict && !report.ok) process.exitCode = EXIT_CODES.GENERIC_ERROR;
+  });
 
   // ── Built-in: browser (browser control for Claude Code skill) ───────────────
   //
@@ -1216,114 +1223,123 @@ cli({
     });
 
 
-  pluginCmd
+  const pluginListCmd = pluginCmd
     .command('list')
     .description('List installed plugins')
-    .option('-f, --format <fmt>', 'Output format: table, json', 'table')
-    .action(async (opts) => {
-      const { listPlugins } = await import('./plugin.js');
-      const plugins = listPlugins();
-      if (plugins.length === 0) {
-        console.log('  No plugins installed.');
-        console.log(`  Install one with: ${CLI_COMMAND} plugin install github:user/repo`);
-        return;
-      }
-      if (opts.format === 'json') {
-        renderOutput(plugins, {
-          fmt: 'json',
-          columns: ['name', 'commands', 'source'],
-          title: `${CLI_COMMAND}/plugins`,
-          source: `${CLI_COMMAND} plugin list`,
-        });
-        return;
-      }
-      console.log();
-      console.log('  Installed plugins');
-      console.log();
+    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
+  pluginListCmd.action(async (opts) => {
+    const fmt = resolveOutputFormat(opts.format);
+    if (fmt === null) return;
+    const { listPlugins } = await import('./plugin.js');
+    const plugins = listPlugins();
+    if (fmt !== 'table') {
+      renderOutput(plugins, {
+        fmt,
+        fmtExplicit: pluginListCmd.getOptionValueSource('format') === 'cli',
+        columns: ['name', 'commands', 'source'],
+        title: `${CLI_COMMAND}/plugins`,
+        source: `${CLI_COMMAND} plugin list`,
+      });
+      return;
+    }
+    if (plugins.length === 0) {
+      console.log('  No plugins installed.');
+      console.log(`  Install one with: ${CLI_COMMAND} plugin install github:user/repo`);
+      return;
+    }
+    console.log();
+    console.log('  Installed plugins');
+    console.log();
 
-      // Group by monorepo
-      const standalone = plugins.filter((p) => !p.monorepoName);
-      const monoGroups = new Map<string, typeof plugins>();
-      for (const p of plugins) {
-        if (!p.monorepoName) continue;
-        const g = monoGroups.get(p.monorepoName) ?? [];
-        g.push(p);
-        monoGroups.set(p.monorepoName, g);
-      }
+    // Group by monorepo
+    const standalone = plugins.filter((p) => !p.monorepoName);
+    const monoGroups = new Map<string, typeof plugins>();
+    for (const p of plugins) {
+      if (!p.monorepoName) continue;
+      const g = monoGroups.get(p.monorepoName) ?? [];
+      g.push(p);
+      monoGroups.set(p.monorepoName, g);
+    }
 
-      for (const p of standalone) {
+    for (const p of standalone) {
+      const version = p.version ? ` @${p.version}` : '';
+      const desc = p.description ? ` — ${p.description}` : '';
+      const cmds = p.commands.length > 0 ? ` (${p.commands.join(', ')})` : '';
+      const src = p.source ? ` ← ${p.source}` : '';
+      console.log(`  ${p.name}${version}${desc}${cmds}${src}`);
+    }
+
+    for (const [mono, group] of monoGroups) {
+      console.log();
+      console.log(`  📦 ${mono}` + ' (monorepo)');
+      for (const p of group) {
         const version = p.version ? ` @${p.version}` : '';
         const desc = p.description ? ` — ${p.description}` : '';
         const cmds = p.commands.length > 0 ? ` (${p.commands.join(', ')})` : '';
-        const src = p.source ? ` ← ${p.source}` : '';
-        console.log(`  ${p.name}${version}${desc}${cmds}${src}`);
+        console.log(`    ${p.name}${version}${desc}${cmds}`);
       }
+    }
 
-      for (const [mono, group] of monoGroups) {
-        console.log();
-        console.log(`  📦 ${mono}` + ' (monorepo)');
-        for (const p of group) {
-          const version = p.version ? ` @${p.version}` : '';
-          const desc = p.description ? ` — ${p.description}` : '';
-          const cmds = p.commands.length > 0 ? ` (${p.commands.join(', ')})` : '';
-          console.log(`    ${p.name}${version}${desc}${cmds}`);
-        }
-      }
-
-      console.log();
-      console.log(`  ${plugins.length} plugin(s) installed`);
-      console.log();
-    });
+    console.log();
+    console.log(`  ${plugins.length} plugin(s) installed`);
+    console.log();
+  });
 
 
   const catalogCmd = pluginCmd
     .command('catalog')
     .description('Manage plugin marketplace sources');
 
-  catalogCmd
+  const catalogListCmd = catalogCmd
     .command('list')
     .description('List configured plugin marketplace sources')
-    .option('-f, --format <fmt>', 'Output format: table, json', 'table')
-    .action(async (opts: { format?: string }) => {
-      const { readCatalog } = await import('./plugin-catalog.js');
-      try {
-        const catalog = readCatalog();
-        if (opts.format === 'json') {
-          renderOutput(catalog, { fmt: 'json' });
-          return;
-        }
-        renderOutput(catalog.sources, {
-          fmt: opts.format,
-          columns: ['id', 'source', 'manifestUrl'],
-          title: `${CLI_COMMAND}/plugin-catalog`,
-          source: `${CLI_COMMAND} plugin catalog list`,
-        });
-      } catch (err) {
-        console.error(`Error: ${getErrorMessage(err)}`);
-        process.exitCode = EXIT_CODES.GENERIC_ERROR;
+    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
+  catalogListCmd.action(async (opts: { format?: string }) => {
+    const fmt = resolveOutputFormat(opts.format);
+    if (fmt === null) return;
+    const { readCatalog } = await import('./plugin-catalog.js');
+    try {
+      const catalog = readCatalog();
+      if (fmt === 'json') {
+        renderOutput(catalog, { fmt: 'json' });
+        return;
       }
-    });
+      renderOutput(catalog.sources, {
+        fmt,
+        fmtExplicit: catalogListCmd.getOptionValueSource('format') === 'cli',
+        columns: ['id', 'source', 'manifestUrl'],
+        title: `${CLI_COMMAND}/plugin-catalog`,
+        source: `${CLI_COMMAND} plugin catalog list`,
+      });
+    } catch (err) {
+      console.error(`Error: ${getErrorMessage(err)}`);
+      process.exitCode = EXIT_CODES.GENERIC_ERROR;
+    }
+  });
 
-  catalogCmd
+  const catalogAddCmd = catalogCmd
     .command('add')
     .description('Add a plugin marketplace source')
     .argument('<source>', 'Marketplace source, e.g. github:owner/repo')
-    .option('-f, --format <fmt>', 'Output format: table, json', 'table')
-    .action(async (source: string, opts: { format?: string }) => {
-      const { addCatalogSource } = await import('./plugin-catalog.js');
-      try {
-        const added = await addCatalogSource(source);
-        renderOutput(opts.format === 'json' ? added : [added], {
-          fmt: opts.format,
-          columns: ['id', 'source', 'manifestUrl'],
-          title: `${CLI_COMMAND}/plugin-catalog`,
-          source: `${CLI_COMMAND} plugin catalog add`,
-        });
-      } catch (err) {
-        console.error(`Error: ${getErrorMessage(err)}`);
-        process.exitCode = EXIT_CODES.GENERIC_ERROR;
-      }
-    });
+    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
+  catalogAddCmd.action(async (source: string, opts: { format?: string }) => {
+    const fmt = resolveOutputFormat(opts.format);
+    if (fmt === null) return;
+    const { addCatalogSource } = await import('./plugin-catalog.js');
+    try {
+      const added = await addCatalogSource(source);
+      renderOutput(fmt === 'json' ? added : [added], {
+        fmt,
+        fmtExplicit: catalogAddCmd.getOptionValueSource('format') === 'cli',
+        columns: ['id', 'source', 'manifestUrl'],
+        title: `${CLI_COMMAND}/plugin-catalog`,
+        source: `${CLI_COMMAND} plugin catalog add`,
+      });
+    } catch (err) {
+      console.error(`Error: ${getErrorMessage(err)}`);
+      process.exitCode = EXIT_CODES.GENERIC_ERROR;
+    }
+  });
 
   catalogCmd
     .command('remove')
@@ -1340,33 +1356,37 @@ cli({
       }
     });
 
-  configurePluginSearchSurface(pluginCmd.command('search'))
-    .action(async (query: string | undefined, opts: { format?: string }) => {
-      const { readCatalog, searchCatalogPlugins } = await import('./plugin-catalog.js');
-      try {
-        const catalog = readCatalog();
-        const result = await searchCatalogPlugins(catalog, { query });
-        if (opts.format === 'json') {
-          renderOutput(result, { fmt: 'json' });
-        } else {
-          for (const err of result.errors) {
-            console.error(`Warning: ${err.sourceId}: ${err.message}`);
-          }
-          renderOutput(result.plugins, {
-            fmt: opts.format,
-            columns: ['name', 'description', 'version', 'sourceId', 'installSource', 'webcmd'],
-            title: `${CLI_COMMAND}/plugin-search`,
-            source: `${CLI_COMMAND} plugin search`,
-          });
+  const pluginSearchCmd = configurePluginSearchSurface(pluginCmd.command('search'));
+  pluginSearchCmd.action(async (query: string | undefined, opts: { format?: string }) => {
+    const fmt = resolveOutputFormat(opts.format);
+    if (fmt === null) return;
+    const { readCatalog, searchCatalogPlugins } = await import('./plugin-catalog.js');
+    try {
+      const catalog = readCatalog();
+      const result = await searchCatalogPlugins(catalog, { query });
+      const fmtExplicit = pluginSearchCmd.getOptionValueSource('format') === 'cli';
+      if (fmt === 'json') {
+        renderOutput(result, { fmt });
+      } else {
+        for (const err of result.errors) {
+          console.error(`Warning: ${err.sourceId}: ${err.message}`);
         }
-        if (catalog.sources.length > 0 && result.errors.length === catalog.sources.length) {
-          process.exitCode = EXIT_CODES.GENERIC_ERROR;
-        }
-      } catch (err) {
-        console.error(`Error: ${getErrorMessage(err)}`);
+        renderOutput(result.plugins, {
+          fmt,
+          fmtExplicit,
+          columns: ['name', 'description', 'version', 'sourceId', 'installSource', 'webcmd'],
+          title: `${CLI_COMMAND}/plugin-search`,
+          source: `${CLI_COMMAND} plugin search`,
+        });
+      }
+      if (catalog.sources.length > 0 && result.errors.length === catalog.sources.length) {
         process.exitCode = EXIT_CODES.GENERIC_ERROR;
       }
-    });
+    } catch (err) {
+      console.error(`Error: ${getErrorMessage(err)}`);
+      process.exitCode = EXIT_CODES.GENERIC_ERROR;
+    }
+  });
 
   pluginCmd
     .command('create')
@@ -1671,27 +1691,30 @@ cli({
       registerExternalCli(name, { binary: opts.binary, install: opts.install, description: opts.desc });
     });
 
-  externalCmd
+  const externalListCmd = externalCmd
     .command('list')
     .description('List registered external CLIs')
-    .option('-f, --format <fmt>', 'Output format: table, json, yaml, md, csv', 'table')
-    .action((opts) => {
-      const rows = loadExternalClis().map((ext) => ({
-        name: ext.name,
-        package: ext.package ?? '',
-        binary: ext.binary,
-        installed: isBinaryInstalled(ext.binary),
-        description: ext.description ?? '',
-        homepage: ext.homepage ?? '',
-        tags: ext.tags?.join(', ') ?? '',
-      }));
-      renderOutput(rows, {
-        fmt: opts.format,
-        columns: ['name', 'package', 'binary', 'installed', 'description', 'homepage', 'tags'],
-        title: 'webcmd/external/list',
-        source: 'webcmd external list',
-      });
+    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
+  externalListCmd.action((opts) => {
+    const fmt = resolveOutputFormat(opts.format);
+    if (fmt === null) return;
+    const rows = loadExternalClis().map((ext) => ({
+      name: ext.name,
+      package: ext.package ?? '',
+      binary: ext.binary,
+      installed: isBinaryInstalled(ext.binary),
+      description: ext.description ?? '',
+      homepage: ext.homepage ?? '',
+      tags: ext.tags?.join(', ') ?? '',
+    }));
+    renderOutput(rows, {
+      fmt,
+      fmtExplicit: externalListCmd.getOptionValueSource('format') === 'cli',
+      columns: ['name', 'package', 'binary', 'installed', 'description', 'homepage', 'tags'],
+      title: 'webcmd/external/list',
+      source: 'webcmd external list',
     });
+  });
 
   function passthroughExternal(name: string, parsedArgs?: string[]) {
     const args = parsedArgs ?? (() => {
