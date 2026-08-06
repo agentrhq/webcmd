@@ -55,19 +55,38 @@ webcmd web fetch-browser --url https://example.com/app-shell
 
 The old `web read` command has been renamed to `web fetch-browser`.
 
-## Browser Runtime
+## Local Browser Programs
 
-`webcmd browser <session> <command>` drives a real browser tab. Run `webcmd browser --help` for the full surface; the bundled `webcmd-browser` skill is the agent-facing reference.
+`browser run` executes one Playwright-style JavaScript program against an
+existing local CloakBrowser session:
 
 ```bash
-webcmd browser work open https://example.com
-webcmd browser work tab new https://example.com
-webcmd browser work tab new https://example.com --wait-until none
+webcmd browser work snapshot --snapshot-mode act
+webcmd browser work snapshot --snapshot-mode read
+webcmd browser work run --stdin --timeout 45
+webcmd browser work run --stdin --no-snapshot-diff
 ```
 
-| Option | Purpose |
-| --- | --- |
-| `tab new --wait-until <mode>` | `load` (default) waits for the load event; `none` returns as soon as navigation commits, for pages that stream and never finish loading. |
+Use `snapshot` for explicit page inspection. `act` is the default
+action-first mode, `tree` preserves fuller page structure, and `read` extracts readable article/content text. Exactly one of `--file
+<path>` or `--stdin` is required for `run`. The CLI reads files locally and
+sends source—not the path—to the local daemon. `--timeout` is in seconds and
+`--max-output` bounds returned results and logs. Successful runs return a
+`snapshotDiff` by default; pass `--no-snapshot-diff` only when the program is
+pure read-only and its result already contains the needed state.
+
+The program runs in a fresh QuickJS sandbox with `page`, `context`, `browser`,
+and `console` globals. `page.snapshotForAI()` is not available. It can use the
+supported Page/Frame/Locator methods and passively inspect request and response
+events. It cannot access Node.js, the filesystem, environment variables, raw
+CDP endpoints, browser launch/connect APIs, or browser-context ownership.
+Screenshot bytes are written to a Webcmd-owned cache directory and returned as
+a receipt.
+
+The public browser surface is `tabs`, `bind`, `run`, `snapshot`, and `close`.
+Reusable adapters continue to use the existing `IPage` API. Playwright-style
+programs are for reconnaissance and ad-hoc multi-step work; they are not pasted
+into adapter modules.
 
 ## Top-Level Commands
 
@@ -162,6 +181,7 @@ Register our internal `releasectl` binary as a Webcmd external CLI with a short 
 | `~/.webcmd/` | User-level Webcmd state. |
 | `~/.webcmd/clis/` | Private adapters and local overrides. |
 | `~/.webcmd/cache/browser-network/` | Browser network capture cache. |
+| `~/.webcmd/cache/browser-run/` | Host-owned browser-run screenshot artifacts. |
 | `~/.webcmd/external-clis.yaml` | User external CLI registry. |
 | `skills/` | Bundled agent skills shipped with the package. |
 

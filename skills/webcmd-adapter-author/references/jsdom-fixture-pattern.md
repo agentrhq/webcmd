@@ -35,7 +35,9 @@ Temporary debug dumps still belong only in:
 Use the browser to capture the specific DOM region, not the entire page.
 
 ```bash
-webcmd browser eval "document.querySelector('<root-selector>')?.outerHTML"
+webcmd browser recon run --stdin <<'JS'
+return await page.evaluate(() => document.querySelector('<root-selector>')?.outerHTML ?? '');
+JS
 ```
 
 Save only the required HTML for the parser.

@@ -5,9 +5,6 @@
   <a href="https://www.npmjs.com/package/@agentrhq/webcmd">
     <img alt="NPM version" src="https://img.shields.io/npm/v/@agentrhq/webcmd.svg?style=for-the-badge&color=1E88E5&labelColor=000000">
   </a>
-  <a href="https://www.npmjs.com/package/@agentrhq/webcmd">
-    <img alt="NPM downloads" src="https://img.shields.io/npm/dt/@agentrhq/webcmd.svg?style=for-the-badge&color=1E88E5&labelColor=000000">
-  </a>
   <a href="https://webcmd.dev/docs">
     <img alt="Documentation" src="https://img.shields.io/badge/docs-webcmd.dev-7C3AED.svg?style=for-the-badge&labelColor=000000">
   </a>
@@ -36,6 +33,15 @@ On top of live browser control, WebCMD adds 3 layers of learnings. Each layer co
 | 2. Sitemap memory | The site is familiar, but the action space is not fully known. | Capture an agent-facing sitemap of observed pages, states, actions, workflows, APIs, pitfalls, and fallback paths. |
 | 3. CLI authoring | The action space is known, but the path is still too variable for one fixed sequence. | Explicitly author a reusable `webcmd <site>` adapter with structured output, so future agents spend tokens on the task instead of navigation. |
 | 4. Extend existing CLIs | The workflow is deterministic enough to stop browsing. | Extend the `webcmd <site>` adapter with a tailored command so the workflow runs instantly with the least amount of tokens. |
+
+For local, multi-step browser exploration, agents can send one sandboxed
+Playwright-style program to an existing CloakBrowser session:
+
+```bash
+webcmd browser work run --file explore.js
+printf 'const page = await browser.currentPage(); return await page.title();' \
+  | webcmd browser work run --stdin
+```
 
 ## Demo
 
@@ -124,21 +130,8 @@ Webcmd Cloud can run supported commands and browser sessions on hosted infrastru
 
 | Plugin | Description | Author |
 | --- | --- | --- |
-| [`bmwblog`](./plugins/bmwblog/) | BMWBLOG article discovery commands for Webcmd | [WebCMD Agent](https://github.com/agentrhq) |
-| [`cincinnati`](./plugins/cincinnati/) | University of Cincinnati postgraduate course export adapter | [WebCMD Agent](https://github.com/agentrhq) |
-| [`concordia`](./plugins/concordia/) | Concordia University Montréal postgraduate course export adapter | [WebCMD Agent](https://github.com/agentrhq) |
-| [`goettingen`](./plugins/goettingen/) | University of Göttingen postgraduate course export adapter | [WebCMD Agent](https://github.com/agentrhq) |
-| [`heidelberg`](./plugins/heidelberg/) | Heidelberg University postgraduate course export adapter | [WebCMD Agent](https://github.com/agentrhq) |
-| [`hft`](./plugins/hft/) | HFT Stuttgart postgraduate course export adapter | [WebCMD Agent](https://github.com/agentrhq) |
-| [`iit`](./plugins/iit/) | Illinois Institute of Technology postgraduate course export adapter | [WebCMD Agent](https://github.com/agentrhq) |
-| [`jhu`](./plugins/jhu/) | Johns Hopkins University postgraduate course export adapter | [WebCMD Agent](https://github.com/agentrhq) |
-| [`luma`](./plugins/luma/) | Manage hosted Luma events, registration questions, and guests | [Webcmd](https://github.com/webcmd) |
 | [`pypi`](./plugins/pypi/) | Inspect public Python package metadata and releases from PyPI | [Kemal Kaya](https://github.com/yoldaolmak) |
 | [`skyscanner`](./plugins/skyscanner/) | Skyscanner flight search commands for Webcmd | [Rishabh](https://github.com/rishabhraj36) |
-| [`techcrunch`](./plugins/techcrunch/) | Search and read TechCrunch stories from its public API | [WebCMD Agent](https://github.com/agentrhq) |
-| [`ualberta`](./plugins/ualberta/) | University of Alberta postgraduate course export adapter | [WebCMD Agent](https://github.com/agentrhq) |
-| [`yale`](./plugins/yale/) | Yale University postgraduate course export adapter | [WebCMD Agent](https://github.com/agentrhq) |
-| [`ycombinator`](./plugins/ycombinator/) | Read-only Y Combinator startup directory commands for WebCMD | [WebCMD Agent](https://github.com/agentrhq) |
 <!-- webcmd-community-plugins:end -->
 
 ## Contributing

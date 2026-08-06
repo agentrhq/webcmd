@@ -34,8 +34,10 @@ Do not install Node.js or silently fall back to `npx`.
 ## The Three Pillars
 
 - **Adapter commands:** `webcmd <site> <command> [...]`. Built-in adapters live in `clis/`; community adapters promoted to the main repo live as plugins under `plugins/`; private iteration adapters live in `~/.webcmd/clis/`. Each command has a strategy such as `PUBLIC`, `COOKIE`, `INTERCEPT`, `UI`, or `LOCAL`.
-- **Browser driving:** `webcmd browser *` subcommands (`open`, `state`, `click`, `type`, `select`, `find`, `extract`, `network`) for ad-hoc interaction when no adapter covers the task. See `webcmd-browser`.
+- **Browser driving:** use an existing adapter command first; otherwise load `webcmd-browser` and run Playwright.
 - **External CLI passthrough:** `webcmd gh`, `webcmd docker`, `webcmd vercel`, and similar wrappers. Manage them with `webcmd external install <name>` or `webcmd external register <name>`.
+
+**REQUIRED SUB-SKILL:** Before raw browser work, load `webcmd-browser`.
 
 ## Install
 
@@ -108,7 +110,7 @@ Use this fallback order:
 | `-f, --format <fmt>` | `table` in TTY by default; `yaml` outside TTY by default; also supports `json`, `plain`, `md`, `csv`. Agents usually want `-f json`. |
 | `-v, --verbose` | Debug logs and stack traces on failure; also sets `WEBCMD_VERBOSE=1`. |
 
-Command-specific flags such as `--limit`, `--tab`, and `--filter` are not universal. Read `<site> <command> --help`.
+Command-specific flags such as `--limit` and `--filter` are not universal. Read `<site> <command> --help`.
 
 ## Output Formats
 
@@ -233,8 +235,8 @@ The script prints to stdout; source or save it according to your shell.
 
 Do not invoke these removed commands:
 
-- `webcmd explore <url>`: use `webcmd browser network` and `webcmd browser find`, or the `webcmd-adapter-author` workflow.
-- `webcmd record <url>`: manual capture now lives in `webcmd browser network --detail`.
+- `webcmd explore <url>`: use the `webcmd-adapter-author` workflow.
+- `webcmd record <url>`: use a Playwright run through `webcmd-browser`.
 - Top-level `webcmd desktop *` groups: use their adapters instead.
 
 ## Do Not

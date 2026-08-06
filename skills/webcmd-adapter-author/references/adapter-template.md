@@ -2,6 +2,9 @@
 
 Use this after recon, endpoint verification, field decoding, output design, and strategy-note writing are complete.
 
+Playwright-style browser-run code is reconnaissance, not adapter source.
+Implement the observed behavior with the existing adapter APIs.
+
 ## Create The File
 
 For private iteration:

@@ -172,9 +172,9 @@ describe('hosted availability', () => {
       .toEqual({ mode: 'local-only', reason: 'desktop-app' });
     expect(deriveHostedAvailability({ strategy: 'cookie', domain: 'example.com' }))
       .toEqual({ mode: 'hosted' });
-    expect(deriveBrowserAvailability('bind'))
-      .toEqual({ mode: 'local-only', reason: 'browser-bind' });
-    expect(deriveBrowserAvailability('open')).toEqual({ mode: 'hosted' });
+    expect(deriveBrowserAvailability('bind')).toEqual({ mode: 'hosted' });
+    expect(deriveBrowserAvailability('run')).toEqual({ mode: 'hosted' });
+    expect(deriveBrowserAvailability('tabs')).toEqual({ mode: 'hosted' });
   });
 
   it('matches the reviewed local-only adapter exception sets exactly', () => {

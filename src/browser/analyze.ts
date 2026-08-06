@@ -1,5 +1,5 @@
 /**
- * `browser analyze <url>` — turn site-recon guesswork into deterministic CLI output.
+ * Site-recon heuristics used by browser-run documentation and tests.
  *
  * When an agent starts a new adapter, the first question is "which pattern am
  * I looking at?" (A/B/C/D/E from site-recon docs) and "will Node-side fetch
@@ -507,15 +507,15 @@ export function analyzeSite(
   } else if (pattern.pattern === 'A') {
     next = 'Inspect `api_candidates`, then replay the best endpoint and record the status/content-type/sample shape in your strategy note; do not choose API strategy from XHR count alone.';
   } else if (pattern.pattern === 'B') {
-    next = 'Read the SSR global via `webcmd browser eval "JSON.stringify(window.__INITIAL_STATE__ ?? window.__NUXT__ ?? window.__NEXT_DATA__ ?? window.__APOLLO_STATE__)"` — no API needed.';
+    next = 'Read the SSR global with `webcmd browser <session> run --stdin` and page.evaluate(() => window.__INITIAL_STATE__ ?? window.__NUXT__ ?? window.__NEXT_DATA__ ?? window.__APOLLO_STATE__) — no API needed.';
   } else if (pattern.pattern === 'C') {
-    next = 'No API visible — use SSR HTML scrape (e.g. `webcmd browser extract`) against the rendered page.';
+    next = 'No API visible — use `webcmd browser <session> snapshot --snapshot-mode read` or DOM extraction inside `browser run` against the rendered page.';
   } else if (pattern.pattern === 'D') {
     next = 'Endpoints need auth. Re-open the page from a signed-in session, then retry analyze; see `field-decode-playbook` §4 for token tracing.';
   } else if (pattern.pattern === 'E') {
     next = 'WebSocket stream detected — find the underlying HTTP poll/long-poll endpoint; raw WS is not supported.';
   } else {
-    next = 'No strong signal. Manually inspect `webcmd browser network --all` and pick a pattern.';
+    next = 'No strong signal. Use `webcmd browser <session> run --stdin` with response listeners and pick a pattern from the captured evidence.';
   }
 
   return {

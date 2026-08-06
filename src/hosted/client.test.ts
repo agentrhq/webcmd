@@ -1014,6 +1014,81 @@ describe('HostedClient', () => {
     ]);
   });
 
+  it('accepts compact hosted snapshot responses', async () => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'wcmd_live_test',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        result: { text: 'button Save' },
+        run: {
+          executionId: 'exec_1',
+          session: 'work',
+          profile: { id: 'profile_default', displayName: 'default' },
+        },
+      }), { status: 200 }),
+    });
+
+    await expect(client.runBrowserAction('work', {
+      command: 'browser/snapshot', action: 'snapshot', args: { snapshotMode: 'read' },
+    })).resolves.toMatchObject({ result: { text: 'button Save' } });
+  });
+
+  it('accepts the live-view expiry returned with a hosted browser run', async () => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'wcmd_live_test',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        result: { url: 'https://example.com' },
+        columns: ['url'],
+        trace: null,
+        run: {
+          executionId: 'exec_1',
+          session: 'work',
+          profile: { id: 'profile_default', displayName: 'default' },
+          liveViewUrl: 'https://api.example.com/account/live/view_1',
+          expiresAt: '2026-08-03T20:54:04.384Z',
+        },
+        execution: { id: 'exec_1', status: 'succeeded' },
+      }), { status: 200 }),
+    });
+
+    await expect(client.runBrowserAction('work', {
+      command: 'browser/open',
+      action: 'navigate',
+      args: { url: 'https://example.com' },
+    })).resolves.toMatchObject({
+      run: { expiresAt: '2026-08-03T20:54:04.384Z' },
+    });
+  });
+
+  it('rejects a non-string hosted browser run expiry', async () => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'wcmd_live_test',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        result: { url: 'https://example.com' },
+        columns: ['url'],
+        trace: null,
+        run: {
+          executionId: 'exec_1',
+          session: 'work',
+          profile: { id: 'profile_default', displayName: 'default' },
+          expiresAt: 123,
+        },
+        execution: { id: 'exec_1', status: 'succeeded' },
+      }), { status: 200 }),
+    });
+
+    await expect(client.runBrowserAction('work', {
+      command: 'browser/open',
+      action: 'navigate',
+      args: { url: 'https://example.com' },
+    })).rejects.toMatchObject({ code: 'HOSTED_PROTOCOL' });
+  });
+
   it('attaches the workspace header when a workspace is configured', async () => {
     const requests: Array<{ workspace: string | null }> = [];
     const client = new HostedClient({

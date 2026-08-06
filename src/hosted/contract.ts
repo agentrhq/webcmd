@@ -1,6 +1,7 @@
 import { commandHelpData } from '../help.js';
 import type { Arg, CliCommand } from '../registry.js';
 import { browserCommandCatalog } from '../browser/command-catalog.js';
+import type { HostedBrowserActionName } from './types.js';
 import {
   deriveBrowserAvailability,
   deriveHostedAvailability,
@@ -64,7 +65,7 @@ export interface HostedBrowserCommandContract {
   positionals: HostedArgumentContract[];
   options: HostedArgumentContract[];
   sessionPolicy: HostedSessionPolicy;
-  action?: string;
+  action?: HostedBrowserActionName;
 }
 
 export interface HostedContractCommand {

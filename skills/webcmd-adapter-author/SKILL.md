@@ -8,7 +8,10 @@ allowed-tools: Bash(webcmd:*), Read, Edit, Write, Grep
 
 You are an agent writing an adapter for a site. The goal of this skill is a 30-minute loop from zero context to a passing `webcmd browser verify`.
 
-Use the existing tools throughout: `webcmd browser *`, `webcmd doctor`, `webcmd browser init`, and `webcmd browser verify`. This skill does not introduce new commands.
+Use the existing tools throughout: Playwright `browser run` for reconnaissance,
+plus `webcmd doctor`, `webcmd browser init`,
+and `webcmd browser verify`. Browser-run programs are discovery evidence, not
+adapter source.
 
 Browser-profile auth commands must reuse `registerSiteAuthCommands`. Keep only site-specific `verify` and `openLogin` logic in the adapter. The login row must return `action_required` and `verify_command` (normally `webcmd <site> whoami`); after the user reports done, agents run that returned command and verification must succeed before retrying the original workflow. Credentials, MFA, and CAPTCHA always use human handoff: CAPTCHA stops automation until the user reports done and verification succeeds, and adapter code must not collect or type passwords or secrets.
 
@@ -57,7 +60,7 @@ Why not simpler:
 | `COOKIE_API` | stable | Node-side `fetch` plus `page.getCookies()` / header helper can get the data | cookie/CSRF source is clear and replay is non-empty |
 | `UI_SELECTOR` | visible-ui | publish/upload/click/form flows, or page semantics are more stable than internal APIs | selector has a semantic anchor; failure path is a typed error |
 | `DOM_STATE` | visible-ui | data is in hydration state, bootstrap JSON, or SSR HTML | state key, script JSON, or HTML structure is clear |
-| `PAGE_FETCH` | internal-unstable | only page-context `fetch` can reuse same-origin/session/runtime state | `webcmd browser eval fetch(...)` is non-empty; explain why the internal endpoint is unavoidable |
+| `PAGE_FETCH` | internal-unstable | only page-context `fetch` can reuse same-origin/session/runtime state | a browser run returns a non-empty page-context fetch result; explain why the internal endpoint is unavoidable |
 | `INTERCEPT` | internal-unstable | request signing is complex but the page can naturally issue the request | target response is captured after triggering UI; explain why UI/DOM is insufficient |
 
 Selection rule: prefer `PUBLIC_API` / `COOKIE_API`. If UI/DOM semantics are stable, do not force an upgrade to `PAGE_FETCH` / `INTERCEPT`. Pay the maintenance cost of uncontracted internal endpoints only when public/official APIs are unavailable and UI/DOM cannot express the target data or operation.
@@ -146,8 +149,9 @@ Check these off step by step:
        [ ] If memory is older than 30 days according to `verified_at`, treat it as stale and use the cold-start path through Steps 3 and 4.
 
 [ ] 3. Recon (`site-recon.md`):
-       [ ] **Preferred:** `webcmd browser analyze <url>` to get pattern, anti-bot signals, nearest adapter, and next step in one pass.
-       [ ] If `analyze` is ambiguous, run manual checks: `open` -> `wait time 2` (or `wait xhr <regex>`) -> `network`.
+       [ ] **Preferred:** use `webcmd browser recon run --stdin` for navigation, readiness, network hints, and page evidence in one Playwright-style program.
+       [ ] Use `webcmd browser recon snapshot --snapshot-mode tree` when structural page evidence is needed.
+       [ ] Use the run result as reconnaissance evidence; do not copy Playwright code into an adapter.
        [ ] Choose Pattern A / B / C / D / E.
 
 [ ] 4. API discovery (`api-discovery.md`) by Pattern:
@@ -182,6 +186,7 @@ Check these off step by step:
        [ ] `webcmd browser init <site>/<name>`, then set `strategy: Strategy.<strategy>` in the generated file
        [ ] Find the closest same-site or same-type adapter and copy it.
        [ ] Edit name, URL, and field mapping.
+       [ ] Use only the adapter-compatible path proven in Step 6A; never paste Playwright locators, `waitForResponse`, or browser-run globals into `func`.
 
 [ ] 10. Verification fixtures:
         [ ] After the first passing run, immediately use `--write-fixture` to seed `~/.webcmd/sites/<site>/verify/<cmd>.json`.
@@ -252,6 +257,7 @@ Check these off step by step:
 ## Key Conventions
 
 - Adapters import only `@agentrhq/webcmd/registry` and `@agentrhq/webcmd/errors`; do not add third-party dependencies.
+- Browser-run’s Playwright-style `page` and adapter `func(page,args)` are different contracts. Preserve evidence and behavior, not syntax. Implement adapters with the existing `IPage`, pipeline, Node-fetch, or interceptor APIs.
 - The `columns` array and `func` return object keys must match exactly, including order.
 - **Intermediate parsing object keys must not overlap any `columns` entry.** Otherwise silent-column-drop audits can misread the adapter. Use dedicated internal names and destructure with aliases when pushing rows.
 - **The `browser:` field determines the `func` signature:** `browser:false -> (args)`, `browser:true -> (page, args)`. If this is reversed, `args` may actually be a debug flag and all external parameters can silently fall back to defaults.

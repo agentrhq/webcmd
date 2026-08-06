@@ -61,7 +61,7 @@ Persistent-session adapters (`siteSession: 'persistent'`) share one tab per site
 
 - Check the trace screenshot and `location.href`: a modal over a blank page or the wrong URL means the tab carried stale DOM from a previous command, not that the site rejected this request.
 - Check session-scoped context: sites often scope results to a selected city, date, or account. A "closed" / "unavailable" verdict can simply mean the browser's selected context does not match the request (for example, a seat layout opened while the site's location cookie points at another city).
-- Reproduce in a clean tab (`webcmd browser open <url>`) before trusting the verdict. If it only fails in the adapter's persistent tab, fix state handling (`freshPage: true`, dismiss-and-renavigate, context preconditions) instead of selectors.
+- Reproduce in a separate browser session with `webcmd browser repair-clean run --stdin` before trusting the verdict. If it only fails in the adapter's persistent tab, fix state handling (`freshPage: true`, dismiss-and-renavigate, context preconditions) instead of selectors.
 
 ## Step 1: Collect Trace Context
 
@@ -144,22 +144,39 @@ Use `webcmd browser` to inspect the live site. Do not use the broken adapter for
 For DOM changes:
 
 ```bash
-webcmd browser open https://example.com/target-page
-webcmd browser state
+webcmd browser repair run --stdin --snapshot-mode tree <<'JS'
+await page.goto('https://example.com/target-page');
+await page.waitForLoadState('domcontentloaded');
+return { url: page.url(), title: await page.title() };
+JS
+webcmd browser repair snapshot --snapshot-mode tree
 ```
 
 For API changes:
 
 ```bash
-webcmd browser open https://example.com/target-page
-webcmd browser state
-webcmd browser click <N>
-webcmd browser network
-webcmd browser network --filter author,text,likes
-webcmd browser network --detail <key>
+webcmd browser repair run --stdin <<'JS'
+const responses = [];
+page.on('response', async response => {
+  if (!response.url().includes('<target-fragment>')) return;
+  let body = '';
+  try { body = (await response.text()).slice(0, 2000); } catch {}
+  responses.push({
+    url: response.url(),
+    method: response.request().method(),
+    status: response.status(),
+    body,
+  });
+});
+
+await page.goto('https://example.com/target-page');
+await page.locator('<selector>').click();
+await page.waitForTimeout(1000);
+return responses;
+JS
 ```
 
-Use the `key` field from network output with `--detail`.
+Use the captured response evidence to decide whether the adapter broke because of selectors, endpoint drift, auth state, or real empty data.
 
 ## Step 4: Patch The Adapter
 
@@ -273,7 +290,8 @@ In all stop cases, clearly report the situation instead of making speculative pa
    -> Page loaded, but post cards now use "[data-testid=post-container]"
 
 4. Agent explores:
-   -> webcmd browser open https://www.reddit.com && webcmd browser state
+   -> webcmd browser repair run --stdin --snapshot-mode tree
+   -> webcmd browser repair snapshot --snapshot-mode tree
 
 5. Agent patches adapterSourcePath:
    -> Replace old selector with stable scoped selector

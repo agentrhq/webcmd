@@ -116,7 +116,7 @@ Start fallback paths with trigger condition plus `adapter_health_update`:
 ```yaml
 on_adapter_fail:
   - adapter_health_update: webcmd twitter post -> suspect
-  - webcmd browser state (verify current page)
+  - webcmd browser <session> snapshot --snapshot-mode tree (verify current page)
   - if not on /home: goto /home
   - action:open_compose in pages/home.md
 ```

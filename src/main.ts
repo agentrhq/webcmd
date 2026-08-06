@@ -73,7 +73,7 @@ if (!fastPathHandled) {
   if (argv[0] === 'setup') {
     const { runHostedSetup } = await import('./hosted/setup.js');
     process.exitCode = await runHostedSetup();
-  } else if (argv[0] === 'skills') {
+  } else if (argv[0] === 'skills' || argv[0] === 'update') {
     const { createProgram } = await import('./cli.js');
     await createProgram(BUILTIN_CLIS, USER_CLIS).parseAsync(argv, { from: 'user' });
   } else if (argv[0] === 'web' && argv[1] === 'fetch') {

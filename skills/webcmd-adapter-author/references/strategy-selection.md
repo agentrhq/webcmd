@@ -64,7 +64,7 @@ Use when only page-context `fetch` can reuse same-origin/session/runtime state.
 
 Required evidence:
 
-- `webcmd browser eval fetch(...)` returns non-empty target data.
+- `webcmd browser recon run --stdin` with page-context `fetch(...)` returns non-empty target data.
 - Simpler strategies are ruled out in the strategy note.
 - Internal endpoint drift risk is accepted and documented.
 
@@ -78,20 +78,16 @@ Required evidence:
 - Captured response contains target data.
 - UI/DOM cannot provide the target data or operation.
 
-## `api_candidates` Evidence
+## Browser-Run Response Evidence
 
-`webcmd browser analyze` may output `api_candidates[]`.
+Treat a response observed by `browser run` as usable only when:
 
-Treat a candidate as usable only when:
-
-- `verdict` is `likely_data`.
 - Response sample includes target fields.
 - URL and params are related to the user-visible result.
 - Replay succeeds or the failure clearly points to auth/token handling.
 
 Ignore candidates when:
 
-- `verdict` is `noise`.
 - The response is analytics, beacon, ads, personalization, or experiment config.
 - It contains only layout metadata.
 - It cannot be tied to visible page data.

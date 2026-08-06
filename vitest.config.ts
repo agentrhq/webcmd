@@ -8,7 +8,7 @@ export default defineConfig({
         test: {
           name: 'unit',
           include: ['src/**/*.test.ts'],
-          exclude: ['clis/**/*.test.{ts,js}'],
+          exclude: ['clis/**/*.test.{ts,js}', 'src/browser/**/*.test.ts'],
           sequence: { groupOrder: 0 },
         },
       },
@@ -39,10 +39,12 @@ export default defineConfig({
             'tests/e2e/plugin-management.test.ts',
             'tests/e2e/article-download-pipeline.test.ts',
             'tests/e2e/cloak-runtime.test.ts',
+            'tests/e2e/browser-run.test.ts',
             // Extended browser tests (20+ sites) — opt-in only:
             //   WEBCMD_E2E=1 npx vitest run
             ...(includeExtendedE2e ? ['tests/e2e/browser-public-extended.test.ts', 'tests/e2e/browser-auth.test.ts'] : []),
           ],
+          fileParallelism: false,
           maxWorkers: 2,
           sequence: { groupOrder: 3 },
         },

@@ -189,6 +189,18 @@ export class CloakSessionManager {
     });
   }
 
+  findPage(input: SessionKeyInput): CloakPageLease | null {
+    const profileId = normalizeProfileId(input.profileId);
+    const leaseKey = resolveLeaseKey(input);
+    const runtime = this.profiles.get(profileId);
+    const entry = runtime?.pages.get(leaseKey);
+    if (!runtime || !entry || pageIsClosed(entry.page)) return null;
+    runtime.lastSeenAt = Date.now();
+    entry.idleTimeout = input.idleTimeout;
+    this.refreshIdleTimer(runtime, leaseKey, entry);
+    return { profileId, leaseKey, context: runtime.context, page: entry.page, pageId: entry.pageId };
+  }
+
   findPageById(pageId: string, opts: Pick<SessionKeyInput, 'idleTimeout'> = {}): CloakPageLease | null {
     for (const [profileId, runtime] of this.profiles.entries()) {
       for (const [leaseKey, entry] of runtime.pages.entries()) {
@@ -196,6 +208,17 @@ export class CloakSessionManager {
           entry.idleTimeout = opts.idleTimeout;
           this.refreshIdleTimer(runtime, leaseKey, entry);
           return { profileId, leaseKey, context: runtime.context, page: entry.page, pageId: entry.pageId };
+        }
+      }
+    }
+    return null;
+  }
+
+  profileIdForPage(pageId: string): string | null {
+    for (const [profileId, runtime] of this.profiles.entries()) {
+      for (const entry of runtime.pages.values()) {
+        if (entry.pageId === pageId && !pageIsClosed(entry.page)) {
+          return profileId;
         }
       }
     }
@@ -356,10 +379,11 @@ export class CloakSessionManager {
     const runtime = this.profiles.get(profileId);
     if (!runtime) return;
     const leaseKey = resolveLeaseKey(input);
-    const exactEntry = runtime.pages.get(leaseKey);
-    const entries = exactEntry
-      ? [[leaseKey, exactEntry] as const]
-      : this.openEntries(runtime).filter(([, entry]) => entry.session === requireSession(input.session) && entry.surface === normalizeSurface(input.surface));
+    const entries = this.openEntries(runtime)
+      .filter(([key, entry]) => key === leaseKey || (
+        entry.session === requireSession(input.session)
+        && entry.surface === normalizeSurface(input.surface)
+      ));
     for (const [key, entry] of entries) {
       runtime.pages.delete(key);
       this.clearIdleTimer(entry);

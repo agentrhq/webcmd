@@ -19,6 +19,8 @@ import { StreamWriteError, writeToStream } from '../stream-write.js';
 import { PKG_VERSION } from '../version.js';
 import { getCompletionScriptFast } from '../completion-fast.js';
 import { browserCommandCatalog } from '../browser/command-catalog.js';
+import { loadBrowserRunSource } from '../browser/run/input.js';
+import { BrowserRunError } from '../browser/run/types.js';
 import { CLI_COMMAND } from '../brand.js';
 import { HostedClient, HostedClientError, resolveWorkspace } from './client.js';
 import { parseHostedInvocation } from './args.js';
@@ -40,6 +42,7 @@ import { parseHostedRootCommandSurface } from '../root-command-surface.js';
 import type {
   HostedBrowserActionName,
   HostedBrowserRunActionResponse,
+  HostedBrowserSnapshotActionResponse,
   HostedManifest,
 } from './types.js';
 import type { HostedBrowserCommandContract } from './contract.js';
@@ -175,7 +178,7 @@ async function dispatchHosted(
     );
   }
   if (args[0] === 'browser') {
-    const invocation = parseHostedBrowserInvocation(args, normalized.profile);
+    const invocation = await parseHostedBrowserInvocation(args, normalized.profile);
     const manifest = await client.getManifest();
     validateManifestContractIdentity(manifest);
     await dispatchHostedBrowser(invocation, client, stdout);
@@ -459,7 +462,7 @@ function contentTypeForUpload(filePath: string): string {
   }
 }
 
-function parseHostedBrowserInvocation(argv: string[], profile: string | undefined): ParsedHostedBrowserInvocation {
+async function parseHostedBrowserInvocation(argv: string[], profile: string | undefined): Promise<ParsedHostedBrowserInvocation> {
   let rewritten: string[];
   try {
     rewritten = rewriteBrowserArgv(argv);
@@ -489,17 +492,18 @@ function parseHostedBrowserInvocation(argv: string[], profile: string | undefine
   if (!structure.commandName) {
     throw new ConfigError(
       'Hosted browser command is required.',
-      'Use: webcmd browser <session> open <url>, state, screenshot, tab list, or eval <js>.',
+      'Use: webcmd browser <session> tabs, bind --page <id>, run --stdin|--file <path>, or close.',
     );
   }
 
   const windowMode = structure.window === undefined ? undefined : parseWindowMode(structure.window);
   const parsed = parseBrowserLeaf(structure.commandName, structure.positionals, structure.options);
+  const browserArgs = await materializeBrowserRunSource(parsed.commandName, parsed.args);
   return {
     session: structure.session,
     command: `browser/${parsed.commandName}`,
     action: parsed.action,
-    args: parsed.args,
+    args: browserArgs,
     ...(parsed.localPath !== undefined ? { localPath: parsed.localPath } : {}),
     ...(profile !== undefined ? { profile } : {}),
     ...(windowMode !== undefined ? { windowMode } : {}),
@@ -523,23 +527,41 @@ function parseBrowserLeaf(
 } {
   const contract = hostedBrowserCommandsByPath.get(leaf);
   if (!contract || !contract.action) {
-    if (leaf === 'bind' || contract?.sessionPolicy === 'local-only') {
-      throw new ConfigError(
-        'Browser bind is not supported in hosted mode.',
-        'Use browser state or browser tabs to inspect the active hosted page.',
-      );
-    }
     throw new ConfigError(`Hosted browser command is not supported yet: ${leaf}`);
   }
 
   const localPath = leaf === 'screenshot' ? positionals[0] : undefined;
   const args = browserActionArgs(contract, positionals, options);
+  if (contract.command === 'run') {
+    const hasStdin = args.stdin === true;
+    const file = typeof args.file === 'string' ? args.file.trim() : '';
+    if (hasStdin === Boolean(file)) {
+      throw new ConfigError(
+        'Browser run requires exactly one program input: --stdin or --file <path>.',
+      );
+    }
+  }
   return {
     commandName: leaf,
-    action: contract.action as HostedBrowserActionName,
+    action: contract.action,
     args,
     ...(localPath !== undefined ? { localPath } : {}),
   };
+}
+
+async function materializeBrowserRunSource(commandName: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  if (commandName !== 'run') return args;
+  try {
+    const source = await loadBrowserRunSource({
+      stdin: args.stdin === true,
+      file: typeof args.file === 'string' ? args.file : undefined,
+    });
+    const { stdin: _stdin, file: _file, ...rest } = args;
+    return { ...rest, source };
+  } catch (error) {
+    if (error instanceof BrowserRunError) throw new ConfigError(error.message, error.hint);
+    throw error;
+  }
 }
 
 function browserActionArgs(
@@ -656,11 +678,15 @@ function withoutKeys(input: Record<string, unknown>, keys: readonly string[]): R
 async function renderHostedBrowserResponse(
   stdout: NodeJS.WritableStream,
   invocation: ParsedHostedBrowserInvocation,
-  response: HostedBrowserRunActionResponse,
+  response: HostedBrowserRunActionResponse | HostedBrowserSnapshotActionResponse,
 ): Promise<void> {
   const result = response.result;
   if (invocation.action === 'snapshot' && result && typeof result === 'object') {
-    const record = result as { url?: unknown; snapshot?: unknown };
+    const record = result as { tree?: unknown; url?: unknown; snapshot?: unknown };
+    if (typeof record.tree === 'string') {
+      await writeToStream(stdout, `${record.tree}\n`);
+      return;
+    }
     await writeToStream(stdout, `URL: ${typeof record.url === 'string' ? record.url : ''}\n\n`);
     await writeToStream(stdout, `${typeof record.snapshot === 'string' ? record.snapshot : JSON.stringify(record.snapshot, null, 2)}\n`);
     return;

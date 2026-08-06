@@ -4,39 +4,78 @@
 
 This file only classifies sites. It does not explain how to discover endpoints.
 
-## One-Step Diagnosis
+## Browser-Run Diagnosis
 
-Preferred command:
-
-```bash
-webcmd browser analyze <url>
-```
-
-The command returns JSON with:
-
-```json
-{
-  "pattern": "A|B|C|D|E",
-  "anti_bot": [],
-  "api_candidates": [],
-  "nearest_adapters": [],
-  "recommended_next_step": "..."
-}
-```
-
-`analyze` gives Pattern classification, anti-bot signals, nearest-adapter matches, and the next step in one pass. Follow `recommended_next_step` directly in most cases.
-
-## Manual Three-Step Diagnosis
-
-Use this only when `analyze` is ambiguous:
+Preferred flow:
 
 ```bash
-webcmd browser open <url> --trace on --keep-tab true --window foreground
-webcmd browser wait time 2
-webcmd browser network --format json
+webcmd browser recon run --stdin --snapshot-mode tree <<'JS'
+const responses = [];
+page.on('response', response => {
+  const contentType = response.headers()['content-type'] || '';
+  if (/json|text\/event-stream/i.test(contentType) || /\/api\/|graphql/i.test(response.url())) {
+    responses.push({
+      url: response.url(),
+      status: response.status(),
+      contentType,
+    });
+  }
+});
+
+await page.goto('<url>');
+await page.waitForLoadState('domcontentloaded');
+await page.waitForTimeout(1500);
+
+return {
+  url: page.url(),
+  title: await page.title(),
+  globals: await page.evaluate(() => ({
+    react: Boolean(window.React || window.__REACT_DEVTOOLS_GLOBAL_HOOK__),
+    next: Boolean(window.__NEXT_DATA__),
+    nuxt: Boolean(window.__NUXT__),
+  })),
+  responses: responses.slice(0, 20),
+};
+JS
 ```
 
-Read `network` output this way:
+Then inspect page structure when needed:
+
+```bash
+webcmd browser recon snapshot --snapshot-mode tree
+```
+
+Use this evidence to choose Pattern A/B/C/D/E. Do not paste the Playwright-style program into the adapter.
+
+## Existing-Page Diagnosis
+
+Use this when the user already has a relevant tab open. List pages, bind the chosen page,
+then run dependent recon steps together:
+
+```bash
+webcmd browser recon tabs
+webcmd browser recon bind --page page-123
+webcmd browser recon run --stdin <<'JS'
+const responsePromise = page.waitForResponse(
+  response => response.url().includes('/api/path-fragment'),
+);
+await page.goto('https://example.com');
+await page.waitForLoadState('domcontentloaded');
+const response = await responsePromise;
+return {
+  url: page.url(),
+  endpoint: { url: response.url(), status: response.status() },
+};
+JS
+```
+
+Then inspect the current page when a snapshot is needed:
+
+```bash
+webcmd browser recon snapshot --snapshot-mode tree
+```
+
+Use the snapshot and any response evidence collected in the run to classify the site:
 
 | `network` shows | Site type | Signals |
 | --- | --- | --- |
@@ -46,7 +85,13 @@ Read `network` output this way:
 | API exists but returns 401/403 or signature errors | **D. Token / CSRF auth** | Pattern A plus auth headers or page-sourced tokens |
 | `Content-Type: text/event-stream` or WebSocket handshake | **E. Streaming** | Live feed, chat, or tick data |
 
-If data is loaded asynchronously, `wait time 2` may not be enough. Prefer `webcmd browser wait xhr '/api/path-fragment'` for a specific interface over blind `wait time 5`.
+If data is loaded asynchronously, arm `page.waitForResponse(...)` before the
+navigation or UI trigger in the same run. Do not use a separate browser wait.
+
+When classification needs a dependent UI trigger plus a request/response
+waiter, use one sandboxed `browser run` program and arm the waiter before the
+trigger. Record the endpoint and UI evidence; do not copy the Playwright-style
+program into an adapter.
 
 ---
 
@@ -64,7 +109,7 @@ If data is loaded asynchronously, `wait time 2` may not be enough. Prefer `webcm
 
 **Important:** Pattern A does not automatically mean `PAGE_FETCH`.
 
-- First inspect `api_candidates[]` from `webcmd browser analyze`: only `verdict=likely_data` entries are real candidates. `verdict=noise` entries such as analytics, beacons, or personalization do not count as API signals.
+- First inspect the response evidence collected by `browser run`; analytics, beacons, or personalization responses do not count as API signals.
 - The booking #1680 counterexample had many JSON XHRs that looked like Pattern A, but they were analytics side-channels; the final strategy was `DOM_STATE` / `UI_SELECTOR`.
 - After replaying a candidate endpoint, choose strategy through `strategy-selection.md`. Consider `PAGE_FETCH` only after `PUBLIC_API` and `COOKIE_API` fail.
 
