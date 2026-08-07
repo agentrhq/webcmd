@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.6.0](https://github.com/agentrhq/webcmd/compare/webcmd-v0.5.3...webcmd-v0.6.0) (2026-08-07)
+
+
+### Features
+
+* add webcmd update command ([eeb695b](https://github.com/agentrhq/webcmd/commit/eeb695bee26ca94bd3b8c7f922f152a89619ac4d))
+* add webcmd update command ([ce68d92](https://github.com/agentrhq/webcmd/commit/ce68d9217591fb4191b4054c44a5f12b47943e08))
+* added luma plugin ([#195](https://github.com/agentrhq/webcmd/issues/195)) ([8de78ba](https://github.com/agentrhq/webcmd/commit/8de78ba245b134c46cce12ae07c198c5bb34d3d4))
+* browser run playwright sandbox ([b51cac3](https://github.com/agentrhq/webcmd/commit/b51cac37e160bee1664de853b4dcbc60059476b6))
+* surface Cloak runtime update notice in webcmd update ([8f7ffba](https://github.com/agentrhq/webcmd/commit/8f7ffba5bf817965f48762465a6214780434de1a))
+
+
+### Bug Fixes
+
+* correct layer numbering in README for clarity ([#205](https://github.com/agentrhq/webcmd/issues/205)) ([cfba63c](https://github.com/agentrhq/webcmd/commit/cfba63cefed2496fb748c4079556fd3d88322029))
+* **hosted:** accept expiresAt in browser run responses ([06fb90c](https://github.com/agentrhq/webcmd/commit/06fb90cd9818f820a35e7ced9bd6673b853c5b30))
+* **hosted:** accept expiresAt in browser run responses ([11c0920](https://github.com/agentrhq/webcmd/commit/11c09205b2b413ee9fd018dc247d5f6defd5e2f8))
+* omit links for internal plugin authors ([#214](https://github.com/agentrhq/webcmd/issues/214)) ([8276873](https://github.com/agentrhq/webcmd/commit/8276873d3eee706212f178f13febf005bcd845c6))
+* typos ([1a25081](https://github.com/agentrhq/webcmd/commit/1a250817e99a0cc21e3ddf2d36784aeac8bd6052))
+
+
+### Performance Improvements
+
+* cache the resolved cloakbrowser version instead of re-reading it per status call ([#213](https://github.com/agentrhq/webcmd/issues/213)) ([9fc42d4](https://github.com/agentrhq/webcmd/commit/9fc42d40ee7e456388c8ab495f9dda3e59af8c1b))
+
 ## [0.5.3](https://github.com/agentrhq/webcmd/compare/webcmd-v0.5.2...webcmd-v0.5.3) (2026-08-03)
 
 ### Fixes
