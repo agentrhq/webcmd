@@ -9,6 +9,7 @@ import { activateDarwinBackgroundContext, launchDarwinBackgroundPersistentContex
 import { normalizeProfileId, resolveCloakProfileDir } from './profiles.js';
 import { CloakNetworkCapture } from './network.js';
 import { findPackageRoot } from '../../../package-paths.js';
+import { toPlaywrightWaitUntil } from '../../utils.js';
 
 const UNRESOLVED = Symbol('unresolved');
 let cachedCloakBrowserVersion: string | undefined | typeof UNRESOLVED = UNRESOLVED;
@@ -270,7 +271,7 @@ export class CloakSessionManager {
     })));
   }
 
-  async newPage(input: SessionKeyInput & { url?: string }): Promise<CloakPageLease> {
+  async newPage(input: SessionKeyInput & { url?: string; waitUntil?: 'load' | 'none' }): Promise<CloakPageLease> {
     const profileId = normalizeProfileId(input.profileId);
     const session = requireSession(input.session);
     const surface = normalizeSurface(input.surface);
@@ -282,7 +283,7 @@ export class CloakSessionManager {
     );
     if (input.url) {
       try {
-        await acquired.page.goto(input.url, { waitUntil: 'load' });
+        await acquired.page.goto(input.url, { waitUntil: toPlaywrightWaitUntil(input.waitUntil) });
       } catch (error) {
         if (!pageIsClosed(acquired.page)) await acquired.page.close().catch(() => {});
         throw error;

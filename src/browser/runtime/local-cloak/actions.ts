@@ -14,6 +14,7 @@ import type { CloakSessionManager } from './session-manager.js';
 import type { BrowserContext, Frame, Page as PlaywrightPage } from 'playwright-core';
 import { runBrowserProgram } from '../../run/runner.js';
 import { BROWSER_RUN_MAX_SOURCE_BYTES } from '../../run/types.js';
+import { toPlaywrightWaitUntil } from '../../utils.js';
 
 const snapshotBaselines = new WeakMap<CloakSessionManager, SnapshotBaselineStore>();
 
@@ -185,7 +186,7 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
         // 'none' maps to Playwright's 'commit': sites that stream analytics forever
         // never fire the load event, so adapters gating readiness on their own
         // selector waits must be able to skip it.
-        await lease.page.goto(command.url, { waitUntil: command.waitUntil === 'none' ? 'commit' : 'load' });
+        await lease.page.goto(command.url, { waitUntil: toPlaywrightWaitUntil(command.waitUntil) });
         return { id: command.id, ok: true, data: { title: await lease.page.title(), url: lease.page.url(), timedOut: false }, page: lease.pageId };
       }
       case 'exec': {
@@ -336,6 +337,7 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
               siteSession: command.siteSession,
               idleTimeout: command.idleTimeout,
               url: command.url,
+              waitUntil: command.waitUntil,
               windowMode: command.windowMode,
             });
             return { id: command.id, ok: true, data: { title: await lease.page.title(), url: lease.page.url() }, page: lease.pageId };
