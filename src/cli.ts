@@ -856,8 +856,9 @@ cli({
     .option('--strict-memory', 'Fail (not just warn) when ~/.webcmd/sites/<site>/endpoints.json or notes.md is missing')
     .option('--seed-args <value>', 'Seed args when no fixture exists; use JSON array/object for multiple args or flags')
     .option('--trace <mode>', 'Trace capture for the adapter subprocess: off, on, retain-on-failure', 'off')
+    .option('--max-top-level-keys <n>', 'Override the row-shape top-level key cap (default: 12) for adapters whose rows are wide by design')
     .description('Execute an adapter and validate output; uses fixture at ~/.webcmd/sites/<site>/verify/<cmd>.json when present')
-    .action(async (name: string, opts: { fixture?: boolean; writeFixture?: boolean; updateFixture?: boolean; strictMemory?: boolean; seedArgs?: string; trace?: string } = {}) => {
+    .action(async (name: string, opts: { fixture?: boolean; writeFixture?: boolean; updateFixture?: boolean; strictMemory?: boolean; seedArgs?: string; trace?: string; maxTopLevelKeys?: string } = {}) => {
       try {
         const parts = name.split('/');
         if (parts.length !== 2) { console.error('Name must be site/command format'); process.exitCode = EXIT_CODES.USAGE_ERROR; return; }
@@ -866,6 +867,16 @@ cli({
           console.error('Name parts must be alphanumeric/dash/underscore only');
           process.exitCode = EXIT_CODES.USAGE_ERROR;
           return;
+        }
+
+        let maxTopLevelKeys: number | undefined;
+        if (opts.maxTopLevelKeys !== undefined) {
+          maxTopLevelKeys = Number(opts.maxTopLevelKeys);
+          if (!Number.isInteger(maxTopLevelKeys) || maxTopLevelKeys <= 0) {
+            console.error('--max-top-level-keys must be a positive integer');
+            process.exitCode = EXIT_CODES.USAGE_ERROR;
+            return;
+          }
         }
 
         const { execFileSync } = await import('node:child_process');
@@ -936,7 +947,7 @@ cli({
         console.log(renderVerifyPreview(rows));
         console.log(`\n  → ${rows.length} row${rows.length === 1 ? '' : 's'}`);
 
-        const shapeFailures = validateRowShape(rows);
+        const shapeFailures = validateRowShape(rows, { maxTopLevelKeys });
         if (shapeFailures.length > 0) {
           console.log(`\n  ✗ Adapter output violates row shape conventions:`);
           for (const f of shapeFailures.slice(0, 20)) {
@@ -946,7 +957,8 @@ cli({
           if (shapeFailures.length > 20) {
             console.log(`    ... and ${shapeFailures.length - 20} more failure(s)`);
           }
-          console.log(`\n  Keep rows agent-native: <=12 top-level keys, nesting depth <=1, and id-shaped fields at top level.`);
+          console.log(`\n  Keep rows agent-native: <=${maxTopLevelKeys ?? 12} top-level keys, nesting depth <=1, and id-shaped fields at top level.`);
+          console.log(`  If this adapter's rows are wide by design, rerun with --max-top-level-keys <n>.`);
           process.exitCode = EXIT_CODES.GENERIC_ERROR;
           return;
         }
