@@ -195,6 +195,28 @@ describe('validateRowShape', () => {
             },
         ]);
     });
+
+    it('allows wide rows when maxTopLevelKeys is overridden', () => {
+        const wideRow = Object.fromEntries(Array.from({ length: 15 }, (_, i) => [`col${i}`, i]));
+        const failures = validateRowShape([wideRow], { maxTopLevelKeys: 20 });
+        expect(failures).toEqual([]);
+    });
+
+    it('falls back sensibly if maxTopLevelKeys override is invalid or negative', () => {
+        const wideRow = Object.fromEntries(Array.from({ length: 15 }, (_, i) => [`col${i}`, i]));
+        // Should fall back to 12 and fail
+        const failuresNeg = validateRowShape([wideRow], { maxTopLevelKeys: -5 });
+        expect(failuresNeg).toContainEqual(expect.objectContaining({ rule: 'shapeKeyCount' }));
+
+        const failuresNan = validateRowShape([wideRow], { maxTopLevelKeys: NaN });
+        expect(failuresNan).toContainEqual(expect.objectContaining({ rule: 'shapeKeyCount' }));
+    });
+
+    it('allows deeper nesting when maxNestedDepth is overridden', () => {
+        const deepRow = { nested: { deeply: { value: 1 } } }; // Depth is 3
+        const failures = validateRowShape([deepRow], { maxNestedDepth: 5 });
+        expect(failures.filter(f => f.rule === 'shapeDepth')).toEqual([]);
+    });
 });
 
 describe('deriveFixture', () => {

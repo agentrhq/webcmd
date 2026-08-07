@@ -935,7 +935,10 @@ cli({
         console.log(renderVerifyPreview(rows));
         console.log(`\n  → ${rows.length} row${rows.length === 1 ? '' : 's'}`);
 
-        const shapeFailures = validateRowShape(rows);
+        const shapeFailures = validateRowShape(rows, {
+          maxTopLevelKeys: fixture?.expect?.maxColumns,
+          maxNestedDepth: fixture?.expect?.maxNestedDepth,
+        });
         if (shapeFailures.length > 0) {
           console.log(`\n  ✗ Adapter output violates row shape conventions:`);
           for (const f of shapeFailures.slice(0, 20)) {
