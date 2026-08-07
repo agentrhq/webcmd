@@ -199,7 +199,7 @@ Check these off step by step:
         [ ] `endpoints.json`: short endpoint name as key; value = `{url, method, params.{required,optional}, response, verified_at: YYYY-MM-DD, notes}`.
         [ ] `field-map.json`: append only new codes. key = field code; value = `{meaning, verified_at: YYYY-MM-DD, source}`. **Do not overwrite existing keys.** If there is a conflict, align with the visible page before writing.
         [ ] `notes.md`: prepend `## YYYY-MM-DD by <agent/user>` with new pitfalls or conclusions from this adapter work.
-        [ ] `verify/<cmd>.json`: **required.** Expected values for `webcmd browser verify`: args, rowCount, columns, types, patterns, notEmpty. Step 10 generated this; this item is the checklist gate.
+        [ ] `verify/<cmd>.json`: **required.** Expected values for `webcmd browser verify`: args, rowCount, columns, types, patterns, notEmpty. Step 10 generated this; this item is the checklist gate. Rows wider than 12 top-level keys by design (e.g. a spreadsheet-style export) fail shape validation by default — rerun with `webcmd browser verify <site>/<name> --max-top-level-keys <n>` instead of skipping the fixture.
         [ ] `fixtures/<cmd>-<YYYYMMDDHHMM>.json`: save one complete endpoint response sample after removing cookies, tokens, and private user fields. Use it for later field comparison and offline replay.
         [ ] If debugging dumped temporary files in the repo or adapter directory, such as `.dbg-*.html`, `raw-*.json`, or similar, **delete them before commit**. Those belong in `~/.webcmd/sites/<site>/fixtures/` or `/tmp/`.
 

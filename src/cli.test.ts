@@ -1173,6 +1173,71 @@ describe('browser verify', () => {
       fs.rmSync(fakeHome, { recursive: true, force: true });
     }
   });
+
+  it('rejects a wide row by default but passes with a raised --max-top-level-keys', async () => {
+    const originalHome = process.env.HOME;
+    const originalUserProfile = process.env.USERPROFILE;
+    const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-browser-verify-wide-'));
+    process.env.HOME = fakeHome;
+    process.env.USERPROFILE = fakeHome;
+    const wideRow = Object.fromEntries(Array.from({ length: 20 }, (_, i) => [`col${i}`, i]));
+    mockExecFileSync.mockReturnValue(JSON.stringify([wideRow]));
+    const consoleLogSpy = vi.mocked(console.log);
+    consoleLogSpy.mockClear();
+
+    try {
+      const adapterDir = path.join(fakeHome, '.webcmd', 'clis', 'hn');
+      fs.mkdirSync(adapterDir, { recursive: true });
+      fs.writeFileSync(path.join(adapterDir, 'top.js'), 'export default {};\n', 'utf-8');
+
+      const program = createProgram('', '');
+      await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'verify', 'hn/top', '--no-fixture']);
+      expect(process.exitCode).toBe(1);
+      let output = consoleLogSpy.mock.calls.map((args) => args.join(' ')).join('\n');
+      expect(output).toContain('row has 20 top-level keys, expected at most 12');
+
+      process.exitCode = undefined;
+      consoleLogSpy.mockClear();
+      const program2 = createProgram('', '');
+      await program2.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'verify', 'hn/top', '--no-fixture', '--max-top-level-keys', '20']);
+      expect(process.exitCode).toBeUndefined();
+      output = consoleLogSpy.mock.calls.map((args) => args.join(' ')).join('\n');
+      expect(output).not.toContain('violates row shape conventions');
+    } finally {
+      consoleLogSpy.mockClear();
+      if (originalHome === undefined) delete process.env.HOME;
+      else process.env.HOME = originalHome;
+      if (originalUserProfile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = originalUserProfile;
+      fs.rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a non-positive --max-top-level-keys', async () => {
+    const originalHome = process.env.HOME;
+    const originalUserProfile = process.env.USERPROFILE;
+    const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-browser-verify-badflag-'));
+    process.env.HOME = fakeHome;
+    process.env.USERPROFILE = fakeHome;
+
+    try {
+      const adapterDir = path.join(fakeHome, '.webcmd', 'clis', 'hn');
+      fs.mkdirSync(adapterDir, { recursive: true });
+      fs.writeFileSync(path.join(adapterDir, 'top.js'), 'export default {};\n', 'utf-8');
+
+      const program = createProgram('', '');
+      await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'verify', 'hn/top', '--no-fixture', '--max-top-level-keys', '0']);
+
+      expect(process.exitCode).toBe(2);
+      expect(mockExecFileSync).not.toHaveBeenCalled();
+    } finally {
+      if (originalHome === undefined) delete process.env.HOME;
+      else process.env.HOME = originalHome;
+      if (originalUserProfile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = originalUserProfile;
+      fs.rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('profile list', () => {
