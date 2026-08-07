@@ -18,10 +18,13 @@ This scaffolds `~/.webcmd/clis/<site>/<name>.js` with a `Strategy.PUBLIC` placeh
 Promote a community CLI to the main repo as a plugin:
 
 ```bash
-webcmd plugin create <site> --dir plugins/<site> --description "<site> commands for Webcmd"
+webcmd plugin create <site> --dir plugins/<site> --description "<site> commands for Webcmd" \
+  --author-name "<Your Name>" --author-handle <your-github-handle>
 cp ~/.webcmd/clis/<site>/*.js plugins/<site>/
 rm plugins/<site>/hello.ts plugins/<site>/greet.ts 2>/dev/null || true
 ```
+
+`--author-name` and `--author-handle` are required outside an interactive TTY (non-interactive/agent runs fail with `Invalid author.name`/`Invalid author.handle` if omitted); `--author-handle` must be a valid GitHub username.
 
 Then add `<site>` to the root `webcmd-plugin.json` `plugins` map:
 
