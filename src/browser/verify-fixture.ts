@@ -54,6 +54,15 @@ export type FixtureExpect = {
    * the value coerces to `false` in JS.
    */
   mustBeTruthy?: string[];
+  /**
+   * Override the default maximum number of top-level columns allowed in the row.
+   * Useful for spreadsheet-export adapters that legitimately return wide rows.
+   */
+  maxColumns?: number;
+  /**
+   * Override the default maximum nesting depth allowed in the row values.
+   */
+  maxNestedDepth?: number;
 };
 
 export type FixtureArgs = Record<string, unknown> | unknown[];
@@ -262,8 +271,12 @@ export function validateRows(rows: Row[], fixture: Fixture): ValidationFailure[]
 
 export function validateRowShape(rows: Row[], opts: RowShapeOptions = {}): ValidationFailure[] {
   const failures: ValidationFailure[] = [];
-  const maxTopLevelKeys = opts.maxTopLevelKeys ?? DEFAULT_MAX_TOP_LEVEL_KEYS;
-  const maxNestedDepth = opts.maxNestedDepth ?? DEFAULT_MAX_NESTED_DEPTH;
+  const maxTopLevelKeys = (typeof opts.maxTopLevelKeys === 'number' && opts.maxTopLevelKeys >= 0)
+    ? opts.maxTopLevelKeys
+    : DEFAULT_MAX_TOP_LEVEL_KEYS;
+  const maxNestedDepth = (typeof opts.maxNestedDepth === 'number' && opts.maxNestedDepth >= 0)
+    ? opts.maxNestedDepth
+    : DEFAULT_MAX_NESTED_DEPTH;
 
   rows.forEach((row, i) => {
     const keys = Object.keys(row);

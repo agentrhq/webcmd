@@ -68,3 +68,7 @@ export function buildEvaluateExpression(input: string | EvaluateFunction, args: 
   }
   return wrapForEval(input);
 }
+
+export function toPlaywrightWaitUntil(waitUntil?: 'load' | 'none'): 'commit' | 'load' {
+  return waitUntil === 'none' ? 'commit' : 'load';
+}
