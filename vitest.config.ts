@@ -23,7 +23,6 @@ export default defineConfig({
         test: {
           name: 'unit',
           include: ['src/**/*.test.ts'],
-          exclude: ['src/browser/**/*.test.ts'],
           sequence: { groupOrder: 0 },
         },
       },
