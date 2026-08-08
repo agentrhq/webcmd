@@ -5,6 +5,7 @@
  */
 
 import { DEFAULT_DAEMON_PORT } from './constants.js';
+import { binaryInfo, ensureBinary } from 'cloakbrowser';
 import { BrowserBridge } from './browser/index.js';
 import { setDaemonCommandTimeoutSeconds } from './browser/daemon-client.js';
 import { getDaemonHealth } from './browser/daemon-transport.js';
@@ -52,8 +53,14 @@ export type DoctorReport = {
 export async function checkConnectivity(opts?: { timeout?: number }): Promise<ConnectivityResult> {
   const start = Date.now();
   const timeoutSeconds = opts?.timeout ?? DOCTOR_LIVE_TIMEOUT_SECONDS;
-  setDaemonCommandTimeoutSeconds(timeoutSeconds);
   try {
+    // CloakBrowser installs Chromium lazily. Keep that potentially long first-use
+    // download outside the daemon's deliberately short live-probe deadline;
+    // otherwise doctor reports a timeout while the download keeps running and
+    // holds the profile command queue.
+    if (!binaryInfo().installed) await ensureBinary();
+
+    setDaemonCommandTimeoutSeconds(timeoutSeconds);
     const bridge = new BrowserBridge();
     const page = await bridge.connect({
       timeout: timeoutSeconds,
