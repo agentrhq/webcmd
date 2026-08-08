@@ -1,4 +1,6 @@
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { getRegistry } from '@agentrhq/webcmd/registry';
 import { ArgumentError, AuthRequiredError, EmptyResultError } from '@agentrhq/webcmd/errors';
@@ -179,7 +181,7 @@ describe('twitter likes archive safety', () => {
 
     it('refuses to overwrite an existing output file without matching resume state', async () => {
         const command = getRegistry().get('twitter/likes');
-        const outputFile = `/tmp/webcmd-likes-existing-${process.pid}-${Date.now()}.jsonl`;
+        const outputFile = path.join(os.tmpdir(), `webcmd-likes-existing-${process.pid}-${Date.now()}.jsonl`);
         const resumeFile = `${outputFile}.resume.json`;
         fs.writeFileSync(outputFile, 'user-owned\n');
         try {
@@ -198,7 +200,7 @@ describe('twitter likes archive safety', () => {
     });
 
     it('rejects cross-source and malformed resume state instead of silently restarting', () => {
-        const resumeFile = `/tmp/webcmd-likes-mismatch-${process.pid}-${Date.now()}.json`;
+        const resumeFile = path.join(os.tmpdir(), `webcmd-likes-mismatch-${process.pid}-${Date.now()}.json`);
         try {
             fs.writeFileSync(resumeFile, JSON.stringify({
                 cursor: 'NEXT',
@@ -224,7 +226,7 @@ describe('twitter likes archive safety', () => {
 
     it('rejects output files whose JSONL record count differs from resume state', async () => {
         const command = getRegistry().get('twitter/likes');
-        const outputFile = `/tmp/webcmd-likes-count-mismatch-${process.pid}-${Date.now()}.jsonl`;
+        const outputFile = path.join(os.tmpdir(), `webcmd-likes-count-mismatch-${process.pid}-${Date.now()}.jsonl`);
         const resumeFile = `${outputFile}.resume.json`;
         fs.writeFileSync(outputFile, '{"id":"1"}\n{"id":"2"}\n');
         fs.writeFileSync(resumeFile, JSON.stringify({
@@ -251,7 +253,7 @@ describe('twitter likes archive safety', () => {
 
     it('throws for an incomplete in-memory --all run while retaining resume state', async () => {
         const command = getRegistry().get('twitter/likes');
-        const resumeFile = `/tmp/webcmd-likes-memory-${process.pid}-${Date.now()}.json`;
+        const resumeFile = path.join(os.tmpdir(), `webcmd-likes-memory-${process.pid}-${Date.now()}.json`);
         const payload = likesPayload();
         payload.data.user.result.timeline_v2.timeline.instructions[0].entries.push({
             entryId: 'cursor-bottom-1',
@@ -355,8 +357,8 @@ describe('twitter likes command', () => {
 
     it('keeps resume state and reports complete=false when --max-pages stops early', async () => {
         const command = getRegistry().get('twitter/likes');
-        const resumeFile = `/tmp/webcmd-likes-resume-${process.pid}-${Date.now()}.json`;
-        const outputFile = `/tmp/webcmd-likes-out-${process.pid}-${Date.now()}.jsonl`;
+        const resumeFile = path.join(os.tmpdir(), `webcmd-likes-resume-${process.pid}-${Date.now()}.json`);
+        const outputFile = path.join(os.tmpdir(), `webcmd-likes-out-${process.pid}-${Date.now()}.jsonl`);
         const page = {
             goto: vi.fn().mockResolvedValue(undefined),
             wait: vi.fn().mockResolvedValue(undefined),
@@ -425,8 +427,8 @@ describe('twitter likes command', () => {
 
     it('removes resume file only after the likes timeline is exhausted', async () => {
         const command = getRegistry().get('twitter/likes');
-        const resumeFile = `/tmp/webcmd-likes-resume-done-${process.pid}-${Date.now()}.json`;
-        const outputFile = `/tmp/webcmd-likes-out-done-${process.pid}-${Date.now()}.jsonl`;
+        const resumeFile = path.join(os.tmpdir(), `webcmd-likes-resume-done-${process.pid}-${Date.now()}.json`);
+        const outputFile = path.join(os.tmpdir(), `webcmd-likes-out-done-${process.pid}-${Date.now()}.jsonl`);
         const page = {
             goto: vi.fn().mockResolvedValue(undefined),
             wait: vi.fn().mockResolvedValue(undefined),
