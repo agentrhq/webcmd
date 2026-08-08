@@ -1,11 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execFile } from 'node:child_process';
 import type { BrowserContext, Page as PlaywrightPage } from 'playwright-core';
 import { launchPersistentContext as cloakLaunchPersistentContext } from 'cloakbrowser';
 import type { BrowserSurface, BrowserWindowMode, SiteSessionMode } from '../../protocol.js';
 import { activateDarwinBackgroundContext, launchDarwinBackgroundPersistentContext } from './darwin-background-launch.js';
+import { findCloakProfileProcesses, signalPids } from './profile-processes.js';
 import { normalizeProfileId, resolveCloakProfileDir } from './profiles.js';
 import { CloakNetworkCapture } from './network.js';
 import { findPackageRoot } from '../../../package-paths.js';
@@ -606,64 +606,4 @@ async function waitForProfileProcessesToExit(userDataDir: string, timeoutMs: num
     if ((await findCloakProfileProcesses(userDataDir)).length === 0) return true;
   }
   return (await findCloakProfileProcesses(userDataDir)).length === 0;
-}
-
-function signalPids(pids: number[], signal: NodeJS.Signals): void {
-  for (const pid of pids) {
-    try {
-      process.kill(pid, signal);
-    } catch {
-      // Already exited or not signalable; the follow-up poll decides recovery.
-    }
-  }
-}
-
-async function findCloakProfileProcesses(userDataDir: string): Promise<number[]> {
-  const profileDirs = profileDirAliases(userDataDir);
-  const stdout = await psOutput();
-  const pids: number[] = [];
-  for (const line of stdout.split('\n')) {
-    const match = line.match(/^\s*(\d+)\s+(.+)$/);
-    if (!match) continue;
-    const pid = Number(match[1]);
-    const command = match[2];
-    if (!Number.isInteger(pid) || pid === process.pid) continue;
-    if (!isCloakBrowserCommand(command)) continue;
-    if (!commandUsesProfileDir(command, profileDirs)) continue;
-    pids.push(pid);
-  }
-  return [...new Set(pids)];
-}
-
-function commandUsesProfileDir(command: string, profileDirs: string[]): boolean {
-  for (const dir of profileDirs) {
-    const marker = `--user-data-dir=${dir}`;
-    const index = command.indexOf(marker);
-    if (index < 0) continue;
-    const next = command[index + marker.length];
-    if (next === undefined || /\s/.test(next)) return true;
-  }
-  return false;
-}
-
-function profileDirAliases(userDataDir: string): string[] {
-  const aliases = new Set([userDataDir]);
-  try {
-    aliases.add(fs.realpathSync.native(userDataDir));
-  } catch {
-    // The launch path is still useful even if realpath cannot resolve it.
-  }
-  return [...aliases];
-}
-
-function isCloakBrowserCommand(command: string): boolean {
-  return command.includes('/.cloakbrowser/') || command.includes('\\.cloakbrowser\\');
-}
-
-function psOutput(): Promise<string> {
-  return new Promise((resolve) => {
-    execFile('ps', ['-axo', 'pid=,command='], { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, timeout: 2000 }, (err, stdout) => {
-      resolve(err ? '' : String(stdout));
-    });
-  });
 }
