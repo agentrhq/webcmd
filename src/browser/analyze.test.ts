@@ -1,10 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import {
   analyzeSite,
+  buildAdapterHints,
   detectAntiBot,
   classifyPattern,
   findNearestAdapter,
   scoreEndpointEvidence,
+  scoreNetworkEvidence,
   type PageSignals,
 } from './analyze.js';
 import type { CliCommand } from '../registry.js';
@@ -259,5 +261,93 @@ describe('analyzeSite', () => {
       reg,
     );
     expect(report.nearest_adapter?.site).toBe('github');
+  });
+
+  it('always includes adapter_hints with the Playwright boundary notice', () => {
+    const report = analyzeSite(mkSignals(), new Map());
+    expect(report.adapter_hints.do_not_copy_playwright_notice).toMatch(/not adapter source/i);
+    expect(report.adapter_hints.network_evidence).toEqual(report.api_candidates);
+  });
+});
+
+describe('buildAdapterHints', () => {
+  it('recommends PUBLIC_API for Pattern A with no anti-bot signal', () => {
+    const signals = mkSignals({
+      networkEntries: [
+        { url: 'https://x.com/api/a', status: 200, contentType: 'application/json', bodyPreview: '{"items":[{"title":"A","id":"1"}]}' },
+      ],
+    });
+    const pattern = classifyPattern(signals);
+    const antiBot = detectAntiBot(signals);
+    const hints = buildAdapterHints(signals, pattern, antiBot, scoreNetworkEvidence(signals));
+    expect(hints.recommended_strategy).toBe('PUBLIC_API');
+    expect(hints.adapter_compatible_path).toMatch(/Strategy\.PUBLIC.*browser:false/);
+    expect(hints.state_hazards).toEqual([]);
+  });
+
+  it('recommends COOKIE_API and flags the hazard for Pattern A behind a WAF', () => {
+    const signals = mkSignals({
+      cookieNames: ['acw_sc__v2'],
+      networkEntries: [
+        { url: 'https://x.com/api/a', status: 200, contentType: 'application/json', bodyPreview: '{"items":[{"title":"A","id":"1"}]}' },
+      ],
+    });
+    const pattern = classifyPattern(signals);
+    const antiBot = detectAntiBot(signals);
+    const hints = buildAdapterHints(signals, pattern, antiBot, scoreNetworkEvidence(signals));
+    expect(hints.recommended_strategy).toBe('COOKIE_API');
+    expect(hints.state_hazards.some((h) => /aliyun_waf/i.test(h))).toBe(true);
+  });
+
+  it('recommends DOM_STATE for Pattern B', () => {
+    const signals = mkSignals({
+      initialState: { __INITIAL_STATE__: true, __NUXT__: false, __NEXT_DATA__: false, __APOLLO_STATE__: false },
+    });
+    const pattern = classifyPattern(signals);
+    const antiBot = detectAntiBot(signals);
+    const hints = buildAdapterHints(signals, pattern, antiBot, scoreNetworkEvidence(signals));
+    expect(hints.recommended_strategy).toBe('DOM_STATE');
+    expect(hints.adapter_compatible_path).toMatch(/page\.evaluate/);
+  });
+
+  it('recommends COOKIE_API and flags the auth hazard for Pattern D', () => {
+    const signals = mkSignals({
+      networkEntries: [
+        { url: 'https://x.com/api/a', status: 401, contentType: 'application/json', bodyPreview: '' },
+        { url: 'https://x.com/api/b', status: 403, contentType: 'application/json', bodyPreview: '' },
+      ],
+    });
+    const pattern = classifyPattern(signals);
+    const antiBot = detectAntiBot(signals);
+    const hints = buildAdapterHints(signals, pattern, antiBot, scoreNetworkEvidence(signals));
+    expect(hints.recommended_strategy).toBe('COOKIE_API');
+    expect(hints.state_hazards.some((h) => /401\/403/.test(h))).toBe(true);
+  });
+
+  it('recommends UI_SELECTOR and points at the snapshot tool for Pattern C', () => {
+    const signals = mkSignals();
+    const pattern = classifyPattern(signals);
+    const antiBot = detectAntiBot(signals);
+    const hints = buildAdapterHints(signals, pattern, antiBot, scoreNetworkEvidence(signals));
+    expect(pattern.pattern).toBe('C');
+    expect(hints.recommended_strategy).toBe('UI_SELECTOR');
+    expect(hints.selector_evidence).toMatch(/browser <session> snapshot/);
+  });
+
+  it('recommends INTERCEPT and flags the WS hazard for Pattern E', () => {
+    const signals = mkSignals();
+    const pattern = { pattern: 'E' as const, reason: 'WS traffic observed', json_responses: 0, real_data_candidates: 0, auth_failures: 0 };
+    const antiBot = detectAntiBot(signals);
+    const hints = buildAdapterHints(signals, pattern, antiBot, scoreNetworkEvidence(signals));
+    expect(hints.recommended_strategy).toBe('INTERCEPT');
+    expect(hints.state_hazards.some((h) => /WebSocket/.test(h))).toBe(true);
+  });
+
+  it('always carries the fixed do-not-copy-Playwright notice regardless of strategy', () => {
+    const signals = mkSignals();
+    const pattern = classifyPattern(signals);
+    const antiBot = detectAntiBot(signals);
+    const hints = buildAdapterHints(signals, pattern, antiBot, scoreNetworkEvidence(signals));
+    expect(hints.do_not_copy_playwright_notice).toMatch(/never paste Playwright locators/i);
   });
 });

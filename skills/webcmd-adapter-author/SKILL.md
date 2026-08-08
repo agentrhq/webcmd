@@ -152,7 +152,7 @@ Check these off step by step:
        [ ] **Preferred:** use `webcmd browser recon run --stdin` for navigation, readiness, network hints, and page evidence in one Playwright-style program.
        [ ] Use `webcmd browser recon snapshot --snapshot-mode tree` when structural page evidence is needed.
        [ ] Use the run result as reconnaissance evidence; do not copy Playwright code into an adapter.
-       [ ] Choose Pattern A / B / C / D / E.
+       [ ] Choose Pattern A / B / C / D / E — optionally shape the run result as `PageSignals` and pipe it through `webcmd browser analyze` for an automated pattern classification plus `adapter_hints` (recommended strategy, adapter-compatible path, state hazards). See "Optional: Automated Classification + Adapter Hints" in `site-recon.md`.
 
 [ ] 4. API discovery (`api-discovery.md`) by Pattern:
        [ ] Pattern A -> section 1 network deep read.

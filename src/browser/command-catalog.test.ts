@@ -24,6 +24,7 @@ describe('browserCommandCatalog', () => {
     expect(browserCommand().commands.map(command => command.name())).toEqual([
       'init',
       'verify',
+      'analyze',
       'tabs',
       'bind',
       'run',

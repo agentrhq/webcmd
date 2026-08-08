@@ -471,6 +471,119 @@ export function findNearestAdapter(
   };
 }
 
+// ── Adapter hints (recon → adapter translation) ─────────────────────────────
+
+/**
+ * Discovery-time strategy label, matching the vocabulary of the strategy-note
+ * template in `references/adapter-template.md` — distinct from the runtime
+ * `Strategy` enum in `registry.ts`, which `adapter_compatible_path` maps to.
+ */
+export type RecommendedStrategy =
+  | 'PUBLIC_API'
+  | 'COOKIE_API'
+  | 'UI_SELECTOR'
+  | 'DOM_STATE'
+  | 'INTERCEPT';
+
+export interface AdapterHints {
+  recommended_strategy: RecommendedStrategy;
+  /** How the recommended strategy maps onto the stable adapter API — never Playwright. */
+  adapter_compatible_path: string;
+  /** Same evidence as `AnalyzeReport.api_candidates`, grouped here for a self-contained hint object. */
+  network_evidence: EndpointEvidence[];
+  /** DOM selectors aren't captured by PageSignals; point at the tool that captures them instead of fabricating evidence. */
+  selector_evidence: string;
+  state_hazards: string[];
+  /** Fixed boundary reminder — always present so the hint object stands alone even if only this field is read. */
+  do_not_copy_playwright_notice: string;
+}
+
+const DO_NOT_COPY_PLAYWRIGHT_NOTICE =
+  'This report and any Playwright-style `browser run` code are reconnaissance evidence, not adapter source. ' +
+  'Implement the adapter with the existing IPage/pipeline/Node-fetch APIs (`browser:false -> func(args)` or ' +
+  '`browser:true -> func(page,args)`); never paste Playwright locators, page.goto, or run() code into an adapter\'s func().';
+
+const SELECTOR_EVIDENCE_POINTER =
+  'Not captured by this report. For UI_SELECTOR/DOM scraping, run `webcmd browser <session> snapshot --snapshot-mode tree` ' +
+  'and record semantic selectors/ARIA roles for the target rows before writing the adapter.';
+
+function recommendStrategy(
+  pattern: PatternVerdict,
+  antiBot: AntiBotVerdict,
+): { strategy: RecommendedStrategy; path: string } {
+  switch (pattern.pattern) {
+    case 'D':
+      return {
+        strategy: 'COOKIE_API',
+        path: 'Strategy.COOKIE, browser:true -> func(page,args); read cookies with page.getCookies() and finish with Node-side fetch.',
+      };
+    case 'B':
+      return {
+        strategy: 'DOM_STATE',
+        path: 'browser:true -> func(page,args); read the SSR/hydration global with page.evaluate() — no API call needed.',
+      };
+    case 'A':
+      return antiBot.detected
+        ? {
+            strategy: 'COOKIE_API',
+            path: 'Strategy.COOKIE, browser:true -> func(page,args); read cookies with page.getCookies() and finish with Node-side fetch.',
+          }
+        : {
+            strategy: 'PUBLIC_API',
+            path: 'Strategy.PUBLIC, browser:false -> func(args); plain Node-side fetch, no browser context required.',
+          };
+    case 'E':
+      return {
+        strategy: 'INTERCEPT',
+        path: 'Raw WebSocket streams are not supported by adapters — find the underlying HTTP poll/long-poll endpoint and treat it as PUBLIC_API/COOKIE_API instead.',
+      };
+    case 'C':
+    default:
+      return {
+        strategy: 'UI_SELECTOR',
+        path: 'browser:true -> func(page,args); no API/SSR-state evidence yet, so extract with IPage selectors against the rendered page.',
+      };
+  }
+}
+
+/**
+ * Translate recon evidence into a structured bridge toward the stable
+ * adapter API, so agents act on the report instead of re-deriving strategy
+ * choice by hand or copying Playwright-style `browser run` code into `func`.
+ * See issue #226.
+ */
+export function buildAdapterHints(
+  signals: PageSignals,
+  pattern: PatternVerdict,
+  antiBot: AntiBotVerdict,
+  apiCandidates: EndpointEvidence[],
+): AdapterHints {
+  const { strategy, path } = recommendStrategy(pattern, antiBot);
+
+  const hazards: string[] = [];
+  if (antiBot.detected) {
+    hazards.push(`${antiBot.vendor ?? 'unknown'} anti-bot detected: ${antiBot.evidence.join('; ')}`);
+  }
+  if (pattern.auth_failures > 0) {
+    hazards.push(`${pattern.auth_failures} response(s) returned 401/403 — endpoint likely requires an authenticated session`);
+  }
+  if (pattern.pattern === 'E') {
+    hazards.push('WebSocket stream detected — raw WS is not supported by adapters; find the HTTP poll fallback.');
+  }
+  if (signals.cookieNames.length === 0 && strategy === 'COOKIE_API') {
+    hazards.push('Recommended strategy needs an authenticated session, but no cookies were observed — re-run recon from a signed-in session before picking a strategy.');
+  }
+
+  return {
+    recommended_strategy: strategy,
+    adapter_compatible_path: path,
+    network_evidence: apiCandidates,
+    selector_evidence: SELECTOR_EVIDENCE_POINTER,
+    state_hazards: hazards,
+    do_not_copy_playwright_notice: DO_NOT_COPY_PLAYWRIGHT_NOTICE,
+  };
+}
+
 // ── Top-level assembly ────────────────────────────────────────────────────
 
 export interface AnalyzeReport {
@@ -483,6 +596,7 @@ export interface AnalyzeReport {
   api_candidates: EndpointEvidence[];
   nearest_adapter: NearestAdapter | null;
   recommended_next_step: string;
+  adapter_hints: AdapterHints;
 }
 
 /**
@@ -528,5 +642,6 @@ export function analyzeSite(
     api_candidates: apiCandidates,
     nearest_adapter: nearest,
     recommended_next_step: next,
+    adapter_hints: buildAdapterHints(signals, pattern, antiBot, apiCandidates),
   };
 }

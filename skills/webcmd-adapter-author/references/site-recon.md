@@ -47,6 +47,55 @@ webcmd browser recon snapshot --snapshot-mode tree
 
 Use this evidence to choose Pattern A/B/C/D/E. Do not paste the Playwright-style program into the adapter.
 
+### Optional: Automated Classification + Adapter Hints
+
+To skip manually reading the table below, shape the `browser run` return value as
+`PageSignals` and pipe it into `webcmd browser analyze`. This is a pure JSON-in/JSON-out
+command — it does not drive a live browser itself, it only scores evidence you already
+captured:
+
+```bash
+webcmd browser recon run --stdin <<'JS' > /tmp/signals.json
+const networkEntries = [];
+page.on('response', async response => {
+  const contentType = response.headers()['content-type'] || '';
+  networkEntries.push({
+    url: response.url(),
+    status: response.status(),
+    contentType,
+    bodyPreview: /json|text\/event-stream/i.test(contentType)
+      ? (await response.text().catch(() => '')).slice(0, 2000)
+      : null,
+  });
+});
+
+await page.goto('<url>');
+await page.waitForLoadState('domcontentloaded');
+await page.waitForTimeout(1500);
+
+return {
+  requestedUrl: '<url>',
+  finalUrl: page.url(),
+  title: await page.title(),
+  cookieNames: (await page.context().cookies()).map(c => c.name),
+  networkEntries: networkEntries.slice(0, 30),
+  initialState: await page.evaluate(() => ({
+    __INITIAL_STATE__: Boolean(window.__INITIAL_STATE__),
+    __NUXT__: Boolean(window.__NUXT__),
+    __NEXT_DATA__: Boolean(window.__NEXT_DATA__),
+    __APOLLO_STATE__: Boolean(window.__APOLLO_STATE__),
+  })),
+};
+JS
+webcmd browser analyze --file /tmp/signals.json
+```
+
+The report includes `pattern` (A/B/C/D/E with reasoning), `anti_bot`, scored `api_candidates`,
+and an `adapter_hints` object with a recommended strategy, the corresponding adapter
+signature (`browser:false -> func(args)` vs `browser:true -> func(page,args)`), flagged
+state hazards, and a standing reminder that this report — and any Playwright-style code —
+is reconnaissance evidence, never adapter source.
+
 ## Existing-Page Diagnosis
 
 Use this when the user already has a relevant tab open. List pages, bind the chosen page,
