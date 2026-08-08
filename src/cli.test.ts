@@ -724,8 +724,8 @@ name: 'search',
       expect(data.namespace).toBe('browser');
       expect(data.command).toBe('webcmd browser');
       expect(data.description).toBe('Run Playwright programs against named browser sessions');
-      expect(data.command_count).toBe(7);
-      expect(data.commands.map((cmd: any) => cmd.name)).toEqual(['bind', 'close', 'init', 'run', 'snapshot', 'tabs', 'verify']);
+      expect(data.command_count).toBe(8);
+      expect(data.commands.map((cmd: any) => cmd.name)).toEqual(['analyze', 'bind', 'close', 'init', 'run', 'snapshot', 'tabs', 'verify']);
       // `--session` is now a hidden internal option; user-facing surface is the
       // <session> positional declared via `.usage()`. Structured help drops
       // hidden options, so namespace_options shouldn't expose it.
@@ -1050,6 +1050,120 @@ describe('resolveSitemapAvailabilityForUrl', () => {
     });
 
     expect(report).toBeNull();
+  });
+});
+
+describe('browser analyze', () => {
+  const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+  beforeEach(() => {
+    process.exitCode = undefined;
+    consoleLogSpy.mockClear();
+  });
+
+  const validSignals = {
+    requestedUrl: 'https://example.com/',
+    finalUrl: 'https://example.com/',
+    cookieNames: [],
+    networkEntries: [
+      { url: 'https://example.com/api/items', status: 200, contentType: 'application/json', bodyPreview: '{"items":[{"title":"A","id":"1"}]}' },
+    ],
+    initialState: { __INITIAL_STATE__: false, __NUXT__: false, __NEXT_DATA__: false, __APOLLO_STATE__: false },
+    title: 'Example',
+  };
+
+  function withTempFile(contents: string, fn: (filePath: string) => Promise<void>) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-browser-analyze-'));
+    const filePath = path.join(dir, 'signals.json');
+    fs.writeFileSync(filePath, contents, 'utf-8');
+    return fn(filePath).finally(() => fs.rmSync(dir, { recursive: true, force: true }));
+  }
+
+  it('scores PageSignals from --file into a report with adapter_hints', async () => {
+    await withTempFile(JSON.stringify(validSignals), async (filePath) => {
+      const program = createProgram('', '');
+      await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'analyze', '--file', filePath]);
+
+      expect(process.exitCode).toBeUndefined();
+      const output = consoleLogSpy.mock.calls.map((args) => args.join(' ')).join('\n');
+      const report = JSON.parse(output);
+      expect(report.pattern.pattern).toBe('A');
+      expect(report.adapter_hints.recommended_strategy).toBe('PUBLIC_API');
+      expect(report.adapter_hints.do_not_copy_playwright_notice).toMatch(/not adapter source/i);
+    });
+  });
+
+  it('reads PageSignals from --stdin', async () => {
+    const { Readable } = await import('node:stream');
+    const originalStdin = process.stdin;
+    Object.defineProperty(process, 'stdin', { value: Readable.from([JSON.stringify(validSignals)]), configurable: true });
+
+    try {
+      const program = createProgram('', '');
+      await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'analyze', '--stdin']);
+
+      expect(process.exitCode).toBeUndefined();
+      const output = consoleLogSpy.mock.calls.map((args) => args.join(' ')).join('\n');
+      const report = JSON.parse(output);
+      expect(report.pattern.pattern).toBe('A');
+    } finally {
+      Object.defineProperty(process, 'stdin', { value: originalStdin, configurable: true });
+    }
+  });
+
+  it('rejects when neither --stdin nor --file is given', async () => {
+    const stderr = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const program = createProgram('', '');
+      await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'analyze']);
+
+      expect(process.exitCode).toBe(2);
+      const errOutput = stderr.mock.calls.map((args) => args.join(' ')).join('\n');
+      expect(errOutput).toContain('Provide exactly one of --stdin or --file');
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
+  it('rejects when both --stdin and --file are given', async () => {
+    await withTempFile(JSON.stringify(validSignals), async (filePath) => {
+      const program = createProgram('', '');
+      await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'analyze', '--stdin', '--file', filePath]);
+
+      expect(process.exitCode).toBe(2);
+    });
+  });
+
+  it('rejects invalid JSON with a usage error', async () => {
+    const stderr = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await withTempFile('not json', async (filePath) => {
+        const program = createProgram('', '');
+        await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'analyze', '--file', filePath]);
+
+        expect(process.exitCode).toBe(2);
+        const errOutput = stderr.mock.calls.map((args) => args.join(' ')).join('\n');
+        expect(errOutput).toContain('Could not parse input as JSON');
+      });
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
+  it('rejects PageSignals missing a required field', async () => {
+    const stderr = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await withTempFile(JSON.stringify({ requestedUrl: 'https://example.com/' }), async (filePath) => {
+        const program = createProgram('', '');
+        await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'analyze', '--file', filePath]);
+
+        expect(process.exitCode).toBe(2);
+        const errOutput = stderr.mock.calls.map((args) => args.join(' ')).join('\n');
+        expect(errOutput).toContain('missing required PageSignals field');
+      });
+    } finally {
+      stderr.mockRestore();
+    }
   });
 });
 

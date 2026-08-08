@@ -1004,6 +1004,51 @@ cli({
       }
     });
 
+  async function readStdinText(): Promise<string> {
+    const chunks: Buffer[] = [];
+    for await (const chunk of process.stdin) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks).toString('utf8');
+  }
+
+  browser.command('analyze')
+    .description('Score recon evidence captured via `browser run` into a pattern classification and adapter-authoring hints')
+    .option('--stdin', 'Read PageSignals JSON from stdin')
+    .option('--file <path>', 'Read PageSignals JSON from a file')
+    .action(async (opts: { stdin?: boolean; file?: string }) => {
+      try {
+        if (Number(opts.stdin === true) + Number(typeof opts.file === 'string') !== 1) {
+          throw new ArgumentError(
+            'Provide exactly one of --stdin or --file <path>.',
+            'Capture PageSignals JSON with a `browser run` recon script (see references/site-recon.md), then pipe or save it for this command.',
+          );
+        }
+        const raw = opts.stdin === true
+          ? await readStdinText()
+          : fs.readFileSync(opts.file as string, 'utf-8');
+
+        let signals: PageSignals;
+        try {
+          signals = JSON.parse(raw) as PageSignals;
+        } catch (err) {
+          throw new ArgumentError(`Could not parse input as JSON: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        for (const field of ['requestedUrl', 'finalUrl', 'cookieNames', 'networkEntries', 'initialState', 'title'] as const) {
+          if (!(field in signals)) {
+            throw new ArgumentError(`Input is missing required PageSignals field "${field}".`, 'See references/site-recon.md for the expected shape.');
+          }
+        }
+
+        const report = analyzeSite(signals, getRegistry());
+        console.log(JSON.stringify(report, null, 2));
+      } catch (err) {
+        console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
+        if (err instanceof CliError && err.hint) console.error(`Hint: ${err.hint}`);
+        process.exitCode = err instanceof CliError ? err.exitCode : EXIT_CODES.GENERIC_ERROR;
+      }
+    });
+
   function rawBrowserAction(fn: (session: string, routing: { contextId?: string; preferredContextId?: string }, opts: Record<string, unknown>) => Promise<unknown>) {
     return async (opts: Record<string, unknown>, command: Command) => {
       try {
