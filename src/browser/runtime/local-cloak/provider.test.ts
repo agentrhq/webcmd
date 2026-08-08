@@ -114,6 +114,22 @@ describe('LocalCloakRuntimeProvider', () => {
     expect(page.goto).toHaveBeenCalledWith('https://example.com/', expect.objectContaining({ waitUntil: 'commit' }));
   });
 
+  it("maps waitUntil 'none' to a commit-only wait when opening a tab", async () => {
+    const { provider, pages } = makeProviderWithFakePage();
+    const result = await provider.dispatch({
+      id: 'new',
+      action: 'tabs',
+      op: 'new',
+      session: 'work',
+      surface: 'browser',
+      url: 'https://second.example/',
+      waitUntil: 'none',
+      profileId: 'default',
+    });
+    expect(result).toMatchObject({ id: 'new', ok: true, page: expect.any(String) });
+    expect(pages[1].goto).toHaveBeenCalledWith('https://second.example/', expect.objectContaining({ waitUntil: 'commit' }));
+  });
+
   it('evaluates JavaScript in the resolved page', async () => {
     const { provider } = makeProviderWithFakePage();
     const nav = await provider.dispatch({ id: 'nav', action: 'navigate', session: 'work', surface: 'browser', url: 'https://example.com/', profileId: 'default' });

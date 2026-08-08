@@ -432,6 +432,19 @@ describe('Page active target tracking', () => {
     }));
   });
 
+  it('forwards waitUntil to the tabs/new command', async () => {
+    sendCommandFullMock.mockResolvedValueOnce({ data: {}, page: 'page-2' });
+
+    const page = new Page('default');
+    await page.newTab?.('https://second.example', { waitUntil: 'none' });
+
+    expect(sendCommandFullMock).toHaveBeenCalledWith('tabs', expect.objectContaining({
+      op: 'new',
+      url: 'https://second.example',
+      waitUntil: 'none',
+    }));
+  });
+
   it('closes a tab by explicit page identity', async () => {
     sendCommandMock.mockResolvedValueOnce({ closed: 'page-2' });
 

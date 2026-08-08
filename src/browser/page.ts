@@ -224,10 +224,11 @@ export class Page extends BasePage {
     return Array.isArray(result) ? result : [];
   }
 
-  async newTab(url?: string): Promise<string | undefined> {
+  async newTab(url?: string, options?: { waitUntil?: 'load' | 'none' }): Promise<string | undefined> {
     const result = await sendCommandFull('tabs', {
       op: 'new',
       ...(url !== undefined && { url }),
+      ...(options?.waitUntil && { waitUntil: options.waitUntil }),
       ...this._sessionOpts(),
     });
     this._lastUrl = null;
