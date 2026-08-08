@@ -34,6 +34,12 @@ Then add `<site>` to the root `webcmd-plugin.json` `plugins` map:
 }
 ```
 
+**Verify the registration landed** — nothing else errors or warns if this step is silently skipped:
+
+```bash
+node scripts/check-plugin-root-registration.mjs
+```
+
 Before handing off, remove the private shadow and prove the plugin path works:
 
 ```bash

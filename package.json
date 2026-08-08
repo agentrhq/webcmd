@@ -77,7 +77,8 @@
     "check:package-bin": "node scripts/check-package-bin.mjs",
     "check:silent-column-drop": "node scripts/check-silent-column-drop.mjs",
     "check:typed-error-lint": "node scripts/check-typed-error-lint.mjs",
-    "check:plugin-parity": "node scripts/check-plugin-command-parity.mjs"
+    "check:plugin-parity": "node scripts/check-plugin-command-parity.mjs",
+    "check:plugin-root-registration": "node scripts/check-plugin-root-registration.mjs"
   },
   "keywords": [
     "cli",
