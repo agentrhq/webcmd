@@ -1356,10 +1356,10 @@ describe('runHostedCli', () => {
       expected: 'username\n"a,""b\nline 2"\n',
     },
     {
-      name: 'literal Markdown cells',
+      name: 'escaped Markdown cells',
       result: [{ username: 'a|b\nline 2' }],
       argv: ['-f', 'md'],
-      expected: '| username |\n| --- |\n| a|b\nline 2 |\n',
+      expected: '| username |\n| --- |\n| a\\|b\nline 2 |\n',
     },
   ])('renders hosted $name with canonical literal bytes', async ({ result, argv, expected }) => {
     const stdout = sink(true);

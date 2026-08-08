@@ -21,3 +21,7 @@ webcmd plugin install github:agentrhq/webcmd/amazon
 | `webcmd amazon product` | Amazon product page facts for candidate validation |
 | `webcmd amazon search` | Amazon search results for product discovery and coarse filtering |
 | `webcmd amazon whoami` | Show the current logged-in amazon account |
+
+## Notes
+
+- A product or review URL from a sibling marketplace (`amazon.co.uk`, `amazon.de`, `amazon.com.au`, …) is read on that marketplace, and the emitted URLs stay on it. A bare ASIN still defaults to `amazon.com`.

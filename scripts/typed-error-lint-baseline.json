@@ -329,26 +329,10 @@
   },
   {
     "rule": "silent-clamp",
-    "command": "twitter/bookmarks",
-    "file": "plugins/twitter/bookmarks.js",
-    "line": 157,
-    "text": "const fetchCount = Math.min(100, limit - allTweets.length + 10);",
-    "occurrence": 0
-  },
-  {
-    "rule": "silent-clamp",
     "command": "twitter/following",
     "file": "plugins/twitter/following.js",
     "line": 232,
     "text": "const fetchCount = Math.min(50, limit - allUsers.length + 10);",
-    "occurrence": 0
-  },
-  {
-    "rule": "silent-clamp",
-    "command": "twitter/likes",
-    "file": "plugins/twitter/likes.js",
-    "line": 208,
-    "text": "const fetchCount = Math.min(100, limit - allTweets.length + 10);",
     "occurrence": 0
   },
   {
@@ -491,7 +475,7 @@
     "rule": "silent-sentinel",
     "command": "twitter/bookmarks",
     "file": "plugins/twitter/bookmarks.js",
-    "line": 55,
+    "line": 59,
     "text": "const screenName = user?.legacy?.screen_name || user?.core?.screen_name || 'unknown';",
     "occurrence": 0
   },
@@ -499,7 +483,7 @@
     "rule": "silent-sentinel",
     "command": "twitter/likes",
     "file": "plugins/twitter/likes.js",
-    "line": 91,
+    "line": 95,
     "text": "const screenName = user?.legacy?.screen_name || user?.core?.screen_name || 'unknown';",
     "occurrence": 0
   },
