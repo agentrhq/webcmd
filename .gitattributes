@@ -1,0 +1,6 @@
+# The vendored Playwright client is verified by a byte-exact SHA-256 digest
+# (scripts/build-playwright-sandbox-client.mjs), and the generated bundle is
+# byte-compared against a fresh esbuild output. Both must therefore check out
+# identically on every platform, regardless of core.autocrlf.
+src/browser/run/playwright-client/vendor/** text eol=lf
+src/browser/run/generated/playwright-client.js text eol=lf
