@@ -15,7 +15,7 @@ webcmd browser init <site>/<name>
 
 This scaffolds `~/.webcmd/clis/<site>/<name>.js` with a `Strategy.PUBLIC` placeholder — `init` takes no flags, so set the real `strategy:` value (and the other `TODO` fields) by hand once the file exists.
 
-Promote a community CLI to the main repo as a plugin:
+Promote a community CLI to the main repo as a plugin — **only after the user has explicitly confirmed they want it pushed into the repo**; a general instruction to build a working adapter is not that confirmation (see `SKILL.md`'s Key Conventions):
 
 ```bash
 webcmd plugin create <site> --dir plugins/<site> --description "<site> commands for Webcmd"
