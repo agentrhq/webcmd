@@ -7,6 +7,7 @@ import { buildLaunchOptions, humanizeBrowser } from 'cloakbrowser';
 import type { LaunchPersistentContextOptions } from 'cloakbrowser';
 import { chromium } from 'playwright-core';
 import type { Browser, BrowserContext } from 'playwright-core';
+import { findCloakProfileProcesses, signalPids } from './profile-processes.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -40,13 +41,7 @@ export async function waitForDevToolsPort(portFile: string, timeoutMs = 10_000):
 }
 
 async function terminateProfile(userDataDir: string): Promise<void> {
-  const { stdout } = await execFileAsync('/bin/ps', ['-axo', 'pid=,command=']);
-  const needle = `--user-data-dir=${userDataDir}`;
-  for (const line of stdout.split('\n')) {
-    if (!line.includes(needle)) continue;
-    const pid = Number.parseInt(line.trim().split(/\s+/, 1)[0], 10);
-    if (Number.isInteger(pid) && pid !== process.pid) process.kill(pid, 'SIGTERM');
-  }
+  signalPids(await findCloakProfileProcesses(userDataDir), 'SIGTERM');
 }
 
 const defaultDependencies: Dependencies = {
@@ -109,7 +104,9 @@ export async function launchDarwinBackgroundPersistentContext(
         await browser!.close();
       } finally {
         contextActivators.delete(context);
-        await deps.terminateProfile(options.userDataDir);
+        // Best-effort: a ps/kill failure must not replace the outcome of
+        // `browser.close()`, which is what the caller awaited.
+        await deps.terminateProfile(options.userDataDir).catch(() => {});
       }
     };
     return context;
