@@ -2,8 +2,22 @@
  * Core registry: Strategy enum, Arg/CliCommand interfaces, cli() registration.
  */
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type { IPage } from './types.js';
 import type { FileArgumentContract } from './hosted/contract.js';
+
+/**
+ * Tracks the file path currently being imported by discovery, so cli()
+ * registrations that don't explicitly pass `source` (i.e. essentially all
+ * real adapters) still get attributed to their module. Discovery wraps each
+ * dynamic `import()` in `runWithDiscoverySource`; registerCommand falls back
+ * to this when the caller didn't set `source` itself.
+ */
+const discoverySourceStorage = new AsyncLocalStorage<string>();
+
+export function runWithDiscoverySource<T>(source: string, fn: () => Promise<T>): Promise<T> {
+  return discoverySourceStorage.run(source, fn);
+}
 
 export enum Strategy {
   PUBLIC = 'public',
@@ -236,6 +250,10 @@ function assertSiteSession(cmd: Pick<RawCliCommand, 'site' | 'name'> & { siteSes
 }
 
 export function registerCommand(cmd: RawCliCommand): void {
+  if (!cmd.source) {
+    const discoverySource = discoverySourceStorage.getStore();
+    if (discoverySource) cmd.source = discoverySource;
+  }
   const normalized = normalizeCommand(cmd);
   const canonicalKey = fullName(normalized);
   const existing = _registry.get(canonicalKey);
