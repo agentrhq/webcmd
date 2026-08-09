@@ -207,6 +207,38 @@ describe('override reporting surfaces', () => {
       .parseAsync(['node', 'webcmd', 'adapter', 'status']);
     expect(stdoutSpy.mock.calls.flat().join('\n')).toContain('orphaned override: linkedin/search (plugin linkedin is not installed)');
   });
+
+  it('reports adapter override state as JSON', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+    const pluginsDir = path.join(home, '.webcmd', 'plugins');
+    const upstream = path.join(pluginsDir, 'linkedin', 'search.js');
+    fs.mkdirSync(path.dirname(upstream), { recursive: true });
+    fs.mkdirSync(path.join(userClis, 'linkedin'), { recursive: true });
+    fs.mkdirSync(path.join(userClis, 'local'), { recursive: true });
+    fs.mkdirSync(path.join(userClis, 'old'), { recursive: true });
+    fs.writeFileSync(upstream, '// upstream v2\n');
+    fs.writeFileSync(path.join(userClis, 'linkedin', 'search.js'), '// override\n');
+    fs.writeFileSync(path.join(userClis, 'local', 'run.js'), '// user adapter\n');
+    fs.writeFileSync(path.join(userClis, 'old', 'search.js'), '// orphan\n');
+    fs.writeFileSync(path.join(home, '.webcmd', 'override-provenance.json'), JSON.stringify({
+      'linkedin/search': {
+        plugin: 'linkedin', commitHash: null, sourcePath: upstream, sourceSha256: 'old-hash',
+        basePath: '/tmp/base.js', createdAt: '2026-08-09T00:00:00.000Z',
+      },
+      'old/search': {
+        plugin: 'old', commitHash: null, sourcePath: path.join(pluginsDir, 'old', 'search.js'), sourceSha256: 'old-hash',
+        basePath: '/tmp/base.js', createdAt: '2026-08-09T00:00:00.000Z',
+      },
+    }));
+
+    await createProgram('', userClis, pluginsDir)
+      .parseAsync(['node', 'webcmd', 'adapter', 'status', '--format', 'json']);
+    expect(JSON.parse(stdoutSpy.mock.calls.flat().join('\n'))).toEqual([
+      { command: 'linkedin/search', kind: 'override', plugin: 'linkedin', reconciliationNeeded: true, orphaned: false },
+      { command: 'local/run', kind: 'user', plugin: null, reconciliationNeeded: false, orphaned: false },
+      { command: 'old/search', kind: 'override', plugin: 'old', reconciliationNeeded: false, orphaned: true },
+    ]);
+  });
 });
 
 describe('Antigravity serve plugin loading', () => {

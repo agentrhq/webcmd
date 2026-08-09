@@ -1474,7 +1474,8 @@ cli({
   adapterCmd
     .command('status')
     .description('List local adapters in ~/.webcmd/clis/')
-    .action(async () => {
+    .option('-f, --format <fmt>', 'Output format: table, json', 'table')
+    .action(async (opts: { format?: string }) => {
       try {
         const userEntries = await fs.promises.readdir(USER_CLIS, { withFileTypes: true });
         const userSites = userEntries.filter(e => e.isDirectory() && e.name !== '.base').map(e => e.name).sort();
@@ -1485,19 +1486,48 @@ cli({
 
         const records = readOverrideRecords();
         const reconcile = new Set((await import('./plugin.js')).findOverridesNeedingReconcile().map(({ commandKey }) => commandKey));
+        const adapters: Array<{
+          command: string;
+          kind: 'user' | 'override';
+          plugin: string | null;
+          reconciliationNeeded: boolean;
+          orphaned: boolean;
+        }> = [];
+        for (const site of userSites) {
+          const files = await fs.promises.readdir(path.join(USER_CLIS, site));
+          for (const file of files.filter((entry) => entry.endsWith('.js')).sort()) {
+            const command = `${site}/${file.slice(0, -3)}`;
+            const record = records[command];
+            adapters.push(record
+              ? {
+                  command,
+                  kind: 'override',
+                  plugin: record.plugin,
+                  reconciliationNeeded: reconcile.has(command),
+                  orphaned: !fs.existsSync(path.join(pluginsDir, record.plugin)),
+                }
+              : { command, kind: 'user', plugin: null, reconciliationNeeded: false, orphaned: false });
+          }
+        }
+        if (opts.format === 'json') {
+          renderOutput(adapters, {
+            fmt: 'json',
+            columns: ['command', 'kind', 'plugin', 'reconciliationNeeded', 'orphaned'],
+            title: `${CLI_COMMAND}/adapter-status`,
+            source: `${CLI_COMMAND} adapter status`,
+          });
+          return;
+        }
         console.log(`Local adapters in ~/.webcmd/clis/ (${userSites.length} sites):\n`);
         for (const site of userSites) {
           console.log(`  ${site}`);
-          const files = await fs.promises.readdir(path.join(USER_CLIS, site));
-          for (const file of files.filter((entry) => entry.endsWith('.js')).sort()) {
-            const commandKey = `${site}/${file.slice(0, -3)}`;
-            const record = records[commandKey];
-            if (!record) {
-              console.log(`    user adapter: ${commandKey}`);
-            } else if (!fs.existsSync(path.join(pluginsDir, record.plugin))) {
-              console.log(`    orphaned override: ${commandKey} (plugin ${record.plugin} is not installed)`);
+          for (const adapter of adapters.filter((item) => item.command.startsWith(`${site}/`))) {
+            if (adapter.kind === 'user') {
+              console.log(`    user adapter: ${adapter.command}`);
+            } else if (adapter.orphaned) {
+              console.log(`    orphaned override: ${adapter.command} (plugin ${adapter.plugin} is not installed)`);
             } else {
-              console.log(`    override: ${commandKey} (plugin ${record.plugin}${reconcile.has(commandKey) ? ', upstream changed since fork' : ''})`);
+              console.log(`    override: ${adapter.command} (plugin ${adapter.plugin}${adapter.reconciliationNeeded ? ', upstream changed since fork' : ''})`);
             }
           }
         }
