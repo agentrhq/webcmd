@@ -24,6 +24,7 @@
     "./browser/run": "./dist/src/browser/run/index.js",
     "./browser/snapshot": "./dist/src/browser/snapshot/index.js",
     "./browser/article-extract": "./dist/src/browser/article-extract.js",
+    "./browser/verify-fixture": "./dist/src/browser/verify-fixture.js",
     "./browser/utils": "./dist/src/browser/utils.js",
     "./download": "./dist/src/download/index.js",
     "./download/article-download": "./dist/src/download/article-download.js",
