@@ -99,6 +99,14 @@ export const browserCommandCatalog: readonly HostedBrowserCommandContract[] = [
   command('bind', 'Bind this session to an existing page', 'bind', [], [
     option('page', 'Stable page id returned by tabs', { required: true }),
   ], 'require-existing'),
+  command('fork', 'Fork an installed plugin command into a private copy', 'fork', [{
+    name: 'name',
+    type: 'string',
+    description: 'Command to fork in site/command format',
+    positional: true,
+    required: true,
+    variadic: false,
+  }], [], 'require-existing'),
   command('run', 'Run JavaScript with Playwright', 'run', [], [
     flag('stdin', 'Read the program from stdin'),
     option('file', 'Read the program from a file'),

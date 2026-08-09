@@ -570,6 +570,23 @@ function applyRootSubcommandSummaries(program: Command): void {
   }
 }
 
+async function handleAdapterOverride(commandKey: string): Promise<void> {
+  const { createAdapterOverride } = await import('./adapter-override.js');
+  try {
+    const result = createAdapterOverride(commandKey);
+    console.log(`✅ Override created for ${result.commandKey}`);
+    console.log(`     yours: ${result.overridePath}`);
+    console.log(`     base:  ${result.basePath}`);
+    console.log();
+    console.log(`  Your copy now takes precedence over plugin "${result.plugin}".`);
+    console.log(`  "${CLI_COMMAND} plugin update" keeps updating the plugin copy, not your override,`);
+    console.log('  and will tell you when the upstream file changes so you can merge.');
+  } catch (err) {
+    console.error(`Error: ${getErrorMessage(err)}`);
+    process.exitCode = EXIT_CODES.GENERIC_ERROR;
+  }
+}
+
 export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDir: string = PLUGINS_DIR): Command {
   const program = new Command();
   // enablePositionalOptions: prevents parent from consuming flags meant for subcommands;
@@ -858,6 +875,11 @@ cli({
         process.exitCode = EXIT_CODES.GENERIC_ERROR;
       }
     });
+
+  browser.command('fork')
+    .argument('<name>', 'Command to fork in site/command format')
+    .description('Fork an installed plugin command into a private copy')
+    .action(handleAdapterOverride);
 
   // ── Verify (test adapter) ──
 
@@ -1263,6 +1285,10 @@ cli({
       const { listPlugins } = await import('./plugin.js');
       const plugins = listPlugins();
       if (plugins.length === 0) {
+        if (opts.format === 'json') {
+          renderOutput([], { fmt: 'json' });
+          return;
+        }
         console.log('  No plugins installed.');
         console.log(`  Install one with: ${CLI_COMMAND} plugin install github:user/repo`);
         return;
@@ -1538,16 +1564,13 @@ cli({
           }
         }
       } catch (err) {
-        if (opts.format === 'json' && !userClisListed && (err as NodeJS.ErrnoException).code === 'ENOENT') {
-          renderOutput([], { fmt: 'json' });
+        if (!userClisListed && (err as NodeJS.ErrnoException).code === 'ENOENT') {
+          if (opts.format === 'json') renderOutput([], { fmt: 'json' });
+          else console.log('No local adapters installed.');
           return;
         }
-        if (opts.format === 'json') {
-          console.error(`Error: ${getErrorMessage(err)}`);
-          process.exitCode = EXIT_CODES.GENERIC_ERROR;
-          return;
-        }
-        console.log('No local adapters installed.');
+        console.error(`Error: ${getErrorMessage(err)}`);
+        process.exitCode = EXIT_CODES.GENERIC_ERROR;
       }
     });
 
@@ -1558,21 +1581,28 @@ cli({
     .option('--all', 'Reset all local overrides')
     .action(async (site: string | undefined, opts: { all?: boolean }) => {
       if (opts.all) {
+        let userClisListed = false;
         try {
           const userEntries = await fs.promises.readdir(USER_CLIS, { withFileTypes: true });
+          userClisListed = true;
           const dirs = userEntries.filter(e => e.isDirectory() && e.name !== '.base');
           if (dirs.length === 0) {
             console.log('No local sites to reset.');
             return;
           }
+          readOverrideRecords();
           let removedRecords = 0;
           for (const dir of dirs) {
             fs.rmSync(path.join(USER_CLIS, dir.name), { recursive: true, force: true });
             removedRecords += removeOverrideRecords(dir.name).length;
           }
           console.log(`✅ Removed ${dirs.length} local adapter override(s) and ${removedRecords} provenance record(s).`);
-        } catch {
-          console.log('No local sites to reset.');
+        } catch (err) {
+          if (!userClisListed && (err as NodeJS.ErrnoException).code === 'ENOENT') console.log('No local sites to reset.');
+          else {
+            console.error(`Error: ${getErrorMessage(err)}`);
+            process.exitCode = EXIT_CODES.GENERIC_ERROR;
+          }
         }
         return;
       }
@@ -1600,22 +1630,7 @@ cli({
     .command('override')
     .description('Fork an installed plugin command into ~/.webcmd/clis so you can modify it')
     .argument('<command>', 'Command to override, as <site>/<command>')
-    .action(async (commandKey: string) => {
-      const { createAdapterOverride } = await import('./adapter-override.js');
-      try {
-        const result = createAdapterOverride(commandKey);
-        console.log(`✅ Override created for ${result.commandKey}`);
-        console.log(`     yours: ${result.overridePath}`);
-        console.log(`     base:  ${result.basePath}`);
-        console.log();
-        console.log(`  Your copy now takes precedence over plugin "${result.plugin}".`);
-        console.log(`  "${CLI_COMMAND} plugin update" keeps updating the plugin copy, not your override,`);
-        console.log('  and will tell you when the upstream file changes so you can merge.');
-      } catch (err) {
-        console.error(`Error: ${getErrorMessage(err)}`);
-        process.exitCode = EXIT_CODES.GENERIC_ERROR;
-      }
-    });
+    .action(handleAdapterOverride);
 
   // ── Built-in: browser profile selection ──────────────────────────────────
   const profileCmd = program.command('profile').description('Manage webcmd browser runtime profiles');

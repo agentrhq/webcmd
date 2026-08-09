@@ -197,6 +197,7 @@ async function loadFromManifest(manifestPath: string, clisDir: string): Promise<
     const manifest = JSON.parse(raw) as ManifestEntry[];
     for (const entry of manifest) {
       if (!entry.modulePath) continue;
+      if ([entry.modulePath, entry.sourceFile].some(candidate => candidate && isUnderBaseDir(clisDir, candidate))) continue;
       const modulePath = path.resolve(clisDir, entry.modulePath);
       const cmd: InternalCliCommand = {
         site: entry.site,
@@ -229,6 +230,11 @@ async function loadFromManifest(manifestPath: string, clisDir: string): Promise<
     log.warn(`Failed to load manifest ${manifestPath}: ${getErrorMessage(err)}`);
     return false;
   }
+}
+
+function isUnderBaseDir(clisDir: string, candidate: string): boolean {
+  const relative = path.relative(path.resolve(clisDir, '.base'), path.resolve(clisDir, candidate));
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 }
 
 /**

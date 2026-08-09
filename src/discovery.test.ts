@@ -99,4 +99,24 @@ describe('discovery attributes source through the real cli() path', () => {
 
     expect(getRegistry().get('demo/run')).toBeUndefined();
   });
+
+  it('never registers manifest commands whose module or source is under clis/.base/', async () => {
+    const clisDir = path.join(tempHome, 'clis');
+    await fs.promises.mkdir(clisDir, { recursive: true });
+    await fs.promises.writeFile(path.join(tempHome, 'cli-manifest.json'), JSON.stringify([
+      {
+        site: 'base-module', name: 'run', access: 'read', browser: false, args: [],
+        modulePath: '.base/base-module/run.js', sourceFile: 'base-module/run.js',
+      },
+      {
+        site: 'base-source', name: 'run', access: 'read', browser: false, args: [],
+        modulePath: 'base-source/run.js', sourceFile: '.base/base-source/run.js',
+      },
+    ]));
+
+    await discoverClis(clisDir);
+
+    expect(getRegistry().get('base-module/run')).toBeUndefined();
+    expect(getRegistry().get('base-source/run')).toBeUndefined();
+  });
 });

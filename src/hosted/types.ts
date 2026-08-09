@@ -179,6 +179,7 @@ export type HostedBrowserActionName =
   | 'fill'
   | 'find'
   | 'focus'
+  | 'fork'
   | 'frames'
   | 'get-attributes'
   | 'get-html'

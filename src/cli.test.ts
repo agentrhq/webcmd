@@ -65,6 +65,20 @@ vi.mock('node:child_process', async () => {
 
 import { createProgram, findPackageRoot, loadAntigravityServe, normalizeVerifyRows, renderVerifyPreview, resolveBrowserVerifyInvocation, resolveSitemapAvailabilityForUrl, selectFreshByTimestamp } from './cli.js';
 
+const realHome = process.env.HOME;
+let isolatedCliTestHome: string;
+
+beforeEach(() => {
+  isolatedCliTestHome = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-cli-home-'));
+  process.env.HOME = isolatedCliTestHome;
+});
+
+afterEach(() => {
+  if (realHome === undefined) delete process.env.HOME;
+  else process.env.HOME = realHome;
+  fs.rmSync(isolatedCliTestHome, { recursive: true, force: true });
+});
+
 describe('plugin update reconciliation reporting', () => {
   const stdoutSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
@@ -156,6 +170,18 @@ describe('override reporting surfaces', () => {
         name: 'linkedin', commands: ['search'], source: 'github:example/linkedin',
         overrides: ['search'], updateAvailable: true,
       }]);
+    } finally {
+      list.mockRestore();
+    }
+  });
+
+  it('renders an empty plugin list as JSON', async () => {
+    const list = vi.spyOn(pluginModule, 'listPlugins').mockReturnValue([]);
+    try {
+      await createProgram('', '', path.join(home, '.webcmd', 'plugins'))
+        .parseAsync(['node', 'webcmd', 'plugin', 'list', '--format', 'json']);
+
+      expect(JSON.parse(stdoutSpy.mock.calls.flat().join('\n'))).toEqual([]);
     } finally {
       list.mockRestore();
     }
@@ -294,6 +320,57 @@ describe('override reporting surfaces', () => {
       process.exitCode = previousExitCode;
       stderrSpy.mockRestore();
     }
+  });
+
+  it('reports malformed override provenance as a table status error', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const previousExitCode = process.exitCode;
+    fs.mkdirSync(path.join(userClis, 'linkedin'), { recursive: true });
+    fs.writeFileSync(path.join(userClis, 'linkedin', 'search.js'), '// override\n');
+    fs.writeFileSync(path.join(home, '.webcmd', 'override-provenance.json'), '{not json');
+    try {
+      await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+        .parseAsync(['node', 'webcmd', 'adapter', 'status']);
+
+      expect(stdoutSpy.mock.calls.flat().join('\n')).not.toContain('No local adapters installed.');
+      expect(stderrSpy.mock.calls.flat().join('\n')).toContain('Malformed override provenance store');
+      expect(process.exitCode).not.toBe(0);
+    } finally {
+      process.exitCode = previousExitCode;
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('fails reset --all loudly on malformed provenance before deleting adapters', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+    const siteDir = path.join(userClis, 'linkedin');
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const previousExitCode = process.exitCode;
+    fs.mkdirSync(siteDir, { recursive: true });
+    fs.writeFileSync(path.join(siteDir, 'search.js'), '// override\n');
+    fs.writeFileSync(path.join(home, '.webcmd', 'override-provenance.json'), '{not json');
+    try {
+      await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+        .parseAsync(['node', 'webcmd', 'adapter', 'reset', '--all']);
+
+      expect(fs.existsSync(siteDir)).toBe(true);
+      expect(stdoutSpy.mock.calls.flat().join('\n')).not.toContain('No local sites to reset.');
+      expect(stderrSpy.mock.calls.flat().join('\n')).toContain('Malformed override provenance store');
+      expect(process.exitCode).not.toBe(0);
+    } finally {
+      process.exitCode = previousExitCode;
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('reports no sites when reset --all has no local adapter directory', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+
+    await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+      .parseAsync(['node', 'webcmd', 'adapter', 'reset', '--all']);
+
+    expect(stdoutSpy.mock.calls.flat().join('\n')).toContain('No local sites to reset.');
   });
 });
 
@@ -960,8 +1037,8 @@ name: 'search',
       expect(data.namespace).toBe('browser');
       expect(data.command).toBe('webcmd browser');
       expect(data.description).toBe('Run Playwright programs against named browser sessions');
-      expect(data.command_count).toBe(7);
-      expect(data.commands.map((cmd: any) => cmd.name)).toEqual(['bind', 'close', 'init', 'run', 'snapshot', 'tabs', 'verify']);
+      expect(data.command_count).toBe(8);
+      expect(data.commands.map((cmd: any) => cmd.name)).toEqual(['bind', 'close', 'fork', 'init', 'run', 'snapshot', 'tabs', 'verify']);
       // `--session` is now a hidden internal option; user-facing surface is the
       // <session> positional declared via `.usage()`. Structured help drops
       // hidden options, so namespace_options shouldn't expose it.
