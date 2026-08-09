@@ -363,7 +363,9 @@ describe('doctor report rendering', () => {
       {
         name: 'instagram/saved',
         userPath: '/home/me/.webcmd/clis/instagram/saved.js',
-        builtinPath: '/pkg/clis/instagram/saved.js',
+        pluginPath: '/home/me/.webcmd/plugins/instagram/saved.js',
+        plugin: 'instagram',
+        hasProvenance: false,
       },
     ]);
 
@@ -371,7 +373,7 @@ describe('doctor report rendering', () => {
 
     expect(report.adapterShadows).toHaveLength(1);
     expect(report.issues).toEqual(expect.arrayContaining([
-      expect.stringContaining('Local adapter overrides shadow packaged adapters'),
+      expect.stringContaining('Local adapter overrides shadow installed plugin adapters'),
     ]));
   });
 
