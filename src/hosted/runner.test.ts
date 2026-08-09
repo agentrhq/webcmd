@@ -91,6 +91,107 @@ it('routes site commands to the hosted site-memory API', async () => {
   }
 });
 
+it('gets hosted adapter source into the hosted-only local root or stdout', async () => {
+  const homeDir = await mkdtemp(path.join(tmpdir(), 'webcmd-adapter-source-home-'));
+  const stdout = sink();
+  const source = 'export const search = true;\n';
+  const manifest = adapterSourceManifest();
+  try {
+    const run = (argv: string[]) => runHostedCli(argv, {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      homeDir,
+      stdout: stdout.stream,
+      fetchImpl: async (url) => new URL(String(url)).pathname === '/v1/manifest'
+        ? new Response(JSON.stringify({ ok: true, manifest }))
+        : new Response(source),
+    });
+
+    await expect(run(['adapter', 'source', 'get', 'acme/search'])).resolves.toMatchObject({ exitCode: 0 });
+    await expect(readFile(path.join(homeDir, '.webcmd', 'hosted', 'clis', 'acme', 'search.js'), 'utf8')).resolves.toBe(source);
+
+    await expect(run(['adapter', 'path', 'acme/search'])).resolves.toMatchObject({ exitCode: 0 });
+    expect(stdout.text()).toContain(path.join(homeDir, '.webcmd', 'hosted', 'clis', 'acme', 'search.js'));
+
+    await expect(run(['adapter', 'source', 'get', 'acme/search', '--output', '-'])).resolves.toMatchObject({ exitCode: 0 });
+    expect(stdout.text()).toContain(source);
+  } finally {
+    await rm(homeDir, { recursive: true, force: true });
+  }
+});
+
+it('puts hosted adapter source and reports re-inventoried commands', async () => {
+  const sourceDir = await mkdtemp(path.join(tmpdir(), 'webcmd-adapter-source-put-'));
+  const sourcePath = path.join(sourceDir, 'search.js');
+  const stdout = sink();
+  const requests: Array<{ path: string; method: string; body?: string }> = [];
+  const source = 'export const detail = true;\n';
+  await writeFile(sourcePath, source);
+  try {
+    const result = await runHostedCli(['adapter', 'source', 'put', 'acme/search', sourcePath], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      fetchImpl: async (url, init) => {
+        const request = {
+          path: new URL(String(url)).pathname,
+          method: init?.method ?? 'GET',
+          ...(init?.body ? { body: String(init.body) } : {}),
+        };
+        requests.push(request);
+        if (request.path === '/v1/manifest') return new Response(JSON.stringify({ ok: true, manifest: adapterSourceManifest() }));
+        return new Response(JSON.stringify({ ok: true, package: { id: 'pkg_acme', storagePath: '/private/acme-edit' }, commands: ['acme/detail'] }));
+      },
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(requests).toContainEqual({ path: '/v1/adapters/pkg_acme/source/clis/acme/search.js', method: 'PUT', body: source });
+    expect(stdout.text()).toContain('acme/detail');
+  } finally {
+    await rm(sourceDir, { recursive: true, force: true });
+  }
+});
+
+it('surfaces adapter override guidance for protected hosted adapter source', async () => {
+  const stderr = sink();
+  const result = await runHostedCli(['adapter', 'source', 'get', 'acme/search'], {
+    config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+    stderr: stderr.stream,
+    fetchImpl: async (url) => new URL(String(url)).pathname === '/v1/manifest'
+      ? new Response(JSON.stringify({ ok: true, manifest: adapterSourceManifest() }))
+      : new Response(JSON.stringify({
+        ok: false,
+        error: {
+          code: 'ADAPTER_SOURCE_SYSTEM_PACKAGE',
+          message: 'System adapter source is read-only; create an adapter override to fork it first.',
+          exitCode: 1,
+        },
+      }), { status: 403 }),
+  });
+
+  expect(result.exitCode).toBe(1);
+  expect(stderr.text()).toContain('adapter override');
+});
+
+it('reports adapter source local paths without source transfer in local mode', async () => {
+  const homeDir = await mkdtemp(path.join(tmpdir(), 'webcmd-adapter-source-local-'));
+  const userClis = path.join(homeDir, '.webcmd', 'clis');
+  const expectedPath = path.join(userClis, 'acme', 'search.js');
+  const stdout = vi.spyOn(console, 'log').mockImplementation(() => {});
+  try {
+    for (const argv of [
+      ['adapter', 'source', 'get', 'acme/search'],
+      ['adapter', 'source', 'put', 'acme/search', path.join(homeDir, 'search.js')],
+      ['adapter', 'path', 'acme/search'],
+    ]) {
+      stdout.mockClear();
+      await createProgram('', userClis).parseAsync(argv, { from: 'user' });
+      expect(stdout.mock.calls.flat().join('\n')).toContain(expectedPath);
+    }
+  } finally {
+    stdout.mockRestore();
+    await rm(homeDir, { recursive: true, force: true });
+  }
+});
+
 it.each([
   {
     name: 'list',
@@ -198,6 +299,20 @@ const manifest = {
     },
   ],
 };
+
+function adapterSourceManifest() {
+  return {
+    ...manifest,
+    commands: [{
+      ...manifest.commands[0],
+      site: 'acme',
+      name: 'search',
+      command: 'acme/search',
+      adapterPackageId: 'pkg_acme',
+      sourceFile: 'clis/acme/search.js',
+    }],
+  };
+}
 
 function sink(isTTY = false): { stream: Writable; text: () => string } {
   let data = '';

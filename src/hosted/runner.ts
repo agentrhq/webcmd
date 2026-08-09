@@ -1,4 +1,5 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Command, CommanderError } from 'commander';
@@ -50,6 +51,7 @@ import { resolveHostedApiKey, type HostedCredentialStore } from './credentials.j
 import { parseHostedRootCommandSurface } from '../root-command-surface.js';
 import { registerSiteCommands } from '../site-memory/commands.js';
 import type {
+  HostedCommand,
   HostedBrowserActionName,
   HostedBrowserRunActionResponse,
   HostedBrowserSnapshotActionResponse,
@@ -108,7 +110,7 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
       workspace: resolveWorkspace(argv, opts.env ?? process.env),
       fetchImpl: opts.fetchImpl,
     });
-    await dispatchHosted(argv, client, stdout, stderr, opts.now ?? Date.now);
+    await dispatchHosted(argv, client, stdout, stderr, opts.now ?? Date.now, opts.homeDir ?? opts.env?.HOME ?? homedir());
     return { handled: true, exitCode: EXIT_CODES.SUCCESS };
   } catch (err) {
     if (err instanceof StreamWriteError) throw err;
@@ -143,6 +145,7 @@ async function dispatchHosted(
   stdout: NodeJS.WritableStream,
   stderr: NodeJS.WritableStream,
   now: () => number,
+  homeDir: string,
 ): Promise<void> {
   const normalized = parseHostedRootCommandSurface(argv);
   if (normalized.kind === 'help') {
@@ -209,6 +212,11 @@ async function dispatchHosted(
 
   if (args[0] === 'site') {
     await runHostedSiteSurface(args.slice(1), normalized.literal, client, stdout);
+    return;
+  }
+
+  if (args[0] === 'adapter' && (args[1] === 'source' || args[1] === 'path')) {
+    await runHostedAdapterSourceSurface(args.slice(1), normalized.literal, client, stdout, homeDir);
     return;
   }
 
@@ -851,6 +859,101 @@ async function runHostedSiteSurface(
     }
     throw new CommanderStructuralError(stderr || `${error.message}\n`, error.exitCode);
   }
+}
+
+type HostedAdapterSourceCommand =
+  | { kind: 'get'; commandKey: string; output?: string }
+  | { kind: 'put'; commandKey: string; path: string }
+  | { kind: 'path'; commandKey: string };
+
+async function runHostedAdapterSourceSurface(
+  argv: readonly string[],
+  literal: boolean,
+  client: HostedClient,
+  stdout: NodeJS.WritableStream,
+  homeDir: string,
+): Promise<void> {
+  let help = '';
+  let stderr = '';
+  let parsed: HostedAdapterSourceCommand | undefined;
+  const root = new Command('webcmd');
+  const output = {
+    writeOut: (value: string) => { help += value; },
+    writeErr: (value: string) => { stderr += value; },
+  };
+  root.exitOverride().configureOutput(output);
+  const adapter = root.command('adapter').description('Manage CLI adapters');
+  const source = adapter.command('source').description('Read or write hosted adapter source');
+  source.command('get')
+    .argument('<command>')
+    .option('-o, --output <path>')
+    .action((commandKey: string, options: { output?: string }) => { parsed = { kind: 'get', commandKey, output: options.output }; });
+  source.command('put')
+    .argument('<command>')
+    .argument('<path>')
+    .action((commandKey: string, filePath: string) => { parsed = { kind: 'put', commandKey, path: filePath }; });
+  adapter.command('path')
+    .argument('<command>')
+    .action((commandKey: string) => { parsed = { kind: 'path', commandKey }; });
+
+  try {
+    await root.parseAsync(literal ? ['--', 'adapter', ...argv] : ['adapter', ...argv], { from: 'user' });
+  } catch (error) {
+    if (!(error instanceof CommanderError)) throw error;
+    if (error.code === 'commander.helpDisplayed') {
+      await writeToStream(stdout, help);
+      return;
+    }
+    throw new CommanderStructuralError(stderr || `${error.message}\n`, error.exitCode);
+  }
+  if (!parsed) throw new CommanderStructuralError("error: command 'adapter' did not run\n", 1);
+
+  const { site, command } = parseAdapterCommandKey(parsed.commandKey);
+  const destination = hostedAdapterPath(homeDir, site, command);
+  if (parsed.kind === 'path') {
+    await writeToStream(stdout, `${destination}\n`);
+    return;
+  }
+  const metadata = await hostedAdapterSourceMetadata(client, parsed.commandKey);
+  if (parsed.kind === 'get') {
+    const sourceText = await client.getAdapterSource(metadata.adapterPackageId!, metadata.sourceFile!);
+    const outputPath = parsed.output ?? destination;
+    if (outputPath === '-') {
+      await writeToStream(stdout, sourceText);
+      return;
+    }
+    mkdirSync(path.dirname(outputPath), { recursive: true });
+    writeFileSync(outputPath, sourceText, 'utf8');
+    await writeToStream(stdout, `Adapter source written to ${outputPath}\n`);
+    return;
+  }
+  const result = await client.putAdapterSource(
+    metadata.adapterPackageId!,
+    metadata.sourceFile!,
+    readFileSync(parsed.path, 'utf8'),
+  );
+  await writeToStream(stdout, `Adapter source updated. Re-inventoried commands: ${result.commands.join(', ')}\n`);
+}
+
+function parseAdapterCommandKey(commandKey: string): { site: string; command: string } {
+  const [site, command, extra] = commandKey.split('/');
+  if (!site || !command || extra) throw new ConfigError('Adapter command must use site/command format.');
+  return { site, command };
+}
+
+function hostedAdapterPath(homeDir: string, site: string, command: string): string {
+  // Under the override model's precedence flip, pulling hosted source into clis/ would shadow the user's local plugin after a local-mode switch.
+  return path.join(homeDir, '.webcmd', 'hosted', 'clis', site, `${command}.js`);
+}
+
+async function hostedAdapterSourceMetadata(client: HostedClient, commandKey: string): Promise<HostedCommand> {
+  const manifest = await client.getManifest();
+  validateManifestContractIdentity(manifest);
+  const command = manifest.commands.find(candidate => candidate.command === commandKey);
+  if (!command?.adapterPackageId || !command.sourceFile) {
+    throw new ConfigError(`Hosted adapter source is unavailable for ${commandKey}.`);
+  }
+  return command;
 }
 
 type ParsedHostedListSurface =

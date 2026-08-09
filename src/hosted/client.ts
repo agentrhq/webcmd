@@ -10,6 +10,7 @@ import type {
   HostedBrowserRunRequest,
   HostedBrowserRunResponse,
   HostedArtifactReceipt,
+  HostedAdapterSourceUpdate,
   HostedErrorResponse,
   HostedExecution,
   HostedExecuteResponse,
@@ -235,6 +236,21 @@ export class HostedClient {
     if (!isHostedSiteMemoryWriteResponse(response)) {
       throw protocolError('Webcmd Cloud returned an invalid site memory write response.');
     }
+  }
+
+  async getAdapterSource(packageId: string, sourcePath: string): Promise<string> {
+    return this.requestText(`/v1/adapters/${encodeURIComponent(packageId)}/source/${encodeMemoryPath(sourcePath)}`);
+  }
+
+  async putAdapterSource(packageId: string, sourcePath: string, source: string): Promise<HostedAdapterSourceUpdate> {
+    const body = await this.request(`/v1/adapters/${encodeURIComponent(packageId)}/source/${encodeMemoryPath(sourcePath)}`, {
+      method: 'PUT',
+      body: source,
+    });
+    if (!isHostedAdapterSourceUpdate(body)) {
+      throw protocolError('Webcmd Cloud returned an invalid adapter source update response.');
+    }
+    return { packageId: body.package.id, storagePath: body.package.storagePath, commands: body.commands };
   }
 
   async execute(input: {
@@ -505,6 +521,21 @@ function isHostedManifest(value: unknown): value is HostedManifest {
     && typeof value.metadata.generatedAt === 'string'
     && Array.isArray(value.commands)
     && value.commands.every(isHostedManifestCommand);
+}
+
+function isHostedAdapterSourceUpdate(value: unknown): value is {
+  ok: true;
+  package: { id: string; storagePath: string };
+  commands: string[];
+} {
+  return hasExactKeys(value, ['ok', 'package', 'commands'])
+    && value.ok === true
+    && isRecord(value.package)
+    && hasExactKeys(value.package, ['id', 'storagePath'])
+    && typeof value.package.id === 'string'
+    && typeof value.package.storagePath === 'string'
+    && Array.isArray(value.commands)
+    && value.commands.every(command => typeof command === 'string');
 }
 
 function isHostedExecuteResponse(

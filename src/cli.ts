@@ -1635,6 +1635,30 @@ cli({
     .argument('<command>', 'Command to override, as <site>/<command>')
     .action(handleAdapterOverride);
 
+  const localAdapterPath = (commandKey: string): string => {
+    const [site, command, extra] = commandKey.split('/');
+    if (!site || !command || extra) throw new ArgumentError('Adapter command must use site/command format.');
+    return path.join(USER_CLIS, site, `${command}.js`);
+  };
+  const reportLocalAdapterPath = (commandKey: string): void => {
+    console.log(`Local adapter source is already at ${localAdapterPath(commandKey)}.`);
+  };
+  const adapterSourceCmd = adapterCmd.command('source').description('Read or write hosted adapter source');
+  adapterSourceCmd
+    .command('get')
+    .argument('<command>', 'Adapter command, as <site>/<command>')
+    .option('-o, --output <path>', 'Write source to path')
+    .action((commandKey: string) => reportLocalAdapterPath(commandKey));
+  adapterSourceCmd
+    .command('put')
+    .argument('<command>', 'Adapter command, as <site>/<command>')
+    .argument('<path>', 'Local source path')
+    .action((commandKey: string) => reportLocalAdapterPath(commandKey));
+  adapterCmd
+    .command('path')
+    .argument('<command>', 'Adapter command, as <site>/<command>')
+    .action((commandKey: string) => reportLocalAdapterPath(commandKey));
+
   // ── Built-in: browser profile selection ──────────────────────────────────
   const profileCmd = program.command('profile').description('Manage webcmd browser runtime profiles');
   // Snapshot before applyRootSubcommandSummaries() rewrites .description() to a child-name listing.
