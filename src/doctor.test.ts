@@ -377,6 +377,31 @@ describe('doctor report rendering', () => {
     ]));
   });
 
+  it('reports a diagnostic issue instead of throwing when adapter shadow detection fails', async () => {
+    const status = {
+      state: 'ready' as const,
+      status: {
+        daemonVersion: '1.7.9',
+        runtimeConnected: true,
+        runtimeName: 'Cloak',
+        runtimeVersion: '1.0.3',
+      },
+    };
+    mockGetDaemonHealth.mockResolvedValue(status);
+    mockFindShadowedUserAdapters.mockImplementationOnce(() => {
+      throw new Error('Malformed override provenance store at /home/me/.webcmd/override-provenance.json: invalid JSON');
+    });
+
+    const report = await runBrowserDoctor({ cliVersion: '1.7.9' });
+
+    expect(report.adapterShadows).toEqual([]);
+    expect(report.daemonRunning).toBe(true);
+    expect(report.runtimeConnected).toBe(true);
+    expect(report.issues).toEqual(expect.arrayContaining([
+      expect.stringContaining('Could not check adapter overrides: Malformed override provenance store'),
+    ]));
+  });
+
   it('reports profile-required when multiple profiles are connected without a selection', async () => {
     const status = {
       state: 'profile-required' as const,
