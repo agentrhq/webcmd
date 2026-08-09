@@ -108,6 +108,7 @@ it('gets hosted adapter source into the hosted-only local root or stdout', async
 
     await expect(run(['adapter', 'source', 'get', 'acme/search'])).resolves.toMatchObject({ exitCode: 0 });
     await expect(readFile(path.join(homeDir, '.webcmd', 'hosted', 'clis', 'acme', 'search.js'), 'utf8')).resolves.toBe(source);
+    await expect(readFile(path.join(homeDir, '.webcmd', 'clis', 'acme', 'search.js'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
 
     await expect(run(['adapter', 'path', 'acme/search'])).resolves.toMatchObject({ exitCode: 0 });
     expect(stdout.text()).toContain(path.join(homeDir, '.webcmd', 'hosted', 'clis', 'acme', 'search.js'));
