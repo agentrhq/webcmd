@@ -1535,9 +1535,14 @@ cli({
             }
           }
         }
-      } catch {
-        if (opts.format === 'json') {
+      } catch (err) {
+        if (opts.format === 'json' && (err as NodeJS.ErrnoException).code === 'ENOENT') {
           renderOutput([], { fmt: 'json' });
+          return;
+        }
+        if (opts.format === 'json') {
+          console.error(`Error: ${getErrorMessage(err)}`);
+          process.exitCode = EXIT_CODES.GENERIC_ERROR;
           return;
         }
         console.log('No local adapters installed.');

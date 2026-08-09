@@ -248,6 +248,25 @@ describe('override reporting surfaces', () => {
 
     expect(JSON.parse(stdoutSpy.mock.calls.flat().join('\n'))).toEqual([]);
   });
+
+  it('reports malformed override provenance as a JSON status error', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const previousExitCode = process.exitCode;
+    fs.mkdirSync(path.join(userClis, 'linkedin'), { recursive: true });
+    fs.writeFileSync(path.join(userClis, 'linkedin', 'search.js'), '// override\n');
+    fs.writeFileSync(path.join(home, '.webcmd', 'override-provenance.json'), '{not json');
+    try {
+      await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+        .parseAsync(['node', 'webcmd', 'adapter', 'status', '--format', 'json']);
+
+      expect(stdoutSpy.mock.calls.flat().join('\n')).not.toBe('[]');
+      expect(stderrSpy.mock.calls.flat().join('\n')).toContain('Malformed override provenance store');
+    } finally {
+      process.exitCode = previousExitCode;
+      stderrSpy.mockRestore();
+    }
+  });
 });
 
 describe('Antigravity serve plugin loading', () => {
