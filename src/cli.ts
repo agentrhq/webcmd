@@ -1480,6 +1480,10 @@ cli({
         const userEntries = await fs.promises.readdir(USER_CLIS, { withFileTypes: true });
         const userSites = userEntries.filter(e => e.isDirectory() && e.name !== '.base').map(e => e.name).sort();
         if (userSites.length === 0) {
+          if (opts.format === 'json') {
+            renderOutput([], { fmt: 'json' });
+            return;
+          }
           console.log('No local adapters installed.');
           return;
         }
@@ -1532,6 +1536,10 @@ cli({
           }
         }
       } catch {
+        if (opts.format === 'json') {
+          renderOutput([], { fmt: 'json' });
+          return;
+        }
         console.log('No local adapters installed.');
       }
     });

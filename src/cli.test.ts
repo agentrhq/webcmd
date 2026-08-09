@@ -239,6 +239,15 @@ describe('override reporting surfaces', () => {
       { command: 'old/search', kind: 'override', plugin: 'old', reconciliationNeeded: false, orphaned: true },
     ]);
   });
+
+  it('reports an empty adapter status as JSON', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+
+    await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+      .parseAsync(['node', 'webcmd', 'adapter', 'status', '--format', 'json']);
+
+    expect(JSON.parse(stdoutSpy.mock.calls.flat().join('\n'))).toEqual([]);
+  });
 });
 
 describe('Antigravity serve plugin loading', () => {
