@@ -4,15 +4,18 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { createAdapterOverride } from './adapter-override.js';
 import { readOverrideRecords, fileSha256 } from './override-provenance.js';
-import { getLockFilePath, type LockEntry } from './plugin.js';
+import type { LockEntry } from './plugin.js';
 
 let home: string;
 let pluginFile: string;
-let lockBackup: string | null;
 
+// Seeds the temp home's own lock file — never the real ~/.webcmd/plugins.lock.json,
+// so these tests don't depend on (or corrupt) whatever plugins are actually
+// installed on the machine running them.
 function seedLock(entries: Record<string, LockEntry>): void {
-  fs.mkdirSync(path.dirname(getLockFilePath()), { recursive: true });
-  fs.writeFileSync(getLockFilePath(), JSON.stringify(entries, null, 2));
+  const lockPath = path.join(home, '.webcmd', 'plugins.lock.json');
+  fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+  fs.writeFileSync(lockPath, JSON.stringify(entries, null, 2));
 }
 
 beforeEach(() => {
@@ -20,18 +23,10 @@ beforeEach(() => {
   pluginFile = path.join(home, '.webcmd', 'plugins', 'linkedin', 'search.js');
   fs.mkdirSync(path.dirname(pluginFile), { recursive: true });
   fs.writeFileSync(pluginFile, '// linkedin search plugin\nmodule.exports = {};\n');
-
-  lockBackup = fs.existsSync(getLockFilePath()) ? fs.readFileSync(getLockFilePath(), 'utf-8') : null;
 });
 
 afterEach(() => {
   fs.rmSync(home, { recursive: true, force: true });
-  if (lockBackup !== null) {
-    fs.mkdirSync(path.dirname(getLockFilePath()), { recursive: true });
-    fs.writeFileSync(getLockFilePath(), lockBackup);
-  } else {
-    try { fs.unlinkSync(getLockFilePath()); } catch {}
-  }
 });
 
 describe('createAdapterOverride', () => {
@@ -65,6 +60,8 @@ describe('createAdapterOverride', () => {
   });
 
   it('records commitHash null when the plugin has no lock entry', () => {
+    // Deliberately no seedLock() call: this temp home's lock file does not
+    // exist at all, regardless of what's in the real ~/.webcmd/plugins.lock.json.
     createAdapterOverride('linkedin/search', { homeDir: home });
     const record = readOverrideRecords(home)['linkedin/search']!;
     expect(record.commitHash).toBeNull();

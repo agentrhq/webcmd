@@ -11,7 +11,6 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { CLI_COMMAND } from './brand.js';
 import { classifyCommandOrigin } from './command-origin.js';
-import { readLockFile } from './plugin.js';
 import { getRegistry } from './registry.js';
 import {
   fileSha256,
@@ -29,6 +28,26 @@ export interface AdapterOverrideResult {
 
 function resolveHomeDir(homeDir?: string): string {
   return homeDir ?? process.env.HOME ?? process.env.USERPROFILE ?? os.homedir();
+}
+
+/**
+ * Read a plugin's commitHash from the lock file scoped to `homeDir`.
+ *
+ * `readLockFile()` in plugin.ts always resolves the real $HOME and has no
+ * `homeDir` param — using it here would make provenance describe whatever
+ * plugin happens to be installed on the real machine instead of the
+ * installation actually being forked. Read the lock file directly instead,
+ * scoped the same way as the plugin file and clis/.base copies above.
+ */
+function readCommitHashFor(homeDir: string, plugin: string): string | null {
+  const lockPath = path.join(homeDir, '.webcmd', 'plugins.lock.json');
+  try {
+    const parsed = JSON.parse(fs.readFileSync(lockPath, 'utf-8'));
+    const commitHash = parsed?.[plugin]?.commitHash;
+    return typeof commitHash === 'string' ? commitHash : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Fork an installed plugin's command file into ~/.webcmd/clis and record provenance. */
@@ -84,8 +103,7 @@ export function createAdapterOverride(
   fs.mkdirSync(path.dirname(basePath), { recursive: true });
   fs.writeFileSync(basePath, content);
 
-  const lock = readLockFile();
-  const commitHash = lock[site]?.commitHash ?? null;
+  const commitHash = readCommitHashFor(homeDir, site);
 
   const records = readOverrideRecords(options.homeDir);
   records[commandKey] = {
