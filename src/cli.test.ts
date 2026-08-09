@@ -364,8 +364,37 @@ describe('override reporting surfaces', () => {
     }
   });
 
+  it('fails reset --all loudly on malformed provenance when clis is empty', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const previousExitCode = process.exitCode;
+    fs.mkdirSync(userClis, { recursive: true });
+    fs.writeFileSync(path.join(home, '.webcmd', 'override-provenance.json'), '{not json');
+    try {
+      await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+        .parseAsync(['node', 'webcmd', 'adapter', 'reset', '--all']);
+
+      expect(stdoutSpy.mock.calls.flat().join('\n')).not.toContain('No local sites to reset.');
+      expect(stderrSpy.mock.calls.flat().join('\n')).toContain('Malformed override provenance store');
+      expect(process.exitCode).not.toBe(0);
+    } finally {
+      process.exitCode = previousExitCode;
+      stderrSpy.mockRestore();
+    }
+  });
+
   it('reports no sites when reset --all has no local adapter directory', async () => {
     const userClis = path.join(home, '.webcmd', 'clis');
+
+    await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+      .parseAsync(['node', 'webcmd', 'adapter', 'reset', '--all']);
+
+    expect(stdoutSpy.mock.calls.flat().join('\n')).toContain('No local sites to reset.');
+  });
+
+  it('reports no sites when reset --all has an empty adapter directory and no provenance', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+    fs.mkdirSync(userClis, { recursive: true });
 
     await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
       .parseAsync(['node', 'webcmd', 'adapter', 'reset', '--all']);

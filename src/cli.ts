@@ -1586,11 +1586,11 @@ cli({
           const userEntries = await fs.promises.readdir(USER_CLIS, { withFileTypes: true });
           userClisListed = true;
           const dirs = userEntries.filter(e => e.isDirectory() && e.name !== '.base');
+          readOverrideRecords();
           if (dirs.length === 0) {
             console.log('No local sites to reset.');
             return;
           }
-          readOverrideRecords();
           let removedRecords = 0;
           for (const dir of dirs) {
             fs.rmSync(path.join(USER_CLIS, dir.name), { recursive: true, force: true });
