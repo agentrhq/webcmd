@@ -98,6 +98,8 @@ const getCompIdx = process.argv.indexOf('--get-completions');
 if (getCompIdx !== -1) {
   // Only include manifests that actually exist on disk.
   // With sparse override, the user clis dir may exist but have no manifest.
+  // Order matches runtime discovery: plugins before user clis, so an override
+  // in ~/.webcmd/clis is what completion advertises last (and thus wins).
   const manifestPaths = [getCliManifestPath(BUILTIN_CLIS)];
   const uncoveredCommandRoots = [USER_PLUGINS];
   const userManifest = getCliManifestPath(USER_CLIS);
@@ -136,7 +138,9 @@ installNodeNetwork();
 // Parallelise independent startup I/O:
 //  - ensureUserCliCompatShims and ensureUserAdapters operate on different paths
 //    (~/.webcmd/node_modules/ vs ~/.webcmd/clis/).
-//  - discoverPlugins runs last: installed plugins may override legacy user CLIs.
+//  - discoverClis(USER_CLIS) runs last: ~/.webcmd/clis holds user adapters and
+//    overrides, and registerCommand is last-write-wins, so loading it after
+//    plugins is what makes an override actually take effect.
 const skipUserDiscovery = argv[0] === 'convention-audit';
 if (skipUserDiscovery) {
   await discoverClis(BUILTIN_CLIS);
@@ -146,8 +150,8 @@ if (skipUserDiscovery) {
     ensureUserAdapters(),
     discoverClis(BUILTIN_CLIS),
   ]);
-  await discoverClis(USER_CLIS);
   await discoverPlugins(PLUGINS_DIR);
+  await discoverClis(USER_CLIS);
 }
 
 // Register exit hook: notice appears after command output (same as npm/gh/yarn)
