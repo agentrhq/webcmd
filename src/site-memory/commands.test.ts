@@ -55,6 +55,15 @@ describe('site commands', () => {
     expect(output.text()).toContain('[]');
   });
 
+  it('reports a missing fixture after another local artifact creates the site', async () => {
+    const homeDir = await tempHome();
+    const program = siteProgram(homeDir, sink().stream);
+    await run(program, ['note', 'add', 'example.test', '--text', 'site exists']);
+
+    await expect(run(program, ['fixture', 'get', 'example.test/search']))
+      .rejects.toMatchObject({ code: 'SITE_MEMORY_NOT_FOUND' });
+  });
+
   it('makes an existing field mapping actionable', async () => {
     const homeDir = await tempHome();
     const program = siteProgram(homeDir, sink().stream);

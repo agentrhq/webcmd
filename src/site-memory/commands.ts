@@ -148,7 +148,14 @@ export function createLocalSiteMemoryBackend(options: LocalStoreOptions = {}): S
     setEndpoint: (input) => setEndpoint({ ...input, ...options }),
     markEndpointStale: (input) => markEndpointStale({ ...input, ...options }),
     addFieldMapping: (input) => addFieldMapping({ ...input, ...options }),
-    getFixture: async (site, command) => (await showSiteMemory(site, { ...options, paths: [`verify/${command}.json`] }))[0]?.body ?? null,
+    getFixture: async (site, command) => {
+      try {
+        return (await showSiteMemory(site, { ...options, paths: [`verify/${command}.json`] }))[0]?.body ?? null;
+      } catch (error) {
+        if (isMissingFile(error)) return null;
+        throw error;
+      }
+    },
     putFixture: async (site, command, body) => writeSiteFile(root(site), `verify/${command}.json`, body),
     addSample: async (site, command, body) => writeSiteFile(root(site), `fixtures/${command}-${Date.now()}.json`, body),
   };
@@ -262,4 +269,8 @@ function statusCode(error: unknown): number | undefined {
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isMissingFile(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && 'code' in error && error.code === 'ENOENT';
 }

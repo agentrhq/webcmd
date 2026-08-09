@@ -91,6 +91,37 @@ it('routes site commands to the hosted site-memory API', async () => {
   }
 });
 
+it.each([
+  {
+    name: 'list',
+    argv: ['site', 'memory', 'list', 'example.test'],
+    response: { ok: true, artifacts: [], extra: true },
+    message: 'invalid site memory list',
+  },
+  {
+    name: 'write',
+    argv: ['site', 'note', 'add', 'example.test', '--text', 'works'],
+    response: { ok: true, extra: true },
+    message: 'invalid site memory write response',
+  },
+  {
+    name: 'stale',
+    argv: ['site', 'endpoint', 'stale', 'example.test', 'search'],
+    response: { ok: true, stale: true, extra: true },
+    message: 'invalid endpoint stale response',
+  },
+])('rejects hosted site-memory $name responses with extra keys', async ({ argv, response, message }) => {
+  const stderr = sink();
+  const result = await runHostedCli(argv, {
+    config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+    stderr: stderr.stream,
+    fetchImpl: async () => new Response(JSON.stringify(response)),
+  });
+
+  expect(result.exitCode).toBe(1);
+  expect(stderr.text()).toContain(message);
+});
+
 it('makes hosted field mapping conflicts actionable', async () => {
   const stderr = sink();
   const result = await runHostedCli([
