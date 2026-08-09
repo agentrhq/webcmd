@@ -1,9 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import yaml from 'js-yaml';
-import { cli, getRegistry, Strategy } from './registry.js';
+import { cli, getRegistry, runWithDiscoverySource, Strategy } from './registry.js';
 import { BrowserCommandError } from './browser/daemon-client.js';
 import type { IPage } from './types.js';
 import { TargetError } from './browser/target-errors.js';
@@ -123,6 +123,89 @@ describe('plugin update reconciliation reporting', () => {
       discover.mockRestore();
       fs.rmSync(pluginsDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('override reporting surfaces', () => {
+  const stdoutSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+  let home: string;
+  let originalHome: string | undefined;
+
+  beforeEach(() => {
+    stdoutSpy.mockClear();
+    originalHome = process.env.HOME;
+    home = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-cli-overrides-'));
+    process.env.HOME = home;
+  });
+
+  afterEach(() => {
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it('includes override fields in plugin list JSON', async () => {
+    const list = vi.spyOn(pluginModule, 'listPlugins').mockReturnValue([{
+      name: 'linkedin', path: '/tmp/linkedin', commands: ['search'], source: 'github:example/linkedin',
+      overrides: ['search'], updateAvailable: true,
+    }] as never);
+    try {
+      await createProgram('', '', path.join(home, '.webcmd', 'plugins'))
+        .parseAsync(['node', 'webcmd', 'plugin', 'list', '--format', 'json']);
+      expect(JSON.parse(stdoutSpy.mock.calls.flat().join('\n'))).toMatchObject([{
+        name: 'linkedin', commands: ['search'], source: 'github:example/linkedin',
+        overrides: ['search'], updateAvailable: true,
+      }]);
+    } finally {
+      list.mockRestore();
+    }
+  });
+
+  it('reports override origins in webcmd list JSON', async () => {
+    const registry = getRegistry();
+    const snapshot = new Map(registry);
+    const userClis = path.join(home, '.webcmd', 'clis');
+    const source = path.join(userClis, 'linkedin', 'search.js');
+    registry.clear();
+    try {
+      fs.mkdirSync(path.dirname(source), { recursive: true });
+      fs.writeFileSync(source, '// override\n');
+      fs.mkdirSync(path.join(home, '.webcmd'), { recursive: true });
+      fs.writeFileSync(path.join(home, '.webcmd', 'override-provenance.json'), JSON.stringify({
+        'linkedin/search': {
+          plugin: 'linkedin', commitHash: null, sourcePath: '/tmp/upstream.js', sourceSha256: 'abc',
+          basePath: '/tmp/base.js', createdAt: '2026-08-09T00:00:00.000Z',
+        },
+      }));
+      await runWithDiscoverySource(source, async () => {
+        cli({ site: 'linkedin', name: 'search', access: 'read', browser: false });
+      });
+
+      await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+        .parseAsync(['node', 'webcmd', 'list', '--format', 'json']);
+      expect(JSON.parse(stdoutSpy.mock.calls.flat().join('\n'))).toMatchObject([
+        { command: 'linkedin/search', origin: 'override:linkedin' },
+      ]);
+    } finally {
+      registry.clear();
+      for (const [key, value] of snapshot) registry.set(key, value);
+    }
+  });
+
+  it('marks orphaned overrides in adapter status', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+    fs.mkdirSync(path.join(userClis, 'linkedin'), { recursive: true });
+    fs.writeFileSync(path.join(userClis, 'linkedin', 'search.js'), '// override\n');
+    fs.writeFileSync(path.join(home, '.webcmd', 'override-provenance.json'), JSON.stringify({
+      'linkedin/search': {
+        plugin: 'linkedin', commitHash: null, sourcePath: path.join(home, '.webcmd', 'plugins', 'linkedin', 'search.js'),
+        sourceSha256: 'abc', basePath: '/tmp/base.js', createdAt: '2026-08-09T00:00:00.000Z',
+      },
+    }));
+
+    await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+      .parseAsync(['node', 'webcmd', 'adapter', 'status']);
+    expect(stdoutSpy.mock.calls.flat().join('\n')).toContain('orphaned override: linkedin/search (plugin linkedin is not installed)');
   });
 });
 
@@ -540,7 +623,9 @@ name: 'search',
           args: [{ name: 'limit', type: 'int', default: 20, help: 'Maximum issues' }],
           columns: ['number', 'title'],
         });
-        const presentation = commandListPresentation([toPresentableCommand(command)], format);
+        const presentation = commandListPresentation([
+          { ...toPresentableCommand(command), origin: 'builtin' },
+        ], format);
 
         const outputSpy = vi.mocked(console.log);
         outputSpy.mockClear();

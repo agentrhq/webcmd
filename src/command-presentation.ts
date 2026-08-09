@@ -17,6 +17,7 @@ export interface PresentableCommand {
   domain?: string;
   example?: string;
   siteSession?: string;
+  origin?: string;
 }
 
 export interface PresentableCommandSource {
@@ -224,6 +225,7 @@ export function commandListRows(
         example: formatPresentableCommandExample(command),
         defaultFormat: command.defaultFormat ?? null,
         siteSession: command.siteSession ?? null,
+        ...(command.origin ? { origin: command.origin } : {}),
       };
     }
     return {
@@ -269,6 +271,7 @@ export function commandListPresentation(
       'strategy',
       'browser',
       'args',
+      ...(unique.some((command) => command.origin) ? ['origin'] : []),
       ...(structured ? ['columns', 'domain'] : []),
     ],
     structured,
@@ -318,7 +321,8 @@ function formatGroupedCommandList(
         const aliases = command.aliases.length > 0 ? ` (aliases: ${command.aliases.join(', ')})` : '';
         lines.push(
           `    ${command.name} [${command.strategy}]${aliases}`
-          + `${command.description ? ` — ${command.description}` : ''}`,
+          + `${command.description ? ` — ${command.description}` : ''}`
+          + `${command.origin ? ` [${command.origin}]` : ''}`,
         );
       }
       lines.push('');

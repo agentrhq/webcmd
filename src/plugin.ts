@@ -67,6 +67,10 @@ export interface PluginInfo {
   monorepoName?: string;
   /** Description from webcmd-plugin.json. */
   description?: string;
+  /** Commands forked into ~/.webcmd/clis with upstream provenance. */
+  overrides: string[];
+  /** An override's upstream command changed since it was forked. */
+  updateAvailable: boolean;
 }
 
 interface ParsedSource {
@@ -1345,6 +1349,8 @@ export function listPlugins(): PluginInfo[] {
 
   const entries = fs.readdirSync(PLUGINS_DIR, { withFileTypes: true });
   const lock = readLockFile();
+  const records = readOverrideRecords(getHomeDir());
+  const updates = new Set(findOverridesNeedingReconcile().map(({ commandKey }) => commandKey));
   const plugins: PluginInfo[] = [];
 
   for (const entry of entries) {
@@ -1372,6 +1378,9 @@ export function listPlugins(): PluginInfo[] {
     }
 
     const source = resolveStoredPluginSource(lockEntry, pluginDir);
+    const overrideKeys = Object.keys(records)
+      .filter((commandKey) => records[commandKey]!.plugin === entry.name)
+      .sort();
 
     plugins.push({
       name: entry.name,
@@ -1382,6 +1391,8 @@ export function listPlugins(): PluginInfo[] {
       installedAt: lockEntry?.installedAt,
       monorepoName: lockEntry?.source.kind === 'monorepo' ? lockEntry.source.repoName : undefined,
       description,
+      overrides: overrideKeys.map((commandKey) => commandKey.slice(commandKey.indexOf('/') + 1)),
+      updateAvailable: overrideKeys.some((commandKey) => updates.has(commandKey)),
     });
   }
 

@@ -1953,3 +1953,51 @@ describe('findOverridesNeedingReconcile', () => {
     expect(pluginModule.findOverridesNeedingReconcile(['linkedin'])[0]!.base).toBeNull();
   });
 });
+
+describe('listPlugins override reporting', () => {
+  let home: string;
+  let originalHome: string | undefined;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    home = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-list-overrides-'));
+    process.env.HOME = home;
+  });
+
+  afterEach(() => {
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
+    fs.rmSync(home, { recursive: true, force: true });
+    vi.resetModules();
+  });
+
+  it('lists only provenance-backed overrides and their upstream state per plugin', async () => {
+    vi.resetModules();
+    const { createAdapterOverride: createOverride } = await import('./adapter-override.js');
+    const { listPlugins: list } = await import('./plugin.js');
+    const pluginsDir = path.join(home, '.webcmd', 'plugins');
+    const clisDir = path.join(home, '.webcmd', 'clis');
+    const linkedinDir = path.join(pluginsDir, 'linkedin');
+
+    fs.mkdirSync(linkedinDir, { recursive: true });
+    fs.mkdirSync(path.join(pluginsDir, 'hackernews'), { recursive: true });
+    fs.writeFileSync(path.join(linkedinDir, 'search.js'), '// search v1\n');
+    fs.writeFileSync(path.join(linkedinDir, 'inbox.js'), '// inbox v1\n');
+    fs.writeFileSync(path.join(pluginsDir, 'hackernews', 'top.js'), '// top v1\n');
+    createOverride('linkedin/search', { homeDir: home });
+    fs.mkdirSync(path.join(clisDir, 'local'), { recursive: true });
+    fs.writeFileSync(path.join(clisDir, 'local', 'run.js'), '// no upstream\n');
+
+    expect(list().find((plugin) => plugin.name === 'linkedin')).toMatchObject({
+      overrides: ['search'], updateAvailable: false,
+    });
+    expect(list().find((plugin) => plugin.name === 'hackernews')).toMatchObject({
+      overrides: [], updateAvailable: false,
+    });
+
+    fs.writeFileSync(path.join(linkedinDir, 'search.js'), '// search v2\n');
+    expect(list().find((plugin) => plugin.name === 'linkedin')).toMatchObject({
+      overrides: ['search'], updateAvailable: true,
+    });
+  });
+});

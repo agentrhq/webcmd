@@ -50,6 +50,8 @@ import { configureRootCommandSurface } from './root-command-surface.js';
 import { missingPluginGuidance, PLUGINS_DIR } from './discovery.js';
 import { loadBrowserRunSource } from './browser/run/input.js';
 import { BrowserRunError } from './browser/run/types.js';
+import { classifyCommandOrigin, formatCommandOrigin } from './command-origin.js';
+import { readOverrideRecords } from './override-provenance.js';
 
 const CLI_FILE = fileURLToPath(import.meta.url);
 const FOLLOW_POLL_MS = 1_000;
@@ -582,8 +584,19 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
   configureListCommandSurface(program.command('list'))
     .action((opts) => {
       const externalClis = opts.format === 'table' ? loadExternalClis() : [];
+      const overrides = readOverrideRecords();
       const presentation = commandListPresentation(
-        filterCommandsByTag([...new Set(getRegistry().values())].map(toPresentableCommand), opts.tag),
+        filterCommandsByTag([...new Set(getRegistry().values())].map((command) => {
+          const commandKey = `${command.site}/${command.name}`;
+          const classified = classifyCommandOrigin(command, {
+            pluginsDir,
+            userClisDir: USER_CLIS,
+          });
+          const origin = classified.kind === 'local' && overrides[commandKey]
+            ? { kind: 'override' as const, plugin: overrides[commandKey].plugin }
+            : classified;
+          return { ...toPresentableCommand(command), origin: formatCommandOrigin(origin) };
+        }), opts.tag),
         opts.format,
         {
           externalClis: externalClis.map((external) => ({
@@ -1257,7 +1270,7 @@ cli({
       if (opts.format === 'json') {
         renderOutput(plugins, {
           fmt: 'json',
-          columns: ['name', 'commands', 'source'],
+          columns: ['name', 'commands', 'source', 'overrides', 'updateAvailable'],
           title: `${CLI_COMMAND}/plugins`,
           source: `${CLI_COMMAND} plugin list`,
         });
@@ -1283,6 +1296,9 @@ cli({
         const cmds = p.commands.length > 0 ? ` (${p.commands.join(', ')})` : '';
         const src = p.source ? ` ← ${p.source}` : '';
         console.log(`  ${p.name}${version}${desc}${cmds}${src}`);
+        if (p.overrides.length > 0) {
+          console.log(`    ⚠ ${p.overrides.length} override${p.overrides.length === 1 ? '' : 's'}: ${p.overrides.join(', ')}${p.updateAvailable ? ' (upstream changed since fork)' : ''}`);
+        }
       }
 
       for (const [mono, group] of monoGroups) {
@@ -1293,6 +1309,9 @@ cli({
           const desc = p.description ? ` — ${p.description}` : '';
           const cmds = p.commands.length > 0 ? ` (${p.commands.join(', ')})` : '';
           console.log(`    ${p.name}${version}${desc}${cmds}`);
+          if (p.overrides.length > 0) {
+            console.log(`      ⚠ ${p.overrides.length} override${p.overrides.length === 1 ? '' : 's'}: ${p.overrides.join(', ')}${p.updateAvailable ? ' (upstream changed since fork)' : ''}`);
+          }
         }
       }
 
@@ -1454,20 +1473,36 @@ cli({
 
   adapterCmd
     .command('status')
-    .description('List legacy local adapters in ~/.webcmd/clis/')
+    .description('List local adapters in ~/.webcmd/clis/')
     .action(async () => {
       try {
         const userEntries = await fs.promises.readdir(USER_CLIS, { withFileTypes: true });
-        const userSites = userEntries.filter(e => e.isDirectory()).map(e => e.name).sort();
+        const userSites = userEntries.filter(e => e.isDirectory() && e.name !== '.base').map(e => e.name).sort();
         if (userSites.length === 0) {
-          console.log('No legacy local adapters installed.');
+          console.log('No local adapters installed.');
           return;
         }
 
-        console.log(`Legacy local adapters in ~/.webcmd/clis/ (${userSites.length} sites):\n`);
-        for (const site of userSites) console.log(`  ${site}`);
+        const records = readOverrideRecords();
+        const reconcile = new Set((await import('./plugin.js')).findOverridesNeedingReconcile().map(({ commandKey }) => commandKey));
+        console.log(`Local adapters in ~/.webcmd/clis/ (${userSites.length} sites):\n`);
+        for (const site of userSites) {
+          console.log(`  ${site}`);
+          const files = await fs.promises.readdir(path.join(USER_CLIS, site));
+          for (const file of files.filter((entry) => entry.endsWith('.js')).sort()) {
+            const commandKey = `${site}/${file.slice(0, -3)}`;
+            const record = records[commandKey];
+            if (!record) {
+              console.log(`    user adapter: ${commandKey}`);
+            } else if (!fs.existsSync(path.join(pluginsDir, record.plugin))) {
+              console.log(`    orphaned override: ${commandKey} (plugin ${record.plugin} is not installed)`);
+            } else {
+              console.log(`    override: ${commandKey} (plugin ${record.plugin}${reconcile.has(commandKey) ? ', upstream changed since fork' : ''})`);
+            }
+          }
+        }
       } catch {
-        console.log('No legacy local adapters installed.');
+        console.log('No local adapters installed.');
       }
     });
 
