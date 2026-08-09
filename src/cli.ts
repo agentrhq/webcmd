@@ -51,7 +51,7 @@ import { missingPluginGuidance, PLUGINS_DIR } from './discovery.js';
 import { loadBrowserRunSource } from './browser/run/input.js';
 import { BrowserRunError } from './browser/run/types.js';
 import { classifyCommandOrigin, formatCommandOrigin } from './command-origin.js';
-import { readOverrideRecords } from './override-provenance.js';
+import { readOverrideRecords, removeOverrideRecords } from './override-provenance.js';
 
 const CLI_FILE = fileURLToPath(import.meta.url);
 const FOLLOW_POLL_MS = 1_000;
@@ -1553,22 +1553,24 @@ cli({
 
   adapterCmd
     .command('reset')
-    .description('Remove a legacy local adapter')
+    .description('Remove a local adapter override')
     .argument('[site]', 'Site name (e.g. twitter, youtube)')
     .option('--all', 'Reset all local overrides')
     .action(async (site: string | undefined, opts: { all?: boolean }) => {
       if (opts.all) {
         try {
           const userEntries = await fs.promises.readdir(USER_CLIS, { withFileTypes: true });
-          const dirs = userEntries.filter(e => e.isDirectory());
+          const dirs = userEntries.filter(e => e.isDirectory() && e.name !== '.base');
           if (dirs.length === 0) {
             console.log('No local sites to reset.');
             return;
           }
+          let removedRecords = 0;
           for (const dir of dirs) {
             fs.rmSync(path.join(USER_CLIS, dir.name), { recursive: true, force: true });
+            removedRecords += removeOverrideRecords(dir.name).length;
           }
-          console.log(`✅ Removed ${dirs.length} legacy local adapter(s).`);
+          console.log(`✅ Removed ${dirs.length} local adapter override(s) and ${removedRecords} provenance record(s).`);
         } catch {
           console.log('No local sites to reset.');
         }
@@ -1590,7 +1592,8 @@ cli({
       }
 
       fs.rmSync(userSiteDir, { recursive: true, force: true });
-      console.log(`✅ Removed legacy local adapter "${site}".`);
+      const removedRecords = removeOverrideRecords(site).length;
+      console.log(`✅ Removed local adapter override "${site}" and ${removedRecords} provenance record(s).`);
     });
 
   adapterCmd

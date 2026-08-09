@@ -3,8 +3,9 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { createAdapterOverride } from './adapter-override.js';
-import { readOverrideRecords, fileSha256 } from './override-provenance.js';
+import { getBaseCopyPath, readOverrideRecords, fileSha256 } from './override-provenance.js';
 import type { LockEntry } from './plugin.js';
+import { createProgram } from './cli.js';
 
 let home: string;
 let pluginFile: string;
@@ -66,5 +67,30 @@ describe('createAdapterOverride', () => {
     const record = readOverrideRecords(home)['linkedin/search']!;
     expect(record.commitHash).toBeNull();
     expect(record.sourceSha256).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('adapter reset removes the clis copy, the provenance record, and the base copy', async () => {
+    const originalHome = process.env.HOME;
+    process.env.HOME = home;
+    try {
+      seedLock({
+        linkedin: {
+          source: { kind: 'local', path: path.resolve(home) },
+          commitHash: 'a'.repeat(40),
+          installedAt: new Date().toISOString(),
+        },
+      });
+      createAdapterOverride('linkedin/search', { homeDir: home });
+
+      await createProgram('', path.join(home, '.webcmd', 'clis'))
+        .parseAsync(['node', 'webcmd', 'adapter', 'reset', 'linkedin']);
+
+      expect(fs.existsSync(path.join(home, '.webcmd', 'clis', 'linkedin'))).toBe(false);
+      expect(fs.existsSync(getBaseCopyPath('linkedin/search', home))).toBe(false);
+      expect(readOverrideRecords(home)).toEqual({});
+    } finally {
+      if (originalHome === undefined) delete process.env.HOME;
+      else process.env.HOME = originalHome;
+    }
   });
 });
