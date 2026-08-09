@@ -15,6 +15,8 @@ import {
   toPresentableCommand,
 } from './command-presentation.js';
 import { render as renderOutput } from './output.js';
+import * as pluginModule from './plugin.js';
+import * as discoveryModule from './discovery.js';
 
 const {
   mockBrowserConnect,
@@ -62,6 +64,67 @@ vi.mock('node:child_process', async () => {
 });
 
 import { createProgram, findPackageRoot, loadAntigravityServe, normalizeVerifyRows, renderVerifyPreview, resolveBrowserVerifyInvocation, resolveSitemapAvailabilityForUrl, selectFreshByTimestamp } from './cli.js';
+
+describe('plugin update reconciliation reporting', () => {
+  const stdoutSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+  beforeEach(() => {
+    stdoutSpy.mockClear();
+    process.exitCode = undefined;
+  });
+
+  it('reports every monorepo plugin refreshed by a named update', async () => {
+    const pluginsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-plugin-update-'));
+    const update = vi.spyOn(pluginModule, 'updatePlugin').mockReturnValue(['alpha', 'beta'] as never);
+    const findNeeds = vi.spyOn(pluginModule, 'findOverridesNeedingReconcile').mockReturnValue([]);
+    const discover = vi.spyOn(discoveryModule, 'discoverPlugins').mockResolvedValue();
+
+    try {
+      await createProgram('', '', pluginsDir).parseAsync(['node', 'webcmd', 'plugin', 'update', 'alpha']);
+
+      expect(update).toHaveBeenCalledWith('alpha', { force: false });
+      expect(findNeeds).toHaveBeenCalledWith(['alpha', 'beta']);
+    } finally {
+      update.mockRestore();
+      findNeeds.mockRestore();
+      discover.mockRestore();
+      fs.rmSync(pluginsDir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports reconciliation only for successful --all updates', async () => {
+    const pluginsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-plugin-update-'));
+    const updateAll = vi.spyOn(pluginModule, 'updateAllPlugins').mockReturnValue([
+      { name: 'alpha', success: true, updatedPlugins: ['alpha'] },
+      { name: 'broken', success: false, error: 'network error' },
+      { name: 'beta', success: true, updatedPlugins: ['beta'] },
+    ]);
+    const findNeeds = vi.spyOn(pluginModule, 'findOverridesNeedingReconcile').mockReturnValue([{
+      commandKey: 'beta/search',
+      plugin: 'beta',
+      yours: '/tmp/home/.webcmd/clis/beta/search.js',
+      upstream: '/tmp/home/.webcmd/plugins/beta/search.js',
+      base: '/tmp/home/.webcmd/clis/.base/beta/search.js',
+    }]);
+    const discover = vi.spyOn(discoveryModule, 'discoverPlugins').mockResolvedValue();
+
+    try {
+      await createProgram('', '', pluginsDir).parseAsync(['node', 'webcmd', 'plugin', 'update', '--all']);
+
+      expect(findNeeds).toHaveBeenCalledWith(['alpha', 'beta']);
+      const output = stdoutSpy.mock.calls.flat().join('\n');
+      expect(output).toContain('beta/search');
+      expect(output).toContain('yours:    /tmp/home/.webcmd/clis/beta/search.js');
+      expect(output).toContain('upstream: /tmp/home/.webcmd/plugins/beta/search.js');
+      expect(output).toContain('base:     /tmp/home/.webcmd/clis/.base/beta/search.js');
+    } finally {
+      updateAll.mockRestore();
+      findNeeds.mockRestore();
+      discover.mockRestore();
+      fs.rmSync(pluginsDir, { recursive: true, force: true });
+    }
+  });
+});
 
 describe('Antigravity serve plugin loading', () => {
   it('loads serve.js from the installed Antigravity plugin', async () => {

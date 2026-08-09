@@ -1182,7 +1182,7 @@ function isSymlinkSync(p: string): boolean {
  * For monorepo sub-plugins: pulls the monorepo root and re-runs lifecycle
  * for all sub-plugins from the same monorepo.
  */
-export function updatePlugin(name: string, options: { force?: boolean } = {}): void {
+export function updatePlugin(name: string, options: { force?: boolean } = {}): string[] {
   const targetDir = path.join(PLUGINS_DIR, name);
   if (!fs.existsSync(targetDir)) {
     throw new Error(`Plugin "${name}" is not installed.`);
@@ -1195,7 +1195,7 @@ export function updatePlugin(name: string, options: { force?: boolean } = {}): v
     // Local installs are symlinked to the user's own checkout, not replaced
     // wholesale, so dirty edits there are the intended workflow, not a hazard.
     updateLocalPlugin(name, targetDir, lock, lockEntry);
-    return;
+    return [name];
   }
 
   if (source?.kind === 'monorepo') {
@@ -1203,7 +1203,7 @@ export function updatePlugin(name: string, options: { force?: boolean } = {}): v
     const monoName = source.repoName;
     const cloneUrl = source.url;
     assertPluginNotDirty(monoName, monoDir, options.force === true);
-    withTempClone(cloneUrl, (tmpCloneDir) => {
+    return withTempClone(cloneUrl, (tmpCloneDir) => {
       const manifest = readPluginManifest(tmpCloneDir);
       if (!manifest || !isMonorepo(manifest)) {
         throw new Error(`Updated source is no longer a monorepo: ${cloneUrl}`);
@@ -1240,8 +1240,8 @@ export function updatePlugin(name: string, options: { force?: boolean } = {}): v
           writeLockFile(lock);
         },
       );
+      return updatedPlugins.map((plugin) => plugin.name);
     });
-    return;
   }
 
   assertPluginNotDirty(name, targetDir, options.force === true);
@@ -1267,12 +1267,14 @@ export function updatePlugin(name: string, options: { force?: boolean } = {}): v
       }
     });
   });
+  return [name];
 }
 
 export interface UpdateResult {
   name: string;
   success: boolean;
   error?: string;
+  updatedPlugins?: string[];
 }
 
 /**
@@ -1282,8 +1284,7 @@ export interface UpdateResult {
 export function updateAllPlugins(options: { force?: boolean } = {}): UpdateResult[] {
   return listPlugins().map((plugin): UpdateResult => {
     try {
-      updatePlugin(plugin.name, options);
-      return { name: plugin.name, success: true };
+      return { name: plugin.name, success: true, updatedPlugins: updatePlugin(plugin.name, options) };
     } catch (err) {
       return {
         name: plugin.name,

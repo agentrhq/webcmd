@@ -1224,15 +1224,17 @@ cli({
           console.log('✅ All plugins updated successfully.');
         }
 
-        printReconcileReport(findOverridesNeedingReconcile(results.map((r) => r.name)));
+        printReconcileReport(findOverridesNeedingReconcile([
+          ...new Set(results.flatMap((result) => result.success ? result.updatedPlugins ?? [result.name] : [])),
+        ]));
         return;
       }
 
       try {
-        updatePlugin(name!, { force: opts.force === true });
+        const updatedPlugins = updatePlugin(name!, { force: opts.force === true });
         await discoverPlugins();
         console.log(`✅ Plugin "${name}" updated successfully.`);
-        printReconcileReport(findOverridesNeedingReconcile([name!]));
+        printReconcileReport(findOverridesNeedingReconcile(updatedPlugins));
       } catch (err) {
         console.error(`Error: ${getErrorMessage(err)}`);
         process.exitCode = EXIT_CODES.GENERIC_ERROR;
