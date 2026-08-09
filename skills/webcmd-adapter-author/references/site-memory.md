@@ -7,6 +7,9 @@ Site memory prevents every adapter run from starting cold. It has two layers:
 
 Local memory is the main write target. Do not write private cookies, tokens, or user data into the repo.
 
+Use the `webcmd site ...` commands below for local memory writes. Their invariants
+protect evidence from deletion; hand-editing tenant state bypasses those protections.
+
 ## Directory Layout
 
 ```text
@@ -50,6 +53,11 @@ Rules:
 - Mark changed endpoints stale instead of deleting evidence silently.
 - Never store cookies, bearer tokens, CSRF tokens, or private user data.
 
+Write or update an endpoint with `webcmd site endpoint set <site> <name> --url
+<url> --method <method>` and add any applicable `--params '<json>'`,
+`--rows-path <path>`, `--fields <fields>`, or `--notes <text>` options. Mark a
+changed endpoint stale with `webcmd site endpoint stale <site> <name>`.
+
 ## `field-map.json`
 
 Map source codes or unclear keys to meanings:
@@ -68,11 +76,12 @@ Rules:
 
 - Append new mappings.
 - Do not overwrite existing keys without visible-page proof.
-- If a conflict appears, compare against the visible page and record the decision in `notes.md`.
+- Add a mapping with `webcmd site field-map add <site> <key> --meaning <meaning> --source <source>`.
+- If a conflict appears, compare against the visible page and record the decision with `webcmd site note add <site> --text "…"`.
 
 ## `notes.md`
 
-Prepend a dated note for each run:
+Prepend a dated note for each run with `webcmd site note add <site> --text "…"`:
 
 ```md
 ## YYYY-MM-DD by <agent/user>
@@ -101,7 +110,9 @@ It should include:
 - mustNotContain
 - mustBeTruthy
 
-Write it after the first passing run, then tighten it manually and verify again.
+After the first passing run, seed it with `webcmd browser verify <site>/<cmd> --write-fixture`,
+then tighten it and store the result with `webcmd site fixture put <site>/<cmd> <path>`;
+verify again afterward.
 
 Example:
 
@@ -151,7 +162,8 @@ Fixture workflow:
 
 ## `fixtures/<cmd>-<YYYYMMDDHHMM>.json`
 
-Store a sanitized response sample for field decoding and offline replay.
+Store a sanitized response sample for field decoding and offline replay with
+`webcmd site sample add <site>/<cmd> <path>`.
 
 Rules:
 

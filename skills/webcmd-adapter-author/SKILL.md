@@ -127,11 +127,12 @@ webcmd browser verify
 Compare field values against the visible page
   | mismatch -> return to field decoding
   v match
-Write back ~/.webcmd/sites/
-  - endpoints
-  - field-map
-  - notes
-  - fixtures
+Write site memory with commands:
+  - webcmd site endpoint set/stale
+  - webcmd site field-map add
+  - webcmd site note add
+  - webcmd site fixture put
+  - webcmd site sample add
 ```
 
 ---
@@ -189,19 +190,20 @@ Check these off step by step:
        [ ] Use only the adapter-compatible path proven in Step 6A; never paste Playwright locators, `waitForResponse`, or browser-run globals into `func`.
 
 [ ] 10. Verification fixtures:
-        [ ] After the first passing run, immediately use `--write-fixture` to seed `~/.webcmd/sites/<site>/verify/<cmd>.json`.
+        [ ] After the first passing run, immediately use `webcmd browser verify <site>/<name> --write-fixture` to seed the fixture.
         [ ] Tighten the seed by adding `patterns` (URL/date/ID formats), `notEmpty` (core fields), and stricter `rowCount`.
+        [ ] Store a tightened fixture with `webcmd site fixture put <site>/<name> <path>`.
         [ ] Run `webcmd browser verify <site>/<name>` again and confirm it matches the fixture.
 
 [ ] 11. Compare field values against the visible page. Do not stop at "Adapter works!"
 
 [ ] 12. Write site memory after **verify passes and visible-page comparison matches**. See `references/site-memory.md` for schema:
-        [ ] `endpoints.json`: short endpoint name as key; value = `{url, method, params.{required,optional}, response, verified_at: YYYY-MM-DD, notes}`.
-        [ ] `field-map.json`: append only new codes. key = field code; value = `{meaning, verified_at: YYYY-MM-DD, source}`. **Do not overwrite existing keys.** If there is a conflict, align with the visible page before writing.
-        [ ] `notes.md`: prepend `## YYYY-MM-DD by <agent/user>` with new pitfalls or conclusions from this adapter work.
-        [ ] `verify/<cmd>.json`: **required.** Expected values for `webcmd browser verify`: args, rowCount, columns, types, patterns, notEmpty. Step 10 generated this; this item is the checklist gate.
-        [ ] `fixtures/<cmd>-<YYYYMMDDHHMM>.json`: save one complete endpoint response sample after removing cookies, tokens, and private user fields. Use it for later field comparison and offline replay.
-        [ ] If debugging dumped temporary files in the repo or adapter directory, such as `.dbg-*.html`, `raw-*.json`, or similar, **delete them before commit**. Those belong in `~/.webcmd/sites/<site>/fixtures/` or `/tmp/`.
+        [ ] Set `endpoints.json` with `webcmd site endpoint set <site> <name> ...`; mark changed entries stale with `webcmd site endpoint stale <site> <name>`.
+        [ ] Append `field-map.json` with `webcmd site field-map add <site> <key> ...`; **do not overwrite existing keys** without visible-page proof.
+        [ ] Prepend `notes.md` with `webcmd site note add <site> --text "…"`.
+        [ ] Store the required `verify/<cmd>.json` with `webcmd site fixture put <site>/<cmd> <path>`.
+        [ ] Store a sanitized endpoint response sample with `webcmd site sample add <site>/<cmd> <path>`.
+        [ ] If debugging dumped temporary files in the repo or adapter directory, such as `.dbg-*.html`, `raw-*.json`, or similar, **delete them before commit**. Keep raw dumps in `/tmp/`; after sanitizing a sample, use `webcmd site sample add <site>/<cmd> <path>`.
 
 [ ] 13. **First command for this site? Stop and ask before building more.**
         [ ] If this was the site's first command, do not silently keep scaffolding more commands. Ask the user what use cases they have in mind for this site — who the persona is, what they're trying to accomplish end to end.
@@ -265,9 +267,9 @@ Check these off step by step:
 - **Persistent sessions keep stale DOM between commands.** `siteSession: 'persistent'` shares one tab per site; leftover modals/drawers from the previous command leak into the next one. State-sensitive write commands (checkout flows) should add `freshPage: true` (new tab, same lease — cookies/login/location survive). Verify session-scoped context (login, selected city/date) *before* side effects, and embed such context in URLs/IDs your command emits for sibling commands. See `references/adapter-template.md` and "Persistent Sessions and State Hygiene" in `docs/authoring.mdx`.
 - For private iteration, write `~/.webcmd/clis/<site>/<name>.js` to avoid a build. Use `webcmd adapter override <site>/<command>` to fork an existing plugin command. When the user says to promote a CLI, keep the `webcmd plugin create <site> --dir plugins/<site>` step for packaging a new plugin, then register it in root `webcmd-plugin.json`, install the plugin, and run `webcmd validate <site>` and smoke commands. See `references/adapter-template.md` for details.
 - After `webcmd plugin update`, check the reported overrides needing reconciliation and merge `yours` with `upstream`, using `base` as the common ancestor for a three-way merge. Only overrides are reported; a user-authored adapter has no upstream.
-- Write site memory every round: no memory -> use skill -> produce memory -> next time becomes a five-minute task.
+- Write site memory every round with the `webcmd site ...` commands: no memory -> use skill -> produce memory -> next time becomes a five-minute task.
 - **After a site's first command passes verify, stop and ask the user for their use cases before recommending next set of commands.** See Runbook Step 13.
-- **Raw dumps, packet captures, and HTML samples from debugging may only be written to `~/.webcmd/sites/<site>/fixtures/` or `/tmp/`. Never leave `.dbg-*.html`, `raw-*.json`, `sample.*`, or similar temporary files in the repo root, `plugins/<site>/`, or the current working directory.**
+- **Keep raw dumps, packet captures, and HTML samples from debugging in `/tmp/` only. After sanitizing a response sample, store it with `webcmd site sample add <site>/<cmd> <path>`. Never leave `.dbg-*.html`, `raw-*.json`, `sample.*`, or similar temporary files in the repo root, `plugins/<site>/`, or the current working directory.**
 - **JSDOM unit-test fixtures (`plugins/<site>/__fixtures__/<command>.html`) are the exception.** They are intentional review artifacts committed to the repo, not temporary dumps. Because of that, the quality bar is higher: complete the five steps in `references/jsdom-fixture-pattern.md`, including the mandatory `awk 'NF>0'` blank-line tightening, and reverse-validate once to prove the regression guard can fail.
 
 ---

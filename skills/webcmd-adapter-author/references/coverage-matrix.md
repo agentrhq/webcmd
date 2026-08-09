@@ -44,4 +44,5 @@ Continue only when all three checks pass.
 | Yellow | Plausible but not fully exercised | Pattern is documented, but this exact site has not been verified end-to-end. |
 | Red | Out of scope | The skill explicitly does not teach this path. |
 
-Prefer green evidence. If you proceed on yellow evidence, write the uncertainty in `~/.webcmd/sites/<site>/notes.md` after the run so the next agent starts with better context.
+Prefer green evidence. If you proceed on yellow evidence, add the uncertainty with
+`webcmd site note add <site> --text "…"` after the run so the next agent starts with better context.

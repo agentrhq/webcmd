@@ -69,7 +69,7 @@ Percentages should be documented in output design. If the source gives `0.025`, 
 
 ## Raw Field Codes
 
-When a field code is already known, map it here or in `~/.webcmd/sites/<site>/field-map.json`:
+When a field code is already known, add it to site memory with `webcmd site field-map add <site> <key> --meaning <meaning> --source <source>`:
 
 ```json
 {
@@ -85,5 +85,5 @@ Rules:
 
 - Append new field-code meanings.
 - Do not overwrite an existing meaning without visible-page proof.
-- If two sources disagree, trust the visible page and record the conflict in `notes.md`.
+- If two sources disagree, trust the visible page and record the conflict with `webcmd site note add <site> --text "…"`.
 - When a code is unknown, use `field-decode-playbook.md`.

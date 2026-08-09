@@ -211,7 +211,7 @@ Rules:
 3. Prefer stable API evidence over brittle DOM scraping when discovered.
 4. Use only `@agentrhq/webcmd/*` imports; do not add third-party packages.
 5. Test after patching.
-6. Never relax `verify/<cmd>.json` fixtures to silence a failure. A failing `patterns`, `notEmpty`, `mustNotContain`, or `mustBeTruthy` rule usually means adapter output is wrong. Edit a fixture only when the site itself legitimately changed shape, such as a URL format migration, and note the change in `~/.webcmd/sites/<site>/notes.md`.
+6. Never relax `verify/<cmd>.json` fixtures to silence a failure. A failing `patterns`, `notEmpty`, `mustNotContain`, or `mustBeTruthy` rule usually means adapter output is wrong. Edit a fixture only when the site itself legitimately changed shape, such as a URL format migration; store the revised fixture with `webcmd site fixture put <site>/<cmd> <path>` and note the change with `webcmd site note add <site> --text "…"`.
 
 ## Step 5: Verify The Fix
 
