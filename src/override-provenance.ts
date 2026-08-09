@@ -66,7 +66,25 @@ export function readOverrideRecords(homeDir?: string): Record<string, OverrideRe
     throw new Error(`Malformed override provenance store at ${storePath}: expected an object`);
   }
 
+  for (const [key, entry] of Object.entries(parsed)) {
+    if (!isValidOverrideRecord(entry)) {
+      throw new Error(`Malformed override provenance store at ${storePath}: invalid record for "${key}"`);
+    }
+  }
+
   return parsed as Record<string, OverrideRecord>;
+}
+
+function isValidOverrideRecord(value: unknown): value is OverrideRecord {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.plugin === 'string' &&
+    (value.commitHash === null || typeof value.commitHash === 'string') &&
+    typeof value.sourcePath === 'string' &&
+    typeof value.sourceSha256 === 'string' &&
+    typeof value.basePath === 'string' &&
+    typeof value.createdAt === 'string'
+  );
 }
 
 /** Write the full set of override records, creating parent directories as needed. */

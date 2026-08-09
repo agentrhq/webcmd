@@ -37,11 +37,24 @@ describe('override provenance store', () => {
   it('hashes file content', () => {
     const f = join(home, 'x.js');
     writeFileSync(f, 'hello', 'utf-8');
-    expect(fileSha256(f)).toMatch(/^[0-9a-f]{64}$/);
+    const first = fileSha256(f);
+    expect(first).toMatch(/^[0-9a-f]{64}$/);
     writeFileSync(f, 'hello2', 'utf-8');
     const second = fileSha256(f);
+    expect(second).not.toBe(first);
     writeFileSync(f, 'hello', 'utf-8');
-    expect(fileSha256(f)).not.toBe(second);
+    expect(fileSha256(f)).toBe(first);
+  });
+
+  it('throws on a structurally valid store with a garbage record', () => {
+    mkdirSync(join(home, '.webcmd'), { recursive: true });
+    writeFileSync(
+      join(home, '.webcmd', 'override-provenance.json'),
+      JSON.stringify({ 'linkedin/search': 'not-a-record' }),
+      'utf-8',
+    );
+    expect(() => readOverrideRecords(home)).toThrow(/malformed/i);
+    expect(() => readOverrideRecords(home)).toThrow(/linkedin\/search/);
   });
 
   it('removes every record and base copy for a site', () => {
