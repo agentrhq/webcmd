@@ -249,6 +249,34 @@ describe('override reporting surfaces', () => {
     expect(JSON.parse(stdoutSpy.mock.calls.flat().join('\n'))).toEqual([]);
   });
 
+  it('reports a JSON status error when a listed adapter site disappears', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+    const siteDir = path.join(userClis, 'linkedin');
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const previousExitCode = process.exitCode;
+    const originalReaddir = fs.promises.readdir;
+    const readdir = vi.spyOn(fs.promises, 'readdir');
+    fs.mkdirSync(siteDir, { recursive: true });
+    fs.writeFileSync(path.join(siteDir, 'search.js'), '// adapter\n');
+    readdir.mockImplementationOnce(async () => {
+      const entries = await originalReaddir(userClis, { withFileTypes: true });
+      fs.rmSync(siteDir, { recursive: true });
+      return entries as any;
+    });
+    try {
+      await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+        .parseAsync(['node', 'webcmd', 'adapter', 'status', '--format', 'json']);
+
+      expect(stdoutSpy.mock.calls.flat().join('\n')).not.toBe('[]');
+      expect(stderrSpy.mock.calls.flat().join('\n')).toContain('ENOENT');
+      expect(process.exitCode).not.toBe(0);
+    } finally {
+      readdir.mockRestore();
+      process.exitCode = previousExitCode;
+      stderrSpy.mockRestore();
+    }
+  });
+
   it('reports malformed override provenance as a JSON status error', async () => {
     const userClis = path.join(home, '.webcmd', 'clis');
     const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => {});

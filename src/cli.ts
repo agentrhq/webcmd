@@ -1476,8 +1476,10 @@ cli({
     .description('List local adapters in ~/.webcmd/clis/')
     .option('-f, --format <fmt>', 'Output format: table, json', 'table')
     .action(async (opts: { format?: string }) => {
+      let userClisListed = false;
       try {
         const userEntries = await fs.promises.readdir(USER_CLIS, { withFileTypes: true });
+        userClisListed = true;
         const userSites = userEntries.filter(e => e.isDirectory() && e.name !== '.base').map(e => e.name).sort();
         if (userSites.length === 0) {
           if (opts.format === 'json') {
@@ -1536,7 +1538,7 @@ cli({
           }
         }
       } catch (err) {
-        if (opts.format === 'json' && (err as NodeJS.ErrnoException).code === 'ENOENT') {
+        if (opts.format === 'json' && !userClisListed && (err as NodeJS.ErrnoException).code === 'ENOENT') {
           renderOutput([], { fmt: 'json' });
           return;
         }
