@@ -132,7 +132,7 @@ describe('createProgram root help descriptions', () => {
     expect(descriptionFor(program, 'browser')).not.toContain('Browser control');
     expect(descriptionFor(program, 'auth')).toBe('refresh, status');
     expect(descriptionFor(program, 'plugin')).toBe('catalog, create, install, list, search, uninstall, update');
-    expect(descriptionFor(program, 'adapter')).toBe('reset, status');
+    expect(descriptionFor(program, 'adapter')).toBe('override, reset, status');
     expect(descriptionFor(program, 'profile')).toBe('list, rename, use');
     expect(descriptionFor(program, 'daemon')).toBe('restart, status, stop');
     expect(descriptionFor(program, 'external')).toBe('install, list, register');
@@ -148,7 +148,7 @@ describe('createProgram root help descriptions', () => {
   it('keeps legacy local adapters manageable without claiming a bundled baseline', () => {
     const adapter = createProgram('', '').commands.find((command) => command.name() === 'adapter')!;
 
-    expect(adapter.commands.map((command) => command.name())).toEqual(['status', 'reset']);
+    expect(adapter.commands.map((command) => command.name())).toEqual(['status', 'reset', 'override']);
     expect(adapter.helpInformation()).not.toMatch(/official|baseline|eject/i);
   });
 
@@ -844,7 +844,7 @@ name: 'search',
       // applyRootSubcommandSummaries() rewrites .description() to a child-name listing;
       // structured help must surface the original product description via the snapshot.
       expect(data.description).toBe('Manage CLI adapters');
-      expect(data.commands.map((cmd: any) => cmd.name)).toEqual(['reset', 'status']);
+      expect(data.commands.map((cmd: any) => cmd.name)).toEqual(['override', 'reset', 'status']);
       const reset = data.commands.find((cmd: any) => cmd.name === 'reset');
       expect(reset).toMatchObject({
         usage: 'webcmd adapter reset [site] [options]',

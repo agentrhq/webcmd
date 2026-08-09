@@ -1,0 +1,73 @@
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { createAdapterOverride } from './adapter-override.js';
+import { readOverrideRecords, fileSha256 } from './override-provenance.js';
+import { getLockFilePath, type LockEntry } from './plugin.js';
+
+let home: string;
+let pluginFile: string;
+let lockBackup: string | null;
+
+function seedLock(entries: Record<string, LockEntry>): void {
+  fs.mkdirSync(path.dirname(getLockFilePath()), { recursive: true });
+  fs.writeFileSync(getLockFilePath(), JSON.stringify(entries, null, 2));
+}
+
+beforeEach(() => {
+  home = fs.mkdtempSync(path.join(os.tmpdir(), 'ao-'));
+  pluginFile = path.join(home, '.webcmd', 'plugins', 'linkedin', 'search.js');
+  fs.mkdirSync(path.dirname(pluginFile), { recursive: true });
+  fs.writeFileSync(pluginFile, '// linkedin search plugin\nmodule.exports = {};\n');
+
+  lockBackup = fs.existsSync(getLockFilePath()) ? fs.readFileSync(getLockFilePath(), 'utf-8') : null;
+});
+
+afterEach(() => {
+  fs.rmSync(home, { recursive: true, force: true });
+  if (lockBackup !== null) {
+    fs.mkdirSync(path.dirname(getLockFilePath()), { recursive: true });
+    fs.writeFileSync(getLockFilePath(), lockBackup);
+  } else {
+    try { fs.unlinkSync(getLockFilePath()); } catch {}
+  }
+});
+
+describe('createAdapterOverride', () => {
+  it('copies the plugin command into clis and records provenance', () => {
+    seedLock({
+      linkedin: {
+        source: { kind: 'local', path: path.resolve(home) },
+        commitHash: 'a'.repeat(40),
+        installedAt: new Date().toISOString(),
+      },
+    });
+
+    const result = createAdapterOverride('linkedin/search', { homeDir: home });
+
+    expect(fs.readFileSync(result.overridePath, 'utf-8')).toBe(fs.readFileSync(pluginFile, 'utf-8'));
+    expect(fs.readFileSync(result.basePath, 'utf-8')).toBe(fs.readFileSync(pluginFile, 'utf-8'));
+    const record = readOverrideRecords(home)['linkedin/search']!;
+    expect(record).toMatchObject({ plugin: 'linkedin', commitHash: 'a'.repeat(40) });
+    expect(record.sourceSha256).toBe(fileSha256(pluginFile));
+  });
+
+  it('refuses a command that comes from no installed plugin', () => {
+    expect(() => createAdapterOverride('nosuch/cmd', { homeDir: home }))
+      .toThrow(/not provided by an installed plugin/i);
+  });
+
+  it('refuses when a clis copy already exists', () => {
+    createAdapterOverride('linkedin/search', { homeDir: home });
+    expect(() => createAdapterOverride('linkedin/search', { homeDir: home }))
+      .toThrow(/already/i);
+  });
+
+  it('records commitHash null when the plugin has no lock entry', () => {
+    createAdapterOverride('linkedin/search', { homeDir: home });
+    const record = readOverrideRecords(home)['linkedin/search']!;
+    expect(record.commitHash).toBeNull();
+    expect(record.sourceSha256).toMatch(/^[0-9a-f]{64}$/);
+  });
+});

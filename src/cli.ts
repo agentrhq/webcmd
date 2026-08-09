@@ -1489,6 +1489,27 @@ cli({
       console.log(`✅ Removed legacy local adapter "${site}".`);
     });
 
+  adapterCmd
+    .command('override')
+    .description('Fork an installed plugin command into ~/.webcmd/clis so you can modify it')
+    .argument('<command>', 'Command to override, as <site>/<command>')
+    .action(async (commandKey: string) => {
+      const { createAdapterOverride } = await import('./adapter-override.js');
+      try {
+        const result = createAdapterOverride(commandKey);
+        console.log(`✅ Override created for ${result.commandKey}`);
+        console.log(`     yours: ${result.overridePath}`);
+        console.log(`     base:  ${result.basePath}`);
+        console.log();
+        console.log(`  Your copy now takes precedence over plugin "${result.plugin}".`);
+        console.log(`  "${CLI_COMMAND} plugin update" keeps updating the plugin copy, not your override,`);
+        console.log('  and will tell you when the upstream file changes so you can merge.');
+      } catch (err) {
+        console.error(`Error: ${getErrorMessage(err)}`);
+        process.exitCode = EXIT_CODES.GENERIC_ERROR;
+      }
+    });
+
   // ── Built-in: browser profile selection ──────────────────────────────────
   const profileCmd = program.command('profile').description('Manage webcmd browser runtime profiles');
   // Snapshot before applyRootSubcommandSummaries() rewrites .description() to a child-name listing.
