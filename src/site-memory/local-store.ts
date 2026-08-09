@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { access, mkdir, readdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
+import { access, lstat, mkdir, readdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 
 type JsonObject = Record<string, unknown>;
@@ -48,6 +49,7 @@ export interface SiteMemoryListing {
 }
 
 const writeChains = new Map<string, Promise<void>>();
+const tempWritePattern = /^\..+\.\d+\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.tmp$/i;
 
 export function appendNote(input: NoteInput): Promise<{ path: 'notes.md' }> {
   return updateText(input.site, 'notes.md', input, (existing) => {
@@ -185,13 +187,13 @@ function siteRoot(site: string, opts: LocalStoreOptions): string {
   if (!site || site.includes('/') || site.includes('\\') || site === '.' || site === '..') {
     throw new Error(`Invalid site memory site: ${site}`);
   }
-  return join(opts.homeDir ?? process.env.HOME ?? '', '.webcmd', 'sites', site);
+  return join(requiredHomeDir(opts), '.webcmd', 'sites', site);
 }
 
 async function memoryPaths(root: string, requested?: string[]): Promise<string[]> {
   if (!await exists(root)) return [];
-  const paths = requested ?? await walkFiles(root);
-  return paths.map((path) => safeRelativePath(root, path)).sort();
+  const paths = (requested ?? await walkFiles(root)).filter((path) => !isTempWritePath(path));
+  return Promise.all(paths.map((path) => readableRelativePath(root, path))).then((items) => items.sort());
 }
 
 async function walkFiles(root: string, dir = root): Promise<string[]> {
@@ -199,10 +201,16 @@ async function walkFiles(root: string, dir = root): Promise<string[]> {
   const nested = await Promise.all(entries.map(async (entry) => {
     const path = join(dir, entry.name);
     if (entry.isDirectory()) return walkFiles(root, path);
-    if (entry.isFile()) return [relative(root, path)];
+    if (entry.isFile() && !isTempWritePath(entry.name)) return [relative(root, path)];
     return [];
   }));
   return nested.flat();
+}
+
+async function readableRelativePath(root: string, path: string): Promise<string> {
+  const relativePath = safeRelativePath(root, path);
+  if ((await lstat(join(root, relativePath))).isSymbolicLink()) throw new Error(`Invalid site memory path: ${path}`);
+  return relativePath;
 }
 
 function safeRelativePath(root: string, path: string): string {
@@ -210,6 +218,16 @@ function safeRelativePath(root: string, path: string): string {
   const resolvedRoot = resolve(root);
   if (target !== resolvedRoot && target.startsWith(`${resolvedRoot}${sep}`)) return relative(resolvedRoot, target);
   throw new Error(`Invalid site memory path: ${path}`);
+}
+
+function isTempWritePath(path: string): boolean {
+  return tempWritePattern.test(basename(path));
+}
+
+function requiredHomeDir(opts: LocalStoreOptions): string {
+  const home = opts.homeDir ?? process.env.HOME ?? process.env.USERPROFILE ?? homedir();
+  if (!home) throw new Error('Site memory requires homeDir, HOME, USERPROFILE, or os.homedir().');
+  return home;
 }
 
 async function exists(path: string): Promise<boolean> {

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -15,11 +15,15 @@ import {
 const tempHomes: string[] = [];
 const base = { site: 'example.test' };
 const originalHome = process.env.HOME;
+const originalUserProfile = process.env.USERPROFILE;
 
 afterEach(async () => {
   if (originalHome === undefined) delete process.env.HOME;
   else process.env.HOME = originalHome;
+  if (originalUserProfile === undefined) delete process.env.USERPROFILE;
+  else process.env.USERPROFILE = originalUserProfile;
   await Promise.all(tempHomes.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+  await rm(join(process.cwd(), '.webcmd/sites/no-home.test'), { recursive: true, force: true });
 });
 
 describe('local site memory store', () => {
@@ -138,6 +142,46 @@ describe('local site memory store', () => {
         sha256: createHash('sha256').update('{"ok":true}\n').digest('hex'),
       },
     ]);
+  });
+
+  it('hides in-directory temp writes from readers', async () => {
+    const homeDir = await tempHome();
+    await appendNote({ ...base, homeDir, text: 'hello' });
+    await writeFile(
+      join(homeDir, '.webcmd/sites', base.site, '.notes.md.123.11111111-1111-4111-8111-111111111111.tmp'),
+      'partial',
+    );
+
+    await expect(showSiteMemory(base.site, { homeDir })).resolves.toEqual([
+      expect.objectContaining({ path: 'notes.md' }),
+    ]);
+    await expect(listSiteMemory(base.site, { homeDir })).resolves.toEqual([
+      expect.objectContaining({ path: 'notes.md' }),
+    ]);
+  });
+
+  it('rejects requested symlink paths instead of reading outside the site root', async () => {
+    const homeDir = await tempHome();
+    await appendNote({ ...base, homeDir, text: 'hello' });
+    const outside = join(homeDir, 'outside.json');
+    await writeFile(outside, '{"secret":true}\n');
+    await symlink(outside, join(homeDir, '.webcmd/sites', base.site, 'inside-link'));
+
+    await expect(showSiteMemory(base.site, { homeDir, paths: ['inside-link'] })).rejects.toThrow(/Invalid site memory path/);
+    await expect(listSiteMemory(base.site, { homeDir, paths: ['inside-link'] })).rejects.toThrow(/Invalid site memory path/);
+  });
+
+  it('uses USERPROFILE instead of writing under cwd when HOME is unset', async () => {
+    const homeDir = await tempHome();
+    delete process.env.HOME;
+    process.env.USERPROFILE = homeDir;
+
+    await appendNote({ site: 'no-home.test', text: 'nope' });
+
+    await expect(showSiteMemory('no-home.test', { homeDir })).resolves.toEqual([
+      expect.objectContaining({ path: 'notes.md', body: expect.stringContaining('nope') }),
+    ]);
+    await expect(showSiteMemory('no-home.test', { homeDir: process.cwd() })).resolves.toEqual([]);
   });
 });
 
