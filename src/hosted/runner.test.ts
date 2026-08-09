@@ -80,7 +80,7 @@ it('routes site commands to the hosted site-memory API', async () => {
       { path: '/v1/sites/example.test/memory/verify/search.json', method: 'PUT', body: '{"expect":{"columns":["id"]}}\n' },
     ]));
     expect(requests).toContainEqual(expect.objectContaining({
-      path: expect.stringMatching(/^\/v1\/sites\/example\.test\/memory\/fixtures\/search-\d+\.json$/),
+      path: expect.stringMatching(/^\/v1\/sites\/example\.test\/memory\/fixtures\/search-\d+-[0-9a-f-]{36}\.json$/),
       method: 'PUT',
       body: '{"items":[{"id":1}]}\n',
     }));

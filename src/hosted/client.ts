@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { attachTraceReceipt, CliError, EXIT_CODES, type ExitCode } from '../errors.js';
 import type {
   HostedBrowserActionRequest,
@@ -225,7 +226,7 @@ export class HostedClient {
   }
 
   async addSample(site: string, command: string, body: string): Promise<void> {
-    await this.putSiteMemory(site, `fixtures/${command}-${Date.now()}.json`, body);
+    await this.putSiteMemory(site, `fixtures/${command}-${Date.now()}-${randomUUID()}.json`, body);
   }
 
   async putSiteMemory(site: string, path: string, body: string): Promise<void> {

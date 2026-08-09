@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Command } from 'commander';
@@ -157,7 +158,7 @@ export function createLocalSiteMemoryBackend(options: LocalStoreOptions = {}): S
       }
     },
     putFixture: async (site, command, body) => writeSiteFile(root(site), `verify/${command}.json`, body),
-    addSample: async (site, command, body) => writeSiteFile(root(site), `fixtures/${command}-${Date.now()}.json`, body),
+    addSample: async (site, command, body) => writeSiteFile(root(site), `fixtures/${command}-${Date.now()}-${randomUUID()}.json`, body, true),
   };
 }
 
@@ -249,10 +250,10 @@ function kindForPath(path: string): MemoryKind | undefined {
   return undefined;
 }
 
-async function writeSiteFile(root: string, path: string, body: string): Promise<void> {
+async function writeSiteFile(root: string, path: string, body: string, exclusive = false): Promise<void> {
   const target = join(root, path);
   await mkdir(join(target, '..'), { recursive: true });
-  await writeFile(target, body);
+  await writeFile(target, body, exclusive ? { flag: 'wx' } : undefined);
 }
 
 function requiredHomeDir(options: LocalStoreOptions): string {

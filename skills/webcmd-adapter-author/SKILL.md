@@ -77,8 +77,8 @@ webcmd doctor passes?
   | no -> fix the bridge using doctor output
   v yes
 Read site memory:
-  - ~/.webcmd/sites/<site>/endpoints.json
-  - ~/.webcmd/sites/<site>/field-map.json
+  - webcmd site memory show <site> --kind endpoints
+  - webcmd site memory show <site> --kind field-map
   - references/site-memory/<site>.md, if present
   |
   | hit endpoint + fields -> jump to endpoint verification
@@ -116,9 +116,11 @@ Design columns (output-design.md)
   |
   v
 webcmd browser init
-  - generate ~/.webcmd/clis/<site>/<name>.js skeleton
-  - copy the closest neighboring adapter
-  - edit name, URL, and field mapping
+  - local mode: generate ~/.webcmd/clis/<site>/<name>.js skeleton
+  - hosted mode: webcmd adapter source get <site>/<name>, then use
+    webcmd adapter path <site>/<name> to edit under ~/.webcmd/hosted/clis
+  - copy the closest neighboring adapter; after hosted edits, upload with
+    webcmd adapter source put <site>/<name> <path>
   |
   v
 webcmd browser verify
@@ -144,7 +146,8 @@ Check these off step by step:
 [ ] 1. `webcmd doctor` returns "Everything looks good"
 
 [ ] 2. Read site memory:
-       [ ] Does `~/.webcmd/sites/<site>/endpoints.json` exist, and does it contain the desired endpoint?
+       [ ] Run `webcmd site memory show <site> --kind endpoints`; does it contain the desired endpoint?
+       [ ] Run `webcmd site memory show <site> --kind field-map` when field mappings matter.
        [ ] Does `references/site-memory/<site>.md` exist? If yes, read its "Known endpoints" section.
        [ ] On a hit: **jump to Step 5 endpoint verification + Step 7 field check**, not directly to Step 9 adapter code.
        [ ] If memory is older than 30 days according to `verified_at`, treat it as stale and use the cold-start path through Steps 3 and 4.
@@ -184,7 +187,8 @@ Check these off step by step:
        [ ] Order: identifier columns -> business numbers -> metadata.
 
 [ ] 9. Write the adapter (`adapter-template.md`):
-       [ ] `webcmd browser init <site>/<name>`, then set `strategy: Strategy.<strategy>` in the generated file
+       [ ] Local mode: `webcmd browser init <site>/<name>`, then set `strategy: Strategy.<strategy>` in the generated file.
+       [ ] Hosted mode: materialize with `webcmd adapter source get <site>/<name>`, locate it with `webcmd adapter path <site>/<name>`, edit only under `~/.webcmd/hosted/clis`, then upload with `webcmd adapter source put <site>/<name> <path>`.
        [ ] Find the closest same-site or same-type adapter and copy it.
        [ ] Edit name, URL, and field mapping.
        [ ] Use only the adapter-compatible path proven in Step 6A; never paste Playwright locators, `waitForResponse`, or browser-run globals into `func`.
@@ -248,7 +252,7 @@ Check these off step by step:
 | `references/field-decode-playbook.md` | Step 7: field not in dictionary |
 | `references/output-design.md` | Step 8: naming, types, order |
 | `references/adapter-template.md` | Step 9: file structure and live example `convertible.js` |
-| `references/site-memory.md` | Overview: in-repo seeds plus local `~/.webcmd/sites/` two-layer structure |
+| `references/site-memory.md` | Overview: in-repo seeds plus command-managed site memory |
 | `references/site-memory/<site>.md` | Step 2: public site knowledge when a seed file exists |
 | `references/success-rate-pitfalls.md` | Step 7 / 11: eleven silent failure modes where verify can pass with wrong data, including aria-label locale dependence |
 | `references/jsdom-fixture-pattern.md` | When adapter uses DOM extraction inside `page.evaluate` and mocked-evaluate unit tests miss silent bugs; freeze HTML into `plugins/<site>/__fixtures__/` and run JSDOM with the mandatory `awk 'NF>0'` tightening plus reverse-validation discipline |
@@ -265,7 +269,7 @@ Check these off step by step:
 - **The `browser:` field determines the `func` signature:** `browser:false -> (args)`, `browser:true -> (page, args)`. If this is reversed, `args` may actually be a debug flag and all external parameters can silently fall back to defaults.
 - Throw the correct typed error for known failures according to [`references/typed-errors.md`](./references/typed-errors.md). **Do not** silently `return []`, **do not** silently `return [{sentinel}]`, and **do not** silently clamp external parameters with `Math.max/min`.
 - **Persistent sessions keep stale DOM between commands.** `siteSession: 'persistent'` shares one tab per site; leftover modals/drawers from the previous command leak into the next one. State-sensitive write commands (checkout flows) should add `freshPage: true` (new tab, same lease — cookies/login/location survive). Verify session-scoped context (login, selected city/date) *before* side effects, and embed such context in URLs/IDs your command emits for sibling commands. See `references/adapter-template.md` and "Persistent Sessions and State Hygiene" in `docs/authoring.mdx`.
-- For private iteration, write `~/.webcmd/clis/<site>/<name>.js` to avoid a build. Use `webcmd adapter override <site>/<command>` to fork an existing plugin command. When the user says to promote a CLI, keep the `webcmd plugin create <site> --dir plugins/<site>` step for packaging a new plugin, then register it in root `webcmd-plugin.json`, install the plugin, and run `webcmd validate <site>` and smoke commands. See `references/adapter-template.md` for details.
+- For private local iteration, write `~/.webcmd/clis/<site>/<name>.js` to avoid a build. In hosted mode, use `webcmd adapter source get|put` and `webcmd adapter path`; hosted source stays under `~/.webcmd/hosted/clis`, never `~/.webcmd/clis`. Use `webcmd adapter override <site>/<command>` to fork an existing plugin command. When the user says to promote a CLI, keep the `webcmd plugin create <site> --dir plugins/<site>` step for packaging a new plugin, then register it in root `webcmd-plugin.json`, install the plugin, and run `webcmd validate <site>` and smoke commands. See `references/adapter-template.md` for details.
 - After `webcmd plugin update`, check the reported overrides needing reconciliation and merge `yours` with `upstream`, using `base` as the common ancestor for a three-way merge. Only overrides are reported; a user-authored adapter has no upstream.
 - Write site memory every round with the `webcmd site ...` commands: no memory -> use skill -> produce memory -> next time becomes a five-minute task.
 - **After a site's first command passes verify, stop and ask the user for their use cases before recommending next set of commands.** See Runbook Step 13.

@@ -3,12 +3,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Writable } from 'node:stream';
 import { Command } from 'commander';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createLocalSiteMemoryBackend, registerSiteCommands } from './commands.js';
 
 const tempHomes: string[] = [];
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await Promise.all(tempHomes.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
@@ -28,6 +29,8 @@ describe('site commands', () => {
     await run(program, ['field-map', 'add', 'example.test', 'num_comments', '--meaning', 'comment count', '--source', 'page']);
     await run(program, ['fixture', 'put', 'example.test/search', fixture]);
     await run(program, ['fixture', 'get', 'example.test/search']);
+    vi.spyOn(Date, 'now').mockReturnValue(1_754_678_400_000);
+    await run(program, ['sample', 'add', 'example.test/search', sample]);
     await run(program, ['sample', 'add', 'example.test/search', sample]);
     await run(program, ['memory', 'show', 'example.test', '--kind', 'notes']);
     await run(program, ['memory', 'list', 'example.test']);
@@ -38,7 +41,13 @@ describe('site commands', () => {
     await expect(readFile(join(root, 'endpoints.json'), 'utf8')).resolves.toContain('"stale": true');
     await expect(readFile(join(root, 'field-map.json'), 'utf8')).resolves.toContain('"num_comments"');
     await expect(readFile(join(root, 'verify', 'search.json'), 'utf8')).resolves.toBe('{"expect":{"columns":["id"]}}\n');
-    await expect(readdir(join(root, 'fixtures'))).resolves.toEqual([expect.stringMatching(/^search-\d+\.json$/)]);
+    const samples = await readdir(join(root, 'fixtures'));
+    expect(samples).toEqual([
+      expect.stringMatching(/^search-1754678400000-[0-9a-f-]{36}\.json$/),
+      expect.stringMatching(/^search-1754678400000-[0-9a-f-]{36}\.json$/),
+    ]);
+    await expect(Promise.all(samples.map((name) => readFile(join(root, 'fixtures', name), 'utf8'))))
+      .resolves.toEqual(['{"items":[{"id":1}]}\n', '{"items":[{"id":1}]}\n']);
     expect(output.text()).toContain('search endpoint works');
     expect(output.text()).toContain('"columns":["id"]');
     expect(output.text()).toContain('notes.md');

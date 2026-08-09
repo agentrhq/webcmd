@@ -7,13 +7,22 @@ Implement the observed behavior with the existing adapter APIs.
 
 ## Create The File
 
-For private iteration:
+For private local iteration:
 
 ```bash
 webcmd browser init <site>/<name>
 ```
 
 This scaffolds `~/.webcmd/clis/<site>/<name>.js` with a `Strategy.PUBLIC` placeholder — `init` takes no flags, so set the real `strategy:` value (and the other `TODO` fields) by hand once the file exists.
+
+For hosted mode, do not use `~/.webcmd/clis`. Materialize the package source, locate its hosted-only path, edit it, then upload it:
+
+```bash
+webcmd adapter source get <site>/<name>
+webcmd adapter path <site>/<name>
+# edit ~/.webcmd/hosted/clis/<site>/<name>.js
+webcmd adapter source put <site>/<name> ~/.webcmd/hosted/clis/<site>/<name>.js
+```
 
 Promote a community CLI to the main repo as a plugin:
 
