@@ -75,7 +75,21 @@ describe('discovery attributes source through the real cli() path', () => {
       .toEqual({ kind: 'plugin', plugin: 'linkedin' });
   });
 
-  it('never registers commands from clis/.base/', async () => {
+  it('never registers commands from clis/.base/ (shallow: file is a direct child of .base)', async () => {
+    const clisDir = path.join(tempHome, 'clis');
+    const baseDir = path.join(clisDir, '.base');
+    await fs.promises.mkdir(baseDir, { recursive: true });
+    // discoverClisFromFs treats each directory under clisDir as a "site" and
+    // scans its direct children — so the file must sit right here, not nested
+    // another level deeper, or this test can't detect a missing guard.
+    await fs.promises.writeFile(path.join(baseDir, 'run.js'), CLI_MODULE.replace('__SITE__', 'demo'));
+
+    await discoverClis(clisDir);
+
+    expect(getRegistry().get('demo/run')).toBeUndefined();
+  });
+
+  it('never registers commands from a nested clis/.base/<site>/ dir either', async () => {
     const clisDir = path.join(tempHome, 'clis');
     const baseDir = path.join(clisDir, '.base', 'demo');
     await fs.promises.mkdir(baseDir, { recursive: true });
