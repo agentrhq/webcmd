@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { access, lstat, mkdir, readdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
+import { access, lstat, mkdir, readdir, readFile, realpath, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 
@@ -210,6 +210,8 @@ async function walkFiles(root: string, dir = root): Promise<string[]> {
 async function readableRelativePath(root: string, path: string): Promise<string> {
   const relativePath = safeRelativePath(root, path);
   if ((await lstat(join(root, relativePath))).isSymbolicLink()) throw new Error(`Invalid site memory path: ${path}`);
+  const [realRoot, realTarget] = await Promise.all([realpath(root), realpath(join(root, relativePath))]);
+  if (realTarget !== realRoot && !realTarget.startsWith(`${realRoot}${sep}`)) throw new Error(`Invalid site memory path: ${path}`);
   return relativePath;
 }
 

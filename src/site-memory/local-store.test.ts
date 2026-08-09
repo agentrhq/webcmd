@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -169,6 +169,18 @@ describe('local site memory store', () => {
 
     await expect(showSiteMemory(base.site, { homeDir, paths: ['inside-link'] })).rejects.toThrow(/Invalid site memory path/);
     await expect(listSiteMemory(base.site, { homeDir, paths: ['inside-link'] })).rejects.toThrow(/Invalid site memory path/);
+  });
+
+  it('rejects requested paths through a symlinked directory', async () => {
+    const homeDir = await tempHome();
+    await appendNote({ ...base, homeDir, text: 'hello' });
+    const outsideDir = join(homeDir, 'outside-dir');
+    await mkdir(outsideDir);
+    await writeFile(join(outsideDir, 'secret.txt'), 'secret');
+    await symlink(outsideDir, join(homeDir, '.webcmd/sites', base.site, 'linkdir'));
+
+    await expect(showSiteMemory(base.site, { homeDir, paths: ['linkdir/secret.txt'] })).rejects.toThrow(/Invalid site memory path/);
+    await expect(listSiteMemory(base.site, { homeDir, paths: ['linkdir/secret.txt'] })).rejects.toThrow(/Invalid site memory path/);
   });
 
   it('uses USERPROFILE instead of writing under cwd when HOME is unset', async () => {
