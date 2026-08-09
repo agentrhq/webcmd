@@ -56,3 +56,75 @@ export function configurePluginUpdateSurface(command: Command): Command {
     .argument('[name]', 'Installed plugin name')
     .option('--all', 'Update all installed plugins');
 }
+
+export function configureSiteMemoryShowSurface(command: Command): Command {
+  return command
+    .description('Print site memory')
+    .argument('<site>', 'Site name')
+    .option('--kind <kind>', 'Filter: notes, endpoints, field-map, verify, fixture');
+}
+
+export function configureSiteMemoryListSurface(command: Command): Command {
+  return command
+    .description('List site memory artifacts')
+    .argument('<site>', 'Site name');
+}
+
+export function configureSiteNoteAddSurface(command: Command): Command {
+  return command
+    .description('Add a site memory note')
+    .argument('<site>', 'Site name')
+    .requiredOption('--text <markdown>', 'Note text')
+    .option('--author <author>', 'Note author');
+}
+
+export function configureSiteEndpointSetSurface(command: Command): Command {
+  return command
+    .description('Set a verified endpoint')
+    .argument('<site>', 'Site name')
+    .argument('<name>', 'Endpoint name')
+    .requiredOption('--url <url>', 'Endpoint URL')
+    .requiredOption('--method <method>', 'HTTP method')
+    .option('--params <json>', 'Endpoint parameters as a JSON object')
+    .option('--rows-path <path>', 'Result rows path')
+    .option('--fields <fields>', 'Comma-separated sample fields')
+    .option('--notes <text>', 'Endpoint notes');
+}
+
+export function configureSiteEndpointStaleSurface(command: Command): Command {
+  return command
+    .description('Mark an endpoint stale')
+    .argument('<site>', 'Site name')
+    .argument('<name>', 'Endpoint name');
+}
+
+export function configureSiteFieldMapAddSurface(command: Command): Command {
+  return command
+    .description('Add a field mapping')
+    .argument('<site>', 'Site name')
+    .argument('<key>', 'Observed field key')
+    .requiredOption('--meaning <meaning>', 'Field meaning')
+    .requiredOption('--source <source>', 'Evidence source')
+    .option('--force', 'Overwrite an existing mapping');
+}
+
+export function configureSiteFixtureGetSurface(command: Command): Command {
+  return command
+    .description('Get a verify fixture')
+    .argument('<site-command>', 'Site and command in site/command format')
+    .option('--output <path>', 'Write fixture to this path');
+}
+
+export function configureSiteFixturePutSurface(command: Command): Command {
+  return command
+    .description('Validate and store a verify fixture')
+    .argument('<site-command>', 'Site and command in site/command format')
+    .argument('<path>', 'Fixture file path');
+}
+
+export function configureSiteSampleAddSurface(command: Command): Command {
+  return command
+    .description('Store a response sample')
+    .argument('<site-command>', 'Site and command in site/command format')
+    .argument('<path>', 'Sample file path');
+}

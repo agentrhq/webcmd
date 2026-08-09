@@ -20,6 +20,8 @@ import type {
   HostedMarketplaceInstallation,
   HostedMarketplaceInstallationRow,
   HostedMarketplaceSearchResult,
+  HostedSiteMemoryArtifact,
+  HostedSiteMemoryBody,
   HostedTraceReceipt,
 } from './types.js';
 
@@ -151,6 +153,88 @@ export class HostedClient {
       throw protocolError('Webcmd Cloud returned an invalid marketplace update response.');
     }
     return body.result;
+  }
+
+  async listSiteMemory(site: string): Promise<HostedSiteMemoryArtifact[]> {
+    const body = await this.request(`/v1/sites/${encodeURIComponent(site)}/memory`);
+    if (!isHostedSiteMemoryListResponse(body)) {
+      throw protocolError('Webcmd Cloud returned an invalid site memory list.');
+    }
+    return body.artifacts;
+  }
+
+  async getSiteMemory(site: string, path: string): Promise<string> {
+    return this.requestText(`/v1/sites/${encodeURIComponent(site)}/memory/${encodeMemoryPath(path)}`);
+  }
+
+  async showSiteMemory(site: string, kind?: 'notes' | 'endpoints' | 'field-map' | 'verify' | 'fixture'): Promise<HostedSiteMemoryBody[]> {
+    const artifacts = await this.listSiteMemory(site);
+    return Promise.all(artifacts
+      .filter(artifact => kind === undefined || artifact.kind === kind)
+      .map(async (artifact) => ({ path: artifact.path, body: await this.getSiteMemory(site, artifact.path) })));
+  }
+
+  async appendNote(input: { site: string; text: string; author?: string }): Promise<void> {
+    await this.putSiteMemory(input.site, 'notes.md', JSON.stringify({
+      text: input.text,
+      ...(input.author !== undefined ? { author: input.author } : {}),
+    }));
+  }
+
+  async setEndpoint(input: {
+    site: string;
+    name: string;
+    url: string;
+    method: string;
+    params?: Record<string, unknown>;
+    rowsPath?: string;
+    sampleFields?: string[];
+    notes?: string;
+  }): Promise<void> {
+    const { site, ...body } = input;
+    await this.putSiteMemory(site, 'endpoints.json', JSON.stringify(body));
+  }
+
+  async markEndpointStale(input: { site: string; name: string }): Promise<void> {
+    const body = await this.request(`/v1/sites/${encodeURIComponent(input.site)}/memory/endpoints.json`, {
+      method: 'DELETE',
+      body: JSON.stringify({ name: input.name }),
+    });
+    if (!isHostedSiteMemoryStaleResponse(body)) {
+      throw protocolError('Webcmd Cloud returned an invalid endpoint stale response.');
+    }
+  }
+
+  async addFieldMapping(input: { site: string; key: string; meaning: string; source: string; force?: boolean }): Promise<void> {
+    const { site, ...body } = input;
+    await this.putSiteMemory(site, 'field-map.json', JSON.stringify(body));
+  }
+
+  async getFixture(site: string, command: string): Promise<string | null> {
+    try {
+      return await this.getSiteMemory(site, `verify/${command}.json`);
+    } catch (error) {
+      if (error instanceof HostedClientError && error.code === 'SITE_MEMORY_NOT_FOUND') return null;
+      throw error;
+    }
+  }
+
+  async putFixture(site: string, command: string, body: string): Promise<void> {
+    await this.putSiteMemory(site, `verify/${command}.json`, body);
+  }
+
+  async addSample(site: string, command: string, body: string): Promise<void> {
+    await this.putSiteMemory(site, `fixtures/${command}-${Date.now()}.json`, body);
+  }
+
+  async putSiteMemory(site: string, path: string, body: string): Promise<void> {
+    const response = await this.request(`/v1/sites/${encodeURIComponent(site)}/memory/${encodeMemoryPath(path)}`, {
+      method: 'PUT',
+      body,
+    });
+    if (!isHostedSiteMemoryWriteResponse(response)) {
+      throw protocolError('Webcmd Cloud returned an invalid site memory write response.');
+    }
   }
 
   async execute(input: {
@@ -361,6 +445,27 @@ export class HostedClient {
     if (!response.ok) throw protocolError('Webcmd Cloud returned a success envelope with an HTTP error status.');
     return body;
   }
+
+  private async requestText(path: string): Promise<string> {
+    const response = await this.fetchImpl(`${this.apiBaseUrl}${path}`, {
+      headers: {
+        accept: 'text/plain, application/json',
+        authorization: `Bearer ${this.apiKey}`,
+        ...(this.workspace ? { 'x-webcmd-workspace': this.workspace } : {}),
+      },
+    });
+    if (response.ok) return response.text();
+    const text = await response.text();
+    const body = text ? parseJson(text) : {};
+    if (!isHostedError(body)) throw protocolError('Webcmd Cloud returned an invalid site memory read failure.');
+    const error = body.error;
+    throw new HostedClientError(
+      error.code,
+      error.message,
+      error.help,
+      normalizeExitCode(error.exitCode, response.status === 401 ? EXIT_CODES.NOPERM : EXIT_CODES.GENERIC_ERROR),
+    );
+  }
 }
 
 function parseJson(text: string): unknown {
@@ -369,6 +474,10 @@ function parseJson(text: string): unknown {
   } catch {
     throw protocolError('Webcmd Cloud returned non-JSON response.');
   }
+}
+
+function encodeMemoryPath(path: string): string {
+  return path.split('/').map(encodeURIComponent).join('/');
 }
 
 function isHostedError(value: unknown): value is HostedErrorResponse {
@@ -496,6 +605,36 @@ function isHostedMarketplaceInstallationRow(value: unknown): value is HostedMark
     && (value.sourceCommit === null || typeof value.sourceCommit === 'string')
     && typeof value.installedAt === 'string'
     && typeof value.updateAvailable === 'boolean';
+}
+
+function isHostedSiteMemoryListResponse(value: unknown): value is { ok: true; artifacts: HostedSiteMemoryArtifact[] } {
+  return hasExactKeys(value, ['ok', 'artifacts'])
+    && value.ok === true
+    && Array.isArray(value.artifacts)
+    && value.artifacts.every(isHostedSiteMemoryArtifact);
+}
+
+function isHostedSiteMemoryArtifact(value: unknown): value is HostedSiteMemoryArtifact {
+  return hasExactKeys(value, ['path', 'kind', 'contentType', 'sha256', 'byteSize', 'updatedAt'])
+    && typeof value.path === 'string'
+    && isHostedSiteMemoryKind(value.kind)
+    && typeof value.contentType === 'string'
+    && typeof value.sha256 === 'string'
+    && typeof value.byteSize === 'number'
+    && typeof value.updatedAt === 'string';
+}
+
+function isHostedSiteMemoryKind(value: unknown): value is HostedSiteMemoryArtifact['kind'] {
+  return value === 'notes' || value === 'endpoints' || value === 'field-map' || value === 'sitemap'
+    || value === 'workflow' || value === 'verify' || value === 'fixture' || value === 'other';
+}
+
+function isHostedSiteMemoryWriteResponse(value: unknown): value is { ok: true } {
+  return hasExactKeys(value, ['ok']) && value.ok === true;
+}
+
+function isHostedSiteMemoryStaleResponse(value: unknown): value is { ok: true; stale: true } {
+  return hasExactKeys(value, ['ok', 'stale']) && value.ok === true && value.stale === true;
 }
 
 // `delisted` is optional and appears ONLY when true (installed plugin whose catalog

@@ -98,6 +98,22 @@ export interface HostedMarketplaceInstallationRow {
   updateAvailable: boolean;
 }
 
+export type HostedSiteMemoryKind = 'notes' | 'endpoints' | 'field-map' | 'sitemap' | 'workflow' | 'verify' | 'fixture' | 'other';
+
+export interface HostedSiteMemoryArtifact {
+  path: string;
+  kind: HostedSiteMemoryKind;
+  contentType: string;
+  sha256: string;
+  byteSize: number;
+  updatedAt: string;
+}
+
+export interface HostedSiteMemoryBody {
+  path: string;
+  body: string;
+}
+
 export interface HostedExecution {
   id: string;
   command: string;

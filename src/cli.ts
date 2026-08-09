@@ -52,6 +52,7 @@ import { loadBrowserRunSource } from './browser/run/input.js';
 import { BrowserRunError } from './browser/run/types.js';
 import { classifyCommandOrigin, formatCommandOrigin } from './command-origin.js';
 import { readOverrideRecords, removeOverrideRecords } from './override-provenance.js';
+import { createLocalSiteMemoryBackend, registerSiteCommands } from './site-memory/commands.js';
 
 const CLI_FILE = fileURLToPath(import.meta.url);
 const FOLLOW_POLL_MS = 1_000;
@@ -634,6 +635,8 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
         source: 'webcmd list',
       });
     });
+
+  registerSiteCommands(program, createLocalSiteMemoryBackend());
 
   // ── Built-in: validate / verify ───────────────────────────────────────────
 

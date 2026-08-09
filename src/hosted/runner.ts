@@ -48,6 +48,7 @@ import {
 import { isHostedConfig, loadWebcmdConfig, type WebcmdConfig } from './config.js';
 import { resolveHostedApiKey, type HostedCredentialStore } from './credentials.js';
 import { parseHostedRootCommandSurface } from '../root-command-surface.js';
+import { registerSiteCommands } from '../site-memory/commands.js';
 import type {
   HostedBrowserActionName,
   HostedBrowserRunActionResponse,
@@ -203,6 +204,11 @@ async function dispatchHosted(
     const manifest = await client.getManifest();
     validateManifestContractIdentity(manifest);
     await renderHostedList(manifest, parsed.format, parsed.formatExplicit, stdout, parsed.tag);
+    return;
+  }
+
+  if (args[0] === 'site') {
+    await runHostedSiteSurface(args.slice(1), normalized.literal, client, stdout);
     return;
   }
 
@@ -817,6 +823,34 @@ async function writeHostedHelp(
 ): Promise<void> {
   const format = getRequestedHelpFormat(argv);
   await writeToStream(stdout, format ? renderStructuredHelp(data, format) : text);
+}
+
+async function runHostedSiteSurface(
+  argv: readonly string[],
+  literal: boolean,
+  client: HostedClient,
+  stdout: NodeJS.WritableStream,
+): Promise<void> {
+  let help = '';
+  let stderr = '';
+  const root = new Command('webcmd');
+  const output = {
+    writeOut: (value: string) => { help += value; },
+    writeErr: (value: string) => { stderr += value; },
+  };
+  root.exitOverride().configureOutput(output);
+  registerSiteCommands(root, client, { stdout });
+
+  try {
+    await root.parseAsync(literal ? ['--', 'site', ...argv] : ['site', ...argv], { from: 'user' });
+  } catch (error) {
+    if (!(error instanceof CommanderError)) throw error;
+    if (error.code === 'commander.helpDisplayed') {
+      await writeToStream(stdout, help);
+      return;
+    }
+    throw new CommanderStructuralError(stderr || `${error.message}\n`, error.exitCode);
+  }
 }
 
 type ParsedHostedListSurface =

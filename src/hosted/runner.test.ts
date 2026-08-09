@@ -28,6 +28,110 @@ it('ships no default site commands while preserving the browser contract', () =>
   );
 });
 
+it('routes site commands to the hosted site-memory API', async () => {
+  const fixtureDir = await mkdtemp(path.join(tmpdir(), 'webcmd-site-fixture-'));
+  const fixturePath = path.join(fixtureDir, 'fixture.json');
+  const samplePath = path.join(fixtureDir, 'sample.json');
+  await writeFile(fixturePath, '{"expect":{"columns":["id"]}}\n');
+  await writeFile(samplePath, '{"items":[{"id":1}]}\n');
+  const requests: Array<{ path: string; method: string; body?: string }> = [];
+  const stdout = sink();
+  try {
+    const run = async (argv: string[]) => runHostedCli(argv, {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      fetchImpl: async (url, init) => {
+        const request = {
+          path: new URL(String(url)).pathname,
+          method: init?.method ?? 'GET',
+          ...(init?.body ? { body: String(init.body) } : {}),
+        };
+        requests.push(request);
+        if (request.path.endsWith('/memory')) {
+          return new Response(JSON.stringify({ ok: true, artifacts: [{
+            path: 'notes.md', kind: 'notes', contentType: 'text/markdown', sha256: 'a'.repeat(64), byteSize: 5,
+            updatedAt: '2026-08-09T00:00:00.000Z',
+          }] }));
+        }
+        if (request.method === 'GET') return new Response('hello\n');
+        if (request.method === 'DELETE') return new Response(JSON.stringify({ ok: true, stale: true }));
+        return new Response(JSON.stringify({ ok: true }));
+      },
+    });
+
+    await expect(run(['site', 'memory', 'show', 'example.test', '--kind', 'notes'])).resolves.toMatchObject({ exitCode: 0 });
+    await expect(run(['site', 'memory', 'list', 'example.test'])).resolves.toMatchObject({ exitCode: 0 });
+    await expect(run(['site', 'note', 'add', 'example.test', '--text', 'works'])).resolves.toMatchObject({ exitCode: 0 });
+    await expect(run(['site', 'endpoint', 'set', 'example.test', 'search', '--url', 'https://example.test/search', '--method', 'GET'])).resolves.toMatchObject({ exitCode: 0 });
+    await expect(run(['site', 'endpoint', 'stale', 'example.test', 'search'])).resolves.toMatchObject({ exitCode: 0 });
+    await expect(run(['site', 'field-map', 'add', 'example.test', 'num_comments', '--meaning', 'comment count', '--source', 'page'])).resolves.toMatchObject({ exitCode: 0 });
+    await expect(run(['site', 'fixture', 'get', 'example.test/search'])).resolves.toMatchObject({ exitCode: 0 });
+    await expect(run(['site', 'fixture', 'put', 'example.test/search', fixturePath])).resolves.toMatchObject({ exitCode: 0 });
+    await expect(run(['site', 'sample', 'add', 'example.test/search', samplePath])).resolves.toMatchObject({ exitCode: 0 });
+
+    expect(requests).toEqual(expect.arrayContaining([
+      { path: '/v1/sites/example.test/memory', method: 'GET' },
+      { path: '/v1/sites/example.test/memory/notes.md', method: 'GET' },
+      { path: '/v1/sites/example.test/memory/notes.md', method: 'PUT', body: '{"text":"works"}' },
+      { path: '/v1/sites/example.test/memory/endpoints.json', method: 'PUT', body: '{"name":"search","url":"https://example.test/search","method":"GET"}' },
+      { path: '/v1/sites/example.test/memory/endpoints.json', method: 'DELETE', body: '{"name":"search"}' },
+      { path: '/v1/sites/example.test/memory/field-map.json', method: 'PUT', body: '{"key":"num_comments","meaning":"comment count","source":"page","force":false}' },
+      { path: '/v1/sites/example.test/memory/verify/search.json', method: 'GET' },
+      { path: '/v1/sites/example.test/memory/verify/search.json', method: 'PUT', body: '{"expect":{"columns":["id"]}}\n' },
+    ]));
+    expect(requests).toContainEqual(expect.objectContaining({
+      path: expect.stringMatching(/^\/v1\/sites\/example\.test\/memory\/fixtures\/search-\d+\.json$/),
+      method: 'PUT',
+      body: '{"items":[{"id":1}]}\n',
+    }));
+    expect(stdout.text()).toContain('"body": "hello\\n"');
+    expect(stdout.text()).toContain('notes.md');
+  } finally {
+    await rm(fixtureDir, { recursive: true, force: true });
+  }
+});
+
+it('makes hosted field mapping conflicts actionable', async () => {
+  const stderr = sink();
+  const result = await runHostedCli([
+    'site', 'field-map', 'add', 'example.test', 'num_comments', '--meaning', 'other', '--source', 'guess',
+  ], {
+    config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+    stderr: stderr.stream,
+    fetchImpl: async () => new Response(JSON.stringify({
+      ok: false,
+      error: {
+        code: 'SITE_MEMORY_FIELD_MAPPING_EXISTS',
+        message: 'Field mapping num_comments already exists.',
+        exitCode: 1,
+      },
+    }), { status: 409 }),
+  });
+
+  expect(result.exitCode).toBe(1);
+  expect(stderr.text()).toContain('Field mapping num_comments already exists.');
+  expect(stderr.text()).toContain('Use --force only after confirming the replacement mapping.');
+});
+
+it('rejects malformed hosted fixtures before making a request', async () => {
+  const fixtureDir = await mkdtemp(path.join(tmpdir(), 'webcmd-invalid-fixture-'));
+  const fixturePath = path.join(fixtureDir, 'fixture.json');
+  await writeFile(fixturePath, '{"expect":{"columns":"id"}}\n');
+  const fetchImpl = vi.fn<typeof fetch>();
+  try {
+    const result = await runHostedCli(['site', 'fixture', 'put', 'example.test/search', fixturePath], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stderr: sink().stream,
+      fetchImpl,
+    });
+
+    expect(result.exitCode).toBe(2);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  } finally {
+    await rm(fixtureDir, { recursive: true, force: true });
+  }
+});
+
 const manifest = {
   userId: 'user_demo',
   metadata: {
