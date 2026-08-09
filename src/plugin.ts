@@ -17,6 +17,7 @@ import { getErrorMessage, PluginError } from './errors.js';
 import { log } from './logger.js';
 import { isRecord } from './utils.js';
 import { PACKAGE_NAME } from './brand.js';
+import { fileSha256, readOverrideRecords } from './override-provenance.js';
 import {
   readPluginManifest,
   isMonorepo,
@@ -1291,6 +1292,47 @@ export function updateAllPlugins(options: { force?: boolean } = {}): UpdateResul
       };
     }
   });
+}
+
+export interface OverrideReconcileNeed {
+  commandKey: string;
+  plugin: string;
+  yours: string;
+  upstream: string;
+  base: string | null;
+}
+
+/**
+ * Find overrides whose upstream plugin file has changed since the fork.
+ *
+ * Content-based, not commit-based: a plugin's commitHash moves whenever
+ * *any* of its commands change, so comparing commitHash would flag every
+ * override on every unrelated update. Comparing the file's own sha256
+ * against the override record's sourceSha256 only flags overrides whose
+ * actual upstream content changed.
+ */
+export function findOverridesNeedingReconcile(pluginNames?: string[]): OverrideReconcileNeed[] {
+  const homeDir = getHomeDir();
+  const records = readOverrideRecords(homeDir);
+  const needs: OverrideReconcileNeed[] = [];
+
+  for (const [commandKey, record] of Object.entries(records)) {
+    if (pluginNames && !pluginNames.includes(record.plugin)) continue;
+    // Plugin was uninstalled: no upstream to reconcile against. Task 7's
+    // `adapter status` surfaces these separately as orphaned.
+    if (!fs.existsSync(record.sourcePath)) continue;
+    if (fileSha256(record.sourcePath) === record.sourceSha256) continue;
+
+    needs.push({
+      commandKey,
+      plugin: record.plugin,
+      yours: path.join(homeDir, '.webcmd', 'clis', `${commandKey}.js`),
+      upstream: record.sourcePath,
+      base: fs.existsSync(record.basePath) ? record.basePath : null,
+    });
+  }
+
+  return needs;
 }
 
 /**

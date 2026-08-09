@@ -1114,6 +1114,25 @@ cli({
 
   // ── Plugin management ──────────────────────────────────────────────────────
 
+  /** Print the "N overrides need reconciliation" report after `plugin update`. Prints nothing when empty. */
+  function printReconcileReport(needs: import('./plugin.js').OverrideReconcileNeed[]): void {
+    if (needs.length === 0) return;
+    console.log();
+    console.log(`⚠  ${needs.length} override${needs.length === 1 ? '' : 's'} need${needs.length === 1 ? 's' : ''} reconciliation:`);
+    for (const need of needs) {
+      console.log(`     ${need.commandKey}`);
+      console.log(`       yours:    ${need.yours}`);
+      console.log(`       upstream: ${need.upstream}`);
+      if (need.base) {
+        console.log(`       base:     ${need.base}`);
+      } else {
+        console.log(`       base:     unavailable (merge base was deleted)`);
+      }
+    }
+    console.log(`     Your override still takes precedence. Merge the upstream change, or run`);
+    console.log(`     ${CLI_COMMAND} adapter reset <plugin> to drop the override.`);
+  }
+
   const pluginCmd = program.command('plugin').description(`Manage ${CLI_COMMAND} plugins`);
   // Snapshot before applyRootSubcommandSummaries() rewrites .description() to a child-name listing.
   const originalPluginDescription = pluginCmd.description();
@@ -1173,7 +1192,7 @@ cli({
         return;
       }
 
-      const { updatePlugin, updateAllPlugins } = await import('./plugin.js');
+      const { updatePlugin, updateAllPlugins, findOverridesNeedingReconcile } = await import('./plugin.js');
       const { discoverPlugins } = await import('./discovery.js');
       if (opts.all) {
         const results = updateAllPlugins({ force: opts.force === true });
@@ -1204,6 +1223,8 @@ cli({
         } else {
           console.log('✅ All plugins updated successfully.');
         }
+
+        printReconcileReport(findOverridesNeedingReconcile(results.map((r) => r.name)));
         return;
       }
 
@@ -1211,6 +1232,7 @@ cli({
         updatePlugin(name!, { force: opts.force === true });
         await discoverPlugins();
         console.log(`✅ Plugin "${name}" updated successfully.`);
+        printReconcileReport(findOverridesNeedingReconcile([name!]));
       } catch (err) {
         console.error(`Error: ${getErrorMessage(err)}`);
         process.exitCode = EXIT_CODES.GENERIC_ERROR;
