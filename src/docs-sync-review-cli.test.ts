@@ -353,8 +353,11 @@ describe('OpenAI and documentation boundaries', () => {
       expect.objectContaining({
         method: 'POST',
         headers: expect.objectContaining({ authorization: 'Bearer api-key' }),
+        body: expect.stringContaining('"reasoning_effort":"low"'),
       }),
     );
+    const requestInit = (fetchImpl.mock.calls as unknown as Array<[unknown, { body?: string }?]>)[0]?.[1];
+    expect(requestInit?.body).toContain('"response_format"');
     expect(result).toEqual({ verdict: 'no_update_needed', summary: 'Covered.', findings: [] });
   });
 

@@ -3,6 +3,7 @@ import { isAbsolute, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
   REVIEW_COMMENT_MARKER,
+  REVIEW_JSON_SCHEMA,
   buildReviewPrompts,
   classifyPullRequest,
   createDeferredResult,
@@ -197,6 +198,15 @@ export async function generateOpenAIReview(
       model,
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.1,
+      reasoning_effort: 'low',
+      response_format: {
+        type: 'json_schema',
+        json_schema: {
+          name: 'docs_sync_review',
+          strict: true,
+          schema: REVIEW_JSON_SCHEMA,
+        },
+      },
     }),
     signal: AbortSignal.timeout(180_000),
   });
