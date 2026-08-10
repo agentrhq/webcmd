@@ -78,6 +78,22 @@ try {
   if (packedPaths.has('scripts/fetch-adapters.js')) {
     fail('packed tarball contains the retired adapter fetch lifecycle');
   }
+
+  // Every command the core manifest advertises must be in the tarball. A
+  // manifest entry whose module was left behind is discoverable but dies with
+  // ADAPTER_LOAD on first use — see #247, where web/fetch-browser was the only
+  // escalation path FETCH_BLOCKED knew how to recommend.
+  const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'cli-manifest.json'), 'utf8'));
+  for (const entry of manifest) {
+    if (!entry.modulePath) continue;
+    const packedModule = `dist/src/clis/${entry.modulePath}`;
+    if (!packedPaths.has(packedModule)) {
+      fail(`packed tarball is missing manifest module for ${entry.site}/${entry.name}: ${packedModule}`);
+    }
+  }
+  if (manifest.length > 0 && !packedPaths.has('dist/src/cli-manifest.json')) {
+    fail('packed tarball is missing the staged core manifest: dist/src/cli-manifest.json');
+  }
   for (const [name, target] of binEntries) {
     if (!packedPaths.has(String(target))) {
       fail(`packed tarball is missing bin "${name}" target: ${target}`);

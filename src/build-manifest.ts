@@ -27,7 +27,7 @@ import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { getErrorMessage } from './errors.js';
 import { fullName, getRegistry, type CliCommand } from './registry.js';
-import { findPackageRoot } from './package-paths.js';
+import { findPackageRoot, getCliManifestPath } from './package-paths.js';
 import type { ManifestEntry } from './manifest-types.js';
 import { isRecord } from './utils.js';
 import {
@@ -450,6 +450,13 @@ async function main(): Promise<void> {
 
   fs.mkdirSync(path.dirname(OUTPUT), { recursive: true });
   fs.writeFileSync(OUTPUT, artifacts.manifestJson);
+  // The published package resolves the builtin tree to dist/src/clis/, and the
+  // manifest lookup is always clisDir/../cli-manifest.json — keep the staged
+  // copy in step so an installed CLI does not fall back to a filesystem scan.
+  const stagedClis = path.join(PACKAGE_ROOT, 'dist', 'src', 'clis');
+  if (fs.existsSync(stagedClis)) {
+    fs.writeFileSync(getCliManifestPath(stagedClis), artifacts.manifestJson);
+  }
   fs.writeFileSync(HOSTED_CONTRACT_OUTPUT, artifacts.hostedContractJson);
   console.error(`✅ Manifest compiled: ${entries.length} entries → ${OUTPUT}`);
   console.error(`✅ Hosted contract compiled: ${packageMetadata.name}@${packageMetadata.version} → ${HOSTED_CONTRACT_OUTPUT}`);
