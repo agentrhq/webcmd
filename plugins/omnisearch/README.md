@@ -55,7 +55,7 @@ All commands return clean, consistent camelCase JSON:
 
 ```bash
 # Install locally for development (symlinked, changes reflect immediately)
-webcmd plugin install file:///Users/rishetmehra/webcmd-opinions
+webcmd plugin install file:///Users/rishetmehra/webcmd-omnisearch
 
 # Verify commands are registered
 webcmd list | grep -A12 omnisearch
