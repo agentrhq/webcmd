@@ -5,15 +5,7 @@ sidebarTitle: Pi
 
 ## Agent prompt
 
-Use this prompt with a coding agent to set up Webcmd end to end:
-
-```text
-Fetch and follow https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md to set up Webcmd end to end.
-```
-
-> Use Webcmd with [Pi](https://pi.dev) to give it a browser surface. Pi ships no built-in web, search, or browser tools, so Webcmd is driven through Pi's default `bash` tool with no permission or config changes.
-
-Pi is a minimal terminal coding harness whose default tools are filesystem and shell only (`read`, `bash`, `edit`, `write`, with `grep`, `find`, and `ls` available). Its agent drives Webcmd through the `bash` tool. Adapter-first commands and compact snapshots usually use fewer tokens than the official `brave-search` and `browser-tools` skills, and logged-in profiles handle authenticated pages.
+> Fetch and follow [https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md](https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md) to set up Webcmd end to end.
 
 ## Manual
 

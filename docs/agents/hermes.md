@@ -5,15 +5,7 @@ sidebarTitle: Hermes
 
 ## Agent prompt
 
-Use this prompt with a coding agent to set up Webcmd end to end:
-
-```text
-Fetch and follow https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md to set up Webcmd end to end.
-```
-
-> Use Webcmd with [Hermes Agent](https://hermes-agent.nousresearch.com/docs) to replace its built-in `browser_*` stack with Webcmd's adapters and `webcmd browser` sessions.
-
-Point Hermes at Webcmd's browser CLI to replace its native browser toolset with Webcmd's adapters and `webcmd browser` sessions. Hermes drives Webcmd through its `terminal` toolset. Adapter-first commands and compact snapshots usually use fewer tokens than Hermes' native browser tools.
+> Fetch and follow [https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md](https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md) to set up Webcmd end to end.
 
 ## Manual
 

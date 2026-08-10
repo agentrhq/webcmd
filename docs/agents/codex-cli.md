@@ -5,15 +5,7 @@ sidebarTitle: Codex CLI
 
 ## Agent prompt
 
-Use this prompt with a coding agent to set up Webcmd end to end:
-
-```text
-Fetch and follow https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md to set up Webcmd end to end.
-```
-
-> Use Webcmd with [Codex CLI](https://developers.openai.com/codex/) to replace its native `web_search` tool with the Webcmd browser surface.
-
-Codex CLI's native `web_search` tool returns cached or indexed search results but cannot read pages or run authenticated sessions. Point Codex at Webcmd's browser CLI instead: adapters return exact, stable fields, and `webcmd browser` sessions render real pages with logged-in profiles. Codex runs `webcmd` through its shell tool.
+> Fetch and follow [https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md](https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md) to set up Webcmd end to end.
 
 ## Manual
 

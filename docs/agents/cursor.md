@@ -5,15 +5,7 @@ sidebarTitle: Cursor
 
 ## Agent prompt
 
-Use this prompt with a coding agent to set up Webcmd end to end:
-
-```text
-Fetch and follow https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md to set up Webcmd end to end.
-```
-
-> Use Webcmd with [Cursor](https://cursor.com) to replace its built-in Browser and Web tools with Webcmd's adapters and `webcmd browser` sessions.
-
-Point Cursor's agent at Webcmd's browser CLI to replace its native Browser (navigate/click/screenshot) and Web (search/fetch) tools with Webcmd's adapters and `webcmd browser` sessions. Cursor's agent drives Webcmd through its shell tool. Adapter-first commands and compact snapshots usually use fewer tokens than Cursor's native web tools.
+> Fetch and follow [https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md](https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md) to set up Webcmd end to end.
 
 ## Manual
 
