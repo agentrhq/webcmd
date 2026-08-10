@@ -533,11 +533,10 @@ function describeGitError(error: unknown): string {
 /**
  * Report tracked-file modifications and untracked files within `dir` in a git checkout.
  *
- * Untracked files are included on purpose: `git status` already excludes
- * gitignored paths (build output like node_modules/dist never shows up), so
- * anything untracked that does show up is real, unsaved user work — e.g. a
- * new command file that hasn't been `git add`ed yet — which updating would
- * destroy just as surely as an uncommitted edit to a tracked file.
+ * Untracked files are included on purpose: anything untracked is real, unsaved
+ * user work — e.g. a new command file that hasn't been `git add`ed yet — which
+ * updating would destroy just as surely as an uncommitted edit to a tracked
+ * file. The exception is `installArtifacts`: those are ours, not the user's.
  *
  * The `-- .` pathspec on `git status` restricts the report to `dir` itself.
  * Without it, git reports the *entire enclosing repository* — e.g. a plugin
@@ -572,7 +571,8 @@ export function getDirtyFiles(dir: string): string[] {
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'pipe'],
     });
-    return out.split('\n').map((line) => line.trim()).filter(Boolean);
+    return out.split('\n').map((line) => line.trim()).filter(Boolean)
+      .filter((entry) => !installArtifacts.test(dirtyEntryPath(entry)));
   } catch (error) {
     throw new PluginError(
       `Could not determine whether "${dir}" has uncommitted changes: git failed with: ${describeGitError(error)}`,
@@ -581,10 +581,23 @@ export function getDirtyFiles(dir: string): string[] {
   }
 }
 
+/**
+ * Artifacts `installDependencies` creates by running `npm install` in the
+ * checkout, at the repo root and in every sub-plugin of a monorepo. A plugin
+ * repo without a .gitignore reports them as dirty, so without this the guard
+ * fires on webcmd's own output and every such plugin is permanently
+ * un-updatable — blaming the user for work they never did.
+ */
+const installArtifacts = /(?:^|\/)(?:node_modules(?:\/|$)|package-lock\.json$)/;
+
+/** Path portion of a `git status --porcelain` entry (already trimmed of its leading space). */
+function dirtyEntryPath(entry: string): string {
+  return entry.startsWith('??') ? entry.slice(2).trim() : entry.replace(/^[MADRCU!]{1,2}\s+/, '');
+}
+
 function describeDirtyEntry(entry: string): string {
-  const isUntracked = entry.startsWith('??');
-  const file = entry.replace(/^\?\?\s*/, '').replace(/^[MADRCU! ]+\s*/, '');
-  return isUntracked ? `${file} (new, unstaged)` : `${file} (modified)`;
+  const file = dirtyEntryPath(entry);
+  return entry.startsWith('??') ? `${file} (new, unstaged)` : `${file} (modified)`;
 }
 
 function assertPluginNotDirty(name: string, dir: string, force: boolean): void {
