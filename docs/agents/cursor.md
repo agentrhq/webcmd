@@ -3,17 +3,23 @@ title: Cursor Agent
 sidebarTitle: Cursor
 ---
 
+> **Agent prompt**
+>
+> Fetch and follow [start.md](https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md) to set up Webcmd end to end, then read this page's Manual — especially [Override default tools](#override-default-tools) — before doing browser work.
+
 > Use Webcmd with [Cursor](https://cursor.com) to replace its built-in Browser and Web tools with Webcmd's adapters and `webcmd browser` sessions.
 
 Point Cursor's agent at Webcmd's browser CLI to replace its native Browser (navigate/click/screenshot) and Web (search/fetch) tools with Webcmd's adapters and `webcmd browser` sessions. Cursor's agent drives Webcmd through its shell tool. Adapter-first commands and compact snapshots usually use fewer tokens than Cursor's native web tools.
 
-## Requirements
+## Manual
+
+### Requirements
 
 * Node.js 20.6+
 * The `webcmd` npm CLI, installed globally or in the project
 * A browser runtime; confirm with `webcmd doctor` before browser work
 
-## Install and configure
+### Install and configure
 
 Install Webcmd and its skills:
 
@@ -27,7 +33,7 @@ When `webcmd skills add` prompts, choose the `agents` provider. It installs into
 
 For a project-scoped setup, copy the `webcmd-*` skill folders into the project's `.cursor/skills/` or `.agents/skills/` so the whole team gets them. Restart Cursor after installing skills.
 
-## Disable Cursor's built-in browser
+### Override default tools
 
 Cursor's agent ships two native web tools: **Browser** (navigate, click, screenshot running apps) and **Web** (search and fetch external documentation). Cursor has no single config key that removes them, so replace them with an always-applied rule that forces Webcmd usage.
 
@@ -53,17 +59,7 @@ Use Webcmd instead:
 
 The `alwaysApply: true` rule is injected into every Cursor session, so the agent does not fall back to its native Browser/Web tools. You can also set the Browser Automation dropdown in the agent window to **Off** so the built-in browser is not attached at all.
 
-## Auth profiles and human handoff
-
-Webcmd browser sessions keep signed-in state in profiles. To sign in once, run the session headed and complete login in the window yourself, then close the session; later headless runs reuse the cookies. Profile changes save only on a clean close.
-
-For login walls or CAPTCHA during a run, stop browser writes and hand off to the user with any `handoff.viewUrl` or `Webcmd browser:` link, then verify the post-action state before retrying. Never ask for or type passwords, OTPs, cookies, credentials, or session secrets.
-
-## Security
-
-`webcmd browser run` executes Playwright and JavaScript in the sandboxed browser runtime. Treat the machine running Webcmd as the trust boundary. Do not share profile directories across untrusted users.
-
-## Troubleshooting
+### Troubleshooting
 
 | Symptom | What to try |
 | --- | --- |
@@ -75,6 +71,6 @@ For login walls or CAPTCHA during a run, stop browser writes and hand off to the
 
 ## See also
 
-* [`start.md`](../../start.md) — bootstrap Webcmd end to end.
+* [`start.md`](../../start.md) — common setup, [auth profiles and human handoff](../../start.md#auth-profiles-and-human-handoff), and [security](../../start.md#security).
 * [`webcmd-browser`](../../skills/webcmd-browser/SKILL.md) — the raw browser session surface.
 * [`webcmd-usage`](../../skills/webcmd-usage/SKILL.md) — adapter-first usage rules.

@@ -3,18 +3,24 @@ title: Hermes Agent
 sidebarTitle: Hermes
 ---
 
+> **Agent prompt**
+>
+> Fetch and follow [start.md](https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md) to set up Webcmd end to end, then read this page's Manual — especially [Override default tools](#override-default-tools) — before doing browser work.
+
 > Use Webcmd with [Hermes Agent](https://hermes-agent.nousresearch.com/docs) to replace its built-in `browser_*` stack with Webcmd's adapters and `webcmd browser` sessions.
 
 Point Hermes at Webcmd's browser CLI to replace its native browser toolset with Webcmd's adapters and `webcmd browser` sessions. Hermes drives Webcmd through its `terminal` toolset. Adapter-first commands and compact snapshots usually use fewer tokens than Hermes' native browser tools.
 
-## Requirements
+## Manual
+
+### Requirements
 
 * Node.js 20.6+ on the Hermes host
 * The `webcmd` npm CLI, installed globally on the Hermes host
 * Hermes `terminal` toolset enabled (needed to run `webcmd`)
 * A browser runtime; confirm with `webcmd doctor` before browser work
 
-## Install and configure
+### Install and configure
 
 Install Webcmd and its skills on the Hermes host:
 
@@ -34,7 +40,7 @@ skills:
 
 Hermes then reads `webcmd-usage` and `webcmd-browser` as skills. Restart Hermes after changing config and confirm the skills are discoverable.
 
-## Disable Hermes' built-in browser
+### Override default tools
 
 Hermes' native browser toolset is `browser` (`browser_navigate`, `browser_snapshot`, `browser_click`, `browser_type`, `browser_scroll`, and the rest). Disable it so Hermes does not keep its native browser tools alongside Webcmd:
 
@@ -50,21 +56,13 @@ agent:
     - browser
 ```
 
+Recommended: use `hermes tools disable browser` so the terminal toolset stays available.
+
 Note: Hermes' `browser` toolset statically bundles `web_search`, so disabling `browser` also removes `web_search` from every session. `web_extract` and the rest of the `web` toolset are unaffected. That is acceptable here: Webcmd's `smart-search` skill and adapters cover search, so Hermes should rely on Webcmd for browser work and search.
 
 Do not disable the `terminal` toolset — that is how Hermes runs `webcmd`.
 
-## Auth profiles and human handoff
-
-Webcmd browser sessions keep signed-in state in profiles. To sign in once, run the session headed and complete login in the window yourself, then close the session; later headless runs reuse the cookies. Profile changes save only on a clean close.
-
-For login walls or CAPTCHA during a run, stop browser writes and hand off to the user with any `handoff.viewUrl` or `Webcmd browser:` link, then verify the post-action state before retrying. Never ask for or type passwords, OTPs, cookies, credentials, or session secrets.
-
-## Security
-
-`webcmd browser run` executes Playwright and JavaScript in the sandboxed browser runtime. Treat the Hermes host as the trust boundary. Do not share profile directories across untrusted users.
-
-## Troubleshooting
+### Troubleshooting
 
 | Symptom | What to try |
 | --- | --- |
@@ -77,6 +75,6 @@ For login walls or CAPTCHA during a run, stop browser writes and hand off to the
 
 ## See also
 
-* [`start.md`](../../start.md) — bootstrap Webcmd end to end.
+* [`start.md`](../../start.md) — common setup, [auth profiles and human handoff](../../start.md#auth-profiles-and-human-handoff), and [security](../../start.md#security).
 * [`webcmd-browser`](../../skills/webcmd-browser/SKILL.md) — the raw browser session surface.
 * [`webcmd-usage`](../../skills/webcmd-usage/SKILL.md) — adapter-first usage rules.
