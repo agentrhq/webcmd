@@ -5,7 +5,9 @@ sidebarTitle: Codex CLI
 
 ## Agent prompt
 
-> Fetch and follow [https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md](https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md) to set up Webcmd end to end.
+```text
+Fetch and follow https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md to set up Webcmd end to end.
+```
 
 ## Manual
 

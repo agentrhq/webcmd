@@ -51,7 +51,9 @@ https://github.com/user-attachments/assets/04eceadc-d398-4303-984d-ae3197bfa664
 
 ### Agent prompt
 
-> Fetch and follow [https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md](https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md) to set up Webcmd end to end.
+```text
+Fetch and follow https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md to set up Webcmd end to end.
+```
 
 ## What You Can Ask
 
