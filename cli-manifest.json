@@ -1,6 +1,47 @@
 [
   {
     "site": "web",
+    "name": "fetch",
+    "description": "Fetch a URL locally without launching a browser",
+    "access": "read",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "url",
+        "type": "string",
+        "required": true,
+        "help": "http(s) URL to fetch"
+      },
+      {
+        "name": "timeout",
+        "type": "int",
+        "default": 30,
+        "required": false,
+        "help": "Fetch budget in seconds"
+      },
+      {
+        "name": "max-chars",
+        "type": "int",
+        "default": 50000,
+        "required": false,
+        "help": "Maximum characters of extracted content"
+      },
+      {
+        "name": "allow-private",
+        "type": "boolean",
+        "default": false,
+        "required": false,
+        "help": "Allow private/loopback addresses"
+      }
+    ],
+    "defaultFormat": "md",
+    "type": "js",
+    "modulePath": "web/fetch.js",
+    "sourceFile": "web/fetch.js"
+  },
+  {
+    "site": "web",
     "name": "fetch-browser",
     "description": "Fetch any web page and export as Markdown",
     "access": "read",

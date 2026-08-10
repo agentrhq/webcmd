@@ -38,8 +38,8 @@ export const USER_WEBCMD_DIR = getUserWebcmdDir();
 export const USER_CLIS_DIR = getUserClisDir();
 /** Plugins directory: ~/.webcmd/plugins/ */
 export const PLUGINS_DIR = getPluginsDir();
-/** Matches files that register commands via cli() or lifecycle hooks */
-const PLUGIN_MODULE_PATTERN = /\b(?:cli|registerSiteAuthCommands|onStartup|onBeforeExecute|onAfterExecute)\s*\(/;
+/** Matches files that register commands via cli() / factories or lifecycle hooks */
+const PLUGIN_MODULE_PATTERN = /\b(?:cli|registerSiteAuthCommands|onStartup|onBeforeExecute|onAfterExecute)\s*\(|\bmake[A-Z]\w*Command\s*\(/;
 
 function parseStrategy(rawStrategy: string | undefined, fallback: Strategy = Strategy.COOKIE): Strategy {
   if (!rawStrategy) return fallback;
