@@ -5,7 +5,9 @@ sidebarTitle: Claude Code
 
 > **Agent prompt**
 >
-> Fetch and follow [start.md](https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md) to set up Webcmd end to end, then read this page's Manual — especially [Override default tools](#override-default-tools) — before doing browser work.
+> ```text
+> Fetch and follow https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md to set up Webcmd end to end.
+> ```
 
 > Use Webcmd with [Claude Code](https://code.claude.com) to replace its native `WebFetch` and `WebSearch` tools with the Webcmd browser surface.
 

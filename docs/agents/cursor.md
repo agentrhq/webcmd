@@ -5,7 +5,9 @@ sidebarTitle: Cursor
 
 > **Agent prompt**
 >
-> Fetch and follow [start.md](https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md) to set up Webcmd end to end, then read this page's Manual — especially [Override default tools](#override-default-tools) — before doing browser work.
+> ```text
+> Fetch and follow https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md to set up Webcmd end to end.
+> ```
 
 > Use Webcmd with [Cursor](https://cursor.com) to replace its built-in Browser and Web tools with Webcmd's adapters and `webcmd browser` sessions.
 

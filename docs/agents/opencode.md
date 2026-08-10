@@ -5,7 +5,9 @@ sidebarTitle: OpenCode
 
 > **Agent prompt**
 >
-> Fetch and follow [start.md](https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md) to set up Webcmd end to end, then read this page's Manual — especially [Override default tools](#override-default-tools) — before doing browser work.
+> ```text
+> Fetch and follow https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md to set up Webcmd end to end.
+> ```
 
 > Use Webcmd with OpenCode to replace its built-in `webfetch` / `websearch` tools with the Webcmd browser surface.
 
