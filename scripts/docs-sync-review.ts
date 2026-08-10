@@ -187,6 +187,22 @@ export async function generateOpenAIReview(
   apiKey: string,
   fetchImpl: FetchLike = fetch,
 ): Promise<unknown> {
+  const response = await requestOpenAIReview(prompt, model, apiKey, fetchImpl, true);
+  const data = await response.json() as {
+    choices?: Array<{ message?: { content?: string | null } }>;
+  };
+  const text = data.choices?.[0]?.message?.content?.trim();
+  if (!text) throw new Error('OpenAI returned empty content.');
+  return parseReviewJson(text);
+}
+
+async function requestOpenAIReview(
+  prompt: string,
+  model: string,
+  apiKey: string,
+  fetchImpl: FetchLike,
+  useLowReasoning: boolean,
+): Promise<Response> {
   const response = await fetchImpl('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -203,17 +219,15 @@ export async function generateOpenAIReview(
         { role: 'user', content: prompt },
       ],
       temperature: 0.1,
-      reasoning_effort: 'low',
+      ...(useLowReasoning ? { reasoning_effort: 'low' } : {}),
     }),
     signal: AbortSignal.timeout(180_000),
   });
+  if (response.status === 400 && useLowReasoning) {
+    return requestOpenAIReview(prompt, model, apiKey, fetchImpl, false);
+  }
   if (!response.ok) throw new Error(`OpenAI request failed with HTTP ${response.status}.`);
-  const data = await response.json() as {
-    choices?: Array<{ message?: { content?: string | null } }>;
-  };
-  const text = data.choices?.[0]?.message?.content?.trim();
-  if (!text) throw new Error('OpenAI returned empty content.');
-  return parseReviewJson(text);
+  return response;
 }
 
 function parseReviewJson(text: string): unknown {
