@@ -1,47 +1,46 @@
 # Set Up Webcmd
 
-Install Webcmd and verify that it runs end to end.
+This is a guide for agents to install Webcmd and verify that it runs end to end. Start with understanding the environment where webcmd will be used.
 
-This is the common setup guide for every agent harness. Per-agent pages under `docs/agents/` cover harness-specific configuration; each has a *Manual* section ending with an *Override default tools* section that differs per agent. Start here, then follow the page for your harness.
+- **Coding agent** — a terminal- or shell-driven harness with a bash/shell tool and skills support (Cursor, OpenCode, Claude Code, Codex CLI, Hermes Agent, Pi, OpenClaw). Fully supported by this guide; each has a per-agent page below.
+- **MCP-based agent** — a harness that consumes tools only through MCP tools and supports skills, but cannot access locally installed software. Not implemented yet; support is coming soon.
+- **Custom SDK** — programmatic integration (AI SDK, LangGraph, and similar). No agent onboarding here; follow the manual docs under `docs/agents/`.
 
-## 1. Determine your agent type
+If the user already chose a path, location, name, or harness, treat that as binding. For example, opencode agent maybe asked to setup Hermes agent, then you should instructions related to Hermes.
 
-Inspect the current environment and ask only for missing information. Ask which harness is in use and classify it:
+## Coding agents
 
-- **Coding agent** — a terminal- or shell-driven harness that runs commands (Cursor, OpenCode, Claude Code, Codex CLI, Hermes Agent, Pi, OpenClaw). Fully supported by this guide; each has a per-agent page below.
-- **MCP-based agent** — a harness that consumes tools only through an MCP server. Not implemented yet; support is coming soon.
-- **Custom SDK** — programmatic integration through the Webcmd SDK. Not available yet; see [custom-sdk.md](docs/agents/custom-sdk.md).
+### 1. Install or update
 
-### Coding agent harnesses
+Check whether Webcmd is already installed:
 
-| Harness | Native tools Webcmd replaces | Page |
-| --- | --- | --- |
-| Cursor | `Browser`, `Web` | [cursor.md](docs/agents/cursor.md#override-default-tools) |
-| OpenCode | `webfetch`, `websearch` | [opencode.md](docs/agents/opencode.md#override-default-tools) |
-| Claude Code | `WebFetch`, `WebSearch` | [claude-code.md](docs/agents/claude-code.md#override-default-tools) |
-| Codex CLI | `web_search` | [codex-cli.md](docs/agents/codex-cli.md#override-default-tools) |
-| Hermes Agent | `browser_*` | [hermes.md](docs/agents/hermes.md#override-default-tools) |
-| Pi | none (optional `pi-skills`) | [pi.md](docs/agents/pi.md#override-default-tools) |
-| OpenClaw | `web_search`, `web_fetch`, `browser` | [openclaw.md](docs/agents/openclaw.md#override-default-tools) |
+```bash
+webcmd --version
+```
 
-For MCP-based and Custom SDK harnesses, the per-agent page's *Agent prompt* does not point here yet; follow the page directly.
-
-If the user already chose a path, location, name, or harness, treat that as binding.
-
-## 2. Set up the package
-
-For a global install:
+If that fails, install it. For a global install:
 
 ```bash
 npm install -g @agentrhq/webcmd
-webcmd doctor
 ```
 
 For a project install, run the equivalent commands with the project's package manager (npm, pnpm, yarn, bun).
 
+If Webcmd is already installed, update it:
+
+```bash
+webcmd update
+```
+
+Then run:
+
+```bash
+webcmd doctor
+```
+
 `webcmd doctor` must be green before browser commands will work. Fix only the setup issue `doctor` reports; do not proceed until it passes.
 
-## 3. Read installed guidance
+### 2. Read installed guidance
 
 Install the Webcmd skills for your harness:
 
@@ -57,28 +56,34 @@ When prompted, choose the provider that matches your agent (`agents`, `codex`, o
 .claude/skills/webcmd-usage/SKILL.md
 ```
 
-If none of those paths exist because the project has no `.agents/`, `.codex/`, or `.claude/` directory, create the appropriate agent directory and rerun `webcmd skills add`. Follow the per-agent page under `docs/agents/` for harness-specific configuration, including the *Override default tools* section that disables the agent's native browser tools.
+If none of those paths exist because the project has no `.agents/`, `.codex/`, or `.claude/` directory, create the appropriate agent directory and rerun `webcmd skills add`.
 
-## 4. Verify
+### 3. Verify
 
-For this smoke check, copy the program below directly; do not inspect additional references unless validation fails. Run it against a real page:
+Using the Webcmd skill installed in the previous step, complete this task:
 
-```bash
-webcmd browser work run --stdin <<'JS'
-await page.goto('https://example.com');
-return { title: await page.title(), url: page.url() };
-JS
-```
+> Pull the top 5 stories from Hacker News and return each story's title and URL.
 
-Then release the session:
+Do not hand-write a one-off script from memory. Follow the skill guidance, run the task end to end, and close any browser session you open. Success means returning five real stories with titles and URLs.
 
-```bash
-webcmd browser work close
-```
+### 4. Override default tools
 
-The run must return the page title and URL.
+Open the *Override default tools* section on the matching per-agent page under `docs/agents/`. Disable the agent's native browser tools so Webcmd is used instead:
 
-## 5. Finish
+| Harness | Native tools Webcmd replaces | Page |
+| --- | --- | --- |
+| Cursor | `Browser`, `Web` | [cursor.md](docs/agents/cursor.md#override-default-tools) |
+| OpenCode | `webfetch`, `websearch` | [opencode.md](docs/agents/opencode.md#override-default-tools) |
+| Claude Code | `WebFetch`, `WebSearch` | [claude-code.md](docs/agents/claude-code.md#override-default-tools) |
+| Codex CLI | `web_search` | [codex-cli.md](docs/agents/codex-cli.md#override-default-tools) |
+| Hermes Agent | `browser_*` | [hermes.md](docs/agents/hermes.md#override-default-tools) |
+| Pi | none (optional `pi-skills`) | [pi.md](docs/agents/pi.md#override-default-tools) |
+| OpenClaw | `web_search`, `web_fetch`, `browser` | [openclaw.md](docs/agents/openclaw.md#override-default-tools) |
+| Other Coding Agents | native web fetch / browser tools | see instructions below |
+
+If your harness is not listed above, disable any default built-in browser tool or web-search tool so the agent uses Webcmd instead. Do not disable builtin web search tool and keep custom tools and skills untouched. If the harness has none of these tools, no override is needed.
+
+### 5. Finish
 
 After verifying Webcmd is set up and working properly, summarize the steps you took and offer some sample browser automations you could build next, such as:
 
@@ -87,19 +92,6 @@ After verifying Webcmd is set up and working properly, summarize the steps you t
 - Check product prices, availability, or delivery options.
 - Turn a proven browser workflow into a reusable `webcmd <site>` command.
 
-## Auth profiles and human handoff
+## MCP-based agents
 
-Webcmd browser sessions keep signed-in state in profiles. To sign in once, run the session headed and complete login in the window yourself, then close the session; later headless runs reuse the cookies. Profile changes save only on a clean close.
-
-For login walls or CAPTCHA during a run, stop browser writes and hand off to the user with any `handoff.viewUrl` or `Webcmd browser:` link, then verify the post-action state before retrying. Never ask for or type passwords, OTPs, cookies, credentials, or session secrets.
-
-## Security
-
-`webcmd browser run` executes Playwright and JavaScript in the sandboxed browser runtime. Treat the machine running Webcmd as the trust boundary. Do not share profile directories across untrusted users.
-
-## Important Instructions and Constraints to be Successful
-
-- Fix only setup-related failures.
-- Do not make unrelated changes or invent secrets.
-- Adapter first, browser second: before opening a raw browser session, check `webcmd list -f json` for an adapter that covers the task. Use raw `webcmd browser` only when no adapter exists.
-- Never ask for or type passwords, OTPs, cookies, credentials, or session secrets. Use Webcmd's human handoff for login walls.
+MCP-based agents consume tools only through an MCP server. Not implemented yet; support is coming soon.
