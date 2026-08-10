@@ -939,8 +939,21 @@ function installMonorepo(
   const monoreposDir = getMonoreposDir();
   const repoDir = path.join(monoreposDir, repoName);
   const repoAlreadyInstalled = fs.existsSync(repoDir);
-  const repoRoot = repoAlreadyInstalled ? repoDir : cloneDir;
-  const effectiveManifest = repoAlreadyInstalled ? readPluginManifest(repoDir) : manifest;
+  let repoRoot = repoAlreadyInstalled ? repoDir : cloneDir;
+  let effectiveManifest = repoAlreadyInstalled ? readPluginManifest(repoDir) : manifest;
+  let publishRepo = repoAlreadyInstalled ? undefined : { stagingDir: cloneDir, parentDir: monoreposDir };
+
+  if (
+    repoAlreadyInstalled
+    && subPlugin
+    && (!effectiveManifest?.plugins?.[subPlugin] || effectiveManifest.plugins[subPlugin].disabled)
+    && manifest.plugins?.[subPlugin]
+    && !manifest.plugins[subPlugin].disabled
+  ) {
+    repoRoot = cloneDir;
+    effectiveManifest = manifest;
+    publishRepo = { stagingDir: cloneDir, parentDir: monoreposDir };
+  }
 
   if (!effectiveManifest || !isMonorepo(effectiveManifest)) {
     throw new PluginError(`Monorepo manifest missing or invalid at ${repoRoot}`);
@@ -1009,23 +1022,16 @@ function installMonorepo(
 
   const publishPlugins = eligiblePlugins.map(({ name, entry }) => ({ name, subPath: entry.path }));
 
-  if (repoAlreadyInstalled) {
-    postInstallMonorepoLifecycle(
-      repoDir,
-      eligiblePlugins.map((p) => resolveRepoContainedPath(repoDir, p.entry.path)),
-    );
-  } else {
-    postInstallMonorepoLifecycle(
-      cloneDir,
-      eligiblePlugins.map((p) => resolveRepoContainedPath(cloneDir, p.entry.path)),
-    );
-  }
+  postInstallMonorepoLifecycle(
+    repoRoot,
+    eligiblePlugins.map((p) => resolveRepoContainedPath(repoRoot, p.entry.path)),
+  );
 
   publishMonorepoPlugins(
     repoDir,
     PLUGINS_DIR,
     publishPlugins,
-    repoAlreadyInstalled ? undefined : { stagingDir: cloneDir, parentDir: monoreposDir },
+    publishRepo,
     (commitHash) => {
       for (const { name, entry } of eligiblePlugins) {
         if (commitHash) {

@@ -1262,6 +1262,47 @@ describe('installPlugin with existing monorepo', () => {
     expect(npmCalls.some(([, , opts]) => opts?.cwd === repoDir)).toBe(true);
     expect(fs.realpathSync(pluginLink)).toBe(fs.realpathSync(subDir));
   });
+
+  it('refreshes an existing monorepo cache when the requested sub-plugin is missing locally', () => {
+    fs.mkdirSync(path.join(repoDir, 'packages', 'alpha'), { recursive: true });
+    fs.writeFileSync(path.join(repoDir, 'webcmd-plugin.json'), JSON.stringify({
+      plugins: {
+        alpha: { path: 'packages/alpha' },
+      },
+    }));
+
+    mockExecFileSync.mockImplementation((cmd, args) => {
+      if (cmd === 'git' && Array.isArray(args) && args[0] === 'clone') {
+        const cloneDir = String(args[4]);
+        const subDir = path.join(cloneDir, 'packages', pluginName);
+        fs.mkdirSync(subDir, { recursive: true });
+        fs.writeFileSync(path.join(cloneDir, 'package.json'), JSON.stringify({
+          name: repoName,
+          private: true,
+          workspaces: ['packages/*'],
+        }));
+        fs.writeFileSync(path.join(cloneDir, 'webcmd-plugin.json'), JSON.stringify({
+          plugins: {
+            alpha: { path: 'packages/alpha' },
+            [pluginName]: { path: `packages/${pluginName}` },
+          },
+        }));
+        fs.writeFileSync(path.join(subDir, 'hello.js'), 'cli({ site: "test", name: "hello", access: "read" })');
+        return '';
+      }
+      if (cmd === 'git' && Array.isArray(args) && args[0] === 'rev-parse' && args[1] === 'HEAD') {
+        return '1234567890abcdef1234567890abcdef12345678\n';
+      }
+      return '';
+    });
+
+    installPlugin(`github:user/${repoName}/${pluginName}`);
+
+    const refreshedSubDir = path.join(repoDir, 'packages', pluginName);
+    const refreshedManifest = JSON.parse(fs.readFileSync(path.join(repoDir, 'webcmd-plugin.json'), 'utf-8'));
+    expect(refreshedManifest.plugins[pluginName]).toEqual({ path: `packages/${pluginName}` });
+    expect(fs.realpathSync(pluginLink)).toBe(fs.realpathSync(refreshedSubDir));
+  });
 });
 
 describe('updatePlugin transactional staging', () => {
