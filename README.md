@@ -89,6 +89,10 @@ In your agent harness, load or tag `webcmd-usage`, then describe the outcome you
 Use webcmd to research the latest discussions about browser automation across Hacker News and Reddit, then return a concise comparison with source links.
 ```
 
+### Agent prompt
+
+> Fetch and follow [https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md](https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md) to set up Webcmd end to end.
+
 ## What You Can Ask
 
 - “Use webcmd to research agentic browser automation on PubMed and return the title, authors, publication date, abstract, and URL for each result.”
