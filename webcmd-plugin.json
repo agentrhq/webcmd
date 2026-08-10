@@ -804,6 +804,16 @@
         "handle": "agentrhq"
       }
     },
+    "opinions": {
+      "path": "plugins/opinions",
+      "version": "0.1.0",
+      "description": "No-login social opinions & problems research across public platforms",
+      "webcmd": ">=0.5.3",
+      "author": {
+        "name": "Rishet Mehra",
+        "handle": "Rishet11"
+      }
+    },
     "osv": {
       "path": "plugins/osv",
       "version": "0.1.0",

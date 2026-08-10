@@ -1,0 +1,10 @@
+{
+  "name": "opinions",
+  "version": "0.1.0",
+  "description": "No-login social opinions & problems research across public platforms",
+  "webcmd": ">=0.5.3",
+  "author": {
+    "name": "Rishet Mehra",
+    "handle": "Rishet11"
+  }
+}
