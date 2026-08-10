@@ -14,7 +14,7 @@ import ts from 'typescript';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
-const CLIS_DIR = path.join(ROOT, 'clis');
+const CLIS_DIR = path.join(ROOT, 'clis', 'web');
 const pkgJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf-8'));
 
 /** Recursively collect all JS adapter files in a directory. */
@@ -58,12 +58,12 @@ const FORBIDDEN_PATTERNS = [
   /(?:from|mock|importActual)\s*\(?['"](?:\.\.\/)+pipeline\//,
 ];
 
-describe('adapter imports use package exports', () => {
+describe('bundled web adapter imports use package exports', () => {
   const adapterFiles = collectAdapterFiles(CLIS_DIR);
   const runtimeAdapterFiles = collectAdapterFiles(CLIS_DIR, { excludeTests: true });
 
-  it('has no bundled core adapter files', () => {
-    expect(adapterFiles).toEqual([]);
+  it('bundles the web adapter under clis/web', () => {
+    expect(adapterFiles.length).toBeGreaterThan(0);
   });
 
   it('excludes adapters from package files and the install lifecycle', () => {
