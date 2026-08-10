@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.6.0](https://github.com/agentrhq/webcmd/compare/webcmd-v0.5.4...webcmd-v0.6.0) (2026-08-10)
+
+
+### Features
+
+* migrate release tooling to openai ([#256](https://github.com/agentrhq/webcmd/issues/256)) ([dca5bbb](https://github.com/agentrhq/webcmd/commit/dca5bbb3184218853502e0af3d24726d9c505296))
+
+
+### Bug Fixes
+
+* **adapters,output:** repair site drift and markdown/console output bugs ([4d2d45b](https://github.com/agentrhq/webcmd/commit/4d2d45b27199c800108a40fe5d6e64782d0c6ea1))
+* harden docs review structured output ([#259](https://github.com/agentrhq/webcmd/issues/259)) ([a1a426a](https://github.com/agentrhq/webcmd/commit/a1a426af82ab9b3d8c973a5b627c5f76723de710))
+* use a lighter review model ([#257](https://github.com/agentrhq/webcmd/issues/257)) ([5fc7e49](https://github.com/agentrhq/webcmd/commit/5fc7e490bb6085d12273ad766675da4148b0ef22))
+
 ## [0.5.4](https://github.com/agentrhq/webcmd/compare/webcmd-v0.5.3...webcmd-v0.5.4) (2026-08-09)
 
 ### Highlights
