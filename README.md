@@ -49,46 +49,6 @@ https://github.com/user-attachments/assets/04eceadc-d398-4303-984d-ae3197bfa664
 
 ## Quick Start
 
-### Codex
-
-In Codex, open **Plugins**, choose **Add plugin marketplace**, and enter either
-`agentrhq/webcmd` or `https://github.com/agentrhq/webcmd`. Install **Webcmd**
-from that marketplace, then start a new task. On first use, the plugin installs
-the npm CLI automatically if `webcmd` is missing.
-
-The plugin includes all seven bundled Webcmd skills. Do not also add those
-skills with `webcmd skills add` in Codex.
-
-### Other agents or plugin-free setup
-
-Webcmd requires Node.js 20.6+.
-
-```bash
-npm install -g @agentrhq/webcmd
-```
-
-The npm package ships the Webcmd core and browser commands, but no site
-adapters. Search the plugin catalog and explicitly install the adapter you
-need:
-
-```bash
-webcmd plugin search <site> -f json
-webcmd plugin install <installSource-from-search>
-```
-
-```bash
-webcmd skills add
-```
-
-When prompted, choose Claude, Codex, another supported harness, or a custom
-skills path.
-
-In your agent harness, load or tag `webcmd-usage`, then describe the outcome you want.
-
-```text
-Use webcmd to research the latest discussions about browser automation across Hacker News and Reddit, then return a concise comparison with source links.
-```
-
 ### Agent prompt
 
 > Fetch and follow [https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md](https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md) to set up Webcmd end to end.
