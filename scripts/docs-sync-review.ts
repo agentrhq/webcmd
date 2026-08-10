@@ -3,7 +3,6 @@ import { isAbsolute, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
   REVIEW_COMMENT_MARKER,
-  REVIEW_JSON_SCHEMA,
   buildReviewPrompts,
   classifyPullRequest,
   createDeferredResult,
@@ -196,17 +195,15 @@ export async function generateOpenAIReview(
     },
     body: JSON.stringify({
       model,
-      messages: [{ role: 'user', content: prompt }],
+      messages: [
+        {
+          role: 'system',
+          content: 'Return only valid JSON matching the requested review object. Do not wrap it in markdown.',
+        },
+        { role: 'user', content: prompt },
+      ],
       temperature: 0.1,
       reasoning_effort: 'low',
-      response_format: {
-        type: 'json_schema',
-        json_schema: {
-          name: 'docs_sync_review',
-          strict: true,
-          schema: REVIEW_JSON_SCHEMA,
-        },
-      },
     }),
     signal: AbortSignal.timeout(180_000),
   });
@@ -216,8 +213,14 @@ export async function generateOpenAIReview(
   };
   const text = data.choices?.[0]?.message?.content?.trim();
   if (!text) throw new Error('OpenAI returned empty content.');
+  return parseReviewJson(text);
+}
+
+function parseReviewJson(text: string): unknown {
+  const fenced = text.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)?.[1];
+  const candidate = fenced ?? text;
   try {
-    return JSON.parse(text) as unknown;
+    return JSON.parse(candidate) as unknown;
   } catch {
     throw new Error('OpenAI returned invalid JSON.');
   }

@@ -356,9 +356,16 @@ describe('OpenAI and documentation boundaries', () => {
         body: expect.stringContaining('"reasoning_effort":"low"'),
       }),
     );
-    const requestInit = (fetchImpl.mock.calls as unknown as Array<[unknown, { body?: string }?]>)[0]?.[1];
-    expect(requestInit?.body).toContain('"response_format"');
     expect(result).toEqual({ verdict: 'no_update_needed', summary: 'Covered.', findings: [] });
+  });
+
+  it('accepts fenced OpenAI JSON output', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({
+      choices: [{ message: { content: '```json\n{"verdict":"no_update_needed","summary":"Covered.","findings":[]}\n```' } }],
+    }));
+
+    await expect(generateOpenAIReview('review prompt', 'gpt-test', 'api-key', fetchImpl))
+      .resolves.toEqual({ verdict: 'no_update_needed', summary: 'Covered.', findings: [] });
   });
 
   it('defaults the docs review model to gpt-5.4-mini', async () => {
