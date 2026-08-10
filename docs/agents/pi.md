@@ -3,11 +3,13 @@ title: Pi Agent
 sidebarTitle: Pi
 ---
 
-> **Agent prompt**
->
-> ```text
-> Fetch and follow https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md to set up Webcmd end to end.
-> ```
+## Agent prompt
+
+Use this prompt with a coding agent to set up Webcmd end to end:
+
+```text
+Fetch and follow https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md to set up Webcmd end to end.
+```
 
 > Use Webcmd with [Pi](https://pi.dev) to give it a browser surface. Pi ships no built-in web, search, or browser tools, so Webcmd is driven through Pi's default `bash` tool with no permission or config changes.
 

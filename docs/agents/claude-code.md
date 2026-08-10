@@ -3,11 +3,13 @@ title: Claude Code Agent
 sidebarTitle: Claude Code
 ---
 
-> **Agent prompt**
->
-> ```text
-> Fetch and follow https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md to set up Webcmd end to end.
-> ```
+## Agent prompt
+
+Use this prompt with a coding agent to set up Webcmd end to end:
+
+```text
+Fetch and follow https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md to set up Webcmd end to end.
+```
 
 > Use Webcmd with [Claude Code](https://code.claude.com) to replace its native `WebFetch` and `WebSearch` tools with the Webcmd browser surface.
 

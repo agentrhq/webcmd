@@ -3,11 +3,13 @@ title: OpenClaw Agent
 sidebarTitle: OpenClaw
 ---
 
-> **Agent prompt**
->
-> ```text
-> Fetch and follow https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md to set up Webcmd end to end.
-> ```
+## Agent prompt
+
+Use this prompt with a coding agent to set up Webcmd end to end:
+
+```text
+Fetch and follow https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md to set up Webcmd end to end.
+```
 
 > Use Webcmd with [OpenClaw](https://openclaw.ai) to replace its built-in `web_search`, `web_fetch`, and `browser` tools with the Webcmd browser surface.
 
