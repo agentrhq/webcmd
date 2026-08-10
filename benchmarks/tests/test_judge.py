@@ -172,7 +172,7 @@ def test_generate_sends_multimodal_structured_request_and_validates_result(tmp_p
     monkeypatch.setenv("GOOGLE_API_KEY", "secret")
     monkeypatch.setattr(judge.genai, "Client", FakeClient)
 
-    result = asyncio.run(judge._generate("gemini-2.5-flash", "policy", "evidence", [image]))
+    result = asyncio.run(judge._generate("google", "gemini-2.5-flash", "policy", "evidence", [image]))
 
     assert result == JudgementResult(
         reasoning="done", verdict=True, failure_reason="", impossible_task=False, reached_captcha=False
@@ -212,13 +212,14 @@ def test_generate_rejects_malformed_structured_output(monkeypatch):
     monkeypatch.setattr(judge.genai, "Client", FakeClient)
 
     with pytest.raises(ValidationError):
-        asyncio.run(judge._generate("gemini-2.5-flash", "policy", "evidence", []))
+        asyncio.run(judge._generate("google", "gemini-2.5-flash", "policy", "evidence", []))
 
 
 def test_judge_default_model_is_gemini_2_5_flash(tmp_path, monkeypatch):
     captured = {}
 
-    async def fake_generate(model, *args):
+    async def fake_generate(provider, model, *args):
+        captured["provider"] = provider
         captured["model"] = model
         return JudgementResult(verdict=True)
 
@@ -226,4 +227,59 @@ def test_judge_default_model_is_gemini_2_5_flash(tmp_path, monkeypatch):
 
     asyncio.run(judge_execution("task", None, evidence(tmp_path, 0)))
 
+    assert captured["provider"] == "google"
     assert captured["model"] == "gemini-2.5-flash"
+
+
+def test_generate_openai_sends_multimodal_structured_request_and_validates_result(tmp_path, monkeypatch):
+    image = tmp_path / "state.png"
+    image.write_bytes(b"png bytes")
+    captured = {}
+
+    class FakeCompletions:
+        async def parse(self, **kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            parsed=JudgementResult(
+                                reasoning="done",
+                                verdict=True,
+                                failure_reason="",
+                                impossible_task=False,
+                                reached_captcha=False,
+                            )
+                        )
+                    )
+                ]
+            )
+
+    class FakeClient:
+        beta = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            captured["client_closed"] = True
+
+    monkeypatch.setenv("OPENAI_API_KEY", "secret")
+    monkeypatch.setattr(
+        judge,
+        "AsyncOpenAI",
+        lambda **kwargs: (captured.setdefault("api_key", kwargs.get("api_key")), FakeClient())[1],
+    )
+
+    result = asyncio.run(judge._generate("openai", "gpt-4o-mini", "policy", "evidence", [image]))
+
+    assert result.verdict is True
+    assert captured["api_key"] == "secret"
+    assert captured["client_closed"] is True
+    assert captured["model"] == "gpt-4o-mini"
+    messages = captured["messages"]
+    assert messages[0]["content"] == "policy"
+    user_content = messages[1]["content"]
+    assert user_content[0]["text"] == "evidence"
+    assert user_content[1]["image_url"]["url"].startswith("data:image/png;base64,")
+    assert captured["response_format"] is JudgementResult

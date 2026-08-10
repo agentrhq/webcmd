@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
 import asyncio
+import base64
 import hashlib
 import os
 from pathlib import Path
+from typing import Literal
 
 from google import genai
 from google.genai import types
+from openai import AsyncOpenAI
 from pydantic import BaseModel, StrictBool
 
 from run_controller import ExecutionEvidence
 
+
+JudgeProvider = Literal["google", "openai"]
 
 CONTRACT_PATH = Path(__file__).resolve().parent.parent / "references" / "judge-contract.md"
 GROUND_TRUTH_RULES = """**GROUND TRUTH VALIDATION (HIGHEST PRIORITY):**
@@ -67,7 +72,7 @@ Evaluate the execution and return the required structured judgement."""
     return system, user, images
 
 
-async def _generate(model: str, system: str, user: str, images: list[Path]) -> JudgementResult:
+async def _generate_google(model: str, system: str, user: str, images: list[Path]) -> JudgementResult:
     api_key = os.environ.get("GOOGLE_API_KEY")
     if not api_key:
         raise RuntimeError("GOOGLE_API_KEY is required")
@@ -86,12 +91,47 @@ async def _generate(model: str, system: str, user: str, images: list[Path]) -> J
     return JudgementResult.model_validate_json(response.text or "")
 
 
-async def judge_execution(task: str, ground_truth: str | None, evidence: ExecutionEvidence, model: str = "gemini-2.5-flash") -> JudgementResult:
+async def _generate_openai(model: str, system: str, user: str, images: list[Path]) -> JudgementResult:
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError("OPENAI_API_KEY is required")
+    content: list[dict[str, object]] = [{"type": "text", "text": user}]
+    for path in images:
+        encoded = base64.standard_b64encode(path.read_bytes()).decode()
+        content.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{encoded}"}})
+    async with AsyncOpenAI(api_key=api_key) as client:
+        response = await client.beta.chat.completions.parse(
+            model=model,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": content},
+            ],
+            response_format=JudgementResult,
+        )
+    parsed = response.choices[0].message.parsed
+    if parsed is None:
+        raise ValueError("invalid structured output")
+    return parsed
+
+
+async def _generate(provider: JudgeProvider, model: str, system: str, user: str, images: list[Path]) -> JudgementResult:
+    if provider == "openai":
+        return await _generate_openai(model, system, user, images)
+    return await _generate_google(model, system, user, images)
+
+
+async def judge_execution(
+    task: str,
+    ground_truth: str | None,
+    evidence: ExecutionEvidence,
+    model: str = "gemini-2.5-flash",
+    provider: JudgeProvider = "google",
+) -> JudgementResult:
     system, user, images = build_judge_input(task, ground_truth, evidence)
     last_error: Exception | None = None
     for attempt in range(3):
         try:
-            return await _generate(model, system, user, images)
+            return await _generate(provider, model, system, user, images)
         except Exception as error:
             last_error = error
             if attempt < 2:

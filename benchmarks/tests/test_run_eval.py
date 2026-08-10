@@ -21,6 +21,7 @@ def isolated_webcmd_config(tmp_path, monkeypatch):
         json.dumps({"mode": "local", "updatedAt": "2026-08-04T00:00:00Z"})
     )
     monkeypatch.setenv("WEBCMD_CONFIG_DIR", str(config_dir))
+    monkeypatch.setenv("GOOGLE_API_KEY", "judge-secret")
 
 
 def controller_metrics():
@@ -42,9 +43,34 @@ def test_cli_requires_exactly_one_explicit_task_selection():
     args = run_eval.parse_args(BASE + ["--tasks", "1"])
     assert args.tools == "webcmd"
     assert args.judge_model == "gemini-2.5-flash"
+    assert args.judge_provider == "google"
     assert args.task_timeout == 1800
     assert args.reasoning_effort is None
     assert not hasattr(args, "parallel")
+
+
+def test_cli_accepts_openai_judge_provider():
+    args = run_eval.parse_args(BASE + ["--tasks", "1", "--judge-provider", "openai"])
+    assert args.judge_provider == "openai"
+    assert args.judge_model == "gpt-4o-mini"
+
+
+def test_preflight_requires_openai_key_for_openai_judge(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
+        run_eval.preflight("codex", ["webcmd"], "openai")
+
+
+def test_preflight_accepts_openai_judge_without_google_key(monkeypatch):
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "judge-secret")
+
+    def fake_check(command, env):
+        return "1"
+
+    monkeypatch.setattr(run_eval.subprocess, "run", lambda *args, **kwargs: type("Result", (), {"returncode": 0, "stdout": "1\n", "stderr": ""})())
+    versions = run_eval.preflight("codex", ["webcmd"], "openai")
+    assert versions["codex"] == "1"
 
 
 def test_cli_accepts_stealth_webcmd():
@@ -191,7 +217,7 @@ def test_output_destination_rejects_unignored_repository_path_before_preflight(m
 
     unsafe = run_eval.PROJECT_DIR / "unsafe-eval-output"
     monkeypatch.setattr(run_eval, "preflight", fake_preflight)
-    args = argparse.Namespace(controller="codex", model="gpt-5", benchmark="BU_Bench_V1", tasks="1", task_indices=None, tools="webcmd", judge_model="gemini-2.5-flash", task_timeout=10, stealth_view="raw", output_dir=unsafe, reasoning_effort=None)
+    args = argparse.Namespace(controller="codex", model="gpt-5", benchmark="BU_Bench_V1", tasks="1", task_indices=None, tools="webcmd", judge_provider="google", judge_model="gemini-2.5-flash", task_timeout=10, stealth_view="raw", output_dir=unsafe, reasoning_effort=None)
 
     with pytest.raises(ValueError, match="results"):
         asyncio.run(run_eval.run_benchmark(args))
@@ -431,7 +457,7 @@ def test_manifest_records_only_reproducibility_fields(tmp_path):
         tasks=tasks,
         controller="codex",
         model="gpt-5",
-        judge_model="gemini-2.5-flash",
+        judge_provider="google", judge_model="gemini-2.5-flash",
         versions={"codex": "1", "webcmd": "2"},
         tools=["webcmd"],
         timeout=1800,
@@ -456,7 +482,7 @@ def test_manifest_records_webcmd_cloud_mode():
         tasks=tasks,
         controller="codex",
         model="gpt-5",
-        judge_model="gemini-2.5-flash",
+        judge_provider="google", judge_model="gemini-2.5-flash",
         versions={"codex": "1", "webcmd": "2", "webcmd_mode": "hosted"},
         tools=["webcmd"],
         timeout=1800,
@@ -477,7 +503,7 @@ def test_manifest_records_libretto_with_cloakbrowser():
         tasks=tasks,
         controller="codex",
         model="gpt-5",
-        judge_model="gemini-2.5-flash",
+        judge_provider="google", judge_model="gemini-2.5-flash",
         versions={
             "codex": "1",
             "libretto": "0.1.2",
@@ -542,7 +568,7 @@ def test_run_attempt_does_not_persist_task_or_ground_truth(tmp_path, monkeypatch
     monkeypatch.setattr(run_eval, "run_controller", fake_controller)
     monkeypatch.setattr(run_eval, "judge_execution", fake_judge)
     task = {"task_id": "secret-id", "confirmed_task": "protected prompt", "answer": "protected truth", "category": "A", "_raw_index": 7}
-    result = asyncio.run(run_eval.run_attempt(run_id="run", benchmark="BU_Bench_V1", task=task, effective_index=0, controller="codex", model="gpt-5", tool="webcmd", timeout=10, attempt_dir=tmp_path / "attempt", judge_model="gemini-2.5-flash", reasoning_effort="high"))
+    result = asyncio.run(run_eval.run_attempt(run_id="run", benchmark="BU_Bench_V1", task=task, effective_index=0, controller="codex", model="gpt-5", tool="webcmd", timeout=10, attempt_dir=tmp_path / "attempt", judge_provider="google", judge_model="gemini-2.5-flash", reasoning_effort="high"))
 
     persisted = (tmp_path / "attempt" / "result.json").read_text()
     assert result["score"] == 1
@@ -575,7 +601,7 @@ def test_run_attempt_checkpoints_and_finalizes_controller_metrics(tmp_path, monk
     monkeypatch.setattr(run_eval, "judge_execution", fake_judge)
     task = {"task_id": "x", "confirmed_task": "task", "category": "A", "_raw_index": 0}
 
-    result = asyncio.run(run_eval.run_attempt(run_id="run", benchmark="BU_Bench_V1", task=task, effective_index=0, controller="codex", model="gpt-5", tool="webcmd", timeout=10, attempt_dir=tmp_path / "attempt", judge_model="gemini-2.5-flash"))
+    result = asyncio.run(run_eval.run_attempt(run_id="run", benchmark="BU_Bench_V1", task=task, effective_index=0, controller="codex", model="gpt-5", tool="webcmd", timeout=10, attempt_dir=tmp_path / "attempt", judge_provider="google", judge_model="gemini-2.5-flash"))
 
     assert result["status"] == "completed"
     assert result["metrics"] == {"steps": 4, "tool_calls": 3, "total_duration": 12.5, "tokens": 25, "agent_turns": 2}
@@ -617,7 +643,7 @@ def test_run_attempt_keeps_agent_turns_when_judge_marks_answer_incorrect(
             tool="webcmd",
             timeout=10,
             attempt_dir=tmp_path / "attempt",
-            judge_model="gemini-2.5-flash",
+            judge_provider="google", judge_model="gemini-2.5-flash",
         )
     )
 
@@ -635,7 +661,7 @@ def test_run_attempt_leaves_judge_failure_unscored(tmp_path, monkeypatch):
     monkeypatch.setattr(run_eval, "run_controller", fake_controller)
     monkeypatch.setattr(run_eval, "judge_execution", broken_judge)
     task = {"task_id": "x", "confirmed_task": "task", "category": "A", "_raw_index": 0}
-    result = asyncio.run(run_eval.run_attempt(run_id="run", benchmark="BU_Bench_V1", task=task, effective_index=0, controller="codex", model="gpt-5", tool="webcmd", timeout=10, attempt_dir=tmp_path / "attempt", judge_model="gemini-2.5-flash"))
+    result = asyncio.run(run_eval.run_attempt(run_id="run", benchmark="BU_Bench_V1", task=task, effective_index=0, controller="codex", model="gpt-5", tool="webcmd", timeout=10, attempt_dir=tmp_path / "attempt", judge_provider="google", judge_model="gemini-2.5-flash"))
     assert result["status"] == "judge_error"
     assert result["score"] is None
 
@@ -666,7 +692,7 @@ def test_run_attempt_redacts_protected_values_from_durable_copies(tmp_path, monk
     monkeypatch.setattr(run_eval, "judge_execution", fake_judge)
     task = {"task_id": "x", "confirmed_task": prompt, "answer": truth, "category": "A", "_raw_index": 0}
 
-    asyncio.run(run_eval.run_attempt(run_id="run", benchmark="BU_Bench_V1", task=task, effective_index=0, controller="codex", model="gpt-5", tool="webcmd", timeout=10, attempt_dir=tmp_path / "attempt", judge_model="gemini-2.5-flash"))
+    asyncio.run(run_eval.run_attempt(run_id="run", benchmark="BU_Bench_V1", task=task, effective_index=0, controller="codex", model="gpt-5", tool="webcmd", timeout=10, attempt_dir=tmp_path / "attempt", judge_provider="google", judge_model="gemini-2.5-flash"))
 
     durable = (tmp_path / "attempt" / "result.json").read_text() + (tmp_path / "attempt" / "transcript.jsonl").read_text()
     assert prompt not in durable
@@ -687,7 +713,7 @@ def test_run_attempt_preserves_final_answer_even_when_it_equals_truth(tmp_path, 
     monkeypatch.setattr(run_eval, "judge_execution", fake_judge)
     task = {"task_id": "x", "confirmed_task": "prompt", "answer": truth, "category": "A", "_raw_index": 0}
 
-    asyncio.run(run_eval.run_attempt(run_id="run", benchmark="BU_Bench_V1", task=task, effective_index=0, controller="codex", model="gpt-5", tool="webcmd", timeout=10, attempt_dir=tmp_path / "attempt", judge_model="gemini-2.5-flash"))
+    asyncio.run(run_eval.run_attempt(run_id="run", benchmark="BU_Bench_V1", task=task, effective_index=0, controller="codex", model="gpt-5", tool="webcmd", timeout=10, attempt_dir=tmp_path / "attempt", judge_provider="google", judge_model="gemini-2.5-flash"))
 
     assert json.loads((tmp_path / "attempt" / "result.json").read_text())["final_answer"] == truth
 
@@ -710,7 +736,7 @@ def test_run_attempt_redacts_short_hidden_answers_only_at_boundaries(tmp_path, m
     monkeypatch.setattr(run_eval, "judge_execution", fake_judge)
     task = {"task_id": "x", "confirmed_task": "prompt", "answer": truth, "category": "A", "_raw_index": 0}
 
-    asyncio.run(run_eval.run_attempt(run_id="run", benchmark="BU_Bench_V1", task=task, effective_index=0, controller="codex", model="gpt-5", tool="webcmd", timeout=10, attempt_dir=tmp_path / "attempt", judge_model="gemini-2.5-flash"))
+    asyncio.run(run_eval.run_attempt(run_id="run", benchmark="BU_Bench_V1", task=task, effective_index=0, controller="codex", model="gpt-5", tool="webcmd", timeout=10, attempt_dir=tmp_path / "attempt", judge_provider="google", judge_model="gemini-2.5-flash"))
 
     result = json.loads((tmp_path / "attempt" / "result.json").read_text())
     assert result["judgement"]["reasoning"] == expected
@@ -749,7 +775,7 @@ def test_run_benchmark_writes_manifest_before_sequential_attempts(tmp_path, monk
     monkeypatch.setattr(run_eval, "load_tasks", lambda benchmark: tasks)
     monkeypatch.setattr(run_eval, "run_controller", fake_controller)
     monkeypatch.setattr(run_eval, "judge_execution", fake_judge)
-    args = argparse.Namespace(controller="codex", model="gpt-5", benchmark="Stealth_Bench_V1", tasks="all", task_indices=None, tools="webcmd", judge_model="gemini-2.5-flash", task_timeout=10, stealth_view="raw", output_dir=tmp_path, reasoning_effort=None)
+    args = argparse.Namespace(controller="codex", model="gpt-5", benchmark="Stealth_Bench_V1", tasks="all", task_indices=None, tools="webcmd", judge_provider="google", judge_model="gemini-2.5-flash", task_timeout=10, stealth_view="raw", output_dir=tmp_path, reasoning_effort=None)
 
     run_dir = asyncio.run(run_eval.run_benchmark(args))
 
@@ -779,7 +805,7 @@ def test_run_benchmark_passes_axi_selection_and_records_cloakbrowser(tmp_path, m
     monkeypatch.setattr(run_eval, "preflight", lambda *args: {"codex": "1", "chrome-devtools-axi": "0.1.26", "cloakbrowser": "0.4.5"})
     monkeypatch.setattr(run_eval, "load_tasks", lambda benchmark: [task])
     monkeypatch.setattr(run_eval, "run_attempt", fake_attempt)
-    args = argparse.Namespace(controller="codex", model="gpt-5", benchmark="Stealth_Bench_V1", tasks="all", task_indices=None, tools="chrome-devtools-axi", judge_model="gemini-2.5-flash", task_timeout=10, stealth_view="raw", output_dir=tmp_path, reasoning_effort=None)
+    args = argparse.Namespace(controller="codex", model="gpt-5", benchmark="Stealth_Bench_V1", tasks="all", task_indices=None, tools="chrome-devtools-axi", judge_provider="google", judge_model="gemini-2.5-flash", task_timeout=10, stealth_view="raw", output_dir=tmp_path, reasoning_effort=None)
 
     run_dir = asyncio.run(run_eval.run_benchmark(args))
 
@@ -806,7 +832,7 @@ def test_run_benchmark_passes_agent_browser_selection_and_records_cloakbrowser(t
     monkeypatch.setattr(run_eval, "preflight", lambda *args: {"codex": "1", "agent-browser": "0.32.3", "cloakbrowser": "0.4.5"})
     monkeypatch.setattr(run_eval, "load_tasks", lambda benchmark: [task])
     monkeypatch.setattr(run_eval, "run_attempt", fake_attempt)
-    args = argparse.Namespace(controller="codex", model="gpt-5", benchmark="Stealth_Bench_V1", tasks="all", task_indices=None, tools="agent-browser", judge_model="gemini-2.5-flash", task_timeout=10, stealth_view="raw", output_dir=tmp_path, reasoning_effort=None)
+    args = argparse.Namespace(controller="codex", model="gpt-5", benchmark="Stealth_Bench_V1", tasks="all", task_indices=None, tools="agent-browser", judge_provider="google", judge_model="gemini-2.5-flash", task_timeout=10, stealth_view="raw", output_dir=tmp_path, reasoning_effort=None)
 
     run_dir = asyncio.run(run_eval.run_benchmark(args))
 
@@ -863,7 +889,7 @@ def test_run_benchmark_passes_dev_browser_selection_and_records_cloakbrowser(
         tasks="all",
         task_indices=None,
         tools="dev-browser",
-        judge_model="gemini-2.5-flash",
+        judge_provider="google", judge_model="gemini-2.5-flash",
         task_timeout=10,
         stealth_view="raw",
         output_dir=tmp_path,
@@ -891,7 +917,7 @@ def test_run_benchmark_stops_when_manifest_write_fails(tmp_path, monkeypatch):
     monkeypatch.setattr(run_eval, "load_tasks", lambda benchmark: tasks)
     monkeypatch.setattr(run_eval, "run_attempt", fake_attempt)
     monkeypatch.setattr(run_eval, "_write_json", lambda *args: (_ for _ in ()).throw(OSError("disk full")))
-    args = argparse.Namespace(controller="codex", model="gpt-5", benchmark="Stealth_Bench_V1", tasks="all", task_indices=None, tools="webcmd", judge_model="gemini-2.5-flash", task_timeout=10, stealth_view="raw", output_dir=tmp_path, reasoning_effort=None)
+    args = argparse.Namespace(controller="codex", model="gpt-5", benchmark="Stealth_Bench_V1", tasks="all", task_indices=None, tools="webcmd", judge_provider="google", judge_model="gemini-2.5-flash", task_timeout=10, stealth_view="raw", output_dir=tmp_path, reasoning_effort=None)
 
     with pytest.raises(OSError, match="disk full"):
         asyncio.run(run_eval.run_benchmark(args))

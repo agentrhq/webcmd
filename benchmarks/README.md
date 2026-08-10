@@ -87,7 +87,7 @@ Run a controlled, sequential browser-tool benchmark. Keep task data and local ev
 
 ## Workflow
 
-1. Confirm `uv`, the selected controller CLI, selected browser tool, and `GOOGLE_API_KEY` are available. AXI, agent-browser, and dev-browser runs also require CloakBrowser.
+1. Confirm `uv`, the selected controller CLI, selected browser tool, and a judge API key are available (`GOOGLE_API_KEY` for `--judge-provider google`, or `OPENAI_API_KEY` for `--judge-provider openai`). AXI, agent-browser, and dev-browser runs also require CloakBrowser.
 2. Ask the user to choose a controller, model, benchmark, and task selection if any is missing.
 3. Start with one task unless the user explicitly requests a larger or full run.
 4. Run `scripts/run_eval.py` with the explicit choices.
@@ -103,6 +103,19 @@ uv run python benchmarks/scripts/run_eval.py \
   --benchmark BU_Bench_V1 \
   --tasks 1 \
   --tools webcmd
+```
+
+Use OpenAI instead of Gemini for judging:
+
+```bash
+uv run python benchmarks/scripts/run_eval.py \
+  --controller codex \
+  --model gpt-5 \
+  --benchmark BU_Bench_V1 \
+  --tasks 1 \
+  --tools webcmd \
+  --judge-provider openai \
+  --judge-model gpt-4o-mini
 ```
 
 Pi uses the pinned SDK sidecar from the repository's Node lockfile:
@@ -213,5 +226,5 @@ BU Bench loads `datasets/BU_Bench_V1.json`. To skip a task without shifting its 
 
 ## References
 
-- Read `references/judge-contract.md` when auditing Gemini decisions.
+- Read `references/judge-contract.md` when auditing judge decisions.
 - Read `references/dataset-provenance.md` before copying, updating, or publishing datasets.

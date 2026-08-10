@@ -67,11 +67,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
         default="webcmd",
     )
-    parser.add_argument("--judge-model", default="gemini-2.5-flash")
+    parser.add_argument("--judge-provider", choices=("google", "openai"), default="google")
+    parser.add_argument("--judge-model")
     parser.add_argument("--task-timeout", type=int, default=1800)
     parser.add_argument("--stealth-view", choices=("raw", "official"), default="raw")
     parser.add_argument("--output-dir", type=Path, default=PROJECT_DIR / "results")
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.judge_model is None:
+        args.judge_model = "gpt-4o-mini" if args.judge_provider == "openai" else "gemini-2.5-flash"
+    return args
 
 
 def validate_args(args: argparse.Namespace) -> None:
@@ -126,9 +130,11 @@ def _webcmd_mode(env: dict[str, str]) -> str:
     return "local"
 
 
-def preflight(controller: str, tools: list[str]) -> dict[str, str]:
-    if not os.environ.get("GOOGLE_API_KEY"):
-        raise RuntimeError("GOOGLE_API_KEY is required")
+def preflight(controller: str, tools: list[str], judge_provider: str = "google") -> dict[str, str]:
+    if judge_provider == "google" and not os.environ.get("GOOGLE_API_KEY"):
+        raise RuntimeError("GOOGLE_API_KEY is required when --judge-provider google")
+    if judge_provider == "openai" and not os.environ.get("OPENAI_API_KEY"):
+        raise RuntimeError("OPENAI_API_KEY is required when --judge-provider openai")
     controller_command = ["node", str(PI_CONTROLLER), "--version"] if controller == "pi" else [controller, "--version"]
     versions = {controller: _check(controller_command, _subprocess_env(controller=controller))}
     for tool in tools:
@@ -158,7 +164,7 @@ def preflight(controller: str, tools: list[str]) -> dict[str, str]:
     return versions
 
 
-def build_manifest(*, run_id: str, benchmark: str, tasks: list[dict], controller: str, model: str, judge_model: str, versions: dict[str, str], tools: list[str], timeout: int, created_at: str, reasoning_effort: str | None = None) -> dict:
+def build_manifest(*, run_id: str, benchmark: str, tasks: list[dict], controller: str, model: str, judge_provider: str, judge_model: str, versions: dict[str, str], tools: list[str], timeout: int, created_at: str, reasoning_effort: str | None = None) -> dict:
     tool_manifest = {}
     for tool in tools:
         tool_manifest[tool] = {"version": versions[tool]}
@@ -181,7 +187,7 @@ def build_manifest(*, run_id: str, benchmark: str, tasks: list[dict], controller
             "raw_indices": [task["_raw_index"] for task in tasks],
         },
         "controller": {"name": controller, "model": model, "version": versions[controller], "reasoning_effort": reasoning_effort},
-        "judge": {"provider": "google", "model": judge_model, "prompt_version": "upstream-dff86d1"},
+        "judge": {"provider": judge_provider, "model": judge_model, "prompt_version": "upstream-dff86d1"},
         "tools": tool_manifest,
         "task_timeout_seconds": timeout,
         "tool_order": "single",
@@ -322,7 +328,7 @@ def _redact_hidden_answer(value: object, answer: object | None) -> object:
     return value
 
 
-async def run_attempt(*, run_id: str, benchmark: str, task: dict, effective_index: int, controller: str, model: str, tool: str, timeout: int, attempt_dir: Path, judge_model: str, reasoning_effort: str | None = None) -> dict:
+async def run_attempt(*, run_id: str, benchmark: str, task: dict, effective_index: int, controller: str, model: str, tool: str, timeout: int, attempt_dir: Path, judge_provider: str, judge_model: str, reasoning_effort: str | None = None) -> dict:
     attempt_dir.mkdir(parents=True, exist_ok=False)
     with tempfile.TemporaryDirectory(prefix=f"bbe-{effective_index}-{tool}-") as temporary:
         work_dir = Path(temporary) / "contestant"
@@ -366,7 +372,13 @@ async def run_attempt(*, run_id: str, benchmark: str, task: dict, effective_inde
         judgement = None
         if evidence.termination == "completed":
             try:
-                judgement_model = await judge_execution(task["confirmed_task"], task.get("answer"), evidence, judge_model)
+                judgement_model = await judge_execution(
+                    task["confirmed_task"],
+                    task.get("answer"),
+                    evidence,
+                    judge_model,
+                    provider=judge_provider,
+                )
                 judgement = _redact(judgement_model.model_dump(), (task["confirmed_task"],))
                 judgement = _redact_hidden_answer(judgement, task.get("answer"))
                 status = "completed"
@@ -431,7 +443,7 @@ async def run_benchmark(args: argparse.Namespace) -> Path:
     validate_args(args)
     output_dir = _validate_output_dir(args.output_dir)
     tools = selected_tools(args.tools)
-    versions = preflight(args.controller, tools)
+    versions = preflight(args.controller, tools, args.judge_provider)
     tasks = effective_tasks(args.benchmark, load_tasks(args.benchmark), args.stealth_view)
     tasks = select_tasks(tasks, args.tasks, args.task_indices)
     now = datetime.now(timezone.utc)
@@ -439,14 +451,14 @@ async def run_benchmark(args: argparse.Namespace) -> Path:
     run_id = f"{now.strftime('%Y%m%dT%H%M%SZ')}-{args.controller}-{args.benchmark.lower().replace('_', '-')}"
     run_dir = output_dir / run_id
     run_dir.mkdir(parents=True, exist_ok=False)
-    manifest = build_manifest(run_id=run_id, benchmark=args.benchmark, tasks=tasks, controller=args.controller, model=args.model, judge_model=args.judge_model, versions=versions, tools=tools, timeout=args.task_timeout, created_at=created_at, reasoning_effort=args.reasoning_effort)
+    manifest = build_manifest(run_id=run_id, benchmark=args.benchmark, tasks=tasks, controller=args.controller, model=args.model, judge_provider=args.judge_provider, judge_model=args.judge_model, versions=versions, tools=tools, timeout=args.task_timeout, created_at=created_at, reasoning_effort=args.reasoning_effort)
     _write_json(run_dir / "manifest.json", manifest)
 
     results = []
     for task in tasks:
         tool = args.tools
         attempt_dir = run_dir / "tasks" / _safe(task["task_id"]) / tool
-        result = await run_attempt(run_id=run_id, benchmark=args.benchmark, task=task, effective_index=task["_effective_index"], controller=args.controller, model=args.model, tool=tool, timeout=args.task_timeout, attempt_dir=attempt_dir, judge_model=args.judge_model, reasoning_effort=args.reasoning_effort)
+        result = await run_attempt(run_id=run_id, benchmark=args.benchmark, task=task, effective_index=task["_effective_index"], controller=args.controller, model=args.model, tool=tool, timeout=args.task_timeout, attempt_dir=attempt_dir, judge_provider=args.judge_provider, judge_model=args.judge_model, reasoning_effort=args.reasoning_effort)
         results.append(result)
     summary = build_summary(results, tools)
     _write_json(run_dir / "summary.json", summary)
