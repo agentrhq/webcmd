@@ -1,10 +1,8 @@
 import { appendFileSync, lstatSync, readFileSync } from 'node:fs';
 import { isAbsolute, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { GoogleGenAI } from '@google/genai';
 import {
   REVIEW_COMMENT_MARKER,
-  REVIEW_JSON_SCHEMA,
   buildReviewPrompts,
   classifyPullRequest,
   createDeferredResult,
@@ -60,23 +58,6 @@ interface IssueCommentResponse {
   body?: string | null;
   user?: { login?: string } | null;
 }
-
-interface GeminiClientLike {
-  models: {
-    generateContent: (request: {
-      model: string;
-      contents: string;
-      config: {
-        responseMimeType: string;
-        responseJsonSchema: unknown;
-        temperature: number;
-        abortSignal: AbortSignal;
-      };
-    }) => Promise<{ text?: string }>;
-  };
-}
-
-export type GeminiClientFactory = (apiKey: string) => GeminiClientLike;
 
 const GITHUB_API_ROOT = 'https://api.github.com';
 const GITHUB_API_VERSION = '2022-11-28';
@@ -200,38 +181,35 @@ export function loadDocumentation(
   return excerpts;
 }
 
-const defaultGeminiClient: GeminiClientFactory = (apiKey) => {
-  const client = new GoogleGenAI({ apiKey });
-  return {
-    models: {
-      generateContent: (request) => client.models.generateContent(request),
-    },
-  };
-};
-
-export async function generateGeminiReview(
+export async function generateOpenAIReview(
   prompt: string,
   model: string,
   apiKey: string,
-  createClient: GeminiClientFactory = defaultGeminiClient,
+  fetchImpl: FetchLike = fetch,
 ): Promise<unknown> {
-  const client = createClient(apiKey);
-  const response = await client.models.generateContent({
-    model,
-    contents: prompt,
-    config: {
-      responseMimeType: 'application/json',
-      responseJsonSchema: REVIEW_JSON_SCHEMA,
-      temperature: 0.1,
-      abortSignal: AbortSignal.timeout(180_000),
+  const response = await fetchImpl('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${apiKey}`,
+      'content-type': 'application/json',
     },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.1,
+    }),
+    signal: AbortSignal.timeout(180_000),
   });
-  const text = response.text?.trim();
-  if (!text) throw new Error('Gemini returned empty content.');
+  if (!response.ok) throw new Error(`OpenAI request failed with HTTP ${response.status}.`);
+  const data = await response.json() as {
+    choices?: Array<{ message?: { content?: string | null } }>;
+  };
+  const text = data.choices?.[0]?.message?.content?.trim();
+  if (!text) throw new Error('OpenAI returned empty content.');
   try {
     return JSON.parse(text) as unknown;
   } catch {
-    throw new Error('Gemini returned invalid JSON.');
+    throw new Error('OpenAI returned invalid JSON.');
   }
 }
 
@@ -265,7 +243,7 @@ export async function runDocsSyncReview(
 
   const loadContext = deps.loadContext ?? loadPullRequestContext;
   const readDocumentation = deps.loadDocumentation ?? loadDocumentation;
-  const generateReview = deps.generateReview ?? generateGeminiReview;
+  const generateReview = deps.generateReview ?? generateOpenAIReview;
   const upsertComment = deps.upsertComment ?? upsertReviewComment;
   const writeSummary = deps.writeSummary ?? defaultWriteSummary;
 
@@ -287,7 +265,7 @@ export async function runDocsSyncReview(
     if (routing.route === 'resolved') {
       result = createResolvedResult(routing);
     } else {
-      const apiKey = env.GEMINI_API_KEY?.trim();
+      const apiKey = env.OPENAI_API_KEY?.trim();
       if (!apiKey) {
         io.writeStderr('Semantic review API key is not configured.\n');
         result = createUnavailableResult();
@@ -295,7 +273,7 @@ export async function runDocsSyncReview(
         const documentation = readDocumentation(selectDocumentationPaths(context.files));
         const prompts = buildReviewPrompts(context, documentation);
         const reviews: ReviewResult[] = [];
-        const model = env.GEMINI_DOCS_REVIEW_MODEL?.trim() || 'gemini-3.5-flash';
+        const model = env.OPENAI_DOCS_REVIEW_MODEL?.trim() || 'gpt-5.6-sol';
         for (const [index, prompt] of prompts.entries()) {
           try {
             const raw = await generateReview(prompt.prompt, model, apiKey);
