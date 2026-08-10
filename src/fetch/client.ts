@@ -51,6 +51,9 @@ export async function webFetch(options: WebFetchOptions, dependencies: WebFetchD
     let tier: WebFetchResult['tier'] = 'plain'; let profile: WebFetchResult['profile'];
     if (isJavaScriptShell(body)) throw new CliError('FETCH_REQUIRES_BROWSER', 'This page requires browser rendering.', 'Use webcmd web fetch-browser for this URL.');
     if (isChallengeResponse(response.status, headersOf(response), body)) {
+      // ponytail: impit's timeout covers the request, not the body stream, so a
+      // trickling escalation body can outlive the budget. Race readBody against
+      // the deadline if that shows up in practice.
       for (const browser of ['chrome', 'firefox'] as const) {
         const impit = createImpit({ browser, proxyUrl: proxy.url, timeout: remaining() });
         response = await impit.fetch(options.url, { redirect: 'manual', timeout: remaining() });
@@ -63,5 +66,15 @@ export async function webFetch(options: WebFetchOptions, dependencies: WebFetchD
     const extracted = extractFetchedContent({ body, contentType: response.headers.get('content-type') ?? '', url: options.url });
     const clipped = truncate(extracted.content, options.maxChars);
     return { status: response.status, requestedUrl: options.url, finalUrl: response.url || options.url, contentType: response.headers.get('content-type') ?? '', tier, ...(profile && { profile }), title: extracted.title, extractionSource: extracted.source, truncated: clipped.truncated, content: clipped.content };
+  } catch (error) {
+    throw asFetchError(error, options.timeoutSeconds);
   } finally { await proxy.close(); }
+}
+
+/** An aborted fetch surfaces as a DOMException; agents need the structured timeout instead. */
+function asFetchError(error: unknown, timeoutSeconds: number): unknown {
+  if (error instanceof CliError) return error;
+  const name = (error as { name?: string } | null)?.name;
+  if (name === 'TimeoutError' || name === 'AbortError') return new TimeoutError('web fetch', timeoutSeconds);
+  return error;
 }

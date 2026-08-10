@@ -19,4 +19,21 @@ describe('webFetch', () => {
     expect(createImpit).toHaveBeenNthCalledWith(1, expect.objectContaining({ browser: 'chrome' }));
     expect(createImpit).toHaveBeenNthCalledWith(2, expect.objectContaining({ browser: 'firefox' }));
   });
+  it('closes the safe proxy even when the ladder throws', async () => {
+    const close = vi.fn().mockResolvedValue(undefined);
+    await expect(webFetch({ url: 'https://example.com', timeoutSeconds: 5, maxChars: 0, allowPrivate: false }, {
+      plainFetch: vi.fn().mockRejectedValue(new Error('boom')),
+      createImpit: vi.fn(),
+      createSafeProxy: async () => ({ url: 'http://proxy', close }),
+    })).rejects.toThrow('boom');
+    expect(close).toHaveBeenCalledOnce();
+  });
+  it('reports an aborted fetch as a structured timeout', async () => {
+    const abort = Object.assign(new Error('The operation was aborted'), { name: 'TimeoutError' });
+    await expect(webFetch({ url: 'https://example.com', timeoutSeconds: 5, maxChars: 0, allowPrivate: false }, {
+      plainFetch: vi.fn().mockRejectedValue(abort),
+      createImpit: vi.fn(),
+      createSafeProxy: async () => ({ url: 'http://proxy', close: async () => {} }),
+    })).rejects.toMatchObject({ code: 'TIMEOUT', message: 'web fetch timed out after 5s' });
+  });
 });
