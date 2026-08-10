@@ -563,6 +563,9 @@ def test_run_attempt_does_not_persist_task_or_ground_truth(tmp_path, monkeypatch
         return ExecutionEvidence("safe final", ["command: safe"], [shot], 0, "completed")
 
     async def fake_judge(*args, **kwargs):
+        execution = args[2]
+        assert len(execution.screenshot_paths) == 1
+        assert execution.screenshot_paths[0].read_bytes() == b"png"
         return JudgementResult(reasoning="correct", verdict=True)
 
     monkeypatch.setattr(run_eval, "run_controller", fake_controller)
@@ -578,6 +581,7 @@ def test_run_attempt_does_not_persist_task_or_ground_truth(tmp_path, monkeypatch
     assert "protected truth" not in persisted
     assert (tmp_path / "attempt" / "transcript.jsonl").exists()
     assert (tmp_path / "attempt" / "screenshots" / "001.png").exists()
+    assert result["evidence"]["screenshots"] == ["screenshots/001.png"]
 
 
 def test_run_attempt_checkpoints_and_finalizes_controller_metrics(tmp_path, monkeypatch):

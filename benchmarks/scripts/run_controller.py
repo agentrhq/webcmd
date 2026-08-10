@@ -6,6 +6,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import signal
 import threading
 import time
@@ -13,6 +14,7 @@ from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Literal
+from urllib.parse import unquote
 
 from agent_browser_runtime import start_agent_browser_runtime
 from axi_runtime import start_axi_runtime
@@ -1062,6 +1064,75 @@ async def _close_session(tool: Tool, session: str, tool_env: dict[str, str] | No
         return
 
 
+WEBCMD_ARTIFACT_LOCATOR_RE = re.compile(
+    r"browser-run://(artifact_[0-9a-f]{24})/([^\"'\\\s]+)"
+)
+
+
+def _webcmd_result_payloads(controller: Controller, lines: list[str]) -> list[object]:
+    payloads: list[object] = []
+    for line in lines:
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        event_type = event.get("type")
+        if controller == "codex" and event_type == "item.completed":
+            item = event.get("item") or {}
+            command = str(item.get("command") or "")
+            if item.get("type") == "command_execution" and "webcmd browser" in command:
+                payloads.append(item.get("aggregated_output") or item.get("output") or "")
+        elif controller == "pi" and event_type == "tool_execution_end":
+            payloads.append(event.get("result") or "")
+        elif controller == "claude" and event_type in {"assistant", "user"}:
+            for block in (event.get("message") or {}).get("content", []) or []:
+                if block.get("type") == "tool_result":
+                    payloads.append(block.get("content") or "")
+    return payloads
+
+
+def _collect_webcmd_screenshots(
+    controller: Controller,
+    lines: list[str],
+    shots_dir: Path,
+) -> None:
+    locators: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for payload in _webcmd_result_payloads(controller, lines):
+        text = payload if isinstance(payload, str) else json.dumps(payload, default=str)
+        for match in WEBCMD_ARTIFACT_LOCATOR_RE.finditer(text):
+            locator = (match.group(1), unquote(match.group(2)))
+            if locator not in seen:
+                seen.add(locator)
+                locators.append(locator)
+
+    cache_dir = Path.home() / ".webcmd" / "cache" / "browser-run"
+    next_index = 1
+    for artifact_id, filename in locators:
+        logical_path = Path(filename)
+        if (
+            not filename
+            or logical_path.is_absolute()
+            or "\\" in filename
+            or ".." in logical_path.parts
+        ):
+            raise ValueError(f"Unsafe Webcmd artifact path: {filename}")
+        if logical_path.suffix.lower() != ".png":
+            continue
+        artifact_dir = (cache_dir / artifact_id).resolve()
+        source = (artifact_dir / logical_path).resolve()
+        if not source.is_relative_to(artifact_dir):
+            raise ValueError(f"Unsafe Webcmd artifact path: {filename}")
+        if not source.is_file():
+            raise FileNotFoundError(f"Missing Webcmd screenshot artifact: {source}")
+        destination = shots_dir / f"step_{next_index:03}.png"
+        while destination.exists():
+            next_index += 1
+            destination = shots_dir / f"step_{next_index:03}.png"
+        shutil.copy2(source, destination)
+        next_index += 1
+
+
 async def run_controller(controller: Controller, model: str, tool: Tool, task: str, work_dir: Path, timeout_seconds: int, reasoning_effort: str | None = None, tool_env: dict[str, str] | None = None) -> ExecutionEvidence:
     work_dir.mkdir(parents=True, exist_ok=False)
     shots_dir = work_dir / "shots"
@@ -1133,6 +1204,8 @@ async def run_controller(controller: Controller, model: str, tool: Tool, task: s
     if stderr:
         lines.append(json.dumps({"type": "stderr", "text": stderr.decode(errors="replace")[:2000]}))
     parsed = _parse_events(controller, lines, tool=tool)
+    if tool == "webcmd":
+        _collect_webcmd_screenshots(controller, lines, shots_dir)
     for index, image in enumerate(parsed.screenshot_images, start=1):
         (shots_dir / f"step_{index:03}.png").write_bytes(image)
     final_answer = _extract_final_answer(parsed.final_text)

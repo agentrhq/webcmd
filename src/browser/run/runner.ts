@@ -446,7 +446,7 @@ export async function runBrowserProgram(
             rejectRun = undefined;
           }
           try {
-            const serialized = JSON.stringify(value);
+            const serialized = JSON.stringify(value === undefined ? null : value);
             if (serialized === undefined) throw new TypeError('Result is not JSON serializable.');
             return serialized;
           } catch (cause) {

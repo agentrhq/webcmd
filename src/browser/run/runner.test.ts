@@ -405,6 +405,16 @@ describe('runBrowserProgram', () => {
     expect(output.result).toBe('undefined');
   });
 
+  it('treats a program without an explicit return as a null result', async () => {
+    const output = await run('console.log("done");');
+
+    expect(output).toMatchObject({
+      ok: true,
+      result: null,
+      logs: [{ level: 'log', args: ['done'] }],
+    });
+  });
+
   it('keeps time, memory, output, redaction, and serialization limits', async () => {
     await expect(run('while (true) {}', { timeoutMs: 25 })).rejects.toMatchObject({
       code: 'BROWSER_RUN_TIMEOUT',

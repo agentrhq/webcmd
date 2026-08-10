@@ -1284,8 +1284,35 @@ def test_every_normalized_step_is_capped_at_2000_characters():
     assert all(len(step) <= 2000 for step in steps)
 
 
-def test_completed_execution_persists_raw_jsonl_sorted_screenshots_and_cleanup(tmp_path, monkeypatch):
-    command_event = json.dumps({"type": "item.completed", "item": {"type": "command_execution", "command": "webcmd browser s tabs", "aggregated_output": "page"}})
+def test_webcmd_screenshot_receipts_collect_only_current_task_artifacts(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    cache = home / ".webcmd" / "cache" / "browser-run"
+    first = cache / "artifact_111111111111111111111111" / "shots" / "first.png"
+    second = cache / "artifact_222222222222222222222222" / "shots" / "nested" / "second.png"
+    unrelated = cache / "artifact_333333333333333333333333" / "shots" / "unrelated.png"
+    for path, contents in ((first, b"first"), (second, b"second"), (unrelated, b"unrelated")):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(contents)
+    receipts = {
+        "error": {
+            "code": "BROWSER_RUN_SERIALIZATION_ERROR",
+            "details": {
+                "artifacts": [
+                    {
+                        "locator": "browser-run://artifact_222222222222222222222222/shots%2Fnested%2Fsecond.png",
+                    },
+                    {
+                        "locator": "browser-run://artifact_111111111111111111111111/shots%2Ffirst.png",
+                    },
+                    {
+                        "locator": "browser-run://artifact_222222222222222222222222/shots%2Fnested%2Fsecond.png",
+                    },
+                ]
+            },
+        }
+    }
+    command_event = json.dumps({"type": "item.completed", "item": {"type": "command_execution", "command": "webcmd browser s run --stdin <<'JS'\nawait page.screenshot({path:'shots/first.png'});\nreturn null;\nJS", "aggregated_output": json.dumps(receipts)}})
     answer_event = json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "FINAL ANSWER: 42"}})
     script = (
         "import os; from pathlib import Path; "
@@ -1295,6 +1322,7 @@ def test_completed_execution_persists_raw_jsonl_sorted_screenshots_and_cleanup(t
         f"print({command_event!r}); print({answer_event!r})"
     )
     marker = tmp_path / "cleanup.txt"
+    attempt = tmp_path / "attempt"
 
     async def record_cleanup(tool, session, tool_env=None):
         assert tool_env == {"PATH": "/verified/bin:/original/bin"}
@@ -1302,7 +1330,6 @@ def test_completed_execution_persists_raw_jsonl_sorted_screenshots_and_cleanup(t
 
     _fake_controller(monkeypatch, script)
     monkeypatch.setattr(run_controller, "_close_session", record_cleanup)
-    attempt = tmp_path / "attempt"
 
     evidence = asyncio.run(
         execute_controller(
@@ -1313,10 +1340,73 @@ def test_completed_execution_persists_raw_jsonl_sorted_screenshots_and_cleanup(t
 
     assert evidence.termination == "completed"
     assert evidence.final_answer == "42"
-    assert [path.name for path in evidence.screenshot_paths] == ["step_002.png", "step_010.png"]
+    assert [path.name for path in evidence.screenshot_paths] == [
+        "step_001.png",
+        "step_002.png",
+        "step_003.png",
+        "step_010.png",
+    ]
+    assert [path.read_bytes() for path in evidence.screenshot_paths] == [
+        b"second",
+        b"2",
+        b"first",
+        b"10",
+    ]
     assert (attempt / "controller-path.txt").read_text() == "/verified/bin:/original/bin"
     assert (attempt / "controller.jsonl").read_text() == f"{command_event}\n{answer_event}\n"
     assert marker.read_text() == f"webcmd:{run_controller._session_name(attempt)}"
+
+
+@pytest.mark.parametrize(
+    "locator",
+    [
+        "browser-run://artifact_444444444444444444444444/shots%2Fmissing.png",
+        "browser-run://artifact_444444444444444444444444/%2E%2E%2Foutside.png",
+    ],
+)
+def test_webcmd_screenshot_receipts_fail_instead_of_silently_losing_evidence(
+    tmp_path, monkeypatch, locator
+):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    command_event = json.dumps(
+        {
+            "type": "item.completed",
+            "item": {
+                "type": "command_execution",
+                "command": "webcmd browser s run --stdin <<'JS'\nawait page.screenshot({path:'shots/missing.png'});\nreturn null;\nJS",
+                "aggregated_output": json.dumps(
+                    {"ok": True, "artifacts": [{"locator": locator}]}
+                ),
+            },
+        }
+    )
+    answer_event = json.dumps(
+        {
+            "type": "item.completed",
+            "item": {"type": "agent_message", "text": "FINAL ANSWER: 42"},
+        }
+    )
+    _fake_controller(
+        monkeypatch,
+        f"print({command_event!r}); print({answer_event!r})",
+    )
+
+    async def close_session(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(run_controller, "_close_session", close_session)
+
+    with pytest.raises((FileNotFoundError, ValueError)):
+        asyncio.run(
+            execute_controller(
+                "codex",
+                "gpt-5",
+                "webcmd",
+                "task",
+                tmp_path / "attempt",
+                5,
+            )
+        )
 
 
 def test_codex_execution_collects_completed_model_responses(tmp_path, monkeypatch):
