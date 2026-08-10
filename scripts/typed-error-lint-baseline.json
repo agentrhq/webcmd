@@ -546,7 +546,7 @@
   {
     "rule": "silent-sentinel",
     "command": "web/fetch-browser",
-    "file": "plugins/web/fetch-browser.js",
+    "file": "clis/web/fetch-browser.js",
     "line": 378,
     "text": "lines.push(`  [frame ${frame.index}] ${frame.sameOrigin ? 'same-origin' : 'cross-origin'} ${frame.accessible ? 'accessible' : 'blocked'} text=${frame.textLength || 0} ${frame.src || '-'}`);",
     "occurrence": 0
@@ -554,7 +554,7 @@
   {
     "rule": "silent-sentinel",
     "command": "web/fetch-browser",
-    "file": "plugins/web/fetch-browser.js",
+    "file": "clis/web/fetch-browser.js",
     "line": 390,
     "text": "lines.push(`  ${entry.method} ${entry.status || '-'} ${entry.contentType || '-'} ${entry.url}`);",
     "occurrence": 0
@@ -562,7 +562,7 @@
   {
     "rule": "silent-sentinel",
     "command": "web/fetch-browser",
-    "file": "plugins/web/fetch-browser.js",
+    "file": "clis/web/fetch-browser.js",
     "line": 384,
     "text": "lines.push(`  ${item.scope}: ${selector} (${item.url || '-'})`);",
     "occurrence": 0
@@ -570,7 +570,7 @@
   {
     "rule": "silent-sentinel",
     "command": "web/fetch-browser",
-    "file": "plugins/web/fetch-browser.js",
+    "file": "clis/web/fetch-browser.js",
     "line": 375,
     "text": "lines.push(`url: ${diag.url || '-'}`);",
     "occurrence": 0

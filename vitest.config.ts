@@ -30,7 +30,7 @@ export default defineConfig({
         resolve: { alias: packageAliases },
         test: {
           name: 'plugin',
-          include: ['plugins/*/test/**/*.test.{ts,js}'],
+          include: ['plugins/*/test/**/*.test.{ts,js}', 'clis/*/test/**/*.test.{ts,js}'],
           sequence: { groupOrder: 1 },
         },
       },

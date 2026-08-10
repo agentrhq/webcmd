@@ -1114,16 +1114,6 @@
         "handle": "agentrhq"
       }
     },
-    "web": {
-      "path": "plugins/web",
-      "version": "0.1.0",
-      "description": "Webcmd commands for web",
-      "webcmd": ">=0.5.3",
-      "author": {
-        "name": "WebCMD Agent",
-        "handle": "agentrhq"
-      }
-    },
     "wikidata": {
       "path": "plugins/wikidata",
       "version": "0.1.0",

@@ -1,1 +1,95 @@
-[]
+[
+  {
+    "site": "web",
+    "name": "fetch-browser",
+    "description": "Fetch any web page and export as Markdown",
+    "access": "read",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "url",
+        "type": "str",
+        "required": true,
+        "help": "Any web page URL"
+      },
+      {
+        "name": "output",
+        "type": "str",
+        "default": "./web-articles",
+        "required": false,
+        "help": "Output directory"
+      },
+      {
+        "name": "download-images",
+        "type": "boolean",
+        "default": true,
+        "required": false,
+        "help": "Download images locally"
+      },
+      {
+        "name": "wait",
+        "type": "int",
+        "default": 3,
+        "required": false,
+        "help": "Seconds to wait after page load"
+      },
+      {
+        "name": "wait-for",
+        "type": "str",
+        "required": false,
+        "valueRequired": true,
+        "help": "CSS selector to wait for in the main document or same-origin iframes"
+      },
+      {
+        "name": "wait-until",
+        "type": "str",
+        "default": "domstable",
+        "required": false,
+        "help": "Readiness policy after navigation: domstable or networkidle",
+        "choices": [
+          "domstable",
+          "networkidle"
+        ]
+      },
+      {
+        "name": "frames",
+        "type": "str",
+        "default": "same-origin",
+        "required": false,
+        "help": "Iframe handling mode: relevant same-origin, all-same-origin, or none",
+        "choices": [
+          "same-origin",
+          "all-same-origin",
+          "none"
+        ]
+      },
+      {
+        "name": "diagnose",
+        "type": "boolean",
+        "default": false,
+        "required": false,
+        "help": "Print render diagnostics (frames, empty containers, XHR/API-like requests) to stderr"
+      },
+      {
+        "name": "stdout",
+        "type": "boolean",
+        "default": false,
+        "required": false,
+        "help": "Print markdown to stdout instead of saving to a file"
+      }
+    ],
+    "columns": [
+      "title",
+      "author",
+      "publish_time",
+      "status",
+      "size",
+      "saved"
+    ],
+    "type": "js",
+    "modulePath": "web/fetch-browser.js",
+    "sourceFile": "web/fetch-browser.js",
+    "navigateBefore": false
+  }
+]

@@ -396,7 +396,7 @@
   },
   {
     "command": "web/fetch-browser",
-    "file": "plugins/web/fetch-browser.js",
+    "file": "clis/web/fetch-browser.js",
     "missing": [
       "accessible",
       "index",
@@ -407,7 +407,7 @@
   },
   {
     "command": "web/fetch-browser",
-    "file": "plugins/web/fetch-browser.js",
+    "file": "clis/web/fetch-browser.js",
     "missing": [
       "bodyTruncated",
       "contentType",
