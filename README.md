@@ -55,6 +55,10 @@ https://github.com/user-attachments/assets/04eceadc-d398-4303-984d-ae3197bfa664
 Fetch and follow https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md to set up Webcmd end to end.
 ```
 
+### Manual
+
+Refer to the [Quickstart](https://webcmd.dev/docs/quickstart) docs for step-by-step manual setup.
+
 ## What You Can Ask
 
 - “Use webcmd to research agentic browser automation on PubMed and return the title, authors, publication date, abstract, and URL for each result.”
