@@ -4,6 +4,23 @@
  * Every search command aggregates across these. Each fetcher returns
  * normalized rows: { platform, title, author, score, commentCount, createdAt, url, text }
  */
+import { CommandExecutionError } from '@agentrhq/webcmd/errors';
+
+/** Fetch helper: isolates transport errors into webcmd's typed error. */
+async function get(url, init, { source } = {}) {
+  let res;
+  try {
+    res = await fetch(url, init);
+  } catch (err) {
+    throw new CommandExecutionError(
+      `OmniSearch: ${source} request failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  if (!res.ok) {
+    throw new CommandExecutionError(`OmniSearch: ${source} HTTP ${res.status}`);
+  }
+  return res;
+}
 
 // --- Hacker News (Algolia) ---
 export async function hnSearch(query, limit) {
@@ -11,8 +28,7 @@ export async function hnSearch(query, limit) {
   url.searchParams.set('query', query);
   url.searchParams.set('tags', 'story');
   url.searchParams.set('hitsPerPage', String(limit));
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Hacker News HTTP ${res.status}`);
+  const res = await get(url, {}, { source: 'Hacker News' });
   const json = await res.json();
   return (json?.hits ?? []).slice(0, limit).map((h) => ({
     platform: 'hackernews',
@@ -28,10 +44,9 @@ export async function hnSearch(query, limit) {
 
 // --- Lobste.rs ---
 export async function lobstersSearch(query, limit) {
-  const res = await fetch('https://lobste.rs/newest.json', {
+  const res = await get('https://lobste.rs/newest.json', {
     headers: { 'User-Agent': 'Mozilla/5.0 (compatible; OmniSearch/0.1)' },
-  });
-  if (!res.ok) throw new Error(`Lobste.rs HTTP ${res.status}`);
+  }, { source: 'Lobste.rs' });
   const rows = await res.json();
   if (!Array.isArray(rows)) return [];
   const q = query.toLowerCase();
@@ -62,8 +77,7 @@ export async function stackoverflowSearch(query, limit) {
   url.searchParams.set('q', query);
   url.searchParams.set('site', 'stackoverflow');
   url.searchParams.set('pagesize', String(limit));
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Stack Overflow HTTP ${res.status}`);
+  const res = await get(url, {}, { source: 'Stack Overflow' });
   const json = await res.json();
   return (json?.items ?? []).slice(0, limit).map((q) => ({
     platform: 'stackoverflow',
@@ -82,10 +96,9 @@ export async function devtoSearch(query, limit) {
   const url = new URL('https://dev.to/api/articles');
   url.searchParams.set('tag', query.replace(/[^a-zA-Z0-9-]/g, ''));
   url.searchParams.set('per_page', String(limit));
-  const res = await fetch(url, {
+  const res = await get(url, {
     headers: { 'User-Agent': 'Mozilla/5.0 (compatible; OmniSearch/0.1)' },
-  });
-  if (!res.ok) throw new Error(`Dev.to HTTP ${res.status}`);
+  }, { source: 'Dev.to' });
   const json = await res.json();
   if (!Array.isArray(json)) return [];
   return json.slice(0, limit).map((a) => ({
@@ -104,8 +117,7 @@ export async function githubSearch(query, limit) {
   const url = new URL('https://api.github.com/search/issues');
   url.searchParams.set('q', `${query} in:title,body`);
   url.searchParams.set('per_page', String(limit));
-  const res = await fetch(url, { headers: { 'User-Agent': 'OmniSearch/0.1' } });
-  if (!res.ok) throw new Error(`GitHub HTTP ${res.status}`);
+  const res = await get(url, { headers: { 'User-Agent': 'OmniSearch/0.1' } }, { source: 'GitHub' });
   const json = await res.json();
   return (json?.items ?? []).slice(0, limit).map((i) => ({
     platform: 'github',
@@ -124,8 +136,7 @@ export async function arxivSearch(query, limit) {
   const url = new URL('https://export.arxiv.org/api/query');
   url.searchParams.set('search_query', `all:${query.split(' ').join('+')}`);
   url.searchParams.set('max_results', String(limit));
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`arXiv HTTP ${res.status}`);
+  const res = await get(url, {}, { source: 'arXiv' });
   const xml = await res.text();
   const entryRe = /<entry>([\s\S]*?)<\/entry>/g;
   const rows = [];
@@ -158,10 +169,9 @@ export async function blueskyPosts(handle, limit) {
   const url = new URL('https://public.api.bsky.app/xrpc/app.bsky.feed.getAuthorFeed');
   url.searchParams.set('actor', handle);
   url.searchParams.set('limit', String(limit));
-  const res = await fetch(url, {
+  const res = await get(url, {
     headers: { 'User-Agent': 'Mozilla/5.0 (compatible; OmniSearch/0.1)' },
-  });
-  if (!res.ok) throw new Error(`Bluesky HTTP ${res.status}`);
+  }, { source: 'Bluesky' });
   const json = await res.json();
   const feed = Array.isArray(json?.feed) ? json.feed : [];
   return feed.slice(0, limit).map((entry) => {

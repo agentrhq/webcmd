@@ -69,8 +69,11 @@ cli({
 
     let rows;
     try {
-      const results = await Promise.all(selected.map((s) => fetchers[s]()));
-      rows = results.flat();
+      // Failure isolation: one rate-limited/erroring source must not wipe out the rest.
+      const outcomes = await Promise.allSettled(selected.map((key) => fetchers[key]()));
+      rows = outcomes
+        .filter((o) => o.status === 'fulfilled')
+        .flatMap((o) => o.value);
     } catch (err) {
       throw new CommandExecutionError(`research aggregation failed: ${err instanceof Error ? err.message : String(err)}`);
     }
