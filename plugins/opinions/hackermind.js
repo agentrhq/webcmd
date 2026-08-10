@@ -35,7 +35,7 @@ cli({
       choices: ['story', 'comment'],
     },
   ],
-  columns: ['rank', 'id', 'object_type', 'title', 'author', 'points', 'comments', 'created_at', 'url'],
+  columns: ['rank', 'id', 'objectType', 'title', 'author', 'score', 'commentCount', 'createdAt', 'url'],
   func: async (kwargs) => {
     const query = requireQuery(kwargs.query);
     const raw = Number(kwargs.limit ?? 20);
@@ -68,12 +68,12 @@ cli({
     return hits.slice(0, limit).map((h, index) => ({
       rank: index + 1,
       id: h.objectID,
-      object_type: scope,
+      objectType: scope,
       title: String(h.title ?? h.story_title ?? h.comment_text ?? '').replace(/<[^>]+>/g, '').trim(),
       author: String(h.author ?? ''),
-      points: h.points ?? 0,
-      comments: h.num_comments ?? 0,
-      created_at: String(h.created_at ?? ''),
+      score: h.points ?? 0,
+      commentCount: h.num_comments ?? 0,
+      createdAt: String(h.created_at ?? ''),
       url: String(h.url ?? `https://news.ycombinator.com/item?id=${h.objectID}`),
     }));
   },

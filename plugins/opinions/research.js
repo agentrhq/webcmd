@@ -31,8 +31,8 @@ async function hnSearch(query, limit) {
     title: String(h.title ?? h.story_title ?? '').trim(),
     author: String(h.author ?? ''),
     score: h.points ?? 0,
-    comments: h.num_comments ?? 0,
-    created_at: String(h.created_at ?? ''),
+    commentCount: h.num_comments ?? 0,
+    createdAt: String(h.created_at ?? ''),
     url: String(h.url ?? `https://news.ycombinator.com/item?id=${h.objectID}`),
     text: '',
   }));
@@ -58,8 +58,8 @@ async function lobstersSearch(query, limit) {
       title: String(s.title ?? '').trim(),
       author: String(s.submitter_user ?? ''),
       score: s.score ?? 0,
-      comments: s.comment_count ?? 0,
-      created_at: String(s.created_at ?? ''),
+      commentCount: s.comment_count ?? 0,
+      createdAt: String(s.created_at ?? ''),
       url: String(s.comments_url ?? ''),
       text: String(s.description_plain ?? ''),
     }));
@@ -78,7 +78,7 @@ cli({
     { name: 'query', required: true, positional: true, help: 'Topic, product, or problem to research' },
     { name: 'limit', type: 'int', default: 20, help: 'Number of results per platform' },
   ],
-  columns: ['platform', 'title', 'author', 'score', 'comments', 'created_at', 'url', 'text'],
+  columns: ['platform', 'title', 'author', 'score', 'commentCount', 'createdAt', 'url', 'text'],
   func: async (kwargs) => {
     const query = requireQuery(kwargs.query);
     const raw = Number(kwargs.limit ?? 20);

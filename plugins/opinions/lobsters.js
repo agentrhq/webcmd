@@ -33,7 +33,7 @@ cli({
     { name: 'limit', type: 'int', default: 20, help: 'Number of stories' },
     { name: 'sort', default: 'newest', help: 'Sort order: newest, active, hot', choices: ['newest', 'active', 'hot'] },
   ],
-  columns: ['rank', 'id', 'title', 'author', 'score', 'comments', 'created_at', 'tags', 'url'],
+  columns: ['rank', 'id', 'title', 'author', 'score', 'commentCount', 'createdAt', 'tags', 'url'],
   func: async (kwargs) => {
     const sort = requireSort(kwargs.sort);
     const raw = Number(kwargs.limit ?? 20);
@@ -64,8 +64,8 @@ cli({
       title: String(s.title ?? '').trim(),
       author: String(s.submitter_user ?? ''),
       score: s.score ?? 0,
-      comments: s.comment_count ?? 0,
-      created_at: String(s.created_at ?? ''),
+      commentCount: s.comment_count ?? 0,
+      createdAt: String(s.created_at ?? ''),
       tags: Array.isArray(s.tags) ? s.tags.join(', ') : '',
       url: String(s.comments_url ?? s.short_id_url ?? ''),
     }));

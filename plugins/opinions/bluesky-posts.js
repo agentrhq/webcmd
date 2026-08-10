@@ -36,7 +36,7 @@ cli({
     { name: 'handle', required: true, positional: true, help: 'Bluesky handle (e.g. bsky.app)' },
     { name: 'limit', type: 'int', default: 20, help: 'Number of posts' },
   ],
-  columns: ['rank', 'uri', 'created_at', 'text', 'likes', 'replies', 'reposts', 'url'],
+  columns: ['rank', 'uri', 'createdAt', 'text', 'likeCount', 'replyCount', 'repostCount', 'url'],
   func: async (kwargs) => {
     const handle = requireHandle(kwargs.handle);
     const raw = Number(kwargs.limit ?? 20);
@@ -77,11 +77,11 @@ cli({
       return {
         rank: index + 1,
         uri,
-        created_at: String(record.createdAt ?? post.indexedAt ?? ''),
+        createdAt: String(record.createdAt ?? post.indexedAt ?? ''),
         text: String(record.text ?? '').replace(/\s*\n+/g, ' ').trim(),
-        likes: post.likeCount ?? 0,
-        replies: post.replyCount ?? 0,
-        reposts: post.repostCount ?? 0,
+        likeCount: post.likeCount ?? 0,
+        replyCount: post.replyCount ?? 0,
+        repostCount: post.repostCount ?? 0,
         url: `https://bsky.app/profile/${author.handle ?? handle}/post/${rkey}`,
       };
     });
