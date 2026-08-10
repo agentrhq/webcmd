@@ -73,12 +73,12 @@ Open the *Override default tools* section on the matching per-agent page under `
 | Harness | Native tools Webcmd replaces | Page |
 | --- | --- | --- |
 | Cursor | `Browser`, `Web` | [cursor.md](docs/agents/cursor.md#override-default-tools) |
-| OpenCode | `webfetch`, `websearch` | [opencode.md](docs/agents/opencode.md#override-default-tools) |
+| OpenCode | `webfetch`; `websearch` when enabled | [opencode.md](docs/agents/opencode.md#override-default-tools) |
 | Claude Code | `WebFetch`, `WebSearch` | [claude-code.md](docs/agents/claude-code.md#override-default-tools) |
 | Codex CLI | `web_search` | [codex-cli.md](docs/agents/codex-cli.md#override-default-tools) |
-| Hermes Agent | `browser_*` | [hermes.md](docs/agents/hermes.md#override-default-tools) |
+| Hermes Agent | `browser` + `web` toolsets (`browser_*`, `web_search`, `web_extract`) | [hermes.md](docs/agents/hermes.md#override-default-tools) |
 | Pi | none (optional `pi-skills`) | [pi.md](docs/agents/pi.md#override-default-tools) |
-| OpenClaw | `web_search`, `web_fetch`, `browser` | [openclaw.md](docs/agents/openclaw.md#override-default-tools) |
+| OpenClaw | `web_search`, `web_fetch`, `x_search`, `browser` | [openclaw.md](docs/agents/openclaw.md#override-default-tools) |
 | Other Coding Agents | native web fetch / browser tools | see instructions below |
 
 If your harness is not listed above, disable any default built-in browser tool or web-search tool so the agent uses Webcmd instead. Do not disable builtin web search tool and keep custom tools and skills untouched. If the harness has none of these tools, no override is needed.
