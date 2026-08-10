@@ -87,13 +87,12 @@ Run a controlled, sequential browser-tool benchmark. Keep task data and local ev
 
 ## Workflow
 
-1. Read `references/methodology.md` before configuring a run.
-2. Confirm `uv`, the selected controller CLI, selected browser tool, and `GOOGLE_API_KEY` are available. AXI, agent-browser, and dev-browser runs also require CloakBrowser.
-3. Ask the user to choose a controller, model, benchmark, and task selection if any is missing.
-4. Start with one task unless the user explicitly requests a larger or full run.
-5. Run `scripts/run_eval.py` with the explicit choices.
-6. Report selected task count, overall accuracy, category accuracy, terminal statuses, controller time, steps, tool calls, token usage, and the ignored local result path.
-7. Compare runs only when the manifest fields listed in `references/result-schema.md` match.
+1. Confirm `uv`, the selected controller CLI, selected browser tool, and `GOOGLE_API_KEY` are available. AXI, agent-browser, and dev-browser runs also require CloakBrowser.
+2. Ask the user to choose a controller, model, benchmark, and task selection if any is missing.
+3. Start with one task unless the user explicitly requests a larger or full run.
+4. Run `scripts/run_eval.py` with the explicit choices.
+5. Report selected task count, overall accuracy, category accuracy, terminal statuses, controller time, steps, tool calls, token usage, and the ignored local result path.
+6. Compare runs only when manifest metadata (benchmark, dataset hash, controller, model, and tools) match.
 
 ## Commands
 
@@ -214,7 +213,5 @@ BU Bench loads `datasets/BU_Bench_V1.json`. To skip a task without shifting its 
 
 ## References
 
-- Read `references/methodology.md` for fairness, evidence, scoring, and limitations.
 - Read `references/judge-contract.md` when auditing Gemini decisions.
-- Read `references/result-schema.md` when consuming or comparing artifacts.
 - Read `references/dataset-provenance.md` before copying, updating, or publishing datasets.
