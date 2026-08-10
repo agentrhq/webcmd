@@ -358,6 +358,26 @@ describe('OpenAI and documentation boundaries', () => {
     expect(result).toEqual({ verdict: 'no_update_needed', summary: 'Covered.', findings: [] });
   });
 
+  it('defaults the docs review model to gpt-5.4-mini', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({
+      choices: [{ message: { content: JSON.stringify({ verdict: 'no_update_needed', summary: 'Covered.', findings: [] }) } }],
+    }));
+
+    await runDocsSyncReview(['node', 'script', '72'], ENV, {
+      ...baseDependencies(),
+      generateReview: vi.fn(async (prompt: string, model: string, apiKey: string) => {
+        return generateOpenAIReview(prompt, model, apiKey, fetchImpl);
+      }),
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://api.openai.com/v1/chat/completions',
+      expect.objectContaining({
+        body: expect.stringContaining('"model":"gpt-5.4-mini"'),
+      }),
+    );
+  });
+
   it.each([
     ['empty', ''],
     ['invalid JSON', '{not json'],

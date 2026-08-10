@@ -273,7 +273,7 @@ export async function runDocsSyncReview(
         const documentation = readDocumentation(selectDocumentationPaths(context.files));
         const prompts = buildReviewPrompts(context, documentation);
         const reviews: ReviewResult[] = [];
-        const model = env.OPENAI_DOCS_REVIEW_MODEL?.trim() || 'gpt-5.6-sol';
+        const model = env.OPENAI_DOCS_REVIEW_MODEL?.trim() || 'gpt-5.4-mini';
         for (const [index, prompt] of prompts.entries()) {
           try {
             const raw = await generateReview(prompt.prompt, model, apiKey);
