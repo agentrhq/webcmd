@@ -131,7 +131,7 @@ describe('webcmd skills content', () => {
       expect(skill).toContain('handoff.viewUrl');
       expect(skill).toContain('handoff.verifyCommand');
       expect(skill).toContain('Webcmd browser:');
-      expect(skill).not.toMatch(/\bhosted\b|\bKernel\b|\blocal mode\b|\blocally\b/i);
+      expect(skill).not.toMatch(/\bhosted\b|\blocal mode\b|\blocally\b/i);
     }
     for (const skill of [usage]) {
       expect(skill).toContain('already_logged_in');

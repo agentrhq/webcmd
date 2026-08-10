@@ -3,9 +3,9 @@ import { HostedClient, HostedClientError, resolveWorkspace } from './client.js';
 
 const invalidTraceUrlCases = [
   {
-    name: 'raw absolute Kernel URL with token',
+    name: 'raw absolute provider URL with token',
     field: 'liveViewUrl',
-    value: 'https://kernel.example/session/secret?token=kernel-secret-token',
+    value: 'https://provider.example/session/secret?token=provider-secret-token',
     executionId: 'exec_trace',
   },
   {
@@ -427,7 +427,7 @@ describe('HostedClient', () => {
   });
 
   it.each([
-    { name: 'private provider field', change: { kernelProfileId: 'private' } },
+    { name: 'private provider field', change: { providerProfileId: 'private' } },
     { name: 'missing updatedAt', change: { updatedAt: undefined } },
     { name: 'non-nullable name shape', change: { name: 7 } },
     { name: 'non-nullable workspace shape', change: { workspace: false } },

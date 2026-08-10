@@ -90,11 +90,11 @@ webcmd plugin search <site-or-capability> -f json
 Install promising plugins sequentially, at most three plugins per user request:
 
 ```bash
-webcmd plugin install <source>
+webcmd plugin install <installSource>
 webcmd list --tag search -f json
 ```
 
-Inspect the newly visible command help. Stop once a suitable command appears. If hosted marketplace installation is unavailable, state that gap and continue with fetched sources.
+Inspect the newly visible command help. Stop once a suitable command appears. If installation fails, report the error and continue with fetched sources.
 
 Do not add custom marketplaces in this workflow. In hosted mode, only verified hosted marketplace adapters are installable.
 

@@ -1526,7 +1526,7 @@ describe('runHostedCli', () => {
   });
 
   it.each(['success', 'failure'])('rejects a raw provider trace URL before $phase output or attachment', async (phase) => {
-    const rawUrl = 'https://kernel.example/session/private?token=kernel-secret-token';
+    const rawUrl = 'https://provider.example/session/private?token=provider-secret-token';
     const stdout = sink();
     const stderr = sink();
     const success = phase === 'success';
@@ -1561,7 +1561,7 @@ describe('runHostedCli', () => {
     expect(stdout.text()).toBe('');
     expect(stderr.text()).toContain('HOSTED_PROTOCOL');
     expect(`${stdout.text()}\n${stderr.text()}`).not.toContain(rawUrl);
-    expect(`${stdout.text()}\n${stderr.text()}`).not.toContain('kernel-secret-token');
+    expect(`${stdout.text()}\n${stderr.text()}`).not.toContain('provider-secret-token');
   });
 
   it('accepts a manifest patch bump on the same hosted compatibility line', async () => {

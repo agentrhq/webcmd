@@ -151,7 +151,7 @@ webcmd profile delete profile_abc123
 
 In local mode, arbitrary `--profile <name>` values lazily create separate local state; local `list`, `rename`, and `use` are unchanged. In hosted mode, `--profile <name>` selects a persona within the ambient workspace; an omitted selector or `--profile default` lazily creates that workspace's `default` profile.
 
-Hosted `list` returns profile rows scoped to the ambient workspace; `delete` takes an immutable profile ID and returns `{ "ok": true, "deleted": true }`, permanently removing that hosted browser state. Each profile row has `id`, `name`, `workspace`, `default`, `status`, `createdAt`, `updatedAt`, and `lastUsedAt`. `status` is `pending` or `available`. Kernel identifiers are never exposed.
+Hosted `list` returns profile rows scoped to the ambient workspace; `delete` takes an immutable profile ID and returns `{ "ok": true, "deleted": true }`, permanently removing that hosted browser state. Each profile row has `id`, `name`, `workspace`, `default`, `status`, `createdAt`, `updatedAt`, and `lastUsedAt`. `status` is `pending` or `available`. Cloud provider identifiers are never exposed.
 
 Prompt example:
 
@@ -168,8 +168,10 @@ the returned `installSource`:
 
 ```bash
 webcmd plugin search ycombinator -f json
-webcmd plugin install github:agentrhq/webcmd/ycombinator
+webcmd plugin install <installSource-from-search>
 ```
+
+Use direct `plugin install github:...` only when you already know the source. For missing or unknown sites, `plugin search` is the freshness boundary; it reads the current catalog instead of relying on package contents.
 
 Hosted mode supports the same `plugin search` and `plugin install` grammar for Webcmd-verified marketplace adapters. Other plugin management commands remain local-only in hosted mode.
 
