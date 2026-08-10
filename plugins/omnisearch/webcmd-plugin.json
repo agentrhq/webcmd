@@ -1,0 +1,10 @@
+{
+  "name": "omnisearch",
+  "version": "0.1.0",
+  "description": "Universal search across public platforms (Bluesky, Hacker News, Lobsters, Product Hunt) — no login",
+  "webcmd": ">=0.5.3",
+  "author": {
+    "name": "Rishet Mehra",
+    "handle": "Rishet11"
+  }
+}

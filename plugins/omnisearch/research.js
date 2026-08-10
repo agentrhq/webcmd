@@ -1,5 +1,5 @@
 /**
- * opinions research — aggregate opinions about a topic across no-login
+ * omnisearch research — aggregate omnisearch about a topic across no-login
  * public platforms (Hacker News + Lobste.rs) into one feed.
  *
  * No login. Combines HN Algolia stories and Lobste.rs newest stories filtered
@@ -40,7 +40,7 @@ async function hnSearch(query, limit) {
 
 async function lobstersSearch(query, limit) {
   const res = await fetch(LOBSTERS, {
-    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; webcmd-opinions/0.1)' },
+    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; webcmd-omnisearch/0.1)' },
   });
   if (!res.ok) return [];
   const rows = await res.json();
@@ -66,11 +66,11 @@ async function lobstersSearch(query, limit) {
 }
 
 cli({
-  site: 'opinions',
+  site: 'omnisearch',
   name: 'research',
   tags: ['search'],
   access: 'read',
-  description: "Aggregate opinions/problems about a topic across no-login platforms (Hacker News + Lobste.rs)",
+  description: "Aggregate results about a topic across no-login platforms (Hacker News + Lobste.rs)",
   domain: 'hn.algolia.com',
   strategy: Strategy.PUBLIC,
   browser: false,
@@ -97,7 +97,7 @@ cli({
     }
 
     if (!rows.length) {
-      throw new EmptyResultError('opinions/research', `no opinions found across platforms for "${query}"`);
+      throw new EmptyResultError('omnisearch/research', `no omnisearch found across platforms for "${query}"`);
     }
 
     return rows.slice(0, limit);

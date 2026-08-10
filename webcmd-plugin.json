@@ -774,6 +774,16 @@
         "handle": "agentrhq"
       }
     },
+    "omnisearch": {
+      "path": "plugins/omnisearch",
+      "version": "0.1.0",
+      "description": "Universal search across public platforms (Bluesky, Hacker News, Lobsters, Product Hunt) — no login",
+      "webcmd": ">=0.5.3",
+      "author": {
+        "name": "Rishet Mehra",
+        "handle": "Rishet11"
+      }
+    },
     "openalex": {
       "path": "plugins/openalex",
       "version": "0.1.0",
@@ -802,16 +812,6 @@
       "author": {
         "name": "WebCMD Agent",
         "handle": "agentrhq"
-      }
-    },
-    "opinions": {
-      "path": "plugins/opinions",
-      "version": "0.1.0",
-      "description": "No-login social opinions & problems research across public platforms",
-      "webcmd": ">=0.5.3",
-      "author": {
-        "name": "Rishet Mehra",
-        "handle": "Rishet11"
       }
     },
     "osv": {

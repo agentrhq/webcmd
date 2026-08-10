@@ -1,5 +1,5 @@
 /**
- * opinions lobsters — Lobste.rs newest / active discussions.
+ * omnisearch lobsters — Lobste.rs newest / active discussions.
  *
  * No login. Uses the public lobste.rs JSON endpoint. Lobste.rs is a
  * Reddit/HN-style community; good for surfacing what developers are
@@ -22,7 +22,7 @@ function requireSort(value) {
 }
 
 cli({
-  site: 'opinions',
+  site: 'omnisearch',
   name: 'lobsters',
   access: 'read',
   description: "Lobste.rs newest / active / hot discussions (no login)",
@@ -45,7 +45,7 @@ cli({
     let rows;
     try {
       const res = await fetch(SORTS[sort], {
-        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; webcmd-opinions/0.1)' },
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; webcmd-omnisearch/0.1)' },
       });
       if (!res.ok) throw new CommandExecutionError(`lobste.rs request failed: HTTP ${res.status}`);
       rows = await res.json();
@@ -55,7 +55,7 @@ cli({
     }
 
     if (!Array.isArray(rows) || !rows.length) {
-      throw new EmptyResultError('opinions/lobsters', 'lobste.rs returned no stories');
+      throw new EmptyResultError('omnisearch/lobsters', 'lobste.rs returned no stories');
     }
 
     return rows.slice(0, limit).map((s, index) => ({

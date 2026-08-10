@@ -1,5 +1,5 @@
 /**
- * opinions hackermind — search Hacker News stories & comments for opinions.
+ * omnisearch hackermind — search Hacker News stories & comments for omnisearch.
  *
  * No login. Uses the public HN Algolia API, which indexes stories and
  * comments. Good for researching what the tech/startup community is saying
@@ -17,11 +17,11 @@ function requireQuery(value) {
 }
 
 cli({
-  site: 'opinions',
+  site: 'omnisearch',
   name: 'hackermind',
   tags: ['search'],
   access: 'read',
-  description: "Search Hacker News stories & comments for opinions (no login)",
+  description: "Search Hacker News stories & comments (no login)",
   domain: 'hn.algolia.com',
   strategy: Strategy.PUBLIC,
   browser: false,
@@ -62,7 +62,7 @@ cli({
 
     const hits = Array.isArray(json?.hits) ? json.hits : [];
     if (!hits.length) {
-      throw new EmptyResultError('opinions/hackermind', `no results for "${query}"`);
+      throw new EmptyResultError('omnisearch/hackermind', `no results for "${query}"`);
     }
 
     return hits.slice(0, limit).map((h, index) => ({

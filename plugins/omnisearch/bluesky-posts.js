@@ -1,5 +1,5 @@
 /**
- * opinions bluesky-posts — read what a public Bluesky account is saying.
+ * omnisearch bluesky-posts — read what a public Bluesky account is saying.
  *
  * No login. Uses the public Bluesky API (public.api.bsky.app) author feed
  * endpoint, which returns a user's recent posts without authentication.
@@ -25,7 +25,7 @@ function requireHandle(value) {
 }
 
 cli({
-  site: 'opinions',
+  site: 'omnisearch',
   name: 'bluesky-posts',
   access: 'read',
   description: "Recent posts from a public Bluesky account (no login)",
@@ -52,7 +52,7 @@ cli({
     let json;
     try {
       const res = await fetch(url, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; webcmd-opinions/0.1)' },
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; webcmd-omnisearch/0.1)' },
       });
       if (!res.ok) {
         throw new CommandExecutionError(`Bluesky API request failed: HTTP ${res.status}`);
@@ -65,7 +65,7 @@ cli({
 
     const feed = Array.isArray(json?.feed) ? json.feed : [];
     if (!feed.length) {
-      throw new EmptyResultError('opinions/bluesky-posts', `no posts found for "${handle}"`);
+      throw new EmptyResultError('omnisearch/bluesky-posts', `no posts found for "${handle}"`);
     }
 
     return feed.slice(0, limit).map((entry, index) => {
