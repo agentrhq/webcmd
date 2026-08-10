@@ -1,7 +1,7 @@
 {
   "name": "omnisearch",
   "version": "0.1.0",
-  "description": "Universal search across public platforms (Bluesky, Hacker News, Lobsters, Product Hunt) — no login",
+  "description": "Scrape & research 12 platforms — X, Reddit, LinkedIn, Instagram, YouTube, Hacker News, Stack Overflow, GitHub, arXiv, Dev.to, Lobsters, Bluesky",
   "webcmd": ">=0.5.3",
   "author": {
     "name": "Rishet Mehra",

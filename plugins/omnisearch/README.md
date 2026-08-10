@@ -1,67 +1,108 @@
-# webcmd-plugin-omnisearch
+<h1 align="center">
+  🔎 OmniSearch
+</h1>
 
-**OmniSearch — the developer internet, in one command.**
-
-Stop opening seven tabs to ask "what does the community think?" Run one command and OmniSearch sweeps **Hacker News, Lobste.rs, Stack Overflow, GitHub issues, arXiv, Dev.to, and Bluesky** — then returns clean JSON of what people are building, asking, breaking, and debating, **ranked by score**. No login, no browser, no API keys.
-
-Ask "who already hit this wall?" the way you'd ask a search engine — and get a verdict, not a link dump.
-
----
-
-## Why OmniSearch
-
-- **Community signal, not search noise** — normalized results with `score` + `commentCount` so you rank by real traction.
-- **No login, ever** — all public APIs. Zero setup, zero credentials, works in CI and headless agents.
-- **Structured, consistent JSON** — same schema across every source.
-- **Multi-source in one command** — `research` aggregates everything; filter with `--sources`.
-- **Agent-native** — built to be driven by Claude, Codex, GPT, Cursor, or your own agent.
-
-OmniSearch is **not a crawler**. Firecrawl renders a URL you give it; OmniSearch is the "where do I even start" layer — a curated set of trusted platform-native communities, pre-ranked by traction.
+<p align="center">
+  <strong>The internet's opinion — in one command.</strong><br/>
+  Scrape & research <strong>X, Reddit, LinkedIn, Instagram, YouTube, Hacker News, Stack Overflow, GitHub, arXiv, Dev.to, Lobsters, Bluesky</strong> — no login, one clean JSON response.
+</p>
 
 ---
 
-## Install
+## 🌐 12 platforms, ordered by reach
+
+OmniSearch sweeps every big place people talk online. The social giants (via your logged-in profile) plus the developer & research communities (no login at all).
+
+| # | Platform | Access | What it surfaces |
+|---|----------|--------|------------------|
+| 1 | **X / Twitter** 🐦 | profile | Real-time public opinion |
+| 2 | **Reddit** 🧑‍🤝‍🧑 | profile | The front page of the internet, thread-level |
+| 3 | **LinkedIn** 💼 | profile | Professional voices, people search |
+| 4 | **Instagram** 📸 | profile | Visual & DM culture |
+| 5 | **YouTube** ▶️ | profile | Video + comments |
+| 6 | **Hacker News** 🟠 | no login | Tech opinions & discussions |
+| 7 | **Stack Overflow** 📚 | no login | Real problems developers ask |
+| 8 | **GitHub** 🐙 | no login | Real problems people report (issues/PRs) |
+| 9 | **Dev.to** 💜 | no login | Developer articles |
+| 10 | **arXiv** 📄 | no login | Research papers |
+| 11 | **Lobsters** 🦞 | no login | Developer discussions |
+| 12 | **Bluesky** 🦋 | no login | Public posts by account |
+
+---
+
+## ⚡ Quick start
 
 ```bash
 webcmd plugin install github:Rishet11/webcmd-plugin-omnisearch
+
+# 🔓 No login — instant, works for everyone
+webcmd omnisearch verdict "saas pricing" -f json          # 🏆 the community's verdict
+webcmd omnisearch research "saas pricing" -f json         # aggregate all sources
+webcmd omnisearch stackoverflow "billing saas" -f json   # real problems
+
+# 🔑 Logged-in social — one-time setup, then headless
+webcmd --profile social twitter search "saas pricing" -f json
+webcmd --profile social reddit search "saas pricing" -f json
+webcmd --profile social linkedin people-search "saas founder" -f json
+webcmd --profile social instagram search "saas" -f json
 ```
 
-## Commands (Tier 1 — public, no login)
+---
 
-| Command | Source | What it surfaces |
-|---------|--------|------------------|
-| `omnisearch verdict <topic>` | **All sources** | 🏆 The community's verdict, synthesized |
-| `omnisearch research <topic>` | **All sources** | Aggregate everything in one feed |
-| `omnisearch hackermind <query>` | Hacker News | Tech opinions & discussions |
+## 🎯 Commands (Tier 1 — no login)
+
+| Command | Source(s) | What it does |
+|---------|-----------|--------------|
+| `omnisearch verdict <topic>` | all | 🏆 Synthesizes the community verdict, ranked by traction |
+| `omnisearch research <topic>` | all | Aggregates everything in one feed; filter with `--sources` |
+| `omnisearch hackermind <q>` | Hacker News | Tech opinions & discussions |
 | `omnisearch stackoverflow <q>` | Stack Overflow | Real problems developers ask |
-| `omnisearch github <q>` | GitHub issues/PRs | Real problems people report |
-| `omnisearch devto <tag>` | Dev.to | Developer articles (takes a TAG, not free text) |
+| `omnisearch github <q>` | GitHub | Real problems people report (issues/PRs) |
+| `omnisearch devto <tag>` | Dev.to | Developer articles (takes a TAG) |
 | `omnisearch arxiv <q>` | arXiv | Research papers |
-| `omnisearch lobsters [--sort]` | Lobste.rs | Developer discussions |
-| `omnisearch bluesky-posts <handle>` | Bluesky | What one public account is saying |
+| `omnisearch lobsters [--sort]` | Lobsters | Developer discussions |
+| `omnisearch bluesky-posts <handle>` | Bluesky | One public account's posts |
 
-### Examples
+## 🔑 Commands (Tier 2 — logged-in social)
+
+Install the official plugins once, sign in once, then research headlessly:
 
 ```bash
-# Research a topic across ALL sources in one shot
-webcmd omnisearch research "saas pricing" --limit 20 -f json
+webcmd plugin install github:agentrhq/webcmd/twitter
+webcmd plugin install github:agentrhq/webcmd/reddit
+webcmd plugin install github:agentrhq/webcmd/linkedin
+webcmd plugin install github:agentrhq/webcmd/instagram
 
-# Get the community's verdict (signal, not search)
-webcmd omnisearch verdict "saas pricing" -f json
+# One-time sign-in per site (~1 min each)
+webcmd --profile social twitter login
+webcmd --profile social reddit login
 
-# Filter to specific sources
-webcmd omnisearch research "rag" --sources github,hn -f json
-
-# Find real problems people are hitting
-webcmd omnisearch stackoverflow "billing saas" --limit 10 -f json
-webcmd omnisearch github "saas pricing" --limit 10 -f json
-
-# Research papers + tech opinions
-webcmd omnisearch arxiv "large language models" --limit 10 -f json
-webcmd omnisearch hackermind "ai agents" --limit 10 -f json
+# Then headless research on the social giants
+webcmd --profile social twitter search "<query>" -f json
+webcmd --profile social reddit subreddit startups -f json
+webcmd --profile social linkedin people-search "<job>" -f json
+webcmd --profile social instagram search "<tag>" -f json
 ```
 
-### Output schema (uniform)
+> Tier 2 is **optional & machine-specific** (needs your own profile). Tier 1 works for everyone, everywhere, no login.
+
+---
+
+## 🤖 Driving it with an AI agent
+
+Give any agent a prompt below — each names the exact command and the answer shape.
+
+1. **Competition research** — "Run `webcmd omnisearch research \"{topic}\" --sources hn,lobsters,stackoverflow,github --limit 30 -f json`. For each platform return the 5 highest-scored items; summarize who's building here and the one recurring complaint."
+2. **Pain discovery** — "Run `webcmd omnisearch github \"{topic}\" --limit 15 -f json` and `webcmd omnisearch stackoverflow \"{topic}\" --limit 15 -f json`. Return the 10 most-referenced pains, each with a source URL."
+3. **Technical feasibility** — "Run `webcmd omnisearch arxiv \"{idea}\" --limit 10 -f json` and `webcmd omnisearch hackermind \"{idea}\" --limit 15 -f json`. Return recent techniques and blockers; say what's proven vs aspirational."
+4. **Market validation** — "Run `webcmd omnisearch research \"{product}\" --limit 20 -f json`. Return signal strength per platform plus 3 representative quotes with URLs."
+5. **Product pre-mortem** — "Run `webcmd omnisearch research \"{idea}\" --limit 30 -f json`. Return 3 ways this failed before, 3 reasons it might fail, the strongest argument for it, each with a URL."
+
+Also ships **`SKILL.md`** so agent harnesses auto-discover OmniSearch.
+
+---
+
+## 📦 Output schema (uniform)
 
 ```json
 {
@@ -76,89 +117,14 @@ webcmd omnisearch hackermind "ai agents" --limit 10 -f json
 }
 ```
 
-| Field | Type | Meaning |
-|-------|------|---------|
-| `platform` | string | Source platform |
-| `title` | string | Title / headline / post text |
-| `author` | string | Author or handle |
-| `score` | number | Upvotes / points / reactions |
-| `commentCount` | number | Comments / answers |
-| `createdAt` | string | ISO timestamp |
-| `url` | string | Absolute link |
-| `text` | string | Snippet (may be empty on HN/SO; truncated on GitHub/arXiv) |
+`score` + `commentCount` let you rank by **real traction**, not search order.
 
----
+## ➕ Adding a platform (~20 lines)
 
-## Commands (Tier 2 — logged-in social, via webcmd `social` profile)
+All sources live in `sources.js` behind one signature `search(query, limit) -> rows[]`.
+Add a fetcher, wire it into `research`, and it's searchable everywhere.
 
-For the login-walled platforms (X/Twitter, Reddit, LinkedIn, Instagram, YouTube),
-install the official webcmd plugins once and sign in once through the `social`
-browser profile. Then research those platforms headlessly too.
-
-```bash
-webcmd plugin install github:agentrhq/webcmd/twitter
-webcmd plugin install github:agentrhq/webcmd/reddit
-webcmd plugin install github:agentrhq/webcmd/linkedin
-webcmd plugin install github:agentrhq/webcmd/instagram
-
-# One-time sign-in per site (opens a browser; completes in ~1 min)
-webcmd --profile social twitter login
-webcmd --profile social reddit login
-
-# Headless research on login-walled platforms
-webcmd --profile social twitter search "saas pricing" -f json
-webcmd --profile social reddit search "saas pricing" -f json
-webcmd --profile social reddit subreddit startups -f json
-webcmd --profile social linkedin people-search "saas founder" -f json
-webcmd --profile social instagram search "saas" -f json
-```
-
-> Tier 2 is **optional** and machine-specific — it needs your own logged-in profile.
-> Tier 1 (OmniSearch's own commands) works for everyone, everywhere, with no login.
-
----
-
-## Using OmniSearch with an AI agent (the most important part)
-
-OmniSearch is agent-ready. It runs as a webcmd site: `webcmd omnisearch <command> -f json`.
-It is read-only, needs no login, and returns consistent JSON. Give an agent any
-prompt below — each names the exact command and the shape of the answer to return.
-
-1. **Competition research** — "Research the market around `{topic}`. Run
-   `webcmd omnisearch research "{topic}" --sources hn,lobsters,stackoverflow,github --limit 30 -f json`.
-   For each platform return the 5 highest-scored items; summarize who's building in this
-   space and the one recurring complaint."
-
-2. **Pain discovery** — "Find real, unsolved problems around `{topic}`. Run
-   `webcmd omnisearch github "{topic}" --limit 15 -f json` and
-   `webcmd omnisearch stackoverflow "{topic}" --limit 15 -f json`.
-   Return the 10 most-referenced pains, each with a source URL."
-
-3. **Technical feasibility** — "Assess whether `{idea}` is viable now. Run
-   `webcmd omnisearch arxiv "{idea}" --limit 10 -f json` and
-   `webcmd omnisearch hackermind "{idea}" --limit 15 -f json`.
-   Return recent techniques from papers and the blockers hackers describe. Say what is
-   'proven' vs 'aspirational'."
-
-4. **Market validation** — "Validate demand for `{product}`. Run
-   `webcmd omnisearch research "{product}" --limit 20 -f json`.
-   Return signal strength = count of high-score items per platform, plus 3 representative
-   quotes with URLs."
-
-5. **Product idea pre-mortem** — "Pre-mortem `{idea}`. Run
-   `webcmd omnisearch research "{idea}" --limit 30 -f json`.
-   Return 3 ways this has been tried before, 3 reasons it might fail, and the strongest
-   argument FOR it, each tied to a URL."
-
----
-
-## Adding a platform (~20 lines)
-
-All sources live in `sources.js` behind one uniform signature
-`search(query, limit) -> rows[]`. Add a fetcher, wire it into the `research`
-command's source map, and it's searchable everywhere.
-
-## Development
+## 🛠 Development
 
 ```bash
 webcmd plugin install file:///Users/rishetmehra/webcmd-omnisearch
