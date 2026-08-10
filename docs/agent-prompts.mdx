@@ -13,6 +13,23 @@ Describe the target, outcome, required fields, authentication context, and safet
 Use `webcmd-usage` to find an existing adapter for Hacker News discussions about browser automation. Return title, URL, author, points, and source for the best results. This is a public, read-only task: do not post, vote, save, or create a new adapter unless no existing command can complete it.
 ```
 
+## Research a Topic Across Named Communities
+
+Naming the sites is not enough on its own — say that their adapters come first,
+or the run starts at a search engine and often never gets past the CAPTCHA wall.
+
+```text
+Research the latest discussions about browser automation on Hacker News and Reddit.
+
+Preflight: run `webcmd --version` and `webcmd list`. If an adapter for a site I named is missing, run `webcmd plugin search <site>` and install it before searching. Report what was already installed.
+
+Method: use each site's own adapter or public API first — Hacker News via Algolia search and items, Reddit via the reddit adapter. Do not route through DuckDuckGo, Bing, or Google for sites I have named. Scope Reddit queries to relevant subreddits rather than a site-wide sort, and avoid single words that collide with everyday English.
+
+Budget: one attempt per blocked search engine, two blocked plain fetches before escalating to a browser or adapter path, one plugin-discovery round. Do not loop on a blocked source.
+
+Read three to five threads end to end before summarizing. Return a comparison table with a link for every claim, and a Gaps section naming each source that failed and why. Report gaps explicitly; do not silently drop a source I asked for.
+```
+
 ## Complete a One-Off Browser Task
 
 ```text

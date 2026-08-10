@@ -47,6 +47,12 @@
             ]
           },
           {
+            "group": "Set Up Your Agent",
+            "pages": [
+              "opencode"
+            ]
+          },
+          {
             "group": "Understand Webcmd",
             "pages": [
               "concepts",

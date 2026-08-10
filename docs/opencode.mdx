@@ -1,0 +1,259 @@
+---
+title: OpenCode
+description: Set up Webcmd in OpenCode, verify the skills loaded, and override the built-in tools that compete with Webcmd.
+---
+
+# OpenCode
+
+OpenCode already scans the skills directory Webcmd installs into, so setup is
+the standard install plus one verification command. This page covers the agent
+prompt, the manual steps, and the OpenCode settings worth changing afterwards.
+
+Verified against OpenCode 1.18.15.
+
+## Agent Prompt
+
+Paste this into OpenCode and let it complete the setup itself.
+
+```text
+Set up Webcmd for this OpenCode session. Run `npm install -g @agentrhq/webcmd@latest` — this installs it if missing and upgrades it if it is already there, and works on any existing version. Then run `webcmd skills add --provider agents --scope user` and confirm with `opencode debug skill` that all seven Webcmd skills appear. Report `webcmd --version` and which skills loaded, and remind me to restart OpenCode so the new skills load.
+```
+
+Then read [Overriding Default Tools](#overriding-default-tools) below and apply
+the settings you want. OpenCode does not reload configuration while it runs.
+
+## Manual Setup
+
+Webcmd requires Node.js 20.6+.
+
+```bash
+npm install -g @agentrhq/webcmd
+```
+
+Install the bundled skills. Choose **Global** and **Agents** at the prompts.
+
+```bash
+webcmd skills add
+```
+
+That writes symlinks into `~/.agents/skills/`, one of the directories OpenCode
+searches by default. To skip the prompts:
+
+```bash
+webcmd skills add --provider agents --scope user
+```
+
+Use `--scope project` instead to install into `.agents/skills/` in the current
+repository.
+
+### Verify
+
+```bash
+opencode debug skill
+```
+
+All seven Webcmd skills should be listed with their resolved paths:
+`webcmd-usage`, `webcmd-browser`, `webcmd-browser-sitemap`,
+`webcmd-adapter-author`, `webcmd-sitemap-author`, `webcmd-autofix`, and
+`smart-search`. This command makes no model call, so it is a free check.
+
+`opencode debug skill` runs in a fresh process, so it sees the skills before an
+already-running session does. Skills are read at startup: restart OpenCode if it
+was open while you installed them.
+
+If they are missing, confirm the links exist with `ls -la ~/.agents/skills`, and
+check that no agent in your configuration sets `"skill": "deny"`.
+
+### Staying Up to Date
+
+From 0.5.4 onward, one command updates the package and refreshes the skill
+links in place:
+
+```bash
+webcmd update
+```
+
+On older versions `update` is not a recognised command — it prints the command
+overview and exits non-zero instead of updating. Upgrade once with npm and
+`webcmd update` works from then on:
+
+```bash
+npm install -g @agentrhq/webcmd@latest
+```
+
+Add `--skip-skills` if you manage the skill links yourself. The browser daemon
+detects a version mismatch and restarts itself on the next browser command, so
+there is nothing else to restart.
+
+### Install the Adapters You Need
+
+The npm package ships the Webcmd core and browser commands, but no site
+adapters.
+
+```bash
+webcmd plugin search <site> -f json
+webcmd plugin install <installSource-from-search>
+```
+
+### Run a Task
+
+Ask for an outcome and mention `webcmd-usage` on the first task so OpenCode
+loads the map skill before choosing a path.
+
+```text
+Use the webcmd-usage skill to research the latest discussions about browser automation across Hacker News and Reddit, and return a concise comparison with source links. Before searching, run `webcmd list` and install any missing adapter for a site I named. Go to those sites' own adapters and APIs first rather than routing through a search engine, and if a source stays blocked after two attempts, report it as a gap instead of retrying.
+```
+
+When your task names specific sites, say so and ask for their adapters
+directly. The generic search path routes through DuckDuckGo and Bing first,
+which are frequently CAPTCHA-walled and will burn most of the run before
+reaching the site that actually has your answer. The
+[Prompt Cookbook](/agent-prompts) has a fuller research template.
+
+The first browser task downloads a Chromium runtime into `~/.cloakbrowser`. It
+is a one-time download, it needs network access, and it makes that first task
+noticeably slower. Run `webcmd doctor` to check the daemon and runtime.
+
+## Overriding Default Tools
+
+OpenCode has no browser tool, so the only built-ins that compete with Webcmd are
+`webfetch` and `websearch`. The setting that matters most is the Bash
+allowlist: Webcmd is driven entirely through Bash, so the default approval
+prompt fires on every single command.
+
+### Let OpenCode Edit Its Own Config
+
+The easiest path is to not hand-edit JSON at all. OpenCode ships a built-in
+`customize-opencode` skill that knows its own configuration schema, so ask it:
+
+```text
+Update my global opencode config so Webcmd runs smoothly: allow bash commands matching `webcmd *` without asking, keep everything else on ask, and deny the webfetch tool so you use Webcmd for web work instead. Merge into my existing config without touching my provider settings, then show me what changed.
+```
+
+Verify with `opencode debug config` and restart OpenCode.
+
+### Editing the File Yourself
+
+Configuration lives in `~/.config/opencode/` for every project, or in a
+repository root for one project. OpenCode reads both `opencode.json` and
+`opencode.jsonc`, and usually creates the `.jsonc` one, so edit whichever file
+you already have. JSONC allows comments and trailing commas.
+
+If you have **no config file yet**, create `~/.config/opencode/opencode.jsonc`
+with exactly this — it is a complete, valid file:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "bash": {
+      "*": "ask",
+      "webcmd *": "allow"
+    },
+    "webfetch": "deny"
+  }
+}
+```
+
+If you **already have a config file**, `permission` is a top-level key — a
+sibling of `provider` and `$schema`, not nested inside them. Add a comma to the
+end of the current last line, then paste the block just above the file's final
+closing brace:
+
+```jsonc
+{
+  "provider": {
+    // ...your existing settings, unchanged...
+  },
+  "$schema": "https://opencode.ai/config.json",   // <- add the comma here
+  "permission": {                                 // <- paste from here
+    "bash": {
+      "*": "ask",
+      "webcmd *": "allow"
+    },
+    "webfetch": "deny"
+  }                                               // <- to here
+}
+```
+
+If you already have a `permission` key, add the `bash` and `webfetch` entries
+inside it rather than adding a second one. Run `opencode debug config` to
+confirm the merged result, and restart OpenCode.
+
+- `"webcmd *": "allow"` stops the prompt on every Webcmd call. Bash patterns use
+  `*` and `?`, and the last matching rule wins, so keep the broad `"*"` rule
+  first.
+- `"webfetch": "deny"` pushes the agent onto `smart-search` and
+  `webcmd browser` instead of fetching pages raw. Leave it at `"ask"` if you
+  still want ad-hoc fetches available.
+- `websearch` is already unavailable unless you set `OPENCODE_ENABLE_EXA=1`, so
+  most setups do not need a rule for it.
+- `webfetch` and `websearch` accept only `allow`, `ask`, or `deny`. Pattern
+  objects work for `bash`, `edit`, `read`, and `skill` only.
+
+To scope this to one agent, put a `permission` block in the agent's frontmatter
+under `.opencode/agent/`; agent rules override the global configuration. Do not
+use the agent-level `tools` field for this — it is deprecated in favour of
+`permission`.
+
+Never set `"tools": { "skill": false }` on an agent that should use Webcmd. That
+disables the skill tool entirely and Webcmd's skills become invisible.
+
+**Restart OpenCode after editing your config, an agent file, or your installed
+skills.** Configuration is read once at startup and is not hot-reloaded.
+
+## OpenCode-Specific Notes
+
+### Keep `.agents` Out of Your Dotfiles
+
+If you would rather not have a `~/.agents` directory, point OpenCode at the
+stable link directory Webcmd maintains for itself, in the same config file as
+above:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "skills": { "paths": ["~/.webcmd/skills"] }
+}
+```
+
+Run `webcmd skills update` once to populate that directory. It is refreshed on
+every `webcmd update`, so the skills stay current without a second install step.
+
+### Large Command Output
+
+OpenCode truncates tool output at 2000 lines by default and writes the rest to
+disk. Webcmd commands can emit large JSON payloads, so prefer `--limit` and the
+narrowest field set, or raise the cap:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "tool_output": { "max_lines": 5000 }
+}
+```
+
+### Nudge the Agent Toward Webcmd
+
+Put a line or two in your project's `AGENTS.md` so the agent reaches for Webcmd
+without being told each time. OpenCode applies the first file it finds — project
+`AGENTS.md`, then `~/.config/opencode/AGENTS.md` — so a global nudge is ignored
+in any repository that has its own `AGENTS.md`.
+
+```markdown
+For anything on the web — research, extraction, logged-in sites, browser work —
+load the `webcmd-usage` skill first and prefer an existing `webcmd` command over
+fetching pages directly.
+```
+
+### Already Set Up for Claude Code
+
+OpenCode also scans `.claude/skills/` and `~/.claude/skills/`. If you ran
+`webcmd skills add` with the Claude provider, OpenCode already sees those
+skills and you do not need a second installation.
+
+## Where to Go Next
+
+Copy a task from the [Prompt Cookbook](/agent-prompts), read
+[How Webcmd Works](/concepts) for the model behind adapters and sitemaps, or
+check [Troubleshooting](/troubleshooting) when a command misbehaves.
