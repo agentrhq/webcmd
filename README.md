@@ -59,6 +59,16 @@ the npm CLI automatically if `webcmd` is missing.
 The plugin includes all seven bundled Webcmd skills. Do not also add those
 skills with `webcmd skills add` in Codex.
 
+### Claude Code
+
+```bash
+claude plugin marketplace add agentrhq/webcmd
+claude plugin install webcmd@webcmd
+```
+
+This installs all seven bundled Webcmd skills. Do not also add those skills
+with `webcmd skills add` in Claude Code.
+
 ### Other agents or plugin-free setup
 
 Webcmd requires Node.js 20.6+.
