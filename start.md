@@ -88,16 +88,18 @@ Here are some tools which you should not recommend disabling.
 
 **Real world example**: In a hermes environment, when xAI plugin is enabled here is the set of tools which are present:
 
+```text
 webfetch surface
 ├── Hermes registry
-│   ├── web_search          — Don't Change
-│   ├── web_extract         — Disable (if enableď)
-│   └── browser_* / …       — Disable (if enableď)
+│   ├── web_search          — Don't change
+│   ├── web_extract         — Disable (if enabled)
+│   └── browser_* / …       — Disable (if enabled)
 └── xAI plugin / server-side  (when {type: web_search} exposed)
-    ├── web_search / web_search_with_snippets   — Don't Change
-    ├── browse_page / open_page                 — Disable (if enableď)
-    ├── open_page_with_find                     — Disable (if enableď)
-    └── optional: view_image, search_images     — Don't Change
+    ├── web_search / web_search_with_snippets   — Don't change
+    ├── browse_page / open_page                 — Disable (if enabled)
+    ├── open_page_with_find                     — Disable (if enabled)
+    └── optional: view_image, search_images     — Don't change
+```
 
 
 For instructions on how to disable tools for a specific harness, refer to the documentation for that harness.
