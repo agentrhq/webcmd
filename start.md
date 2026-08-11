@@ -83,8 +83,8 @@ Here is the rubric to shortlist the tools you'll recommend disabling.
 
 Here are some tools which you should not recommend disabling.
 
-1. **Web search** - 
-2. **Other search tools** - For example x_search tool in hermes
+1. **Web search** — a builtin that takes a query and returns result titles and links without reading the pages. Claude Code's `WebSearch`, Codex CLI's `web_search`, OpenCode's `websearch`, OpenClaw's `web_search`, Hermes' `web_search`, Cursor's Web Search Tool. Leave these on. Webcmd has no search index of its own, and a native search tool is the cheapest way to turn a question into URLs. Webcmd takes over from there — it reads the pages the search only names.
+2. **Other search tools** — the same reasoning covers scoped search builtins: Hermes' `x_search`, OpenClaw's `x_search` and `search_news`. They return links, not page content.
 
 **Real world example**: In a hermes environment, when xAI plugin is enabled here is the set of tools which are present:
 
@@ -102,16 +102,15 @@ webfetch surface
 
 For instructions on how to disable tools for a specific harness, refer to the documentation for that harness.
 
-| Harness | Suggest disabling | Page |
-| --- | --- | --- |
-| Claude Code | `WebFetch` | [claude-code.md](docs/agents/claude-code.md#override-default-tools) |
-| Codex CLI | `web_search` | [codex-cli.md](docs/agents/codex-cli.md#override-default-tools) |
-| OpenCode | `webfetch` | [opencode.md](docs/agents/opencode.md#override-default-tools) |
-| Cursor | `Web` | [cursor.md](docs/agents/cursor.md#override-default-tools) |
-| OpenClaw | `web_search`, `web_fetch`, `x_search`, `search_news` | [openclaw.md](docs/agents/openclaw.md#override-default-tools) |
-| Hermes Agent | `web_search` (bundled in `browser`; see page) | [hermes.md](docs/agents/hermes.md#override-default-tools) |
-| Pi | none | [pi.md](docs/agents/pi.md#override-default-tools) |
-| Other Coding Agents | native web fetch / browser tools | see instructions below |
+| Harness | Suggest disabling | Keep (search) | Page |
+| --- | --- | --- | --- |
+| Claude Code | `WebFetch`; Browser pane tools (`mcp__Claude_Browser__*`) | `WebSearch` | [claude-code.md](docs/agents/claude-code.md#override-default-tools) |
+| Codex CLI | none — Codex has no fetch or browser tool | `web_search` | [codex-cli.md](docs/agents/codex-cli.md#override-default-tools) |
+| OpenCode | `webfetch` | `websearch` | [opencode.md](docs/agents/opencode.md#override-default-tools) |
+| Cursor | `Browser` when pointed at external sites | Web Search Tool | [cursor.md](docs/agents/cursor.md#override-default-tools) |
+| OpenClaw | `web_fetch`, `browser`, `browser_visual` | `web_search`, `x_search`, `search_news` | [openclaw.md](docs/agents/openclaw.md#override-default-tools) |
+| Hermes Agent | `web_extract`, `browser_*`, `computer_use` | `web_search`, `x_search` | [hermes.md](docs/agents/hermes.md#override-default-tools) |
+| Pi | none built in — check installed extensions | none built in | [pi.md](docs/agents/pi.md#override-default-tools) |
 
 ### 5. Finish
 

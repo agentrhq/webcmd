@@ -62,7 +62,7 @@ agent:
 
 Recommended: use `hermes tools disable browser` so the terminal toolset stays available.
 
-Note: Hermes' `browser` toolset statically bundles `web_search`, so disabling `browser` also removes `web_search` from every session. `web_extract` and the rest of the `web` toolset are unaffected. That is acceptable — Webcmd's `smart-search` skill and adapters cover search.
+Note: `web_search` lives in the separate `web` toolset, not in `browser`, so disabling `browser` leaves search intact. Keep `web_search` — Webcmd has no search index of its own and reads the pages search only names. `web_extract` is the tool in that toolset worth disabling.
 
 Do not disable the `terminal` toolset — that is how Hermes runs `webcmd`.
 
@@ -73,7 +73,7 @@ Do not disable the `terminal` toolset — that is how Hermes runs `webcmd`.
 | `webcmd doctor` is red | Fix the browser runtime first; browser commands depend on it. |
 | Skills not loading in Hermes | Confirm `skills.external_dirs` includes `~/.agents/skills`, restart Hermes, and check skill discovery. |
 | Hermes uses `browser_*` for open-web work | Remind it in the system prompt that Webcmd handles the open web; for a hard block, add `browser` to `agent.disabled_toolsets` and restart Hermes. |
-| `web_search` missing after disabling `browser` | Expected: Hermes bundles `web_search` inside the `browser` toolset. Use Webcmd's `smart-search` skill or adapters instead. |
+| `web_search` missing after disabling `browser` | Unexpected — `web_search` is in the `web` toolset. Confirm `web` is still enabled with `hermes tools`. |
 | `webcmd` not found in Hermes terminal | Confirm `webcmd` is on the host PATH that Hermes' `terminal` toolset uses; non-interactive shells may skip shell init files. |
 | Browser sessions stop working after idle | Ask the agent to open a fresh session or re-bind with `tabs` and `bind --page`. |
 
