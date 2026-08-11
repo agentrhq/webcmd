@@ -127,6 +127,7 @@ function toManifestEntry(cmd: CliCommand, modulePath: string, sourceFile?: strin
     ...(cmd.tags?.length ? { tags: [...cmd.tags] } : {}),
     ...(cmd.keywords?.length ? { keywords: [...cmd.keywords] } : {}),
     defaultFormat: cmd.defaultFormat,
+    ...(cmd.clientOwned ? { clientOwned: true } : {}),
     type: 'js',
     modulePath,
     sourceFile,

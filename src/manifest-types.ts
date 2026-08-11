@@ -35,6 +35,8 @@ export interface ManifestEntry {
   keywords?: string[];
   pipeline?: Record<string, unknown>[];
   defaultFormat?: 'table' | 'plain' | 'json' | 'yaml' | 'yml' | 'md' | 'markdown' | 'csv';
+  /** The CLI executes this command itself; hosted mode must never serve it. */
+  clientOwned?: boolean;
   type: 'js';
   /** Relative path from clis/ dir, e.g. 'youtube/search.js' */
   modulePath?: string;

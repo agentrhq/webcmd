@@ -31,6 +31,9 @@ export function makeWebFetchCommand(): CliCommand {
     access: 'read',
     strategy: Strategy.PUBLIC,
     browser: false,
+    // main.ts runs this before the hosted-mode boundary, so the CLI owns it in
+    // every mode. Declared here so the hosted contract says so too.
+    clientOwned: true,
     description: 'Fetch a URL locally without launching a browser',
     defaultFormat: 'md',
     args: WEB_FETCH_ARGS,

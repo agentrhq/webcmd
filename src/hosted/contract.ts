@@ -115,6 +115,7 @@ export interface HostedContractCommandInput {
   tags?: string[];
   keywords?: string[];
   defaultFormat?: CliCommand['defaultFormat'];
+  clientOwned?: boolean;
 }
 
 type SharedOption = {

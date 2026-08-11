@@ -36,6 +36,7 @@
       }
     ],
     "defaultFormat": "md",
+    "clientOwned": true,
     "type": "js",
     "modulePath": "web/fetch.js",
     "sourceFile": "web/fetch.js"

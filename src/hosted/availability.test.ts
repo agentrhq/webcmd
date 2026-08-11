@@ -172,6 +172,12 @@ describe('hosted availability', () => {
       .toEqual({ mode: 'local-only', reason: 'desktop-app' });
     expect(deriveHostedAvailability({ strategy: 'cookie', domain: 'example.com' }))
       .toEqual({ mode: 'hosted' });
+    // A client-owned command is PUBLIC and non-browser: without the explicit
+    // flag nothing would stop the server advertising its own copy.
+    expect(deriveHostedAvailability({ strategy: 'public', domain: undefined, clientOwned: true }))
+      .toEqual({ mode: 'local-only', reason: 'client-owned' });
+    expect(deriveHostedAvailability({ strategy: 'public', domain: 'example.com' }))
+      .toEqual({ mode: 'hosted' });
     expect(deriveBrowserAvailability('bind')).toEqual({ mode: 'hosted' });
     expect(deriveBrowserAvailability('run')).toEqual({ mode: 'hosted' });
     expect(deriveBrowserAvailability('tabs')).toEqual({ mode: 'hosted' });

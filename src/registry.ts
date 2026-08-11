@@ -97,6 +97,15 @@ interface BaseCliCommand {
    * combining them is a contradiction and fails at registration.
    */
   freshPage?: boolean;
+  /**
+   * This command is executed by the CLI itself, on every path, in every mode.
+   * It is carried into the manifest so the hosted contract marks it local-only
+   * rather than leaving ownership to be inferred from main.ts control flow: a
+   * client-owned command must not also become a server-side default, or its
+   * network origin, timeout, billing, proxy and SSRF semantics would depend on
+   * how it was reached.
+   */
+  clientOwned?: boolean;
   /** Override the default CLI output format when the user does not pass -f/--format. */
   defaultFormat?: 'table' | 'plain' | 'json' | 'yaml' | 'yml' | 'md' | 'markdown' | 'csv';
   /** Optional auth-status metadata attached by shared auth adapters. */
@@ -177,6 +186,7 @@ export function cli(opts: CliOptions): CliCommand {
     siteSession: opts.siteSession,
     freshPage: opts.freshPage,
     defaultFormat: opts.defaultFormat,
+    ...(opts.clientOwned ? { clientOwned: true } : {}),
     authStatus: opts.authStatus,
   };
 

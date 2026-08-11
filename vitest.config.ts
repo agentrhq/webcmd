@@ -55,6 +55,7 @@ export default defineConfig({
             'tests/e2e/article-download-pipeline.test.ts',
             'tests/e2e/cloak-runtime.test.ts',
             'tests/e2e/browser-run.test.ts',
+            'tests/e2e/web-fetch-discoverability.test.ts',
             // Extended browser tests (20+ sites) — opt-in only:
             //   WEBCMD_E2E=1 npx vitest run
             ...(includeExtendedE2e ? ['tests/e2e/browser-public-extended.test.ts', 'tests/e2e/browser-auth.test.ts'] : []),
