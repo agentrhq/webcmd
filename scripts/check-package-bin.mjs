@@ -118,7 +118,15 @@ try {
     // the package root, and only the installed package takes the dist/src/clis
     // fallback. #247 was exactly this gap — advertised, then ADAPTER_LOAD on
     // first use.
-    const installedMain = path.join(prefix, 'lib', 'node_modules', pkg.name, pkg.main);
+    // npm -g --prefix puts packages under <prefix>/lib/node_modules on POSIX
+    // and directly under <prefix>/node_modules on Windows.
+    const installedRoot = process.platform === 'win32'
+      ? path.join(prefix, 'node_modules', pkg.name)
+      : path.join(prefix, 'lib', 'node_modules', pkg.name);
+    const installedMain = path.join(installedRoot, pkg.main);
+    if (!fs.existsSync(installedMain)) {
+      fail(`global install did not create the package entry point: ${installedMain}`);
+    }
     for (const entry of manifest) {
       if (!entry.modulePath) continue;
       const help = run(binPath, [entry.site, entry.name, '--help'], { cwd: tmp });
