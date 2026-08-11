@@ -1,14 +1,22 @@
 const challengeMarkers = /cloudflare|cf-chl|datadome|perimeterx|px-captcha|akamai|captcha|just a moment|verify you are human/i;
-// Headers that say something about *this* response. CSP/report-to/link are allow-lists of third
-// parties (cdnjs.cloudflare.com, google.com/recaptcha) and are evidence of nothing.
-const signalHeaders = /^(?:server|cf-mitigated|cf-chl-[\w-]+|x-datadome[\w-]*|set-cookie)$/i;
+// Headers a bot-mitigation product sets *because it challenged this request*. The evidence is in
+// the name — values are opaque tokens — so these are decisive on their own, whatever the status.
+// https://developers.cloudflare.com/cloudflare-challenges/challenge-types/challenge-pages/detect-response/
+const decisiveHeaders = /^(?:cf-chl-[\w-]+|x-datadome[\w-]*)$/i;
+// Provider branding: present on every response the provider proxies, challenge or not. It can
+// support an already-blocked status but must never turn a served 200 into a challenge.
+const weakHeaders = /^(?:server|set-cookie)$/i;
+// CSP/report-to/link are allow-lists of third parties (cdnjs.cloudflare.com, google.com/recaptcha)
+// and are evidence of nothing — they are in neither list.
 
 export function isChallengeResponse(status: number, headers: Record<string, string>, body: string): boolean {
   if (status !== 403 && status !== 429 && status !== 503 && status !== 200) return false;
   if (challengeMarkers.test(body.slice(0, 20_000))) return true;
-  // A 200 with a real body is a served page; headers alone (server: cloudflare) never prove otherwise.
+  const entries = Object.entries(headers).map(([key, value]) => [key.trim().toLowerCase(), value] as const);
+  if (entries.some(([key, value]) => decisiveHeaders.test(key) || (key === 'cf-mitigated' && /challenge/i.test(value)))) return true;
+  // A 200 with a real body is a served page; branding alone (server: cloudflare) never proves otherwise.
   if (status === 200) return false;
-  return Object.entries(headers).some(([key, value]) => signalHeaders.test(key) && challengeMarkers.test(value));
+  return entries.some(([key, value]) => weakHeaders.test(key) && challengeMarkers.test(value));
 }
 
 export function isJavaScriptShell(body: string): boolean {

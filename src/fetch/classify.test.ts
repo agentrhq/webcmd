@@ -16,5 +16,14 @@ describe('fetch classification', () => {
     expect(isChallengeResponse(200, { server: 'cloudflare' }, '<html>real page</html>')).toBe(false);
     expect(isChallengeResponse(200, { server: 'cloudflare' }, 'Just a moment...')).toBe(true);
   });
+  it('treats cf-mitigated: challenge as decisive, even on a 200', () => {
+    expect(isChallengeResponse(200, { 'cf-mitigated': 'challenge' }, '<html>looks fine</html>')).toBe(true);
+    expect(isChallengeResponse(403, { 'cf-mitigated': 'challenge' }, 'forbidden')).toBe(true);
+  });
+  it('reads decisive evidence from the header name, not just its value', () => {
+    expect(isChallengeResponse(403, { 'cf-chl-out': 'AAAA1111' }, 'forbidden')).toBe(true);
+    expect(isChallengeResponse(403, { 'x-datadome': 'protected' }, 'forbidden')).toBe(true);
+    expect(isChallengeResponse(403, { 'x-datadome-cid': 'abc123' }, 'forbidden')).toBe(true);
+  });
   it('recognizes script-heavy app shells', () => expect(isJavaScriptShell('<div id="root"></div><script src="/app.js"></script><script>boot()</script>')).toBe(true));
 });
