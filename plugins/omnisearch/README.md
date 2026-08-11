@@ -1,133 +1,138 @@
-<h1 align="center">
-  🔎 OmniSearch
-</h1>
+# 🔎 OmniSearch
 
-<p align="center">
-  <strong>The internet's opinion — in one command.</strong><br/>
-  Scrape & research <strong>X, Reddit, LinkedIn, Instagram, YouTube, Hacker News, Stack Overflow, GitHub, arXiv, Dev.to, Lobsters, Bluesky</strong> — no login, one clean JSON response.
-</p>
+**OmniSearch is a research assistant that reads the internet for you.**
 
----
+Ask it what people on **X, Reddit, LinkedIn, Instagram, YouTube, Hacker News, Stack Overflow, GitHub, and more** are saying, asking, and complaining about — and it brings back a clear answer with links.
 
-## 🌐 12 platforms, ordered by reach
-
-OmniSearch sweeps every big place people talk online. The social giants (via your logged-in profile) plus the developer & research communities (no login at all).
-
-| # | Platform | Access | What it surfaces |
-|---|----------|--------|------------------|
-| 1 | **X / Twitter** 🐦 | profile | Real-time public opinion |
-| 2 | **Reddit** 🧑‍🤝‍🧑 | profile | The front page of the internet, thread-level |
-| 3 | **LinkedIn** 💼 | profile | Professional voices, people search |
-| 4 | **Instagram** 📸 | profile | Visual & DM culture |
-| 5 | **YouTube** ▶️ | profile | Video + comments |
-| 6 | **Hacker News** 🟠 | no login | Tech opinions & discussions |
-| 7 | **Stack Overflow** 📚 | no login | Real problems developers ask |
-| 8 | **GitHub** 🐙 | no login | Real problems people report (issues/PRs) |
-| 9 | **Dev.to** 💜 | no login | Developer articles |
-| 10 | **arXiv** 📄 | no login | Research papers |
-| 11 | **Lobsters** 🦞 | no login | Developer discussions |
-| 12 | **Bluesky** 🦋 | no login | Public posts by account |
+**You never need to touch the command line.** This tool is for your AI agent (Claude Code, Codex, Cursor, ChatGPT), not for you. Just tell your agent what you want to learn, and it handles the rest.
 
 ---
 
-## ⚡ Quick start
+## How to use OmniSearch (no coding needed)
 
-```bash
+There are three steps — and you only do the first one yourself.
+
+**Step 1 — Install once (5 minutes).** You add OmniSearch to your AI assistant, like installing an app once. Your agent runs this for you:
+
+```
 webcmd plugin install github:Rishet11/webcmd-plugin-omnisearch
-
-# 🔓 No login — instant, works for everyone
-webcmd omnisearch verdict "saas pricing" -f json          # 🏆 the community's verdict
-webcmd omnisearch research "saas pricing" -f json         # aggregate all sources
-webcmd omnisearch stackoverflow "billing saas" -f json   # real problems
-
-# 🔑 Logged-in social — one-time setup, then headless
-webcmd --profile social twitter search "saas pricing" -f json
-webcmd --profile social reddit search "saas pricing" -f json
-webcmd --profile social linkedin people-search "saas founder" -f json
-webcmd --profile social instagram search "saas" -f json
 ```
+
+**Step 2 — Tell your agent what you want to know.**
+
+You don't type commands. You just talk. Say something like:
+
+> "Before I build this, find out what people actually think about it."
+
+Your agent recognizes OmniSearch and runs it for you.
+
+**Step 3 — Read the answer.**
+
+You get a plain-language summary — what people say, where they say it, and links to the actual posts. No folders, no files, nothing to interpret.
 
 ---
 
-## 🎯 Commands (Tier 1 — no login)
+## What you say. What your agent does.
 
-| Command | Source(s) | What it does |
-|---------|-----------|--------------|
-| `omnisearch verdict <topic>` | all | 🏆 Synthesizes the community verdict, ranked by traction |
-| `omnisearch research <topic>` | all | Aggregates everything in one feed; filter with `--sources` |
-| `omnisearch hackermind <q>` | Hacker News | Tech opinions & discussions |
-| `omnisearch stackoverflow <q>` | Stack Overflow | Real problems developers ask |
-| `omnisearch github <q>` | GitHub | Real problems people report (issues/PRs) |
-| `omnisearch devto <tag>` | Dev.to | Developer articles (takes a TAG) |
-| `omnisearch arxiv <q>` | arXiv | Research papers |
-| `omnisearch lobsters [--sort]` | Lobsters | Developer discussions |
-| `omnisearch bluesky-posts <handle>` | Bluesky | One public account's posts |
+Here are real conversations, ready to copy-paste. Swap the words in **{braces}** for your topic.
 
-## 🔑 Commands (Tier 2 — logged-in social)
+| You say | What your agent finds |
+|---|---|
+| "**{My idea}** — do people actually want this?" | What people say across X, Reddit, Hacker News, GitHub |
+| "Find what people complain about when using **{a tool}**." | The real problems people report on Stack Overflow and GitHub |
+| "Is **{this idea}** already done? Who's winning?" | The competition and reception across platforms |
+| "Is **{this idea}** even technically possible yet?" | What research says is proven vs. still speculative |
+| "Before I launch **{product}**, what could kill it?" | The risks, past failures, and strongest arguments for it |
+| "What's the reaction to **{a product / a launch / the news}**?" | What people are saying on X, Reddit, and Hacker News right now |
 
-Install the official plugins once, sign in once, then research headlessly:
+### Ready-to-paste prompts for your agent
+
+Pick one, replace **{the brackets}**, and paste it to your agent:
+
+1. "Research **{topic/competitor/product}**. Use OmniSearch to check what people say across Reddit, X, Hacker News, and GitHub. Give me a two-paragraph summary and the 5 most-talked-about posts with links."
+
+2. "Find what's broken or frustrating about **{topic}**. Look at Stack Overflow questions and GitHub issues, and list the 10 most common problems people mention, each with a source link."
+
+3. "Check if **{my idea}** is technically realistic yet. Scan recent research papers and tech discussions, and tell me what's proven to work vs. still speculative."
+
+4. "Validate my idea: **{one-line pitch}**. Gather what people are saying about it, rate how much real interest there is, and quote 3 real people with links."
+
+5. "Do a pre-mortem on **{my startup/product}**. Find how similar things failed before, the top 3 reasons this could fail, and the strongest argument it could succeed — each with a source."
+
+6. "What do developers complain about when using **{a tool/language}**? Summarize the biggest recurring pain points with links."
+
+7. "Check the reaction to **{a new release / launch}**. What are people on X, Reddit, and Hacker News saying right now?"
+
+---
+
+## What you can research
+
+OmniSearch reads **12 places people talk** — the big social networks (through your own accounts, quietly in the background) plus a bunch of no-login communities:
+
+| Platform | Best at telling you |
+|---|---|
+| **X / Twitter** 🐦 | what people think right now |
+| **Reddit** 🧑‍🤝‍🧑 | real threads and discussion |
+| **LinkedIn** 💼 | professional opinions, finding people |
+| **Instagram** 📸 | visual and chat culture |
+| **YouTube** ▶️ | video + what's being discussed |
+| **Hacker News** 🟠 | what the tech world thinks |
+| **Stack Overflow** 📚 | what's actually broken |
+| **GitHub** 🐙 | real problems people file |
+| **Dev.to** 💜 | what developers are writing |
+| **arXiv** 📄 | the latest research |
+| **Lobsters** 🦞 | smart developer discussion |
+| **Bluesky** 🦋 | fresh public posts |
+
+**No login needed for most.** Only X, Reddit, LinkedIn, Instagram, and YouTube use your own account — the agent uses it quietly in the background; you never log in again.
+
+---
+
+## Start now
+
+**Install OmniSearch once, then ask your agent:**
+
+> *"Before I build this, find out what people actually think about it."*
+
+That's the whole product.
+
+---
+
+## For developers
+
+Everything below is for the agent (and for people who want to dig in). A normal user never reads this.
+
+### The commands
 
 ```bash
-webcmd plugin install github:agentrhq/webcmd/twitter
-webcmd plugin install github:agentrhq/webcmd/reddit
-webcmd plugin install github:agentrhq/webcmd/linkedin
-webcmd plugin install github:agentrhq/webcmd/instagram
+# Aggregate everything about a topic
+webcmd omnisearch research "<topic>" -f json
 
-# One-time sign-in per site (~1 min each)
-webcmd --profile social twitter login
-webcmd --profile social reddit login
+# 🏆 The community's verdict, distilled
+webcmd omnisearch verdict "<topic>" -f json
 
-# Then headless research on the social giants
-webcmd --profile social twitter search "<query>" -f json
-webcmd --profile social reddit subreddit startups -f json
-webcmd --profile social linkedin people-search "<job>" -f json
-webcmd --profile social instagram search "<tag>" -f json
+# One source at a time
+webcmd omnisearch hackermind "<q>" -f json
+webcmd omnisearch stackoverflow "<q>" -f json
+webcmd omnisearch github "<q>" -f json
+webcmd omnisearch arxiv "<q>" -f json
+webcmd omnisearch devto <tag> -f json
+webcmd omnisearch lobsters -f json
+webcmd omnisearch bluesky-posts <handle> -f json
+
+# Logged-in social (one-time login: webcmd --profile social <site> login)
+webcmd --profile social twitter search "<q>" -f json
+webcmd --profile social reddit search "<q>" -f json
+webcmd --profile social linkedin people-search "<q>" -f json
+webcmd --profile social instagram search "<q>" -f json
 ```
 
-> Tier 2 is **optional & machine-specific** (needs your own profile). Tier 1 works for everyone, everywhere, no login.
+### Output
 
----
+Every command returns the same shape: `platform`, `title`, `author`, `score`, `commentCount`, `createdAt`, `url`, `text`. The `score` + `commentCount` let an agent rank results by real traction.
 
-## 🤖 Driving it with an AI agent
+### How it works
 
-Give any agent a prompt below — each names the exact command and the answer shape.
+All platforms live in `sources.js` behind one signature (`search(query, limit)`), so adding a new platform to `research` is about 20 lines.
 
-1. **Competition research** — "Run `webcmd omnisearch research \"{topic}\" --sources hn,lobsters,stackoverflow,github --limit 30 -f json`. For each platform return the 5 highest-scored items; summarize who's building here and the one recurring complaint."
-2. **Pain discovery** — "Run `webcmd omnisearch github \"{topic}\" --limit 15 -f json` and `webcmd omnisearch stackoverflow \"{topic}\" --limit 15 -f json`. Return the 10 most-referenced pains, each with a source URL."
-3. **Technical feasibility** — "Run `webcmd omnisearch arxiv \"{idea}\" --limit 10 -f json` and `webcmd omnisearch hackermind \"{idea}\" --limit 15 -f json`. Return recent techniques and blockers; say what's proven vs aspirational."
-4. **Market validation** — "Run `webcmd omnisearch research \"{product}\" --limit 20 -f json`. Return signal strength per platform plus 3 representative quotes with URLs."
-5. **Product pre-mortem** — "Run `webcmd omnisearch research \"{idea}\" --limit 30 -f json`. Return 3 ways this failed before, 3 reasons it might fail, the strongest argument for it, each with a URL."
-
-Also ships **`SKILL.md`** so agent harnesses auto-discover OmniSearch.
-
----
-
-## 📦 Output schema (uniform)
-
-```json
-{
-  "platform": "stackoverflow",
-  "title": "Best SaaS recurring billing solution?",
-  "author": "user1",
-  "score": 143,
-  "commentCount": 5,
-  "createdAt": "2026-08-10T12:00:00Z",
-  "url": "...",
-  "text": ""
-}
-```
-
-`score` + `commentCount` let you rank by **real traction**, not search order.
-
-## ➕ Adding a platform (~20 lines)
-
-All sources live in `sources.js` behind one signature `search(query, limit) -> rows[]`.
-Add a fetcher, wire it into `research`, and it's searchable everywhere.
-
-## 🛠 Development
-
-```bash
-webcmd plugin install file:///Users/rishetmehra/webcmd-omnisearch
-webcmd list | grep -A12 omnisearch
-webcmd validate omnisearch
-```
+Ships `SKILL.md` so agent harnesses auto-discover OmniSearch.
