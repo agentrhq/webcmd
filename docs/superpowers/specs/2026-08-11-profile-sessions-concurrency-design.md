@@ -22,19 +22,21 @@ This design also addresses:
 
 ## Goals
 
-- Let different agents run concurrently in separate Sessions under one Profile.
-- Share Profile cookies and authentication while isolating each Session's tabs and command state.
+- Let different agents run concurrently in separate Session browser workspaces under one Profile.
+- Make a local Session a Cloak window group and a hosted Session a Browser Use allocation.
+- Reuse Profile authentication while isolating each Session's tabs, live view, and runtime lifecycle.
 - Use one consistent Session selector for adapters and raw browser commands.
 - Preserve Session identity across browser or daemon restarts without promising tab restoration.
 - Make same-Session collisions and human handoffs explicit to agents.
-- Give local Cloak and hosted Browser Use the same observable behavior.
+- Give local Cloak and hosted Browser Use the same Session selection, ownership, and handoff behavior.
 - Update user documentation, CLI help, and bundled agent skills as part of the release.
 
 ## Non-goals
 
-- Cookie isolation between Sessions; that remains a Profile responsibility.
-- Arc-style spaces, tab groups, colors, themes, pinned tabs, or one window per task.
+- Cookie isolation between Sessions; Profile authentication is intentionally reusable.
+- Arc-style spaces, tab groups, colors, themes, or pinned tabs.
 - Automatic tab restoration after a Profile runtime is restarted or evicted.
+- Live injection of newly changed hosted cookies into already-running Browser Use allocations.
 - `session create`, `session complete`, `session takeover`, or a process-global current Session.
 - Cloak licence/capability detection or a degraded single-context mode.
 - A general output-format migration; existing output defaults remain unchanged.
@@ -43,15 +45,15 @@ This design also addresses:
 
 | Concept | Responsibility |
 |---|---|
-| Profile | Persistent browser identity: cookies, local storage, authentication, and Cloak/Browser Use profile data. |
-| Profile runtime | One running browser context/allocation for a Profile. |
-| Session | Persistent logical identity for one agent task under a Profile. Owns task tabs and command admission. |
+| Profile | Persistent authentication state: cookies, local storage, and Cloak/Browser Use profile data. |
+| Local Profile runtime | One persistent Cloak browser context for a Profile, shared by its Session windows. |
+| Session | Persistent logical identity for one agent task. Owns a local window group or one hosted allocation, plus its tabs and command admission. |
 | Tab | A Playwright `Page` owned by a Session. `Page` remains an implementation term. |
-| Anchor tab | Local-only, Profile-owned blank tab that keeps a Cloak runtime alive. It is never exposed as a Session tab. |
+| Anchor target | Local-only, hidden Profile-owned CDP target that keeps Cloak alive with no visible Session windows. |
 
 Session names are unique within a Profile. Immutable `session_...` IDs are globally
-unambiguous. Sessions under the same Profile share authentication but cannot list, select,
-bind, close, or otherwise act on each other's tabs.
+unambiguous. A browser window never mixes tabs from different Sessions. Sessions under the
+same Profile cannot list, select, bind, close, or otherwise act on each other's tabs.
 
 ## CLI contract
 
@@ -93,9 +95,9 @@ name, current runtime state, last activity, and handoff state. The default human
 machine formats follow existing CLI output conventions.
 
 Session metadata persists locally in Webcmd state and remotely in the Cloud database. A
-runtime restart or idle eviction preserves the Session record but discards its owned-tab and
-selected-tab state. The next command creates a fresh owned tab while the Profile supplies
-the preserved login state.
+runtime restart or idle eviction preserves the Session record but discards its owned-window,
+owned-tab, selected-tab, and hosted-allocation state. The next command opens a fresh local
+window or hosted allocation using the Profile's persisted authentication state.
 
 Session records are small and are not automatically deleted in v1. A delete/complete command
 can be added if real usage shows that accumulated records are a problem.
@@ -104,43 +106,63 @@ can be added if real usage shows that accumulated records are a problem.
 
 ### Shared invariant
 
-Both providers implement this hierarchy:
+Both providers make Session the running browser-workspace boundary, but use their native
+isolation primitive:
 
 ```text
-Profile
-└── Profile runtime (shared authentication)
-    ├── Session default
-    │   └── owned tabs
-    ├── Session invoice-audit
-    │   └── owned tabs
-    └── Session research
-        └── owned tabs
+Local Profile context                 Hosted Browser Use Profile
+├── hidden anchor target              ├── Session invoice-audit allocation
+├── Session invoice-audit window(s)   │   └── owned tabs + live URL
+│   └── owned tabs                    └── Session research allocation
+└── Session research window(s)            └── owned tabs + live URL
+    └── owned tabs
 ```
 
-Ending or idling a Session releases only its runtime tab resources. It must not end the
-Profile runtime. Only Profile eviction, daemon shutdown, an explicit Profile shutdown, or an
-unrecoverable browser disconnect ends the Profile runtime.
+Ending or idling a Session closes its local window group or hosted allocation but preserves
+the Session record and Profile authentication state. Sessions never share a visible window,
+hosted allocation, live-view URL, selected tab, or command lock.
 
 ### Local Cloak
 
-Local mode uses one persistent `BrowserContext` per Profile. The Session manager partitions
-tracked tabs and selected-tab state by immutable Session ID.
+Local mode uses one persistent `BrowserContext` per Profile so cookies and browser storage
+remain live-shared. A Session's first page is created with CDP
+`Target.createTarget({ newWindow: true })`; its `windowId`, targets, tabs, and selected tab are
+registered under the immutable Session ID.
+
+Later tabs are created in that Session's window under the existing short per-Profile page-
+creation lock. Webcmd verifies the resulting `windowId` before registering the tab. Site-
+created tabs and popup windows inherit their opener's Session. A Session may therefore own a
+primary window and child popup windows, but no window may contain targets from two Sessions.
+Webcmd never adopts a target whose window ownership conflicts with its Session.
+Manual tab moves between Session windows are unsupported. If Webcmd detects one, it leaves
+the tab untouched and returns `SESSION_WINDOW_CONFLICT`; it never reassigns or closes the tab.
 
 The current command queue is keyed only by Profile. It will be re-keyed by Profile and
-Session so different Sessions can execute concurrently. The existing per-Profile page-
-creation lock remains because creating/adopting tabs mutates shared context state; it covers
-only that short critical section.
+Session so different Session windows execute concurrently. Profile eviction or daemon
+shutdown closes the whole context; closing a Session closes only its owned window targets.
 
 ### Hosted Browser Use
 
-Hosted mode uses one Browser Use browser allocation per Profile and partitions logical tabs,
-active-tab state, and command admission by Session ID. The existing Profile allocation is
-not duplicated per Session because doing so would lose immediate cookie sharing and spend
-unnecessary browser infrastructure.
+Hosted mode uses one Browser Use browser allocation per Session. Every allocation is created
+from the same Browser Use Profile ID, but has its own CDP endpoint, tabs, live-view URL,
+timeout, and lifecycle. The durable allocation key becomes
+`(userId, workspaceId, profileId, sessionId)` and the current one-allocation-per-Profile
+constraint is removed.
 
-The current in-process Profile/session-name lock and persistent Profile-wide database lease
-must use the immutable Session ID. A Profile remains the allocation key; a Session becomes
-the write-admission key.
+Browser Use Profiles persist cookies and local storage across browsers. A new or restarted
+Session loads that state. Webcmd does not promise that a cookie changed in one allocation is
+injected live into another already-running allocation. Browser Use's concurrent same-Profile
+save/merge behavior must pass the release gate below; Webcmd will not add its own cookie or
+storage synchronization layer.
+
+This model consumes one hosted browser allocation per active Session. That cost and provider
+concurrency usage are intentional consequences of clean Session isolation.
+
+Before release, a live Browser Use gate must start two allocations concurrently from one
+Profile, write different-domain cookies and local storage in each, stop them in both orders,
+and prove that a later allocation loads both markers. It must also prove that a handoff in one
+allocation leaves the sibling allocation usable. Failure blocks the release and returns this
+architecture to design review; it does not trigger a Webcmd-owned cookie-sync subsystem.
 
 ### Adapter routing
 
@@ -150,9 +172,10 @@ The user-selected Session and adapter `siteSession` are different concerns:
 - `siteSession: persistent|ephemeral` remains an adapter tab-lifecycle policy.
 
 A persistent adapter tab is keyed by `(profileId, sessionId, site)`. An ephemeral adapter
-command creates a new tab within the selected Session and closes it when the command ends.
-Raw browser commands act on that Session's selected owned tab. Tab IDs may be globally
-unique, but every operation must still verify Session ownership.
+command creates a tab within the Session's local window group or hosted allocation and closes
+it when the command ends. Raw browser commands act on that Session's selected owned tab. Tab
+IDs may be globally unique, but every operation must still verify Session and window/allocation
+ownership.
 
 ## Concurrency and admission
 
@@ -162,34 +185,37 @@ unique, but every operation must still verify Session ownership.
   `SESSION_BUSY`; they do not wait in an invisible public queue.
 - Commands belonging to the same logical execution may use the existing defensive internal
   queue.
-- Brief shared operations such as page creation remain serialized by the Profile's existing
-  critical-section lock.
-- Human handoff pause takes precedence over Session admission.
+- Brief local window/tab placement remains serialized by the Profile's existing critical-
+  section lock; hosted Sessions need no cross-Session browser lock.
+- A human handoff blocks normal automation only in its owning Session.
 
 The existing local `SessionLeaseRegistry` and hosted persistent write-lease mechanism should
-be extended and re-keyed rather than replaced. `SESSION_BUSY` includes the Session ID/name
-and safe holder metadata, uses the existing temporary-failure exit-code convention, and is
-retryable by the caller.
+be extended and re-keyed by immutable Session ID rather than replaced. `SESSION_BUSY`
+includes the Session ID/name and safe holder metadata, uses the existing temporary-failure
+exit-code convention, and is retryable by the caller.
 
-## Local runtime anchor and issue #276
+## Hidden local anchor and issue #276
 
-Cloak's initial clean `about:blank` tab becomes a Profile runtime anchor; if launch provides
-none, Webcmd creates one. It is never leased to a Session. The first Session command always
-creates a separate user tab.
+Each local Profile runtime owns one hidden `about:blank` CDP target created with
+`Target.createTarget({ hidden: true, background: true })`. Its browser-level CDP session
+remains open for the runtime's lifetime. The hidden target keeps Cloak connected when no
+visible Session windows exist without adding a blank window or tab-strip entry.
 
-The anchor:
+The anchor target:
 
-- Is stored separately from the Session tab map.
-- Has no public page ID and never appears in tab listing, selection, snapshots, or network capture.
-- Survives Session release, explicit tab close, `freshPage`, and Session tab idle expiry.
-- Is closed only when the Profile runtime is intentionally ended or disconnected.
-- Is recreated under the existing per-Profile page-creation lock if it is unexpectedly closed
-  while the context remains healthy, before Webcmd closes the final leased tab.
+- Is stored separately from every Session window and tab map.
+- Has no public page ID, is never registered as a Playwright Session page, and never appears
+  in tab listing, selection, snapshots, or network capture.
+- Survives Session window close, release, `freshPage`, and Session idle expiry.
+- Is recreated under the existing per-Profile creation lock if unexpectedly destroyed while
+  the context remains healthy.
+- Is closed only when the Profile runtime is intentionally evicted, disconnected, or shut down.
 
-`freshPage` creates and registers its replacement before closing the previous leased tab.
-This removes the transient zero-user-tab interval and ensures failure leaves the old tab
-available. Recovery retries remain a fallback for genuine browser disconnects, not the
-primary lifecycle mechanism.
+`freshPage` creates and registers its replacement in the same Session window before closing
+the previous tab. Closing the final visible Session window therefore leaves only the hidden
+anchor, never a stale runtime awaiting an asynchronous close event. Hosted allocations need
+no anchor because ending one Session intentionally stops that allocation and cannot affect a
+sibling allocation.
 
 ## Pinned Cloak concurrency and issue #225
 
@@ -199,12 +225,17 @@ supported-runtime guarantee, not a runtime capability negotiated from licence st
 A candidate pair cannot be released unless it passes live gates for:
 
 - Two persistent Profile contexts launched concurrently with separate user-data directories.
-- Two Sessions in one Profile navigating concurrently in separate tabs.
+- Two Sessions in one Profile navigating concurrently in distinct OS windows.
+- Additional tabs and popups remaining inside their owning Session's window group.
+- Background window/tab creation not stealing focus from a human-controlled Session window.
+- A hidden anchor keeping the Profile connected with zero visible Session windows, followed
+  by successful creation of a new Session window.
 - The macOS foreground/background launch paths used by Webcmd remaining connected through navigation.
-- Closing Session tabs without closing the Profile runtime.
+- Closing one Session window without affecting sibling windows or the Profile runtime.
 
 There is no `CLOAK_CONCURRENCY_LIMIT` product branch for the supported pinned runtime. A
-failure is a Webcmd runtime/launcher defect to fix before release.
+failure, including focus theft during background tab placement, blocks release until the
+runtime or launcher is fixed; Webcmd does not fall back to Profile-wide serialization.
 
 ## Exact Profile teardown and issue #242
 
@@ -224,23 +255,22 @@ background teardown and recovery. Closing a Session never invokes Profile proces
 The existing `login` -> human action -> `whoami` protocol remains the public workflow. No
 generic handoff, takeover, or complete commands are added.
 
-When a hosted login needs human action:
+When a login needs human action:
 
-1. Record the initiating immutable Session ID and pause browser work for that Profile.
-2. Return `action_required`, the live-view URL, expiry, and a verify command that includes
-   the same `--profile` and immutable `--session` selectors.
-3. Other browser commands under the Profile fail immediately with
-   `PROFILE_PAUSED_FOR_HUMAN_HANDOFF`; they do not queue.
-4. Only the initiating Session's verification command may use the browser while paused.
-5. Successful `whoami` releases the pause. Expiry also releases it.
+1. Mark the initiating immutable Session as human-controlled.
+2. Local mode foregrounds that Session's Cloak window. Hosted mode returns that Session
+   allocation's live-view URL.
+3. Return `action_required`, expiry, and a verify command containing the same `--profile`
+   and immutable `--session` selectors.
+4. Normal browser commands targeting that Session fail immediately with
+   `SESSION_PAUSED_FOR_HUMAN_HANDOFF`; they do not queue.
+5. Only that Session's verification command may automate the browser while human-controlled.
+6. Successful `whoami` or handoff expiry releases human control.
 
-The pause is Profile-wide because Browser Use live view exposes the shared browser. The error
-payload tells other agents that a human handoff is active and includes Profile ID, initiating
-Session ID, and expiry, but does not disclose the initiator's live-view URL. Other Profiles
-and non-browser commands continue normally.
-
-Local handoff keeps its visible-browser workflow. It uses the same Session-bound verify
-command and Session tab-ownership checks, but does not add the hosted live-view pause.
+Sibling Sessions under the same Profile continue normally in their own local windows or
+hosted allocations, including when they are working on different sites. They receive neither
+the handoff URL nor a pause error. Authentication persisted to the Profile becomes available
+to future or restarted hosted allocations according to the Profile semantics above.
 
 ## Errors
 
@@ -248,7 +278,8 @@ command and Session tab-ownership checks, but does not add the hosted live-view 
 |---|---|
 | `SESSION_NOT_FOUND` | An immutable Session ID is unknown or belongs to another Profile. |
 | `SESSION_BUSY` | Another execution currently owns command admission for the selected Session. |
-| `PROFILE_PAUSED_FOR_HUMAN_HANDOFF` | A human controls the Profile through another Session's hosted handoff. |
+| `SESSION_PAUSED_FOR_HUMAN_HANDOFF` | A human controls the selected Session during authentication handoff. |
+| `SESSION_WINDOW_CONFLICT` | A local tab was manually moved into a window owned by another Session. |
 
 These are structured errors in local and hosted modes with consistent exit codes and safe
 metadata. They must not be collapsed into generic browser-closed, timeout, or HTTP errors.
@@ -268,8 +299,11 @@ release updates:
 
 Documentation must explain Profile versus Session versus tab, lazy/default Session behavior,
 how separate agents choose separate Sessions, how to list Sessions, `SESSION_BUSY`, and how a
-Profile-wide human handoff affects sibling Sessions. Examples use immutable IDs when resuming
-an auth handoff and friendly names for normal task selection.
+Session-scoped human handoff leaves sibling Sessions running. It must also explain that local
+Sessions appear as separate Cloak windows, hosted Sessions consume separate Browser Use
+allocations, and already-running hosted allocations do not receive live cookie injection.
+Examples use immutable IDs when resuming an auth handoff and friendly names for normal task
+selection.
 
 Historical design documents remain historical. This specification explicitly supersedes the
 old Spaces decision; active documentation must not teach Spaces or positional browser syntax.
@@ -282,14 +316,24 @@ Focused automated and live checks must cover:
 2. Lazy name creation, reserved `default`, immutable-ID lookup, Profile scoping, listing, and restart persistence.
 3. Parallel wall-clock execution for two Sessions in one Profile and for two Profiles.
 4. Immediate `SESSION_BUSY` for concurrent independent commands in one Session.
-5. Session-scoped list/select/bind/close behavior, including popup registration.
-6. Persistent adapter tab separation by Session and unchanged `siteSession` lifecycle behavior.
-7. Hosted Profile-wide handoff pause, safe sibling error, successful verification, and expiry recovery.
-8. Anchor exclusion and repeated release/close/`freshPage`/idle-expiry -> immediate create -> navigate cycles.
-9. Intentional Profile eviction and daemon shutdown closing the context and anchor.
-10. Exact Profile teardown for `work` versus `work-2` and unrelated Chrome processes.
-11. Live release gates for the pinned Cloak concurrency contract.
-12. Help, generated hints, bundled skill examples, and active docs containing only canonical syntax.
+5. Distinct local `windowId` ownership, same-Session tab placement, popup inheritance, and no
+   cross-Session target adoption, including a non-destructive error after a manual tab move.
+6. Session-scoped list/select/bind/close behavior and persistent adapter separation with
+   unchanged `siteSession` lifecycle behavior.
+7. A hidden anchor absent from all public surfaces while zero visible windows -> immediate
+   Session window creation remains reliable.
+8. Repeated release/close/`freshPage`/idle-expiry cycles without target-closed errors.
+9. Intentional Profile eviction and daemon shutdown closing every Session window, the context,
+   and the hidden anchor.
+10. One hosted Browser Use allocation and distinct live-view URL per active Session.
+11. Concurrent hosted allocations from one Browser Use Profile preserving different-domain
+   cookies and local storage after both stop, regardless of stop order, and a later allocation
+   loading both markers.
+12. Session-scoped local and hosted handoff, successful verification, expiry recovery, and a
+   sibling Session continuing throughout.
+13. Exact Profile teardown for `work` versus `work-2` and unrelated Chrome processes.
+14. Live release gates for the pinned Cloak concurrency contract.
+15. Help, generated hints, bundled skill examples, and active docs containing only canonical syntax.
 
 ## Rollout
 
