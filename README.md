@@ -57,7 +57,33 @@ Fetch and follow https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md
 
 ### Manual
 
-Refer to the [Quickstart](https://webcmd.dev/docs/quickstart) docs for step-by-step manual setup.
+Webcmd requires Node.js 20.6+.
+
+```bash
+npm install -g @agentrhq/webcmd
+```
+
+The npm package ships the Webcmd core and browser commands, but no site
+adapters. Search the plugin catalog and explicitly install the adapter you
+need:
+
+```bash
+webcmd plugin search <site> -f json
+webcmd plugin install <installSource-from-search>
+```
+
+```bash
+webcmd skills add
+```
+
+When prompted, choose Claude, Codex, another supported harness, or a custom
+skills path.
+
+In your agent harness, load or tag `webcmd-usage`, then describe the outcome you want.
+
+```text
+Use webcmd to research the latest discussions about browser automation across Hacker News and Reddit, then return a concise comparison with source links.
+```
 
 ## What You Can Ask
 
