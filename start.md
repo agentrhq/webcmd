@@ -83,8 +83,8 @@ Here is the rubric to shortlist the tools you'll recommend disabling.
 
 Here are some tools which you should not recommend disabling.
 
-1. **Web search** — a builtin that takes a query and returns result titles and links without reading the pages. Every harness here except Pi ships one, usually named some spelling of `web_search` (`WebSearch`, `websearch`, or a "Web Search" toggle in Cursor). Leave it on: Webcmd has no search index of its own, and search is the cheapest way to turn a question into URLs. Webcmd reads the pages that search only names.
-2. **Other search tools** — the same reasoning covers scoped search builtins: Hermes' `x_search`, OpenClaw's `x_search` and `search_news`. They return links, not page content.
+1. **Web search** — a builtin that takes a query and returns result titles and links without reading the pages. Every harness here except Pi ships one, usually named some spelling of `web_search` (`WebSearch`, `websearch`, or a "Web Search" toggle in Cursor). 
+2. **Other search tools** — the same reasoning covers scoped search builtins: For example Hermes's `x_search`.
 
 **Real world example**: In a hermes environment, when xAI plugin is enabled here is the set of tools which are present:
 
