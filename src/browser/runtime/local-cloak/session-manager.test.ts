@@ -16,14 +16,16 @@ function fakeContext() {
     close: vi.fn().mockResolvedValue(undefined),
   });
   const page = fakePage();
+  const allPages = [page];
   const backgroundPages: ReturnType<typeof fakePage>[] = [];
   const emit = (event: string, ...args: unknown[]) => {
     for (const listener of listeners.get(event) ?? []) listener(...args);
   };
+  let context: any;
   const cdp = {
     send: vi.fn(async (command: string) => {
       if (command === 'Target.createTarget') {
-        const backgroundPage = fakePage();
+        const backgroundPage = await context.newPage();
         backgroundPages.push(backgroundPage);
         queueMicrotask(() => emit('page', backgroundPage));
       }
@@ -31,7 +33,7 @@ function fakeContext() {
     detach: vi.fn().mockResolvedValue(undefined),
   };
   return {
-    context: {
+    context: context = {
       on(event: string, listener: (...args: unknown[]) => void) {
         const bucket = listeners.get(event) ?? new Set();
         bucket.add(listener);
@@ -41,8 +43,12 @@ function fakeContext() {
       waitForEvent(event: string) {
         return new Promise((resolve) => this.on(event, resolve));
       },
-      pages: vi.fn().mockReturnValue([page]),
-      newPage: vi.fn().mockResolvedValue(page),
+      pages: vi.fn(() => allPages.filter((page) => !page.isClosed())),
+      newPage: vi.fn(async () => {
+        const created = fakePage();
+        allPages.push(created);
+        return created;
+      }),
       browser: vi.fn().mockReturnValue({ newBrowserCDPSession: vi.fn().mockResolvedValue(cdp) }),
       cookies: vi.fn().mockResolvedValue([{ name: 'sid', value: '1', domain: 'example.com', path: '/' }]),
       close: vi.fn().mockResolvedValue(undefined),
@@ -137,10 +143,10 @@ describe('CloakSessionManager', () => {
 
     expect(launched.cdp.send).toHaveBeenCalledWith('Target.createTarget', {
       url: 'about:blank',
+      newWindow: true,
       background: true,
       focus: false,
     });
-    expect(launched.context.newPage).not.toHaveBeenCalled();
   });
 
   it('creates an explicit background tab without focusing Chromium', async () => {
@@ -160,13 +166,13 @@ describe('CloakSessionManager', () => {
 
     expect(launched.cdp.send).toHaveBeenCalledWith('Target.createTarget', {
       url: 'about:blank',
+      newWindow: true,
       background: true,
       focus: false,
     });
-    expect(launched.context.newPage).not.toHaveBeenCalled();
   });
 
-  it('creates an explicit foreground tab through Playwright', async () => {
+  it('creates an explicit foreground tab in a new CDP window', async () => {
     const launched = fakeContext();
     const manager = new CloakSessionManager({
       baseDir: '/tmp/webcmd-test',
@@ -180,8 +186,12 @@ describe('CloakSessionManager', () => {
       windowMode: 'foreground',
     });
 
-    expect(launched.context.newPage).toHaveBeenCalledOnce();
-    expect(launched.cdp.send).not.toHaveBeenCalled();
+    expect(launched.cdp.send).toHaveBeenCalledWith('Target.createTarget', {
+      url: 'about:blank',
+      newWindow: true,
+      background: false,
+      focus: true,
+    });
   });
 
   it('gives concurrent background tabs distinct pages', async () => {
@@ -352,12 +362,10 @@ describe('CloakSessionManager', () => {
     vi.useFakeTimers();
     const first = fakeContext();
     first.context.pages.mockReturnValue([]);
-    first.context.newPage.mockImplementation(() => ({
-      then(resolve: (page: typeof first.page) => void) {
-        resolve(first.page);
-        queueMicrotask(() => first.context.emit('close'));
-      },
-    }));
+    first.context.newPage.mockImplementation(() => {
+      queueMicrotask(() => first.context.emit('close'));
+      return Promise.resolve(first.page);
+    });
     const replacement = fakeContext();
     replacement.context.pages.mockReturnValue([]);
     const launchPersistentContext = vi.fn()
@@ -365,7 +373,8 @@ describe('CloakSessionManager', () => {
       .mockResolvedValueOnce(replacement.context);
     const manager = new CloakSessionManager({ baseDir: '/tmp/webcmd-test', launchPersistentContext });
 
-    await manager.getPage({ profileId: 'default', session: 'first', surface: 'browser', idleTimeout: 25 });
+    await expect(manager.getPage({ profileId: 'default', session: 'first', surface: 'browser', idleTimeout: 25 }))
+      .rejects.toThrow('Target page, context or browser has been closed');
 
     expect(manager.activeProfileIds()).toEqual([]);
     expect(vi.getTimerCount()).toBe(0);
@@ -445,6 +454,7 @@ describe('CloakSessionManager', () => {
         resolveNavigation = resolve;
       });
     });
+    launched.context.newPage.mockResolvedValue(launched.page);
     const manager = new CloakSessionManager({
       baseDir: '/tmp/webcmd-test',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
@@ -476,6 +486,7 @@ describe('CloakSessionManager', () => {
     const navigationFailure = new Error('Target page, context or browser has been closed');
     const launched = fakeContext();
     launched.page.goto.mockRejectedValue(navigationFailure);
+    launched.context.newPage.mockResolvedValue(launched.page);
     const launchPersistentContext = vi.fn().mockResolvedValue(launched.context);
     const manager = new CloakSessionManager({ baseDir: '/tmp/webcmd-test', launchPersistentContext });
 
@@ -487,7 +498,6 @@ describe('CloakSessionManager', () => {
     })).rejects.toBe(navigationFailure);
 
     expect(launchPersistentContext).toHaveBeenCalledTimes(1);
-    expect(launched.context.newPage).toHaveBeenCalledTimes(1);
     expect(launched.page.goto).toHaveBeenCalledTimes(1);
     expect(launched.page.close).toHaveBeenCalledTimes(1);
     expect(await manager.listPages({ profileId: 'default' })).toEqual([]);
@@ -513,29 +523,10 @@ describe('CloakSessionManager', () => {
   });
 
   it('freshPage closes the existing persistent lease page and creates a new one', async () => {
-    const makePage = () => ({
-      goto: vi.fn().mockResolvedValue(undefined),
-      evaluate: vi.fn().mockResolvedValue('ok'),
-      title: vi.fn().mockResolvedValue('Title'),
-      url: vi.fn().mockReturnValue('about:blank'),
-      isClosed: vi.fn().mockReturnValue(false),
-      close: vi.fn().mockResolvedValue(undefined),
-    });
-    const openPages: ReturnType<typeof makePage>[] = [];
-    const context = {
-      on: vi.fn(),
-      pages: vi.fn(() => openPages),
-      newPage: vi.fn(async () => {
-        const page = makePage();
-        openPages.push(page);
-        return page;
-      }),
-      cookies: vi.fn().mockResolvedValue([]),
-      close: vi.fn().mockResolvedValue(undefined),
-    };
+    const launched = fakeContext();
     const manager = new CloakSessionManager({
       baseDir: '/tmp/webcmd-test',
-      launchPersistentContext: vi.fn().mockResolvedValue(context),
+      launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
     });
     const key = { profileId: 'default', session: 'site:district', surface: 'adapter' as const, siteSession: 'persistent' as const };
 
@@ -551,31 +542,18 @@ describe('CloakSessionManager', () => {
   });
 
   it('freshPage never adopts a leftover context tab', async () => {
-    const leftover = {
-      goto: vi.fn(),
-      isClosed: vi.fn().mockReturnValue(false),
-      close: vi.fn().mockResolvedValue(undefined),
-    };
-    const created = {
-      goto: vi.fn(),
-      isClosed: vi.fn().mockReturnValue(false),
-      close: vi.fn().mockResolvedValue(undefined),
-    };
-    const context = {
-      on: vi.fn(),
-      pages: vi.fn().mockReturnValue([leftover]),
-      newPage: vi.fn().mockResolvedValue(created),
-      cookies: vi.fn().mockResolvedValue([]),
-      close: vi.fn().mockResolvedValue(undefined),
-    };
+    const launched = fakeContext();
+    const leftover = launched.page;
+    const created = fakeContext().page;
+    launched.context.newPage.mockResolvedValue(created);
     const manager = new CloakSessionManager({
       baseDir: '/tmp/webcmd-test',
-      launchPersistentContext: vi.fn().mockResolvedValue(context),
+      launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
     });
 
     const lease = await manager.getPage({ profileId: 'default', session: 'site:district', surface: 'adapter', siteSession: 'persistent', freshPage: true });
     expect(lease.page).toBe(created);
-    expect(context.newPage).toHaveBeenCalled();
+    expect(lease.page).not.toBe(leftover);
   });
 
   it('closes ephemeral adapter sessions when released', async () => {

@@ -48,11 +48,23 @@ function fakePage(url: string, initialViewport: { width: number; height: number 
 
 function makeProviderWithFakePage(initialViewport: { width: number; height: number } | null = { width: 1280, height: 720 }) {
   const pages = [fakePage('https://example.com/', initialViewport)];
+  const listeners = new Map<string, Set<(...args: unknown[]) => void>>();
+  const emit = (event: string, ...args: unknown[]) => {
+    for (const listener of listeners.get(event) ?? []) listener(...args);
+  };
   const cdpSession = { send: vi.fn().mockResolvedValue(undefined), detach: vi.fn().mockResolvedValue(undefined) };
-  const browser = { contexts: vi.fn(() => [context]) };
+  const browser = { contexts: vi.fn(() => [context]), newBrowserCDPSession: vi.fn().mockResolvedValue(cdpSession) };
   const context = {
     browser: vi.fn(() => browser),
-    on: vi.fn(),
+    on: vi.fn((event: string, listener: (...args: unknown[]) => void) => {
+      const bucket = listeners.get(event) ?? new Set();
+      bucket.add(listener);
+      listeners.set(event, bucket);
+    }),
+    off: vi.fn((event: string, listener: (...args: unknown[]) => void) => {
+      listeners.get(event)?.delete(listener);
+    }),
+    waitForEvent: vi.fn((event: string) => new Promise((resolve) => context.on(event, resolve))),
     pages: vi.fn(() => pages.filter((page) => !page.isClosed())),
     newPage: vi.fn(async () => {
       const page = fakePage('about:blank');
@@ -63,6 +75,12 @@ function makeProviderWithFakePage(initialViewport: { width: number; height: numb
     cookies: vi.fn().mockResolvedValue([{ name: 'sid', value: '1', domain: 'example.com', path: '/' }]),
     close: vi.fn().mockResolvedValue(undefined),
   };
+  cdpSession.send.mockImplementation(async (command: string) => {
+    if (command === 'Target.createTarget') {
+      const page = await context.newPage();
+      queueMicrotask(() => emit('page', page));
+    }
+  });
   const provider = new LocalCloakRuntimeProvider({
     baseDir: '/tmp/webcmd-test',
     launchPersistentContext: vi.fn().mockResolvedValue(context),

@@ -562,18 +562,17 @@ export class CloakSessionManager {
   }
 
   private async createPage(context: BrowserContext, windowMode?: BrowserWindowMode): Promise<PlaywrightPage> {
-    if (windowMode !== 'background') return context.newPage();
-
     const browser = context.browser();
-    if (!browser) throw new Error('Background page creation requires a Chromium browser connection.');
+    if (!browser) throw new Error('Cloak page creation requires a Chromium browser connection.');
     const cdp = await browser.newBrowserCDPSession();
     try {
       const [page] = await Promise.all([
         context.waitForEvent('page'),
         cdp.send('Target.createTarget', {
           url: 'about:blank',
-          background: true,
-          focus: false,
+          newWindow: true,
+          background: windowMode === 'background',
+          focus: windowMode !== 'background',
         }),
       ]);
       return page;
