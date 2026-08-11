@@ -63,6 +63,8 @@ describe('webcmd skills content', () => {
     expect(skill).toMatch(/up to five.*candidate/i);
     expect(skill).toMatch(/three.*URL.*default/i);
     expect(skill).toMatch(/two.*browser fetch/i);
+    expect(skill).toContain('## Site-named fast path');
+    expect(skill).toMatch(/cost order is mandatory when the request does not name a site/i);
     expect(skill).not.toContain('references/sources-');
     for (const name of ['ai', 'info', 'media', 'other', 'shopping', 'social', 'tech', 'travel']) {
       expect(fs.existsSync(path.join(process.cwd(), 'skills', 'smart-search', 'references', `sources-${name}.md`))).toBe(false);

@@ -11,7 +11,21 @@ Use live fetch results, command metadata, and command help. Do not infer command
 
 Do not use this skill for plugin inventory, plugin management, or listing available extensions. Marketplace commands appear here only to find and install search-capable adapters needed for the current search/fetch task.
 
-Cost order is mandatory: `webcmd web fetch` first, `webcmd web fetch-browser` second, search adapters last. Do not call search adapters until plain HTTP/TLS fetch and browser fetch cannot satisfy the task.
+Cost order is mandatory when the request does not name a site: `webcmd web fetch` first, `webcmd web fetch-browser` second, search adapters last. Do not call search adapters until plain HTTP/TLS fetch and browser fetch cannot satisfy the task.
+
+When the request does name a site or community, take the site-native fast path below instead.
+
+## Site-named fast path
+
+When the request names the site(s) to search (not just a topic), look for a site-native command first:
+
+```bash
+webcmd list --tag search -f json
+```
+
+If an installed command covers a named site, run it before any search-engine fetch. If none covers it, try `webcmd plugin search <site>` once within the install budget. Only when the named site has no adapter does that site fall back to the cost order above, starting with the site's own search URL.
+
+Do not report a site as blocked or unavailable until you have checked adapter availability this way.
 
 ## Trust boundary
 
@@ -39,7 +53,7 @@ If direct fetch is rate-limited, blocked, CAPTCHA-gated, login-gated, geo-gated,
 
 ## Fetch-first web search
 
-For a search query without a direct URL, start with fetched search-engine result pages, not adapters. Encode the query into one of these URLs and fetch it:
+For a search query that names no site and has no direct URL, start with fetched search-engine result pages, not adapters. Encode the query into one of these URLs and fetch it:
 
 ```bash
 webcmd web fetch --url "https://duckduckgo.com/html/?q=<encoded-query>"
@@ -49,9 +63,11 @@ webcmd web fetch --url "https://www.google.com/search?q=<encoded-query>"
 
 Try one search engine by default. Try a second when the first is weak, empty, blocked, CAPTCHA-gated, or lacks usable result URLs. Treat Google as more likely to block; DuckDuckGo HTML and Bing are cheaper first choices.
 
-Extract useful result URLs from the fetched page and then fetch the target pages with `webcmd web fetch`. Search snippets and result titles are discovery only, not evidence.
+Query terms that collide with everyday English (`puppeteer`, `playwright`, `rust`) pull unrelated results. Add a disambiguating term and say so if results still drift.
 
-If the search-engine result page itself needs browser rendering, use at most one browser fetch for a search results page before trying another search engine. Do not jump to adapters because one engine blocked.
+Extract useful result URLs from the fetched page and then fetch the target pages with `webcmd web fetch`. Search snippets and result titles are discovery only, not evidence. A page that yields zero usable result URLs is a failed search, not a search with no results: move to the next engine.
+
+If the search-engine result page itself needs browser rendering, use at most one browser fetch for a search results page before trying another search engine. A recognised block, CAPTCHA, or challenge page retires that engine for this request: do not re-fetch variants of the same engine. Do not jump to adapters because one engine blocked, unless the request names a site.
 
 ## Fetch evidence
 
@@ -67,7 +83,7 @@ If fetch is rate-limited, auth-gated, CAPTCHA-gated, bot-detected, quota-limited
 
 ## Adapter fallback
 
-Only after fetch-first search, target-page fetch, and allowed browser fetches fail or are insufficient, discover search adapters:
+On the site-named fast path, discover adapters first. Otherwise, only after fetch-first search, target-page fetch, and allowed browser fetches fail or are insufficient, discover search adapters:
 
 ```bash
 webcmd list --tag search -f json
@@ -79,7 +95,7 @@ Shortlist up to five candidate commands from site, name, description, keywords, 
 webcmd <site> <command> -h
 ```
 
-Run one adapter search command. Run a second only if the first is weak, empty, fails, or an independent source materially corroborates it. Do not use adapters as the first search path.
+Run one adapter search command. Run a second only if the first is weak, empty, fails, or an independent source materially corroborates it. Do not use adapters as the first search path unless the request names the site.
 
 When no installed command covers the needed site or specialized capability, use marketplace search only as adapter fallback:
 
