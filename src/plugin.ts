@@ -571,8 +571,9 @@ export function getDirtyFiles(dir: string): string[] {
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'pipe'],
     });
-    return out.split('\n').map((line) => line.trim()).filter(Boolean)
-      .filter((entry) => !installArtifacts.test(dirtyEntryPath(entry)));
+    return out.split('\n').filter((line) => line.trim())
+      .filter((line) => !isInstallArtifact(line))
+      .map((line) => line.trim());
   } catch (error) {
     throw new PluginError(
       `Could not determine whether "${dir}" has uncommitted changes: git failed with: ${describeGitError(error)}`,
@@ -589,6 +590,18 @@ export function getDirtyFiles(dir: string): string[] {
  * un-updatable — blaming the user for work they never did.
  */
 const installArtifacts = /(?:^|\/)(?:node_modules(?:\/|$)|package-lock\.json$)/;
+
+/**
+ * True only for an artifact npm itself created: a `??` (untracked) porcelain
+ * entry at an artifact path. The status columns are read from the raw line
+ * before any trimming, because every other status — ` M`, `M `, ` D`, `A `,
+ * `R `, `UU` — is tracked work the user could lose when `updatePlugin`
+ * replaces the directory, no matter what the path looks like.
+ */
+function isInstallArtifact(line: string): boolean {
+  if (line.slice(0, 2) !== '??') return false;
+  return installArtifacts.test(line.slice(2).trim());
+}
 
 /** Path portion of a `git status --porcelain` entry (already trimmed of its leading space). */
 function dirtyEntryPath(entry: string): string {
