@@ -67,14 +67,19 @@ export async function webFetch(options: WebFetchOptions, dependencies: WebFetchD
     const clipped = truncate(extracted.content, options.maxChars);
     return { status: response.status, requestedUrl: options.url, finalUrl: response.url || options.url, contentType: response.headers.get('content-type') ?? '', tier, ...(profile && { profile }), title: extracted.title, extractionSource: extracted.source, truncated: clipped.truncated, content: clipped.content };
   } catch (error) {
-    throw asFetchError(error, options.timeoutSeconds);
+    throw asFetchError(error, options.timeoutSeconds, deadline);
   } finally { await proxy.close(); }
 }
 
 /** An aborted fetch surfaces as a DOMException; agents need the structured timeout instead. */
-function asFetchError(error: unknown, timeoutSeconds: number): unknown {
+function asFetchError(error: unknown, timeoutSeconds: number, deadline: number): unknown {
   if (error instanceof CliError) return error;
   const name = (error as { name?: string } | null)?.name;
   if (name === 'TimeoutError' || name === 'AbortError') return new TimeoutError('web fetch', timeoutSeconds);
+  // Impit reports its own deadline as a plain Error with a message we do not control, so the name
+  // check misses it. Anything that fails at or past the budget is a timeout whatever it calls
+  // itself; a failure with time left is a real error and is passed through untouched, so a refused
+  // connection or DNS failure is never mislabelled.
+  if (Date.now() >= deadline) return new TimeoutError('web fetch', timeoutSeconds);
   return error;
 }

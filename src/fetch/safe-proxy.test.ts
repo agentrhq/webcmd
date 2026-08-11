@@ -32,4 +32,43 @@ describe('createSafeProxy close', () => {
     await new Promise<void>(done => client.once('close', () => done()));
     await new Promise<void>(done => upstream.close(() => done()));
   });
+
+  it('does not open an upstream tunnel from a DNS lookup that finishes after close()', async () => {
+    // Counts every accepted connection: the proxy must not dial us at all once
+    // close() has begun, however late the lookup that was already in flight.
+    let accepted = 0;
+    const upstream = net.createServer(socket => { accepted += 1; socket.destroy(); });
+    await new Promise<void>(done => upstream.listen(0, '127.0.0.1', () => done()));
+    const upstreamPort = (upstream.address() as net.AddressInfo).port;
+
+    // A lookup that only resolves when we say so, so the CONNECT handler is
+    // parked mid-await exactly when close() starts.
+    let releaseLookup: (() => void) | undefined;
+    let onLookup: () => void;
+    const lookupCalled = new Promise<void>(done => { onLookup = done; });
+    const proxy = await createSafeProxy({
+      allowPrivate: true,
+      lookup: ((_host: string, _options: unknown, callback: (error: Error | null, result: unknown) => void) => {
+        releaseLookup = () => callback(null, [{ address: '127.0.0.1', family: 4 }]);
+        onLookup();
+      }) as never,
+    });
+
+    const client = net.connect({ host: '127.0.0.1', port: Number(new URL(proxy.url).port) });
+    client.on('error', () => {});
+    client.write(`CONNECT example.test:${upstreamPort} HTTP/1.1\r\nHost: example.test\r\n\r\n`);
+    await lookupCalled;
+
+    const started = Date.now();
+    const closePromise = proxy.close();
+    releaseLookup?.();
+    await closePromise;
+    await proxy.close(); // repeated close is safe
+    expect(Date.now() - started).toBeLessThan(1000);
+    await new Promise(done => setTimeout(done, 50));
+    expect(accepted).toBe(0);
+
+    client.destroy();
+    await new Promise<void>(done => upstream.close(() => done()));
+  });
 });

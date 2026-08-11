@@ -44,7 +44,13 @@ export async function createSafeProxy(options: SafeProxyOptions = {}): Promise<S
   // tunnel otherwise keeps `server.close()` pending until the peer or the OS
   // gives up, which turns a bounded fetch budget into a minutes-long hang.
   const sockets = new Set<Duplex>();
+  // Both request paths await DNS before connecting upstream, so a resolution that
+  // lands after `close()` could otherwise open an untracked socket — outbound
+  // traffic after the fetch budget expired, and one more handle holding the
+  // process open. Once closing, nothing new is tracked or dialled.
+  let closing = false;
   const track = <T extends Duplex>(socket: T): T => {
+    if (closing) { socket.destroy(); return socket; }
     sockets.add(socket);
     socket.on('close', () => sockets.delete(socket));
     // A destroyed peer must not resurface as an unhandled 'error' event.
@@ -55,6 +61,7 @@ export async function createSafeProxy(options: SafeProxyOptions = {}): Promise<S
     try {
       const target = new URL(request.url ?? '');
       const address = await resolve(target.hostname, lookup, allowPrivate);
+      if (closing) { response.destroy(); return; }
       const upstream = http.request({ host: address, port: Number(target.port) || 80, method: request.method, path: `${target.pathname}${target.search}`, headers: { ...request.headers, host: target.host } }, upstreamResponse => {
         response.writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
         upstreamResponse.pipe(response);
@@ -71,6 +78,7 @@ export async function createSafeProxy(options: SafeProxyOptions = {}): Promise<S
       const [host, portText] = (request.url ?? '').replace(/^\[/, '').replace(']', '').split(':');
       if (!host) throw new Error('Invalid CONNECT target');
       const address = await resolve(host, lookup, allowPrivate);
+      if (closing) { client.destroy(); return; }
       const upstream = track(net.connect({ host: address, port: Number(portText) || 443 }));
       upstream.once('connect', () => { client.write('HTTP/1.1 200 Connection Established\r\n\r\n'); if (head.length) upstream.write(head); upstream.pipe(client); client.pipe(upstream); });
       upstream.once('error', error => client.destroy(error));
@@ -79,12 +87,16 @@ export async function createSafeProxy(options: SafeProxyOptions = {}): Promise<S
   await new Promise<void>((resolveListen, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', () => resolveListen()); });
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('Safe proxy did not bind');
+  let closed: Promise<void> | undefined;
   return {
     url: `http://127.0.0.1:${address.port}`,
-    close: () => new Promise((resolveClose, reject) => {
+    // Idempotent: a second close() awaits the first rather than asking an
+    // already-stopped server to close again.
+    close: () => (closed ??= new Promise((resolveClose, reject) => {
+      closing = true;
       for (const socket of sockets) socket.destroy();
       sockets.clear();
       server.close(error => error ? reject(error) : resolveClose());
-    }),
+    })),
   };
 }
