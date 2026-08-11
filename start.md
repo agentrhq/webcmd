@@ -66,11 +66,17 @@ Using the Webcmd skill installed in the previous step, complete this task:
 
 Do not hand-write a one-off script from memory. Follow the skill guidance, run the task end to end, and close any browser session you open. Success means returning five real stories with titles and URLs.
 
-### 4. Route web work to Webcmd
+### 4. Override installed tools
 
-Open the *Override default tools* section on the matching per-agent page under `docs/agents/`. Harnesses get one of two treatments.
+Do not change the user's tool configuration yourself. Work out what should change, then **present it to the user and ask them to confirm** before anything is disabled. Tool configuration is theirs; a harness that silently loses its browser tools is a bad surprise.
 
-**Replace** — narrow fetch and search tools. Webcmd covers these end to end (adapters plus the `smart-search` skill), so disable them and let Webcmd be the harness's web surface.
+Phrase it as a recommendation with a reason, not as a requirement. For example:
+
+> Webcmd now covers web fetching and search for this project, and it does a better job than the built-in tools — adapters return exact fields, sessions render real pages with logged-in profiles, and snapshots cost fewer tokens. I'd suggest disabling `WebFetch` and `WebSearch` so I don't fall back to them. Want me to make that change?
+
+Open the *Override default tools* section on the matching per-agent page under `docs/agents/` for the exact config edit. Harnesses get one of two treatments.
+
+**Replace** — narrow fetch and search tools. Webcmd covers these end to end (adapters plus the `smart-search` skill), so recommend disabling them and let Webcmd be the harness's web surface.
 
 | Harness | Tools to disable | Page |
 | --- | --- | --- |
@@ -95,9 +101,20 @@ Use the **harness's native browser tool** for the app you are editing: localhost
 
 This is a question of integration, not capability — `webcmd browser <session> run` can drive localhost too. Routing by task domain means neither surface has to be crippled.
 
-If your harness is not listed above, apply the same split: disable a plain fetch or search tool, keep a full browser toolset and state the routing rule in the harness's system prompt or rules file. Leave custom tools and skills untouched. If the harness has neither kind of tool, no override is needed.
+If your harness is not listed above, apply the same split: recommend disabling a plain fetch or search tool, and keep a full browser toolset with the routing rule stated in the harness's system prompt or rules file. If the harness has neither kind of tool, no override is needed.
 
-**Full override (opt-in).** If you never debug local apps through the harness browser and want the token savings, disable the native browser toolset as well and use Webcmd for everything. Each per-agent page documents how.
+#### Other installed tools
+
+The tables above cover tools the harness ships with. Users often have others installed that overlap with Webcmd — a Playwright or Puppeteer MCP server, a browser-automation MCP, a scraping or search MCP, a custom web-fetch skill. Two or more of these competing for the same task is how an agent ends up picking the wrong surface.
+
+Check what is actually connected in this environment, list anything that overlaps, and apply the same split when you present it:
+
+- Overlaps with fetch/search or general web automation → recommend disabling it, and say why Webcmd is the better fit for this project.
+- Serves a purpose Webcmd does not (drives the local dev server, a bespoke internal tool, project-specific skills) → leave it alone and say so.
+
+Never disable a user-installed tool without asking, and never touch project-specific custom tools or skills. If you are unsure whether something overlaps, list it and let the user decide.
+
+**Full override (opt-in).** If the user never debugs local apps through the harness browser and wants the token savings, they can disable the native browser toolset as well and use Webcmd for everything. Each per-agent page documents how — offer it, do not assume it.
 
 ### 5. Finish
 
