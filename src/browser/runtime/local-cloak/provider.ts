@@ -92,8 +92,8 @@ export class LocalCloakRuntimeProvider implements BrowserRuntimeProvider {
 
   private commandQueueKey(command: BrowserRuntimeCommand): string {
     if (command.page) {
-      const profileId = this.manager.profileIdForPage(command.page);
-      if (profileId) return `profile\u0000${profileId}`;
+      const owner = this.manager.pageOwner(command.page);
+      if (owner) return `session\u0000${owner.profileId}\u0000${owner.surface}\u0000${owner.session}`;
     }
 
     let profileId: string;
@@ -105,6 +105,6 @@ export class LocalCloakRuntimeProvider implements BrowserRuntimeProvider {
         ?? command.preferredContextId
         ?? 'default';
     }
-    return `profile\u0000${profileId.trim() || 'default'}`;
+    return `session\u0000${profileId.trim() || 'default'}\u0000${command.surface ?? 'browser'}\u0000${command.session ?? ''}`;
   }
 }

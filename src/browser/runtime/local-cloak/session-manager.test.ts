@@ -115,7 +115,7 @@ describe('CloakSessionManager', () => {
       windowMode: 'background',
     });
 
-    await manager.selectPage({ profileId: 'default', pageId: lease.pageId, windowMode: 'foreground' });
+    await manager.selectPage({ profileId: 'default', session: 'work', surface: 'browser', pageId: lease.pageId, windowMode: 'foreground' });
 
     expect(activateBackgroundContext).toHaveBeenCalledWith(launched.context);
   });

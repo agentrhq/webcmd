@@ -147,9 +147,30 @@ describe('LocalCloakRuntimeProvider', () => {
       browser,
       context,
       page,
+      pages: [page],
     }), expect.stringContaining('return page.url()'), expect.objectContaining({
       snapshotDiff: undefined,
     }));
+  });
+
+  it('browser-run receives only pages from the selected session', async () => {
+    const { provider, pages } = makeProviderWithFakePage();
+    runBrowserProgram.mockResolvedValue(runOutput(null));
+    await provider.dispatch({ id: 'first', action: 'navigate', session: 'first', surface: 'browser', url: 'https://first.example/', profileId: 'default' });
+    await provider.dispatch({ id: 'second', action: 'tabs', op: 'new', session: 'second', surface: 'browser', url: 'https://second.example/', profileId: 'default' });
+
+    await provider.dispatch({
+      id: 'run',
+      action: 'run',
+      session: 'first',
+      surface: 'browser',
+      source: 'return context.pages().length;',
+      profileId: 'default',
+    });
+
+    expect(runBrowserProgram).toHaveBeenCalledWith(expect.objectContaining({
+      pages: [pages[0]],
+    }), expect.any(String), expect.any(Object));
   });
 
   it('preserves structured browser-run error details', async () => {
@@ -268,19 +289,19 @@ describe('LocalCloakRuntimeProvider', () => {
       id: 'run',
       action: 'run',
       page: nav.page,
-      session: 'misleading-session',
-      surface: 'adapter',
+      session: 'work',
+      surface: 'browser',
       source: 'await new Promise(resolve => setTimeout(resolve, 30)); return 1;',
-      profileId: 'misleading-profile',
+      profileId: 'default',
     });
     const second = provider.dispatch({
       id: 'exec',
       action: 'exec',
       page: nav.page,
-      session: 'different-session',
-      surface: 'adapter',
+      session: 'work',
+      surface: 'browser',
       code: 'document.title',
-      profileId: 'different-profile',
+      profileId: 'default',
     });
 
     await new Promise((resolve) => setTimeout(resolve, 5));
@@ -318,14 +339,14 @@ describe('LocalCloakRuntimeProvider', () => {
       id: 'run',
       action: 'run',
       page: nav.page,
-      session: 'misleading-session',
-      surface: 'adapter',
+      session: 'work',
+      surface: 'browser',
       source: `
         await page.waitForEvent("popup");
         await new Promise(resolve => setTimeout(resolve, 30));
         return null;
       `,
-      profileId: 'misleading-profile',
+      profileId: 'default',
     });
     await vi.waitFor(() => {
       expect(manager.pageIdFor(popup)).toEqual(expect.any(String));
@@ -337,10 +358,10 @@ describe('LocalCloakRuntimeProvider', () => {
       id: 'exec',
       action: 'exec',
       page: popupPageId,
-      session: 'different-session',
-      surface: 'adapter',
+      session: 'work',
+      surface: 'browser',
       code: 'document.title',
-      profileId: 'different-profile',
+      profileId: 'default',
     });
 
     await new Promise((resolve) => setTimeout(resolve, 5));
@@ -398,7 +419,7 @@ describe('LocalCloakRuntimeProvider', () => {
     expect(page.evaluate).toHaveBeenCalledTimes(1);
   });
 
-  it('joins target commands queued on opposite sides of a bind transition', async () => {
+  it('keeps explicit page commands queued behind a bind transition', async () => {
     const { provider, page, pages, context } = makeProviderWithFakePage();
     const nav = await provider.dispatch({
       id: 'nav',
@@ -490,7 +511,8 @@ describe('LocalCloakRuntimeProvider', () => {
 
     finishFirstTargetExec();
     await Promise.all([bind, beforeMapping, afterMapping]);
-    expect(page.evaluate).toHaveBeenCalledTimes(2);
+    expect(page.evaluate).toHaveBeenCalledTimes(1);
+    expect(priorTargetPage.evaluate).toHaveBeenCalledTimes(2);
   });
 
   it('evaluates JavaScript in the requested iframe', async () => {
@@ -751,16 +773,20 @@ describe('LocalCloakRuntimeProvider', () => {
     expect(pages[1].bringToFront).toHaveBeenCalledOnce();
   });
 
-  it('closes a window by page identity when command.page is provided', async () => {
+  it('rejects a page identity from a different session', async () => {
     const { provider, pages } = makeProviderWithFakePage();
     const first = await provider.dispatch({ id: 'first', action: 'navigate', session: 'first', surface: 'browser', url: 'https://first.example/', profileId: 'default' });
     const second = await provider.dispatch({ id: 'second', action: 'tabs', op: 'new', session: 'second', surface: 'browser', url: 'https://second.example/', profileId: 'default' });
 
     await expect(provider.dispatch({ id: 'close-window', action: 'close-window', session: 'first', surface: 'browser', page: second.page, profileId: 'default' }))
-      .resolves.toMatchObject({ id: 'close-window', ok: true, data: { closed: true, page: second.page } });
+      .resolves.toMatchObject({ id: 'close-window', ok: true, data: { closed: false, page: second.page } });
+
+    await expect(provider.dispatch({ id: 'exec', action: 'exec', session: 'first', surface: 'browser', page: second.page, code: 'document.title', profileId: 'default' }))
+      .resolves.toMatchObject({ id: 'exec', ok: false, errorCode: 'stale_page_identity' });
 
     expect(pages[0].isClosed()).toBe(false);
-    expect(pages[1].close).toHaveBeenCalled();
+    expect(pages[1].close).not.toHaveBeenCalled();
+    expect(pages[1].evaluate).not.toHaveBeenCalled();
     expect(first.page).not.toBe(second.page);
   });
 });

@@ -81,7 +81,7 @@ export interface CloakTabInfo {
 interface ProfileRuntime {
   context: BrowserContext;
   pages: Map<string, PageEntry>;
-  selectedPageId?: string;
+  selectedPageIds: Map<string, string>;
   lastSeenAt: number;
 }
 
@@ -164,7 +164,7 @@ export class CloakSessionManager {
       if (existing && freshPage) {
         runtime.pages.delete(leaseKey);
         this.clearIdleTimer(existing);
-        if (runtime.selectedPageId === existing.pageId) runtime.selectedPageId = undefined;
+        this.clearSelectedPage(runtime, existing);
         if (!pageIsClosed(existing.page)) await existing.page.close().catch(() => {});
       }
 
@@ -183,7 +183,7 @@ export class CloakSessionManager {
           const entry: PageEntry = { page, pageId, session, surface, siteSession: input.siteSession, idleTimeout: input.idleTimeout };
           candidate.pages.set(leaseKey, entry);
           this.refreshIdleTimer(candidate, leaseKey, entry);
-          candidate.selectedPageId = pageId;
+          this.setSelectedPage(candidate, entry);
           candidate.lastSeenAt = Date.now();
           return { profileId, leaseKey, context: candidate.context, page, pageId };
         },
@@ -203,10 +203,19 @@ export class CloakSessionManager {
     return { profileId, leaseKey, context: runtime.context, page: entry.page, pageId: entry.pageId };
   }
 
-  findPageById(pageId: string, opts: Pick<SessionKeyInput, 'idleTimeout'> = {}): CloakPageLease | null {
+  findPageById(pageId: string, opts: Pick<SessionKeyInput, 'profileId' | 'session' | 'surface' | 'idleTimeout'> = {}): CloakPageLease | null {
+    const expectedProfileId = opts.profileId ? normalizeProfileId(opts.profileId) : undefined;
+    const expectedSession = opts.session?.trim();
+    const expectedSurface = opts.surface ? normalizeSurface(opts.surface) : undefined;
     for (const [profileId, runtime] of this.profiles.entries()) {
+      if (expectedProfileId && expectedProfileId !== profileId) continue;
       for (const [leaseKey, entry] of runtime.pages.entries()) {
-        if (entry.pageId === pageId && !pageIsClosed(entry.page)) {
+        if (
+          entry.pageId === pageId
+          && !pageIsClosed(entry.page)
+          && (!expectedSession || entry.session === expectedSession)
+          && (!expectedSurface || entry.surface === expectedSurface)
+        ) {
           entry.idleTimeout = opts.idleTimeout;
           this.refreshIdleTimer(runtime, leaseKey, entry);
           return { profileId, leaseKey, context: runtime.context, page: entry.page, pageId: entry.pageId };
@@ -216,11 +225,11 @@ export class CloakSessionManager {
     return null;
   }
 
-  profileIdForPage(pageId: string): string | null {
+  pageOwner(pageId: string): { profileId: string; session: string; surface: BrowserSurface } | null {
     for (const [profileId, runtime] of this.profiles.entries()) {
       for (const entry of runtime.pages.values()) {
         if (entry.pageId === pageId && !pageIsClosed(entry.page)) {
-          return profileId;
+          return { profileId, session: entry.session, surface: entry.surface };
         }
       }
     }
@@ -247,16 +256,30 @@ export class CloakSessionManager {
     const entry: PageEntry = { page, pageId, session, surface, siteSession: input.siteSession, idleTimeout: input.idleTimeout };
     runtime.pages.set(leaseKey, entry);
     this.refreshIdleTimer(runtime, leaseKey, entry);
-    runtime.selectedPageId = pageId;
+    this.setSelectedPage(runtime, entry);
     runtime.lastSeenAt = Date.now();
     return pageId;
   }
 
-  async listPages(input: Pick<SessionKeyInput, 'profileId'>): Promise<CloakTabInfo[]> {
+  sessionPages(input: Pick<SessionKeyInput, 'profileId' | 'session' | 'surface'>): PlaywrightPage[] {
     const profileId = normalizeProfileId(input.profileId);
+    const session = input.session?.trim();
+    const surface = input.surface ? normalizeSurface(input.surface) : undefined;
+    const runtime = this.profiles.get(profileId);
+    if (!runtime || !session) return [];
+    return this.openEntries(runtime)
+      .filter(([, entry]) => entry.session === session && (!surface || entry.surface === surface))
+      .map(([, entry]) => entry.page);
+  }
+
+  async listPages(input: Pick<SessionKeyInput, 'profileId' | 'session' | 'surface'>): Promise<CloakTabInfo[]> {
+    const profileId = normalizeProfileId(input.profileId);
+    const session = input.session?.trim();
+    const surface = input.surface ? normalizeSurface(input.surface) : undefined;
     const runtime = this.profiles.get(profileId);
     if (!runtime) return [];
-    const entries = this.openEntries(runtime);
+    const entries = this.openEntries(runtime)
+      .filter(([, entry]) => (!session || entry.session === session) && (!surface || entry.surface === surface));
     return Promise.all(entries.map(async ([, entry], index) => ({
       id: entry.pageId,
       page: entry.pageId,
@@ -266,7 +289,7 @@ export class CloakSessionManager {
       profileId,
       session: entry.session,
       surface: entry.surface,
-      selected: runtime.selectedPageId === entry.pageId,
+      selected: runtime.selectedPageIds.get(selectionKey(entry)) === entry.pageId,
     })));
   }
 
@@ -308,18 +331,19 @@ export class CloakSessionManager {
     return { profileId, leaseKey, context: acquired.runtime.context, page: acquired.page, pageId };
   }
 
-  async selectPage(input: Pick<SessionKeyInput, 'profileId' | 'windowMode'> & { pageId?: string; index?: number }): Promise<CloakPageLease | null> {
+  async selectPage(input: Pick<SessionKeyInput, 'profileId' | 'session' | 'surface' | 'windowMode'> & { pageId?: string; index?: number }): Promise<CloakPageLease | null> {
     const profileId = normalizeProfileId(input.profileId);
     const runtime = this.profiles.get(profileId);
     if (!runtime) return null;
-    const match = input.pageId ? this.findEntryByPageId(runtime, input.pageId) : this.openEntries(runtime)[input.index ?? -1];
+    const candidates = this.sessionEntries(runtime, input);
+    const match = input.pageId ? candidates.find(([, entry]) => entry.pageId === input.pageId) : candidates[input.index ?? -1];
     if (!match) return null;
     const [leaseKey, entry] = match;
     if (input.windowMode !== 'background') {
       await entry.page.bringToFront?.().catch(() => {});
       await this.activateBackgroundContext(runtime.context);
     }
-    runtime.selectedPageId = entry.pageId;
+    this.setSelectedPage(runtime, entry);
     runtime.lastSeenAt = Date.now();
     return { profileId, leaseKey, context: runtime.context, page: entry.page, pageId: entry.pageId };
   }
@@ -338,6 +362,11 @@ export class CloakSessionManager {
     const canonicalKey = resolveLeaseKey({ profileId, session, surface });
     const currentCanonical = runtime.pages.get(canonicalKey);
 
+    if (input.windowMode !== 'background') {
+      await entry.page.bringToFront?.().catch(() => {});
+      await this.activateBackgroundContext(runtime.context);
+    }
+
     if (currentCanonical && currentCanonical !== entry && !pageIsClosed(currentCanonical.page)) {
       const preservedKey = `${canonicalKey}\u0000${currentCanonical.pageId}`;
       runtime.pages.delete(canonicalKey);
@@ -351,26 +380,23 @@ export class CloakSessionManager {
     entry.siteSession = input.siteSession;
     entry.idleTimeout = input.idleTimeout;
     runtime.pages.set(canonicalKey, entry);
-    if (input.windowMode !== 'background') {
-      await entry.page.bringToFront?.().catch(() => {});
-      await this.activateBackgroundContext(runtime.context);
-    }
     this.refreshIdleTimer(runtime, canonicalKey, entry);
-    runtime.selectedPageId = entry.pageId;
+    this.setSelectedPage(runtime, entry);
     runtime.lastSeenAt = Date.now();
     return { profileId, leaseKey: canonicalKey, context: runtime.context, page: entry.page, pageId: entry.pageId };
   }
 
-  async closePage(input: Pick<SessionKeyInput, 'profileId'> & { pageId?: string; index?: number }): Promise<string | null> {
+  async closePage(input: Pick<SessionKeyInput, 'profileId' | 'session' | 'surface'> & { pageId?: string; index?: number }): Promise<string | null> {
     const profileId = normalizeProfileId(input.profileId);
     const runtime = this.profiles.get(profileId);
     if (!runtime) return null;
-    const match = input.pageId ? this.findEntryByPageId(runtime, input.pageId) : this.openEntries(runtime)[input.index ?? -1];
+    const candidates = this.sessionEntries(runtime, input);
+    const match = input.pageId ? candidates.find(([, entry]) => entry.pageId === input.pageId) : candidates[input.index ?? -1];
     if (!match) return null;
     const [leaseKey, entry] = match;
     runtime.pages.delete(leaseKey);
     this.clearIdleTimer(entry);
-    if (runtime.selectedPageId === entry.pageId) runtime.selectedPageId = undefined;
+    this.clearSelectedPage(runtime, entry);
     if (!pageIsClosed(entry.page)) await entry.page.close().catch(() => {});
     runtime.lastSeenAt = Date.now();
     return entry.pageId;
@@ -389,7 +415,7 @@ export class CloakSessionManager {
     for (const [key, entry] of entries) {
       runtime.pages.delete(key);
       this.clearIdleTimer(entry);
-      if (runtime.selectedPageId === entry.pageId) runtime.selectedPageId = undefined;
+      this.clearSelectedPage(runtime, entry);
       if (entry.siteSession !== 'persistent' && !pageIsClosed(entry.page)) {
         await entry.page.close().catch(() => {});
       }
@@ -412,7 +438,7 @@ export class CloakSessionManager {
     for (const [key, entry] of entries) {
       runtime.pages.delete(key);
       this.clearIdleTimer(entry);
-      if (runtime.selectedPageId === entry.pageId) runtime.selectedPageId = undefined;
+      this.clearSelectedPage(runtime, entry);
       if (!pageIsClosed(entry.page)) await entry.page.close().catch(() => {});
     }
     if (entries.length > 0) runtime.lastSeenAt = Date.now();
@@ -460,7 +486,7 @@ export class CloakSessionManager {
       if (!isProfileAlreadyInUseError(err) || !(await this.recoverLockedProfile(userDataDir))) throw err;
       context = await launchPersistentContext(launchOptions);
     }
-    const runtime = { context, pages: new Map(), lastSeenAt: Date.now() };
+    const runtime = { context, pages: new Map(), selectedPageIds: new Map(), lastSeenAt: Date.now() };
     this.attachRuntimeLifecycle(profileId, runtime);
     this.profiles.set(profileId, runtime);
     return runtime;
@@ -474,7 +500,7 @@ export class CloakSessionManager {
       this.networkCapture.stop(entry.page);
     }
     runtime.pages.clear();
-    runtime.selectedPageId = undefined;
+    runtime.selectedPageIds.clear();
   }
 
   private attachRuntimeLifecycle(profileId: string, runtime: ProfileRuntime): void {
@@ -564,6 +590,21 @@ export class CloakSessionManager {
     return this.openEntries(runtime).find(([, entry]) => entry.pageId === pageId) ?? null;
   }
 
+  private sessionEntries(runtime: ProfileRuntime, input: Pick<SessionKeyInput, 'session' | 'surface'>): [string, PageEntry][] {
+    const session = requireSession(input.session);
+    const surface = normalizeSurface(input.surface);
+    return this.openEntries(runtime).filter(([, entry]) => entry.session === session && entry.surface === surface);
+  }
+
+  private setSelectedPage(runtime: ProfileRuntime, entry: PageEntry): void {
+    runtime.selectedPageIds.set(selectionKey(entry), entry.pageId);
+  }
+
+  private clearSelectedPage(runtime: ProfileRuntime, entry: PageEntry): void {
+    const key = selectionKey(entry);
+    if (runtime.selectedPageIds.get(key) === entry.pageId) runtime.selectedPageIds.delete(key);
+  }
+
   private refreshIdleTimer(runtime: ProfileRuntime, leaseKey: string, entry: PageEntry): void {
     this.clearIdleTimer(entry);
     if (!entry.idleTimeout || entry.idleTimeout <= 0 || entry.siteSession === 'persistent') return;
@@ -577,7 +618,7 @@ export class CloakSessionManager {
     if (runtime.pages.get(leaseKey) !== entry) return;
     runtime.pages.delete(leaseKey);
     this.clearIdleTimer(entry);
-    if (runtime.selectedPageId === entry.pageId) runtime.selectedPageId = undefined;
+    this.clearSelectedPage(runtime, entry);
     runtime.lastSeenAt = Date.now();
     if (entry.siteSession !== 'persistent' && !pageIsClosed(entry.page)) {
       await entry.page.close().catch(() => {});
@@ -596,6 +637,10 @@ function nextPageId(): string {
 
 function normalizeSurface(surface: BrowserSurface | undefined): BrowserSurface {
   return surface === 'adapter' ? 'adapter' : 'browser';
+}
+
+function selectionKey(entry: Pick<PageEntry, 'surface' | 'session'>): string {
+  return `${entry.surface}\u0000${encodeURIComponent(entry.session)}`;
 }
 
 function requireSession(session: string | undefined): string {

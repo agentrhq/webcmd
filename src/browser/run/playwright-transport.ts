@@ -78,6 +78,51 @@ function implementation<T>(object: T): unknown {
   return value;
 }
 
+function scopedContext(context: object, pages: () => object[]): object {
+  const pageListeners = new WeakMap<Function, Function>();
+  const isAllowedPage = (candidate: object) => {
+    const allowed = pages();
+    if (allowed.includes(candidate)) return true;
+    const opener = Reflect.get(candidate, 'opener', candidate);
+    if (typeof opener !== 'function') return false;
+    try {
+      return allowed.includes(Reflect.apply(opener, candidate, []));
+    } catch {
+      return false;
+    }
+  };
+  let proxy: object;
+  proxy = new Proxy(context, {
+    get(target, property) {
+      if (property === 'pages') return pages;
+      if (property === 'on' || property === 'addListener') {
+        return (event: string, listener: Function) => {
+          let registered = listener;
+          if (event === 'page') {
+            registered = (candidate: object, ...args: unknown[]) => {
+              if (isAllowedPage(candidate)) listener(candidate, ...args);
+            };
+            pageListeners.set(listener, registered);
+          }
+          Reflect.apply(Reflect.get(target, property), target, [event, registered]);
+          return proxy;
+        };
+      }
+      if (property === 'off' || property === 'removeListener') {
+        return (event: string, listener: Function) => {
+          const registered = pageListeners.get(listener) ?? listener;
+          Reflect.apply(Reflect.get(target, property), target, [event, registered]);
+          pageListeners.delete(listener);
+          return proxy;
+        };
+      }
+      const value = Reflect.get(target, property, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+  return proxy;
+}
+
 function scopedBrowser(browser: object, context: object): object {
   const contextListeners = new WeakMap<Function, Function>();
   let proxy: object;
@@ -117,13 +162,13 @@ export class PlaywrightTransport {
   readonly #connection: DispatcherConnection;
   readonly #root: RootDispatcher;
   readonly #deliver: (message: string) => void;
-  readonly #hostPages = new Set<Page>();
+  #registerPageImpl: (page: Page) => void;
   #cancellation: Promise<void> | undefined;
   #disposed = false;
   #browserWaitMs = 0;
 
   constructor(
-    input: { browser: Browser; context: BrowserContext; page: Page },
+    input: { browser: Browser; context: BrowserContext; page: Page; pages?: Page[] },
     deliver: (message: string) => void,
   ) {
     if (
@@ -137,10 +182,11 @@ export class PlaywrightTransport {
     }
 
     const browser = implementation(input.browser) as object;
-    const context = implementation(input.context) as object;
+    const allowedPages = new Set<object>();
+    const context = scopedContext(implementation(input.context) as object, () => [...allowedPages]);
     this.pageGuid = pageGuid(input.page);
-    this.#pages = () => input.context.pages();
-    this.#hostPages.add(input.page);
+    this.#registerPageImpl = page => allowedPages.add(implementation(page) as object);
+    for (const page of input.pages?.length ? input.pages : [input.page]) this.registerPage(page);
     this.#deliver = deliver;
     this.#connection = new server.DispatcherConnection();
     this.#connection.onmessage = message => {
@@ -195,10 +241,8 @@ export class PlaywrightTransport {
     return this.#browserWaitMs;
   }
 
-  #pages: () => Page[];
-
   registerPage(page: Page): void {
-    this.#hostPages.add(page);
+    this.#registerPageImpl(page);
   }
 
   cancel(error: Error): Promise<void> {

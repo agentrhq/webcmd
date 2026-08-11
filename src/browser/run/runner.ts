@@ -40,6 +40,7 @@ export interface BrowserRunProgramHost {
   context: PlaywrightBrowserContext;
   page: PlaywrightPage;
   pageId: string;
+  pages?: PlaywrightPage[];
   artifactSink?: BrowserRunArtifactSink;
   registerPage?: (page: PlaywrightPage) => string;
 }
@@ -297,7 +298,7 @@ export async function runBrowserProgram(
   } finally {
     timings.quickjs_boot_ms = Math.max(0, Date.now() - quickjsBootStartedAt);
   }
-  const knownPages = new Set(input.context.pages());
+  const knownPages = new Set(input.pages?.length ? input.pages : [input.page]);
   for (const page of knownPages) transport.registerPage(page);
   const registerNewPage = (page: PlaywrightPage) => {
     if (knownPages.has(page)) return;
@@ -305,7 +306,7 @@ export async function runBrowserProgram(
     transport.registerPage(page);
     input.registerPage?.(page);
   };
-  input.context.on('page', registerNewPage);
+  input.page.on('popup', registerNewPage);
 
   let timeout: ReturnType<typeof setTimeout> | undefined;
   let timeoutCleanup: Promise<void> | undefined;
@@ -323,7 +324,7 @@ export async function runBrowserProgram(
       .finally(() => {
         host.dispose();
         void transport.dispose(timeoutError);
-        input.context.off('page', registerNewPage);
+        input.page.off('popup', registerNewPage);
       });
   };
   try {
@@ -596,7 +597,7 @@ export async function runBrowserProgram(
       ).catch(() => undefined);
       await transport.dispose(completionError);
       host.dispose();
-      input.context.off('page', registerNewPage);
+    input.page.off('popup', registerNewPage);
     }
   }
 }

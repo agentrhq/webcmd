@@ -263,6 +263,29 @@ describe('runBrowserProgram', () => {
     expect(registered).toEqual([context.pages()[1]]);
   });
 
+  it('hides pages outside the supplied session page set', async () => {
+    const other = await context.newPage();
+    await other.setContent('<button>Other</button>');
+
+    const output = await runBrowserProgram({
+      browser,
+      context,
+      page,
+      pageId: 'page-1',
+      pages: [page],
+    }, `
+      return {
+        pages: context.pages().length,
+        urls: context.pages().map(page => page.url()),
+      };
+    `);
+
+    expect(output.result).toEqual({
+      pages: 1,
+      urls: [page.url()],
+    });
+  });
+
   it('waits for requests and responses', async () => {
     const output = await run(`
       const requestPromise = page.waitForRequest('**/data');
