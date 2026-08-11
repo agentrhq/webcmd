@@ -1,5 +1,9 @@
 /**
- * E2E coverage for the `web fetch` command surface (#252).
+ * Cross-surface coverage for the `web fetch` command surface (#252).
+ *
+ * Lives in the `plugin` project rather than `e2e`: it drives the built binary
+ * (so it needs dist/), and that project is the one CI runs in full on every
+ * OS. The `e2e` project runs only a named subset of browser files.
  *
  * The bug was cross-surface: the command always executed, but help, list and
  * completions did not know it existed. Unit tests on the parser cannot catch
@@ -15,9 +19,9 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { runCli, parseJsonOutput } from './helpers.js';
+import { runCli, parseJsonOutput } from '../../../tests/e2e/helpers.js';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const TEST_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-web-fetch-e2e-'));
 const LOCAL_ENV = { HOME: TEST_HOME, USERPROFILE: TEST_HOME };
 // Hosted mode is selected by config.json, so pointing the config dir at a
