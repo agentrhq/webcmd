@@ -7,7 +7,7 @@ import type { Command } from 'commander';
 import { describe, expect, it, vi } from 'vitest';
 import { browserCommandCatalog } from '../browser/command-catalog.js';
 import { buildHostedContract } from './contract.js';
-import { rewriteBrowserArgv } from '../cli-argv-preprocess.js';
+import { rejectPositionalBrowserSessionArgv } from '../cli-argv-preprocess.js';
 import { createProgram } from '../cli.js';
 import { formatRootHelp } from '../command-presentation.js';
 import { HOSTED_ROOT_HELP } from '../completion-shared.js';
@@ -251,7 +251,7 @@ function captureLocalBrowserStructure(argv: string[]): {
   };
   configure(program);
   try {
-    program.parse(rewriteBrowserArgv(argv), { from: 'user' });
+    program.parse(rejectPositionalBrowserSessionArgv(argv), { from: 'user' });
     return { exitCode: 0, stdout, stderr };
   } catch (error) {
     const commander = error as { exitCode?: number };
@@ -1182,7 +1182,7 @@ describe('runHostedCli', () => {
     const requests: Array<{ url: string; body?: unknown }> = [];
     const stdout = sink();
 
-    const result = await runHostedCli(['github', 'whoami', '-f', 'json'], {
+    const result = await runHostedCli(['--session', 'session_a', 'github', 'whoami', '-f', 'json'], {
       config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
       stdout: stdout.stream,
       fetchImpl: async (url, init) => {
@@ -1205,6 +1205,7 @@ describe('runHostedCli', () => {
         args: {},
         format: 'json',
         trace: 'off',
+        session: 'session_a',
       },
     });
     expect(stdout.text()).toBe('[\n  {\n    "username": "octocat"\n  }\n]\n');
@@ -1656,7 +1657,7 @@ describe('runHostedCli', () => {
       const stderr = sink();
       const fetchImpl = vi.fn<typeof fetch>();
 
-      const result = await runHostedCli(['browser', 'work', ...parts, '--help'], {
+      const result = await runHostedCli(['--session', 'session_work', 'browser', ...parts, '--help'], {
         config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
         stdout: stdout.stream,
         stderr: stderr.stream,
@@ -1688,7 +1689,7 @@ describe('runHostedCli', () => {
           : contract.command === 'run'
             ? ['--file', uploadFile]
             : [];
-        const result = await runHostedCli(['browser', 'work', ...contract.command.split('/'), ...positionals, ...options], {
+        const result = await runHostedCli(['--session', 'session_work', 'browser', ...contract.command.split('/'), ...positionals, ...options], {
           config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
           stdout: sink().stream,
           stderr: sink().stream,
@@ -1697,7 +1698,7 @@ describe('runHostedCli', () => {
             const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined;
             requests.push({ pathname: parsedUrl.pathname, ...(body ? { body } : {}) });
             if (parsedUrl.pathname === '/v1/manifest') return manifestResponse();
-            if (parsedUrl.pathname === '/v1/browser/work/commands') {
+            if (parsedUrl.pathname === '/v1/browser/session_work/commands') {
               return new Response(JSON.stringify({
                 ok: true,
                 result: {},
@@ -1705,7 +1706,7 @@ describe('runHostedCli', () => {
                 trace: null,
                 run: {
                   executionId: `exec_${contract.command.replaceAll('/', '_')}`,
-                  session: 'work',
+                  session: 'session_work',
                   profile: { id: 'profile_default', displayName: 'default' },
                 },
                 execution: { id: `exec_${contract.command.replaceAll('/', '_')}`, status: 'succeeded' },
@@ -1724,7 +1725,7 @@ describe('runHostedCli', () => {
         });
         expect({
           command: contract.command,
-          action: requests.find(request => request.pathname === '/v1/browser/work/commands')?.body,
+          action: requests.find(request => request.pathname === '/v1/browser/session_work/commands')?.body,
         }).toMatchObject({
           command: contract.command,
           action: { command: `browser/${contract.command}`, action: contract.action },
@@ -1741,7 +1742,7 @@ describe('runHostedCli', () => {
     await writeFile(sourcePath, 'return 42;');
     const requests: Array<{ url: string; body?: Record<string, unknown> }> = [];
     try {
-      const result = await runHostedCli(['browser', 'work', 'run', '--file', sourcePath, '--snapshot-mode', 'tree', '--no-snapshot-diff'], {
+      const result = await runHostedCli(['--session', 'session_work', 'browser', 'run', '--file', sourcePath, '--snapshot-mode', 'tree', '--no-snapshot-diff'], {
         config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
         stdout: sink().stream,
         stderr: sink().stream,
@@ -1754,7 +1755,7 @@ describe('runHostedCli', () => {
             result: {},
             columns: [],
             trace: null,
-            run: { executionId: 'exec_browser_run', session: 'work', profile: { id: 'profile_default', displayName: 'default' } },
+            run: { executionId: 'exec_browser_run', session: 'session_work', profile: { id: 'profile_default', displayName: 'default' } },
             execution: { id: 'exec_browser_run', status: 'succeeded' },
           }), { status: 200 });
         },
@@ -1774,7 +1775,7 @@ describe('runHostedCli', () => {
 
   it('forwards browser snapshot mode to hosted browser actions', async () => {
     const requests: Array<{ url: string; body?: Record<string, unknown> }> = [];
-    const result = await runHostedCli(['browser', 'work', 'snapshot', '--snapshot-mode', 'read', '--ref', 'l7', '--max-output', '1000'], {
+    const result = await runHostedCli(['--session', 'session_work', 'browser', 'snapshot', '--snapshot-mode', 'read', '--ref', 'l7', '--max-output', '1000'], {
       config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
       stdout: sink().stream,
       stderr: sink().stream,
@@ -1784,7 +1785,7 @@ describe('runHostedCli', () => {
         if (String(url).endsWith('/v1/manifest')) return manifestResponse();
         return new Response(JSON.stringify({
           ok: true,
-          run: { executionId: 'exec_browser_snapshot', session: 'work', profile: { id: 'profile_default', displayName: 'default' } },
+          run: { executionId: 'exec_browser_snapshot', session: 'session_work', profile: { id: 'profile_default', displayName: 'default' } },
           result: { ok: true, tree: '<page />', page: { url: 'https://example.test', title: 'Example' }, warnings: [], limits: { snapshotTruncated: false } },
         }), { status: 200 });
       },
@@ -1799,7 +1800,7 @@ describe('runHostedCli', () => {
 
   it('prints hosted snapshot trees', async () => {
     const stdout = sink();
-    const result = await runHostedCli(['browser', 'work', 'snapshot'], {
+    const result = await runHostedCli(['--session', 'session_work', 'browser', 'snapshot'], {
       config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
       stdout: stdout.stream,
       stderr: sink().stream,
@@ -1807,7 +1808,7 @@ describe('runHostedCli', () => {
         ? manifestResponse()
         : new Response(JSON.stringify({
             ok: true,
-            run: { executionId: 'exec_browser_snapshot', session: 'work', profile: { id: 'profile_default', displayName: 'default' } },
+            run: { executionId: 'exec_browser_snapshot', session: 'session_work', profile: { id: 'profile_default', displayName: 'default' } },
             result: { ok: true, tree: '<page />', page: { url: 'https://example.test', title: 'Example' }, warnings: [], limits: { snapshotTruncated: false } },
           }), { status: 200 }),
     });
@@ -1829,14 +1830,32 @@ describe('runHostedCli', () => {
     expect(stderr.text()).not.toContain('# webcmd default github');
   });
 
-  it('rejects the retired hosted browser --session flag', async () => {
+  it('rejects retired positional hosted browser sessions', async () => {
     const stderr = sink();
-    const result = await runHostedCli(['browser', '--session', 'work', 'state'], {
+    const result = await runHostedCli(['browser', 'work', 'state'], {
       config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
       stderr: stderr.stream,
     });
 
-    expect(result.exitCode).toBe(78);
-    expect(stderr.text()).toMatch(/session.*no longer a public option/i);
+    expect(result.exitCode).toBe(2);
+    expect(stderr.text()).toMatch(/Browser sessions are root selectors/i);
+  });
+
+  it.each([
+    { argv: ['browser', 'tabs'], code: 'SESSION_REQUIRED' },
+    { argv: ['--session', 'work', 'browser', 'tabs'], code: 'INVALID_SESSION_SELECTOR' },
+  ])('rejects an unusable raw selector before hosted transport: $code', async ({ argv, code }) => {
+    const stderr = sink();
+    const fetchImpl = vi.fn<typeof fetch>();
+
+    const result = await runHostedCli(argv, {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stderr: stderr.stream,
+      fetchImpl,
+    });
+
+    expect(result.exitCode).toBe(2);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(stderr.text()).toContain(code);
   });
 });

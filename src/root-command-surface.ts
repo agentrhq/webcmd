@@ -4,6 +4,8 @@ import { PKG_VERSION } from './version.js';
 
 export const ROOT_PROFILE_FLAGS = '--profile <name>';
 export const ROOT_PROFILE_DESCRIPTION = 'Chrome profile/context alias for browser runtime commands';
+export const ROOT_SESSION_FLAGS = '--session <session-id>';
+export const ROOT_SESSION_DESCRIPTION = 'Existing opaque Session ID from `webcmd session create`';
 export const COMPLETION_SENTINEL = '--get-completions';
 
 /**
@@ -15,6 +17,7 @@ export function configureRootCommandSurface(program: Command): Command {
   return program
     .version(PKG_VERSION)
     .option(ROOT_PROFILE_FLAGS, ROOT_PROFILE_DESCRIPTION)
+    .option(ROOT_SESSION_FLAGS, ROOT_SESSION_DESCRIPTION)
     .enablePositionalOptions();
 }
 
@@ -22,7 +25,7 @@ export type HostedRootCommandSurface =
   | { kind: 'help'; exitCode: number }
   | { kind: 'version'; output: string }
   | { kind: 'completion'; argv: string[] }
-  | { kind: 'dispatch'; argv: string[]; profile?: string; literal: boolean };
+  | { kind: 'dispatch'; argv: string[]; profile?: string; session?: string; literal: boolean };
 
 /**
  * Parse only the root command surface without registering or discovering local
@@ -85,7 +88,7 @@ export function parseHostedRootCommandSurface(argv: readonly string[]): HostedRo
     throw new CommanderStructuralError(stderr || `${error.message}\n`, error.exitCode);
   }
 
-  const profile = root.opts<{ profile?: string }>().profile;
+  const { profile, session } = root.opts<{ profile?: string; session?: string }>();
   if (boundary.commandIndex === undefined && boundary.separatorIndex === undefined) return { kind: 'help', exitCode: 1 };
   const literal = boundary.separatorIndex !== undefined;
   const parsedArgv = boundary.commandIndex !== undefined
@@ -96,6 +99,7 @@ export function parseHostedRootCommandSurface(argv: readonly string[]): HostedRo
     kind: 'dispatch',
     argv: parsedArgv,
     ...(profile !== undefined ? { profile } : {}),
+    ...(session !== undefined ? { session } : {}),
     literal,
   };
 }
@@ -109,7 +113,7 @@ interface RootCommandBoundary {
 function findRootCommandBoundary(argv: readonly string[]): RootCommandBoundary {
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index]!;
-    if (token === '--profile' || token === '--workspace') {
+    if (token === '--profile' || token === '--session' || token === '--workspace') {
       // Commander requires and consumes the next token even when it is `--` or
       // starts with a dash. Structural failures have already been reported.
       // `--workspace` is hosted-only (not a registered Commander option here)
@@ -118,7 +122,7 @@ function findRootCommandBoundary(argv: readonly string[]): RootCommandBoundary {
       index += 1;
       continue;
     }
-    if (token.startsWith('--profile=') || token.startsWith('--workspace=')) continue;
+    if (token.startsWith('--profile=') || token.startsWith('--session=') || token.startsWith('--workspace=')) continue;
     if (token === '--') return { separatorIndex: index };
     if (!token.startsWith('-') || token === '-') return { commandIndex: index };
   }

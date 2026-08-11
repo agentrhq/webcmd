@@ -11,7 +11,7 @@ import {
   configurePluginUninstallSurface,
   configurePluginUpdateSurface,
 } from '../builtin-command-surface.js';
-import { BrowserSessionArgvError, rewriteBrowserArgv } from '../cli-argv-preprocess.js';
+import { BrowserSessionArgvError, rejectPositionalBrowserSessionArgv } from '../cli-argv-preprocess.js';
 import { CommanderStructuralError, MissingRequiredPositionalError } from '../command-surface.js';
 import { filterCommandsByTag, formatRootHelp, getCommandCompletionCandidates } from '../command-presentation.js';
 import {
@@ -33,7 +33,7 @@ import { CLI_COMMAND } from '../brand.js';
 import { missingPluginGuidance } from '../discovery.js';
 import { HostedClient, HostedClientError, resolveWorkspace } from './client.js';
 import { parseHostedInvocation } from './args.js';
-import { HostedBrowserHelp, parseHostedBrowserStructure } from './browser-args.js';
+import { HostedBrowserHelp, parseHostedBrowserStructure, validateRawBrowserSession } from './browser-args.js';
 import { materializeHostedOutputs, prepareHostedFiles, rewriteHostedOutputResultPaths } from './files.js';
 import {
   findHostedCommand,
@@ -93,6 +93,7 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
   const stderr = opts.stderr ?? process.stderr;
 
   try {
+    argv = rejectPositionalBrowserSessionArgv(argv);
     const credential = await resolveHostedApiKey(config, {
       credentialStore: opts.credentialStore,
       env: opts.env,
@@ -111,6 +112,10 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
     return { handled: true, exitCode: EXIT_CODES.SUCCESS };
   } catch (err) {
     if (err instanceof StreamWriteError) throw err;
+    if (err instanceof BrowserSessionArgvError) {
+      await writeToStream(stderr, `error: ${err.message}\n`);
+      return { handled: true, exitCode: EXIT_CODES.USAGE_ERROR };
+    }
     if (err instanceof CliError && err.code === 'UNSUPPORTED_SHELL') throw err;
     if (err instanceof CommanderStructuralError) {
       await writeToStream(stderr, err.output);
@@ -187,7 +192,7 @@ async function dispatchHosted(
     );
   }
   if (args[0] === 'browser') {
-    const invocation = await parseHostedBrowserInvocation(args, normalized.profile);
+    const invocation = await parseHostedBrowserInvocation(args, normalized.profile, normalized.session);
     const manifest = await client.getManifest();
     validateManifestContractIdentity(manifest);
     await dispatchHostedBrowser(invocation, client, stdout);
@@ -398,6 +403,7 @@ async function dispatchHosted(
         format: parsed.format,
         trace: parsed.trace,
         profile: parsed.profile ?? normalized.profile,
+        session: normalized.session,
       })
     : await client.execute({
         command: command.command,
@@ -405,6 +411,7 @@ async function dispatchHosted(
         format: parsed.format,
         trace: parsed.trace,
         profile: parsed.profile ?? normalized.profile,
+        session: normalized.session,
       });
   let format: string = parsed.format;
   if (!parsed.formatExplicit && format === 'table' && command.defaultFormat) {
@@ -446,6 +453,7 @@ async function executeHostedFileCommand(input: {
   format: string;
   trace: string;
   profile?: string;
+  session?: string;
 }): Promise<import('./types.js').HostedExecuteResponse> {
   const prepared = await prepareHostedFiles({
     client: input.client,
@@ -459,6 +467,7 @@ async function executeHostedFileCommand(input: {
     format: input.format,
     trace: input.trace,
     ...(input.profile !== undefined ? { profile: input.profile } : {}),
+    ...(input.session !== undefined ? { session: input.session } : {}),
   });
   const materialized = await materializeHostedOutputs({
     client: input.client,
@@ -541,33 +550,21 @@ function contentTypeForUpload(filePath: string): string {
   }
 }
 
-async function parseHostedBrowserInvocation(argv: string[], profile: string | undefined): Promise<ParsedHostedBrowserInvocation> {
-  let rewritten: string[];
-  try {
-    rewritten = rewriteBrowserArgv(argv);
-  } catch (error) {
-    if (error instanceof BrowserSessionArgvError) {
-      throw new ConfigError(error.message, 'Use: webcmd browser <session> <command>');
-    }
-    throw error;
-  }
+async function parseHostedBrowserInvocation(
+  argv: string[],
+  profile: string | undefined,
+  session: string | undefined,
+): Promise<ParsedHostedBrowserInvocation> {
   let structure;
   try {
-    structure = parseHostedBrowserStructure(rewritten);
+    structure = parseHostedBrowserStructure(session === undefined ? argv : ['--session', session, ...argv]);
   } catch (error) {
     if (error instanceof HostedBrowserHelp) throw new CommanderCompatibleError('', 0, error.output);
     throw error;
   }
-  if (rewritten[0] !== 'browser') {
+  if (argv[0] !== 'browser') {
     throw new ConfigError('Hosted browser invocation must start with browser.');
   }
-  if (!structure.session) {
-    throw new ConfigError(
-      '<session> is required for hosted browser commands.',
-      'Use: webcmd browser <session> <command>',
-    );
-  }
-
   if (!structure.commandName) {
     throw new ConfigError(
       'Hosted browser command is required.',
@@ -579,7 +576,7 @@ async function parseHostedBrowserInvocation(argv: string[], profile: string | un
   const parsed = parseBrowserLeaf(structure.commandName, structure.positionals, structure.options);
   const browserArgs = await materializeBrowserRunSource(parsed.commandName, parsed.args);
   return {
-    session: structure.session,
+    session: validateRawBrowserSession(structure.session, profile),
     command: `browser/${parsed.commandName}`,
     action: parsed.action,
     args: browserArgs,

@@ -47,6 +47,7 @@ import { CLI_COMMAND, PACKAGE_NAME } from './brand.js';
 import type { BrowserDownloadWaitResult, IPage, ScreenshotOptions } from './types.js';
 import type { BrowserWindowMode } from './runtime.js';
 import { configureRootCommandSurface } from './root-command-surface.js';
+import { validateRawBrowserSession } from './hosted/browser-args.js';
 import { missingPluginGuidance, PLUGINS_DIR } from './discovery.js';
 import { loadBrowserRunSource } from './browser/run/input.js';
 import { BrowserRunError } from './browser/run/types.js';
@@ -539,12 +540,7 @@ function getCommandOption(command: Command | undefined, option: string): unknown
 }
 
 function getBrowserSession(command?: Command): string {
-  // The CLI surface is `webcmd browser <session> <subcommand>`. main.ts rewrites
-  // argv to insert `--session <name>` before commander parses it; this helper
-  // reads back the rewritten flag.
-  const raw = getCommandOption(command, 'session');
-  if (typeof raw === 'string' && raw.trim()) return raw.trim();
-  throw new Error('<session> is a required positional argument: webcmd browser <session> <command>');
+  return validateRawBrowserSession(getCommandOption(command, 'session'), getCommandOption(command, 'profile') as string | undefined);
 }
 
 function getBrowserProfileSelection(command?: Command): ProfileSelection | undefined {
@@ -793,20 +789,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
 
   const browser = program
     .command('browser')
-    // --session is an internal hidden option used by the daemon protocol and direct
-    // program.parseAsync callers (tests). User-facing surface is the <session>
-    // positional; main.ts argv preprocessor rewrites positional -> --session.
-    .addOption(new Option('--session <name>', 'Internal — set automatically from the <session> positional').hideHelp())
-    .description('Run Playwright programs against named browser sessions')
-    .usage('<session> <command> [options]')
-    .addHelpText('after', `
-<session> is a required positional: pass the name of the browser session every subcommand should operate on. Reuse the same name across calls to keep the tab/state alive; pick a different name to isolate parallel browser work.
-
-Examples:
-  $ webcmd browser work tabs
-  $ webcmd browser work bind --page page-123
-  $ printf 'await page.goto("https://example.com")' | webcmd browser work run --stdin
-`);
+    .description('Run Playwright programs against an explicit browser Session');
   const originalBrowserDescription = browser.description();
 
   // ── Init (adapter scaffolding) ──
@@ -1056,8 +1039,9 @@ cli({
             },
           }, null, 2));
         }
-        log.error(error instanceof Error ? error.message : String(error));
-        process.exitCode = EXIT_CODES.GENERIC_ERROR;
+        log.error(error instanceof CliError ? `${error.code}: ${error.message}` : error instanceof Error ? error.message : String(error));
+        if (error instanceof CliError && error.hint) log.error(error.hint);
+        process.exitCode = error instanceof CliError ? error.exitCode : EXIT_CODES.GENERIC_ERROR;
       }
     };
   }
@@ -1866,28 +1850,6 @@ cli({
   program.configureHelp({
     visibleCommands: (command) => command.commands.filter(child => command !== program || !adapterNameSet.has(child.name())),
   });
-  // When an ancestor command declares a leading positional via `.usage(...)`
-  // (e.g. `browser` -> `<session> <command> [options]`), inject the positional
-  // between that ancestor's name and the next path segment so the help Usage
-  // line is accurate: `Usage: webcmd browser <session> run [options]`
-  // instead of `webcmd browser run [options]`. Commander does NOT
-  // inherit configureHelp into subcommands, so we walk the descendant tree and
-  // apply the override on each.
-  const ancestorAwareCommandUsage = (cmd: Command): string => {
-    const ancestors: string[] = [];
-    let ancestor: Command | null = cmd.parent;
-    while (ancestor) {
-      const positional = leadingPositionalFromUsage(ancestor);
-      ancestors.unshift(positional ? `${ancestor.name()} ${positional}` : ancestor.name());
-      ancestor = ancestor.parent;
-    }
-    return [...ancestors, cmd.name(), cmd.usage()].filter(Boolean).join(' ').trim();
-  };
-  function applyAncestorAwareUsage(cmd: Command): void {
-    cmd.configureHelp({ commandUsage: ancestorAwareCommandUsage });
-    for (const sub of cmd.commands) applyAncestorAwareUsage(sub);
-  }
-  applyAncestorAwareUsage(browser);
   installRootPresentationHelp(
     program,
     () => rootHelpData(program, adapterGroups),

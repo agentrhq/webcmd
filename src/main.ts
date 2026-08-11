@@ -178,13 +178,9 @@ if (getCompIdx !== -1) {
   process.exit(EXIT_CODES.SUCCESS);
 }
 
-// Rewrite `webcmd browser <session> <subcommand> ...` so commander (which
-// can't combine a parent positional with subcommand dispatch) sees the internal
-// `--session <name>` flag form. Also refuses the retired `webcmd browser
-// --session foo ...` user form with a friendly usage error.
-const { rewriteBrowserArgv, BrowserSessionArgvError, escapeLeadingDashPositional } = await import('./cli-argv-preprocess.js');
+const { rejectPositionalBrowserSessionArgv, BrowserSessionArgvError, escapeLeadingDashPositional } = await import('./cli-argv-preprocess.js');
 try {
-  let rewritten = rewriteBrowserArgv(process.argv.slice(2));
+  let rewritten = rejectPositionalBrowserSessionArgv(process.argv.slice(2));
   // Use the metadata that discovery actually registered. The core manifest is
   // intentionally empty, while installed plugins and legacy user CLIs are not.
   const { getRegistry } = await import('./registry.js');
@@ -193,7 +189,7 @@ try {
 } catch (err) {
   if (err instanceof BrowserSessionArgvError) {
     process.stderr.write(`error: ${err.message}\n`);
-    process.exit(EXIT_CODES.GENERIC_ERROR);
+    process.exit(EXIT_CODES.USAGE_ERROR);
   }
   throw err;
 }

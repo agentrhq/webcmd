@@ -1,10 +1,6 @@
 /**
- * argv preprocessing: rewrite `webcmd browser <session> <subcommand> ...`
- * into `webcmd browser --session <session> <subcommand> ...` so commander
- * (which can't combine a parent positional with subcommand dispatch) can parse it.
- *
- * The user-facing form is positional; the internal form uses --session. Help text
- * for the `browser` command is overridden to advertise the positional form.
+ * Reject the retired positional browser-session grammar before Commander parses
+ * the canonical root `--session` selector.
  */
 
 /**
@@ -30,6 +26,7 @@ const BROWSER_SUBCOMMAND_NAMES: ReadonlySet<string> = new Set([
   'fill',
   'find',
   'focus',
+  'fork',
   'frames',
   'get',
   'help',
@@ -42,8 +39,10 @@ const BROWSER_SUBCOMMAND_NAMES: ReadonlySet<string> = new Set([
   'screenshot',
   'scroll',
   'select',
+  'snapshot',
   'state',
   'tab',
+  'tabs',
   'type',
   'unbind',
   'uncheck',
@@ -60,7 +59,7 @@ const BROWSER_SUBCOMMAND_NAMES: ReadonlySet<string> = new Set([
  *
  * Keep in sync with `program.option(...)` calls in cli.ts.
  */
-const ROOT_VALUE_FLAGS: ReadonlySet<string> = new Set(['--profile']);
+const ROOT_VALUE_FLAGS: ReadonlySet<string> = new Set(['--profile', '--session', '--workspace']);
 
 /**
  * Returns the set of reserved subcommand names (exposed for tests so they stay
@@ -70,60 +69,35 @@ export function getBrowserSubcommandNames(): ReadonlySet<string> {
   return BROWSER_SUBCOMMAND_NAMES;
 }
 
-/**
- * Rewrite `argv` to convert the positional `<session>` after `browser`
- * into the internal `--session <name>` flag form.
- *
- * Only acts when `browser` is the root command (i.e. the first non-flag token
- * after any leading root options), so it can't mis-interpret occurrences of
- * the literal word `browser` deeper in the argv (e.g. `webcmd adapter init
- * browser/x`, or a URL value containing `browser`).
- *
- * Leaves argv unchanged when:
- *   - root command is not `browser`
- *   - the token after `browser` is a flag (e.g. `--help`)
- *   - the token after `browser` is a known subcommand name (session was
- *     omitted; commander will surface its own required-flag error)
- */
-export function rewriteBrowserArgv(argv: readonly string[]): string[] {
+/** Rejects retired `browser <session> ...` while preserving canonical argv. */
+export function rejectPositionalBrowserSessionArgv(argv: readonly string[]): string[] {
   const result = [...argv];
-  // Walk past leading root flags + their values to find the root command token.
-  let i = 0;
-  while (i < result.length) {
-    const tok = result[i];
-    if (!tok.startsWith('-')) break;
-    // `--flag=value` consumes one slot regardless of whether the flag expects a value.
-    if (tok.includes('=')) {
-      i += 1;
-      continue;
-    }
-    if (ROOT_VALUE_FLAGS.has(tok) && i + 1 < result.length) {
-      i += 2;
-    } else {
-      i += 1;
-    }
+  const commandIndex = findRootCommandIndex(result);
+  if (result[commandIndex] !== 'browser') return result;
+  const candidate = result[commandIndex + 1];
+  if (!candidate || candidate.startsWith('-') || BROWSER_SUBCOMMAND_NAMES.has(candidate)) {
+    hoistBrowserWindowOption(result, commandIndex + 1);
+    return result;
   }
-  if (result[i] !== 'browser') return result;
-  const sessionIdx = i + 1;
-  const next = result[sessionIdx];
-  if (next === undefined) return result;
-  // The retired `--session` flag must not be a working public entrance.
-  if (next === '--session' || next === '--session=' || next.startsWith('--session=')) {
-    throw new BrowserSessionArgvError(
-      'The `--session` flag is no longer a public option. Use the positional form: webcmd browser <session> <command>',
-    );
+  const replacement = [
+    ...result.slice(0, commandIndex),
+    '--session', candidate,
+    'browser',
+    ...result.slice(commandIndex + 2),
+  ];
+  throw new BrowserSessionArgvError(
+    `Browser sessions are root selectors. Use: webcmd ${replacement.join(' ')}`,
+  );
+}
+
+function findRootCommandIndex(argv: readonly string[]): number {
+  let index = 0;
+  while (index < argv.length) {
+    const token = argv[index]!;
+    if (!token.startsWith('-')) return index;
+    index += token.includes('=') || !ROOT_VALUE_FLAGS.has(token) ? 1 : 2;
   }
-  if (next.startsWith('-')) return result;
-  if (BROWSER_SUBCOMMAND_NAMES.has(next)) return result;
-  // Splice in --session <name> in place of the positional.
-  result.splice(sessionIdx, 1, '--session', next);
-  // `--window` is a browser namespace option, so commander accepts it before the
-  // leaf command. Users naturally put it at the end:
-  // `browser work open https://x.com --window background`. Hoist that public
-  // form into the namespace-option slot instead of mirroring the option onto
-  // every browser leaf command.
-  hoistBrowserWindowOption(result, sessionIdx + 2);
-  return result;
+  return index;
 }
 
 /**

@@ -159,6 +159,7 @@ export class HostedClient {
     format?: string;
     trace?: string;
     profile?: string;
+    session?: string;
   }): Promise<HostedExecuteResponse> {
     const traceMode = normalizeTraceMode(input.trace);
     const body = await this.request('/v1/execute', {
@@ -211,6 +212,7 @@ export class HostedClient {
     format?: string;
     trace?: string;
     profile?: string;
+    session?: string;
   }): Promise<HostedExecuteResponse> {
     const traceMode = normalizeTraceMode(input.trace);
     const body = await this.request(`/v1/executions/${encodeURIComponent(input.executionId)}/run`, {
@@ -221,6 +223,7 @@ export class HostedClient {
         ...(input.format !== undefined ? { format: input.format } : {}),
         ...(input.trace !== undefined ? { trace: input.trace } : {}),
         ...(input.profile !== undefined ? { profile: input.profile } : {}),
+        ...(input.session !== undefined ? { session: input.session } : {}),
       }),
     }, { command: input.command, traceMode });
     if (!isHostedExecuteResponse(body, input.command, traceMode)) {

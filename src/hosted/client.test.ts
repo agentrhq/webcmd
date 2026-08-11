@@ -476,6 +476,26 @@ describe('HostedClient', () => {
     } satisfies Partial<HostedClientError>);
   });
 
+  it('carries the root session selector in execute requests', async () => {
+    let requestBody: unknown;
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async (_url, init) => {
+        requestBody = JSON.parse(String(init?.body));
+        return new Response(JSON.stringify({
+          ok: true,
+          result: [],
+          execution: { id: 'exec_1', command: 'github/whoami', status: 'succeeded' },
+        }));
+      },
+    });
+
+    await client.execute({ command: 'github/whoami', args: {}, session: 'session_a' });
+
+    expect(requestBody).toMatchObject({ command: 'github/whoami', session: 'session_a' });
+  });
+
   it('prepares, uploads, runs, and downloads execution artifacts with raw byte bodies', async () => {
     const requests: Array<{ url: string; method: string; body?: unknown; filename?: string | null }> = [];
     const bytes = new Uint8Array(Buffer.from('hello cloud'));
@@ -558,6 +578,7 @@ describe('HostedClient', () => {
       executionId: 'exec_files',
       command: 'twitter/post',
       args: {},
+      session: 'session_a',
     })).resolves.toMatchObject({ artifacts: [{ artifactId: 'artifact_out' }] });
     await expect(client.downloadExecutionArtifact({
       executionId: 'exec_files',
@@ -574,6 +595,7 @@ describe('HostedClient', () => {
       filename: 'one.png',
       body: new Uint8Array(Buffer.from('png')),
     });
+    expect(JSON.parse(String(requests[2]?.body))).toMatchObject({ session: 'session_a' });
   });
 
   it('preserves execution and trace metadata from hosted failure envelopes', async () => {

@@ -180,6 +180,18 @@ const generatedTerminalCorpus = profileForms.flatMap(profile =>
 );
 
 describe('hosted root command surface', () => {
+  it('parses the canonical root session selector', () => {
+    expect(parseHostedRootCommandSurface([
+      '--profile', 'work', '--session', 'session_a', 'github', 'issues',
+    ])).toEqual({
+      kind: 'dispatch',
+      argv: ['github', 'issues'],
+      profile: 'work',
+      session: 'session_a',
+      literal: false,
+    });
+  });
+
   it('advertises hosted profile management as a root command, not a local-only namespace', () => {
     expect(HOSTED_ROOT_HELP.commands).toContainEqual({
       name: 'profile',

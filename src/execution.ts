@@ -161,6 +161,7 @@ export async function executeCommand(
   opts: {
     prepared?: boolean;
     profile?: string;
+    session?: string;
     trace?: string;
     keepTab?: string;
     windowMode?: string;
