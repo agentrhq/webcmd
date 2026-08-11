@@ -153,7 +153,7 @@ async function sendCommandRaw(
     }
 
     const remainingMs = Math.max(1000, deadlineAt - Date.now());
-    const run = action === 'lease-release' ? undefined : getDaemonRunContext();
+    const run = action === 'lease-release' || action === 'run-cancel' ? undefined : getDaemonRunContext();
     const command: DaemonCommand = {
       id,
       action,
@@ -270,9 +270,17 @@ export async function sendCommandFull(
 }
 
 export async function releaseSiteSessionLease(runId: string): Promise<void> {
+  await postRunControl('lease-release', runId);
+}
+
+export async function cancelDaemonRun(runId: string): Promise<void> {
+  await postRunControl('run-cancel', runId);
+}
+
+async function postRunControl(action: 'lease-release' | 'run-cancel', runId: string): Promise<void> {
   const command: DaemonCommand = {
     id: generateId(),
-    action: 'lease-release',
+    action,
     runId,
   };
   await requestDaemon('/command', {

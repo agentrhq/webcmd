@@ -180,7 +180,7 @@ describe('SessionBusyError platform hints', () => {
   };
 
   it('uses PowerShell process guidance on Windows when the holder pid is known', () => {
-    const err = new SessionBusyError(holder, 'win32');
+    const err = new SessionBusyError(holder, 'win32', () => true);
     expect(err.hint).toContain('Stop-Process -Id 4242');
     expect(err.hint).not.toContain('kill 4242');
   });
@@ -193,9 +193,16 @@ describe('SessionBusyError platform hints', () => {
   });
 
   it('uses kill guidance on POSIX when the holder pid is known', () => {
-    const err = new SessionBusyError(holder, 'linux');
+    const err = new SessionBusyError(holder, 'linux', () => true);
     expect(err.hint).toContain('kill 4242');
     expect(err.hint).not.toContain('Stop-Process');
+  });
+
+  it('does not suggest killing a holder pid that is no longer alive', () => {
+    const err = new SessionBusyError(holder, 'linux', () => false);
+    expect(err.message).toContain('chatgpt ask');
+    expect(err.hint).toMatch(/wait/i);
+    expect(err.hint).not.toContain('kill 4242');
   });
 
   it.each([

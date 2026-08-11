@@ -150,7 +150,7 @@ describe('SessionLeaseRegistry', () => {
   });
 
   function registry(): SessionLeaseRegistry {
-    return new SessionLeaseRegistry(() => now);
+    return new SessionLeaseRegistry(() => now, () => true);
   }
 
   function acquire(registry: SessionLeaseRegistry, runId: string, key = KEY) {
@@ -193,6 +193,22 @@ describe('SessionLeaseRegistry', () => {
     )).toEqual({
       acquired: true,
       lease: expect.objectContaining({ pid: 4242 }),
+    });
+  });
+
+  it('lets a challenger acquire when the live-looking holder pid is gone', () => {
+    const leases = new SessionLeaseRegistry(() => now, () => false);
+    expect(acquire(leases, 'run_111_1_1')).toMatchObject({ acquired: true });
+
+    now += 1_000;
+    expect(acquire(leases, 'run_222_2_2')).toEqual({
+      acquired: true,
+      lease: expect.objectContaining({
+        runId: 'run_222_2_2',
+        pid: 222,
+        acquiredAt: now,
+        heartbeatAt: now,
+      }),
     });
   });
 

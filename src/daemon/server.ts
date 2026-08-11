@@ -76,7 +76,7 @@ async function resolveBrowserSession(
   provider: BrowserRuntimeProvider,
   command: BrowserRuntimeCommand,
 ): Promise<BrowserRuntimeCommand> {
-  if (command.action === 'lease-release' || SESSION_LIFECYCLE_ACTIONS.has(command.action)) return command;
+  if (command.action === 'lease-release' || command.action === 'run-cancel' || SESSION_LIFECYCLE_ACTIONS.has(command.action)) return command;
   let session: BrowserSessionRecord | undefined;
   if (command.surface === 'adapter' && !command.session) {
     session = await provider.resolveAdapterDefault?.(command);
@@ -243,7 +243,7 @@ export function createDaemonServer(provider: BrowserRuntimeProvider, opts: Daemo
           jsonResponse(res, result.ok ? 200 : result.errorCode === 'command_result_unknown' ? 408 : 400, result);
           return;
         }
-        if (body.action === 'lease-release') {
+        if (body.action === 'lease-release' || body.action === 'run-cancel') {
           const released = typeof body.runId === 'string' ? leases.releaseByRunId(body.runId) : 0;
           jsonResponse(res, 200, { id: body.id, ok: true, data: { released } });
           return;

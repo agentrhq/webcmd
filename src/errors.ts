@@ -20,7 +20,7 @@
  * 130   Interrupted by Ctrl-C           (set by tui.ts SIGINT handler)
  */
 import type { ObservationTraceReceipt } from './observation/events.js';
-import { isActionablePid, type SessionLeaseHolder } from './session-lease.js';
+import { isActionablePid, isPidAlive, type SessionLeaseHolder } from './session-lease.js';
 
 // ── Exit code table ──────────────────────────────────────────────────────────
 
@@ -149,24 +149,25 @@ function formatBusyMessage(holder: SessionLeaseHolder): string {
   return `Session is busy: ${owner} is already driving it.`;
 }
 
-function formatBusyHint(holder: SessionLeaseHolder, platform: string): string {
+function formatBusyHint(holder: SessionLeaseHolder, platform: string, pidAlive: (pid: number) => boolean): string {
+  const hasLivePid = isActionablePid(holder.pid) && pidAlive(holder.pid);
   if (platform === 'win32') {
-    return !isActionablePid(holder.pid)
+    return !hasLivePid
       ? 'Wait for it to finish, or use Task Manager to stop the owning process if it is stuck.'
       : `Wait for it to finish, or run \`Stop-Process -Id ${holder.pid}\` in PowerShell if it is stuck.`;
   }
-  return !isActionablePid(holder.pid)
+  return !hasLivePid
     ? 'Wait for it to finish, or stop the owning process if it is stuck.'
     : `Wait for it to finish, or run \`kill ${holder.pid}\` if it is stuck.`;
 }
 
 /** A persistent write session is temporarily owned by another logical run. */
 export class SessionBusyError extends CliError {
-  constructor(holder: SessionLeaseHolder, platform: string = process.platform) {
+  constructor(holder: SessionLeaseHolder, platform: string = process.platform, pidAlive: (pid: number) => boolean = isPidAlive) {
     super(
       'SESSION_BUSY',
       formatBusyMessage(holder),
-      formatBusyHint(holder, platform),
+      formatBusyHint(holder, platform, pidAlive),
       EXIT_CODES.TEMPFAIL,
     );
   }

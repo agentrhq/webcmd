@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   BrowserCommandError,
+  cancelDaemonRun,
   fetchDaemonStatus,
   getDaemonHealth,
   listExistingBrowserTabs,
@@ -359,6 +360,30 @@ describe('daemon-client', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('cancelDaemonRun makes one best-effort POST without inheriting active run metadata', async () => {
+    setDaemonRunContext({
+      runId: 'run_9999_newer_2',
+      command: 'newer write',
+    });
+    const ensureSpy = vi.spyOn(daemonLifecycle, 'ensureBrowserBridgeReady');
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ id: 'cancel', ok: true, data: { released: 1 } }),
+    } as Response);
+
+    await expect(cancelDaemonRun('run_4242_1000_1')).resolves.toBeUndefined();
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(ensureSpy).not.toHaveBeenCalled();
+    const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body));
+    expect(body).toMatchObject({
+      action: 'run-cancel',
+      runId: 'run_4242_1000_1',
+    });
+    expect(body.command).toBeUndefined();
+    expect(body.pid).toBeUndefined();
   });
 
   it('sendCommand does not retry command_result_unknown even when the message looks transient', async () => {

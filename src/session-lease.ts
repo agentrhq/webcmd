@@ -128,6 +128,16 @@ export function isActionablePid(pid: unknown): pid is number {
   return typeof pid === 'number' && Number.isSafeInteger(pid) && pid > 0;
 }
 
+export function isPidAlive(pid: unknown): boolean {
+  if (!isActionablePid(pid)) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
 function pidFromRunId(runId: string): number | undefined {
   const match = /^run_(\d+)_/.exec(runId);
   if (!match) return undefined;
@@ -159,7 +169,7 @@ export function isSessionLeaseCommand<T extends SessionLeaseCommand>(
 export class SessionLeaseRegistry {
   private readonly leases = new Map<string, SessionLease>();
 
-  constructor(private readonly now = Date.now) {}
+  constructor(private readonly now = Date.now, private readonly pidAlive = isPidAlive) {}
 
   acquire(
     input: AcquireSessionLeaseInput,
@@ -168,7 +178,13 @@ export class SessionLeaseRegistry {
     const now = this.now();
     const current = this.leases.get(input.key);
     const currentIsLive = current !== undefined
-      && (now - current.heartbeatAt <= SESSION_LEASE_TTL_MS || hasPendingWork(current.runId));
+      && (
+        hasPendingWork(current.runId)
+        || (
+          now - current.heartbeatAt <= SESSION_LEASE_TTL_MS
+          && (!isActionablePid(current.pid) || this.pidAlive(current.pid))
+        )
+      );
 
     if (current && currentIsLive && current.runId !== input.runId) {
       return { acquired: false, holder: { ...current } };

@@ -1,5 +1,5 @@
 import { AddressInfo } from 'node:net';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DAEMON_HEADER_NAME } from '../constants.js';
 import type { BrowserRuntimeCommand, BrowserRuntimeResult, BrowserRuntimeStatus } from '../browser/protocol.js';
 import type { BrowserSessionListRow, BrowserSessionRecord } from '../browser/sessions.js';
@@ -98,9 +98,14 @@ class FakeProvider implements BrowserRuntimeProvider {
 describe('createDaemonServer', () => {
   const servers: Array<{ close: () => Promise<void> }> = [];
 
+  beforeEach(() => {
+    vi.spyOn(process, 'kill').mockImplementation(() => true);
+  });
+
   afterEach(async () => {
     while (servers.length) await servers.pop()!.close();
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   async function start(provider = new FakeProvider()) {
@@ -496,6 +501,27 @@ describe('createDaemonServer', () => {
     expect(released.status).toBe(200);
     await expect(released.json()).resolves.toMatchObject({
       id: 'release',
+      ok: true,
+      data: { released: 1 },
+    });
+    expect(provider.commands.map((command) => command.id)).toEqual(['owner']);
+
+    expect((await postCommand(baseUrl, persistentWrite('next-owner', 'run_200_2_2'))).status).toBe(200);
+    expect(provider.commands.map((command) => command.id)).toEqual(['owner', 'next-owner']);
+  });
+
+  it('handles run-cancel locally and permits a new owner', async () => {
+    const { provider, baseUrl } = await start();
+    expect((await postCommand(baseUrl, persistentWrite('owner', 'run_100_1_1'))).status).toBe(200);
+
+    const canceled = await postCommand(baseUrl, {
+      id: 'cancel',
+      action: 'run-cancel' as BrowserRuntimeCommand['action'],
+      runId: 'run_100_1_1',
+    });
+    expect(canceled.status).toBe(200);
+    await expect(canceled.json()).resolves.toMatchObject({
+      id: 'cancel',
       ok: true,
       data: { released: 1 },
     });

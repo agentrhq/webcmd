@@ -20,6 +20,7 @@ export type BrowserRuntimeAction =
   | 'run'
   | 'snapshot'
   | 'lease-release'
+  | 'run-cancel'
   | 'session-create'
   | 'session-list'
   | 'session-close';
