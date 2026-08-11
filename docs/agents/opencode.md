@@ -34,19 +34,22 @@ Restart OpenCode after changing config. Confirm the skill loads with `/skills` a
 
 ### Override default tools
 
-OpenCode's native web tools are `webfetch` (fetch a URL) and `websearch` (search). Deny both so OpenCode cannot fall back to them while Webcmd is its browser surface. Do not add a legacy `tools` block as well; `permission` is the supported field. Denying the tools does not turn off the Bash tool, which is how `webcmd browser` is driven.
+OpenCode's native web tools are `webfetch` (fetch a URL) and `websearch` (search). OpenCode has no browser tool.
 
-Add to `opencode.json`:
+Deny `webfetch` so OpenCode cannot fall back to it while Webcmd is its browser surface. Add to `opencode.json`:
 
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
   "permission": {
-    "webfetch": "deny",
-    "websearch": "deny"
+    "webfetch": "deny"
   }
 }
 ```
+
+**Keep `websearch`.** Webcmd has no search index of its own, so search stays useful — it turns a question into URLs that Webcmd then reads. Note that `websearch` only registers when the OpenCode provider is in use or `OPENCODE_ENABLE_EXA=1` is set, so it may already be absent.
+
+`permission` values are `allow`, `deny`, and `ask`, and wildcards work (`"mymcp_*": "deny"`) — useful if the user has a browser or scraping MCP that overlaps with Webcmd. Do not add a legacy `tools` block as well; `permission` is the supported field. Denying tools does not turn off the Bash tool, which is how `webcmd browser` is driven.
 
 ### Troubleshooting
 
@@ -54,7 +57,8 @@ Add to `opencode.json`:
 | --- | --- |
 | `webcmd doctor` is red | Fix the browser runtime first; browser commands depend on it. |
 | Skills not loading in OpenCode | Run `webcmd skills add` with the `agents` provider, restart OpenCode, and check `/skills`. |
-| OpenCode still uses `webfetch` / `websearch` | Confirm `permission.webfetch` and `permission.websearch` are `deny` in the active config, then restart OpenCode. |
+| OpenCode still uses `webfetch` | Confirm `permission.webfetch` is `deny` in the active config, then restart OpenCode. |
+| `websearch` is missing entirely | It registers only with the OpenCode provider or `OPENCODE_ENABLE_EXA=1`. Not a Webcmd problem. |
 | `webcmd browser` errors | Read `webcmd-usage` and `webcmd-browser` skills; sessions require a `<session>` name after `browser`. |
 | Browser sessions stop working after idle | Ask the agent to open a fresh session or re-bind with `tabs` and `bind --page`. |
 

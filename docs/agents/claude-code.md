@@ -34,21 +34,37 @@ Restart Claude Code (or start a new session) after installing skills.
 
 ### Override default tools
 
-Claude Code ships two native web tools — `WebFetch` (fetch a URL) and `WebSearch` (search). Both are permission-gated by default. Deny them so Claude Code cannot fall back to them while Webcmd is its web surface. Add to the user or project settings file (`.claude/settings.json` in the project, or `~/.claude/settings.json`):
+Claude Code ships two native web tools — `WebFetch` (fetch a URL) and `WebSearch` (search) — both permission-gated by default.
+
+Deny `WebFetch`. It is lossy by design: a small, fast model runs an extraction prompt against the page and Claude receives that model's answer, not the page. Webcmd returns the real content. Add to the user or project settings file (`.claude/settings.json` in the project, or `~/.claude/settings.json`):
 
 ```json
 {
   "permissions": {
-    "deny": ["WebFetch", "WebSearch"]
+    "deny": ["WebFetch"]
   }
 }
 ```
 
-Alternatively, pass the flag per invocation:
+Or per invocation:
 
 ```bash
-claude --disallowedTools WebFetch WebSearch
+claude --disallowedTools WebFetch
 ```
+
+**Keep `WebSearch`.** It returns result titles and URLs without fetching the pages, which is exactly the step Webcmd does not cover — Webcmd has no search index. Let Claude Code search, then let Webcmd read what it finds.
+
+If the desktop app's Browser pane is in use, its tools are MCP-named (`mcp__Claude_Browser__*`) and can be denied the same way:
+
+```json
+{
+  "permissions": {
+    "deny": ["WebFetch", "mcp__Claude_Browser__*"]
+  }
+}
+```
+
+Only deny those if the user does not use the Browser pane for their own app — it is wired into the local dev loop. There is also a `browserExternalPageTools: "disabled"` setting, but it applies to managed settings only.
 
 Denying these tools does not affect the Bash tool, which is how `webcmd` is driven.
 
@@ -58,7 +74,8 @@ Denying these tools does not affect the Bash tool, which is how `webcmd` is driv
 | --- | --- |
 | `webcmd doctor` is red | Fix the browser runtime first; browser commands depend on it. |
 | Skills not loading in Claude Code | Run `webcmd skills add` with the `claude` provider, then restart `claude`. |
-| Claude Code still uses `WebFetch` / `WebSearch` | Confirm `permissions.deny` lists both in the active settings file, then restart `claude`. |
+| Claude Code still uses `WebFetch` | Confirm `permissions.deny` lists it in the active settings file, then restart `claude`. |
+| `WebSearch` was denied and search stopped working | Expected. Remove it from `permissions.deny` — Webcmd does not replace search. |
 | `claude` requires permission prompts for `webcmd` | The Bash tool still asks before non-approved commands; run `claude --dangerously-skip-permissions` or allow the shell command if you accept the risk. |
 | Browser sessions stop working after idle | Ask the agent to open a fresh session or re-bind with `tabs` and `bind --page`. |
 

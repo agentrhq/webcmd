@@ -34,21 +34,43 @@ Restart the Gateway (or start a new session) after installing skills.
 
 ### Override default tools
 
-OpenClaw's built-in web tools split into two groups. Webcmd replaces the fetch and search tools; deny them in the Gateway config (`~/.openclaw/openclaw.json`):
+Deny `web_fetch`. It is an HTTP fetch with readable extraction and does not execute JavaScript, so it fails on exactly the dynamic sites Webcmd handles. In the Gateway config (`~/.openclaw/openclaw.json`):
 
 ```json
 {
   "tools": {
-    "deny": ["web_search", "web_fetch", "x_search", "search_news"]
+    "deny": ["web_fetch"]
   }
 }
 ```
 
-Keep `browser` and `browser_visual`. They are wired into OpenClaw's dev loop, so use them for the app being edited — localhost dev server, console and network triage, visual checks — and route open-web work to Webcmd. State that split in your OpenClaw system prompt or project instructions.
+**Keep the search tools** — `web_search` (backed by Brave, Gemini, Grok, Kimi, or Perplexity), `x_search`, and `search_news`. Webcmd has no search index of its own, so search stays the cheapest way to find URLs for Webcmd to read.
+
+The `browser` tool is a single tool with subcommands (`doctor`, `status`, `start`, `stop`, `tabs`, `open`, `focus`, `close`, `snapshot`, `screenshot`, `navigate`, `act`). It reaches both localhost and the open web, so keep it for the app being edited and route open-web work to Webcmd. State that split in your OpenClaw system prompt or project instructions.
+
+Worth raising with the user: OpenClaw's browser has a `user` profile that reuses their existing signed-in sessions, which overlaps directly with Webcmd's auth profiles. Its isolated `openclaw` profile does not.
 
 The Gateway watches the config file and applies changes automatically. Denying these tools does not affect the `exec` tool, which is how `webcmd` is driven.
 
-**Full override (opt-in).** If you never debug local apps through OpenClaw's browser, add `"browser"` and `"browser_visual"` to the deny list so all web access goes through Webcmd.
+**Full override (opt-in).** If the user never debugs local apps through OpenClaw's browser, disable it outright:
+
+```json
+{
+  "browser": { "enabled": false }
+}
+```
+
+Or remove it entirely — CLI, `browser.request` gateway method, and agent tool — by disabling the plugin:
+
+```json
+{
+  "plugins": {
+    "entries": {
+      "browser": { "enabled": false }
+    }
+  }
+}
+```
 
 ### Troubleshooting
 
@@ -56,8 +78,9 @@ The Gateway watches the config file and applies changes automatically. Denying t
 | --- | --- |
 | `webcmd doctor` is red | Fix the browser runtime first; browser commands depend on it. |
 | Skills not loading in OpenClaw | Run `webcmd skills add` with the `agents` provider, then restart the Gateway. |
-| OpenClaw still uses `web_search` / `web_fetch` | Confirm `tools.deny` lists the tool IDs in `~/.openclaw/openclaw.json`; the Gateway hot-reloads config. |
-| OpenClaw uses `browser` for external sites | Remind it that Webcmd handles the open web; for a hard block, add `browser` and `browser_visual` to `tools.deny`. |
+| OpenClaw still uses `web_fetch` | Confirm `tools.deny` lists it in `~/.openclaw/openclaw.json`; the Gateway hot-reloads config. |
+| OpenClaw uses `browser` for external sites | Remind it that Webcmd handles the open web; for a hard block, set `browser.enabled: false`. |
+| Search stopped working | Check whether `web_search` was denied. Webcmd does not replace search — remove it from `tools.deny`. |
 | `webcmd` not found in OpenClaw exec | Confirm `webcmd` is on the PATH the Gateway's `exec` tool uses; restart after installing the CLI. |
 | Browser sessions stop working after idle | Ask the agent to open a fresh session or re-bind with `tabs` and `bind --page`. |
 

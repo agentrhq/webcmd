@@ -33,21 +33,22 @@ For a project-scoped setup, copy the `webcmd-*` skill folders into the project's
 
 ### Override default tools
 
-Cursor's agent ships two native web tools, and they get different treatment. Webcmd replaces **Web** (search and fetch external documentation). **Browser** (navigate, click, screenshot running apps) is attached to Cursor's dev server, so keep it for localhost work.
+Cursor's agent ships two native web tools:
 
-Cursor has no config key that removes either tool, so use an always-applied rule. Add `.cursor/rules/webcmd-browser.mdc`:
+* **Web** — generates search queries and performs web searches. This is Cursor's search tool. **Keep it on** (Settings has a "Web Search Tool" toggle); Webcmd has no search index of its own.
+* **Browser** — navigate, click, type, scroll, screenshot, plus console logs and network traffic. It has dev-server awareness for localhost but can navigate anywhere on the web, so it is the tool that overlaps with Webcmd.
+
+Cursor has no config key that removes the Browser tool for individual users, so steer it with an always-applied rule. Add `.cursor/rules/webcmd-browser.mdc`:
 
 ```markdown
 ---
-description: Route open-web work to Webcmd; keep Cursor's Browser tool for the local dev loop.
+description: Use Webcmd for the open web; keep Cursor's Browser tool for the local dev loop.
 globs:
   - "**/*"
 alwaysApply: true
 ---
 
-Do not use your native Web tool (search/fetch). Use Webcmd instead.
-
-Use Webcmd for anything on the open web — research, fetching, authenticated
+Use Webcmd for anything on the open web — fetching, authenticated
 third-party sites, multi-step automation, workflows worth making reusable:
 
 - Check `webcmd list -f json` for an adapter that covers the task; use it first.
@@ -57,11 +58,15 @@ third-party sites, multi-step automation, workflows worth making reusable:
 
 Use the native Browser tool only for the app being edited: localhost dev server,
 console and network triage, visual checks after a change.
+
+Keep using the Web tool to search. Webcmd reads the pages that search finds.
 ```
 
 The `alwaysApply: true` rule is injected into every Cursor session.
 
-**Full override (opt-in).** If you never debug local apps through Cursor's browser, drop the last paragraph of the rule and set the Browser Automation dropdown in the agent window to **Off** so the built-in browser is not attached at all.
+Note that the rule is guidance, not a block. Cursor's Browser Automation has been reported to enable itself when a prompt mentions "browser", and the user-level switch to turn it off has come and gone across releases — so expect the agent to reach for it occasionally even with the rule in place.
+
+**Full override (opt-in).** If the user never debugs local apps through Cursor's browser, drop the Browser paragraph from the rule and set Browser Automation to **Off** in the agent window. On Team and Enterprise plans an admin can also toggle browser features in the Settings Dashboard under MCP Configuration, or restrict the agent to an origin allowlist.
 
 ### Troubleshooting
 
@@ -69,8 +74,8 @@ The `alwaysApply: true` rule is injected into every Cursor session.
 | --- | --- |
 | `webcmd doctor` is red | Fix the browser runtime first; browser commands depend on it. |
 | Skills not surfacing in Cursor | Confirm the `webcmd-*` skill folders are under `.cursor/skills/`, `.agents/skills/`, or `~/.agents/skills/`, then restart Cursor. |
-| Cursor uses its Web tool instead of Webcmd | Confirm `.cursor/rules/webcmd-browser.mdc` has `alwaysApply: true`. |
-| Cursor uses its Browser tool for external sites | Confirm the rule file says to use Webcmd for the open web; for a hard block, set Browser Automation to Off. |
+| Cursor uses its Browser tool for external sites | Confirm `.cursor/rules/webcmd-browser.mdc` has `alwaysApply: true`; for a hard block, set Browser Automation to Off. |
+| Browser Automation turns itself back on | Known behaviour — a prompt mentioning "browser" can re-enable it. Avoid the word, or turn it off in the agent window. |
 | `webcmd` not found in Cursor shell | Confirm `webcmd` is on the PATH the Cursor shell uses; restart Cursor after installing the CLI. |
 | Browser sessions stop working after idle | Ask the agent to open a fresh session or re-bind with `tabs` and `bind --page`. |
 

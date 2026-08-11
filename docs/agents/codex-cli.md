@@ -34,15 +34,24 @@ Restart Codex (or start a new session) after installing skills.
 
 ### Override default tools
 
-Codex CLI's native web tool is `web_search`, controlled by the top-level `web_search` setting in `~/.codex/config.toml`. Set it to `"disabled"` to remove the tool so Codex relies on Webcmd for web work:
+**Nothing to disable.** Codex CLI has no fetch tool and no browser tool, so Webcmd does not displace anything — it adds the surface Codex is missing. Codex drives it through the shell tool.
+
+Its one web tool is `web_search`, set by the top-level `web_search` key in `~/.codex/config.toml`. **Keep it enabled.** Webcmd has no search index of its own, and search is how a question becomes URLs for Webcmd to read.
+
+One change is worth recommending. `web_search` defaults to `"cached"`, an OpenAI-maintained index with no external web access, so results can be stale. Switching to `"live"` pairs better with Webcmd:
 
 ```toml
-web_search = "disabled"
+web_search = "live"
 ```
 
-Do not rely on the CLI flag `--dangerously-allow-web-search`; it only gates the tool and does not replace Webcmd's browser surface. Note that `web_search` defaults to `"cached"` (results from an OpenAI-maintained index without external web access) unless overridden.
+Accepted values are `"disabled"`, `"cached"` (default), `"indexed"`, and `"live"`. Ask before changing it — `"live"` means real network egress from the user's machine.
 
-The setting removes only the search tool; it does not affect the shell tool, which is how `webcmd` is driven.
+If the user has installed a browser or scraping MCP server, that does overlap with Webcmd. Individual MCP tools are denied per server:
+
+```toml
+[mcp_servers.some_browser_mcp]
+disabled_tools = ["navigate", "screenshot"]
+```
 
 ### Troubleshooting
 
@@ -50,7 +59,8 @@ The setting removes only the search tool; it does not affect the shell tool, whi
 | --- | --- |
 | `webcmd doctor` is red | Fix the browser runtime first; browser commands depend on it. |
 | Skills not loading in Codex | Run `webcmd skills add` with the `agents` provider, then restart `codex`. |
-| Codex still uses `web_search` | Confirm `web_search = "disabled"` in `~/.codex/config.toml`, then restart `codex`. |
+| Search results look stale | `web_search` defaults to `"cached"`. Set `web_search = "live"` in `~/.codex/config.toml`, then restart `codex`. |
+| `web_search` was disabled and search stopped working | Expected. Set it back to `"live"` or `"cached"` — Webcmd does not replace search. |
 | `webcmd` not found in Codex shell | Confirm `webcmd` is on the PATH Codex uses; restart after installing the CLI. |
 | Browser sessions stop working after idle | Ask the agent to open a fresh session or re-bind with `tabs` and `bind --page`. |
 
