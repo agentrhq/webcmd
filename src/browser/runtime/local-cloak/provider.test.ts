@@ -47,17 +47,29 @@ function fakePage(url: string, initialViewport: { width: number; height: number 
 }
 
 function makeProviderWithFakePage(initialViewport: { width: number; height: number } | null = { width: 1280, height: 720 }) {
-  const pages = [fakePage('https://example.com/', initialViewport)];
+  // `anchor` stands in for Chromium's own default initial tab — the runtime reserves it as
+  // ProfileRuntime.anchorPage on launch and never leases it out. `page` is the object the
+  // first real newPage() call hands back (whether triggered by a session's first getPage or
+  // an explicit new tab), matching what every test here treats as "the" first real page —
+  // pages[0] stays the untouched anchor, pages[1] is the first real one, exactly like the
+  // pre-fix layout, so index-based assertions on multi-tab flows don't need to change.
+  const anchor = fakePage('about:blank');
+  const page = fakePage('https://example.com/', initialViewport);
+  const pages = [anchor];
+  let realPagesCreated = 0;
   const cdpSession = { send: vi.fn().mockResolvedValue(undefined), detach: vi.fn().mockResolvedValue(undefined) };
   const browser = { contexts: vi.fn(() => [context]) };
   const context = {
     browser: vi.fn(() => browser),
     on: vi.fn(),
-    pages: vi.fn(() => pages.filter((page) => !page.isClosed())),
+    pages: vi.fn(() => pages.filter((p) => !p.isClosed())),
     newPage: vi.fn(async () => {
-      const page = fakePage('about:blank');
-      pages.push(page);
-      return page;
+      // A counter, not pages.length — some tests push externally-simulated pages (e.g. a
+      // popup) into `pages` before any real newPage() call happens.
+      const created = realPagesCreated === 0 ? page : fakePage('about:blank');
+      realPagesCreated += 1;
+      pages.push(created);
+      return created;
     }),
     newCDPSession: vi.fn().mockResolvedValue(cdpSession),
     cookies: vi.fn().mockResolvedValue([{ name: 'sid', value: '1', domain: 'example.com', path: '/' }]),
@@ -67,7 +79,7 @@ function makeProviderWithFakePage(initialViewport: { width: number; height: numb
     baseDir: '/tmp/webcmd-test',
     launchPersistentContext: vi.fn().mockResolvedValue(context),
   });
-  return { provider, browser, page: pages[0], pages, context, cdpSession };
+  return { provider, browser, page, pages, context, cdpSession };
 }
 
 describe('LocalCloakRuntimeProvider', () => {
@@ -654,7 +666,9 @@ describe('LocalCloakRuntimeProvider', () => {
       });
 
     await provider.dispatch({ id: 'exec', action: 'exec', session: 'work', surface: 'browser', code: 'document.readyState', profileId: 'default' });
-    expect(pages[1].evaluate).toHaveBeenCalledWith('document.readyState');
+    // pages[0] is the anchor, pages[1] is the 'navigate' session's own page, pages[2] is the
+    // second (index 1 among leased pages) tab that 'tabs new' created and this binds to.
+    expect(pages[2].evaluate).toHaveBeenCalledWith('document.readyState');
   });
 
   it('returns a typed bind error when the requested Cloak tab is missing', async () => {
@@ -759,8 +773,11 @@ describe('LocalCloakRuntimeProvider', () => {
     await expect(provider.dispatch({ id: 'close-window', action: 'close-window', session: 'first', surface: 'browser', page: second.page, profileId: 'default' }))
       .resolves.toMatchObject({ id: 'close-window', ok: true, data: { closed: true, page: second.page } });
 
+    // pages[0] is the anchor, pages[1] is the 'first' session's own page (left open), pages[2]
+    // is the 'second' tab that 'tabs new' created and that this closes by identity.
     expect(pages[0].isClosed()).toBe(false);
-    expect(pages[1].close).toHaveBeenCalled();
+    expect(pages[1].close).not.toHaveBeenCalled();
+    expect(pages[2].close).toHaveBeenCalled();
     expect(first.page).not.toBe(second.page);
   });
 });

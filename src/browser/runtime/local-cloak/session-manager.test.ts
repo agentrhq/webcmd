@@ -140,7 +140,9 @@ describe('CloakSessionManager', () => {
       background: true,
       focus: false,
     });
-    expect(launched.context.newPage).not.toHaveBeenCalled();
+    // The runtime's initial page becomes the anchor (never leased), so the first, foreground
+    // lease creates its own page via newPage; only the explicit background lease uses CDP.
+    expect(launched.context.newPage).toHaveBeenCalledTimes(1);
   });
 
   it('creates an explicit background tab without focusing Chromium', async () => {
@@ -163,7 +165,9 @@ describe('CloakSessionManager', () => {
       background: true,
       focus: false,
     });
-    expect(launched.context.newPage).not.toHaveBeenCalled();
+    // The runtime's initial page becomes the anchor (never leased), so the first, foreground
+    // lease creates its own page via newPage; only the explicit background tab uses CDP.
+    expect(launched.context.newPage).toHaveBeenCalledTimes(1);
   });
 
   it('creates an explicit foreground tab through Playwright', async () => {
@@ -234,7 +238,9 @@ describe('CloakSessionManager', () => {
     expect(second.context).toBe(launched.context);
     expect(first.page).toBe(second.page);
     expect(first.pageId).toBe(second.pageId);
-    expect(launched.context.newPage).not.toHaveBeenCalled();
+    // Exactly one real page creation for the coalesced lease — the runtime's initial page
+    // became the anchor, so it's not what the two concurrent callers end up sharing.
+    expect(launched.context.newPage).toHaveBeenCalledTimes(1);
     expect(launched.cdp.send).not.toHaveBeenCalled();
   });
 
@@ -730,5 +736,112 @@ describe('CloakSessionManager', () => {
       errorCode: 'profile_required',
     });
     expect(launchPersistentContext).toHaveBeenCalledTimes(2);
+  });
+
+  describe('runtime-owned anchor page', () => {
+    it('keeps the runtime\'s initial page open as the anchor when the only leased page is released', async () => {
+      const launched = fakeContext();
+      const leasedPage = fakeContext().page;
+      launched.context.newPage.mockResolvedValue(leasedPage);
+      const manager = new CloakSessionManager({
+        baseDir: '/tmp/webcmd-test',
+        launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
+      });
+
+      const lease = await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser' });
+      expect(lease.page).toBe(leasedPage);
+
+      await manager.release({ profileId: 'default', session: 'work', surface: 'browser' });
+
+      expect(leasedPage.close).toHaveBeenCalled();
+      expect(launched.page.close).not.toHaveBeenCalled();
+      expect(manager.activeProfileIds()).toEqual(['default']);
+    });
+
+    it('reuses the same runtime for an immediate getPage after releasing the final leased page', async () => {
+      const launched = fakeContext();
+      const leasedPage = fakeContext().page;
+      launched.context.newPage.mockResolvedValue(leasedPage);
+      const launchPersistentContext = vi.fn().mockResolvedValue(launched.context);
+      const manager = new CloakSessionManager({ baseDir: '/tmp/webcmd-test', launchPersistentContext });
+
+      await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser' });
+      await manager.release({ profileId: 'default', session: 'work', surface: 'browser' });
+      const next = await manager.getPage({ profileId: 'default', session: 'work-again', surface: 'browser' });
+
+      expect(next.context).toBe(launched.context);
+      expect(launchPersistentContext).toHaveBeenCalledTimes(1);
+    });
+
+    it('recreates the anchor before closing the final leased page if the anchor was unexpectedly closed', async () => {
+      const launched = fakeContext();
+      const leasedPage = fakeContext().page;
+      const recreatedAnchor = fakeContext().page;
+      launched.context.newPage
+        .mockResolvedValueOnce(leasedPage)
+        .mockResolvedValueOnce(recreatedAnchor);
+      const manager = new CloakSessionManager({
+        baseDir: '/tmp/webcmd-test',
+        launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
+      });
+
+      await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser' });
+      launched.page.isClosed.mockReturnValue(true); // the anchor closed out from under us
+
+      await manager.release({ profileId: 'default', session: 'work', surface: 'browser' });
+
+      expect(launched.context.newPage).toHaveBeenCalledTimes(2); // leased page + recreated anchor
+      expect(leasedPage.close).toHaveBeenCalled();
+    });
+
+    it('never exposes the anchor page through listPages', async () => {
+      const launched = fakeContext();
+      const manager = new CloakSessionManager({
+        baseDir: '/tmp/webcmd-test',
+        launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
+      });
+
+      await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser' });
+
+      expect(await manager.listPages({ profileId: 'default' })).toHaveLength(1);
+    });
+
+    it('gives each profile its own independent anchor page', async () => {
+      const peer = fakeContext();
+      const actor = fakeContext();
+      peer.context.newPage.mockResolvedValue(fakeContext().page);
+      actor.context.newPage.mockResolvedValue(fakeContext().page);
+      const launchPersistentContext = vi.fn()
+        .mockResolvedValueOnce(peer.context)
+        .mockResolvedValueOnce(actor.context);
+      const manager = new CloakSessionManager({ baseDir: '/tmp/webcmd-test', launchPersistentContext });
+
+      await manager.getPage({ profileId: 'peer', session: 'work', surface: 'browser' });
+      await manager.getPage({ profileId: 'actor', session: 'work', surface: 'browser' });
+      await manager.release({ profileId: 'peer', session: 'work', surface: 'browser' });
+      await manager.release({ profileId: 'actor', session: 'work', surface: 'browser' });
+
+      expect(peer.page.close).not.toHaveBeenCalled();
+      expect(actor.page.close).not.toHaveBeenCalled();
+      expect(manager.activeProfileIds().sort()).toEqual(['actor', 'peer']);
+    });
+
+    it('does not lease the anchor page out to freshPage requests', async () => {
+      const launched = fakeContext();
+      const leasedPage = fakeContext().page;
+      launched.context.newPage.mockResolvedValue(leasedPage);
+      const manager = new CloakSessionManager({
+        baseDir: '/tmp/webcmd-test',
+        launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
+      });
+      const key = { profileId: 'default', session: 'work', surface: 'browser' as const };
+
+      const first = await manager.getPage(key);
+      expect(first.page).not.toBe(launched.page);
+
+      const fresh = await manager.getPage({ ...key, freshPage: true });
+      expect(fresh.page).not.toBe(launched.page);
+      expect(launched.page.close).not.toHaveBeenCalled();
+    });
   });
 });

@@ -83,6 +83,22 @@ interface ProfileRuntime {
   pages: Map<string, PageEntry>;
   selectedPageId?: string;
   lastSeenAt: number;
+  /**
+   * An unleased `about:blank` page the runtime itself owns, so the Chromium context never
+   * drops to zero pages. Without it, releasing the final leased page can begin browser/context
+   * shutdown; a command arriving before that shutdown finishes propagating then fails with
+   * "Target page, context or browser has been closed". Never leased to a task or site session,
+   * and never exposed through listPages, tab selection, page IDs, or network capture.
+   *
+   * Undefined only in the (practically nonexistent) case where launchPersistentContext handed
+   * back a context with zero pages already open — created lazily on demand instead of blocking
+   * runtime registration on it, so a context close mid-creation can't orphan the whole launch.
+   */
+  anchorPage: PlaywrightPage | undefined;
+}
+
+function anchorPageIsHealthy(runtime: ProfileRuntime): boolean {
+  return runtime.anchorPage !== undefined && !pageIsClosed(runtime.anchorPage);
 }
 
 export interface CloakSessionManagerOptions {
@@ -165,19 +181,18 @@ export class CloakSessionManager {
         runtime.pages.delete(leaseKey);
         this.clearIdleTimer(existing);
         if (runtime.selectedPageId === existing.pageId) runtime.selectedPageId = undefined;
+        // Already inside withPageCreationLock via the wrapper above — use the lock-free
+        // variant here, or re-acquiring the same per-profile lock would deadlock.
+        await this.ensureAnchorPageLocked(runtime);
         if (!pageIsClosed(existing.page)) await existing.page.close().catch(() => {});
       }
 
       return this.createPageWithRecoveryAttempt(
         profileId,
         input.windowMode,
-        (candidate) => {
-          const existingPages = candidate.context.pages();
-          // freshPage must never adopt a leftover tab — its whole point is a clean DOM.
-          return !freshPage && existingPages[0] && candidate.pages.size === 0
-            ? existingPages[0]
-            : this.createPage(candidate.context, input.windowMode);
-        },
+        // Never adopt an existing context page here — the runtime's initial page is reserved
+        // as its anchor (see launchProfileRuntime), so every lease gets its own fresh page.
+        (candidate) => this.createPage(candidate.context, input.windowMode),
         (candidate, page) => {
           const pageId = nextPageId();
           const entry: PageEntry = { page, pageId, session, surface, siteSession: input.siteSession, idleTimeout: input.idleTimeout };
@@ -371,6 +386,7 @@ export class CloakSessionManager {
     runtime.pages.delete(leaseKey);
     this.clearIdleTimer(entry);
     if (runtime.selectedPageId === entry.pageId) runtime.selectedPageId = undefined;
+    await this.ensureAnchorPage(profileId, runtime);
     if (!pageIsClosed(entry.page)) await entry.page.close().catch(() => {});
     runtime.lastSeenAt = Date.now();
     return entry.pageId;
@@ -391,6 +407,7 @@ export class CloakSessionManager {
       this.clearIdleTimer(entry);
       if (runtime.selectedPageId === entry.pageId) runtime.selectedPageId = undefined;
       if (entry.siteSession !== 'persistent' && !pageIsClosed(entry.page)) {
+        await this.ensureAnchorPage(profileId, runtime);
         await entry.page.close().catch(() => {});
       }
     }
@@ -437,10 +454,34 @@ export class CloakSessionManager {
       if (!isProfileAlreadyInUseError(err) || !(await this.recoverLockedProfile(userDataDir))) throw err;
       context = await launchPersistentContext(launchOptions);
     }
-    const runtime = { context, pages: new Map(), lastSeenAt: Date.now() };
+    // Chromium already hands launchPersistentContext its own initial about:blank page; adopt
+    // that synchronously as the anchor. Registration must not block on creating one when it's
+    // missing — see the ProfileRuntime.anchorPage doc comment — so a missing anchor is filled
+    // in lazily by ensureAnchorPage the next time a leased page is about to close.
+    const runtime: ProfileRuntime = { context, pages: new Map(), lastSeenAt: Date.now(), anchorPage: context.pages()[0] };
     this.attachRuntimeLifecycle(profileId, runtime);
     this.profiles.set(profileId, runtime);
     return runtime;
+  }
+
+  /**
+   * Recreate the anchor if it's missing or was unexpectedly closed while the context is still
+   * healthy, so closing the caller's own leased page next can never drop the context to zero
+   * pages. Callers that are not already inside withPageCreationLock for this profile must use
+   * ensureAnchorPage instead — this variant does not acquire the lock itself.
+   */
+  private async ensureAnchorPageLocked(runtime: ProfileRuntime): Promise<void> {
+    if (anchorPageIsHealthy(runtime)) return;
+    runtime.anchorPage = await this.createPage(runtime.context);
+  }
+
+  private async ensureAnchorPage(profileId: string, runtime: ProfileRuntime): Promise<void> {
+    if (anchorPageIsHealthy(runtime)) return;
+    if (this.profiles.get(profileId) !== runtime) return;
+    await this.withPageCreationLock(profileId, async () => {
+      if (this.profiles.get(profileId) !== runtime) return;
+      await this.ensureAnchorPageLocked(runtime);
+    });
   }
 
   private invalidateProfileRuntime(profileId: string, runtime: ProfileRuntime): void {
@@ -557,8 +598,17 @@ export class CloakSessionManager {
     if (runtime.selectedPageId === entry.pageId) runtime.selectedPageId = undefined;
     runtime.lastSeenAt = Date.now();
     if (entry.siteSession !== 'persistent' && !pageIsClosed(entry.page)) {
+      const profileId = this.profileIdForRuntime(runtime);
+      if (profileId) await this.ensureAnchorPage(profileId, runtime);
       await entry.page.close().catch(() => {});
     }
+  }
+
+  private profileIdForRuntime(runtime: ProfileRuntime): string | undefined {
+    for (const [profileId, candidate] of this.profiles.entries()) {
+      if (candidate === runtime) return profileId;
+    }
+    return undefined;
   }
 
   private clearIdleTimer(entry: PageEntry): void {
