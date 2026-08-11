@@ -40,7 +40,13 @@ Hermes then reads `webcmd-usage` and `webcmd-browser` as skills. Restart Hermes 
 
 ### Override default tools
 
-Hermes' native browser toolset is `browser` (`browser_navigate`, `browser_snapshot`, `browser_click`, `browser_type`, `browser_scroll`, and the rest). Disable it so Hermes does not keep its native browser tools alongside Webcmd:
+Hermes' native browser toolset is `browser` (`browser_navigate`, `browser_snapshot`, `browser_click`, `browser_type`, `browser_scroll`, and the rest). It is a full browser stack wired into Hermes' dev loop, so the default is to route rather than disable — see [the routing rule](../../start.md#the-routing-rule).
+
+Add this to your Hermes system prompt or project instructions:
+
+> Use Webcmd (`webcmd list`, `webcmd browser <session> ...` via the `terminal` toolset) for anything on the open web: research, fetching, authenticated third-party sites, multi-step automation. Use the `browser_*` tools only for the app being edited — localhost dev server, console and network triage, visual checks.
+
+**Full override (opt-in).** If you never debug local apps through Hermes' browser, disable the toolset outright:
 
 ```bash
 hermes tools disable browser
@@ -56,7 +62,7 @@ agent:
 
 Recommended: use `hermes tools disable browser` so the terminal toolset stays available.
 
-Note: Hermes' `browser` toolset statically bundles `web_search`, so disabling `browser` also removes `web_search` from every session. `web_extract` and the rest of the `web` toolset are unaffected. That is acceptable here: Webcmd's `smart-search` skill and adapters cover search, so Hermes should rely on Webcmd for browser work and search.
+Note: Hermes' `browser` toolset statically bundles `web_search`, so disabling `browser` also removes `web_search` from every session. `web_extract` and the rest of the `web` toolset are unaffected. That is acceptable — Webcmd's `smart-search` skill and adapters cover search.
 
 Do not disable the `terminal` toolset — that is how Hermes runs `webcmd`.
 
@@ -66,7 +72,7 @@ Do not disable the `terminal` toolset — that is how Hermes runs `webcmd`.
 | --- | --- |
 | `webcmd doctor` is red | Fix the browser runtime first; browser commands depend on it. |
 | Skills not loading in Hermes | Confirm `skills.external_dirs` includes `~/.agents/skills`, restart Hermes, and check skill discovery. |
-| Hermes still uses `browser_*` tools | Confirm `agent.disabled_toolsets` includes `browser`, then restart Hermes. |
+| Hermes uses `browser_*` for open-web work | Restate the routing rule in the system prompt; for a hard block, add `browser` to `agent.disabled_toolsets` and restart Hermes. |
 | `web_search` missing after disabling `browser` | Expected: Hermes bundles `web_search` inside the `browser` toolset. Use Webcmd's `smart-search` skill or adapters instead. |
 | `webcmd` not found in Hermes terminal | Confirm `webcmd` is on the host PATH that Hermes' `terminal` toolset uses; non-interactive shells may skip shell init files. |
 | Browser sessions stop working after idle | Ask the agent to open a fresh session or re-bind with `tabs` and `bind --page`. |

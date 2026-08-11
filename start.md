@@ -66,22 +66,38 @@ Using the Webcmd skill installed in the previous step, complete this task:
 
 Do not hand-write a one-off script from memory. Follow the skill guidance, run the task end to end, and close any browser session you open. Success means returning five real stories with titles and URLs.
 
-### 4. Override default tools
+### 4. Route web work to Webcmd
 
-Open the *Override default tools* section on the matching per-agent page under `docs/agents/`. Disable the agent's native browser tools so Webcmd is used instead:
+Open the *Override default tools* section on the matching per-agent page under `docs/agents/`. Harnesses get one of two treatments.
 
-| Harness | Native tools Webcmd replaces | Page |
+**Replace** — narrow fetch and search tools. Webcmd covers these end to end (adapters plus the `smart-search` skill), so disable them and let Webcmd be the harness's web surface.
+
+| Harness | Tools to disable | Page |
 | --- | --- | --- |
-| Cursor | `Browser`, `Web` | [cursor.md](docs/agents/cursor.md#override-default-tools) |
-| OpenCode | `webfetch`; `websearch` when enabled | [opencode.md](docs/agents/opencode.md#override-default-tools) |
 | Claude Code | `WebFetch`, `WebSearch` | [claude-code.md](docs/agents/claude-code.md#override-default-tools) |
 | Codex CLI | `web_search` | [codex-cli.md](docs/agents/codex-cli.md#override-default-tools) |
-| Hermes Agent | `browser` + `web` toolsets (`browser_*`, `web_search`, `web_extract`) | [hermes.md](docs/agents/hermes.md#override-default-tools) |
-| Pi | none (optional `pi-skills`) | [pi.md](docs/agents/pi.md#override-default-tools) |
-| OpenClaw | `web_search`, `web_fetch`, `x_search`, `browser` | [openclaw.md](docs/agents/openclaw.md#override-default-tools) |
-| Other Coding Agents | native web fetch / browser tools | see instructions below |
+| OpenCode | `webfetch`, `websearch` | [opencode.md](docs/agents/opencode.md#override-default-tools) |
 
-If your harness is not listed above, disable any default built-in browser tool or web-search tool so the agent uses Webcmd instead. Do not disable builtin web search tool and keep custom tools and skills untouched. If the harness has none of these tools, no override is needed.
+**Route** — full browser toolsets. These do more than Webcmd targets: they are wired into the local dev loop, attaching to a running dev server and surfacing console errors, network activity, and screenshots of the app under edit. Do not disable them by default. Apply the routing rule below instead.
+
+| Harness | Native browser toolset | Also disable (Replace tools) | Page |
+| --- | --- | --- | --- |
+| Cursor | `Browser` | `Web` | [cursor.md](docs/agents/cursor.md#override-default-tools) |
+| Hermes Agent | `browser_*` | — (bundles `web_search`; see page) | [hermes.md](docs/agents/hermes.md#override-default-tools) |
+| OpenClaw | `browser`, `browser_visual` | `web_search`, `web_fetch`, `x_search`, `search_news` | [openclaw.md](docs/agents/openclaw.md#override-default-tools) |
+| Pi | none (optional `pi-skills`) | — | [pi.md](docs/agents/pi.md#override-default-tools) |
+
+#### The routing rule
+
+Use **Webcmd** for the open web: research and fetching, authenticated third-party sites, multi-step automation, anything worth turning into a reusable adapter. Webcmd owns auth profiles, human handoff, token-compact snapshots, and the adapter registry.
+
+Use the **harness's native browser tool** for the app you are editing: localhost dev server, console and network triage, visual checks after a change. It is attached to the dev loop; Webcmd is not.
+
+This is a question of integration, not capability — `webcmd browser <session> run` can drive localhost too. Routing by task domain means neither surface has to be crippled.
+
+If your harness is not listed above, apply the same split: disable a plain fetch or search tool, keep a full browser toolset and state the routing rule in the harness's system prompt or rules file. Leave custom tools and skills untouched. If the harness has neither kind of tool, no override is needed.
+
+**Full override (opt-in).** If you never debug local apps through the harness browser and want the token savings, disable the native browser toolset as well and use Webcmd for everything. Each per-agent page documents how.
 
 ### 5. Finish
 
