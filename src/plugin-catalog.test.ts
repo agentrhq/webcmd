@@ -119,4 +119,28 @@ describe('plugin catalog', () => {
     expect(result.plugins.map((plugin) => plugin.name)).toEqual(['flights']);
     expect(result.errors).toEqual([{ sourceId: 'bad', manifestUrl: 'https://bad.test/webcmd-plugin.json', message: 'network failed' }]);
   });
+
+  it('matches multi-word queries against a single-word plugin name, ignoring separators', async () => {
+    const catalog: PluginCatalog = {
+      version: 1,
+      sources: [{ id: 'ok', source: 'github:ok/repo', manifestUrl: 'https://ok.test/webcmd-plugin.json' }],
+    };
+    const fetchJson = async () => ({ plugins: { hackernews: { path: 'plugins/hackernews', description: 'Browse Hacker News stories and comments' } } });
+
+    for (const query of ['hacker news', 'hacker-news', 'hackernews', 'hacker']) {
+      const result = await searchCatalogPlugins(catalog, { query, fetchJson });
+      expect(result.plugins.map((plugin) => plugin.name)).toEqual(['hackernews']);
+    }
+  });
+
+  it('requires every query token to match, not just one', async () => {
+    const catalog: PluginCatalog = {
+      version: 1,
+      sources: [{ id: 'ok', source: 'github:ok/repo', manifestUrl: 'https://ok.test/webcmd-plugin.json' }],
+    };
+    const fetchJson = async () => ({ plugins: { hackernews: { path: 'plugins/hackernews', description: 'Browse Hacker News stories and comments' } } });
+
+    const result = await searchCatalogPlugins(catalog, { query: 'hacker weather', fetchJson });
+    expect(result.plugins).toEqual([]);
+  });
 });

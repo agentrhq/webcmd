@@ -133,6 +133,21 @@ export function flattenPluginManifest(source: PluginCatalogSource, manifest: Plu
   }];
 }
 
+function normalizeSearchText(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+function tokenizeSearchQuery(query: string | undefined): string[] {
+  return (query ?? '').trim().toLowerCase().split(/\s+/).map(normalizeSearchText).filter(Boolean);
+}
+
+// Ignoring separators (spaces, hyphens) lets "hacker news", "hacker-news", and "hackernews"
+// all match a plugin named "hackernews" — every token must appear somewhere in the haystack.
+function matchesSearchTokens(plugin: PluginSearchRow, tokens: string[]): boolean {
+  const haystack = normalizeSearchText(`${plugin.name} ${plugin.description ?? ''}`);
+  return tokens.every((token) => haystack.includes(token));
+}
+
 export async function searchCatalogPlugins(
   catalog: PluginCatalog,
   options: { query?: string; fetchJson?: FetchJson } = {},
@@ -150,9 +165,9 @@ export async function searchCatalogPlugins(
     }
   }));
 
-  const query = options.query?.trim().toLowerCase();
-  const filtered = query
-    ? plugins.filter((plugin) => `${plugin.name} ${plugin.description ?? ''}`.toLowerCase().includes(query))
+  const queryTokens = tokenizeSearchQuery(options.query);
+  const filtered = queryTokens.length
+    ? plugins.filter((plugin) => matchesSearchTokens(plugin, queryTokens))
     : plugins;
 
   filtered.sort((a, b) => a.name.localeCompare(b.name));
