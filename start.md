@@ -70,7 +70,7 @@ Do not hand-write a one-off script from memory. Follow the skill guidance, run t
 
 Recommend these changes to the user and ask before applying any of them. Do not edit their tool configuration on your own.
 
-Suggest disabling the harness's built-in fetch and search tools, since Webcmd covers them and returns exact fields from real pages instead of summaries:
+Suggest disabling the harness's built-in webfetch and broswer navigation tools, since Webcmd covers them and returns exact fields from real pages instead of summaries. Do not replace any search tool.
 
 | Harness | Suggest disabling | Page |
 | --- | --- | --- |
