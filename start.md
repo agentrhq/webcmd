@@ -111,7 +111,7 @@ For instructions on how to disable tools for a specific harness, refer to the do
 | Hermes Agent | [hermes.md](docs/agents/hermes.md#override-default-tools) |
 | Pi | [pi.md](docs/agents/pi.md#override-default-tools) |
 | OpenClaw | [openclaw.md](docs/agents/openclaw.md#override-default-tools) |
-| Other Coding Agents | see their officical docs |
+| Other Coding Agents | see their official docs |
 
 ### 5. Finish
 

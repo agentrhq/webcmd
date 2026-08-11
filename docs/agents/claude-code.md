@@ -20,7 +20,29 @@ Fetch and follow https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md
 
 ### Install and configure
 
-Install Webcmd and its skills:
+Pick one of the two paths below. Do not use both — the plugin already carries the skills, and installing them again leaves duplicates.
+
+#### Plugin (recommended)
+
+Add the marketplace and install the plugin:
+
+```bash
+claude plugin marketplace add agentrhq/webcmd
+```
+
+```bash
+claude plugin install webcmd@webcmd
+```
+
+Or from inside a session, with the slash-command equivalents: `/plugin marketplace add agentrhq/webcmd`, then `/plugin install webcmd@webcmd`.
+
+Pin to a branch or tag by appending `@ref` to the source: `claude plugin marketplace add agentrhq/webcmd@v1.0`. Both commands take `--scope user` (default), `project`, or `local`; use `--scope project` to commit the marketplace so the whole team gets it.
+
+The plugin bundles all seven Webcmd skills. Start a new session after installing.
+
+Useful follow-ups: `claude plugin list`, `claude plugin uninstall webcmd`, `claude plugin marketplace update webcmd`.
+
+#### Manual
 
 ```bash
 npm install -g @agentrhq/webcmd

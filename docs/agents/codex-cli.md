@@ -20,7 +20,29 @@ Fetch and follow https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md
 
 ### Install and configure
 
-Install Webcmd and its skills:
+Pick one of the two paths below. Do not use both — the plugin already carries the skills, and installing them again leaves duplicates.
+
+#### Plugin (recommended)
+
+Add the marketplace and install the plugin:
+
+```bash
+codex plugin marketplace add agentrhq/webcmd
+```
+
+```bash
+codex plugin add webcmd@webcmd
+```
+
+`codex plugin add` takes `PLUGIN@MARKETPLACE`, or a bare plugin name with `-m webcmd`. Pin a version with `codex plugin marketplace add agentrhq/webcmd --ref <tag>`.
+
+The same flow is available in the TUI: run `/plugins`, choose **Add plugin marketplace**, and enter `agentrhq/webcmd` or `https://github.com/agentrhq/webcmd`.
+
+The plugin bundles all seven Webcmd skills, and installs the npm CLI on first use if `webcmd` is missing. Start a new task after installing.
+
+Useful follow-ups: `codex plugin list`, `codex plugin remove webcmd`, `codex plugin marketplace upgrade`. All accept `--json`.
+
+#### Manual
 
 ```bash
 npm install -g @agentrhq/webcmd
