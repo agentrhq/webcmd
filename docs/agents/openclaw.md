@@ -3,13 +3,11 @@ title: OpenClaw Agent
 sidebarTitle: OpenClaw
 ---
 
-> **Agent prompt**
->
-> Fetch and follow [start.md](https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md) to set up Webcmd end to end, then read this page's Manual — especially [Override default tools](#override-default-tools) — before doing browser work.
+## Agent prompt
 
-> Use Webcmd with [OpenClaw](https://openclaw.ai) to replace its built-in `web_search`, `web_fetch`, and `browser` tools with the Webcmd browser surface.
-
-OpenClaw ships core web tools (`web_search`, `web_fetch`, `browser`, `browser_visual`, `search_news`) plus a Playwright-based browser. Point OpenClaw at Webcmd's browser CLI instead: adapters return exact, stable fields, and `webcmd browser` sessions keep logged-in profiles. OpenClaw runs `webcmd` through its `exec` tool.
+```text
+Fetch and follow https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md to set up Webcmd end to end.
+```
 
 ## Manual
 

@@ -3,13 +3,11 @@ title: Hermes Agent
 sidebarTitle: Hermes
 ---
 
-> **Agent prompt**
->
-> Fetch and follow [start.md](https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md) to set up Webcmd end to end, then read this page's Manual — especially [Override default tools](#override-default-tools) — before doing browser work.
+## Agent prompt
 
-> Use Webcmd with [Hermes Agent](https://hermes-agent.nousresearch.com/docs) to replace its built-in `browser_*` stack with Webcmd's adapters and `webcmd browser` sessions.
-
-Point Hermes at Webcmd's browser CLI to replace its native browser toolset with Webcmd's adapters and `webcmd browser` sessions. Hermes drives Webcmd through its `terminal` toolset. Adapter-first commands and compact snapshots usually use fewer tokens than Hermes' native browser tools.
+```text
+Fetch and follow https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md to set up Webcmd end to end.
+```
 
 ## Manual
 

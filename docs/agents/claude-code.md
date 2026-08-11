@@ -3,13 +3,11 @@ title: Claude Code Agent
 sidebarTitle: Claude Code
 ---
 
-> **Agent prompt**
->
-> Fetch and follow [start.md](https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md) to set up Webcmd end to end, then read this page's Manual — especially [Override default tools](#override-default-tools) — before doing browser work.
+## Agent prompt
 
-> Use Webcmd with [Claude Code](https://code.claude.com) to replace its native `WebFetch` and `WebSearch` tools with the Webcmd browser surface.
-
-Claude Code's native web tools are lossy by design: `WebFetch` summarizes a page with a small extraction model and `WebSearch` returns result titles and URLs but cannot read the pages. Point Claude Code at Webcmd's browser CLI instead: adapters return exact, stable fields, and `webcmd browser` sessions render real pages with logged-in profiles. Claude Code runs `webcmd` through its Bash tool.
+```text
+Fetch and follow https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md to set up Webcmd end to end.
+```
 
 ## Manual
 
@@ -20,7 +18,18 @@ Claude Code's native web tools are lossy by design: `WebFetch` summarizes a page
 * Claude Code (`claude`), installed globally or in the project
 * A browser runtime; confirm with `webcmd doctor` before browser work
 
-### Install and configure
+### Install the plugin
+
+```bash
+claude plugin marketplace add agentrhq/webcmd
+claude plugin install webcmd@webcmd
+```
+
+This installs all seven bundled Webcmd skills. Do not also add those skills with `webcmd skills add`; running both leaves two copies that can sit at different versions.
+
+Plugin updates are version-gated, not commit-gated. Run `claude plugin update webcmd@webcmd` to pick up a new release; it is separate from `webcmd update`, which upgrades only the npm CLI.
+
+### Install and configure without the plugin
 
 Install Webcmd and its skills:
 
@@ -59,7 +68,8 @@ Denying these tools does not affect the Bash tool, which is how `webcmd` is driv
 | Symptom | What to try |
 | --- | --- |
 | `webcmd doctor` is red | Fix the browser runtime first; browser commands depend on it. |
-| Skills not loading in Claude Code | Run `webcmd skills add` with the `claude` provider, then restart `claude`. |
+| Skills not loading in Claude Code | Run `webcmd skills add` with the `claude` provider, then restart `claude`. With the plugin, run `claude plugin install webcmd@webcmd` and restart. |
+| Skill text looks out of date | `webcmd update` upgrades only the CLI. Run `claude plugin update webcmd@webcmd` to refresh plugin skills. |
 | Claude Code still uses `WebFetch` / `WebSearch` | Confirm `permissions.deny` lists both in the active settings file, then restart `claude`. |
 | `claude` requires permission prompts for `webcmd` | The Bash tool still asks before non-approved commands; run `claude --dangerously-skip-permissions` or allow the shell command if you accept the risk. |
 | Browser sessions stop working after idle | Ask the agent to open a fresh session or re-bind with `tabs` and `bind --page`. |

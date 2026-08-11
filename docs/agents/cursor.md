@@ -3,13 +3,11 @@ title: Cursor Agent
 sidebarTitle: Cursor
 ---
 
-> **Agent prompt**
->
-> Fetch and follow [start.md](https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md) to set up Webcmd end to end, then read this page's Manual — especially [Override default tools](#override-default-tools) — before doing browser work.
+## Agent prompt
 
-> Use Webcmd with [Cursor](https://cursor.com) to replace its built-in Browser and Web tools with Webcmd's adapters and `webcmd browser` sessions.
-
-Point Cursor's agent at Webcmd's browser CLI to replace its native Browser (navigate/click/screenshot) and Web (search/fetch) tools with Webcmd's adapters and `webcmd browser` sessions. Cursor's agent drives Webcmd through its shell tool. Adapter-first commands and compact snapshots usually use fewer tokens than Cursor's native web tools.
+```text
+Fetch and follow https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md to set up Webcmd end to end.
+```
 
 ## Manual
 

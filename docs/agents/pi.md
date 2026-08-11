@@ -3,13 +3,11 @@ title: Pi Agent
 sidebarTitle: Pi
 ---
 
-> **Agent prompt**
->
-> Fetch and follow [start.md](https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md) to set up Webcmd end to end, then read this page's Manual — especially [Override default tools](#override-default-tools) — before doing browser work.
+## Agent prompt
 
-> Use Webcmd with [Pi](https://pi.dev) to give it a browser surface. Pi ships no built-in web, search, or browser tools, so Webcmd is driven through Pi's default `bash` tool with no permission or config changes.
-
-Pi is a minimal terminal coding harness whose default tools are filesystem and shell only (`read`, `bash`, `edit`, `write`, with `grep`, `find`, and `ls` available). Its agent drives Webcmd through the `bash` tool. Adapter-first commands and compact snapshots usually use fewer tokens than the official `brave-search` and `browser-tools` skills, and logged-in profiles handle authenticated pages.
+```text
+Fetch and follow https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md to set up Webcmd end to end.
+```
 
 ## Manual
 
