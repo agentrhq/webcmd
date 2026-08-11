@@ -35,12 +35,14 @@ On top of live browser control, Webcmd adds 3 layers of learnings. Each layer co
 | 3. Extend existing CLIs | The workflow is deterministic enough to stop browsing. | Extend the `webcmd <site>` adapter with a tailored command so the workflow runs instantly with the least amount of tokens. |
 
 For local, multi-step browser exploration, agents can send one sandboxed
-Playwright-style program to an existing CloakBrowser session:
+Playwright-style program to an explicit browser session:
 
 ```bash
-webcmd browser work run --file explore.js
+webcmd session create -f json
+webcmd --session session_abc browser run --file explore.js
 printf 'const page = await browser.currentPage(); return await page.title();' \
-  | webcmd browser work run --stdin
+  | webcmd --session session_abc browser run --stdin
+webcmd session close session_abc
 ```
 
 ## Demo

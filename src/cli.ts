@@ -912,7 +912,7 @@ cli({
         fs.mkdirSync(dir, { recursive: true });
         fs.writeFileSync(filePath, template, 'utf-8');
         console.log(`Created: ${filePath}`);
-        console.log('First time on this site? Run: webcmd browser recon run --stdin');
+        console.log('First time on this site? Run: webcmd session create, then webcmd --session <session-id> browser run --stdin');
         console.log(`Edit the file to implement your adapter, then run: webcmd browser verify ${name}`);
       } catch (err) {
         console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);

@@ -61,7 +61,7 @@ Persistent-session adapters (`siteSession: 'persistent'`) share one tab per site
 
 - Check the trace screenshot and `location.href`: a modal over a blank page or the wrong URL means the tab carried stale DOM from a previous command, not that the site rejected this request.
 - Check session-scoped context: sites often scope results to a selected city, date, or account. A "closed" / "unavailable" verdict can simply mean the browser's selected context does not match the request (for example, a seat layout opened while the site's location cookie points at another city).
-- Reproduce in a separate browser session with `webcmd browser repair-clean run --stdin` before trusting the verdict. If it only fails in the adapter's persistent tab, fix state handling (`freshPage: true`, dismiss-and-renavigate, context preconditions) instead of selectors.
+- Reproduce in a separate browser session with `webcmd --session <session-id> browser run --stdin` before trusting the verdict. If it only fails in the adapter's persistent tab, fix state handling (`freshPage: true`, dismiss-and-renavigate, context preconditions) instead of selectors.
 
 ## Step 1: Collect Trace Context
 
@@ -144,18 +144,18 @@ Use `webcmd browser` to inspect the live site. Do not use the broken adapter for
 For DOM changes:
 
 ```bash
-webcmd browser repair run --stdin --snapshot-mode tree <<'JS'
+webcmd --session <session-id> browser run --stdin --snapshot-mode tree <<'JS'
 await page.goto('https://example.com/target-page');
 await page.waitForLoadState('domcontentloaded');
 return { url: page.url(), title: await page.title() };
 JS
-webcmd browser repair snapshot --snapshot-mode tree
+webcmd --session <session-id> browser snapshot --snapshot-mode tree
 ```
 
 For API changes:
 
 ```bash
-webcmd browser repair run --stdin <<'JS'
+webcmd --session <session-id> browser run --stdin <<'JS'
 const responses = [];
 page.on('response', async response => {
   if (!response.url().includes('<target-fragment>')) return;
@@ -290,8 +290,8 @@ In all stop cases, clearly report the situation instead of making speculative pa
    -> Page loaded, but post cards now use "[data-testid=post-container]"
 
 4. Agent explores:
-   -> webcmd browser repair run --stdin --snapshot-mode tree
-   -> webcmd browser repair snapshot --snapshot-mode tree
+   -> webcmd --session <session-id> browser run --stdin --snapshot-mode tree
+   -> webcmd --session <session-id> browser snapshot --snapshot-mode tree
 
 5. Agent patches adapterSourcePath:
    -> Replace old selector with stable scoped selector

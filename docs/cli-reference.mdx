@@ -57,14 +57,19 @@ The old `web read` command has been renamed to `web fetch-browser`.
 
 ## Local Browser Programs
 
-`browser run` executes one Playwright-style JavaScript program against an
-existing local CloakBrowser session:
+Create an opaque session before raw browser work. Profiles hold cookie/auth
+state; sessions are browser workspaces within that profile. Adapter commands
+may omit `--session` and use their profile's default session, but raw browser
+commands must always pass it:
 
 ```bash
-webcmd browser work snapshot --snapshot-mode act
-webcmd browser work snapshot --snapshot-mode read
-webcmd browser work run --stdin --timeout 45
-webcmd browser work run --stdin --no-snapshot-diff
+webcmd session create -f json
+webcmd --session session_abc browser snapshot --snapshot-mode act
+webcmd --session session_abc browser snapshot --snapshot-mode read
+webcmd --session session_abc browser run --stdin --timeout 45
+webcmd --session session_abc browser run --stdin --no-snapshot-diff
+webcmd session list
+webcmd session close session_abc
 ```
 
 Use `snapshot` for explicit page inspection. `act` is the default
@@ -79,11 +84,12 @@ The program runs in a fresh QuickJS sandbox with `page`, `context`, `browser`,
 and `console` globals. `page.snapshotForAI()` is not available. It can use the
 supported Page/Frame/Locator methods and passively inspect request and response
 events. It cannot access Node.js, the filesystem, environment variables, raw
-CDP endpoints, browser launch/connect APIs, or browser-context ownership.
+CDP endpoints, browser launch/connect APIs, browser-context ownership, or
+`context.newPage()`.
 Screenshot bytes are written to a Webcmd-owned cache directory and returned as
 a receipt.
 
-The public browser surface is `tabs`, `bind`, `run`, `snapshot`, and `close`.
+The public raw-browser surface is `tabs`, `bind`, `run`, and `snapshot`.
 Reusable adapters continue to use the existing `IPage` API. Playwright-style
 programs are for reconnaissance and ad-hoc multi-step work; they are not pasted
 into adapter modules.

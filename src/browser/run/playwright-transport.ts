@@ -95,6 +95,14 @@ function scopedContext(context: object, pages: () => object[]): object {
   proxy = new Proxy(context, {
     get(target, property) {
       if (property === 'pages') return pages;
+      if (property === 'newPage') {
+        return async () => {
+          throw new BrowserRunError(
+            'BROWSER_RUN_API_UNSUPPORTED',
+            'context.newPage() is not supported inside browser run; create or bind a Webcmd Session tab instead.',
+          );
+        };
+      }
       if (property === 'on' || property === 'addListener') {
         return (event: string, listener: Function) => {
           let registered = listener;

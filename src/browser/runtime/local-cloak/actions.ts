@@ -444,7 +444,7 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
             ok: false,
             errorCode: 'invalid_request',
             error: 'Bind requires --page or --index for a Cloak runtime tab',
-            errorHint: 'Run `webcmd browser <session> tab list`, then retry with `webcmd browser <session> bind --page <page-id>`.',
+            errorHint: 'Run `webcmd --session <session-id> browser tab list`, then retry with `webcmd --session <session-id> browser bind --page <page-id>`.',
           };
         }
         {
@@ -464,7 +464,7 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
               ok: false,
               errorCode: 'bound_tab_not_found',
               error: 'Cloak tab not found for bind target',
-              errorHint: 'Run `webcmd browser <session> tab list` and choose a current Cloak tab id or index.',
+              errorHint: 'Run `webcmd --session <session-id> browser tab list` and choose a current Cloak tab id or index.',
             };
           }
           return {

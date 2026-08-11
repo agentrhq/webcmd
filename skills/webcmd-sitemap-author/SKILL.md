@@ -45,7 +45,7 @@ The 800-token target remains the audit threshold. If a file exceeds it, either e
 ## Authoring Loop
 
 1. Load existing memory: local overlay first, then global seed if present.
-2. Verify reality with `webcmd browser <session> state`, `find`, `network`, and `analyze`. Browser state is truth.
+2. Verify reality with `webcmd --session <session-id> browser state`, `find`, `network`, and `analyze`. Browser state is truth.
 3. If you just completed `webcmd-adapter-author` for this site, seed from retained browse traces under `~/.webcmd/sites/<site>/traces/` instead of rediscovering from zero.
 4. Record durable structure only: page purpose, stable anchors, state signatures, actions, workflows, API references, pitfalls.
 5. Use stable ids for pages, actions, and workflows. They should survive URL params, locale text drift, and minor layout changes.
@@ -116,7 +116,7 @@ Start fallback paths with trigger condition plus `adapter_health_update`:
 ```yaml
 on_adapter_fail:
   - adapter_health_update: webcmd twitter post -> suspect
-  - webcmd browser <session> snapshot --snapshot-mode tree (verify current page)
+  - webcmd --session <session-id> browser snapshot --snapshot-mode tree (verify current page)
   - if not on /home: goto /home
   - action:open_compose in pages/home.md
 ```

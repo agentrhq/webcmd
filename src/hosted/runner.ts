@@ -191,6 +191,15 @@ async function dispatchHosted(
       LOCAL_ONLY_COMMAND_HELP,
     );
   }
+  if (args[0] === 'session') {
+    const parsed = parseHostedSessionSurface(args.slice(1), normalized.literal);
+    if (parsed.kind === 'help') {
+      await writeToStream(stdout, parsed.output);
+      return;
+    }
+    await dispatchHostedSession(parsed, client, stdout, normalized.profile);
+    return;
+  }
   if (args[0] === 'browser') {
     const invocation = await parseHostedBrowserInvocation(args, normalized.profile, normalized.session);
     const manifest = await client.getManifest();
@@ -435,6 +444,61 @@ async function dispatchHosted(
   }
 }
 
+type ParsedHostedSessionSurface =
+  | { kind: 'help'; output: string }
+  | { kind: 'run'; command: 'create' | 'list' | 'close'; format: string; session?: string };
+
+function parseHostedSessionSurface(argv: readonly string[], literal: boolean): ParsedHostedSessionSurface {
+  let stdout = '';
+  let stderr = '';
+  let parsed: Exclude<ParsedHostedSessionSurface, { kind: 'help' }> | undefined;
+  const root = new Command('webcmd');
+  const session = root.command('session').description('Create, list, and close browser Sessions');
+  const output = {
+    writeOut: (value: string) => { stdout += value; },
+    writeErr: (value: string) => { stderr += value; },
+  };
+  root.exitOverride().configureOutput(output);
+  session.exitOverride().configureOutput(output);
+  const configure = (command: Command, format: string): Command => command.option('-f, --format <fmt>', 'Output format: table, json, yaml', format);
+  configure(session.command('create'), 'yaml').action((options: { format: string }) => { parsed = { kind: 'run', command: 'create', format: options.format }; });
+  configure(session.command('list'), 'table').action((options: { format: string }) => { parsed = { kind: 'run', command: 'list', format: options.format }; });
+  configure(session.command('close').argument('<session-id>'), 'yaml').action((sessionId: string, options: { format: string }) => {
+    parsed = { kind: 'run', command: 'close', format: options.format, session: sessionId };
+  });
+  try {
+    root.parse(literal ? ['--', 'session', ...argv] : ['session', ...argv], { from: 'user' });
+  } catch (error) {
+    if (!(error instanceof CommanderError)) throw error;
+    if (error.code === 'commander.helpDisplayed') return { kind: 'help', output: stdout };
+    throw new CommanderStructuralError(stderr || `${error.message}\n`, error.exitCode);
+  }
+  if (!parsed) throw new CommanderStructuralError("error: command 'session' did not run\n", 1);
+  return parsed;
+}
+
+async function dispatchHostedSession(
+  parsed: Exclude<ParsedHostedSessionSurface, { kind: 'help' }>,
+  client: HostedClient,
+  stdout: NodeJS.WritableStream,
+  profile?: string,
+): Promise<void> {
+  if (parsed.command === 'create') {
+    await renderOutput((await client.createBrowserSession(profile)).result, { fmt: parsed.format, columns: ['id', 'kind', 'profileId'], stdout });
+    return;
+  }
+  if (parsed.command === 'list') {
+    const rows = (await client.listBrowserSessions(profile)).result;
+    if (rows.length === 0 && parsed.format === 'table') {
+      await writeToStream(stdout, `No browser Sessions found${profile ? ` for Profile ${profile}` : ''}.\n`);
+      return;
+    }
+    await renderOutput(rows, { fmt: parsed.format, columns: ['id', 'kind', 'runtimeState'], stdout });
+    return;
+  }
+  await renderOutput((await client.closeBrowserSession(parsed.session!, profile)).result, { fmt: parsed.format, stdout });
+}
+
 function hasPresentFileArgument(
   command: import('./types.js').HostedCommand,
   args: Record<string, unknown>,
@@ -568,7 +632,7 @@ async function parseHostedBrowserInvocation(
   if (!structure.commandName) {
     throw new ConfigError(
       'Hosted browser command is required.',
-      'Use: webcmd browser <session> tabs, bind --page <id>, run --stdin|--file <path>, or close.',
+      'Use: webcmd --session <session-id> browser tabs, bind --page <id>, or run --stdin|--file <path>.',
     );
   }
 

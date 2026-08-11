@@ -52,7 +52,7 @@ Hermes' web surface spans three toolsets:
 
 **Hermes toggles toolsets, not individual tools.** There is no way to drop `web_extract` while keeping `web_search`, so leave the `web` toolset on and steer the agent with instructions instead. Add this to your Hermes system prompt or project instructions:
 
-> Use Webcmd (`webcmd list`, `webcmd browser <session> ...` via the `terminal` toolset) for anything on the open web: fetching, authenticated third-party sites, multi-step automation. Prefer it over `web_extract`. Use the `browser_*` tools only for the app being edited — localhost dev server, console and network triage, visual checks. Keep using `web_search` and `x_search` to find URLs.
+> Use Webcmd (`webcmd list`, then `webcmd session create -f json` and `webcmd --session <session-id> browser ...` via the `terminal` toolset) for anything on the open web: fetching, authenticated third-party sites, multi-step automation. Prefer it over `web_extract`. Use the `browser_*` tools only for the app being edited — localhost dev server, console and network triage, visual checks. Keep using `web_search` and `x_search` to find URLs.
 
 Also check the `computer_use` toolset. It drives the whole desktop rather than a browser, so it overlaps with Webcmd whenever it is aimed at a website. Disable it if the user does not need desktop control.
 

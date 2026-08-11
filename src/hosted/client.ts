@@ -4,6 +4,9 @@ import type {
   HostedBrowserActionResponse,
   HostedBrowserFinishRequest,
   HostedBrowserFinishResponse,
+  HostedBrowserSessionCloseResponse,
+  HostedBrowserSessionResponse,
+  HostedBrowserSessionsResponse,
   HostedBrowserRunActionInput,
   HostedBrowserRunActionResponse,
   HostedBrowserSnapshotActionResponse,
@@ -102,6 +105,33 @@ export class HostedClient {
       throw protocolError('Webcmd Cloud returned an invalid profile deletion response.');
     }
     return { ok: true, deleted: true };
+  }
+
+  async createBrowserSession(profile?: string): Promise<HostedBrowserSessionResponse> {
+    const body = await this.request('/v1/sessions', {
+      method: 'POST',
+      body: JSON.stringify(profile !== undefined ? { profile } : {}),
+    });
+    if (!isHostedBrowserSessionResponse(body)) {
+      throw protocolError('Webcmd Cloud returned an invalid browser session response.');
+    }
+    return body;
+  }
+
+  async listBrowserSessions(profile?: string): Promise<HostedBrowserSessionsResponse> {
+    const body = await this.request(`/v1/sessions${profileQuery(profile)}`);
+    if (!isHostedBrowserSessionsResponse(body)) {
+      throw protocolError('Webcmd Cloud returned an invalid browser session list.');
+    }
+    return body;
+  }
+
+  async closeBrowserSession(session: string, profile?: string): Promise<HostedBrowserSessionCloseResponse> {
+    const body = await this.request(`/v1/sessions/${encodeURIComponent(session)}${profileQuery(profile)}`, { method: 'DELETE' });
+    if (!isHostedBrowserSessionCloseResponse(body)) {
+      throw protocolError('Webcmd Cloud returned an invalid browser session close response.');
+    }
+    return body;
   }
 
   async searchMarketplacePlugins(query?: string): Promise<HostedMarketplaceSearchResult> {
@@ -456,6 +486,44 @@ function isHostedProfilesResponse(value: unknown): value is HostedProfilesRespon
     && value.ok === true
     && Array.isArray(value.profiles)
     && value.profiles.every(isHostedPublicProfile);
+}
+
+function isHostedBrowserSessionResponse(value: unknown): value is HostedBrowserSessionResponse {
+  return hasExactKeys(value, ['ok', 'result'])
+    && value.ok === true
+    && isHostedBrowserSession(value.result);
+}
+
+function isHostedBrowserSessionsResponse(value: unknown): value is HostedBrowserSessionsResponse {
+  return hasExactKeys(value, ['ok', 'result'])
+    && value.ok === true
+    && Array.isArray(value.result)
+    && value.result.every(isHostedBrowserSession);
+}
+
+function isHostedBrowserSessionCloseResponse(value: unknown): value is HostedBrowserSessionCloseResponse {
+  return hasExactKeys(value, ['ok', 'result'])
+    && value.ok === true
+    && hasExactKeys(value.result, ['closed', 'alreadyIdle', 'session'])
+    && typeof value.result.closed === 'boolean'
+    && typeof value.result.alreadyIdle === 'boolean'
+    && typeof value.result.session === 'string';
+}
+
+function isHostedBrowserSession(value: unknown): boolean {
+  return hasExactKeys(value, ['id', 'kind', 'profileId', 'runtimeState', 'createdAt', 'lastUsedAt'])
+    && typeof value.id === 'string'
+    && value.kind === 'browser'
+    && typeof value.profileId === 'string'
+    && (value.runtimeState === 'active' || value.runtimeState === 'idle')
+    && typeof value.createdAt === 'string'
+    && typeof value.lastUsedAt === 'string';
+}
+
+function profileQuery(profile: string | undefined): string {
+  if (profile === undefined) return '';
+  const params = new URLSearchParams({ profile });
+  return `?${params}`;
 }
 
 function isHostedMarketplaceSearchResult(value: unknown): value is HostedMarketplaceSearchResult {

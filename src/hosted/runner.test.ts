@@ -545,6 +545,46 @@ describe('runHostedCli', () => {
     expect(requests.some(request => request.url.endsWith('/v1/manifest'))).toBe(false);
   });
 
+  it('manages hosted browser sessions without contacting the local daemon or manifest', async () => {
+    const requests: Array<{ url: string; method: string; body?: unknown }> = [];
+    const session = {
+      id: 'session_abc', kind: 'browser', profileId: 'profile_work', runtimeState: 'idle',
+      createdAt: '2026-01-01T00:00:00.000Z', lastUsedAt: '2026-01-01T00:00:00.000Z',
+    };
+    const fetchImpl = vi.fn<typeof fetch>(async (url, init) => {
+      const request = {
+        url: String(url), method: init?.method ?? 'GET',
+        ...(init?.body ? { body: JSON.parse(String(init.body)) } : {}),
+      };
+      requests.push(request);
+      if (request.method === 'POST') return new Response(JSON.stringify({ ok: true, result: session }));
+      if (request.method === 'DELETE') return new Response(JSON.stringify({ ok: true, result: { closed: false, alreadyIdle: true, session: session.id } }));
+      return new Response(JSON.stringify({ ok: true, result: [session] }));
+    });
+
+    for (const argv of [
+      ['--profile', 'work', 'session', 'create', '-f', 'json'],
+      ['--profile', 'work', 'session', 'list', '-f', 'json'],
+      ['--profile', 'work', 'session', 'close', session.id, '-f', 'json'],
+    ]) {
+      const stdout = sink();
+      const result = await runHostedCli(argv, {
+        config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+        stdout: stdout.stream,
+        fetchImpl,
+      });
+      expect(result).toEqual({ handled: true, exitCode: 0 });
+      expect(stdout.text()).toContain(session.id);
+    }
+
+    expect(requests).toEqual([
+      { url: 'https://api.example.com/v1/sessions', method: 'POST', body: { profile: 'work' } },
+      { url: 'https://api.example.com/v1/sessions?profile=work', method: 'GET' },
+      { url: 'https://api.example.com/v1/sessions/session_abc?profile=work', method: 'DELETE' },
+    ]);
+    expect(requests.some(request => request.url.endsWith('/v1/manifest'))).toBe(false);
+  });
+
   it.each(['create', 'get'])('rejects the removed profile %s subcommand', async (command) => {
     const stderr = sink();
     const fetchImpl = vi.fn<typeof fetch>();

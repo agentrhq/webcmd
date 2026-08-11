@@ -30,42 +30,42 @@ Until `doctor` is green, browser commands may fail. Registry and plugin discover
 
 ## Session lifecycle
 
-- `webcmd browser *` commands require a `<session>` positional immediately after `browser`.
-- Use the same session name for a multi-step flow; use a different name to isolate parallel browser work.
+- Create an opaque browser session before raw browser work: `webcmd session create -f json`.
+- Raw `webcmd browser *` commands require that ID at the root: `webcmd --session <session-id> browser ...`; positional `webcmd browser <session> ...` is retired.
+- Profiles are cookie jars and auth scope; sessions are browser workspaces/windows within a profile. Parallel agents use separate sessions.
+- `webcmd session list` shows sessions and their handoff/runtime state; close finished work with `webcmd session close <session-id>`.
 - Browser state in the bound page persists between calls, but each `run` gets a fresh JavaScript scope.
-- `webcmd browser <session> tabs` lists existing pages without creating a new one.
-- `webcmd browser <session> bind --page <page-id>` explicitly attaches a session to an existing page.
-- `webcmd browser <session> close` releases the session when finished.
+- `webcmd --session <session-id> browser tabs` lists existing pages without creating a new one.
+- `webcmd --session <session-id> browser bind --page <page-id>` explicitly attaches the session to an existing page.
 - If the user manually signs in or changes the visible tab, re-bind or inspect with a fresh snapshot before continuing.
 
 ---
 
 ## Command surface
 
-The raw surface is `tabs`, `bind --page`, `snapshot`, `run`, and `close`.
+The raw surface is `tabs`, `bind --page`, `snapshot`, and `run`; close through `webcmd session close`.
 
 Common calls:
 
-1. `webcmd browser work tabs` lists existing pages and is read-only.
-2. `webcmd browser work bind --page page-123` is an explicit bind that selects one page for `work`.
-3. `webcmd browser work snapshot --snapshot-mode act` inspects actionable controls. Use `--snapshot-mode tree` for fuller page structure or `--snapshot-mode read` for readable article/content text.
-4. `webcmd browser work run --stdin` runs one JavaScript program with fresh JavaScript scope and persistent browser state in the bound page.
-5. `webcmd browser work close` detaches and closes the session when finished.
+1. `webcmd --session <session-id> browser tabs` lists existing pages and is read-only.
+2. `webcmd --session <session-id> browser bind --page page-123` is an explicit bind that selects one page.
+3. `webcmd --session <session-id> browser snapshot --snapshot-mode act` inspects actionable controls. Use `--snapshot-mode tree` for fuller page structure or `--snapshot-mode read` for readable article/content text.
+4. `webcmd --session <session-id> browser run --stdin` runs one JavaScript program with fresh JavaScript scope and persistent browser state in the bound page.
+5. `webcmd session close <session-id>` closes the session when finished.
 
 | command | use |
 | --- | --- |
 | `tabs` | List existing pages. Read-only. |
-| `bind --page <id>` | Bind a named session to an existing page. |
+| `bind --page <id>` | Bind this session to an existing page. |
 | `snapshot --snapshot-mode act` | Inspect actionable controls. |
 | `snapshot --snapshot-mode tree` | Inspect fuller page structure. |
 | `snapshot --snapshot-mode read` | Extract readable article/content text. |
 | `run --stdin` / `run --file <path>` | Execute one Playwright-style program with `page`, `context`, `browser`, and `console`. |
-| `close` | Release the browser session. |
 
 Keep related browser actions in one `run` and return compact JSON-compatible data. Successful runs return `snapshotDiff` automatically. Use `--no-snapshot-diff` only when the program is pure read-only and its result already contains the needed state. Do not call the legacy semantic-snapshot page helper; it is not part of Webcmd's Playwright runtime.
 
 ```bash
-webcmd browser work run --stdin <<'JS'
+webcmd --session session_abc browser run --stdin <<'JS'
 await page.goto('https://example.com');
 await page.getByRole('link', { name: 'More information' }).click();
 return { title: await page.title(), url: page.url() };
@@ -95,7 +95,7 @@ Prefer one `run` over shell-chaining multiple browser calls. It keeps Playwright
 Good:
 
 ```bash
-webcmd browser checkout run --stdin <<'JS'
+webcmd --session session_abc browser run --stdin <<'JS'
 await page.goto('https://example.com/cart');
 const pending = page.waitForResponse(r => r.url().includes('/api/checkout'));
 await page.getByRole('button', { name: /checkout/i }).click();
@@ -136,7 +136,7 @@ For CAPTCHA or raw user takeover, stop automation, give the user any viewer URL 
 For native controls, inspect structure first, then use Playwright's normal form APIs inside `run`. Do not guess date formats, option labels, or file constraints from memory; read them from the DOM.
 
 ```bash
-webcmd browser form run --stdin <<'JS'
+webcmd --session session_abc browser run --stdin <<'JS'
 await page.goto('https://example.com/form');
 const country = page.locator('select[name="country"]');
 return {
@@ -157,7 +157,7 @@ For custom React/Radix/shadcn/Material UI dropdowns, use semantic locators and v
 ### Capture a request triggered by UI
 
 ```bash
-webcmd browser app run --stdin <<'JS'
+webcmd --session session_abc browser run --stdin <<'JS'
 await page.goto('https://example.com/search');
 const pending = page.waitForResponse(r => r.url().includes('/api/search'));
 await page.getByRole('textbox', { name: /search/i }).fill('browser automation');

@@ -62,6 +62,34 @@ export interface HostedProfilesResponse {
   profiles: HostedPublicProfile[];
 }
 
+export interface HostedBrowserSession {
+  id: string;
+  kind: 'browser';
+  profileId: string;
+  runtimeState: 'active' | 'idle';
+  createdAt: string;
+  lastUsedAt: string;
+}
+
+export interface HostedBrowserSessionResponse {
+  ok: true;
+  result: HostedBrowserSession;
+}
+
+export interface HostedBrowserSessionsResponse {
+  ok: true;
+  result: HostedBrowserSession[];
+}
+
+export interface HostedBrowserSessionCloseResponse {
+  ok: true;
+  result: {
+    closed: boolean;
+    alreadyIdle: boolean;
+    session: string;
+  };
+}
+
 export interface HostedMarketplacePlugin {
   name: string;
   description?: string;

@@ -34,7 +34,7 @@ Do not install Node.js or silently fall back to `npx`.
 ## The Three Pillars
 
 - **Adapter commands:** `webcmd <site> <command> [...]`. Core ships no site adapters; every site — official and community — lives as an independently installable plugin under `plugins/<site>/` in the main repo, or `~/.webcmd/plugins/<site>/` once installed. Private iteration adapters live in `~/.webcmd/clis/`. A command in `~/.webcmd/clis/<site>/<command>.js` takes precedence over the same command from an installed plugin. Each command has a strategy such as `PUBLIC`, `COOKIE`, `INTERCEPT`, `UI`, or `LOCAL`.
-- **Browser driving:** use an existing adapter command first; otherwise load `webcmd-browser` and run Playwright.
+- **Browser driving:** use an existing adapter command first; otherwise load `webcmd-browser`, create a session, and run Playwright with root `--session <session-id>`.
 - **External CLI passthrough:** `webcmd gh`, `webcmd docker`, `webcmd vercel`, and similar wrappers. Manage them with `webcmd external install <name>` or `webcmd external register <name>`.
 
 **REQUIRED SUB-SKILL:** Before raw browser work, load `webcmd-browser`.
@@ -56,6 +56,20 @@ npx tsx src/main.ts <command>
 ```
 
 `webcmd doctor` reports daemon status, runtime connection, version checks, and live browser connectivity. It is required for `COOKIE`, `INTERCEPT`, `UI`, and `webcmd browser *` work. It is not required for `PUBLIC`, `LOCAL`, `webcmd list`, `validate`, `verify`, plugin commands, or external CLI passthrough.
+
+## Sessions
+
+Profiles are cookie jars and authentication scope. Sessions are browser workspaces/windows within a profile. Create one for each parallel raw-browser agent, then route every raw command through the opaque ID:
+
+```bash
+webcmd session create -f json
+webcmd --session session_abc browser snapshot --snapshot-mode act
+webcmd --session session_abc browser run --stdin
+webcmd session list
+webcmd session close session_abc
+```
+
+Adapter commands may omit `--session` and use the selected profile's adapter-default session. Pass `--session <session-id>` to route one into an explicit session. Raw `webcmd browser` commands never omit it; retired `webcmd browser <session> ...` syntax is invalid.
 
 ## Prerequisites By Strategy
 

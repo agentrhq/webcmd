@@ -286,6 +286,18 @@ describe('runBrowserProgram', () => {
     });
   });
 
+  it('rejects context.newPage so browser-run cannot create unowned session pages', async () => {
+    await expect(runBrowserProgram({
+      browser,
+      context,
+      page,
+      pageId: 'page-1',
+      pages: [page],
+    }, `
+      await context.newPage();
+    `)).rejects.toThrow(/context\.newPage\(\) is not supported/);
+  });
+
   it('waits for requests and responses', async () => {
     const output = await run(`
       const requestPromise = page.waitForRequest('**/data');

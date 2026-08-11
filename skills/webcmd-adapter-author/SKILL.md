@@ -149,8 +149,8 @@ Check these off step by step:
        [ ] If memory is older than 30 days according to `verified_at`, treat it as stale and use the cold-start path through Steps 3 and 4.
 
 [ ] 3. Recon (`site-recon.md`):
-       [ ] **Preferred:** use `webcmd browser recon run --stdin` for navigation, readiness, network hints, and page evidence in one Playwright-style program.
-       [ ] Use `webcmd browser recon snapshot --snapshot-mode tree` when structural page evidence is needed.
+       [ ] **Preferred:** create a session, then use `webcmd --session <session-id> browser run --stdin` for navigation, readiness, network hints, and page evidence in one Playwright-style program.
+       [ ] Use `webcmd --session <session-id> browser snapshot --snapshot-mode tree` when structural page evidence is needed.
        [ ] Use the run result as reconnaissance evidence; do not copy Playwright code into an adapter.
        [ ] Choose Pattern A / B / C / D / E.
 

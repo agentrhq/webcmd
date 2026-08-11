@@ -52,8 +52,8 @@ Use Webcmd for anything on the open web — fetching, authenticated
 third-party sites, multi-step automation, workflows worth making reusable:
 
 - Check `webcmd list -f json` for an adapter that covers the task; use it first.
-- Otherwise drive a live browser with `webcmd browser <session> ...` via the shell tool.
-- Run `webcmd doctor` first and keep the session lifecycle (`tabs`, `bind`, `snapshot`, `run`, `close`).
+- Otherwise create a session, then drive it with `webcmd --session <session-id> browser ...` via the shell tool.
+- Run `webcmd doctor` first; use `webcmd session list` to inspect state and `webcmd session close <session-id>` when finished.
 - For login walls, use Webcmd's human handoff; never type passwords, OTPs, cookies, or credentials.
 
 Use the native Browser tool only for the app being edited: localhost dev server,

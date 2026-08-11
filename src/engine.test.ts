@@ -135,7 +135,7 @@ cli({
 
       expect(sessionOpts).toHaveLength(1);
       expect(sessionOpts[0]).toMatchObject({
-        session: `site:${site}`,
+        session: undefined,
         siteSession: 'persistent',
         freshPage: true,
       });

@@ -59,8 +59,8 @@ Deny `webfetch` so OpenCode cannot fall back to it while Webcmd is its browser s
 | Skills not loading in OpenCode | Run `webcmd skills add` with the `agents` provider, restart OpenCode, and check `/skills`. |
 | OpenCode still uses `webfetch` | Confirm `permission.webfetch` is `deny` in the active config, then restart OpenCode. |
 | `websearch` is missing entirely | It registers only with the OpenCode provider or `OPENCODE_ENABLE_EXA=1`. Not a Webcmd problem. |
-| `webcmd browser` errors | Read `webcmd-usage` and `webcmd-browser` skills; sessions require a `<session>` name after `browser`. |
-| Browser sessions stop working after idle | Ask the agent to open a fresh session or re-bind with `tabs` and `bind --page`. |
+| `webcmd browser` errors | Read `webcmd-usage` and `webcmd-browser` skills; create a session and pass its ID as root `--session`. |
+| Browser sessions stop working after idle | Ask the agent to create a fresh session or inspect it with `webcmd session list`. |
 
 ## See also
 

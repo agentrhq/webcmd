@@ -727,7 +727,7 @@ export abstract class BasePage implements IPage {
       throw new TargetError({
         code: 'not_checkable',
         message: `Target "${ref}" is not a checkbox, radio, switch, or aria-checked control.`,
-        hint: 'Use `webcmd browser <session> snapshot --snapshot-mode tree` to pick an input[type=checkbox], input[type=radio], or role=checkbox/switch target.',
+        hint: 'Use `webcmd --session <session-id> browser snapshot --snapshot-mode tree` to pick an input[type=checkbox], input[type=radio], or role=checkbox/switch target.',
       });
     }
     if (before.disabled) {
@@ -828,7 +828,7 @@ export abstract class BasePage implements IPage {
         throw new TargetError({
           code: 'not_file_input',
           message: `Target "${ref}" is not an input[type=file].`,
-          hint: 'Use `webcmd browser <session> snapshot --snapshot-mode tree` or a targeted `browser run` query to find an input[type=file].',
+          hint: 'Use `webcmd --session <session-id> browser snapshot --snapshot-mode tree` or a targeted `browser run` query to find an input[type=file].',
         });
       }
       if (files.length > 1 && !info?.multiple) {
@@ -984,7 +984,7 @@ export abstract class BasePage implements IPage {
       throw new TargetError({
         code: 'not_editable',
         message: `Target "${ref}" is not a fillable input, textarea, or contenteditable element.`,
-        hint: 'Use `webcmd browser <session> snapshot --snapshot-mode tree` to pick an editable target, or use `browser run` for keyboard-like interactions.',
+        hint: 'Use `webcmd --session <session-id> browser snapshot --snapshot-mode tree` to pick an editable target, or use `browser run` for keyboard-like interactions.',
       });
     }
 
