@@ -40,7 +40,7 @@ Hermes then reads `webcmd-usage` and `webcmd-browser` as skills. Restart Hermes 
 
 ### Override default tools
 
-Hermes' native browser toolset is `browser` (`browser_navigate`, `browser_snapshot`, `browser_click`, `browser_type`, `browser_scroll`, and the rest). It is a full browser stack wired into Hermes' dev loop, so the default is to route rather than disable — see [the routing rule](../../start.md#the-routing-rule).
+Hermes' native browser toolset is `browser` (`browser_navigate`, `browser_snapshot`, `browser_click`, `browser_type`, `browser_scroll`, and the rest). It is attached to Hermes' local dev server, so keep it enabled by default.
 
 Add this to your Hermes system prompt or project instructions:
 
@@ -72,7 +72,7 @@ Do not disable the `terminal` toolset — that is how Hermes runs `webcmd`.
 | --- | --- |
 | `webcmd doctor` is red | Fix the browser runtime first; browser commands depend on it. |
 | Skills not loading in Hermes | Confirm `skills.external_dirs` includes `~/.agents/skills`, restart Hermes, and check skill discovery. |
-| Hermes uses `browser_*` for open-web work | Restate the routing rule in the system prompt; for a hard block, add `browser` to `agent.disabled_toolsets` and restart Hermes. |
+| Hermes uses `browser_*` for open-web work | Remind it in the system prompt that Webcmd handles the open web; for a hard block, add `browser` to `agent.disabled_toolsets` and restart Hermes. |
 | `web_search` missing after disabling `browser` | Expected: Hermes bundles `web_search` inside the `browser` toolset. Use Webcmd's `smart-search` skill or adapters instead. |
 | `webcmd` not found in Hermes terminal | Confirm `webcmd` is on the host PATH that Hermes' `terminal` toolset uses; non-interactive shells may skip shell init files. |
 | Browser sessions stop working after idle | Ask the agent to open a fresh session or re-bind with `tabs` and `bind --page`. |

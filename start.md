@@ -68,53 +68,23 @@ Do not hand-write a one-off script from memory. Follow the skill guidance, run t
 
 ### 4. Override installed tools
 
-Do not change the user's tool configuration yourself. Work out what should change, then **present it to the user and ask them to confirm** before anything is disabled. Tool configuration is theirs; a harness that silently loses its browser tools is a bad surprise.
+Recommend these changes to the user and ask before applying any of them. Do not edit their tool configuration on your own.
 
-Phrase it as a recommendation with a reason, not as a requirement. For example:
+Suggest disabling the harness's built-in fetch and search tools, since Webcmd covers them and returns exact fields from real pages instead of summaries:
 
-> Webcmd now covers web fetching and search for this project, and it does a better job than the built-in tools — adapters return exact fields, sessions render real pages with logged-in profiles, and snapshots cost fewer tokens. I'd suggest disabling `WebFetch` and `WebSearch` so I don't fall back to them. Want me to make that change?
-
-Open the *Override default tools* section on the matching per-agent page under `docs/agents/` for the exact config edit. Harnesses get one of two treatments.
-
-**Replace** — narrow fetch and search tools. Webcmd covers these end to end (adapters plus the `smart-search` skill), so recommend disabling them and let Webcmd be the harness's web surface.
-
-| Harness | Tools to disable | Page |
+| Harness | Suggest disabling | Page |
 | --- | --- | --- |
 | Claude Code | `WebFetch`, `WebSearch` | [claude-code.md](docs/agents/claude-code.md#override-default-tools) |
 | Codex CLI | `web_search` | [codex-cli.md](docs/agents/codex-cli.md#override-default-tools) |
 | OpenCode | `webfetch`, `websearch` | [opencode.md](docs/agents/opencode.md#override-default-tools) |
+| Cursor | `Web` | [cursor.md](docs/agents/cursor.md#override-default-tools) |
+| OpenClaw | `web_search`, `web_fetch`, `x_search`, `search_news` | [openclaw.md](docs/agents/openclaw.md#override-default-tools) |
+| Hermes Agent | `web_search` (bundled in `browser`; see page) | [hermes.md](docs/agents/hermes.md#override-default-tools) |
+| Pi | none | [pi.md](docs/agents/pi.md#override-default-tools) |
 
-**Route** — full browser toolsets. These do more than Webcmd targets: they are wired into the local dev loop, attaching to a running dev server and surfacing console errors, network activity, and screenshots of the app under edit. Do not disable them by default. Apply the routing rule below instead.
+Leave full browser toolsets enabled — Cursor's `Browser`, Hermes' `browser_*`, OpenClaw's `browser`. They are attached to the local dev server, which Webcmd is not. Use them for localhost; use Webcmd for the open web.
 
-| Harness | Native browser toolset | Also disable (Replace tools) | Page |
-| --- | --- | --- | --- |
-| Cursor | `Browser` | `Web` | [cursor.md](docs/agents/cursor.md#override-default-tools) |
-| Hermes Agent | `browser_*` | — (bundles `web_search`; see page) | [hermes.md](docs/agents/hermes.md#override-default-tools) |
-| OpenClaw | `browser`, `browser_visual` | `web_search`, `web_fetch`, `x_search`, `search_news` | [openclaw.md](docs/agents/openclaw.md#override-default-tools) |
-| Pi | none (optional `pi-skills`) | — | [pi.md](docs/agents/pi.md#override-default-tools) |
-
-#### The routing rule
-
-Use **Webcmd** for the open web: research and fetching, authenticated third-party sites, multi-step automation, anything worth turning into a reusable adapter. Webcmd owns auth profiles, human handoff, token-compact snapshots, and the adapter registry.
-
-Use the **harness's native browser tool** for the app you are editing: localhost dev server, console and network triage, visual checks after a change. It is attached to the dev loop; Webcmd is not.
-
-This is a question of integration, not capability — `webcmd browser <session> run` can drive localhost too. Routing by task domain means neither surface has to be crippled.
-
-If your harness is not listed above, apply the same split: recommend disabling a plain fetch or search tool, and keep a full browser toolset with the routing rule stated in the harness's system prompt or rules file. If the harness has neither kind of tool, no override is needed.
-
-#### Other installed tools
-
-The tables above cover tools the harness ships with. Users often have others installed that overlap with Webcmd — a Playwright or Puppeteer MCP server, a browser-automation MCP, a scraping or search MCP, a custom web-fetch skill. Two or more of these competing for the same task is how an agent ends up picking the wrong surface.
-
-Check what is actually connected in this environment, list anything that overlaps, and apply the same split when you present it:
-
-- Overlaps with fetch/search or general web automation → recommend disabling it, and say why Webcmd is the better fit for this project.
-- Serves a purpose Webcmd does not (drives the local dev server, a bespoke internal tool, project-specific skills) → leave it alone and say so.
-
-Never disable a user-installed tool without asking, and never touch project-specific custom tools or skills. If you are unsure whether something overlaps, list it and let the user decide.
-
-**Full override (opt-in).** If the user never debugs local apps through the harness browser and wants the token savings, they can disable the native browser toolset as well and use Webcmd for everything. Each per-agent page documents how — offer it, do not assume it.
+The same applies to tools the user installed themselves. A Playwright or Puppeteer MCP, a scraping or search MCP, or a custom web-fetch skill competes with Webcmd for the same tasks — list what you find and ask. Leave project-specific tools and skills alone.
 
 ### 5. Finish
 

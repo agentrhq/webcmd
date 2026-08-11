@@ -33,9 +33,7 @@ For a project-scoped setup, copy the `webcmd-*` skill folders into the project's
 
 ### Override default tools
 
-Cursor's agent ships two native web tools, and they get different treatment — see [the routing rule](../../start.md#the-routing-rule).
-
-Webcmd replaces **Web** (search and fetch external documentation) outright. **Browser** (navigate, click, screenshot running apps) is wired into Cursor's dev loop, so keep it for localhost work and route open-web work to Webcmd.
+Cursor's agent ships two native web tools, and they get different treatment. Webcmd replaces **Web** (search and fetch external documentation). **Browser** (navigate, click, screenshot running apps) is attached to Cursor's dev server, so keep it for localhost work.
 
 Cursor has no config key that removes either tool, so use an always-applied rule. Add `.cursor/rules/webcmd-browser.mdc`:
 
@@ -72,7 +70,7 @@ The `alwaysApply: true` rule is injected into every Cursor session.
 | `webcmd doctor` is red | Fix the browser runtime first; browser commands depend on it. |
 | Skills not surfacing in Cursor | Confirm the `webcmd-*` skill folders are under `.cursor/skills/`, `.agents/skills/`, or `~/.agents/skills/`, then restart Cursor. |
 | Cursor uses its Web tool instead of Webcmd | Confirm `.cursor/rules/webcmd-browser.mdc` has `alwaysApply: true`. |
-| Cursor uses its Browser tool for external sites | Restate the routing rule; for a hard block, set Browser Automation to Off. |
+| Cursor uses its Browser tool for external sites | Confirm the rule file says to use Webcmd for the open web; for a hard block, set Browser Automation to Off. |
 | `webcmd` not found in Cursor shell | Confirm `webcmd` is on the PATH the Cursor shell uses; restart Cursor after installing the CLI. |
 | Browser sessions stop working after idle | Ask the agent to open a fresh session or re-bind with `tabs` and `bind --page`. |
 
