@@ -185,18 +185,32 @@ ownership.
 
 - Different Sessions under one Profile execute concurrently.
 - Different Profiles execute concurrently.
-- Independently submitted commands targeting a busy Session fail immediately with
-  `SESSION_BUSY`; they do not wait in an invisible public queue.
-- Commands belonging to the same logical execution may use the existing defensive internal
-  queue.
+- A top-level execution targeting a Session already owned by another execution fails
+  immediately with `SESSION_BUSY`; it does not wait in an invisible public queue.
+- Operations belonging to the owning execution may re-enter its admission lease and use the
+  existing defensive internal queue.
 - Brief local window/tab placement remains serialized by the Profile's existing critical-
   section lock; hosted Sessions need no cross-Session browser lock.
 - Local Profile launch, idle shutdown, and anchor recovery use that same per-Profile lock.
 - A human handoff blocks normal automation only in its owning Session.
 
+Admission distinguishes logical executions, not agents, processes, or clients. Every top-level
+browser-backed CLI invocation or hosted request receives a unique execution ID before its first
+browser operation. All nested operations belonging to that invocation carry the same ID. Two
+commands from the same agent or PID still conflict if their execution IDs overlap in one
+Session; two commands issued sequentially do not conflict after the first releases admission.
+PID and command name are diagnostic holder metadata only.
+
+The local CLI reuses its existing `runId` across one invocation's daemon operations. Hosted
+mode mints the admission ID at the trusted server execution boundary and maps idempotent retries
+of the same request back to that execution; a caller-supplied ID cannot impersonate a current
+holder. The execution ID is released when the top-level command reaches a known outcome. The
+existing unknown-outcome TTL behavior remains the recovery path when completion is uncertain.
+
 The existing local `SessionLeaseRegistry` and hosted persistent write-lease mechanism should
-be extended and re-keyed by immutable Session ID rather than replaced. `SESSION_BUSY`
-includes the Session ID/name and safe holder metadata, uses the existing temporary-failure
+be extended from persistent adapter writes to all browser-backed commands and re-keyed by
+immutable Session ID rather than replaced. `SESSION_BUSY` includes the Session ID/name and
+safe holder metadata, never the internal execution ID, uses the existing temporary-failure
 exit-code convention, and is retryable by the caller.
 
 ## Hidden local anchor and issue #276
@@ -326,8 +340,10 @@ how separate agents choose separate Sessions, how to list Sessions, `SESSION_BUS
 Session-scoped human handoff leaves sibling Sessions running. It must also explain that local
 Sessions appear as separate Cloak windows, hosted Sessions consume separate Browser Use
 allocations, a windowless local Profile remains warm behind an invisible anchor for 60 seconds,
-and already-running hosted allocations do not receive live cookie injection. Examples use
-immutable IDs when resuming an auth handoff and friendly names for normal task selection.
+and already-running hosted allocations do not receive live cookie injection. Same-agent
+commands launched concurrently against one Session may receive `SESSION_BUSY`; sequential
+commands do not. Examples use immutable IDs when resuming an auth handoff and friendly names
+for normal task selection.
 
 Historical design documents remain historical. This specification explicitly supersedes the
 old Spaces decision; active documentation must not teach Spaces or positional browser syntax.
@@ -339,7 +355,9 @@ Focused automated and live checks must cover:
 1. Root `--session` parsing for adapters and browser commands, plus rejection of positional syntax.
 2. Lazy name creation, reserved `default`, immutable-ID lookup, Profile scoping, listing, and restart persistence.
 3. Parallel wall-clock execution for two Sessions in one Profile and for two Profiles.
-4. Immediate `SESSION_BUSY` for concurrent independent commands in one Session.
+4. One execution ID re-entering a Session across nested operations; a different ID receiving
+   immediate `SESSION_BUSY` even with the same agent/PID; sequential executions succeeding;
+   hosted callers unable to spoof the current holder's ID.
 5. Distinct local `windowId` ownership, same-Session tab placement, popup inheritance, and no
    cross-Session target adoption, including a non-destructive error after a manual tab move.
 6. Session-scoped list/select/bind/close behavior and persistent adapter separation with
