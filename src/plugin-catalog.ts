@@ -133,6 +133,10 @@ export function flattenPluginManifest(source: PluginCatalogSource, manifest: Plu
   }];
 }
 
+function normalizeSearchText(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
 export async function searchCatalogPlugins(
   catalog: PluginCatalog,
   options: { query?: string; fetchJson?: FetchJson } = {},
@@ -150,9 +154,19 @@ export async function searchCatalogPlugins(
     }
   }));
 
-  const query = options.query?.trim().toLowerCase();
-  const filtered = query
-    ? plugins.filter((plugin) => `${plugin.name} ${plugin.description ?? ''}`.toLowerCase().includes(query))
+  const query = options.query?.trim();
+  const tokens = query
+  ? query.split(/\s+/).map(normalizeSearchText).filter(Boolean)
+  : [];
+
+  const filtered = tokens.length
+    ? plugins.filter((plugin) => {
+        const haystack = normalizeSearchText(
+          `${plugin.name} ${plugin.description ?? ''}`,
+        );
+
+        return tokens.every((token) => haystack.includes(token));
+      })
     : plugins;
 
   filtered.sort((a, b) => a.name.localeCompare(b.name));
