@@ -78,29 +78,40 @@ Suggest disabling webfetch and browser navigation tools, since Webcmd does these
 
 Here is the rubric to shortlist the tools you'll recommend disabling.
 
-1. **Web fetch** — a builtin that retrieves a URL and hands back a summary or extraction: Claude Code's `WebFetch`, OpenCode's `webfetch`, OpenClaw's `web_fetch`, Cursor's `Web`.
-2. **Web search** — a builtin that returns result links without reading the pages: `WebSearch`, `web_search`, `websearch`, `x_search`, `search_news`.
-3. **Browser navigation aimed at the open web** — any tool or MCP that drives a browser against external sites: a Playwright or Puppeteer MCP, a browser-automation or scraping MCP, a cloud browser service, a custom web-fetch skill.
+1. **Web fetch** — a builtin that retrieves a URL and hands back a summary or extraction. Claude Code's `WebFetch`, OpenCode's `webfetch`, OpenClaw's `web_fetch`, Cursor's `Web`.
+2. **Browser Tools** — any tool or MCP that drives a browser against external sites. Hermes has browser_* tools, OpenClaw has one broswer tool, etc.
 
 Here are some tools which you should not recommend disabling.
 
-1. **The harness's own browser attached to the local dev server** — Cursor's `Browser`, Hermes' `browser_*`, OpenClaw's `browser`. These are wired into the dev loop and surface console errors and network activity for the app being edited. Webcmd is not. Use them for localhost; use Webcmd for the open web.
-2. **The shell, terminal, or exec tool** — that is how the agent runs `webcmd`.
-3. **Project-specific custom tools and skills**, and MCPs that do not touch the web (a database, filesystem, or issue-tracker MCP).
+1. **Web search** - 
+2. **Other search tools** - For example x_search tool in hermes
 
-Check what is actually installed in this environment, not just the table below. List everything that matches the rubric, say which rule each one hit, and let the user decide.
+**Real world example**: In a hermes environment, when xAI plugin is enabled here is the set of tools which are present:
+
+webfetch surface
+├── Hermes registry
+│   ├── web_search          — Don't Change
+│   ├── web_extract         — Disable (if enableď)
+│   └── browser_* / …       — Disable (if enableď)
+└── xAI plugin / server-side  (when {type: web_search} exposed)
+    ├── web_search / web_search_with_snippets   — Don't Change
+    ├── browse_page / open_page                 — Disable (if enableď)
+    ├── open_page_with_find                     — Disable (if enableď)
+    └── optional: view_image, search_images     — Don't Change
+
+
+For instructions on how to disable tools for a specific harness, refer to the documentation for that harness.
 
 | Harness | Suggest disabling | Page |
 | --- | --- | --- |
-| Claude Code | `WebFetch`, `WebSearch` | [claude-code.md](docs/agents/claude-code.md#override-default-tools) |
+| Claude Code | `WebFetch` | [claude-code.md](docs/agents/claude-code.md#override-default-tools) |
 | Codex CLI | `web_search` | [codex-cli.md](docs/agents/codex-cli.md#override-default-tools) |
-| OpenCode | `webfetch`, `websearch` | [opencode.md](docs/agents/opencode.md#override-default-tools) |
+| OpenCode | `webfetch` | [opencode.md](docs/agents/opencode.md#override-default-tools) |
 | Cursor | `Web` | [cursor.md](docs/agents/cursor.md#override-default-tools) |
 | OpenClaw | `web_search`, `web_fetch`, `x_search`, `search_news` | [openclaw.md](docs/agents/openclaw.md#override-default-tools) |
 | Hermes Agent | `web_search` (bundled in `browser`; see page) | [hermes.md](docs/agents/hermes.md#override-default-tools) |
 | Pi | none | [pi.md](docs/agents/pi.md#override-default-tools) |
-
-Each per-agent page has the exact config edit under *Override default tools*.
+| Other Coding Agents | native web fetch / browser tools | see instructions below |
 
 ### 5. Finish
 
