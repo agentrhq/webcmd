@@ -38,6 +38,7 @@ This design also addresses:
 - Automatic tab restoration after a Profile runtime is restarted or evicted.
 - Live injection of newly changed hosted cookies into already-running Browser Use allocations.
 - `session create`, `session complete`, `session takeover`, or a process-global current Session.
+- A user-configurable local Profile warm period; v1 uses a fixed 60 seconds.
 - Cloak licence/capability detection or a degraded single-context mode.
 - A general output-format migration; existing output defaults remain unchanged.
 
@@ -120,12 +121,14 @@ Local Profile context                 Hosted Browser Use Profile
 
 Ending or idling a Session closes its local window group or hosted allocation but preserves
 the Session record and Profile authentication state. Sessions never share a visible window,
-hosted allocation, live-view URL, selected tab, or command lock.
+hosted allocation, live-view URL, selected tab, or command lock. A local Profile with no
+active Session windows remains warm for 60 seconds before its runtime is closed.
 
 ### Local Cloak
 
 Local mode uses one persistent `BrowserContext` per Profile so cookies and browser storage
-remain live-shared. A Session's first page is created with CDP
+remain live-shared. Runtime launch creates the hidden Profile anchor before publishing the
+runtime for Session use. A Session's first page is then created with CDP
 `Target.createTarget({ newWindow: true })`; its `windowId`, targets, tabs, and selected tab are
 registered under the immutable Session ID.
 
@@ -138,8 +141,9 @@ Manual tab moves between Session windows are unsupported. If Webcmd detects one,
 the tab untouched and returns `SESSION_WINDOW_CONFLICT`; it never reassigns or closes the tab.
 
 The current command queue is keyed only by Profile. It will be re-keyed by Profile and
-Session so different Session windows execute concurrently. Profile eviction or daemon
-shutdown closes the whole context; closing a Session closes only its owned window targets.
+Session so different Session windows execute concurrently. The fixed local Profile idle
+expiry or daemon shutdown closes the whole context; closing a Session closes only its owned
+window targets.
 
 ### Hosted Browser Use
 
@@ -187,6 +191,7 @@ ownership.
   queue.
 - Brief local window/tab placement remains serialized by the Profile's existing critical-
   section lock; hosted Sessions need no cross-Session browser lock.
+- Local Profile launch, idle shutdown, and anchor recovery use that same per-Profile lock.
 - A human handoff blocks normal automation only in its owning Session.
 
 The existing local `SessionLeaseRegistry` and hosted persistent write-lease mechanism should
@@ -196,10 +201,11 @@ exit-code convention, and is retryable by the caller.
 
 ## Hidden local anchor and issue #276
 
-Each local Profile runtime owns one hidden `about:blank` CDP target created with
-`Target.createTarget({ hidden: true, background: true })`. Its browser-level CDP session
-remains open for the runtime's lifetime. The hidden target keeps Cloak connected when no
-visible Session windows exist without adding a blank window or tab-strip entry.
+Each local Profile runtime creates one hidden `about:blank` CDP target with
+`Target.createTarget({ hidden: true, background: true })` before the runtime enters the
+reusable Profile map. Its browser-level CDP session remains open for the runtime's lifetime.
+The hidden target keeps Cloak connected when no visible Session windows exist without adding
+a blank window or tab-strip entry.
 
 The anchor target:
 
@@ -209,13 +215,29 @@ The anchor target:
 - Survives Session window close, release, `freshPage`, and Session idle expiry.
 - Is recreated under the existing per-Profile creation lock if unexpectedly destroyed while
   the context remains healthy.
-- Is closed only when the Profile runtime is intentionally evicted, disconnected, or shut down.
+- Is not visible or closable through normal Cloak or Webcmd tab UI; low-level CDP clients can
+  observe and explicitly close it, after which Webcmd recreates it if the context is healthy.
+- Is closed with its context after local Profile idle expiry, daemon shutdown, explicit
+  Profile teardown, or an unrecoverable disconnect.
+
+When the last local Session window closes and the Profile has no running command or human
+handoff, Webcmd starts one fixed 60-second, unreferenced idle timer. New local browser work
+cancels the timer under the per-Profile lifecycle lock and reuses the warm runtime.
+
+If the timer fires, it acquires that same lock, rechecks the idle conditions, removes the
+runtime from the reusable Profile map, and then closes the entire context while still holding
+the lock. A command that arrives first cancels eviction; a command that arrives after shutdown
+starts waits briefly on the lock and launches a new runtime after closure completes. Multiple
+arriving commands share the existing single-flight launch. A closing runtime is never returned
+to a command, and a late close event from an old runtime cannot invalidate its replacement.
+If graceful close exceeds three seconds, the exact Profile recovery path from #242
+finishes teardown before relaunch; the old runtime is never put back in the reusable map.
 
 `freshPage` creates and registers its replacement in the same Session window before closing
 the previous tab. Closing the final visible Session window therefore leaves only the hidden
-anchor, never a stale runtime awaiting an asynchronous close event. Hosted allocations need
-no anchor because ending one Session intentionally stops that allocation and cannot affect a
-sibling allocation.
+anchor during the warm period, never a stale runtime awaiting an asynchronous close event.
+Hosted allocations need no anchor or Profile timer because ending one Session intentionally
+stops that allocation and cannot affect a sibling allocation.
 
 ## Pinned Cloak concurrency and issue #225
 
@@ -230,6 +252,8 @@ A candidate pair cannot be released unless it passes live gates for:
 - Background window/tab creation not stealing focus from a human-controlled Session window.
 - A hidden anchor keeping the Profile connected with zero visible Session windows, followed
   by successful creation of a new Session window.
+- Profile idle shutdown and concurrent arrival using one lifecycle lock without returning a
+  closing context.
 - The macOS foreground/background launch paths used by Webcmd remaining connected through navigation.
 - Closing one Session window without affecting sibling windows or the Profile runtime.
 
@@ -301,9 +325,9 @@ Documentation must explain Profile versus Session versus tab, lazy/default Sessi
 how separate agents choose separate Sessions, how to list Sessions, `SESSION_BUSY`, and how a
 Session-scoped human handoff leaves sibling Sessions running. It must also explain that local
 Sessions appear as separate Cloak windows, hosted Sessions consume separate Browser Use
-allocations, and already-running hosted allocations do not receive live cookie injection.
-Examples use immutable IDs when resuming an auth handoff and friendly names for normal task
-selection.
+allocations, a windowless local Profile remains warm behind an invisible anchor for 60 seconds,
+and already-running hosted allocations do not receive live cookie injection. Examples use
+immutable IDs when resuming an auth handoff and friendly names for normal task selection.
 
 Historical design documents remain historical. This specification explicitly supersedes the
 old Spaces decision; active documentation must not teach Spaces or positional browser syntax.
@@ -322,18 +346,22 @@ Focused automated and live checks must cover:
    unchanged `siteSession` lifecycle behavior.
 7. A hidden anchor absent from all public surfaces while zero visible windows -> immediate
    Session window creation remains reliable.
-8. Repeated release/close/`freshPage`/idle-expiry cycles without target-closed errors.
-9. Intentional Profile eviction and daemon shutdown closing every Session window, the context,
-   and the hidden anchor.
-10. One hosted Browser Use allocation and distinct live-view URL per active Session.
-11. Concurrent hosted allocations from one Browser Use Profile preserving different-domain
+8. The 60-second Profile timer starting only at zero Session windows, remaining unreferenced,
+   and being cancelled by new work or a handoff.
+9. Commands winning just before idle expiry reusing the runtime, and commands arriving during
+   shutdown waiting for one close and single-flight relaunch without target-closed errors.
+10. Repeated release/close/`freshPage`/idle-expiry cycles without target-closed errors.
+11. Idle expiry and daemon shutdown closing every Session window, the context, and the hidden
+   anchor; bounded failed close uses exact Profile recovery before relaunch.
+12. One hosted Browser Use allocation and distinct live-view URL per active Session.
+13. Concurrent hosted allocations from one Browser Use Profile preserving different-domain
    cookies and local storage after both stop, regardless of stop order, and a later allocation
    loading both markers.
-12. Session-scoped local and hosted handoff, successful verification, expiry recovery, and a
+14. Session-scoped local and hosted handoff, successful verification, expiry recovery, and a
    sibling Session continuing throughout.
-13. Exact Profile teardown for `work` versus `work-2` and unrelated Chrome processes.
-14. Live release gates for the pinned Cloak concurrency contract.
-15. Help, generated hints, bundled skill examples, and active docs containing only canonical syntax.
+15. Exact Profile teardown for `work` versus `work-2` and unrelated Chrome processes.
+16. Live release gates for the pinned Cloak concurrency contract.
+17. Help, generated hints, bundled skill examples, and active docs containing only canonical syntax.
 
 ## Rollout
 
