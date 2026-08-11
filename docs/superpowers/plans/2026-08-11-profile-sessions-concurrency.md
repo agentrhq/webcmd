@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make a Webcmd Session the deterministic browser-workspace and command-admission boundary in local and hosted modes, so agents can run concurrently under one authenticated Profile without sharing windows, allocations, tabs, live views, or handoffs.
+**Goal:** Make an opaque Webcmd Session ID the deterministic browser-workspace and command-admission boundary, while keeping learned adapter commands ergonomic through a system-managed adapter default.
 
-**Architecture:** The local daemon atomically resolves a friendly Session selector to a persisted immutable ID, admits one top-level execution per Session, and maps that Session to a Cloak window group inside the Profile's single persistent context. Webcmd Cloud stores the same Session identity in PostgreSQL and keys Browser Use allocations and admission leases by `(userId, workspaceId, profileId, sessionId)`; both modes retain existing adapter `siteSession` behavior inside the selected Session.
+**Architecture:** Raw browser work starts with `session create`, carries the returned immutable ID, and is admitted one top-level execution at a time. Browser-backed adapters may instead resolve the Profile's system-managed adapter-default Session; non-browser adapters allocate none. Locally, a Session owns an exclusive Cloak window group inside one Profile context; Webcmd Cloud keys Browser Use allocations and admission leases by `(userId, workspaceId, profileId, sessionId)`.
 
 **Tech Stack:** TypeScript, Node.js 20.6+, Commander 14, Playwright Core 1.61.1, Cloak Browser package 0.4.5 with Chromium v145.0.7632.159, Vitest, PostgreSQL, Browser Use, GCP release gates.
 
@@ -15,17 +15,20 @@
 - Preserve unrelated user changes. Before every commit, stage only that task's files and inspect `git diff --cached`.
 - Keep `cloakbrowser` exactly pinned to `0.4.5`, Playwright Core exactly pinned to `1.61.1`, and the supported Chromium artifact at v145.0.7632.159. Do not add capability/licence fallback branches.
 - Add no dependency. Reuse Commander, Playwright/CDP, the local `SessionLeaseRegistry`, the hosted persistent write lease, existing Profile services, existing live-view storage, and existing rendering.
-- `--session <name-or-id>` is a root option. Omission resolves the reserved name `default`; no PID default, ambient `session use`, explicit create, takeover, complete, or positional compatibility alias is allowed.
-- A missing friendly name is created atomically. An unknown or cross-Profile `session_...` selector returns `SESSION_NOT_FOUND` and is never created.
+- `--session <session-id>` is a root option. Raw browser commands require an existing opaque ID; omission returns `SESSION_REQUIRED` with exit 2. No PID default, ambient `session use`, caller-chosen name, takeover, complete, or positional compatibility alias is allowed.
+- `session create` always returns a new Webcmd-generated ID. `session list` is read-only. `session close` idempotently stops runtime state but preserves the record. Passing an ID is attachment; there is no `session bind` command.
+- Non-browser adapters allocate no Session. Browser-backed adapters may omit `--session` and lazily resolve the Profile's one system-managed `adapter-default` Session; an explicit existing ID overrides it.
+- Unknown, malformed, or cross-Profile IDs are never created. Malformed selectors are usage errors; unknown/cross-Profile IDs return `SESSION_NOT_FOUND`.
 - Session records persist; local pages/windows and hosted allocations do not survive runtime restart or eviction.
 - Different Sessions and Profiles run concurrently. A different overlapping execution in the same Session fails immediately with `SESSION_BUSY`; it never waits in a public queue.
 - Generate execution IDs only at the trusted top-level CLI/server boundary. Permit re-entry by the same ID; never treat PID, agent identity, or caller-supplied hosted IDs as ownership.
-- Local windows never mix Sessions. Manual cross-window tab moves return `SESSION_WINDOW_CONFLICT` without moving or closing the tab.
+- Local windows never mix Sessions. A Session may own a group of windows because CDP cannot target an existing `windowId`. Manual cross-window tab moves return `SESSION_WINDOW_CONFLICT` without moving or closing the tab.
+- All page APIs require both Session and page identity. `browser run` receives a Session-scoped context facade and cannot enumerate, register, or close sibling/keeper pages.
 - A human handoff pauses only its owning Session. Its verify command must contain the same Profile and immutable Session ID; sibling Sessions continue.
-- Local Profile warm time is the fixed, unreferenced `60_000` ms. Graceful context close is bounded at `3_000` ms before exact Profile recovery.
-- Hosted mode uses one Browser Use allocation and one live-view URL per active Session. Do not implement Webcmd-owned cookie/storage synchronization.
+- Local Profile warm time is the fixed, unreferenced `60_000` ms. Graceful context close is bounded at `3_000` ms before exact Profile recovery. macOS uses a retained hidden target; Linux/Windows park a minimized Profile-owned page because a hidden target alone does not keep Chromium alive at zero windows.
+- Hosted mode uses one Browser Use allocation and one live-view URL per active Session. Capacity exhaustion returns `SESSION_CAPACITY_EXCEEDED` with actionable safe counts. Do not implement Webcmd-owned cookie/storage synchronization.
 - Roll out the hosted schema and runtime as one drained revision: route the old browser-worker revision to zero, wait at least the existing 45-second lease TTL, then enable Session-keyed browser traffic. Do not run legacy Profile-keyed and new Session-keyed workers concurrently.
-- Active docs, help, completion, generated hints, and bundled skills must use canonical root syntax in the same release. Historical specs and plans remain historical.
+- Active docs, help, completion, generated hints, and bundled skills must teach create/carry/list/close, adapter-default routing, and canonical root syntax in the same release. Historical specs remain historical.
 
 ---
 
@@ -35,20 +38,20 @@
 
 - `src/root-command-surface.ts`: canonical root `--session` parsing for local and hosted dispatch.
 - `src/cli-argv-preprocess.ts`: reject retired positional raw-browser syntax with a targeted exit-2 migration error; retain unrelated argv preprocessing.
-- `src/cli.ts`, `src/commanderAdapter.ts`: consume the root selector and expose `session list`.
+- `src/cli.ts`, `src/commanderAdapter.ts`: consume the optional root selector and expose `session create`, `session list`, and `session close`.
 - `src/hosted/browser-args.ts`, `src/hosted/runner.ts`, `src/hosted/client.ts`, `src/hosted/types.ts`: send the selector for adapter and raw-browser requests and render hosted Session lists.
-- `src/browser/sessions.ts`: local persisted Session records, lazy/default resolution, handoff metadata, and public list rows.
+- `src/browser/sessions.ts`: local persisted opaque Session records, adapter-default resolution, handoff metadata, close state, and public list rows.
 - `src/browser/protocol.ts`, `src/browser/runtime/provider.ts`, `src/daemon/server.ts`: resolve a selector before admission, carry immutable Session IDs, expose Session status, and return structured errors.
-- `src/execution.ts`, `src/browser/page.ts`, `src/browser/daemon-client.ts`, `src/session-lease.ts`, `src/errors.ts`: top-level run identity, Session admission, adapter tab routing, and handoff controls.
-- `src/browser/runtime/local-cloak/session-manager.ts`, `src/browser/runtime/local-cloak/actions.ts`, `src/browser/runtime/local-cloak/provider.ts`: Session window groups, owned tabs, hidden anchor, Profile idle lifecycle, and Session-scoped actions.
+- `src/execution.ts`, `src/browser/page.ts`, `src/browser/daemon-client.ts`, `src/session-lease.ts`, `src/errors.ts`, `src/main.ts`: top-level run identity, signal/cancel cleanup, Session admission, adapter tab routing, and handoff controls.
+- `src/browser/runtime/local-cloak/session-manager.ts`, `src/browser/runtime/local-cloak/actions.ts`, `src/browser/runtime/local-cloak/provider.ts`, `src/browser/run/playwright-transport.ts`, `src/browser/run/runner.ts`: Session window groups, owned tabs, sandbox scoping, platform keepers, Profile idle lifecycle, and Session-scoped actions.
 - `src/browser/runtime/local-cloak/process-matcher.ts`: the one exact Cloak Profile process matcher reused by recovery and teardown.
 - `tests/e2e/cloak-session-concurrency.test.ts`: live gate for the pinned Cloak/Chromium pair.
 
 ### Webcmd Cloud
 
-- `src/domain/types.ts`, `src/sessions/service.ts`: hosted Session record and selector resolution.
+- `src/domain/types.ts`, `src/sessions/service.ts`: hosted opaque Session create/list/lookup/close and adapter-default resolution.
 - `src/storage/schema.sql`, `src/storage/repository.ts`, `src/storage/postgres-repository.ts`: durable Session rows and Session-keyed admission leases; retain the physical `browser_allocations.session_key` column but store immutable Session IDs in it.
-- `src/http/router.ts`, `src/executor/non-browser.ts`: accept/resolve `session`, mint trusted execution IDs, and route adapters.
+- `src/http/router.ts`, `src/executor/non-browser.ts`: expose Session lifecycle routes, accept optional adapter `session`, require raw IDs, mint trusted execution IDs, and route adapters.
 - `src/browser/allocation-manager.ts`, `src/browser/dependencies.ts`, `src/browser/runtime.ts`: one durable Browser Use allocation per Session without the current `PROFILE_SESSION_KEY` collapse.
 - `src/executor/browser-session-policy.ts`, `src/executor/session-write-lease.ts`, `src/browser/hosted-browser.ts`, `src/browser/session-lock.ts`: Session-keyed adapter tabs, immediate admission, and raw-browser reuse of the same allocation.
 - `src/auth/hosted-auth.ts`, `src/account/browser-live-view.ts`, `src/account/live-view.ts`: Session-scoped handoff and exact allocation/view revocation.
@@ -62,7 +65,7 @@
 
 ---
 
-### Task 1: Canonical Root Session Selector and Syntax Break
+### Task 1: Canonical Root Selector and Raw-Browser Requirement
 
 **Repository:** `/Users/beubax/Desktop/AgentR/OpenCLI`
 
@@ -87,8 +90,9 @@
 **Interfaces:**
 
 - Produces `ROOT_SESSION_FLAGS`, root option `session?: string`, and hosted adapter request field `session?: string`.
+- Raw browser dispatch rejects omission before any daemon/cloud call; adapter dispatch leaves omission unresolved for Task 2/Task 7 routing.
 - Produces `rejectPositionalBrowserSessionArgv(argv): string[]`, which never rewrites a Session selector, retains the existing trailing-`--window` normalization, or throws `BrowserSessionArgvError`.
-- Later tasks consume the selector as an unresolved name-or-ID; this task does not create Session records.
+- Later tasks consume the selector as an unresolved optional opaque ID; this task does not create Session records.
 
 - [ ] **Step 1: Replace positional-success tests with canonical and migration-error tests**
 
@@ -96,20 +100,27 @@ Add these central assertions and update every existing positional fixture in the
 
 ```ts
 expect(parseHostedRootCommandSurface([
-  '--profile', 'work', '--session', 'invoice-audit', 'github', 'issues',
+  '--profile', 'work', '--session', 'session_a', 'github', 'issues',
 ])).toEqual({
   kind: 'dispatch',
   argv: ['github', 'issues'],
   profile: 'work',
-  session: 'invoice-audit',
+  session: 'session_a',
   literal: false,
 });
 
-expect(() => rejectPositionalBrowserSessionArgv(['browser', 'invoice-audit', 'run', '--stdin']))
-  .toThrowError(/webcmd --session invoice-audit browser run --stdin/);
+expect(() => rejectPositionalBrowserSessionArgv(['browser', 'session_a', 'run', '--stdin']))
+  .toThrowError(/webcmd --session session_a browser run --stdin/);
 
-expect(rejectPositionalBrowserSessionArgv(['--session', 'invoice-audit', 'browser', 'run', '--stdin']))
-  .toEqual(['--session', 'invoice-audit', 'browser', 'run', '--stdin']);
+expect(rejectPositionalBrowserSessionArgv(['--session', 'session_a', 'browser', 'run', '--stdin']))
+  .toEqual(['--session', 'session_a', 'browser', 'run', '--stdin']);
+
+expect(() => validateRawBrowserSession(undefined)).toThrowError(
+  expect.objectContaining({ code: 'SESSION_REQUIRED', exitCode: 2 }),
+);
+expect(() => validateRawBrowserSession('work')).toThrowError(
+  expect.objectContaining({ code: 'INVALID_SESSION_SELECTOR', exitCode: 2 }),
+);
 ```
 
 For hosted transport, assert both surfaces carry the same selector:
@@ -117,9 +128,9 @@ For hosted transport, assert both surfaces carry the same selector:
 ```ts
 expect(executeRequest.body).toMatchObject({
   command: 'github/issues',
-  session: 'invoice-audit',
+  session: 'session_a',
 });
-expect(browserRequest.pathname).toBe('/v1/browser/invoice-audit/commands');
+expect(browserRequest.pathname).toBe('/v1/browser/session_a/commands');
 ```
 
 - [ ] **Step 2: Run the focused tests and confirm the old grammar still wins**
@@ -137,8 +148,8 @@ Expected: FAIL because root parsing omits `session`, positional browser argv is 
 Use the shared root surface as the sole source of truth:
 
 ```ts
-export const ROOT_SESSION_FLAGS = '--session <name-or-id>';
-export const ROOT_SESSION_DESCRIPTION = 'Agent task session name or immutable session ID';
+export const ROOT_SESSION_FLAGS = '--session <session-id>';
+export const ROOT_SESSION_DESCRIPTION = 'Existing opaque Session ID from `webcmd session create`';
 
 export function configureRootCommandSurface(program: Command): Command {
   return program
@@ -153,7 +164,7 @@ Extend `HostedRootCommandSurface` dispatch results with `session?: string`; make
 
 - [ ] **Step 4: Replace rewriting with a targeted detector**
 
-Keep `BROWSER_SUBCOMMAND_NAMES`, because it distinguishes `browser run` from the retired `browser invoice-audit run`. Replace only `rewriteBrowserArgv`:
+Keep `BROWSER_SUBCOMMAND_NAMES`, because it distinguishes `browser run` from the retired `browser session_a run`. Replace only `rewriteBrowserArgv`:
 
 ```ts
 export function rejectPositionalBrowserSessionArgv(argv: readonly string[]): string[] {
@@ -189,7 +200,7 @@ In `commanderAdapter.ts`, pass the root global without interpreting it:
   : {}),
 ```
 
-Add `session?: string` to `HostedClient.execute` and `runPreparedExecution`, their JSON validators/types, and `dispatchHosted`. For raw browser commands, choose `normalized.session ?? 'default'` and continue using the existing encoded path segment. Do not accept a browser-namespace selector.
+Add `session?: string` to `HostedClient.execute` and `runPreparedExecution`, their JSON validators/types, and `dispatchHosted`. Adapter omission remains omitted. Before local or hosted raw-browser dispatch, call `validateRawBrowserSession`; its `SESSION_REQUIRED` help prints complete `session create` and `session list` commands carrying the selected Profile. Continue using the validated ID in the existing encoded path segment. Do not accept a browser-namespace selector or friendly string.
 
 - [ ] **Step 6: Verify and commit**
 
@@ -200,7 +211,7 @@ npx vitest run --project unit src/hosted/root-command-surface.test.ts src/cli-ar
 npm run typecheck
 ```
 
-Expected: PASS; positional syntax exits 2 with the canonical replacement, and root syntax works for adapters and browser commands.
+Expected: PASS; positional syntax exits 2 with the canonical replacement, raw omission/malformed selectors exit 2 before transport, and adapters may omit the root selector.
 
 Commit:
 
@@ -212,7 +223,7 @@ git commit -m "feat: make session a root cli selector"
 
 ---
 
-### Task 2: Persist and Resolve Local Session Identity
+### Task 2: Create, Persist, List, and Close Local Sessions
 
 **Repository:** `/Users/beubax/Desktop/AgentR/OpenCLI`
 
@@ -232,7 +243,7 @@ git commit -m "feat: make session a root cli selector"
 **Interfaces:**
 
 - Produces `BrowserSessionRecord`, `BrowserSessionListRow`, and `LocalBrowserSessionStore`.
-- Produces `resolve(profileId, selector?): BrowserSessionRecord`, `list(profileId)`, `markHandoff`, `clearHandoff`, and `touch`.
+- Produces `create(profileId)`, `find(profileId, sessionId)`, `require(profileId, sessionId)`, `resolveAdapterDefault(profileId)`, `list(profileId)`, `markHandoff`, `clearHandoff`, and `touch`.
 - Provider produces `resolveSession(command)` before browser dispatch and includes `sessions` in a Profile-filtered status response.
 
 - [ ] **Step 1: Write persistence and resolution tests**
@@ -246,22 +257,24 @@ const store = new LocalBrowserSessionStore({
   idFactory: () => 'session_11111111-1111-4111-8111-111111111111',
 });
 
-const created = store.resolve('profile_work', 'invoice-audit');
+const created = store.create('profile_work');
 expect(created).toMatchObject({
   id: 'session_11111111-1111-4111-8111-111111111111',
   profileId: 'profile_work',
-  name: 'invoice-audit',
+  kind: 'explicit',
 });
-expect(store.resolve('profile_work', 'invoice-audit').id).toBe(created.id);
-expect(new LocalBrowserSessionStore({ baseDir }).resolve('profile_work', created.id).name)
-  .toBe('invoice-audit');
-expect(() => store.resolve('profile_other', created.id)).toThrowError(
+expect(store.create('profile_work').id).not.toBe(created.id);
+expect(new LocalBrowserSessionStore({ baseDir }).find('profile_work', created.id)?.id)
+  .toBe(created.id);
+expect(() => store.require('profile_other', created.id)).toThrowError(
   expect.objectContaining({ code: 'SESSION_NOT_FOUND' }),
 );
-expect(store.resolve('profile_work').name).toBe('default');
+const adapterDefault = store.resolveAdapterDefault('profile_work');
+expect(adapterDefault.kind).toBe('adapter-default');
+expect(store.resolveAdapterDefault('profile_work').id).toBe(adapterDefault.id);
 ```
 
-Also assert `list` does not create `default`, malformed JSON fails closed with a useful configuration error, the state file is mode `0600`, and a temp file is renamed over the destination.
+At the daemon layer, activate the created Session in a fake manager, close it, and assert `{ closed: true, alreadyIdle: false }`; close it again and assert `{ closed: false, alreadyIdle: true }`. Also assert `list` does not create the adapter default, a caller cannot supply an ID or name to `create`, malformed JSON fails closed with a useful configuration error, the state file is mode `0600`, and a temp file is renamed over the destination.
 
 - [ ] **Step 2: Run tests to verify the store and status fields do not exist**
 
@@ -281,7 +294,7 @@ Use this exact record shape:
 export interface BrowserSessionRecord {
   id: string;
   profileId: string;
-  name: string;
+  kind: 'explicit' | 'adapter-default';
   createdAt: string;
   updatedAt: string;
   lastUsedAt: string;
@@ -293,18 +306,19 @@ export interface BrowserSessionListRow extends BrowserSessionRecord {
 }
 ```
 
-Persist `{ version: 1, sessions: BrowserSessionRecord[] }` at `path.join(baseDir ?? getWebcmdConfigDir(), 'browser-sessions.json')`. Generate IDs with `session_${randomUUID()}`. Resolution is:
+Persist `{ version: 1, sessions: BrowserSessionRecord[] }` at `path.join(baseDir ?? getWebcmdConfigDir(), 'browser-sessions.json')`. Generate IDs with `session_${randomUUID()}`. Explicit creation always inserts. Lookup and adapter-default resolution are:
 
 ```ts
-const value = selector?.trim() || 'default';
-if (value.startsWith('session_')) {
-  const found = sessions.find(row => row.id === value && row.profileId === profileId);
-  if (!found) throw new SessionNotFoundError(value, profileId);
-  return touch(found);
-}
-const found = sessions.find(row => row.profileId === profileId && row.name === value);
-return found ? touch(found) : create(profileId, value);
+requireSessionIdShape(sessionId);
+const found = sessions.find(row => row.id === sessionId && row.profileId === profileId);
+if (!found) throw new SessionNotFoundError(sessionId, profileId);
+return touch(found);
+
+const existing = sessions.find(row => row.profileId === profileId && row.kind === 'adapter-default');
+return existing ?? insert({ id: idFactory(), profileId, kind: 'adapter-default' });
 ```
+
+Enforce at most one `adapter-default` record per Profile in memory and during load validation. Runtime active/idle state is derived from the Session manager, not persisted in this file.
 
 Write JSON to `.<basename>.<pid>.<uuid>.tmp` with mode `0600`, then `renameSync`. The daemon is the sole writer, so do not add filesystem locking.
 
@@ -313,28 +327,31 @@ Write JSON to `.<basename>.<pid>.<uuid>.tmp` with mode `0600`, then `renameSync`
 Extend the provider contract:
 
 ```ts
-resolveSession(command: BrowserRuntimeCommand): Promise<BrowserSessionRecord>;
+requireSession(command: BrowserRuntimeCommand): Promise<BrowserSessionRecord>;
+resolveAdapterDefault(command: BrowserRuntimeCommand): Promise<BrowserSessionRecord>;
 listSessions(input: { profileId?: string }): Promise<BrowserSessionListRow[]>;
 ```
 
-At `/command`, resolve once, then dispatch an enriched copy:
+At `/command`, resolve once according to surface, then dispatch an enriched copy:
 
 ```ts
-const session = await provider.resolveSession(body);
-const command = { ...body, sessionId: session.id, sessionName: session.name };
+const session = body.surface === 'adapter' && !body.session
+  ? await provider.resolveAdapterDefault(body)
+  : await provider.requireSession(body);
+const command = { ...body, sessionId: session.id, sessionKind: session.kind };
 ```
 
-Do not resolve `lease-release` or Session-list/status controls. Add Profile-filtered `sessions` to `/status`; local `runtimeState` is `active` only when the manager owns an open visible tab/window for that immutable ID.
+Do not resolve `lease-release` or Session lifecycle/status controls. Add explicit daemon controls for `session-create`, `session-list`, and `session-close`. Local `runtimeState` is `active` only when the manager owns an open task tab/window for that ID. `session-close` first checks admission/handoff, closes only the Session window group, clears manager metadata, and then marks the durable record idle.
 
-- [ ] **Step 5: Add `webcmd --profile work session list`**
+- [ ] **Step 5: Add the three Session lifecycle commands**
 
-Register `session list` in `cli.ts`, read the root Profile selector through the existing Profile resolution, and render columns:
+Register `session create`, `session list`, and `session close <session-id>` in `cli.ts`. Read the root Profile selector through existing Profile resolution. `create` accepts no name/ID argument. Render the minimal default columns:
 
 ```ts
-['id', 'name', 'runtimeState', 'lastUsedAt', 'handoff']
+['id', 'kind', 'runtimeState', 'handoff']
 ```
 
-When the daemon is absent, read the persisted store and report every row as `idle`; listing must not launch Cloak or create `default`. Use the existing `render` function for `table`, `json`, `yaml`, `md`, and `csv` instead of a new formatter.
+When the daemon is absent, `create` may start the daemon through the normal mutation path; `list` reads persisted state and reports rows as `idle`; `close` of an idle persisted record succeeds as a no-op. None launches Cloak. Listing must explicitly report zero results and must not create the adapter default. Use the existing renderer and structured error conventions instead of a new formatter.
 
 - [ ] **Step 6: Verify restart persistence and commit**
 
@@ -345,7 +362,7 @@ npx vitest run --project unit src/browser/sessions.test.ts src/daemon/server.tes
 npm run typecheck
 ```
 
-Expected: PASS; a new store instance resolves the same immutable ID, cross-Profile IDs fail, and list works with or without a running daemon.
+Expected: PASS; each create returns a unique immutable ID, adapter-default resolution is singleton and lazy, cross-Profile IDs fail, close is idempotent, and list works with or without a running daemon.
 
 Commit:
 
@@ -369,6 +386,7 @@ git commit -m "feat: persist local browser sessions"
 - Modify: `src/browser/daemon-client.ts`
 - Modify: `src/browser/page.ts`
 - Modify: `src/execution.ts`
+- Modify: `src/main.ts`
 - Modify: `src/errors.ts`
 - Test: `src/session-lease.test.ts`
 - Test: `src/daemon/server.test.ts`
@@ -380,6 +398,7 @@ git commit -m "feat: persist local browser sessions"
 - Consumes immutable `sessionId` from Task 2.
 - Produces `getSessionLeaseKey(profileId, sessionId)` and admission for every browser-backed top-level run.
 - Produces separate adapter tab identity `(profileId, sessionId, site)` while preserving `siteSession: persistent|ephemeral`.
+- Produces tracked cancellation and dead-PID recovery so widening admission does not turn the 45-second TTL into the normal recovery experience.
 
 - [ ] **Step 1: Write admission and routing tests**
 
@@ -402,7 +421,12 @@ expect(registry.acquire({ key, runId: 'run_7_three', command: 'browser/run' }, (
   .toBe(true);
 ```
 
+Add daemon-level tests where a holder PID becomes dead while work remains. Assert the daemon aborts that run, waits for its operation `finally`, releases, and only then admits the successor; no overlap occurs. Add signal/disconnect tests asserting one best-effort cancel, cleanup on repeated signals, and a busy hint that never recommends killing an already-dead PID.
+
 In `execution.test.ts`, assert persistent tabs for the same site produce different daemon Session IDs when root Sessions differ, while ephemeral tabs are released only inside their owning Session.
+Also hold a persistent GitHub adapter in `session_a` and assert an overlapping LinkedIn adapter
+in `session_a` receives `SESSION_BUSY`; run LinkedIn in `session_b` and assert it proceeds. This
+pins the intentional Session-wide—not `(Session, site)`—admission decision.
 
 - [ ] **Step 2: Run the focused tests and observe Profile/surface-scoped behavior**
 
@@ -428,6 +452,7 @@ export function isSessionLeaseCommand(command: SessionLeaseCommand): command is 
   runId: string;
 } {
   return command.action !== 'lease-release'
+    && command.action !== 'run-cancel'
     && typeof command.sessionId === 'string'
     && command.sessionId.length > 0
     && typeof command.runId === 'string'
@@ -435,17 +460,19 @@ export function isSessionLeaseCommand(command: SessionLeaseCommand): command is 
 }
 ```
 
-Acquire after Session resolution and before `provider.dispatch`. On conflict return HTTP 409 with `{ code: 'SESSION_BUSY', session: { id, name }, holder: { command, pid?, acquiredAt, heartbeatAt } }`; never include `runId`.
+Delete `access` from `SessionLeaseCommand`, `DaemonRunContext`, and the daemon predicate; it is currently hardcoded to `write` and gates nothing useful. Acquire after Session resolution and before `provider.dispatch`. On conflict return HTTP 409 with `{ code: 'SESSION_BUSY', session: { id, kind }, holder: { command, pid?, acquiredAt, heartbeatAt } }`; never include `runId`.
 
 - [ ] **Step 4: Mint and propagate one run ID for every browser-backed CLI invocation**
 
-Move `generateRunId()` to the top-level browser-backed branch in `executeCommand`, not the persistent-write branch. Run the complete adapter command inside `runWithDaemonRunContext`, and release by run ID in the existing `finally`. Raw browser actions must use the same wrapper in their Commander action so nested daemon operations re-enter.
+Move `generateRunId()` to the top-level browser-backed branch in `executeCommand`, not the persistent-write branch. Run the complete adapter command inside `runWithDaemonRunContext`, and release by run ID in the existing `finally`. Raw browser actions must use the same wrapper in their Commander action so nested daemon operations re-enter. This is mandatory: changing `isSessionLeaseCommand` alone cannot admit commands that never carry a `runId`.
 
 Hosted callers are unrelated here; do not accept a CLI flag or environment variable as `runId`.
 
+Add a daemon `run-cancel` control backed by an `AbortController` per active run. `main.ts` installs one-shot `SIGINT`/`SIGTERM` cleanup that asks the daemon to cancel the active run and preserves the conventional signal exit. The daemon also cancels on request disconnect. Admission recovery for a dead holder PID calls `cancelAndSettle(runId, 2_000)`; it retries acquisition only after tracked work settles. If it does not settle, return retryable `SESSION_BUSY` and retain the 45-second TTL as the final unknown-outcome path.
+
 - [ ] **Step 5: Separate selected Session from adapter tab lifecycle**
 
-Delete `resolveAdapterBrowserSession(cmd, siteSession)` as a source of the user Session. Pass root `options.session` to `BrowserPage`; after daemon resolution, use:
+Delete `resolveAdapterBrowserSession(cmd, siteSession)` and today's `site:<site>:<uuid>` Session minting. Pass the optional root ID to `BrowserPage`; the daemon resolves explicit versus adapter-default before constructing the tab key:
 
 ```ts
 const tabKey = command.surface === 'adapter' && command.siteSession === 'persistent'
@@ -457,7 +484,7 @@ Add `adapterSite?: string` to the daemon protocol and set it from `cmd.site` in 
 
 - [ ] **Step 6: Add consistent typed errors and verify**
 
-Add `SessionNotFoundError` (exit 66), enhance `SessionBusyError` with safe Session ID/name metadata (exit 75), add `SessionPausedForHumanHandoffError` (exit 77), and `SessionWindowConflictError` (exit 75). Map the same uppercase daemon codes in `daemon-client.ts`.
+Add `SessionRequiredError` (exit 2), `InvalidSessionSelectorError` (exit 2), `SessionNotFoundError` (exit 66), enhance `SessionBusyError` with safe Session ID/kind metadata (exit 75), add `SessionPausedForHumanHandoffError` (exit 77), and `SessionWindowConflictError` (exit 75). Map the same uppercase daemon codes in `daemon-client.ts`. Busy help checks recorded PID liveness before including any kill guidance.
 
 Run:
 
@@ -466,19 +493,19 @@ npx vitest run --project unit src/session-lease.test.ts src/daemon/server.test.t
 npm run typecheck
 ```
 
-Expected: PASS; overlapping runs in one Session fail immediately, the same run re-enters, and different Sessions progress concurrently.
+Expected: PASS; overlapping runs in one Session fail immediately, the same run re-enters, different Sessions progress concurrently, raw commands actually carry run IDs, and killed/timed-out clients do not brick or overlap the Session.
 
 Commit:
 
 ```bash
-git add src/session-lease.ts src/daemon/server.ts src/browser/protocol.ts src/browser/daemon-client.ts src/browser/page.ts src/execution.ts src/errors.ts src/session-lease.test.ts src/daemon/server.test.ts src/browser/daemon-client.test.ts src/execution.test.ts
+git add src/session-lease.ts src/daemon/server.ts src/browser/protocol.ts src/browser/daemon-client.ts src/browser/page.ts src/execution.ts src/main.ts src/errors.ts src/session-lease.test.ts src/daemon/server.test.ts src/browser/daemon-client.test.ts src/execution.test.ts
 git diff --cached --check
 git commit -m "feat: admit local browser work by session"
 ```
 
 ---
 
-### Task 4: Give Each Local Session an Owned Cloak Window Group
+### Task 4: Enforce Local Page Isolation and Owned Cloak Window Groups
 
 **Repository:** `/Users/beubax/Desktop/AgentR/OpenCLI`
 
@@ -487,15 +514,21 @@ git commit -m "feat: admit local browser work by session"
 - Modify: `src/browser/runtime/local-cloak/session-manager.ts`
 - Modify: `src/browser/runtime/local-cloak/actions.ts`
 - Modify: `src/browser/runtime/local-cloak/provider.ts`
+- Modify: `src/browser/runtime/local-cloak/darwin-background-launch.ts`
+- Modify: `src/browser/run/playwright-transport.ts`
+- Modify: `src/browser/run/runner.ts`
 - Test: `src/browser/runtime/local-cloak/session-manager.test.ts`
 - Test: `src/browser/runtime/local-cloak/browser-run.test.ts`
 - Test: `src/browser/runtime/local-cloak/provider.test.ts`
+- Test: `src/browser/run/playwright-transport.test.ts`
+- Test: `src/browser/run/runner.test.ts`
 
 **Interfaces:**
 
 - Consumes immutable `sessionId` and adapter tab key from Tasks 2-3.
 - Produces `SessionRuntime` ownership of `windowIds`, `pages`, and `selectedPageId` under one `ProfileRuntime` context.
 - Produces `SESSION_WINDOW_CONFLICT` before any operation on a tab whose actual `windowId` belongs to another Session.
+- Produces a Session-scoped Playwright context facade; raw `BrowserContext.pages()` and context-wide page adoption are no longer reachable from `browser run`.
 
 - [ ] **Step 1: Add CDP-backed window ownership tests**
 
@@ -518,9 +551,25 @@ expect((await manager.listPages({ profileId: 'work', sessionId: 'session_a' }))
   .map(tab => tab.sessionId)).toEqual(['session_a']);
 ```
 
-Create another tab for `session_a` and assert it has `session_a`'s existing `windowId`, not `session_b`'s. Emit a popup with `opener() === first.page` and assert it inherits `session_a`, including when it has a child popup window.
+Create another tab for `session_a`. Assert its actual window is either an existing `session_a` window or a newly registered `session_a` window, never `session_b`'s. Emit a popup with `opener() === first.page` and assert it inherits `session_a`, including when Chromium gives it a child popup window.
 
-Simulate a manual move by returning `session_b`'s window ID for an `session_a` target. Assert `list`, `select`, `bind`, and `close` reject with `SESSION_WINDOW_CONFLICT`, the page remains open, and neither ownership map changes.
+Simulate a manual move by returning `session_b`'s window ID for a `session_a` target. Assert `list`, `select`, `bind`, and `close` reject with `SESSION_WINDOW_CONFLICT`, the page remains open, and neither ownership map changes.
+
+Add the two current escape-path regressions:
+
+```ts
+expect(manager.findPageById({ profileId: 'work', sessionId: 'session_a', pageId: pageB }))
+  .toBeNull();
+await expect(runInSessionA('return (await context.pages()).map(p => p.url())'))
+  .resolves.toEqual(['https://a.example/']);
+await expect(runInSessionA('await (await context.pages())[1].close()'))
+  .rejects.toMatchObject({ code: 'BROWSER_RUN_API_UNSUPPORTED' });
+expect(pageB.isClosed()).toBe(false);
+```
+
+Replace the provider test that intentionally accepts misleading Session/Profile metadata for
+`--page` with a denial test. Create a page in Session B during Session A's `browser run` and
+assert the runner never registers it as A.
 
 - [ ] **Step 2: Run the local runtime tests and confirm Profile-global page state fails them**
 
@@ -530,7 +579,7 @@ Run:
 npx vitest run --project unit src/browser/runtime/local-cloak/session-manager.test.ts src/browser/runtime/local-cloak/browser-run.test.ts src/browser/runtime/local-cloak/provider.test.ts
 ```
 
-Expected: FAIL because `ProfileRuntime` has one global `pages` map/selection, `context.newPage()` does not establish distinct windows, and actions can see cross-Session tabs.
+Expected: FAIL because `ProfileRuntime` has one global `pages` map/selection, page lookup ignores Session, `context.newPage()` does not establish distinct windows, and `browser run` receives every context page plus a context-wide listener.
 
 - [ ] **Step 3: Replace Profile-global page ownership with Session runtimes**
 
@@ -539,7 +588,6 @@ Use these internal shapes in `session-manager.ts`:
 ```ts
 interface SessionRuntime {
   id: string;
-  name: string;
   windowIds: Set<number>;
   pages: Map<string, PageEntry>;
   selectedPageId?: string;
@@ -565,13 +613,13 @@ const { targetId } = await runtime.cdp.send('Target.createTarget', {
 });
 ```
 
-Wait for the matching Playwright page, read `Browser.getWindowForTarget({ targetId })`, and register the window only if unowned or already owned by that Session. Later tabs use `window.open('about:blank', '_blank')` from an open owned page while the Profile creation lock is held, then verify the new target's `windowId` before registration.
+Wait for the matching Playwright page, read `Browser.getWindowForTarget({ targetId })`, and register the window only if unowned or already owned by that Session. Add `--disable-popup-blocking` to the Darwin background launch argument list (the custom launcher does not inherit Playwright's switch). Later tabs call `window.open('about:blank', '_blank')` from an owned page while the Profile creation lock is held. Inspect the actual new `windowId`: register it in an existing owned window or add a new unowned window to that Session's group. There is no `windowId` parameter, reparent attempt, detect-and-retry loop, or assumption that the second tab lands in the first window.
 
 - [ ] **Step 4: Register popups and verify ownership before every public action**
 
-Listen to `context.on('page')`; resolve `await page.opener()`, copy the opener's immutable Session ID, then verify/register the popup target and `windowId`. If a page has no known opener, leave it unadopted until an explicit bind verifies that its window is unowned or owned by the selected Session.
+Install one manager-owned `context.on('page')` listener for the Profile runtime. Resolve `await page.opener()`, copy a known opener's immutable Session ID, then verify/register the popup target and `windowId`. If a page has no known opener, leave it unowned until a Session-scoped browser-tab bind verifies that its window is unowned or owned by the selected Session. Never install a command-owned context-wide listener.
 
-All methods must take `sessionId`: `listPages`, `findPageById`, `selectPage`, `bindPage`, `closePage`, `newPage`, and `release`. Before returning/mutating a page, call one shared guard:
+All methods must take `sessionId`: `listPages`, `findPageById`, `profileIdForPage`, `selectPage`, `bindPage`, `closePage`, `newPage`, and `release`. `pageId` remains an address, never authorization. Store `selectedPageId` only on `SessionRuntime`. Before returning/mutating a page, call one shared guard:
 
 ```ts
 private async assertOwnedWindow(runtime: ProfileRuntime, sessionId: string, entry: PageEntry): Promise<void> {
@@ -588,32 +636,54 @@ private async assertOwnedWindow(runtime: ProfileRuntime, sessionId: string, entr
 
 Never close or reassign on this error.
 
-- [ ] **Step 5: Preserve fresh-page and adapter semantics inside the window group**
+- [ ] **Step 5: Replace the raw BrowserContext with a Session facade**
 
-For `freshPage`, open and register the replacement in the same Session window first, update the selected and canonical adapter tab entries, then close the old target. `release` closes only ephemeral entries for that Session. Closing the last tab closes that Session's visible window targets but leaves sibling Session windows and the Profile context intact.
+Change `runBrowserProgram` and `PlaywrightTransport` inputs to consume an explicit scope:
 
-- [ ] **Step 6: Verify and commit**
+```ts
+export interface BrowserRunSessionScope {
+  browser: Browser;
+  context: BrowserContext;
+  page: Page;
+  pages(): readonly Page[];
+  createPage(): Promise<Page>;
+  onPage(listener: (page: Page) => void): () => void;
+}
+```
+
+Build the Playwright dispatcher with a `scopedContext` implementation proxy. Its `pages()` and
+page events use the scope, `newPage()` delegates to manager-owned creation, and `close`, raw
+context/browser CDP creation, or any method that can enumerate all targets is denied with
+`BROWSER_RUN_API_UNSUPPORTED`. Runner startup registers `scope.pages()` only and unsubscribes
+the scoped listener during normal, timeout, and error cleanup. The hidden/parking keeper has no
+Session and therefore can never enter the scope.
+
+- [ ] **Step 6: Preserve fresh-page and adapter semantics inside the window group**
+
+For `freshPage`, open and register the replacement in the Session window group first, update that Session's selected and canonical adapter tab entries, then close the old target. `release` closes only ephemeral entries for that Session. Closing the last tab invokes Task 5's keeper transition rather than returning a potentially dying context.
+
+- [ ] **Step 7: Verify and commit**
 
 Run:
 
 ```bash
-npx vitest run --project unit src/browser/runtime/local-cloak/session-manager.test.ts src/browser/runtime/local-cloak/browser-run.test.ts src/browser/runtime/local-cloak/provider.test.ts
+npx vitest run --project unit src/browser/runtime/local-cloak/session-manager.test.ts src/browser/runtime/local-cloak/browser-run.test.ts src/browser/runtime/local-cloak/provider.test.ts src/browser/run/playwright-transport.test.ts src/browser/run/runner.test.ts
 npm run typecheck
 ```
 
-Expected: PASS; two Sessions receive distinct OS window IDs, tabs/popups stay in their owner, and a manual move is non-destructive.
+Expected: PASS; two Sessions receive exclusive window groups, tabs/popups stay in their owner, selection/page IDs are scoped, `browser run` cannot see sibling pages, and a manual move is non-destructive.
 
 Commit:
 
 ```bash
-git add src/browser/runtime/local-cloak/session-manager.ts src/browser/runtime/local-cloak/actions.ts src/browser/runtime/local-cloak/provider.ts src/browser/runtime/local-cloak/session-manager.test.ts src/browser/runtime/local-cloak/browser-run.test.ts src/browser/runtime/local-cloak/provider.test.ts
+git add src/browser/runtime/local-cloak/session-manager.ts src/browser/runtime/local-cloak/actions.ts src/browser/runtime/local-cloak/provider.ts src/browser/runtime/local-cloak/darwin-background-launch.ts src/browser/run/playwright-transport.ts src/browser/run/runner.ts src/browser/runtime/local-cloak/session-manager.test.ts src/browser/runtime/local-cloak/browser-run.test.ts src/browser/runtime/local-cloak/provider.test.ts src/browser/run/playwright-transport.test.ts src/browser/run/runner.test.ts
 git diff --cached --check
 git commit -m "feat: isolate local sessions by cloak window"
 ```
 
 ---
 
-### Task 5: Add the Hidden Anchor, Warm Profile Lifecycle, and Exact Teardown
+### Task 5: Add Cross-Platform Profile Keepers, Race-Free Lifecycle, and Exact Teardown
 
 **Repository:** `/Users/beubax/Desktop/AgentR/OpenCLI`
 
@@ -630,11 +700,12 @@ git commit -m "feat: isolate local sessions by cloak window"
 
 **Interfaces:**
 
-- Produces one hidden Profile-owned `anchorTargetId` and one browser CDP session per live Profile runtime.
+- Produces a retained macOS hidden `anchorTargetId` or Linux/Windows Profile-owned parking page, plus one browser CDP session per live Profile runtime.
 - Produces a fixed `PROFILE_IDLE_TIMEOUT_MS = 60_000`, `PROFILE_CLOSE_TIMEOUT_MS = 3_000`, and one per-Profile lifecycle lock shared by launch, cancellation, anchor repair, idle close, and recovery.
 - Produces `findExactCloakProfileProcesses(userDataDir)` reused by locked-Profile recovery and background teardown.
+- Produces shutdown fencing that awaits in-flight Profile launches and prevents late runtime publication.
 
-- [ ] **Step 1: Add anchor and lifecycle race tests with fake timers**
+- [ ] **Step 1: Add platform-keeper, lifecycle-race, and shutdown tests**
 
 Assert the runtime is not published before anchor creation:
 
@@ -652,7 +723,11 @@ expect(manager.activeProfileIds()).toEqual(['work']);
 
 With fake time, close the final Session window, advance `59_999` ms, and assert the context remains. Advance one millisecond and assert it is removed from `activeProfileIds()` before `context.close()` begins. Assert the timer's `unref` was called.
 
+For `platform: 'darwin'`, assert the hidden target is retained and never adopted even though the fake Playwright context reports it in `context.pages()`. Assert the browser CDP session is not detached until runtime close. For `linux` and `win32`, assert the final task page is navigated to `about:blank`, removed from Session maps, minimized/parked as Profile-owned, and excluded from list/run APIs. Simulate the user closing that window and assert the next command performs one clean relaunch.
+
 Start a new command at `59_999` ms and assert it cancels eviction and reuses the context. Start a command after close begins and assert it waits, then all simultaneous callers receive one replacement runtime from one launch. Resolve `context.close()` after more than 3 seconds and assert exact recovery runs once before relaunch.
+
+Start `getPage`, hold `launchPersistentContext`, call `shutdown`, then resolve launch. Assert shutdown awaits and closes the late context, `profiles` and `profileLaunches` are empty, and no runtime is published. Assert a post-shutdown call fails deterministically rather than launching.
 
 - [ ] **Step 2: Add exact process-match tests for issue #242**
 
@@ -676,9 +751,9 @@ Run:
 npx vitest run --project unit src/browser/runtime/local-cloak/process-matcher.test.ts src/browser/runtime/local-cloak/session-manager.test.ts src/browser/runtime/local-cloak/darwin-background-launch.test.ts
 ```
 
-Expected: FAIL because no hidden anchor/timer exists, close and launch are separate paths, and the matcher accepts only a substring form.
+Expected: FAIL because no keeper/timer exists, close and launch are separate paths, shutdown ignores `profileLaunches`, and the matcher accepts only a substring form.
 
-- [ ] **Step 4: Create and maintain the hidden anchor**
+- [ ] **Step 4: Create and maintain the platform keeper**
 
 Immediately after Cloak launch and before `profiles.set`, obtain `context.browser()`, create `browser.newBrowserCDPSession()`, and send:
 
@@ -690,7 +765,9 @@ const { targetId: anchorTargetId } = await cdp.send('Target.createTarget', {
 });
 ```
 
-If the pinned runtime returns `null` from `context.browser()` or rejects the hidden target, fail launch and let the live gate block the release; do not fall back to a visible page. Store the anchor outside Session/page maps. Filter its `targetId` from all page events and public lists. If `Target.targetDestroyed` reports the anchor while the context is healthy, recreate it under the Profile lifecycle lock.
+On macOS, if the pinned runtime returns `null` from `context.browser()` or rejects the hidden target, fail launch and let the live gate block the release. Retain the browser CDP session; do not execute the existing helper's `finally { cdp.detach() }`. Store the anchor outside Session/page maps and filter its target ID before adoption, manager page events, public lists, and runner scopes. If destroyed while healthy, recreate it under the Profile lifecycle lock.
+
+On Linux/Windows, still create/filter the hidden target for uniform ownership bookkeeping, but do not depend on it for liveness. When the final task page would close, navigate that page to `about:blank`, clear captures/listeners, remove it from its Session, record it as `parkingPage`, and minimize its window with `Browser.setWindowBounds` when supported. After a new Session window is successfully registered, close the old parking page. If a user closes it first and Chromium exits, invalidate that exact generation and relaunch on demand.
 
 - [ ] **Step 5: Serialize idle close and relaunch**
 
@@ -706,7 +783,9 @@ await Promise.race([
 ]);
 ```
 
-On timeout call exact Profile recovery and await it before the lock releases. Guard context `close` events by runtime object identity so an old event cannot delete a replacement.
+On timeout call exact Profile recovery and await it before the lock releases. Guard context `close` events by runtime object identity/generation so an old event cannot delete a replacement. A runtime in `closing` state is removed before close begins and is never returned.
+
+Add `shuttingDown` and a launch-generation fence. `shutdown()` sets the fence first, awaits `Promise.allSettled([...profileLaunches.values()])`, closes every runtime including launches that completed after the snapshot, detaches retained CDP sessions during close, and clears maps only after no launch can reinsert. `launchProfileRuntime` checks the fence immediately before `profiles.set`; if closing began, it closes the candidate and throws `DAEMON_SHUTTING_DOWN`.
 
 - [ ] **Step 6: Extract and reuse the exact matcher**
 
@@ -721,7 +800,7 @@ npx vitest run --project unit src/browser/runtime/local-cloak/process-matcher.te
 npm run typecheck
 ```
 
-Expected: PASS for repeated release/close/fresh-page/idle cycles, zero-visible-window anchor reuse, shutdown cleanup, the close/arrival race, and `work` versus `work-2`.
+Expected: PASS for repeated release/close/fresh-page/idle cycles, macOS zero-window hidden reuse, Linux/Windows parking-window reuse, accidental keeper close, shutdown during launch, the close/arrival race, and `work` versus `work-2`.
 
 Commit:
 
@@ -823,7 +902,7 @@ git commit -m "feat: scope local auth handoff to sessions"
 
 ---
 
-### Task 7: Store and Resolve Hosted Sessions
+### Task 7: Create, Persist, List, and Close Hosted Sessions
 
 **Repository:** `/Users/beubax/Desktop/AgentR/webcmd-cloud`
 
@@ -843,9 +922,9 @@ git commit -m "feat: scope local auth handoff to sessions"
 
 **Interfaces:**
 
-- Produces `WebcmdSession`, `HostedSessionService.resolve(tenant, profile, selector?)`, and `list`.
-- Extends `CloudRepository` with `getSession`, `getOrCreateSession`, `listSessions`, `touchSession`, `setSessionHandoff`, and `clearSessionHandoff`.
-- Produces `GET /v1/sessions?profile=<selector>` returning persisted metadata plus runtime state derived from Browser allocations.
+- Produces `WebcmdSession`, `HostedSessionService.create`, `require`, `resolveAdapterDefault`, `list`, and `close`.
+- Extends `CloudRepository` with `createSession`, `getSession`, `getOrCreateAdapterDefaultSession`, `listSessions`, `touchSession`, `setSessionHandoff`, and `clearSessionHandoff`.
+- Produces `POST /v1/sessions`, `GET /v1/sessions`, and `POST /v1/sessions/:id/close` with exact tenant/Profile scoping.
 
 - [ ] **Step 1: Add schema, repository, and resolver tests**
 
@@ -857,14 +936,14 @@ const session = {
   userId: tenant.userId,
   workspaceId: tenant.workspaceId,
   profileId: profile.id,
-  name: 'invoice-audit',
+  kind: 'explicit',
   createdAt: '2026-08-11T00:00:00.000Z',
   updatedAt: '2026-08-11T00:00:00.000Z',
   lastUsedAt: '2026-08-11T00:00:00.000Z',
 };
 ```
 
-Assert two concurrent `getOrCreateSession` calls for the same `(tenant, profileId, name)` return one ID; the same name in another Profile differs; omitted selector resolves `default`; unknown/cross-Profile immutable IDs throw `SESSION_NOT_FOUND`; listing does not create a row; handoff set/clear is owner-scoped.
+Assert two concurrent explicit creates return different collision-free IDs; concurrent `getOrCreateAdapterDefaultSession` calls return one `adapter-default` row per Profile; unknown/cross-Profile IDs throw `SESSION_NOT_FOUND`; listing does not create a row; close is idempotent and handoff set/clear is owner-scoped.
 
 For HTTP:
 
@@ -876,7 +955,7 @@ expect(await response.json()).toEqual({
   ok: true,
   sessions: [expect.objectContaining({
     id: session.id,
-    name: 'invoice-audit',
+    kind: 'explicit',
     runtimeState: 'idle',
     handoff: null,
   })],
@@ -903,63 +982,73 @@ create table if not exists webcmd_sessions (
   user_id text not null,
   workspace_id text not null,
   profile_id text not null,
-  name text not null,
+  kind text not null check (kind in ('explicit', 'adapter-default')),
   handoff_site text,
   handoff_expires_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   last_used_at timestamptz not null default now(),
-  unique (user_id, workspace_id, profile_id, name),
   unique (user_id, workspace_id, profile_id, id),
   constraint webcmd_sessions_profile_fkey
     foreign key (user_id, workspace_id, profile_id)
     references webcmd_profiles(user_id, workspace_id, id) on delete cascade
 );
+
+create unique index if not exists webcmd_sessions_one_adapter_default
+  on webcmd_sessions(user_id, workspace_id, profile_id)
+  where kind = 'adapter-default';
 ```
 
-Add a guarded `0010_profile_sessions` block for existing databases that creates the same table and records the migration. Do not delete or rewrite current `browser_allocations` rows; they expire through the existing reaper and new code addresses only rows whose `session_key` equals a resolved immutable Session ID.
+Add a guarded `0010_profile_sessions` block for existing databases that creates the same table/index and records the migration. Do not delete or rewrite current `browser_allocations` rows; they expire through the existing reaper and new code addresses only rows whose `session_key` equals a resolved immutable Session ID.
 
 - [ ] **Step 4: Implement atomic repository semantics**
 
 Define:
 
 ```ts
-export interface GetOrCreateSessionInput {
+export interface CreateSessionInput {
   tenant: TenantContext;
   profileId: string;
   id: string;
-  name: string;
+  kind: 'explicit' | 'adapter-default';
 }
 ```
 
-PostgreSQL must use `insert ... on conflict (user_id, workspace_id, profile_id, name) do update set last_used_at = excluded.last_used_at returning *`; the Profile foreign key validates tenancy. The in-memory repository uses `JSON.stringify([userId, workspaceId, profileId, name])` and returns clones.
+Explicit create uses a plain insert and retries only a generated-ID primary-key collision. Adapter-default resolution runs `insert ... on conflict do nothing returning *`; if no row returns, it selects the existing `kind = 'adapter-default'` row by the full tenant/Profile tuple in the same READ COMMITTED transaction. The partial unique index serializes concurrent inserts. The Profile foreign key validates tenancy. The in-memory repository mirrors both semantics and returns clones.
 
 Handoff updates must require the full tenant/Profile/Session tuple and set both `handoff_site` and `handoff_expires_at`; `clearSessionHandoff` must use the same tuple and may optionally guard the expected site.
 
-- [ ] **Step 5: Implement one resolver service**
+- [ ] **Step 5: Implement one lifecycle service**
 
-Use the Profile service before Session resolution. `HostedSessionService` accepts an `idFactory` defaulting to `session_${randomUUID()}` and implements exactly:
+Use the Profile service before Session lookup. `HostedSessionService` accepts an `idFactory` defaulting to `session_${randomUUID()}` and implements these distinct paths:
 
 ```ts
-async resolve(tenant: TenantContext, profile: WebcmdProfile, selector?: string): Promise<WebcmdSession> {
-  const value = selector?.trim() || 'default';
-  if (value.startsWith('session_')) {
-    const found = await this.repository.getSession(tenant, profile.id, value);
-    if (!found) throw new PublicHttpError(404, 'SESSION_NOT_FOUND',
-      `Session ${value} was not found in Profile ${profile.displayName}.`, undefined, 66);
-    return found;
-  }
-  return (await this.repository.getOrCreateSession({
-    tenant, profileId: profile.id, id: this.idFactory(), name: value,
-  })).session;
+async create(tenant: TenantContext, profile: WebcmdProfile): Promise<WebcmdSession> {
+  return this.repository.createSession({
+    tenant, profileId: profile.id, id: this.idFactory(), kind: 'explicit',
+  });
+}
+
+async require(tenant: TenantContext, profile: WebcmdProfile, id: string): Promise<WebcmdSession> {
+  requireSessionIdShape(id);
+  const found = await this.repository.getSession(tenant, profile.id, id);
+  if (!found) throw new PublicHttpError(404, 'SESSION_NOT_FOUND',
+    `Session ${id} was not found in Profile ${profile.displayName}.`, undefined, 66);
+  return found;
+}
+
+async resolveAdapterDefault(tenant: TenantContext, profile: WebcmdProfile): Promise<WebcmdSession> {
+  return this.repository.getOrCreateAdapterDefaultSession({
+    tenant, profileId: profile.id, id: this.idFactory(), kind: 'adapter-default',
+  });
 }
 ```
 
-Clear expired handoff metadata when resolving/listing. Do not create an explicit create endpoint.
+Clear expired handoff metadata when requiring/listing. `close` rejects busy/handoff ownership, closes the exact allocation through Task 8, clears exact live views, and leaves the durable row intact; list derives `idle` from the absence of an allocation.
 
 - [ ] **Step 6: Add the list endpoint and verify**
 
-`GET /v1/sessions` authenticates the tenant, resolves the requested/default Profile, lists rows, and joins active `browser_allocations` in memory by `session_key === session.id`. Return `runtimeState: 'active'|'idle'` and `handoff: null|{site,expiresAt}`; never expose Browser Use IDs, CDP URLs, or viewer tokens.
+`POST /v1/sessions` accepts Profile selection only and rejects a caller-supplied Session ID/name. `GET /v1/sessions` resolves the Profile, lists rows, and joins active allocations by `session_key === session.id`. `POST /v1/sessions/:id/close` is idempotent. Return `runtimeState: 'active'|'idle'` and `handoff: null|{site,expiresAt}`; never expose Browser Use IDs, CDP URLs, or viewer tokens.
 
 Run:
 
@@ -968,7 +1057,7 @@ npx vitest run tests/schema.test.ts tests/repository.test.ts tests/sessions-serv
 npm run typecheck
 ```
 
-Expected: PASS; friendly creation is atomic and immutable IDs remain tenant/Profile scoped.
+Expected: PASS; explicit creation never collides, adapter-default creation is singleton, close is idempotent, and immutable IDs remain tenant/Profile scoped.
 
 Commit:
 
@@ -1006,6 +1095,7 @@ git commit -m "feat: persist hosted browser sessions"
 - Consumes immutable hosted Session IDs from Task 7.
 - Produces `PersistentSessionWriteLeaseKey { tenant, profileId, sessionId }` and `acquireSessionBrowserLease`.
 - Produces one allocation row per Session by storing `sessionId` in existing `browser_allocations.session_key`; removes `PROFILE_SESSION_KEY` and the in-memory one-allocation-per-Profile guard.
+- Produces exact Session allocation close and structured `SESSION_CAPACITY_EXCEEDED` translation.
 
 - [ ] **Step 1: Add Session-partitioned lease and allocation tests**
 
@@ -1028,6 +1118,18 @@ await first.release();
 ```
 
 For allocations, concurrently acquire persistent `session_a` and `session_b` under one Profile. Assert `openSession` is called twice, both rows persist, their `browserSessionId` and live URLs differ, reacquiring `session_a` reconnects only its row, and closing `session_a` leaves `session_b` active.
+
+Configure a two-allocation fake quota and request a third Session. Assert the public error is:
+
+```ts
+expect(error).toMatchObject({
+  code: 'SESSION_CAPACITY_EXCEEDED',
+  status: 429,
+  details: { active: 2, limit: 2, retryAfterSessionClose: true },
+});
+```
+
+The hint must include `session list` and `session close <session-id>` and may mention upgrade; it must not expose Browser Use response bodies or allocation IDs.
 
 - [ ] **Step 2: Run focused tests and observe Profile collapse**
 
@@ -1053,7 +1155,7 @@ export interface PersistentSessionWriteLeaseKey {
 
 Add `session_id text not null default 'legacy-profile'` to the base `persistent_session_write_leases` definition. Add a separate idempotent migration `0011_session_browser_leases` that adds the column for existing databases and replaces the primary key with `(user_id, workspace_id, profile_id, session_id)`. Include Session ID in the advisory-lock tuple and every acquire/heartbeat/release/get predicate. Retain the default only for schema compatibility during the drained rollout required by Global Constraints; it does not make mixed old/new browser workers safe.
 
-Rename only TypeScript symbols and public copy to `Session`; keep the physical table name to avoid a second migration. Conflict response is HTTP 409, code `SESSION_BUSY`, exit 75, safe Session name/ID plus holder command/timestamps, never `ownerExecutionId`.
+Rename only TypeScript symbols and public copy to `Session`; keep the physical table name to avoid a second migration. Conflict response is HTTP 409, code `SESSION_BUSY`, exit 75, safe Session ID/kind plus holder command/timestamps, never `ownerExecutionId`.
 
 - [ ] **Step 4: Stop holding admission for the allocation lifetime**
 
@@ -1072,6 +1174,8 @@ browserAllocations.some(allocation =>
 ```
 
 Keep uniqueness of `browserSessionId` and tuple uniqueness. Pass `sessionId` through `RemoteBrowserRuntime.openSession` unchanged.
+
+Add `closeSession(tenant, profileId, sessionId)` under the existing per-key lifecycle lock. It stops and deletes only that durable allocation row and revokes only its views. Translate a provider concurrency/quota response into `SESSION_CAPACITY_EXCEEDED`, deriving safe active/limit counts from Webcmd state/config when available. Do not retry invisibly or collapse the error into `BROWSER_UNAVAILABLE`.
 
 - [ ] **Step 6: Verify and commit**
 
@@ -1116,13 +1220,21 @@ git commit -m "feat: key hosted browsers by session"
 
 **Interfaces:**
 
-- Consumes `session?: string` from `/v1/execute` and raw-browser path selectors, then resolves them with `HostedSessionService`.
+- Consumes optional `session` from `/v1/execute` and required raw-browser path IDs, then uses the correct explicit/default/no-Session route.
 - Acquires the Task 8 admission lease after the trusted execution row exists and before auth, allocation, CDP, pre-navigation, worker, or adapter work.
 - Keys persistent adapter tabs by `(profileId, sessionId, site)` and uses the same Session allocation for raw actions.
 
 - [ ] **Step 1: Add trusted-boundary, no-queue, and cross-surface tests**
 
 Send an execute body containing a fake `executionId` and assert the server ignores/rejects it while minting its own execution. Hold `session_a`, then submit raw browser and adapter commands to it and assert immediate 409 `SESSION_BUSY` with zero Browser Use/worker calls. Submit the same commands to `session_b` and assert they run before `session_a` releases.
+
+Also assert:
+
+- a non-browser adapter with no selector creates no Session, lease, or allocation;
+- a non-browser adapter with an explicit ID validates it but still creates no allocation;
+- a browser-backed adapter with no selector resolves the singleton adapter-default;
+- persistent and ephemeral browser-backed adapters both use that resolved Session;
+- raw browser omission never reaches this server path because the CLI rejects it, and a malformed/unknown route ID fails without creation.
 
 Use wall-clock barriers instead of arbitrary sleeps:
 
@@ -1148,9 +1260,21 @@ Expected: FAIL because adapter requests have no Session, raw commands use `Sessi
 
 - [ ] **Step 3: Parse and resolve selectors at each trusted boundary**
 
-Add `session?: string` validation to `readExecuteRequest`; reject non-string values. Resolve Profile, then Session, before calling adapter/auth browser code. For prepared executions, persist no caller ownership token: reuse the existing queued execution ID only after `startQueuedExecution` succeeds.
+Add `session?: string` validation to `readExecuteRequest`; reject non-string values. Load command metadata before Session allocation. Resolve Profile, then:
 
-For raw browser paths, treat the encoded segment as a selector, resolve it, and pass both `session.id` and `session.name` to `HostedBrowserController`. Its execution records and public run output use the immutable ID for ownership and may include the friendly name for display.
+```ts
+const session = command.browser
+  ? request.session
+    ? await sessions.require(tenant, profile, request.session)
+    : await sessions.resolveAdapterDefault(tenant, profile)
+  : request.session
+    ? await sessions.require(tenant, profile, request.session)
+    : undefined;
+```
+
+Only browser-backed work acquires admission/allocation. For prepared executions, persist no caller ownership token: reuse the existing queued execution ID only after `startQueuedExecution` succeeds.
+
+For raw browser paths, require the encoded segment to be an opaque ID, resolve it with `require`, and pass `session.id` plus `session.kind` to `HostedBrowserController`. Never lazily create from the route.
 
 - [ ] **Step 4: Acquire immediate admission once per top-level request**
 
@@ -1187,7 +1311,7 @@ npx vitest run tests/http-execute.test.ts tests/http-execution-artifacts.test.ts
 npm run typecheck
 ```
 
-Expected: PASS; Session admission is immediate, trusted, cross-surface, and parallel across siblings.
+Expected: PASS; Session admission is immediate, trusted, cross-surface, parallel across siblings, and allocated only for commands that actually need browser state.
 
 Commit:
 
@@ -1275,7 +1399,7 @@ Successful `whoami` clears exactly that Session. Expiry clears the row, invalida
 
 Before admission, reject a live handoff unless the server itself classified the command as the same `${site}/whoami` verification. Raw browser commands have no verification classification and therefore receive `SESSION_PAUSED_FOR_HUMAN_HANDOFF`. Do not accept a client-supplied `allowHumanControlled` or execution owner.
 
-Use code `SESSION_PAUSED_FOR_HUMAN_HANDOFF`, HTTP 409, and exit 77. Return Session ID/name and expiry but never the sibling view URL or Browser Use identifiers.
+Use code `SESSION_PAUSED_FOR_HUMAN_HANDOFF`, HTTP 409, and exit 77. Return Session ID/kind and expiry but never the sibling view URL or Browser Use identifiers.
 
 - [ ] **Step 5: Generate the scoped verify command**
 
@@ -1405,7 +1529,7 @@ git commit -m "feat: advertise hosted session protocol"
 **Interfaces:**
 
 - Consumes `sessionProtocolVersion: 1` from Task 11.
-- Produces `HostedClient.listSessions(profile?)` and hosted `webcmd --profile work session list` rendering.
+- Produces `HostedClient.createSession`, `listSessions`, and `closeSession`, plus hosted lifecycle rendering.
 - Fails incompatible CLI/server pairs with `HOSTED_CONTRACT_MISMATCH` before `/v1/execute` or `/v1/browser/...` is called.
 
 - [ ] **Step 1: Add fail-fast and list tests**
@@ -1413,7 +1537,7 @@ git commit -m "feat: advertise hosted session protocol"
 For an old manifest, assert zero browser/execute calls:
 
 ```ts
-await expect(runHostedCli(['--session', 'work-a', 'github', 'issues'], oldServerOptions))
+await expect(runHostedCli(['--session', 'session_a', 'github', 'issues'], oldServerOptions))
   .resolves.toMatchObject({ exitCode: 78 });
 expect(requests.map(request => request.pathname)).toEqual(['/v1/manifest']);
 expect(stderr).toContain('HOSTED_CONTRACT_MISMATCH');
@@ -1425,11 +1549,11 @@ For a compatible server:
 await runHostedCli(['--profile', 'work', 'session', 'list', '-f', 'json'], options);
 expect(requests.at(-1)?.url).toContain('/v1/sessions?profile=work');
 expect(JSON.parse(stdout)).toEqual([
-  expect.objectContaining({ id: 'session_a', name: 'invoice-audit' }),
+  expect.objectContaining({ id: 'session_a', kind: 'explicit' }),
 ]);
 ```
 
-Assert completion includes root `--session` and `session list`, and contains no `browser <session>` template.
+Assert `session create` sends no name/ID, `session close session_a` calls the exact close route and treats already-idle as exit 0, completion includes all three lifecycle commands, and contains no `browser <session>` template.
 
 - [ ] **Step 2: Run focused tests and verify old metadata is accepted/list is unknown**
 
@@ -1458,11 +1582,13 @@ Reuse the fetched manifest within that dispatch; do not add a second capability 
 
 - [ ] **Step 4: Add hosted Session list and canonical generated surfaces**
 
-Add `HostedSessionsResponse` validator and `listSessions(profile?)`, then route `session list` through it and existing renderer. Replace completion/help templates with:
+Add response validators plus `createSession(profile?)`, `listSessions(profile?)`, and `closeSession(profile?, sessionId)`, then route the lifecycle commands through the existing renderer. Replace completion/help templates with:
 
 ```ts
-`${CLI_COMMAND} [--profile <name>] [--session <name-or-id>] browser <command> [args] [options]`
+`${CLI_COMMAND} --session <session-id> [--profile <name>] browser <command> [args] [options]`
 ```
+
+Browser help must show `session create` and `session list`. Adapter help describes `--session` as optional isolation and must not imply a raw-browser default.
 
 Keep hosted adapter contract `schemaVersion: 1`; this feature changes CLI selectors and manifest metadata, not adapter argument schemas. Regenerate `cli-manifest.json`, `hosted-contract.json`, and plugin command manifests with existing build scripts.
 
@@ -1539,8 +1665,8 @@ The body must use barriers and real navigations to two locally served pages, not
 2. Two Profile contexts with distinct temp user-data directories launch through `Promise.all` and both navigate.
 3. Two Sessions in one Profile receive distinct window IDs and navigate simultaneously.
 4. Same-Session extra tabs and popups retain ownership; background creation does not change `document.hasFocus()` in the foreground human window.
-5. Closing Session A leaves Session B operational and leaves the Profile connected behind the hidden anchor at zero visible windows.
-6. A new Session opens during the warm period; another opens during forced idle close and receives one clean replacement runtime.
+5. Closing Session A leaves Session B operational; after the last task page closes, the supported host's hidden/parking keeper keeps the Profile reusable.
+6. A new Session opens during the warm period; another opens during forced idle close and receives one clean replacement runtime; shutdown during an in-flight launch leaks no process.
 7. `work` teardown does not match `work-2` or an unrelated Chrome process fixture.
 
 Always close contexts and delete only suite-created temp directories in `afterEach`/`finally`.
@@ -1564,7 +1690,7 @@ npx vitest run --project unit src/browser/runtime/local-cloak/session-manager.te
 npm run gate:cloak-sessions
 ```
 
-Expected: unit tests PASS; on the supported macOS release host, the live suite PASSes every listed invariant. Any live failure blocks release and returns the pinned runtime/launcher to repair.
+Expected: unit tests PASS; on every supported release OS, its live suite PASSes the applicable keeper and window invariants. At minimum, macOS release evidence is required before the first implementation lands, and Windows/Linux support cannot be claimed until their live keeper gates pass. Any live failure blocks release and returns the pinned runtime/launcher to repair.
 
 - [ ] **Step 4: Commit**
 
@@ -1686,17 +1812,20 @@ git commit -m "test: gate browser use session isolation"
 **Interfaces:**
 
 - Documents the already-implemented behavior; introduces no runtime switches.
-- Active examples use friendly names for normal work and immutable Session IDs for handoff verification.
+- Active raw-browser examples create and carry opaque IDs; adapter examples omit the selector unless demonstrating explicit isolation.
 
 - [ ] **Step 1: Add documentation/skill contract tests first**
 
 In `skills.test.ts`, require all six bundled skills to use root syntax and explain Session selection where relevant:
 
 ```ts
-expect(browserSkill).toContain('webcmd --session work browser run --stdin');
+expect(browserSkill).toContain('webcmd --profile work session create');
+expect(browserSkill).toContain('webcmd --session session_');
 expect(browserSkill).toContain('webcmd --profile work session list');
+expect(browserSkill).toContain('webcmd --profile work session close');
 expect(browserSkill).toMatch(/different agents[\s\S]*different Sessions/i);
 expect(usageSkill).toMatch(/SESSION_BUSY[\s\S]*same Session/i);
+expect(usageSkill).toMatch(/adapter[\s\S]*default Session/i);
 expect(autofixSkill).toMatch(/verify_command[\s\S]*immutable Session ID/i);
 ```
 
@@ -1722,33 +1851,40 @@ Expected: FAIL on positional syntax, unscoped verify guidance, and missing Profi
 Every overview must use this concise distinction:
 
 ```text
-Profile = persistent login state (cookies and browser storage).
-Session = one agent task's browser workspace and command lock.
+Profile = shared login state (cookies and browser storage).
+Session = one agent task's browser workspace and command lock, selected by an opaque ID.
 Tab = a page owned by that Session.
 ```
 
 Document:
 
-- omitted selector lazily uses `default`; a new friendly name is lazily created;
-- `webcmd --profile work session list` lists stable IDs and state;
-- parallel agents choose distinct names, for example `--session invoice-audit` and `--session research`;
-- local Sessions are distinct Cloak windows inside one Profile context; hosted Sessions consume distinct Browser Use allocations;
-- local zero-window Profiles remain warm behind an invisible anchor for 60 seconds;
+- raw browser work runs `session create` once and carries its returned opaque ID; omission is `SESSION_REQUIRED`;
+- `session list` lists stable IDs/state and attaching means passing an ID—there is no Session bind command;
+- `session close` frees local windows or a hosted allocation, succeeds when already idle, and does not delete the record;
+- non-browser adapters allocate no Session; browser-backed adapters use a system adapter default unless an explicit ID is supplied;
+- `siteSession` ephemeral/persistent controls tab lifetime inside the selected/default Session, so ephemeral adapters do not mint one window per command;
+- the adapter default is never chosen implicitly for raw browser work, but its listed ID may be passed deliberately and then shares admission/tabs with default-routed adapters;
+- parallel agents use distinct created IDs;
+- local Sessions are exclusive Cloak window groups inside one Profile context; hosted Sessions consume distinct Browser Use allocations;
+- local Profiles remain warm for 60 seconds behind the platform keeper; only macOS promises a zero-visible-window hidden target;
 - already-running hosted allocations do not receive live cookie injection;
 - overlapping same-Session commands can receive `SESSION_BUSY`, including commands from the same agent/PID; sequential commands work;
+- hosted quota exhaustion is `SESSION_CAPACITY_EXCEEDED` with close/wait/upgrade guidance;
 - a handoff pauses only its Session and the returned immutable-ID `verify_command` is authoritative.
 
 Use canonical examples:
 
 ```bash
-webcmd --profile work --session invoice-audit github issues
-webcmd --profile work --session invoice-audit browser run --stdin
+webcmd --profile work github issues
+webcmd --profile work session create
+webcmd --profile work --session session_7d8f... browser run --stdin
 webcmd --profile work session list
+webcmd --profile work session close session_7d8f...
 ```
 
 - [ ] **Step 4: Update all active skill examples and error playbooks**
 
-Replace positional browser calls in each selected skill and its directly referenced active example files. Teach `SESSION_NOT_FOUND`, `SESSION_BUSY`, `SESSION_PAUSED_FOR_HUMAN_HANDOFF`, and `SESSION_WINDOW_CONFLICT` as structured runtime states, not adapter breakage. Keep the existing prohibition on agents entering passwords, OTPs, cookies, recovery codes, or CAPTCHAs.
+Replace positional browser calls in each selected skill and its directly referenced active example files. Teach `SESSION_REQUIRED`, `SESSION_NOT_FOUND`, `SESSION_BUSY`, `SESSION_PAUSED_FOR_HUMAN_HANDOFF`, `SESSION_WINDOW_CONFLICT`, and `SESSION_CAPACITY_EXCEEDED` as structured runtime states, not adapter breakage. Explain that cookie APIs are Profile-wide even though pages are Session-scoped. Keep the existing prohibition on agents entering passwords, OTPs, cookies, recovery codes, or CAPTCHAs.
 
 Do not edit historical `docs/superpowers/specs/**` or `docs/superpowers/plans/**` to rewrite history.
 
@@ -1828,7 +1964,7 @@ With the repository's normal test PostgreSQL URL:
 TEST_DATABASE_URL="$WEBCMD_TEST_DATABASE_URL" npx vitest run tests/postgres-migration.integration.test.ts tests/postgres-repository.integration.test.ts tests/postgres-session-write-leases.integration.test.ts
 ```
 
-Expected: migrations `0010_profile_sessions` and `0011_session_browser_leases` are idempotent; concurrent friendly creation returns one row; Session leases arbitrate across two pools.
+Expected: migrations `0010_profile_sessions` and `0011_session_browser_leases` are idempotent; concurrent adapter-default creation returns one row while explicit creates remain distinct; Session leases arbitrate across two pools.
 
 - [ ] **Step 4: Run hosted live release gates**
 
@@ -1845,15 +1981,18 @@ Expected: all gates PASS, including two same-Profile Session allocations, both p
 
 - [ ] **Step 5: Perform the final issue/contract smoke test**
 
-On the release candidate, run two shells against one Profile:
+On the release candidate, create two Sessions, capture their IDs from structured output, then run two shells against one Profile:
 
 ```bash
-webcmd --profile release-work --session agent-a browser run --stdin <<'JS'
+webcmd --profile release-work session create -f json
+webcmd --profile release-work session create -f json
+
+webcmd --profile release-work --session session_A_FROM_OUTPUT browser run --stdin <<'JS'
 await page.goto('data:text/html,<title>agent-a</title>');
 await new Promise(resolve => setTimeout(resolve, 15000));
 return { title: await page.title() };
 JS
-webcmd --profile release-work --session agent-b browser run --stdin <<'JS'
+webcmd --profile release-work --session session_B_FROM_OUTPUT browser run --stdin <<'JS'
 await page.goto('data:text/html,<title>agent-b</title>');
 await new Promise(resolve => setTimeout(resolve, 15000));
 return { title: await page.title() };
@@ -1861,7 +2000,7 @@ JS
 webcmd --profile release-work session list -f json
 ```
 
-Start the first two heredocs in separate shells so their 15-second holds overlap. Expected: distinct local windows or hosted live views, both commands progress, and list returns two stable IDs. During that hold, launch the same `agent-a` command from a third shell; expected `SESSION_BUSY` while `agent-b` remains usable. Run a login in `agent-a`; expected its returned verify command contains `--session session_...`, `agent-a` pauses, and `agent-b` continues.
+Start the heredocs in separate shells so their 15-second holds overlap. Expected: distinct local window groups or hosted live views, both commands progress, and list returns the two stable IDs. During that hold, launch Session A from a third shell; expected `SESSION_BUSY` while B remains usable. Verify raw omission returns `SESSION_REQUIRED`. Run a browser-backed adapter with no selector and verify one `adapter-default` row appears without a per-command Session. Run login in A; expected its returned verify command contains the same immutable ID, A pauses, and B continues. Finally close both IDs and verify repeated close is a successful no-op.
 
 - [ ] **Step 6: Commit any final generated/package-only changes**
 
@@ -1895,13 +2034,14 @@ Do not create either commit when its staged diff is empty.
 
 | Requirement | Implemented and verified by |
 |---|---|
-| Root selector, lazy/default resolution, immutable IDs, listing | Tasks 1-2, 7, 12 |
-| Parallel Sessions, immediate same-Session busy, same-run re-entry | Tasks 3, 8-9 |
-| Local Session windows, tab/popup ownership, manual-move error | Task 4 |
-| Issue #276 anchor and close/arrival race | Task 5 |
+| Root selector, explicit create/list/close, raw requirement, adapter default | Tasks 1-2, 7, 9, 12 |
+| Parallel Sessions, immediate same-Session busy, same-run re-entry, dead-owner cleanup | Tasks 3, 8-9 |
+| Local window groups, tab/popup/page ownership, browser-run sandbox | Task 4 |
+| Issue #276 platform keeper, close/arrival race, shutdown launch fence | Task 5 |
 | Issue #242 exact Profile teardown | Tasks 5 and 13 |
 | Issue #225 pinned concurrent Cloak guarantee | Task 13 |
 | One Browser Use allocation/live view per hosted Session | Tasks 8-10 |
+| Structured hosted Session capacity errors | Tasks 8, 12, 15 |
 | Session-scoped local/hosted handoff with sibling continuation | Tasks 6, 10, 14 |
 | Browser Use same-Profile storage merge in both stop orders | Task 14 |
 | Capability break for incompatible CLI/cloud pairs | Tasks 11-12 |
