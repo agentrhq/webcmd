@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import yaml from 'js-yaml';
 import { cli, getRegistry, runWithDiscoverySource, Strategy } from './registry.js';
 import { BrowserCommandError } from './browser/daemon-client.js';
+import { getDaemonRunContext } from './session-lease.js';
 import type { IPage } from './types.js';
 import { TargetError } from './browser/target-errors.js';
 import { PKG_VERSION } from './version.js';
@@ -23,6 +24,7 @@ const {
   mockBrowserClose,
   mockBindTab,
   mockListExistingBrowserTabs,
+  mockReleaseSiteSessionLease,
   mockSendCommand,
   mockExecFileSync,
   browserState,
@@ -31,6 +33,7 @@ const {
   mockBrowserClose: vi.fn(),
   mockBindTab: vi.fn(),
   mockListExistingBrowserTabs: vi.fn(),
+  mockReleaseSiteSessionLease: vi.fn(),
   mockSendCommand: vi.fn(),
   mockExecFileSync: vi.fn(),
   browserState: { page: null as IPage | null },
@@ -51,6 +54,7 @@ vi.mock('./browser/daemon-client.js', async () => {
     ...actual,
     bindTab: mockBindTab,
     listExistingBrowserTabs: mockListExistingBrowserTabs,
+    releaseSiteSessionLease: mockReleaseSiteSessionLease,
     sendCommand: mockSendCommand,
   };
 });
@@ -1590,6 +1594,7 @@ describe('browser raw session commands', () => {
     stderrSpy.mockClear();
     mockBrowserConnect.mockClear();
     mockListExistingBrowserTabs.mockReset().mockResolvedValue([]);
+    mockReleaseSiteSessionLease.mockReset().mockResolvedValue(undefined);
     mockSendCommand.mockReset().mockResolvedValue({ ok: true });
   });
 
@@ -1650,6 +1655,23 @@ describe('browser raw session commands', () => {
     expect(mockSendCommand).toHaveBeenCalledWith('snapshot', {
       session: 'session_test', surface: 'browser', snapshotMode: 'read', ref: 'e12', maxOutputChars: 1000,
     });
+  });
+
+  it('binds raw browser daemon operations to one logical run', async () => {
+    let run = getDaemonRunContext();
+    mockSendCommand.mockImplementation(async () => {
+      run = getDaemonRunContext();
+      return { ok: true };
+    });
+    const program = createProgram('', '');
+
+    await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'snapshot']);
+
+    expect(run).toMatchObject({
+      runId: expect.stringMatching(/^run_/),
+      command: 'browser/snapshot',
+    });
+    expect(getDaemonRunContext()).toBeUndefined();
   });
 
   it('reads program files for run and rejects mutually exclusive input', async () => {

@@ -21,7 +21,6 @@ import {
 } from './registry.js';
 import type { IPage } from './types.js';
 import { pathToFileURL } from 'node:url';
-import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import { executePipeline } from './pipeline/index.js';
@@ -217,15 +216,12 @@ export async function executeCommand(
       const contextId = profileSelection?.contextId;
       const internal = cmd as InternalCliCommand;
       const siteSession = resolveSiteSession(cmd, opts.siteSession);
-      const session = resolveAdapterBrowserSession(cmd, siteSession);
+      const session = opts.session?.trim() || undefined;
       const keepTab = resolveKeepTab(siteSession, opts.keepTab);
       const windowMode = resolveBrowserWindowMode(opts.windowMode);
       const surface = 'adapter' as const;
       const canonicalCommand = fullName(cmd);
-      const leaseEligible = surface === 'adapter'
-        && siteSession === 'persistent'
-        && cmd.access === 'write';
-      const runId = leaseEligible ? generateRunId() : undefined;
+      const runId = generateRunId();
       let releaseRun = true;
       let deferRunFinalization = false;
 
@@ -235,7 +231,7 @@ export async function executeCommand(
           : new ObservationSession({
             scope: {
               contextId,
-              session,
+              session: session ?? 'adapter-default',
               target: page.getActivePage?.(),
               site: cmd.site,
               command: fullName(cmd),
@@ -374,10 +370,7 @@ export async function executeCommand(
 
       try {
         result = runId
-          ? await runWithDaemonRunContext(
-              { runId, command: canonicalCommand, access: 'write' },
-              executeBrowser,
-            )
+          ? await runWithDaemonRunContext({ runId, command: canonicalCommand }, executeBrowser)
           : await executeBrowser();
       } catch (err) {
         if (runId && isUnknownOutcomeError(err)) releaseRun = false;
@@ -510,11 +503,6 @@ function normalizeSiteSession(raw: unknown): SiteSessionMode | null {
 
 function resolveSiteSession(cmd: CliCommand, rawOption?: unknown): SiteSessionMode {
   return normalizeSiteSession(rawOption) ?? cmd.siteSession ?? 'ephemeral';
-}
-
-function resolveAdapterBrowserSession(cmd: CliCommand, siteSession: SiteSessionMode): string {
-  if (siteSession === 'persistent') return `site:${cmd.site}`;
-  return `site:${cmd.site}:${crypto.randomUUID()}`;
 }
 
 function normalizeBooleanOption(name: string, raw: unknown): boolean | null {

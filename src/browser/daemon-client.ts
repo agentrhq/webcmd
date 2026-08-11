@@ -166,7 +166,6 @@ async function sendCommandRaw(
       ...(run && {
         runId: run.runId,
         command: run.command,
-        access: run.access,
         pid: process.pid,
       }),
     };

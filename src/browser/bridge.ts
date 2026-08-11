@@ -38,8 +38,9 @@ export class BrowserBridge implements IBrowserFactory {
         ? { contextId: opts.contextId, preferredContextId: opts.preferredContextId }
         : profileRouteParams(resolveProfileSelection());
       await this._ensureDaemon(opts.timeout, routing.contextId);
-      if (!opts.session?.trim()) throw new Error('Browser session is required');
-      this._page = new Page(opts.session.trim(), opts.idleTimeout, routing.contextId, opts.windowMode, opts.surface, opts.siteSession, routing.preferredContextId, opts.freshPage);
+      const session = opts.session?.trim();
+      if (!session && opts.surface !== 'adapter') throw new Error('Browser session is required');
+      this._page = new Page(session, opts.idleTimeout, routing.contextId, opts.windowMode, opts.surface, opts.siteSession, routing.preferredContextId, opts.freshPage);
       this._state = 'connected';
       return this._page;
     } catch (err) {

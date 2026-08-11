@@ -259,7 +259,7 @@ export function createDaemonServer(provider: BrowserRuntimeProvider, opts: Daemo
         if (isSessionLeaseCommand(resolvedBody)) {
           const profileId = commandProfileId(provider, resolvedBody)
             ?? 'default';
-          leaseKey = getSessionLeaseKey(profileId, resolvedBody.surface, resolvedBody.session);
+          leaseKey = getSessionLeaseKey(profileId, resolvedBody.sessionId);
           runId = resolvedBody.runId;
           const acquired = leases.acquire({
             key: leaseKey,

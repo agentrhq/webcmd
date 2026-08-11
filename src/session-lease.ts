@@ -13,7 +13,6 @@ export function generateRunId(): string {
 export interface DaemonRunContext {
   runId: string;
   command: string;
-  access: 'read' | 'write';
 }
 
 let activeRun: DaemonRunContext | undefined;
@@ -118,11 +117,10 @@ export type AcquireResult =
   | { acquired: false; holder: SessionLease };
 
 /**
- * Lease key for a site session after the daemon has resolved its actual Cloak
- * profile. Encoding the session keeps key partitions unambiguous.
+ * Lease key after the daemon has resolved the immutable browser Session.
  */
-export function getSessionLeaseKey(profileId: string, surface: string, session: string): string {
-  return `${profileId}␟${surface}␟${encodeURIComponent(session)}`;
+export function getSessionLeaseKey(profileId: string, sessionId: string): string {
+  return `${profileId}␟${encodeURIComponent(sessionId)}`;
 }
 
 /** Whether a process id is safe to interpolate into local process guidance. */
@@ -138,28 +136,22 @@ function pidFromRunId(runId: string): number | undefined {
 }
 
 export interface SessionLeaseCommand {
-  surface?: unknown;
-  siteSession?: unknown;
-  access?: unknown;
-  session?: unknown;
+  action?: unknown;
+  sessionId?: unknown;
   runId?: unknown;
 }
 
-/** Only persistent adapter writes with a complete owner identity need a lease. */
+/** Every resolved browser-backed top-level run with a complete owner identity needs a lease. */
 export function isSessionLeaseCommand<T extends SessionLeaseCommand>(
   command: T,
 ): command is T & {
-  surface: 'adapter';
-  siteSession: 'persistent';
-  access: 'write';
-  session: string;
+  sessionId: string;
   runId: string;
 } {
-  return command.surface === 'adapter'
-    && command.siteSession === 'persistent'
-    && command.access === 'write'
-    && typeof command.session === 'string'
-    && command.session.length > 0
+  return command.action !== 'lease-release'
+    && command.action !== 'run-cancel'
+    && typeof command.sessionId === 'string'
+    && command.sessionId.length > 0
     && typeof command.runId === 'string'
     && command.runId.length > 0;
 }

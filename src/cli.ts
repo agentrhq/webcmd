@@ -38,7 +38,7 @@ import { browserOptionValueParser } from './browser/command-catalog.js';
 import { registerAuthCommands } from './commands/auth.js';
 import { daemonRestart, daemonStatus, daemonStop } from './commands/daemon.js';
 import { isVerbose, log } from './logger.js';
-import { BrowserCommandError, listExistingBrowserTabs, sendCommand } from './browser/daemon-client.js';
+import { BrowserCommandError, listExistingBrowserTabs, releaseSiteSessionLease, sendCommand } from './browser/daemon-client.js';
 import { fetchDaemonStatus } from './browser/daemon-transport.js';
 import { aliasForContextId, loadProfileConfig, profileRouteParams, renameProfile, resolveProfileSelection, setDefaultProfile, type ProfileSelection } from './browser/profile.js';
 import { formatDaemonVersion, isDaemonStale } from './browser/daemon-version.js';
@@ -54,6 +54,7 @@ import { loadBrowserRunSource } from './browser/run/input.js';
 import { BrowserRunError } from './browser/run/types.js';
 import { classifyCommandOrigin, formatCommandOrigin } from './command-origin.js';
 import { readOverrideRecords, removeOverrideRecords } from './override-provenance.js';
+import { clearDaemonRunContext, generateRunId, runWithDaemonRunContext } from './session-lease.js';
 
 const CLI_FILE = fileURLToPath(import.meta.url);
 const FOLLOW_POLL_MS = 1_000;
@@ -1084,10 +1085,13 @@ cli({
 
   function rawBrowserAction(fn: (session: string, routing: { contextId?: string; preferredContextId?: string }, opts: Record<string, unknown>) => Promise<unknown>) {
     return async (opts: Record<string, unknown>, command: Command) => {
+      const runId = generateRunId();
+      const commandName = `browser/${command.name()}`;
       try {
         const session = getBrowserSession(command);
         const routing = profileRouteParams(getBrowserProfileSelection(command));
-        console.log(JSON.stringify(await fn(session, routing, opts), null, 2));
+        const result = await runWithDaemonRunContext({ runId, command: commandName }, () => fn(session, routing, opts));
+        console.log(JSON.stringify(result, null, 2));
       } catch (error) {
         if (error instanceof BrowserCommandError && error.code) {
           console.log(JSON.stringify({
@@ -1102,6 +1106,9 @@ cli({
         log.error(error instanceof CliError ? `${error.code}: ${error.message}` : error instanceof Error ? error.message : String(error));
         if (error instanceof CliError && error.hint) log.error(error.hint);
         process.exitCode = error instanceof CliError ? error.exitCode : EXIT_CODES.GENERIC_ERROR;
+      } finally {
+        clearDaemonRunContext(runId);
+        await releaseSiteSessionLease(runId);
       }
     };
   }

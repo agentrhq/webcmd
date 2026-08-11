@@ -205,7 +205,6 @@ describe('daemon-client', () => {
     setDaemonRunContext({
       runId: 'run_4242_1000_1',
       command: 'example write',
-      access: 'write',
     });
     vi.mocked(fetch).mockResolvedValue({
       status: 200,
@@ -218,7 +217,6 @@ describe('daemon-client', () => {
     expect(body).toMatchObject({
       runId: 'run_4242_1000_1',
       command: 'example write',
-      access: 'write',
       pid: process.pid,
     });
   });
@@ -323,7 +321,6 @@ describe('daemon-client', () => {
     setDaemonRunContext({
       runId: 'run_9999_newer_2',
       command: 'newer write',
-      access: 'write',
     });
     const ensureSpy = vi.spyOn(daemonLifecycle, 'ensureBrowserBridgeReady');
     vi.mocked(fetch).mockRejectedValueOnce(new TypeError('fetch failed'));

@@ -26,7 +26,7 @@ describe('logical daemon run context', () => {
   it('keeps one run id stable while a logical run is bound and generates a different id for the next run', () => {
     vi.spyOn(Date, 'now').mockReturnValue(1_763_000_000_000);
     const firstRunId = generateRunId();
-    setDaemonRunContext({ runId: firstRunId, command: 'chatgpt ask', access: 'write' });
+    setDaemonRunContext({ runId: firstRunId, command: 'chatgpt ask' });
 
     expect(getDaemonRunContext()?.runId).toBe(firstRunId);
     expect(getDaemonRunContext()?.runId).toBe(firstRunId);
@@ -38,14 +38,13 @@ describe('logical daemon run context', () => {
   });
 
   it('does not let deferred cleanup from an older run clear a newer run context', () => {
-    setDaemonRunContext({ runId: 'run_111_1_1', command: 'chatgpt ask', access: 'write' });
-    setDaemonRunContext({ runId: 'run_222_2_2', command: 'claude ask', access: 'write' });
+    setDaemonRunContext({ runId: 'run_111_1_1', command: 'chatgpt ask' });
+    setDaemonRunContext({ runId: 'run_222_2_2', command: 'claude ask' });
 
     clearDaemonRunContext('run_111_1_1');
     expect(getDaemonRunContext()).toEqual({
       runId: 'run_222_2_2',
       command: 'claude ask',
-      access: 'write',
     });
 
     clearDaemonRunContext('run_222_2_2');
@@ -62,12 +61,10 @@ describe('logical daemon run context', () => {
     const firstContext: DaemonRunContext = {
       runId: 'run_111_1_1',
       command: 'first write',
-      access: 'write',
     };
     const secondContext: DaemonRunContext = {
       runId: 'run_222_2_2',
       command: 'second write',
-      access: 'write',
     };
 
     const first = runWithDaemonRunContext(firstContext, async () => {
@@ -105,37 +102,51 @@ describe('isUnknownOutcomeError', () => {
 });
 
 describe('session lease partitions', () => {
-  it('partitions persistent writes by resolved profile, surface, and encoded site', () => {
-    const workChatgpt = getSessionLeaseKey('work', 'adapter', 'site:chatgpt');
-    expect(workChatgpt).toBe('work␟adapter␟site%3Achatgpt');
-    expect(workChatgpt).not.toBe(getSessionLeaseKey('personal', 'adapter', 'site:chatgpt'));
-    expect(workChatgpt).not.toBe(getSessionLeaseKey('work', 'adapter', 'site:claude'));
-    expect(workChatgpt).not.toBe(getSessionLeaseKey('work', 'browser', 'site:chatgpt'));
+  it('partitions admission by resolved profile and immutable Session id', () => {
+    const workSession = getSessionLeaseKey('work', 'session_a');
+    expect(workSession).toBe('work␟session_a');
+    expect(workSession).not.toBe(getSessionLeaseKey('personal', 'session_a'));
+    expect(workSession).not.toBe(getSessionLeaseKey('work', 'session_b'));
   });
 
-  it('does not arbitrate reads, ephemeral sessions, raw browser operations, or incomplete identities', () => {
+  it('arbitrates any resolved browser-backed command with complete run identity', () => {
     const eligible = {
-      surface: 'adapter',
-      siteSession: 'persistent',
-      access: 'write',
-      session: 'site:chatgpt',
+      action: 'exec',
+      sessionId: 'session_a',
       runId: 'run_111_1_1',
     };
     expect(isSessionLeaseCommand(eligible)).toBe(true);
-    expect(isSessionLeaseCommand({ ...eligible, access: 'read' })).toBe(false);
-    expect(isSessionLeaseCommand({ ...eligible, siteSession: 'ephemeral' })).toBe(false);
-    expect(isSessionLeaseCommand({ ...eligible, surface: 'browser' })).toBe(false);
-    expect(isSessionLeaseCommand({ ...eligible, session: '' })).toBe(false);
+    expect(isSessionLeaseCommand({ ...eligible, action: 'lease-release' })).toBe(false);
+    expect(isSessionLeaseCommand({ ...eligible, action: 'run-cancel' })).toBe(false);
+    expect(isSessionLeaseCommand({ ...eligible, sessionId: '' })).toBe(false);
     expect(isSessionLeaseCommand({ ...eligible, runId: undefined })).toBe(false);
   });
 });
 
 describe('SessionLeaseRegistry', () => {
-  const KEY = getSessionLeaseKey('work', 'adapter', 'site:chatgpt');
+  const KEY = getSessionLeaseKey('work', 'session_a');
   let now = T0;
 
   beforeEach(() => {
     now = T0;
+  });
+
+  it('allows same-run re-entry, rejects overlapping different runs, and allows sibling Sessions', () => {
+    const leases = registry();
+    const keyA = getSessionLeaseKey('profile_work', 'session_a');
+    const keyB = getSessionLeaseKey('profile_work', 'session_b');
+
+    expect(leases.acquire({ key: keyA, runId: 'run_7_one', command: 'browser/run', pid: 7 }, () => true).acquired)
+      .toBe(true);
+    expect(leases.acquire({ key: keyA, runId: 'run_7_one', command: 'browser/tabs', pid: 7 }, () => true).acquired)
+      .toBe(true);
+    expect(leases.acquire({ key: keyA, runId: 'run_7_two', command: 'github/issues', pid: 7 }, () => true))
+      .toMatchObject({ acquired: false });
+    expect(leases.acquire({ key: keyB, runId: 'run_7_two', command: 'github/issues', pid: 7 }, () => true).acquired)
+      .toBe(true);
+    leases.releaseByRunId('run_7_one');
+    expect(leases.acquire({ key: keyA, runId: 'run_7_three', command: 'browser/run' }, () => false).acquired)
+      .toBe(true);
   });
 
   function registry(): SessionLeaseRegistry {
@@ -269,7 +280,7 @@ describe('SessionLeaseRegistry', () => {
   it('releases only leases owned by the requested run and reports the count', () => {
     const leases = registry();
     acquire(leases, 'run_111_1_1');
-    acquire(leases, 'run_111_1_1', getSessionLeaseKey('work', 'adapter', 'site:claude'));
+    acquire(leases, 'run_111_1_1', getSessionLeaseKey('work', 'session_b'));
 
     expect(leases.releaseByRunId('run_999_9_9')).toBe(0);
     expect(leases.list(() => false)).toHaveLength(2);

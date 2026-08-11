@@ -22,7 +22,13 @@ export default defineConfig({
       {
         test: {
           name: 'unit',
-          include: ['src/*.test.ts', 'src/!(browser)/**/*.test.ts', 'src/browser/verify-fixture.test.ts', 'src/browser/sessions.test.ts'],
+          include: [
+            'src/*.test.ts',
+            'src/!(browser)/**/*.test.ts',
+            'src/browser/verify-fixture.test.ts',
+            'src/browser/sessions.test.ts',
+            'src/browser/daemon-client.test.ts',
+          ],
           sequence: { groupOrder: 0 },
         },
       },

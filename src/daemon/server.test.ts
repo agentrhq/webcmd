@@ -341,7 +341,7 @@ describe('createDaemonServer', () => {
     const status = await fetch(`${baseUrl}/status`, { headers: { [DAEMON_HEADER_NAME]: '1' } });
     await expect(status.json()).resolves.toMatchObject({
       sessionLeases: [{
-        key: 'default␟adapter␟site%3Aexample',
+        key: 'default␟site%3Aexample',
         command: 'example write',
         acquiredAt: 1_000,
         heartbeatAt: 20_000,
@@ -354,6 +354,17 @@ describe('createDaemonServer', () => {
     ['read access', { access: 'read' as const }],
     ['ephemeral sessions', { siteSession: 'ephemeral' as const }],
     ['raw browser surface', { surface: 'browser' as const }],
+  ])('conflicts across %s when the resolved Session is the same', async (_case, overrides) => {
+    const provider = new FakeProvider();
+    provider.resolveProfileId = (command) => command.profileId ?? 'default';
+    const { baseUrl } = await start(provider);
+
+    expect((await postCommand(baseUrl, persistentWrite('owner', 'run_100_1_1'))).status).toBe(200);
+    expect((await postCommand(baseUrl, persistentWrite('other', 'run_200_2_2', overrides))).status).toBe(409);
+    expect(provider.commands.map((command) => command.id)).toEqual(['owner']);
+  });
+
+  it.each([
     ['different sites', { session: 'site:other' }],
     ['different resolved profiles', { profileId: 'other' }],
   ])('does not conflict across %s', async (_case, overrides) => {
