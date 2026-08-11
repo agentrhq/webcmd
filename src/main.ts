@@ -18,7 +18,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getCompletionScriptFast, getCompletionsFromManifest, hasAllManifests } from './completion-fast.js';
-import { findPackageRoot, getCliManifestPath } from './package-paths.js';
+import { findPackageRoot, getCliManifestPath, resolveBuiltinClisDir } from './package-paths.js';
 import { PKG_VERSION } from './version.js';
 import { EXIT_CODES } from './errors.js';
 import { isSupportedNodeVersion, MIN_SUPPORTED_NODE_MAJOR } from './runtime-detect.js';
@@ -27,12 +27,8 @@ import { CONFIG_DIR_NAME } from './brand.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 // The core manifest sits next to the builtin clis/ tree so user-local adapter
-// manifests keep the same lookup contract. In a repo checkout that tree is
-// clis/ at the package root; the published package cannot ship adapter source
-// at the root, so the build stages a copy next to the compiled output and this
-// resolves to dist/src/clis/ there.
-const REPO_BUILTIN_CLIS = path.join(findPackageRoot(__filename), 'clis');
-const BUILTIN_CLIS = fs.existsSync(REPO_BUILTIN_CLIS) ? REPO_BUILTIN_CLIS : path.join(__dirname, 'clis');
+// manifests keep the same lookup contract.
+const BUILTIN_CLIS = resolveBuiltinClisDir(__filename);
 const USER_CLIS = path.join(os.homedir(), CONFIG_DIR_NAME, 'clis');
 const USER_PLUGINS = path.join(os.homedir(), CONFIG_DIR_NAME, 'plugins');
 

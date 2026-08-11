@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   formatPackageBinSpawnFailure,
   packageBinSpawnOptions,
@@ -112,6 +112,33 @@ try {
       fail(`global install did not create executable: ${binPath}`);
     }
     run(binPath, ['--version'], { cwd: tmp });
+    // Presence in the tarball is not executability. Every manifest command must
+    // also be discoverable and loadable *from the installed layout*, which a
+    // repository checkout never exercises: there the builtin tree is clis/ at
+    // the package root, and only the installed package takes the dist/src/clis
+    // fallback. #247 was exactly this gap — advertised, then ADAPTER_LOAD on
+    // first use.
+    const installedMain = path.join(prefix, 'lib', 'node_modules', pkg.name, pkg.main);
+    for (const entry of manifest) {
+      if (!entry.modulePath) continue;
+      const help = run(binPath, [entry.site, entry.name, '--help'], { cwd: tmp });
+      if (/ADAPTER_LOAD/.test(`${help.stdout}${help.stderr}`)) {
+        fail(`installed package cannot present ${entry.site}/${entry.name}: ADAPTER_LOAD\n${help.stdout}${help.stderr}`);
+      }
+      // --help is served from the staged manifest and never imports the module;
+      // the import below is what execution does, through the CLI's own resolver.
+      const load = [
+        `const { resolveBuiltinClisDir } = await import(${JSON.stringify(pathToFileURL(path.join(path.dirname(installedMain), 'package-paths.js')).href)});`,
+        `const { pathToFileURL } = await import('node:url');`,
+        `const { join } = await import('node:path');`,
+        `const dir = resolveBuiltinClisDir(${JSON.stringify(installedMain)});`,
+        `await import(pathToFileURL(join(dir, ${JSON.stringify(entry.modulePath)})).href);`,
+      ].join('\n');
+      const result = spawnSync(process.execPath, ['--input-type=module', '-e', load], { cwd: tmp, encoding: 'utf8' });
+      if (result.status !== 0) {
+        fail(`installed package cannot load ${entry.site}/${entry.name} (${entry.modulePath}) — this is the ADAPTER_LOAD failure users hit:\n${result.stderr}`);
+      }
+    }
   }
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });
