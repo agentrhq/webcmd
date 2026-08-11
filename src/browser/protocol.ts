@@ -1,4 +1,5 @@
 import type { SessionLeaseStatus } from '../session-lease.js';
+import type { BrowserSessionListRow } from './sessions.js';
 import type { SnapshotMode } from './snapshot/index.js';
 
 export type BrowserRuntimeAction =
@@ -18,7 +19,10 @@ export type BrowserRuntimeAction =
   | 'frames'
   | 'run'
   | 'snapshot'
-  | 'lease-release';
+  | 'lease-release'
+  | 'session-create'
+  | 'session-list'
+  | 'session-close';
 
 export type BrowserSurface = 'browser' | 'adapter';
 export type SiteSessionMode = 'ephemeral' | 'persistent';
@@ -30,6 +34,8 @@ export interface BrowserRuntimeCommand {
   page?: string;
   code?: string;
   session?: string;
+  sessionId?: string;
+  sessionKind?: 'explicit' | 'adapter-default';
   surface?: BrowserSurface;
   siteSession?: SiteSessionMode;
   /** Close any existing leased page and start on a new one (sent on the first action of a command run). */
@@ -111,4 +117,5 @@ export interface BrowserRuntimeStatus {
   commandResultUnknown?: number;
   /** Active local leases with internal run ownership tokens removed. */
   sessionLeases?: SessionLeaseStatus[];
+  sessions?: BrowserSessionListRow[];
 }

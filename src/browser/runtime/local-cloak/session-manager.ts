@@ -396,6 +396,29 @@ export class CloakSessionManager {
     }
   }
 
+  hasSession(profileIdInput: string | undefined, sessionInput: string | undefined): boolean {
+    const profileId = normalizeProfileId(profileIdInput);
+    const session = requireSession(sessionInput);
+    const runtime = this.profiles.get(profileId);
+    return Boolean(runtime && this.openEntries(runtime).some(([, entry]) => entry.session === session));
+  }
+
+  async closeSession(profileIdInput: string | undefined, sessionInput: string | undefined): Promise<number> {
+    const profileId = normalizeProfileId(profileIdInput);
+    const session = requireSession(sessionInput);
+    const runtime = this.profiles.get(profileId);
+    if (!runtime) return 0;
+    const entries = this.openEntries(runtime).filter(([, entry]) => entry.session === session);
+    for (const [key, entry] of entries) {
+      runtime.pages.delete(key);
+      this.clearIdleTimer(entry);
+      if (runtime.selectedPageId === entry.pageId) runtime.selectedPageId = undefined;
+      if (!pageIsClosed(entry.page)) await entry.page.close().catch(() => {});
+    }
+    if (entries.length > 0) runtime.lastSeenAt = Date.now();
+    return entries.length;
+  }
+
   async shutdown(): Promise<void> {
     for (const runtime of this.profiles.values()) {
       for (const entry of runtime.pages.values()) this.clearIdleTimer(entry);

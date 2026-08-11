@@ -4,6 +4,7 @@ import type { BrowserRuntimeCommand, BrowserRuntimeResult } from '../browser/pro
 import type { BrowserRuntimeProvider } from '../browser/runtime/provider.js';
 import { buildCommandTimeoutFailure, getResponseCorsHeaders } from '../daemon-utils.js';
 import { getSessionLeaseKey, isSessionLeaseCommand, SessionLeaseRegistry } from '../session-lease.js';
+import type { BrowserSessionRecord } from '../browser/sessions.js';
 
 const MAX_BODY = 1024 * 1024;
 const LOG_BUFFER_SIZE = 200;
@@ -56,6 +57,55 @@ function waitForCommandResult(
   return responsePromise.finally(() => {
     if (timeoutId) clearTimeout(timeoutId);
   });
+}
+
+const SESSION_LIFECYCLE_ACTIONS = new Set<BrowserRuntimeCommand['action']>([
+  'session-create',
+  'session-list',
+  'session-close',
+]);
+
+function commandProfileId(provider: BrowserRuntimeProvider, command: BrowserRuntimeCommand): string | undefined {
+  return provider.resolveProfileId?.(command)
+    ?? command.profileId
+    ?? command.contextId
+    ?? command.preferredContextId;
+}
+
+async function resolveBrowserSession(
+  provider: BrowserRuntimeProvider,
+  command: BrowserRuntimeCommand,
+): Promise<BrowserRuntimeCommand> {
+  if (command.action === 'lease-release' || SESSION_LIFECYCLE_ACTIONS.has(command.action)) return command;
+  let session: BrowserSessionRecord | undefined;
+  if (command.surface === 'adapter' && !command.session) {
+    session = await provider.resolveAdapterDefault?.(command);
+  } else {
+    session = await provider.requireSession?.(command);
+  }
+  return session ? { ...command, session: session.id, sessionId: session.id, sessionKind: session.kind } : command;
+}
+
+async function handleSessionLifecycle(
+  provider: BrowserRuntimeProvider,
+  command: BrowserRuntimeCommand,
+): Promise<BrowserRuntimeResult | null> {
+  switch (command.action) {
+    case 'session-create': {
+      const session = await provider.createSession?.(command);
+      return session ? { id: command.id, ok: true, data: session } : null;
+    }
+    case 'session-list': {
+      const sessions = await provider.listSessions?.({ profileId: commandProfileId(provider, command) });
+      return sessions ? { id: command.id, ok: true, data: sessions } : null;
+    }
+    case 'session-close': {
+      const closed = await provider.closeSession?.(command);
+      return closed ? { id: command.id, ok: true, data: closed } : null;
+    }
+    default:
+      return null;
+  }
 }
 
 function readBody(req: IncomingMessage): Promise<string> {
@@ -198,21 +248,24 @@ export function createDaemonServer(provider: BrowserRuntimeProvider, opts: Daemo
           jsonResponse(res, 200, { id: body.id, ok: true, data: { released } });
           return;
         }
+        const lifecycleResult = await handleSessionLifecycle(provider, body);
+        if (lifecycleResult) {
+          jsonResponse(res, 200, lifecycleResult);
+          return;
+        }
+        const resolvedBody = await resolveBrowserSession(provider, body);
         let leaseKey: string | undefined;
         let runId: string | undefined;
-        if (isSessionLeaseCommand(body)) {
-          const profileId = provider.resolveProfileId?.(body)
-            ?? body.profileId
-            ?? body.contextId
-            ?? body.preferredContextId
+        if (isSessionLeaseCommand(resolvedBody)) {
+          const profileId = commandProfileId(provider, resolvedBody)
             ?? 'default';
-          leaseKey = getSessionLeaseKey(profileId, body.surface, body.session);
-          runId = body.runId;
+          leaseKey = getSessionLeaseKey(profileId, resolvedBody.surface, resolvedBody.session);
+          runId = resolvedBody.runId;
           const acquired = leases.acquire({
             key: leaseKey,
             runId,
-            command: body.command ?? body.action,
-            pid: body.pid,
+            command: resolvedBody.command ?? resolvedBody.action,
+            pid: resolvedBody.pid,
           }, hasPendingWork);
           if (!acquired.acquired) {
             const { key: _key, runId: _runId, ...holder } = acquired.holder;
@@ -220,7 +273,7 @@ export function createDaemonServer(provider: BrowserRuntimeProvider, opts: Daemo
             return;
           }
         }
-        const commandPromise = provider.dispatch(body).finally(() => {
+        const commandPromise = provider.dispatch(resolvedBody).finally(() => {
           if (leaseKey && runId) leases.heartbeat(leaseKey, runId);
           pending.delete(body.id);
         });

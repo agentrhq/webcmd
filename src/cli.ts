@@ -48,6 +48,7 @@ import type { BrowserDownloadWaitResult, IPage, ScreenshotOptions } from './type
 import type { BrowserWindowMode } from './runtime.js';
 import { configureRootCommandSurface } from './root-command-surface.js';
 import { validateRawBrowserSession } from './hosted/browser-args.js';
+import { LocalBrowserSessionStore, requireSessionIdShape, type BrowserSessionListRow } from './browser/sessions.js';
 import { missingPluginGuidance, PLUGINS_DIR } from './discovery.js';
 import { loadBrowserRunSource } from './browser/run/input.js';
 import { BrowserRunError } from './browser/run/types.js';
@@ -548,6 +549,14 @@ function getBrowserProfileSelection(command?: Command): ProfileSelection | undef
   return resolveProfileSelection(typeof raw === 'string' && raw.trim() ? raw.trim() : undefined);
 }
 
+function getSelectedProfileId(command?: Command): string {
+  return getBrowserProfileSelection(command)?.contextId ?? 'default';
+}
+
+function formatHandoff(row: BrowserSessionListRow): string {
+  return row.handoff ? `${row.handoff.site} until ${row.handoff.expiresAt}` : '';
+}
+
 function applyVerbose(opts: { verbose?: boolean }): void {
   if (opts.verbose) process.env.WEBCMD_VERBOSE = '1';
 }
@@ -780,6 +789,57 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
         console.log(renderConventionAuditText(report));
       }
       if (opts.strict && !report.ok) process.exitCode = EXIT_CODES.GENERIC_ERROR;
+    });
+
+  const sessionCmd = program.command('session').description('Create, list, and close browser Sessions');
+
+  sessionCmd
+    .command('create')
+    .description('Create a new opaque browser Session ID for the selected Profile')
+    .option('-f, --format <fmt>', 'Output format: table, json, yaml', 'yaml')
+    .action(async (opts, command) => {
+      const profileId = getSelectedProfileId(command);
+      const data = await sendCommand('session-create', { contextId: profileId });
+      await renderOutput(data, { fmt: opts.format, columns: ['id', 'kind', 'profileId'] });
+    });
+
+  sessionCmd
+    .command('list')
+    .description('List browser Sessions for the selected Profile')
+    .option('-f, --format <fmt>', 'Output format: table, json, yaml', 'table')
+    .action(async (opts, command) => {
+      const profileId = getSelectedProfileId(command);
+      let rows: BrowserSessionListRow[];
+      const status = await fetchDaemonStatus({ contextId: profileId });
+      if (status?.runtimeConnected && !isDaemonStale(status, PKG_VERSION)) {
+        rows = await sendCommand('session-list', { contextId: profileId }) as BrowserSessionListRow[];
+      } else {
+        rows = new LocalBrowserSessionStore().list(profileId);
+      }
+      const output = rows.map((row) => ({ ...row, handoff: formatHandoff(row) }));
+      if (output.length === 0 && String(opts.format ?? 'table') === 'table') {
+        console.log(`No browser Sessions found for Profile ${profileId}.`);
+        return;
+      }
+      await renderOutput(output, { fmt: opts.format, columns: ['id', 'kind', 'runtimeState', 'handoff'] });
+    });
+
+  sessionCmd
+    .command('close')
+    .description('Close a browser Session runtime without deleting its durable record')
+    .argument('<session-id>', 'Existing opaque Session ID from `webcmd session create`')
+    .option('-f, --format <fmt>', 'Output format: table, json, yaml', 'yaml')
+    .action(async (sessionId: string, opts, command) => {
+      const profileId = getSelectedProfileId(command);
+      requireSessionIdShape(sessionId);
+      const status = await fetchDaemonStatus({ contextId: profileId });
+      if (status?.runtimeConnected && !isDaemonStale(status, PKG_VERSION)) {
+        const data = await sendCommand('session-close', { contextId: profileId, session: sessionId });
+        await renderOutput(data, { fmt: opts.format });
+        return;
+      }
+      new LocalBrowserSessionStore().require(profileId, sessionId);
+      await renderOutput({ closed: false, alreadyIdle: true, session: sessionId }, { fmt: opts.format });
     });
 
   // ── Built-in: browser (browser control for Claude Code skill) ───────────────

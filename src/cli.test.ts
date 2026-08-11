@@ -1683,6 +1683,82 @@ describe('browser raw session commands', () => {
   });
 });
 
+describe('browser Session lifecycle commands', () => {
+  const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+  beforeEach(() => {
+    process.exitCode = undefined;
+    consoleLogSpy.mockClear();
+    mockSendCommand.mockReset();
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('daemon offline')));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('creates a Session through the daemon mutation path', async () => {
+    mockSendCommand.mockResolvedValue({
+      id: 'session_abc',
+      kind: 'explicit',
+      profileId: 'default',
+      runtimeState: 'idle',
+    });
+
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'create']);
+
+    expect(mockSendCommand).toHaveBeenCalledWith('session-create', { contextId: 'default' });
+    expect(consoleLogSpy.mock.calls.flat().join('\n')).toContain('session_abc');
+  });
+
+  it('lists persisted Sessions without creating the adapter default when daemon is absent', async () => {
+    const baseDir = path.join(isolatedCliTestHome, '.webcmd');
+    fs.mkdirSync(baseDir, { recursive: true });
+    fs.writeFileSync(path.join(baseDir, 'browser-sessions.json'), JSON.stringify({
+      version: 1,
+      sessions: [{
+        id: 'session_existing',
+        profileId: 'default',
+        kind: 'explicit',
+        createdAt: '2026-08-11T00:00:00.000Z',
+        updatedAt: '2026-08-11T00:00:00.000Z',
+        lastUsedAt: '2026-08-11T00:00:00.000Z',
+      }],
+    }), { mode: 0o600 });
+
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'list', '-f', 'json']);
+
+    expect(mockSendCommand).not.toHaveBeenCalled();
+    const rows = JSON.parse(consoleLogSpy.mock.calls.flat().join('\n'));
+    expect(rows).toEqual([expect.objectContaining({ id: 'session_existing', runtimeState: 'idle' })]);
+  });
+
+  it('closes an idle persisted Session as a no-op when daemon is absent', async () => {
+    const baseDir = path.join(isolatedCliTestHome, '.webcmd');
+    fs.mkdirSync(baseDir, { recursive: true });
+    fs.writeFileSync(path.join(baseDir, 'browser-sessions.json'), JSON.stringify({
+      version: 1,
+      sessions: [{
+        id: 'session_idle',
+        profileId: 'default',
+        kind: 'explicit',
+        createdAt: '2026-08-11T00:00:00.000Z',
+        updatedAt: '2026-08-11T00:00:00.000Z',
+        lastUsedAt: '2026-08-11T00:00:00.000Z',
+      }],
+    }), { mode: 0o600 });
+
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'close', 'session_idle', '-f', 'json']);
+
+    expect(mockSendCommand).not.toHaveBeenCalled();
+    expect(JSON.parse(consoleLogSpy.mock.calls.flat().join('\n'))).toMatchObject({
+      closed: false,
+      alreadyIdle: true,
+      session: 'session_idle',
+    });
+  });
+});
+
 // Shared helper for the selector-first describe blocks below.
 // Each block spies console.log, mocks the IPage surface it touches, and
 // parses the last stringified call to inspect the JSON envelope — the

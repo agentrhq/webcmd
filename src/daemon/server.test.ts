@@ -2,15 +2,19 @@ import { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DAEMON_HEADER_NAME } from '../constants.js';
 import type { BrowserRuntimeCommand, BrowserRuntimeResult, BrowserRuntimeStatus } from '../browser/protocol.js';
+import type { BrowserSessionListRow, BrowserSessionRecord } from '../browser/sessions.js';
 import type { BrowserRuntimeProvider } from '../browser/runtime/provider.js';
 import { createDaemonServer } from './server.js';
 
 class FakeProvider implements BrowserRuntimeProvider {
   commands: BrowserRuntimeCommand[] = [];
+  sessions: BrowserSessionRecord[] = [];
+  activeSessions = new Set<string>();
   shutdownCalled = false;
   delayMs = 0;
   dispatchImpl?: (command: BrowserRuntimeCommand) => Promise<BrowserRuntimeResult>;
   resolveProfileId?: (command: BrowserRuntimeCommand) => string;
+  sessionId = 'session_11111111-1111-4111-8111-111111111111';
 
   private result(command: BrowserRuntimeCommand) {
     return { id: command.id, ok: true as const, data: { action: command.action }, page: 'page-1' };
@@ -24,7 +28,50 @@ class FakeProvider implements BrowserRuntimeProvider {
       profiles: [{ contextId: 'default', runtimeConnected: true, runtimeVersion: '1.2.3', pending: 0 }],
       pending: 0,
       commandResultUnknown: 0,
+      sessions: this.listSessionRows(),
     };
+  }
+
+  async createSession(command: BrowserRuntimeCommand): Promise<BrowserSessionRecord> {
+    const profileId = command.contextId ?? 'default';
+    const session = {
+      id: this.sessionId,
+      profileId,
+      kind: 'explicit' as const,
+      createdAt: '2026-08-11T00:00:00.000Z',
+      updatedAt: '2026-08-11T00:00:00.000Z',
+      lastUsedAt: '2026-08-11T00:00:00.000Z',
+    };
+    this.sessions.push(session);
+    return session;
+  }
+
+  async listSessions(input: { profileId?: string }): Promise<BrowserSessionListRow[]> {
+    return this.listSessionRows(input.profileId);
+  }
+
+  async closeSession(command: BrowserRuntimeCommand): Promise<{ closed: boolean; alreadyIdle: boolean; session: string }> {
+    const session = String(command.session);
+    const wasActive = this.activeSessions.delete(session);
+    return { closed: wasActive, alreadyIdle: !wasActive, session };
+  }
+
+  async requireSession(command: BrowserRuntimeCommand): Promise<BrowserSessionRecord> {
+    const profileId = command.contextId ?? 'default';
+    const existing = this.sessions.find((session) => session.profileId === profileId && session.id === command.session);
+    if (existing) return existing;
+    return {
+      id: String(command.session),
+      profileId,
+      kind: 'explicit',
+      createdAt: '2026-08-11T00:00:00.000Z',
+      updatedAt: '2026-08-11T00:00:00.000Z',
+      lastUsedAt: '2026-08-11T00:00:00.000Z',
+    };
+  }
+
+  async resolveAdapterDefault(command: BrowserRuntimeCommand): Promise<BrowserSessionRecord> {
+    return this.requireSession({ ...command, session: command.session ?? 'session_default' });
   }
 
   async dispatch(command: BrowserRuntimeCommand) {
@@ -36,6 +83,15 @@ class FakeProvider implements BrowserRuntimeProvider {
 
   async shutdown() {
     this.shutdownCalled = true;
+  }
+
+  private listSessionRows(profileId?: string): BrowserSessionListRow[] {
+    return this.sessions
+      .filter((session) => profileId === undefined || session.profileId === profileId)
+      .map((session) => ({
+        ...session,
+        runtimeState: this.activeSessions.has(session.id) ? 'active' as const : 'idle' as const,
+      }));
   }
 }
 
@@ -113,6 +169,40 @@ describe('createDaemonServer', () => {
     });
     expect(provider.commands).toHaveLength(1);
     expect(provider.commands[0]).toMatchObject({ id: 'cmd-1', action: 'navigate', session: 'work' });
+  });
+
+  it('handles local Session lifecycle controls outside normal dispatch', async () => {
+    const { provider, baseUrl } = await start();
+
+    const created = await postCommand(baseUrl, { id: 'create-session', action: 'session-create' as BrowserRuntimeCommand['action'], contextId: 'profile_work' });
+    expect(created.status).toBe(200);
+    await expect(created.json()).resolves.toMatchObject({
+      ok: true,
+      data: { id: provider.sessionId, profileId: 'profile_work', kind: 'explicit' },
+    });
+
+    provider.activeSessions.add(provider.sessionId);
+    const listed = await postCommand(baseUrl, { id: 'list-sessions', action: 'session-list' as BrowserRuntimeCommand['action'], contextId: 'profile_work' });
+    expect(listed.status).toBe(200);
+    await expect(listed.json()).resolves.toMatchObject({
+      ok: true,
+      data: [{ id: provider.sessionId, runtimeState: 'active' }],
+    });
+
+    const closed = await postCommand(baseUrl, { id: 'close-session', action: 'session-close' as BrowserRuntimeCommand['action'], contextId: 'profile_work', session: provider.sessionId });
+    expect(closed.status).toBe(200);
+    await expect(closed.json()).resolves.toMatchObject({
+      ok: true,
+      data: { closed: true, alreadyIdle: false, session: provider.sessionId },
+    });
+
+    const closedAgain = await postCommand(baseUrl, { id: 'close-session-again', action: 'session-close' as BrowserRuntimeCommand['action'], contextId: 'profile_work', session: provider.sessionId });
+    expect(closedAgain.status).toBe(200);
+    await expect(closedAgain.json()).resolves.toMatchObject({
+      ok: true,
+      data: { closed: false, alreadyIdle: true, session: provider.sessionId },
+    });
+    expect(provider.commands).toEqual([]);
   });
 
   it('accepts the maximum browser-run source envelope', async () => {
