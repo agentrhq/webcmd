@@ -1,8 +1,17 @@
-const challengeMarkers = /cloudflare|cf-chl|datadome|perimeterx|px-captcha|akamai|captcha|just a moment|verify you are human/i;
+// Matched only against the response body: CDN *names* (e.g. "server: cloudflare") are not
+// evidence of a challenge, since most of the web sits behind one on perfectly good responses.
+const bodyChallengeMarkers = /cf-chl|datadome|perimeterx|px-captcha|akamai.*captcha|captcha|just a moment|checking your browser|verify you are human|attention required/i;
+// Header *names* that only ever appear when a challenge actually fired.
+const challengeHeaderNames = ['cf-mitigated', 'x-datadome-captcha', 'x-px-block'];
 
 export function isChallengeResponse(status: number, headers: Record<string, string>, body: string): boolean {
-  const evidence = `${Object.entries(headers).map(([key, value]) => `${key}:${value}`).join('\n')}\n${body.slice(0, 20_000)}`;
-  return challengeMarkers.test(evidence) && (status === 403 || status === 429 || status === 503 || status === 200);
+  if (status !== 403 && status !== 429 && status !== 503 && status !== 200) return false;
+  const bodyHit = bodyChallengeMarkers.test(body.slice(0, 20_000));
+  // A 200 is only a challenge if the body itself shows one; generic CDN headers on a normal
+  // 200 (the common case for any Cloudflare-fronted site) must not trip this.
+  if (status === 200) return bodyHit;
+  const headerHit = challengeHeaderNames.some(name => headers[name] !== undefined);
+  return bodyHit || headerHit;
 }
 
 export function isJavaScriptShell(body: string): boolean {

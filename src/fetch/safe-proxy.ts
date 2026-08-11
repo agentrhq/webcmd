@@ -1,6 +1,7 @@
 import { lookup as dnsLookup } from 'node:dns';
 import * as http from 'node:http';
 import * as net from 'node:net';
+import type { Duplex } from 'node:stream';
 
 export interface SafeProxy { url: string; close(): Promise<void>; }
 export interface SafeProxyOptions { allowPrivate?: boolean; lookup?: typeof dnsLookup; }
@@ -38,6 +39,8 @@ async function resolve(host: string, lookup: typeof dnsLookup, allowPrivate: boo
 export async function createSafeProxy(options: SafeProxyOptions = {}): Promise<SafeProxy> {
   const lookup = options.lookup ?? dnsLookup;
   const allowPrivate = options.allowPrivate === true;
+  const sockets = new Set<net.Socket | Duplex>();
+  const trackSocket = (socket: net.Socket | Duplex) => { sockets.add(socket); socket.once('close', () => sockets.delete(socket)); };
   const server = http.createServer(async (request, response) => {
     try {
       const target = new URL(request.url ?? '');
@@ -46,22 +49,35 @@ export async function createSafeProxy(options: SafeProxyOptions = {}): Promise<S
         response.writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
         upstreamResponse.pipe(response);
       });
-      upstream.on('error', error => response.destroy(error));
+      upstream.on('error', () => { upstream.destroy(); response.destroy(); });
+      request.on('error', () => upstream.destroy());
       request.pipe(upstream);
     } catch (error) { response.writeHead(403).end(error instanceof Error ? error.message : 'Unsafe fetch destination'); }
   });
   server.on('connect', async (request, client, head) => {
+    trackSocket(client);
+    let upstream: net.Socket | undefined;
+    // Persistent (not `once`) handlers: writes to an already half-closed peer keep emitting
+    // 'error', and with no listener at all Node throws and kills the process (EPIPE crash).
+    client.on('error', () => { client.destroy(); upstream?.destroy(); });
     try {
       const [host, portText] = (request.url ?? '').replace(/^\[/, '').replace(']', '').split(':');
       if (!host) throw new Error('Invalid CONNECT target');
       const address = await resolve(host, lookup, allowPrivate);
-      const upstream = net.connect({ host: address, port: Number(portText) || 443 });
-      upstream.once('connect', () => { client.write('HTTP/1.1 200 Connection Established\r\n\r\n'); if (head.length) upstream.write(head); upstream.pipe(client); client.pipe(upstream); });
-      upstream.once('error', error => client.destroy(error));
+      upstream = net.connect({ host: address, port: Number(portText) || 443 });
+      trackSocket(upstream);
+      upstream.on('error', () => { upstream?.destroy(); client.destroy(); });
+      upstream.once('connect', () => { client.write('HTTP/1.1 200 Connection Established\r\n\r\n'); if (head.length) upstream!.write(head); upstream!.pipe(client); client.pipe(upstream!); });
     } catch (error) { client.end(`HTTP/1.1 403 Forbidden\r\n\r\n${error instanceof Error ? error.message : ''}`); }
   });
   await new Promise<void>((resolveListen, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', () => resolveListen()); });
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('Safe proxy did not bind');
-  return { url: `http://127.0.0.1:${address.port}`, close: () => new Promise((resolveClose, reject) => server.close(error => error ? reject(error) : resolveClose())) };
+  return {
+    url: `http://127.0.0.1:${address.port}`,
+    close: () => new Promise((resolveClose, reject) => {
+      for (const socket of sockets) socket.destroy();
+      server.close(error => error ? reject(error) : resolveClose());
+    }),
+  };
 }
