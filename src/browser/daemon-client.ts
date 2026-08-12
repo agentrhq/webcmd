@@ -95,9 +95,9 @@ export class BrowserCommandError extends CliError {
 }
 
 function browserCommandExitCode(code?: string): ExitCode {
-  return code === 'SESSION_PAUSED_FOR_HUMAN_HANDOFF' || code === 'SESSION_WINDOW_CONFLICT'
-    ? EXIT_CODES.TEMPFAIL
-    : EXIT_CODES.GENERIC_ERROR;
+  if (code === 'SESSION_PAUSED_FOR_HUMAN_HANDOFF') return EXIT_CODES.NOPERM;
+  if (code === 'SESSION_WINDOW_CONFLICT') return EXIT_CODES.TEMPFAIL;
+  return EXIT_CODES.GENERIC_ERROR;
 }
 
 export {

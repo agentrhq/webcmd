@@ -85,7 +85,7 @@ Do not disable the `terminal` toolset — that is how Hermes runs `webcmd`.
 | Search disappeared after disabling `web` | Expected: `web_search` and `web_extract` share one toolset. Re-enable `web` and steer the agent with instructions instead. |
 | `x_search` appeared on its own | Expected: it auto-registers when `XAI_API_KEY` or Grok OAuth is configured. Leave it — it is search. |
 | `webcmd` not found in Hermes terminal | Confirm `webcmd` is on the host PATH that Hermes' `terminal` toolset uses; non-interactive shells may skip shell init files. |
-| Browser sessions stop working after idle | Ask the agent to open a fresh session or re-bind with `tabs` and `bind --page`. |
+| Browser Session idles or loses its window | Keep the same Session ID; the next `webcmd --session <session-id> browser ...` command reopens it. Use `webcmd session create -f json`, `webcmd session list`, and `webcmd session close <session-id>` for lifecycle. |
 
 ## See also
 

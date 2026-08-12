@@ -321,7 +321,7 @@ describe('daemon-client', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('maps local handoff pauses to a temporary BrowserCommandError', async () => {
+  it('maps local handoff pauses to an auth-required BrowserCommandError', async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockResolvedValueOnce({
       ok: false,
@@ -338,7 +338,7 @@ describe('daemon-client', () => {
     await expect(sendCommand('exec', { code: '1' })).rejects.toMatchObject({
       name: 'BrowserCommandError',
       code: 'SESSION_PAUSED_FOR_HUMAN_HANDOFF',
-      exitCode: 75,
+      exitCode: 77,
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });

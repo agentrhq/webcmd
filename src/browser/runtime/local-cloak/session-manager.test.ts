@@ -288,7 +288,7 @@ describe('CloakSessionManager', () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('window.open failed'));
   });
 
-  it('adopts a noopener page when Chromium opens it in a new window', async () => {
+  it('ignores an unmarked opener-less page when waiting for a Session tab', async () => {
     const launched = fakeContext();
     const manager = new CloakSessionManager({
       baseDir: '/tmp/webcmd-test',
@@ -303,12 +303,15 @@ describe('CloakSessionManager', () => {
       return null;
     });
 
-    const second = await manager.newPage(key);
+    vi.useFakeTimers();
+    const secondPromise = manager.newPage(key);
+    await vi.advanceTimersByTimeAsync(1_000);
+    const second = await secondPromise;
 
-    expect(second.page).toBe(opened);
+    expect(second.page).not.toBe(opened);
     expect(launched.cdp.send.mock.calls.filter(([method, params]) => (
       method === 'Target.createTarget' && !(params as { hidden?: boolean })?.hidden
-    ))).toHaveLength(1);
+    ))).toHaveLength(2);
     expect((await manager.listPages(key)).map(tab => tab.sessionId)).toEqual(['session_a', 'session_a']);
   });
 

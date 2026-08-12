@@ -319,14 +319,23 @@ describe('createDaemonServer', () => {
   it('force-closes a Session while work is active', async () => {
     let settle!: () => void;
     let settled = false;
+    let aborted = false;
+    const events: string[] = [];
     const provider = new FakeProvider();
     provider.activeSessions.add('session_a');
+    provider.closeSession = vi.fn(async (command) => {
+      events.push('close');
+      const session = String(command.session);
+      const wasActive = provider.activeSessions.delete(session);
+      return { closed: wasActive, alreadyIdle: !wasActive, session };
+    });
     provider.dispatchImpl = (command, signal) => new Promise((resolve) => {
       settle = () => {
         settled = true;
+        events.push('settle');
         resolve({ id: command.id, ok: true, data: 'done' });
       };
-      signal?.addEventListener('abort', settle, { once: true });
+      signal?.addEventListener('abort', () => { aborted = true; }, { once: true });
     });
     const { baseUrl } = await start(provider);
 
@@ -347,7 +356,9 @@ describe('createDaemonServer', () => {
         session: 'session_a',
         force: true,
       });
-      await vi.waitFor(() => expect(provider.activeSessions).not.toContain('session_a'));
+      await vi.waitFor(() => expect(aborted).toBe(true));
+      expect(provider.closeSession).not.toHaveBeenCalled();
+      settle();
       const close = await closeRequest;
       expect(settled).toBe(true);
       expect(close.status).toBe(200);
@@ -361,6 +372,7 @@ describe('createDaemonServer', () => {
           clearedHandoff: false,
         },
       });
+      expect(events).toEqual(['settle', 'close']);
     } finally {
       settle();
       await active.catch(() => undefined);

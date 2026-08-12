@@ -374,9 +374,9 @@ export function createDaemonServer(provider: BrowserRuntimeProvider, opts: Daemo
               return entry.promise;
             });
           forcedRunIds.forEach((runId) => forceClosingRuns.add(runId));
+          await Promise.allSettled(forcedCommands);
           const lifecycleResult = await handleSessionLifecycle(provider, resolvedBody);
           if (lifecycleResult) {
-            await Promise.allSettled(forcedCommands);
             for (const runId of forcedRunIds) {
               leases.releaseByRunId(runId);
               forceClosingRuns.delete(runId);

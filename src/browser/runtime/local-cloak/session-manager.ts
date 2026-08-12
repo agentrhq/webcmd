@@ -984,9 +984,7 @@ export class CloakSessionManager {
         if (actualWindowId === undefined) return;
         const owner = runtime.windowOwners.get(actualWindowId);
         if (owner !== undefined && owner !== sessionId) return;
-        const isRequestedTarget = page.url() === targetUrl;
-        const opener = await page.opener().catch(() => null);
-        if (opener && !isRequestedTarget) return;
+        if (page.url() !== targetUrl) return;
         done(page);
       };
       const onPage = (page: PlaywrightPage) => { void tryPage(page); };

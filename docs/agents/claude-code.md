@@ -88,7 +88,7 @@ Denying these tools does not affect the Bash tool, which is how `webcmd` is driv
 | Skill text looks out of date | `webcmd update` upgrades only the CLI. Run `claude plugin update webcmd@webcmd` to refresh plugin skills. |
 | Claude Code still uses `WebFetch` / `WebSearch` | Confirm `permissions.deny` lists both in the active settings file, then restart `claude`. |
 | `claude` requires permission prompts for `webcmd` | The Bash tool still asks before non-approved commands; run `claude --dangerously-skip-permissions` or allow the shell command if you accept the risk. |
-| Browser sessions stop working after idle | Ask the agent to open a fresh session or re-bind with `tabs` and `bind --page`. |
+| Browser Session idles or loses its window | Keep the same Session ID; the next `webcmd --session <session-id> browser ...` command reopens it. Use `webcmd session create -f json`, `webcmd session list`, and `webcmd session close <session-id>` for lifecycle. |
 
 ## See also
 

@@ -60,7 +60,7 @@ Deny `webfetch` so OpenCode cannot fall back to it while Webcmd is its browser s
 | OpenCode still uses `webfetch` | Confirm `permission.webfetch` is `deny` in the active config, then restart OpenCode. |
 | `websearch` is missing entirely | It registers only with the OpenCode provider or `OPENCODE_ENABLE_EXA=1`. Not a Webcmd problem. |
 | `webcmd browser` errors | Read `webcmd-usage` and `webcmd-browser` skills; create a session and pass its ID as root `--session`. |
-| Browser sessions stop working after idle | Ask the agent to create a fresh session or inspect it with `webcmd session list`. |
+| Browser Session idles or loses its window | Keep the same Session ID; the next `webcmd --session <session-id> browser ...` command reopens it. Use `webcmd session create -f json`, `webcmd session list`, and `webcmd session close <session-id>` for lifecycle. |
 
 ## See also
 

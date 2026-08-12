@@ -52,6 +52,22 @@ describe('Session documentation sync', () => {
     }
     expect(troubleshooting).toContain('webcmd session close <session-id> --force');
   });
+
+  it('teaches Session lifecycle commands in every agent guide', () => {
+    const agentDir = path.join(ROOT, 'docs', 'agents');
+    const guides = fs.readdirSync(agentDir)
+      .filter((file) => file.endsWith('.md'))
+      .filter((file) => file !== 'custom-sdk.md')
+      .map((file) => path.join(agentDir, file));
+
+    for (const guide of guides) {
+      const text = fs.readFileSync(guide, 'utf8');
+      expect(text, path.relative(ROOT, guide)).toContain('webcmd session create');
+      expect(text, path.relative(ROOT, guide)).toContain('webcmd --session <session-id>');
+      expect(text, path.relative(ROOT, guide)).toContain('webcmd session list');
+      expect(text, path.relative(ROOT, guide)).toContain('webcmd session close <session-id>');
+    }
+  });
 });
 
 function findRemovedSessionSyntaxes(text: string): string[] {

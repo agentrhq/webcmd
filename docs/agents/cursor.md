@@ -77,7 +77,7 @@ Note that the rule is guidance, not a block. Cursor's Browser Automation has bee
 | Cursor uses its Browser tool for external sites | Confirm `.cursor/rules/webcmd-browser.mdc` has `alwaysApply: true`; for a hard block, set Browser Automation to Off. |
 | Browser Automation turns itself back on | Known behaviour — a prompt mentioning "browser" can re-enable it. Avoid the word, or turn it off in the agent window. |
 | `webcmd` not found in Cursor shell | Confirm `webcmd` is on the PATH the Cursor shell uses; restart Cursor after installing the CLI. |
-| Browser sessions stop working after idle | Ask the agent to open a fresh session or re-bind with `tabs` and `bind --page`. |
+| Browser Session idles or loses its window | Keep the same Session ID; the next `webcmd --session <session-id> browser ...` command reopens it. Use `webcmd session create -f json`, `webcmd session list`, and `webcmd session close <session-id>` for lifecycle. |
 
 ## See also
 
