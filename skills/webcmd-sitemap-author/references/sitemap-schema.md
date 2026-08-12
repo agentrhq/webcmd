@@ -69,7 +69,7 @@ kind: site | page | partial | workflow | apis | pitfalls | draft
 id: stable-id
 status: verified | draft | stale
 verified_at: YYYY-MM-DD
-source: webcmd browser state | trace:<path> | adapter:<site>/<command>
+source: webcmd browser <session> snapshot --snapshot-mode tree | trace:<path> | adapter:<site>/<command>
 ---
 ```
 
@@ -145,7 +145,7 @@ kind: page
 id: repo
 status: verified
 verified_at: YYYY-MM-DD
-source: webcmd browser state
+source: webcmd browser <session> snapshot --snapshot-mode tree
 url_patterns:
   - https://github.com/*/*
 state_signature:
@@ -222,7 +222,7 @@ kind: partial
 id: post-card
 status: verified
 verified_at: YYYY-MM-DD
-source: webcmd browser state
+source: webcmd browser <session> snapshot --snapshot-mode tree
 url_patterns: []
 scope_root: article[role="article"]
 ---
@@ -302,7 +302,7 @@ Read an issue and extract title, author, body, labels, and comments.
 
 on_adapter_fail:
   - adapter_health_update: webcmd github issue -> suspect
-  - webcmd browser state
+  - webcmd browser <session> snapshot --snapshot-mode tree
   - action:open_issue in pages/repo.md
   - action:extract_comments in pages/issue.md
 
@@ -462,7 +462,7 @@ Do not delete stale evidence immediately. Mark it stale with reason and next ste
 ```yaml
 status: stale
 stale_reason: selector `[data-testid=old]` missing
-next: rerun `webcmd browser analyze <url>`
+next: rerun `webcmd browser <session> run --stdin` against the current URL
 ```
 
 ## 12. Security And Privacy
@@ -498,7 +498,7 @@ Do not promote drafts as verified.
 Before considering a sitemap file ready:
 
 - [ ] Front matter has `site`, `kind`, `id`, `status`, `verified_at`, and `source`.
-- [ ] Current browser state was checked.
+- [ ] Current browser snapshot was checked.
 - [ ] Actions have `pre`, `do`, `post`, `fail`, `recover`, and `evidence`.
 - [ ] Adapter fallback updates `adapter_health` when relevant.
 - [ ] Selectors are semantic and scoped.

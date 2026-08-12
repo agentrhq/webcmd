@@ -1,0 +1,9 @@
+{
+  "name": "webcmd-plugin-tiktok",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Webcmd commands for tiktok",
+  "peerDependencies": {
+    "@agentrhq/webcmd": ">=0.5.3"
+  }
+}

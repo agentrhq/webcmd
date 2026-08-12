@@ -1,21 +1,44 @@
 /**
  * E2E tests for management/built-in commands.
  * These commands require no external network access (except verify --smoke).
+ *
+ * Site commands are no longer bundled in core (they ship as independent
+ * plugins), so `list`/`validate` need at least one plugin installed to have
+ * anything to render. A small local plugin is installed once into an
+ * isolated HOME for that purpose.
  */
 
-import { describe, it, expect } from 'vitest';
-import { runCli, parseJsonOutput } from './helpers.js';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as os from 'node:os';
+import { runCli, parseJsonOutput, installFixturePlugin } from './helpers.js';
+
+const TEST_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-management-e2e-'));
+const FIXTURE_SITE = 'dictionary';
+const FIXTURE_ENV = { HOME: TEST_HOME, USERPROFILE: TEST_HOME };
+
+function runManagementCli(args: string[], opts: { timeout?: number } = {}) {
+  return runCli(args, { ...opts, env: FIXTURE_ENV });
+}
 
 describe('management commands E2E', () => {
+  beforeAll(() => {
+    installFixturePlugin(TEST_HOME, FIXTURE_SITE);
+  });
+
+  afterAll(() => {
+    fs.rmSync(TEST_HOME, { recursive: true, force: true });
+  });
 
   // ── list ──
   it('list shows all registered commands', async () => {
-    const { stdout, code } = await runCli(['list', '-f', 'json']);
+    const { stdout, code } = await runManagementCli(['list', '-f', 'json']);
     expect(code).toBe(0);
     const data = parseJsonOutput(stdout);
     expect(Array.isArray(data)).toBe(true);
-    // Should have 50+ commands across 18 sites
-    expect(data.length).toBeGreaterThan(50);
+    // The fixture plugin (dictionary) contributes 3 commands: search, synonyms, examples.
+    expect(data.length).toBeGreaterThanOrEqual(3);
     // Each entry should have the standard fields
     expect(data[0]).toHaveProperty('command');
     expect(data[0]).toHaveProperty('site');
@@ -25,31 +48,29 @@ describe('management commands E2E', () => {
   });
 
   it('list default table format renders sites', async () => {
-    const { stdout, code } = await runCli(['list']);
+    const { stdout, code } = await runManagementCli(['list']);
     expect(code).toBe(0);
-    // Should contain site names
-    expect(stdout).toContain('hackernews');
-    expect(stdout).toContain('youtube');
-    expect(stdout).toContain('twitter');
+    expect(stdout).toContain(FIXTURE_SITE);
     expect(stdout).toContain('commands across');
   });
 
   it('list -f yaml produces valid yaml', async () => {
-    const { stdout, code } = await runCli(['list', '-f', 'yaml']);
+    const { stdout, code } = await runManagementCli(['list', '-f', 'yaml']);
     expect(code).toBe(0);
     expect(stdout).toContain('command:');
     expect(stdout).toContain('site:');
   });
 
   it('list -f csv produces valid csv', async () => {
-    const { stdout, code } = await runCli(['list', '-f', 'csv']);
+    const { stdout, code } = await runManagementCli(['list', '-f', 'csv']);
     expect(code).toBe(0);
     const lines = stdout.trim().split('\n');
-    expect(lines.length).toBeGreaterThan(50);
+    // header + at least the 3 fixture commands
+    expect(lines.length).toBeGreaterThanOrEqual(4);
   });
 
   it('list -f md produces markdown table', async () => {
-    const { stdout, code } = await runCli(['list', '-f', 'md']);
+    const { stdout, code } = await runManagementCli(['list', '-f', 'md']);
     expect(code).toBe(0);
     expect(stdout).toContain('|');
     expect(stdout).toContain('command');
@@ -57,27 +78,27 @@ describe('management commands E2E', () => {
 
   // ── validate ──
   it('validate passes for all built-in adapters', async () => {
-    const { stdout, code } = await runCli(['validate']);
+    const { stdout, code } = await runManagementCli(['validate']);
     expect(code).toBe(0);
     expect(stdout).toContain('PASS');
     expect(stdout).not.toContain('❌');
   });
 
   it('validate works for specific site', async () => {
-    const { stdout, code } = await runCli(['validate', 'hackernews']);
+    const { stdout, code } = await runManagementCli(['validate', FIXTURE_SITE]);
     expect(code).toBe(0);
     expect(stdout).toContain('PASS');
   });
 
   it('validate works for specific command', async () => {
-    const { stdout, code } = await runCli(['validate', 'hackernews/top']);
+    const { stdout, code } = await runManagementCli(['validate', `${FIXTURE_SITE}/search`]);
     expect(code).toBe(0);
     expect(stdout).toContain('PASS');
   });
 
   // ── verify ──
   it('verify runs validation without smoke tests', async () => {
-    const { stdout, code } = await runCli(['verify']);
+    const { stdout, code } = await runManagementCli(['verify']);
     expect(code).toBe(0);
     expect(stdout).toContain('PASS');
   });

@@ -1,6 +1,6 @@
 {
   "name": "webcmd",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "description": "Turn websites, browser sessions, desktop apps, and local tools into deterministic CLI surfaces for humans and AI agents.",
   "author": {
     "name": "AgentRHQ",
@@ -29,9 +29,9 @@
     ],
     "websiteURL": "https://webcmd.dev/",
     "defaultPrompt": [
-      "Use Webcmd to complete this task with an existing command.",
-      "Use Webcmd to research this topic and return source links.",
-      "Use Webcmd to turn this browser workflow into a reusable CLI."
+      "Create a Zillow rental-search plugin for WebCMD with city, max rent, and bedroom filters. Test it and show me the command.",
+      "Compare MacBook Air M5 prices and availability on Amazon, Walmart, and Best Buy.",
+      "Find and rank today’s most-discussed AI agent launches across Hacker News, Reddit, Product Hunt, and arXiv."
     ],
     "brandColor": "#56C5FF",
     "composerIcon": "./docs/webcmd.svg",

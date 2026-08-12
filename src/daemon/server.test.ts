@@ -115,6 +115,24 @@ describe('createDaemonServer', () => {
     expect(provider.commands[0]).toMatchObject({ id: 'cmd-1', action: 'navigate', session: 'work' });
   });
 
+  it('accepts the maximum browser-run source envelope', async () => {
+    const { provider, baseUrl } = await start();
+    const source = 'x'.repeat(256 * 1024);
+    const res = await postCommand(baseUrl, {
+      id: 'run-max-source',
+      action: 'run',
+      session: 'work',
+      source,
+    });
+
+    expect(res.status).toBe(200);
+    expect(provider.commands[0]).toMatchObject({
+      id: 'run-max-source',
+      action: 'run',
+      source,
+    });
+  });
+
   it('clears custom command timeout timers after successful provider dispatch', async () => {
     const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
     const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');

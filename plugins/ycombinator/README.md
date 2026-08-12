@@ -5,7 +5,7 @@ Read-only access to the public Y Combinator startup directory. No login is requi
 ## Install
 
 ```bash
-webcmd plugin install github:agentrhq/webcmd/plugins/ycombinator
+webcmd plugin install github:agentrhq/webcmd/ycombinator
 ```
 
 ## Commands

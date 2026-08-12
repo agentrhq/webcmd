@@ -17,6 +17,7 @@ export interface PresentableCommand {
   domain?: string;
   example?: string;
   siteSession?: string;
+  origin?: string;
 }
 
 export interface PresentableCommandSource {
@@ -224,6 +225,7 @@ export function commandListRows(
         example: formatPresentableCommandExample(command),
         defaultFormat: command.defaultFormat ?? null,
         siteSession: command.siteSession ?? null,
+        ...(command.origin ? { origin: command.origin } : {}),
       };
     }
     return {
@@ -269,6 +271,7 @@ export function commandListPresentation(
       'strategy',
       'browser',
       'args',
+      ...(unique.some((command) => command.origin) ? ['origin'] : []),
       ...(structured ? ['columns', 'domain'] : []),
     ],
     structured,
@@ -282,7 +285,8 @@ export type AdapterKind = 'site' | 'app';
 
 function isLocalIpDomain(domain: string): boolean {
   if (domain === '::1' || domain === '[::1]') return true;
-  const parts = domain.split('.');
+  const ipPart = domain.split(':')[0];
+  const parts = ipPart.split('.');
   if (parts.length !== 4) return false;
   return parts.every((part) => /^\d+$/.test(part) && Number(part) >= 0 && Number(part) <= 255)
     && Number(parts[0]) === 127;
@@ -317,7 +321,8 @@ function formatGroupedCommandList(
         const aliases = command.aliases.length > 0 ? ` (aliases: ${command.aliases.join(', ')})` : '';
         lines.push(
           `    ${command.name} [${command.strategy}]${aliases}`
-          + `${command.description ? ` — ${command.description}` : ''}`,
+          + `${command.description ? ` — ${command.description}` : ''}`
+          + `${command.origin ? ` [${command.origin}]` : ''}`,
         );
       }
       lines.push('');
@@ -339,6 +344,13 @@ function formatGroupedCommandList(
     + `${externalClis.length} external CLIs`,
     '',
   );
+  if (sitesBySite.size === 0) {
+    lines.push(
+      `  No site plugins installed. Find one with '${CLI_COMMAND} plugin search <site>'`
+      + ` and install it with '${CLI_COMMAND} plugin install <installSource>'.`,
+      '',
+    );
+  }
   return lines;
 }
 

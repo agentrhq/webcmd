@@ -19,4 +19,38 @@ describe('webFetch', () => {
     expect(createImpit).toHaveBeenNthCalledWith(1, expect.objectContaining({ browser: 'chrome' }));
     expect(createImpit).toHaveBeenNthCalledWith(2, expect.objectContaining({ browser: 'firefox' }));
   });
+  it('closes the safe proxy even when the ladder throws', async () => {
+    const close = vi.fn().mockResolvedValue(undefined);
+    await expect(webFetch({ url: 'https://example.com', timeoutSeconds: 5, maxChars: 0, allowPrivate: false }, {
+      plainFetch: vi.fn().mockRejectedValue(new Error('boom')),
+      createImpit: vi.fn(),
+      createSafeProxy: async () => ({ url: 'http://proxy', close }),
+    })).rejects.toThrow('boom');
+    expect(close).toHaveBeenCalledOnce();
+  });
+  it('reports an aborted fetch as a structured timeout', async () => {
+    const abort = Object.assign(new Error('The operation was aborted'), { name: 'TimeoutError' });
+    await expect(webFetch({ url: 'https://example.com', timeoutSeconds: 5, maxChars: 0, allowPrivate: false }, {
+      plainFetch: vi.fn().mockRejectedValue(abort),
+      createImpit: vi.fn(),
+      createSafeProxy: async () => ({ url: 'http://proxy', close: async () => {} }),
+    })).rejects.toMatchObject({ code: 'TIMEOUT', message: 'web fetch timed out after 5s' });
+  });
+  it('reports an impit-shaped deadline as a structured timeout', async () => {
+    // impit reports its own deadline as a plain Error — no TimeoutError/AbortError
+    // name to match on — so the budget having elapsed is what identifies it.
+    const impitTimeout = new Error('error sending request for url (https://example.com/): operation timed out');
+    await expect(webFetch({ url: 'https://example.com', timeoutSeconds: 0.05, maxChars: 0, allowPrivate: false }, {
+      plainFetch: vi.fn().mockImplementation(async () => { await new Promise(done => setTimeout(done, 80)); throw impitTimeout; }),
+      createImpit: vi.fn(),
+      createSafeProxy: async () => ({ url: 'http://proxy', close: async () => {} }),
+    })).rejects.toMatchObject({ code: 'TIMEOUT', message: 'web fetch timed out after 0.05s' });
+  });
+  it('does not relabel a failure that happened with budget left', async () => {
+    await expect(webFetch({ url: 'https://example.com', timeoutSeconds: 30, maxChars: 0, allowPrivate: false }, {
+      plainFetch: vi.fn().mockRejectedValue(Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' })),
+      createImpit: vi.fn(),
+      createSafeProxy: async () => ({ url: 'http://proxy', close: async () => {} }),
+    })).rejects.toThrow('connect ECONNREFUSED');
+  });
 });

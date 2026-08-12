@@ -2,7 +2,15 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Command, CommanderError } from 'commander';
-import { configureCompletionCommandSurface, configureListCommandSurface, configurePluginInstallSurface, configurePluginSearchSurface } from '../builtin-command-surface.js';
+import {
+  configureCompletionCommandSurface,
+  configureListCommandSurface,
+  configurePluginInstallSurface,
+  configurePluginListSurface,
+  configurePluginSearchSurface,
+  configurePluginUninstallSurface,
+  configurePluginUpdateSurface,
+} from '../builtin-command-surface.js';
 import { BrowserSessionArgvError, rewriteBrowserArgv } from '../cli-argv-preprocess.js';
 import { CommanderStructuralError, MissingRequiredPositionalError } from '../command-surface.js';
 import { filterCommandsByTag, formatRootHelp, getCommandCompletionCandidates } from '../command-presentation.js';
@@ -19,7 +27,10 @@ import { StreamWriteError, writeToStream } from '../stream-write.js';
 import { PKG_VERSION } from '../version.js';
 import { getCompletionScriptFast } from '../completion-fast.js';
 import { browserCommandCatalog } from '../browser/command-catalog.js';
+import { loadBrowserRunSource } from '../browser/run/input.js';
+import { BrowserRunError } from '../browser/run/types.js';
 import { CLI_COMMAND } from '../brand.js';
+import { missingPluginGuidance } from '../discovery.js';
 import { HostedClient, HostedClientError, resolveWorkspace } from './client.js';
 import { parseHostedInvocation } from './args.js';
 import { HostedBrowserHelp, parseHostedBrowserStructure } from './browser-args.js';
@@ -40,6 +51,7 @@ import { parseHostedRootCommandSurface } from '../root-command-surface.js';
 import type {
   HostedBrowserActionName,
   HostedBrowserRunActionResponse,
+  HostedBrowserSnapshotActionResponse,
   HostedManifest,
 } from './types.js';
 import type { HostedBrowserCommandContract } from './contract.js';
@@ -175,7 +187,7 @@ async function dispatchHosted(
     );
   }
   if (args[0] === 'browser') {
-    const invocation = parseHostedBrowserInvocation(args, normalized.profile);
+    const invocation = await parseHostedBrowserInvocation(args, normalized.profile);
     const manifest = await client.getManifest();
     validateManifestContractIdentity(manifest);
     await dispatchHostedBrowser(invocation, client, stdout);
@@ -212,10 +224,11 @@ async function dispatchHosted(
 
   if (args[0] === 'plugin') {
     const subcommand = args[1];
-    if (subcommand !== 'search' && subcommand !== 'install' && subcommand !== '--help' && subcommand !== '-h') {
+    const allowed = new Set(['search', 'install', 'list', 'uninstall', 'update', 'create', '--help', '-h']);
+    if (!allowed.has(subcommand ?? '')) {
       throw new ConfigError(
         `webcmd plugin ${subcommand ?? ''}`.trimEnd() + ' is not available in hosted mode.',
-        'Hosted mode supports: webcmd plugin search and webcmd plugin install.',
+        'Hosted mode supports: webcmd plugin search, install, list, uninstall, update, and create.',
       );
     }
     const parsed = parseHostedPluginSurface(args.slice(1), normalized.literal);
@@ -239,11 +252,80 @@ async function dispatchHosted(
       }
       return;
     }
-    const installed = await client.installMarketplacePlugin(parsed.source);
-    await writeToStream(stdout, `✅ Plugin "${installed.name}" installed successfully. Commands are ready to use.\n`);
+    if (parsed.command === 'install') {
+      const installed = await client.installMarketplacePlugin(parsed.source);
+      await writeToStream(stdout, `✅ Plugin "${installed.name}" installed successfully. Commands are ready to use.\n`);
+      return;
+    }
+    if (parsed.command === 'list') {
+      const installations = await client.listMarketplaceInstallations();
+      await renderOutput(installations, {
+        fmt: parsed.format,
+        columns: ['name', 'version', 'installSource', 'installedAt', 'updateAvailable'],
+        title: `${CLI_COMMAND}/plugins`,
+        source: `${CLI_COMMAND} plugin list`,
+        stdout,
+      });
+      return;
+    }
+    if (parsed.command === 'uninstall') {
+      await client.uninstallMarketplacePlugin(parsed.name);
+      await writeToStream(stdout, `✅ Plugin "${parsed.name}" uninstalled.\n`);
+      return;
+    }
+    if (parsed.command === 'update') {
+      if (!parsed.name && !parsed.all) {
+        throw new ConfigError(
+          'Specify a plugin name or use --all.',
+          'Example: webcmd plugin update alpha',
+        );
+      }
+      if (parsed.name && parsed.all) {
+        throw new ConfigError('Cannot specify both a plugin name and --all.');
+      }
+      const targets = parsed.all
+        ? (await client.listMarketplaceInstallations()).map((row) => row.name)
+        : [parsed.name!];
+      let hasErrors = false;
+      for (const target of targets) {
+        try {
+          const outcome = await client.updateMarketplacePlugin(target);
+          if ('delisted' in outcome && outcome.delisted) {
+            await writeToStream(stdout, `⚠ "${target}" is installed but its catalog entry was delisted; nothing to update to.\n`);
+          } else if (outcome.updated) {
+            await writeToStream(stdout, `✅ Updated "${target}" to ${outcome.version}.\n`);
+          } else {
+            await writeToStream(stdout, `✔ "${target}" is already up to date.\n`);
+          }
+        } catch (err) {
+          hasErrors = true;
+          const message = err instanceof Error ? err.message : String(err);
+          await writeToStream(stderr, `✗ "${target}" — ${message}\n`);
+        }
+      }
+      if (hasErrors) throw new ConfigError('Some plugins failed to update.');
+      return;
+    }
+    // parsed.command === 'create'
+    const { createPluginScaffold } = await import('../plugin-scaffold.js');
+    const result = createPluginScaffold(parsed.name, {
+      ...(parsed.dir !== undefined ? { dir: parsed.dir } : {}),
+      ...(parsed.description !== undefined ? { description: parsed.description } : {}),
+      author: { name: parsed.authorName ?? '', handle: parsed.authorHandle ?? '' },
+    });
+    await writeToStream(stdout, `✅ Plugin scaffold created at ${result.dir}\n\n`);
+    await writeToStream(stdout, '  Next steps (hosted mode):\n');
+    await writeToStream(stdout, '    1. Author and verify the adapter in the cloud:\n');
+    await writeToStream(stdout, `       ${CLI_COMMAND} browser init <site>/<command>\n`);
+    await writeToStream(stdout, `       ${CLI_COMMAND} browser verify <site>/<command>\n`);
+    await writeToStream(stdout, '    2. Copy the verified command files into this scaffold.\n');
+    await writeToStream(stdout, '    3. Open a pull request against agentrhq/webcmd to publish it.\n');
+    await writeToStream(stdout, '       See docs/publish-community-plugin.mdx\n');
     return;
   }
 
+  // The API manifest is tenant-scoped. Never merge package or local plugin
+  // commands into it: the installed package contract contains no site commands.
   const manifest = await client.getManifest();
   validateManifestContractIdentity(manifest);
 
@@ -261,7 +343,7 @@ async function dispatchHosted(
       return;
     }
     throw new CommanderCompatibleError(
-      `error: unknown command '${site}'\n`,
+      `${missingPluginGuidance(site)}\n`,
       EXIT_CODES.USAGE_ERROR,
       formatRootHelp(HOSTED_ROOT_HELP),
     );
@@ -459,7 +541,7 @@ function contentTypeForUpload(filePath: string): string {
   }
 }
 
-function parseHostedBrowserInvocation(argv: string[], profile: string | undefined): ParsedHostedBrowserInvocation {
+async function parseHostedBrowserInvocation(argv: string[], profile: string | undefined): Promise<ParsedHostedBrowserInvocation> {
   let rewritten: string[];
   try {
     rewritten = rewriteBrowserArgv(argv);
@@ -489,17 +571,18 @@ function parseHostedBrowserInvocation(argv: string[], profile: string | undefine
   if (!structure.commandName) {
     throw new ConfigError(
       'Hosted browser command is required.',
-      'Use: webcmd browser <session> open <url>, state, screenshot, tab list, or eval <js>.',
+      'Use: webcmd browser <session> tabs, bind --page <id>, run --stdin|--file <path>, or close.',
     );
   }
 
   const windowMode = structure.window === undefined ? undefined : parseWindowMode(structure.window);
   const parsed = parseBrowserLeaf(structure.commandName, structure.positionals, structure.options);
+  const browserArgs = await materializeBrowserRunSource(parsed.commandName, parsed.args);
   return {
     session: structure.session,
     command: `browser/${parsed.commandName}`,
     action: parsed.action,
-    args: parsed.args,
+    args: browserArgs,
     ...(parsed.localPath !== undefined ? { localPath: parsed.localPath } : {}),
     ...(profile !== undefined ? { profile } : {}),
     ...(windowMode !== undefined ? { windowMode } : {}),
@@ -523,23 +606,41 @@ function parseBrowserLeaf(
 } {
   const contract = hostedBrowserCommandsByPath.get(leaf);
   if (!contract || !contract.action) {
-    if (leaf === 'bind' || contract?.sessionPolicy === 'local-only') {
-      throw new ConfigError(
-        'Browser bind is not supported in hosted mode.',
-        'Use browser state or browser tabs to inspect the active hosted page.',
-      );
-    }
     throw new ConfigError(`Hosted browser command is not supported yet: ${leaf}`);
   }
 
   const localPath = leaf === 'screenshot' ? positionals[0] : undefined;
   const args = browserActionArgs(contract, positionals, options);
+  if (contract.command === 'run') {
+    const hasStdin = args.stdin === true;
+    const file = typeof args.file === 'string' ? args.file.trim() : '';
+    if (hasStdin === Boolean(file)) {
+      throw new ConfigError(
+        'Browser run requires exactly one program input: --stdin or --file <path>.',
+      );
+    }
+  }
   return {
     commandName: leaf,
-    action: contract.action as HostedBrowserActionName,
+    action: contract.action,
     args,
     ...(localPath !== undefined ? { localPath } : {}),
   };
+}
+
+async function materializeBrowserRunSource(commandName: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  if (commandName !== 'run') return args;
+  try {
+    const source = await loadBrowserRunSource({
+      stdin: args.stdin === true,
+      file: typeof args.file === 'string' ? args.file : undefined,
+    });
+    const { stdin: _stdin, file: _file, ...rest } = args;
+    return { ...rest, source };
+  } catch (error) {
+    if (error instanceof BrowserRunError) throw new ConfigError(error.message, error.hint);
+    throw error;
+  }
 }
 
 function browserActionArgs(
@@ -656,11 +757,15 @@ function withoutKeys(input: Record<string, unknown>, keys: readonly string[]): R
 async function renderHostedBrowserResponse(
   stdout: NodeJS.WritableStream,
   invocation: ParsedHostedBrowserInvocation,
-  response: HostedBrowserRunActionResponse,
+  response: HostedBrowserRunActionResponse | HostedBrowserSnapshotActionResponse,
 ): Promise<void> {
   const result = response.result;
   if (invocation.action === 'snapshot' && result && typeof result === 'object') {
-    const record = result as { url?: unknown; snapshot?: unknown };
+    const record = result as { tree?: unknown; url?: unknown; snapshot?: unknown };
+    if (typeof record.tree === 'string') {
+      await writeToStream(stdout, `${record.tree}\n`);
+      return;
+    }
     await writeToStream(stdout, `URL: ${typeof record.url === 'string' ? record.url : ''}\n\n`);
     await writeToStream(stdout, `${typeof record.snapshot === 'string' ? record.snapshot : JSON.stringify(record.snapshot, null, 2)}\n`);
     return;
@@ -831,7 +936,11 @@ async function dispatchHostedProfile(
 type ParsedHostedPluginSurface =
   | { kind: 'help'; output: string }
   | { kind: 'run'; command: 'search'; query?: string; format: string }
-  | { kind: 'run'; command: 'install'; source: string };
+  | { kind: 'run'; command: 'install'; source: string }
+  | { kind: 'run'; command: 'list'; format: string }
+  | { kind: 'run'; command: 'uninstall'; name: string }
+  | { kind: 'run'; command: 'update'; name?: string; all: boolean }
+  | { kind: 'run'; command: 'create'; name: string; dir?: string; description?: string; authorName?: string; authorHandle?: string };
 
 function parseHostedPluginSurface(
   argv: readonly string[],
@@ -856,6 +965,41 @@ function parseHostedPluginSurface(
   const install = configurePluginInstallSurface(plugin.command('install'));
   install.exitOverride().configureOutput(output).action((source: string) => {
     parsed = { kind: 'run', command: 'install', source };
+  });
+  const list = configurePluginListSurface(plugin.command('list'));
+  list.exitOverride().configureOutput(output).action((options: { format: string }) => {
+    parsed = { kind: 'run', command: 'list', format: options.format };
+  });
+  const uninstall = configurePluginUninstallSurface(plugin.command('uninstall'));
+  uninstall.exitOverride().configureOutput(output).action((name: string) => {
+    parsed = { kind: 'run', command: 'uninstall', name };
+  });
+  const update = configurePluginUpdateSurface(plugin.command('update'));
+  update.exitOverride().configureOutput(output).action((name: string | undefined, options: { all?: boolean }) => {
+    parsed = { kind: 'run', command: 'update', ...(name !== undefined ? { name } : {}), all: options.all === true };
+  });
+  const create = plugin.command('create')
+    .description('Create a new plugin scaffold')
+    .argument('<name>', 'Plugin name (lowercase, hyphens allowed)')
+    .option('-d, --dir <path>', 'Output directory (default: ./<name>)')
+    .option('--description <text>', 'Plugin description')
+    .option('--author-name <name>', 'Author display name')
+    .option('--author-handle <handle>', 'Author GitHub handle');
+  create.exitOverride().configureOutput(output).action((name: string, options: {
+    dir?: string;
+    description?: string;
+    authorName?: string;
+    authorHandle?: string;
+  }) => {
+    parsed = {
+      kind: 'run',
+      command: 'create',
+      name,
+      ...(options.dir !== undefined ? { dir: options.dir } : {}),
+      ...(options.description !== undefined ? { description: options.description } : {}),
+      ...(options.authorName !== undefined ? { authorName: options.authorName } : {}),
+      ...(options.authorHandle !== undefined ? { authorHandle: options.authorHandle } : {}),
+    };
   });
 
   try {

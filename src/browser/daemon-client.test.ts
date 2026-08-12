@@ -4,6 +4,7 @@ import {
   BrowserCommandError,
   fetchDaemonStatus,
   getDaemonHealth,
+  listExistingBrowserTabs,
   releaseSiteSessionLease,
   requestDaemonShutdown,
   sendCommand,
@@ -58,6 +59,22 @@ describe('daemon-client', () => {
     vi.mocked(fetch).mockRejectedValue(new Error('ECONNREFUSED'));
 
     await expect(fetchDaemonStatus()).resolves.toBeNull();
+  });
+
+  it('lists existing tabs directly and returns empty without a runtime', async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ runtimeConnected: false }) } as Response);
+    await expect(listExistingBrowserTabs('work')).resolves.toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    fetchMock.mockReset()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ runtimeConnected: true }) } as Response)
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: 'tabs', ok: true, data: [{ page: 'page-1' }] }) } as Response);
+    await expect(listExistingBrowserTabs('work')).resolves.toEqual([{ page: 'page-1' }]);
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+      method: 'POST',
+      body: expect.stringContaining('"action":"tabs"'),
+    });
   });
 
   it('requestDaemonShutdown POSTs to the shared shutdown endpoint', async () => {
@@ -367,6 +384,26 @@ describe('daemon-client', () => {
       hint: 'Inspect state before retrying.',
     } satisfies Partial<BrowserCommandError>);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves structured daemon failure details', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: false,
+      status: 408,
+      json: () => Promise.resolve({
+        id: 'server',
+        ok: false,
+        errorCode: 'BROWSER_RUN_TIMEOUT',
+        error: 'Timed out',
+        details: { logs: [{ level: 'warn', args: ['started'] }] },
+      }),
+    } as Response);
+
+    await expect(sendCommand('run', { source: 'await page.waitForEvent("popup");' }))
+      .rejects.toMatchObject({
+        code: 'BROWSER_RUN_TIMEOUT',
+        details: { logs: [{ level: 'warn', args: ['started'] }] },
+      });
   });
 
   it('sendCommand runs full bridge ensure on a pre-dispatch failure, then resends with the same id', async () => {

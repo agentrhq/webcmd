@@ -89,6 +89,15 @@ export interface HostedMarketplaceInstallation {
   installSource: string;
 }
 
+export interface HostedMarketplaceInstallationRow {
+  name: string;
+  version: string;
+  installSource: string;
+  sourceCommit: string | null;
+  installedAt: string;
+  updateAvailable: boolean;
+}
+
 export interface HostedExecution {
   id: string;
   command: string;
@@ -156,6 +165,7 @@ export interface HostedUploadArtifactResponse {
 export type HostedBrowserActionName =
   | 'analyze'
   | 'back'
+  | 'bind'
   | 'check'
   | 'click'
   | 'close-window'
@@ -169,6 +179,7 @@ export type HostedBrowserActionName =
   | 'fill'
   | 'find'
   | 'focus'
+  | 'fork'
   | 'frames'
   | 'get-attributes'
   | 'get-html'
@@ -182,6 +193,7 @@ export type HostedBrowserActionName =
   | 'navigate'
   | 'network'
   | 'press-key'
+  | 'run'
   | 'screenshot'
   | 'scroll'
   | 'select'
@@ -195,7 +207,7 @@ export type HostedBrowserActionName =
 
 export interface HostedBrowserRunRequest {
   command: string;
-  args: Record<string, unknown>;
+  args: HostedBrowserActionArgs;
   profile?: string;
   windowMode?: 'foreground' | 'background';
   trace?: string;
@@ -211,13 +223,20 @@ export interface HostedBrowserRunResponse {
       displayName: string;
     };
     liveViewUrl?: string;
+    expiresAt?: string;
   };
 }
 
 export interface HostedBrowserActionRequest {
   action: HostedBrowserActionName;
-  args: Record<string, unknown>;
+  args: HostedBrowserActionArgs;
   profile?: string;
+}
+
+export interface HostedBrowserActionArgs extends Record<string, unknown> {
+  snapshotMode?: 'act' | 'tree' | 'read';
+  ref?: string;
+  noSnapshotDiff?: boolean;
 }
 
 export interface HostedBrowserActionResponse {
@@ -255,6 +274,12 @@ export interface HostedBrowserRunActionInput extends HostedBrowserRunRequest, Ho
 export interface HostedBrowserRunActionResponse extends HostedBrowserActionResponse {
   run: HostedBrowserRunResponse['run'];
   execution: HostedBrowserFinishResponse['execution'];
+}
+
+export interface HostedBrowserSnapshotActionResponse {
+  ok: true;
+  run: HostedBrowserRunResponse['run'];
+  result: unknown;
 }
 
 export interface HostedErrorResponse {

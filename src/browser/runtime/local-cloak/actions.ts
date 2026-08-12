@@ -1,7 +1,30 @@
 import type { BrowserRuntimeCommand, BrowserRuntimeResult } from '../../protocol.js';
+import { extractArticle, type ExtractedArticle } from '../../article-extract.js';
+import {
+  captureSnapshot,
+  boundSnapshotText,
+  MemorySnapshotBaselineStore,
+  renderSnapshotResult,
+  type SnapshotBaselineStore,
+} from '../../snapshot/index.js';
+import { redactText, redactUrl } from '../../../observation/redaction.js';
+import { articleHtmlToMarkdown } from '../../../download/article-download.js';
 import { waitForDownload } from './downloads.js';
 import type { CloakSessionManager } from './session-manager.js';
 import type { BrowserContext, Frame, Page as PlaywrightPage } from 'playwright-core';
+import { runBrowserProgram } from '../../run/runner.js';
+import { BROWSER_RUN_MAX_SOURCE_BYTES } from '../../run/types.js';
+
+const snapshotBaselines = new WeakMap<CloakSessionManager, SnapshotBaselineStore>();
+
+function snapshotBaselineStore(manager: CloakSessionManager): SnapshotBaselineStore {
+  let baselineStore = snapshotBaselines.get(manager);
+  if (!baselineStore) {
+    baselineStore = new MemorySnapshotBaselineStore();
+    snapshotBaselines.set(manager, baselineStore);
+  }
+  return baselineStore;
+}
 
 class CloakActionError extends Error {
   constructor(
@@ -56,11 +79,60 @@ async function resolveLease(manager: CloakSessionManager, command: BrowserRuntim
   });
 }
 
+function resolveExistingLease(manager: CloakSessionManager, command: BrowserRuntimeCommand) {
+  if (command.page) {
+    const existing = manager.findPageById(command.page, { idleTimeout: command.idleTimeout });
+    if (existing) return existing;
+    throw new CloakActionError('stale_page_identity', `Page not found: ${command.page} — stale page identity`);
+  }
+  const existing = manager.findPage({
+    profileId: resolveCloakCommandProfileId(manager, command),
+    session: command.session,
+    surface: command.surface,
+    idleTimeout: command.idleTimeout,
+  });
+  if (existing) return existing;
+  throw new CloakActionError(
+    'session_not_found',
+    `Browser session not found: ${command.session ?? ''}`,
+    undefined,
+    'Start the session with browser run or navigate before requesting a snapshot.',
+  );
+}
+
 function execTarget(page: PlaywrightPage, frameIndex: number | undefined, pageId: string): PlaywrightPage | Frame {
   if (frameIndex == null) return page;
   const frame = page.frames().slice(1)[frameIndex];
   if (!frame) throw new CloakActionError('frame_not_found', `Frame not found: ${frameIndex}`, pageId);
   return frame;
+}
+
+function readableSnapshotText(article: ExtractedArticle | null): { text: string; warnings: string[]; article: unknown } {
+  if (!article) {
+    return {
+      text: 'No readable article content found. Use --snapshot-mode tree to inspect the page structure.',
+      warnings: ['No readable article content found.'],
+      article: null,
+    };
+  }
+  const meta = [
+    article.title ? `# ${article.title}` : '',
+    article.byline ? `> Author: ${article.byline}` : '',
+    article.publishedTime ? `> Published: ${article.publishedTime}` : '',
+    article.siteName ? `> Site: ${article.siteName}` : '',
+    `> Source: ${article.source}`,
+  ].filter(Boolean);
+  return {
+    text: `${meta.join('\n')}\n\n${articleHtmlToMarkdown(article.html)}`.trim(),
+    warnings: [],
+    article: {
+      title: article.title,
+      byline: article.byline,
+      publishedTime: article.publishedTime,
+      siteName: article.siteName,
+      source: article.source,
+    },
+  };
 }
 
 async function captureScreenshot(page: PlaywrightPage, context: BrowserContext, command: BrowserRuntimeCommand): Promise<Buffer> {
@@ -122,6 +194,109 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
         const target = execTarget(lease.page, command.frameIndex, lease.pageId);
         const data = await target.evaluate(command.code);
         return { id: command.id, ok: true, data, page: lease.pageId };
+      }
+      case 'run': {
+        if (typeof command.source !== 'string' || !command.source.trim()) {
+          return invalidRequest(command, 'Missing source');
+        }
+        if (Buffer.byteLength(command.source, 'utf8') > BROWSER_RUN_MAX_SOURCE_BYTES) {
+          return {
+            id: command.id,
+            ok: false,
+            errorCode: 'BROWSER_RUN_SOURCE_LIMIT',
+            error: `Browser-run source exceeds the ${BROWSER_RUN_MAX_SOURCE_BYTES}-byte limit.`,
+          };
+        }
+        const lease = await resolveLease(manager, command);
+        const browser = lease.context.browser();
+        if (!browser) throw new CloakActionError(
+          'BROWSER_RUN_API_UNSUPPORTED',
+          'The selected browser context is not attached to a browser.',
+          lease.pageId,
+        );
+        const data = await runBrowserProgram({
+          browser,
+          context: lease.context,
+          page: lease.page,
+          pageId: lease.pageId,
+          registerPage: (page) => manager.registerPage({
+            profileId: lease.profileId,
+            session: command.session,
+            surface: command.surface,
+            siteSession: command.siteSession,
+            idleTimeout: command.idleTimeout,
+            windowMode: command.windowMode,
+          }, page),
+        }, command.source, {
+          timeoutMs: command.timeoutMs,
+          maxOutputChars: command.maxOutputChars,
+          memoryLimitBytes: command.memoryLimitBytes,
+          snapshotDiff: command.noSnapshotDiff ? false : command.snapshotDiff,
+          snapshotMode: command.snapshotMode === 'tree' ? 'tree' : 'act',
+          snapshotBaselineStore: snapshotBaselineStore(manager),
+        });
+        return {
+          id: command.id,
+          ok: true,
+          data,
+          page: lease.pageId,
+        };
+      }
+      case 'snapshot': {
+        const lease = resolveExistingLease(manager, command);
+        if (command.snapshotMode === 'read') {
+          const readable = readableSnapshotText(await extractArticle(lease.page, { force: true }));
+          const redacted = redactUrl(redactText(readable.text, { maxStringLength: Number.MAX_SAFE_INTEGER }));
+          const bounded = Number.isFinite(command.maxOutputChars)
+            ? boundSnapshotText(redacted, command.maxOutputChars!)
+            : { value: redacted, truncated: false };
+          return {
+            id: command.id,
+            ok: true,
+            data: {
+              ok: true,
+              tree: bounded.value,
+              article: readable.article,
+              page: {
+                id: lease.pageId,
+                url: redactUrl(lease.page.url()),
+                title: redactText(await lease.page.title().catch(() => '')),
+              },
+              warnings: readable.warnings,
+              limits: { snapshotTruncated: bounded.truncated },
+            },
+            page: lease.pageId,
+          };
+        }
+        const snapshot = await captureSnapshot(lease.page);
+        const rendered = renderSnapshotResult(snapshot, {
+          mode: command.snapshotMode === 'tree' ? 'tree' : 'act',
+          ref: command.ref,
+          maxChars: command.maxOutputChars,
+        });
+        const redacted = redactUrl(redactText(rendered.value, { maxStringLength: Number.MAX_SAFE_INTEGER }));
+        const bounded = Number.isFinite(command.maxOutputChars)
+          ? boundSnapshotText(redacted, command.maxOutputChars!)
+          : { value: redacted, truncated: false };
+        const warnings = [...rendered.warnings];
+        if (bounded.truncated) warnings.push('Snapshot output was truncated after redaction.');
+        snapshotBaselineStore(manager).set(lease.pageId, snapshot);
+        return {
+          id: command.id,
+          ok: true,
+          data: {
+            ok: true,
+            tree: bounded.value,
+            page: {
+              id: lease.pageId,
+              url: redactUrl(lease.page.url()),
+              title: redactText(await lease.page.title().catch(() => '')),
+            },
+            warnings,
+            limits: { snapshotTruncated: rendered.truncated || bounded.truncated },
+          },
+          page: lease.pageId,
+        };
       }
       case 'cookies': {
         const lease = await resolveLease(manager, command);
@@ -272,6 +447,25 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
   } catch (err) {
     if (err instanceof CloakActionError) {
       return { id: command.id, ok: false, errorCode: err.errorCode, error: err.message, ...(err.page && { page: err.page }), ...(err.errorHint && { errorHint: err.errorHint }) };
+    }
+    if (
+      err instanceof Error
+      && 'code' in err
+      && typeof err.code === 'string'
+      && err.code.startsWith('BROWSER_RUN_')
+    ) {
+      const hint = 'hint' in err && typeof err.hint === 'string'
+        ? err.hint
+        : undefined;
+      const details = 'details' in err ? err.details : undefined;
+      return {
+        id: command.id,
+        ok: false,
+        errorCode: err.code,
+        error: err.message,
+        ...(hint && { errorHint: hint }),
+        ...(details !== undefined ? { details } : {}),
+      };
     }
     return { id: command.id, ok: false, errorCode: 'runtime_command_failed', error: err instanceof Error ? err.message : String(err) };
   }

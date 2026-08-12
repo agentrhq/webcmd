@@ -14,12 +14,17 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, '..');
 const DIST_AUDIT = resolve(PROJECT_ROOT, 'dist', 'src', 'convention-audit.js');
+const PLUGIN_MANIFEST = resolve(PROJECT_ROOT, 'plugin-command-manifest.json');
 const BASELINE_PATH = resolve(__dirname, 'typed-error-lint-baseline.json');
 const UPDATE = process.argv.includes('--update-baseline');
 const RULES = new Set(['silent-clamp', 'silent-empty-fallback', 'silent-sentinel']);
 
 if (!existsSync(DIST_AUDIT)) {
   console.error('dist/src/convention-audit.js not found. Run npm run build before this check.');
+  process.exit(1);
+}
+if (!existsSync(PLUGIN_MANIFEST)) {
+  console.error('plugin-command-manifest.json not found. Run npm run build-plugin-manifest before this check.');
   process.exit(1);
 }
 

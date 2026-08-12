@@ -1,4 +1,5 @@
 import type { SessionLeaseStatus } from '../session-lease.js';
+import type { SnapshotMode } from './snapshot/index.js';
 
 export type BrowserRuntimeAction =
   | 'exec'
@@ -15,6 +16,8 @@ export type BrowserRuntimeAction =
   | 'wait-download'
   | 'cdp'
   | 'frames'
+  | 'run'
+  | 'snapshot'
   | 'lease-release';
 
 export type BrowserSurface = 'browser' | 'adapter';
@@ -56,6 +59,14 @@ export interface BrowserRuntimeCommand {
   windowMode?: BrowserWindowMode;
   idleTimeout?: number;
   frameIndex?: number;
+  /** Agent-authored JavaScript executed by the browser-run QuickJS sandbox. */
+  source?: string;
+  snapshotDiff?: boolean;
+  snapshotMode?: SnapshotMode;
+  ref?: string;
+  noSnapshotDiff?: boolean;
+  maxOutputChars?: number;
+  memoryLimitBytes?: number;
   contextId?: string;
   preferredContextId?: string;
   profileId?: string;
@@ -76,6 +87,7 @@ export interface BrowserRuntimeResult {
   error?: string;
   errorCode?: string;
   errorHint?: string;
+  details?: unknown;
   page?: string;
 }
 

@@ -27,13 +27,20 @@ interface ManifestCompletionEntry {
  * the fast path must not be used — otherwise those adapters would silently
  * disappear from completion results.
  */
-export function hasAllManifests(manifestPaths: string[]): boolean {
+export function hasAllManifests(manifestPaths: string[], uncoveredCommandRoots: string[] = []): boolean {
   for (const p of manifestPaths) {
     try {
       fs.accessSync(p);
     } catch {
       return false;
     }
+  }
+  for (const root of uncoveredCommandRoots) {
+    try {
+      if (fs.readdirSync(root, { withFileTypes: true }).some(entry => entry.isDirectory() || entry.isSymbolicLink())) {
+        return false;
+      }
+    } catch { /* absent command roots are empty */ }
   }
   return manifestPaths.length > 0;
 }

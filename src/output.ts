@@ -162,7 +162,7 @@ function formatMarkdown(data: unknown, opts: RenderOptions): string {
   const output = [
     `| ${columns.join(' | ')} |`,
     `| ${columns.map(() => '---').join(' | ')} |`,
-    ...rows.map(row => `| ${columns.map(column => String(row[column] ?? '')).join(' | ')} |`),
+    ...rows.map(row => `| ${columns.map(column => String(row[column] ?? '').replace(/\|/g, '\\|')).join(' | ')} |`),
   ];
   return `${output.join('\n')}\n`;
 }

@@ -33,9 +33,11 @@ Do not install Node.js or silently fall back to `npx`.
 
 ## The Three Pillars
 
-- **Adapter commands:** `webcmd <site> <command> [...]`. Built-in adapters live in `clis/`; community adapters promoted to the main repo live as plugins under `plugins/`; private iteration adapters live in `~/.webcmd/clis/`. Each command has a strategy such as `PUBLIC`, `COOKIE`, `INTERCEPT`, `UI`, or `LOCAL`.
-- **Browser driving:** `webcmd browser *` subcommands (`open`, `state`, `click`, `type`, `select`, `find`, `extract`, `network`) for ad-hoc interaction when no adapter covers the task. See `webcmd-browser`.
+- **Adapter commands:** `webcmd <site> <command> [...]`. Core ships no site adapters; every site — official and community — lives as an independently installable plugin under `plugins/<site>/` in the main repo, or `~/.webcmd/plugins/<site>/` once installed. Private iteration adapters live in `~/.webcmd/clis/`. A command in `~/.webcmd/clis/<site>/<command>.js` takes precedence over the same command from an installed plugin. Each command has a strategy such as `PUBLIC`, `COOKIE`, `INTERCEPT`, `UI`, or `LOCAL`.
+- **Browser driving:** use an existing adapter command first; otherwise load `webcmd-browser` and run Playwright.
 - **External CLI passthrough:** `webcmd gh`, `webcmd docker`, `webcmd vercel`, and similar wrappers. Manage them with `webcmd external install <name>` or `webcmd external register <name>`.
+
+**REQUIRED SUB-SKILL:** Before raw browser work, load `webcmd-browser`.
 
 ## Install
 
@@ -108,7 +110,7 @@ Use this fallback order:
 | `-f, --format <fmt>` | `table` in TTY by default; `yaml` outside TTY by default; also supports `json`, `plain`, `md`, `csv`. Agents usually want `-f json`. |
 | `-v, --verbose` | Debug logs and stack traces on failure; also sets `WEBCMD_VERBOSE=1`. |
 
-Command-specific flags such as `--limit`, `--tab`, and `--filter` are not universal. Read `<site> <command> --help`.
+Command-specific flags such as `--limit` and `--filter` are not universal. Read `<site> <command> --help`.
 
 ## Output Formats
 
@@ -160,11 +162,10 @@ argument, transient, or unreproduced failures.
 
 Storage paths:
 
-- Private: `~/.webcmd/clis/<site>/<command>.js`
-- Public (official bundle): `clis/<site>/<command>.js`
-- Public (community PRs): `plugins/<site>/` plus root `webcmd-plugin.json` registration
+- Private: `~/.webcmd/clis/<site>/<command>.js`. This path takes precedence over the same command from an installed plugin; `webcmd list`'s `origin` column shows which space each command resolves from.
+- Public (main repo, official or community): `plugins/<site>/` plus root `webcmd-plugin.json` registration
 
-The main Webcmd repo is itself a plugin monorepo: promoted community CLIs belong under `plugins/<site>/` and must be registered in the root `webcmd-plugin.json`.
+The main Webcmd repo is itself a plugin monorepo: there is no separate "official bundle" location. Every site belongs under `plugins/<site>/` and must be registered in the root `webcmd-plugin.json`.
 
 Scaffolding and checks:
 
@@ -180,18 +181,18 @@ Adapters import only `@agentrhq/webcmd/registry` and `@agentrhq/webcmd/errors`. 
 ## Plugins
 
 ```bash
-webcmd plugin install github:user/repo
+webcmd plugin search [query] -f json
+webcmd plugin install <installSource>
 webcmd plugin list [-f json]
 webcmd plugin update [name] | --all
 webcmd plugin uninstall <name>
 webcmd plugin create <name>
-webcmd plugin search [query] -f json
 webcmd plugin catalog list -f json
 webcmd plugin catalog add <source>
 webcmd plugin catalog remove <id>
 ```
 
-Plugins are installable extensions pulled from git or local paths. Use `plugin search` for marketplace discovery and `plugin list` for already-installed plugins. Main-repo community CLIs are exposed through the root plugin catalog manifest, not bundled into npm's `clis/` set.
+Plugins are installable extensions pulled from git or local paths. Use `plugin search` for marketplace discovery and `plugin list` for already-installed plugins. Direct `plugin install github:...` is only for a source you already know; for a missing or unknown site, search first and install the returned `installSource`. Main-repo sites (official and community alike) are exposed through the root plugin catalog manifest; none of them are bundled into the npm package.
 
 > **Note:** The repository's `plugins/` directory is not shipped in the npm package. Find the required plugin with `webcmd plugin search`, then install its `installSource` with `webcmd plugin install <installSource>`.
 
@@ -233,8 +234,8 @@ The script prints to stdout; source or save it according to your shell.
 
 Do not invoke these removed commands:
 
-- `webcmd explore <url>`: use `webcmd browser network` and `webcmd browser find`, or the `webcmd-adapter-author` workflow.
-- `webcmd record <url>`: manual capture now lives in `webcmd browser network --detail`.
+- `webcmd explore <url>`: use the `webcmd-adapter-author` workflow.
+- `webcmd record <url>`: use a Playwright run through `webcmd-browser`.
 - Top-level `webcmd desktop *` groups: use their adapters instead.
 
 ## Do Not

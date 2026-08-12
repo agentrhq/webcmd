@@ -48,6 +48,17 @@ describe('classifyAdapter', () => {
   it('defaults missing domain to site (most adapters without explicit domain are public web scrapers)', () => {
     expect(classifyAdapter(undefined)).toBe('site');
   });
+
+  it('classifies local IPv4 addresses (127.x.x.x) as app, with or without port', () => {
+    expect(classifyAdapter('127.0.0.1')).toBe('app');
+    expect(classifyAdapter('127.0.0.1:3000')).toBe('app');
+    expect(classifyAdapter('127.0.0.1:8080')).toBe('app');
+  });
+
+  it('classifies dotted domains as site even if they resemble IPs when not 127.x.x.x', () => {
+    expect(classifyAdapter('news.ycombinator.com')).toBe('site');
+    expect(classifyAdapter('192.168.1.1')).toBe('site');
+  });
 });
 
 describe('formatRootAdapterHelpText', () => {

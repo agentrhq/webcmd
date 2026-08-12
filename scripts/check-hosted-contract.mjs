@@ -11,7 +11,7 @@ const committedRoot = process.env.WEBCMD_CONTRACT_COMMITTED_ROOT
   ? path.resolve(process.env.WEBCMD_CONTRACT_COMMITTED_ROOT)
   : packageRoot;
 const generatedRoot = mkdtempSync(path.join(tmpdir(), 'webcmd-hosted-contract-'));
-const committedArtifactNames = ['cli-manifest.json'];
+const committedArtifactNames = ['cli-manifest.json', 'hosted-contract.json'];
 
 const generator = String.raw`
   import { readFile, writeFile } from 'node:fs/promises';
@@ -98,7 +98,7 @@ try {
         process.exitCode = 1;
       } else {
         process.stdout.write(
-          'Generated cli-manifest.json matches committed bytes; hosted-contract.json generated successfully.\n',
+          'Generated cli-manifest.json and hosted-contract.json match committed bytes; hosted-contract.json generated successfully.\n',
         );
       }
     }

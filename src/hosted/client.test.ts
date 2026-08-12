@@ -3,9 +3,9 @@ import { HostedClient, HostedClientError, resolveWorkspace } from './client.js';
 
 const invalidTraceUrlCases = [
   {
-    name: 'raw absolute Kernel URL with token',
+    name: 'raw absolute provider URL with token',
     field: 'liveViewUrl',
-    value: 'https://kernel.example/session/secret?token=kernel-secret-token',
+    value: 'https://provider.example/session/secret?token=provider-secret-token',
     executionId: 'exec_trace',
   },
   {
@@ -142,6 +142,85 @@ describe('HostedClient', () => {
       method: 'POST',
       body: JSON.stringify({ installSource: 'github:agentrhq/webcmd/acme' }),
     }]);
+  });
+
+  it('lists marketplace installations through the authenticated API', async () => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        result: {
+          installations: [{
+            name: 'alpha', version: '0.1.0', installSource: 'github:agentrhq/webcmd/alpha',
+            sourceCommit: null, installedAt: '2026-08-07T00:00:00.000Z', updateAvailable: false,
+          }],
+        },
+      })),
+    });
+
+    await expect(client.listMarketplaceInstallations()).resolves.toEqual([{
+      name: 'alpha', version: '0.1.0', installSource: 'github:agentrhq/webcmd/alpha',
+      sourceCommit: null, installedAt: '2026-08-07T00:00:00.000Z', updateAvailable: false,
+    }]);
+  });
+
+  it('uninstalls a marketplace plugin through the authenticated API', async () => {
+    const requests: Array<{ url: string; method: string }> = [];
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async (url, init) => {
+        requests.push({ url: String(url), method: init?.method ?? 'GET' });
+        return new Response(JSON.stringify({ ok: true, result: { uninstalled: true } }));
+      },
+    });
+
+    await expect(client.uninstallMarketplacePlugin('alpha')).resolves.toEqual({ uninstalled: true });
+    expect(requests).toEqual([{ url: 'https://api.example.com/v1/marketplace/installations/alpha', method: 'DELETE' }]);
+  });
+
+  it('accepts the ordinary 3-key update response', async () => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        result: { updated: true, name: 'alpha', version: '0.2.0' },
+      })),
+    });
+
+    await expect(client.updateMarketplacePlugin('alpha')).resolves.toEqual({
+      updated: true, name: 'alpha', version: '0.2.0',
+    });
+  });
+
+  it('accepts the 4-key delisted update response', async () => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        result: { updated: false, name: 'alpha', version: '0.1.0', delisted: true },
+      })),
+    });
+
+    await expect(client.updateMarketplacePlugin('alpha')).resolves.toEqual({
+      updated: false, name: 'alpha', version: '0.1.0', delisted: true,
+    });
+  });
+
+  it('rejects an update response with delisted: false as protocol-invalid', async () => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        result: { updated: false, name: 'alpha', version: '0.1.0', delisted: false },
+      })),
+    });
+
+    await expect(client.updateMarketplacePlugin('alpha')).rejects.toThrow(HostedClientError);
   });
 
   it('sends bearer auth and parses hosted manifest', async () => {
@@ -348,7 +427,7 @@ describe('HostedClient', () => {
   });
 
   it.each([
-    { name: 'private provider field', change: { kernelProfileId: 'private' } },
+    { name: 'private provider field', change: { providerProfileId: 'private' } },
     { name: 'missing updatedAt', change: { updatedAt: undefined } },
     { name: 'non-nullable name shape', change: { name: 7 } },
     { name: 'non-nullable workspace shape', change: { workspace: false } },
@@ -1012,6 +1091,81 @@ describe('HostedClient', () => {
         },
       },
     ]);
+  });
+
+  it('accepts compact hosted snapshot responses', async () => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'wcmd_live_test',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        result: { text: 'button Save' },
+        run: {
+          executionId: 'exec_1',
+          session: 'work',
+          profile: { id: 'profile_default', displayName: 'default' },
+        },
+      }), { status: 200 }),
+    });
+
+    await expect(client.runBrowserAction('work', {
+      command: 'browser/snapshot', action: 'snapshot', args: { snapshotMode: 'read' },
+    })).resolves.toMatchObject({ result: { text: 'button Save' } });
+  });
+
+  it('accepts the live-view expiry returned with a hosted browser run', async () => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'wcmd_live_test',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        result: { url: 'https://example.com' },
+        columns: ['url'],
+        trace: null,
+        run: {
+          executionId: 'exec_1',
+          session: 'work',
+          profile: { id: 'profile_default', displayName: 'default' },
+          liveViewUrl: 'https://api.example.com/account/live/view_1',
+          expiresAt: '2026-08-03T20:54:04.384Z',
+        },
+        execution: { id: 'exec_1', status: 'succeeded' },
+      }), { status: 200 }),
+    });
+
+    await expect(client.runBrowserAction('work', {
+      command: 'browser/open',
+      action: 'navigate',
+      args: { url: 'https://example.com' },
+    })).resolves.toMatchObject({
+      run: { expiresAt: '2026-08-03T20:54:04.384Z' },
+    });
+  });
+
+  it('rejects a non-string hosted browser run expiry', async () => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'wcmd_live_test',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        result: { url: 'https://example.com' },
+        columns: ['url'],
+        trace: null,
+        run: {
+          executionId: 'exec_1',
+          session: 'work',
+          profile: { id: 'profile_default', displayName: 'default' },
+          expiresAt: 123,
+        },
+        execution: { id: 'exec_1', status: 'succeeded' },
+      }), { status: 200 }),
+    });
+
+    await expect(client.runBrowserAction('work', {
+      command: 'browser/open',
+      action: 'navigate',
+      args: { url: 'https://example.com' },
+    })).rejects.toMatchObject({ code: 'HOSTED_PROTOCOL' });
   });
 
   it('attaches the workspace header when a workspace is configured', async () => {

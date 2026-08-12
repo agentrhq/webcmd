@@ -172,16 +172,16 @@ describe('hosted availability', () => {
       .toEqual({ mode: 'local-only', reason: 'desktop-app' });
     expect(deriveHostedAvailability({ strategy: 'cookie', domain: 'example.com' }))
       .toEqual({ mode: 'hosted' });
-    expect(deriveBrowserAvailability('bind'))
-      .toEqual({ mode: 'local-only', reason: 'browser-bind' });
-    expect(deriveBrowserAvailability('open')).toEqual({ mode: 'hosted' });
+    expect(deriveBrowserAvailability('bind')).toEqual({ mode: 'hosted' });
+    expect(deriveBrowserAvailability('run')).toEqual({ mode: 'hosted' });
+    expect(deriveBrowserAvailability('tabs')).toEqual({ mode: 'hosted' });
   });
 
   it('matches the reviewed local-only adapter exception sets exactly', () => {
     const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-    const entries = JSON.parse(
-      fs.readFileSync(path.join(root, 'cli-manifest.json'), 'utf8'),
-    ) as ManifestEntry[];
+    const entries = ['cli-manifest.json', 'plugin-command-manifest.json'].flatMap(file => JSON.parse(
+      fs.readFileSync(path.join(root, file), 'utf8'),
+    ) as ManifestEntry[]);
     const byReason = new Map<string, string[]>([
       ['local-tool', []],
       ['desktop-app', []],
@@ -200,5 +200,31 @@ describe('hosted availability', () => {
     expect(exceptionDiff(desktopApps, EXPECTED_DESKTOP_APPS)).toEqual({ added: [], missing: [] });
     expect(localTools).toHaveLength(30);
     expect(desktopApps).toHaveLength(111);
+  });
+});
+
+describe('deriveHostedAvailability classification table', () => {
+  it('treats a dotted domain as hosted', () => {
+    expect(deriveHostedAvailability({ strategy: 'PUBLIC', domain: 'news.ycombinator.com' }))
+      .toEqual({ mode: 'hosted' });
+  });
+
+  it('treats a dotless domain as a desktop app', () => {
+    expect(deriveHostedAvailability({ strategy: 'UI', domain: 'chatgpt-app' }))
+      .toEqual({ mode: 'local-only', reason: 'desktop-app' });
+  });
+
+  it('treats a local IP domain as a desktop app', () => {
+    expect(deriveHostedAvailability({ strategy: 'UI', domain: '127.0.0.1:3000' }))
+      .toEqual({ mode: 'local-only', reason: 'desktop-app' });
+  });
+
+  it('treats an absent domain as hosted', () => {
+    expect(deriveHostedAvailability({ strategy: 'PUBLIC' })).toEqual({ mode: 'hosted' });
+  });
+
+  it('treats LOCAL strategy as a local tool regardless of domain', () => {
+    expect(deriveHostedAvailability({ strategy: 'local', domain: 'example.com' }))
+      .toEqual({ mode: 'local-only', reason: 'local-tool' });
   });
 });

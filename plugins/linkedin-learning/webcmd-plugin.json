@@ -1,0 +1,10 @@
+{
+  "name": "linkedin-learning",
+  "version": "0.1.0",
+  "description": "Webcmd commands for linkedin-learning",
+  "webcmd": ">=0.5.3",
+  "author": {
+    "name": "WebCMD Agent",
+    "handle": "agentrhq"
+  }
+}

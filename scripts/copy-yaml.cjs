@@ -10,3 +10,7 @@ if (existsSync(extSrc)) {
   mkdirSync('dist/src', { recursive: true });
   copyFileSync(extSrc, 'dist/src/external-clis.yaml');
 }
+
+const playwrightClient = 'src/browser/run/generated/playwright-client.js';
+mkdirSync('dist/src/browser/run/generated', { recursive: true });
+copyFileSync(playwrightClient, 'dist/src/browser/run/generated/playwright-client.js');

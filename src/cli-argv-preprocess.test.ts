@@ -30,6 +30,17 @@ describe('rewriteBrowserArgv', () => {
     ]);
   });
 
+  it('rewrites `browser <session> run` with source options preserved', () => {
+    expect(rewriteBrowserArgv(['browser', 'mercury', 'run', '--file', 'task.js'])).toEqual([
+      'browser',
+      '--session',
+      'mercury',
+      'run',
+      '--file',
+      'task.js',
+    ]);
+  });
+
   it('leaves argv alone when session omitted and a subcommand follows', () => {
     // Commander surfaces the required-flag error itself.
     expect(rewriteBrowserArgv(['browser', 'state'])).toEqual(['browser', 'state']);
@@ -234,7 +245,7 @@ describe('rewriteBrowserArgv', () => {
       'analyze', 'back', 'bind', 'check', 'click', 'close', 'console', 'dblclick',
       'dialog', 'drag', 'eval', 'extract', 'fill', 'find', 'focus', 'frames',
       'get', 'hover', 'init', 'keys', 'network', 'open', 'screenshot', 'scroll',
-      'select', 'state', 'tab', 'type', 'unbind', 'uncheck', 'upload', 'verify',
+      'run', 'select', 'state', 'tab', 'type', 'unbind', 'uncheck', 'upload', 'verify',
       'wait',
     ];
     for (const name of required) {

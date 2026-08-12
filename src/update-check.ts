@@ -232,6 +232,11 @@ export function getCachedLatestExtensionVersion(): string | undefined {
   return _cache?.latestExtensionVersion;
 }
 
+/** Read the update-check cache fresh from disk. Used by `webcmd update`. */
+export function readUpdateCache(): UpdateCache | null {
+  return readCacheSync();
+}
+
 export {
   extractLatestExtensionVersionFromReleases as _extractLatestExtensionVersionFromReleases,
   buildUpdateNotices as _buildUpdateNotices,

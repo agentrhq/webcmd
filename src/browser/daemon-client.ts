@@ -82,7 +82,12 @@ export type DaemonCommand = BrowserRuntimeCommand;
 export type DaemonResult = BrowserRuntimeResult;
 
 export class BrowserCommandError extends Error {
-  constructor(message: string, readonly code?: string, readonly hint?: string) {
+  constructor(
+    message: string,
+    readonly code?: string,
+    readonly hint?: string,
+    readonly details?: unknown,
+  ) {
     super(message);
     this.name = 'BrowserCommandError';
   }
@@ -185,7 +190,7 @@ async function sendCommandRaw(
       }
 
       if (result.errorCode && UNKNOWN_OUTCOME_CODES.has(result.errorCode)) {
-        throw new BrowserCommandError(result.error ?? 'Browser command result is unknown', result.errorCode, result.errorHint);
+        throw new BrowserCommandError(result.error ?? 'Browser command result is unknown', result.errorCode, result.errorHint, result.details);
       }
 
       const isDuplicateCommandId = res.status === 409
@@ -213,7 +218,7 @@ async function sendCommandRaw(
         continue;
       }
 
-      throw new BrowserCommandError(result.error ?? 'Daemon command failed', result.errorCode, result.errorHint);
+      throw new BrowserCommandError(result.error ?? 'Daemon command failed', result.errorCode, result.errorHint, result.details);
     } catch (err) {
       if (err instanceof BrowserCommandError || err instanceof BrowserConnectError) throw err;
 
@@ -281,4 +286,14 @@ export async function releaseSiteSessionLease(runId: string): Promise<void> {
 
 export async function bindTab(session: string, opts: { contextId?: string; preferredContextId?: string; page?: string; index?: number; windowMode?: BrowserWindowMode } = {}): Promise<unknown> {
   return sendCommand('bind', { session, surface: 'browser', ...opts });
+}
+
+/** List existing pages without starting a daemon or browser runtime. */
+export async function listExistingBrowserTabs(
+  session: string,
+  opts: { contextId?: string; preferredContextId?: string } = {},
+): Promise<unknown> {
+  const status = await fetchDaemonStatus({ contextId: opts.contextId });
+  if (!status?.runtimeConnected) return [];
+  return sendCommand('tabs', { session, surface: 'browser', ...opts, op: 'list' });
 }

@@ -21,7 +21,7 @@ Exploration is for understanding an unfamiliar surface. A verified, reusable wor
 
 ## Adapters and Stable Output
 
-An adapter turns a website, app, API, or local surface into one or more commands. It can be built in, private to a user, shipped in a plugin, or backed by an external local CLI.
+An adapter turns a website, app, API, or local surface into one or more commands. Site adapters are installed as plugins; the core package bundles none. Legacy private adapters in `~/.webcmd/clis/` remain discoverable, and local tools can also be exposed as external CLIs.
 
 Commands should have clear names, stable inputs, useful errors, and JSON-friendly output. Stable output is the contract that lets another agent reuse a successful workflow.
 

@@ -18,7 +18,7 @@ Do not add JSDOM fixtures for simple JSON adapters.
 Commit intentional review fixtures under:
 
 ```text
-clis/<site>/__fixtures__/<command>.html
+plugins/<site>/__fixtures__/<command>.html
 ```
 
 Temporary debug dumps still belong only in:
@@ -35,7 +35,9 @@ Temporary debug dumps still belong only in:
 Use the browser to capture the specific DOM region, not the entire page.
 
 ```bash
-webcmd browser eval "document.querySelector('<root-selector>')?.outerHTML"
+webcmd browser recon run --stdin <<'JS'
+return await page.evaluate(() => document.querySelector('<root-selector>')?.outerHTML ?? '');
+JS
 ```
 
 Save only the required HTML for the parser.
@@ -45,8 +47,8 @@ Save only the required HTML for the parser.
 Run the mandatory blank-line tightening before committing:
 
 ```bash
-awk 'NF>0' clis/<site>/__fixtures__/<command>.html > /tmp/<command>.html
-mv /tmp/<command>.html clis/<site>/__fixtures__/<command>.html
+awk 'NF>0' plugins/<site>/__fixtures__/<command>.html > /tmp/<command>.html
+mv /tmp/<command>.html plugins/<site>/__fixtures__/<command>.html
 ```
 
 This prevents fixture bloat and makes diffs readable.

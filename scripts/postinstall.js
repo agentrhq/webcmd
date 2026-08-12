@@ -143,28 +143,11 @@ function main() {
     }
   }
 
-  // ── Spotify credentials template ────────────────────────────────────
-  const webcmdDir = join(home, '.webcmd');
-  const spotifyEnvFile = join(webcmdDir, 'spotify.env');
-  ensureDir(webcmdDir);
-  if (!existsSync(spotifyEnvFile)) {
-    writeFileSync(spotifyEnvFile,
-      `# Spotify credentials — get them at https://developer.spotify.com/dashboard\n` +
-      `# Add http://127.0.0.1:8888/callback as a Redirect URI in your Spotify app\n` +
-      `SPOTIFY_CLIENT_ID=your_spotify_client_id_here\n` +
-      `SPOTIFY_CLIENT_SECRET=your_spotify_client_secret_here\n`,
-      'utf8'
-    );
-    console.log(`✓ Spotify credentials template created at ${spotifyEnvFile}`);
-    console.log(`  Edit the file and add your Client ID and Secret, then run: webcmd spotify auth`);
-  }
-
-  // ── Browser runtime setup hint ──────────────────────────────────────
+  // ── Plugin discovery hint ───────────────────────────────────────────
   console.log('');
-  console.log('  \x1b[1mNext step — Browser runtime setup\x1b[0m');
-  console.log('  Browser commands (youtube, reddit, twitter...) use a webcmd-managed CloakBrowser runtime.');
-  console.log('  On first use, CloakBrowser downloads its Chromium binary.');
-  console.log('  Existing Chrome logins are not imported, so run the site login command again when needed.');
+  console.log('  \x1b[1mNext step — install a site plugin\x1b[0m');
+  console.log('  Search:  \x1b[36mwebcmd plugin search <site> -f json\x1b[0m');
+  console.log('  Install: \x1b[36mwebcmd plugin install <installSource-from-search>\x1b[0m');
   console.log('');
   console.log('  Then run \x1b[36mwebcmd doctor\x1b[0m to verify.');
   console.log('');

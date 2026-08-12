@@ -1,13 +1,25 @@
 /**
  * E2E tests for public API commands (browser: false).
  * These commands use Node.js fetch directly — no browser needed.
+ *
+ * Site commands are no longer bundled in core; each site under test here is
+ * installed as a local plugin into an isolated HOME before the suite runs.
  */
 
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import * as fs from 'node:fs/promises';
+import * as fsSync from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { parseJsonOutput, runCli } from './helpers.js';
+import { parseJsonOutput, runCli as runCliBase, installFixturePlugin } from './helpers.js';
+
+const TEST_HOME = fsSync.mkdtempSync(path.join(os.tmpdir(), 'webcmd-public-commands-e2e-'));
+const FIXTURE_ENV = { HOME: TEST_HOME, USERPROFILE: TEST_HOME };
+const FIXTURE_SITES = ['apple-podcasts', 'paperreview', 'hackernews', 'google', 'yollomi', 'dictionary'];
+
+function runCli(args: string[], opts: { timeout?: number; env?: Record<string, string> } = {}) {
+  return runCliBase(args, { ...opts, env: { ...FIXTURE_ENV, ...opts.env } });
+}
 
 function isExpectedApplePodcastsRestriction(code: number, stderr: string): boolean {
   if (code === 0) return false;
@@ -32,7 +44,26 @@ describe('public command restriction detectors', () => {
   });
 });
 
+describe('browser public command surface', () => {
+  it('advertises the four raw browser commands', async () => {
+    const { stdout, code } = await runCli(['browser', '--help']);
+    expect(code).toBe(0);
+    expect(stdout).toMatch(/\btabs\b/);
+    expect(stdout).toMatch(/\bbind\b/);
+    expect(stdout).toMatch(/\brun\b/);
+    expect(stdout).toMatch(/\bclose\b/);
+  });
+});
+
 describe('public commands E2E', () => {
+  beforeAll(() => {
+    for (const site of FIXTURE_SITES) installFixturePlugin(TEST_HOME, site);
+  });
+
+  afterAll(() => {
+    fsSync.rmSync(TEST_HOME, { recursive: true, force: true });
+  });
+
   // ── apple-podcasts ──
   it('apple-podcasts search returns structured podcast results', async () => {
     const { stdout, code } = await runCli(['apple-podcasts', 'search', 'technology', '--limit', '3', '-f', 'json']);

@@ -55,33 +55,72 @@ webcmd web fetch-browser --url https://example.com/app-shell
 
 The old `web read` command has been renamed to `web fetch-browser`.
 
+## Local Browser Programs
+
+`browser run` executes one Playwright-style JavaScript program against an
+existing local CloakBrowser session:
+
+```bash
+webcmd browser work snapshot --snapshot-mode act
+webcmd browser work snapshot --snapshot-mode read
+webcmd browser work run --stdin --timeout 45
+webcmd browser work run --stdin --no-snapshot-diff
+```
+
+Use `snapshot` for explicit page inspection. `act` is the default
+action-first mode, `tree` preserves fuller page structure, and `read` extracts readable article/content text. Exactly one of `--file
+<path>` or `--stdin` is required for `run`. The CLI reads files locally and
+sends source—not the path—to the local daemon. `--timeout` is in seconds and
+`--max-output` bounds returned results and logs. Successful runs return a
+`snapshotDiff` by default; pass `--no-snapshot-diff` only when the program is
+pure read-only and its result already contains the needed state.
+
+The program runs in a fresh QuickJS sandbox with `page`, `context`, `browser`,
+and `console` globals. `page.snapshotForAI()` is not available. It can use the
+supported Page/Frame/Locator methods and passively inspect request and response
+events. It cannot access Node.js, the filesystem, environment variables, raw
+CDP endpoints, browser launch/connect APIs, or browser-context ownership.
+Screenshot bytes are written to a Webcmd-owned cache directory and returned as
+a receipt.
+
+The public browser surface is `tabs`, `bind`, `run`, `snapshot`, and `close`.
+Reusable adapters continue to use the existing `IPage` API. Playwright-style
+programs are for reconnaissance and ad-hoc multi-step work; they are not pasted
+into adapter modules.
+
 ## Top-Level Commands
 
 | Command | Purpose |
 | --- | --- |
-| `list` | Show registered built-in, user, plugin, and external commands. |
+| `list` | Show registered core, legacy user, plugin, and external commands. |
 | `setup` | Choose local or hosted mode interactively. |
 | `doctor` | Diagnose browser bridge and daemon connectivity. |
+| `daemon` | Manage the local Webcmd daemon: status, stop, and restart. |
 | `browser` | Agent-facing browser runtime for exploration and verification. |
 | `web` | Local URL fetch and browser-backed page fetch helpers. |
 | `profile` | List, rename, and select browser runtime profiles. |
+| `auth` | Inspect website login status, and refresh logged-in site sessions. |
 | `plugin` | Install, update, list, create, and uninstall plugins. |
-| `adapter` | Eject, reset, and inspect local adapter overrides. |
+| `adapter` | Inspect or remove legacy adapters in `~/.webcmd/clis/`. |
 | `external` | Register or install external local CLIs. |
 | `validate` | Validate adapter definitions. |
 | `verify` | Validate and smoke test an adapter. |
-| `skills` | List and read bundled Webcmd agent skills. |
+| `convention-audit` | Scan adapters for agent-native convention violations. |
+| `skills` | List, add, update, and remove bundled Webcmd agent skills. |
 | `completion` | Print shell completion scripts. |
 
 ## Output Formats
 
 ```bash
 webcmd hackernews top -f table
+webcmd hackernews top -f plain
 webcmd hackernews top -f json
 webcmd hackernews top -f yaml
 webcmd hackernews top -f md
 webcmd hackernews top -f csv
 ```
+
+`plain` prints `key: value` lines instead of a table, and prints the bare value when a command returns a single field named `response`, `content`, `markdown`, `text`, or `value`. It suits chat-style commands. `yml` and `markdown` are accepted aliases for `yaml` and `md`.
 
 Agents should use JSON unless they are presenting output to a human.
 
@@ -112,7 +151,7 @@ webcmd profile delete profile_abc123
 
 In local mode, arbitrary `--profile <name>` values lazily create separate local state; local `list`, `rename`, and `use` are unchanged. In hosted mode, `--profile <name>` selects a persona within the ambient workspace; an omitted selector or `--profile default` lazily creates that workspace's `default` profile.
 
-Hosted `list` returns profile rows scoped to the ambient workspace; `delete` takes an immutable profile ID and returns `{ "ok": true, "deleted": true }`, permanently removing that hosted browser state. Each profile row has `id`, `name`, `workspace`, `default`, `status`, `createdAt`, `updatedAt`, and `lastUsedAt`. `status` is `pending` or `available`. Kernel identifiers are never exposed.
+Hosted `list` returns profile rows scoped to the ambient workspace; `delete` takes an immutable profile ID and returns `{ "ok": true, "deleted": true }`, permanently removing that hosted browser state. Each profile row has `id`, `name`, `workspace`, `default`, `status`, `createdAt`, `updatedAt`, and `lastUsedAt`. `status` is `pending` or `available`. Cloud provider identifiers are never exposed.
 
 Prompt example:
 
@@ -124,12 +163,30 @@ Use the `work` profile for this Webcmd task. If it is not authenticated, stop an
 
 Local mode supports plugin install, update, list, create, uninstall, catalog, search, and related marketplace commands.
 
+The core package includes no site adapters. Search first, then explicitly use
+the returned `installSource`:
+
 ```bash
 webcmd plugin search ycombinator -f json
-webcmd plugin install github:agentrhq/webcmd/plugins/ycombinator
+webcmd plugin install <installSource-from-search>
 ```
 
+Use direct `plugin install github:...` only when you already know the source. For missing or unknown sites, `plugin search` is the freshness boundary; it reads the current catalog instead of relying on package contents.
+
 Hosted mode supports the same `plugin search` and `plugin install` grammar for Webcmd-verified marketplace adapters. Other plugin management commands remain local-only in hosted mode.
+
+## Skills
+
+Bundled agent skills ship with the package. `webcmd skills add` links them into an agent harness and is part of first-time setup.
+
+```bash
+webcmd skills list
+webcmd skills add
+webcmd skills update
+webcmd skills remove
+```
+
+On a TTY, `skills add` prompts for whichever of scope and harness you did not pass. Use `--scope <user|project>` and `--provider <agents|codex|claude>` to skip the prompts, or `--path <skills-dir>` to link into a custom directory. Outside a TTY, and with `--json`, it never prompts. Run `skills update` after upgrading the package to refresh the links.
 
 ## External CLIs
 
@@ -146,8 +203,9 @@ Register our internal `releasectl` binary as a Webcmd external CLI with a short 
 | Path | Purpose |
 | --- | --- |
 | `~/.webcmd/` | User-level Webcmd state. |
-| `~/.webcmd/clis/` | Private adapters and local overrides. |
+| `~/.webcmd/clis/` | Legacy private adapters retained for compatibility. |
 | `~/.webcmd/cache/browser-network/` | Browser network capture cache. |
+| `~/.webcmd/cache/browser-run/` | Host-owned browser-run screenshot artifacts. |
 | `~/.webcmd/external-clis.yaml` | User external CLI registry. |
 | `skills/` | Bundled agent skills shipped with the package. |
 

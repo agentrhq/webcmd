@@ -291,6 +291,27 @@ browser: false
     await expect(discoverPlugins()).resolves.not.toThrow();
   });
 
+  it('discovers only the explicitly supplied installed-plugin root', async () => {
+    const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'webcmd-installed-plugins-'));
+    const pluginDir = path.join(root, 'explicit-plugin');
+    try {
+      await fs.promises.mkdir(pluginDir, { recursive: true });
+      await fs.promises.writeFile(path.join(pluginDir, 'hello.js'), `
+import { cli, Strategy } from '${pathToFileURL(path.join(process.cwd(), 'src', 'registry.ts')).href}';
+cli({
+  site: 'explicit-plugin', name: 'hello', access: 'read', description: 'hello',
+  strategy: Strategy.PUBLIC, browser: false, func: async () => [{ ok: true }],
+});
+`);
+
+      await discoverPlugins(root);
+
+      expect(getRegistry().get('explicit-plugin/hello')).toBeDefined();
+    } finally {
+      await fs.promises.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('ignores YAML files in symlinked plugin directories (YAML format removed)', async () => {
     await fs.promises.mkdir(PLUGINS_DIR, { recursive: true });
     await fs.promises.mkdir(symlinkTargetDir, { recursive: true });

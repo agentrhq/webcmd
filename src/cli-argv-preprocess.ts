@@ -38,6 +38,7 @@ const BROWSER_SUBCOMMAND_NAMES: ReadonlySet<string> = new Set([
   'keys',
   'network',
   'open',
+  'run',
   'screenshot',
   'scroll',
   'select',
