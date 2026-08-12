@@ -35,7 +35,7 @@ export function extractFetchedContent(input: ExtractFetchedContentInput): Extrac
     throw new CliError(
       'FETCH_UNSUPPORTED_CONTENT_TYPE',
       `Unsupported content type: ${contentType || 'unknown'}`,
-      'Use webcmd web fetch-browser to export this page from a real browser.',
+      'Create a browser Session with `webcmd --profile work session create`, then navigate with `webcmd --profile work --session <session-id> browser run --stdin`.',
     );
   }
 

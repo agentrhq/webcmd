@@ -72,3 +72,25 @@ describe('createSafeProxy close', () => {
     await new Promise<void>(done => upstream.close(() => done()));
   });
 });
+
+describe('createSafeProxy policy errors', () => {
+  it('records the first rejected private destination', async () => {
+    const proxy = await createSafeProxy({ allowPrivate: false });
+    const client = net.connect({ host: '127.0.0.1', port: Number(new URL(proxy.url).port) });
+    const reply = await new Promise<string>(done => {
+      let data = '';
+      client.on('data', chunk => { data += chunk; });
+      client.on('end', () => done(data));
+      client.write('CONNECT 127.0.0.1:443 HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n');
+    });
+    expect(reply).toContain('403 Forbidden');
+    expect(proxy.policyError()?.message).toContain('Unsafe fetch destination');
+    await proxy.close();
+  });
+
+  it('leaves the policy slot empty when private addresses are allowed', async () => {
+    const proxy = await createSafeProxy({ allowPrivate: true });
+    expect(proxy.policyError()).toBeUndefined();
+    await proxy.close();
+  });
+});

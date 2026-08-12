@@ -7,6 +7,12 @@ describe('fetch classification', () => {
     expect(isChallengeResponse(403, {}, 'forbidden')).toBe(false);
   });
 
+  it('does not treat healthy provider evidence as a challenge', () => {
+    expect(isChallengeResponse(200, { 'x-datadome': 'protected' }, '<main>real article</main>')).toBe(false);
+    expect(isChallengeResponse(200, { 'set-cookie': '__cf_bm=abc' }, '<main>real article</main>')).toBe(false);
+    expect(isChallengeResponse(200, { 'content-security-policy': 'script-src https://cdnjs.cloudflare.com' }, '<main>ok</main>')).toBe(false);
+  });
+
   it('recognizes script-heavy app shells', () => expect(isJavaScriptShell('<div id="root"></div><script src="/app.js"></script><script>boot()</script>')).toBe(true));
 
   // A CSP allow-list names third parties this page may load; it says nothing

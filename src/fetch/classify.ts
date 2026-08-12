@@ -11,7 +11,8 @@ const CHALLENGE_HEADERS = /^(?:server|cf-mitigated|cf-chl-[\w-]+|x-datadome[\w-]
  * decide on their own at any status — including the managed-challenge
  * interstitial Cloudflare serves with a 200.
  */
-const DECISIVE_MARKERS = /cf-chl|cf-mitigated|__cf_bm|datadome|perimeterx|px-captcha|just a moment|verify you are human|checking your browser|enable javascript and cookies/i;
+const DECISIVE_HEADERS = /^(?:cf-mitigated|cf-chl-[\w-]+)$/i;
+const DECISIVE_BODY_MARKERS = /cf-chl|cf-mitigated|just a moment|verify you are human|checking your browser|enable javascript and cookies/i;
 
 /**
  * Markers that appear constantly on healthy pages: a CDN name in `server:`,
@@ -19,18 +20,21 @@ const DECISIVE_MARKERS = /cf-chl|cf-mitigated|__cf_bm|datadome|perimeterx|px-cap
  * corroborate a status that already looks like a block, never decide alone —
  * that is the difference between a real block and the false positive in #283.
  */
-const CORROBORATING_MARKERS = /cloudflare|akamai|captcha/i;
+const CORROBORATING_MARKERS = /cloudflare|datadome|perimeterx|px-captcha|akamai|captcha|__cf_bm/i;
 
 const BLOCKED_STATUSES = new Set([403, 429, 503]);
 
 export function isChallengeResponse(status: number, headers: Record<string, string>, body: string): boolean {
+  const headerEvidence = Object.entries(headers)
+    .filter(([key]) => CHALLENGE_HEADERS.test(key))
+    .map(([key, value]) => `${key}:${value}`)
+    .join('\n');
+  const bodyEvidence = body.slice(0, 20_000);
+  if (Object.entries(headers).some(([key, value]) => DECISIVE_HEADERS.test(key) && /challenge|1/i.test(value)) || DECISIVE_BODY_MARKERS.test(bodyEvidence)) return true;
   const evidence = [
-    ...Object.entries(headers)
-      .filter(([key]) => CHALLENGE_HEADERS.test(key))
-      .map(([key, value]) => `${key}:${value}`),
-    body.slice(0, 20_000),
+    headerEvidence,
+    bodyEvidence,
   ].join('\n');
-  if (DECISIVE_MARKERS.test(evidence)) return true;
   return BLOCKED_STATUSES.has(status) && CORROBORATING_MARKERS.test(evidence);
 }
 

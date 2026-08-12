@@ -7,8 +7,8 @@ import { isChallengeResponse, isJavaScriptShell } from './classify.js';
 
 export interface WebFetchOptions { url: string; timeoutSeconds: number; maxChars: number; allowPrivate: boolean; }
 export interface WebFetchResult {
-  status: number; requestedUrl: string; finalUrl: string; contentType: string; tier: 'plain' | 'impit' | 'browser'; profile?: 'chrome' | 'firefox';
-  title: string; extractionSource: ExtractFetchedContentResult['source'] | 'browser'; truncated: boolean; content: string;
+  status: number; requestedUrl: string; finalUrl: string; contentType: string; tier: 'plain' | 'impit'; profile?: 'chrome' | 'firefox';
+  title: string; extractionSource: ExtractFetchedContentResult['source']; truncated: boolean; content: string;
 }
 type ResponseLike = Pick<Response, 'status' | 'headers' | 'url'> & { body?: ReadableStream<Uint8Array> | null; bytes?: () => Promise<Uint8Array>; };
 type FetchLike = (url: string, options?: Record<string, unknown>) => Promise<ResponseLike>;
@@ -19,6 +19,7 @@ export interface WebFetchDependencies {
   createSafeProxy?: (options: { allowPrivate: boolean }) => Promise<SafeProxy>;
 }
 const MAX_BODY_BYTES = 10 * 1024 * 1024;
+const BROWSER_WORKFLOW = 'Create a browser Session with `webcmd --profile work session create`, then navigate with `webcmd --profile work --session <session-id> browser run --stdin`.';
 
 function headersOf(response: ResponseLike): Record<string, string> { return Object.fromEntries(response.headers.entries()); }
 async function readBody(response: ResponseLike): Promise<string> {
@@ -46,26 +47,35 @@ export async function webFetch(options: WebFetchOptions, dependencies: WebFetchD
   const plainFetch = dependencies.plainFetch ?? ((url, init) => fetch(url, init));
   const createImpit = dependencies.createImpit ?? (impitOptions => new Impit(impitOptions));
   try {
-    let response = await plainFetch(options.url, { redirect: 'manual', dispatcher: new ProxyAgent(proxy.url), signal: AbortSignal.timeout(remaining()) });
-    let body = await readBody(response);
-    let tier: WebFetchResult['tier'] = 'plain'; let profile: WebFetchResult['profile'];
-    if (isJavaScriptShell(body)) throw new CliError('FETCH_REQUIRES_BROWSER', 'This page requires browser rendering.', 'The browser tier renders this page; web fetch escalates to it automatically.');
-    if (isChallengeResponse(response.status, headersOf(response), body)) {
-      // ponytail: impit's timeout covers the request, not the body stream, so a
-      // trickling escalation body can outlive the budget. Race readBody against
-      // the deadline if that shows up in practice.
-      for (const browser of ['chrome', 'firefox'] as const) {
-        const impit = createImpit({ browser, proxyUrl: proxy.url, timeout: remaining() });
-        response = await impit.fetch(options.url, { redirect: 'manual', timeout: remaining() });
-        body = await readBody(response); tier = 'impit'; profile = browser;
-        if (isJavaScriptShell(body)) throw new CliError('FETCH_REQUIRES_BROWSER', 'This page requires browser rendering.', 'The browser tier renders this page; web fetch escalates to it automatically.');
-        if (!isChallengeResponse(response.status, headersOf(response), body)) break;
+    const ladder = [undefined, 'chrome', 'firefox'] as const;
+    let lastTransport: unknown;
+    for (const browser of ladder) {
+      try {
+        const timeout = remaining();
+        const response = browser
+          ? await createImpit({ browser, proxyUrl: proxy.url, timeout }).fetch(options.url, { redirect: 'manual', timeout: remaining() })
+          : await plainFetch(options.url, { redirect: 'manual', dispatcher: new ProxyAgent(proxy.url), signal: AbortSignal.timeout(timeout) });
+        const policyError = proxy.policyError();
+        if (policyError) throw new CliError('FETCH_UNSAFE_ADDRESS', policyError.message);
+        const body = await readBody(response);
+        if (proxy.policyError()) throw new CliError('FETCH_UNSAFE_ADDRESS', proxy.policyError()!.message);
+        if (isJavaScriptShell(body)) throw new CliError('FETCH_REQUIRES_BROWSER', 'This page requires browser rendering.', BROWSER_WORKFLOW);
+        if (isChallengeResponse(response.status, headersOf(response), body)) {
+          if (browser === 'firefox') throw new CliError('FETCH_BLOCKED', 'The site blocked non-browser fetches.', BROWSER_WORKFLOW);
+          continue;
+        }
+        const extracted = extractFetchedContent({ body, contentType: response.headers.get('content-type') ?? '', url: options.url });
+        const clipped = truncate(extracted.content, options.maxChars);
+        return { status: response.status, requestedUrl: options.url, finalUrl: response.url || options.url, contentType: response.headers.get('content-type') ?? '', tier: browser ? 'impit' : 'plain', ...(browser && { profile: browser }), title: extracted.title, extractionSource: extracted.source, truncated: clipped.truncated, content: clipped.content };
+      } catch (error) {
+        const policyError = proxy.policyError();
+        if (policyError) throw new CliError('FETCH_UNSAFE_ADDRESS', policyError.message);
+        const mapped = asFetchError(error, options.timeoutSeconds, deadline);
+        if (mapped instanceof CliError) throw mapped;
+        lastTransport = mapped;
       }
-      if (isChallengeResponse(response.status, headersOf(response), body)) throw new CliError('FETCH_BLOCKED', 'The site blocked non-browser fetches.', 'The browser tier renders this page; web fetch escalates to it automatically.');
     }
-    const extracted = extractFetchedContent({ body, contentType: response.headers.get('content-type') ?? '', url: options.url });
-    const clipped = truncate(extracted.content, options.maxChars);
-    return { status: response.status, requestedUrl: options.url, finalUrl: response.url || options.url, contentType: response.headers.get('content-type') ?? '', tier, ...(profile && { profile }), title: extracted.title, extractionSource: extracted.source, truncated: clipped.truncated, content: clipped.content };
+    throw lastTransport;
   } catch (error) {
     throw asFetchError(error, options.timeoutSeconds, deadline);
   } finally { await proxy.close(); }

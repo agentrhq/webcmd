@@ -3,7 +3,7 @@ import * as http from 'node:http';
 import * as net from 'node:net';
 import type { Duplex } from 'node:stream';
 
-export interface SafeProxy { url: string; close(): Promise<void>; }
+export interface SafeProxy { url: string; close(): Promise<void>; policyError(): Error | undefined; }
 export interface SafeProxyOptions { allowPrivate?: boolean; lookup?: typeof dnsLookup; }
 
 export function isSafeAddress(address: string): boolean {
@@ -49,6 +49,7 @@ export async function createSafeProxy(options: SafeProxyOptions = {}): Promise<S
   // traffic after the fetch budget expired, and one more handle holding the
   // process open. Once closing, nothing new is tracked or dialled.
   let closing = false;
+  let firstPolicyError: Error | undefined;
   const track = <T extends Duplex>(socket: T): T => {
     if (closing) { socket.destroy(); return socket; }
     sockets.add(socket);
@@ -69,7 +70,10 @@ export async function createSafeProxy(options: SafeProxyOptions = {}): Promise<S
       upstream.on('socket', track);
       upstream.on('error', error => response.destroy(error));
       request.pipe(upstream);
-    } catch (error) { response.writeHead(403).end(error instanceof Error ? error.message : 'Unsafe fetch destination'); }
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('Unsafe fetch destination:')) firstPolicyError ??= error;
+      response.writeHead(403).end(error instanceof Error ? error.message : 'Unsafe fetch destination');
+    }
   });
   server.on('connection', track);
   server.on('connect', async (request, client, head) => {
@@ -82,7 +86,10 @@ export async function createSafeProxy(options: SafeProxyOptions = {}): Promise<S
       const upstream = track(net.connect({ host: address, port: Number(portText) || 443 }));
       upstream.once('connect', () => { client.write('HTTP/1.1 200 Connection Established\r\n\r\n'); if (head.length) upstream.write(head); upstream.pipe(client); client.pipe(upstream); });
       upstream.once('error', error => client.destroy(error));
-    } catch (error) { client.end(`HTTP/1.1 403 Forbidden\r\n\r\n${error instanceof Error ? error.message : ''}`); }
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('Unsafe fetch destination:')) firstPolicyError ??= error;
+      client.end(`HTTP/1.1 403 Forbidden\r\n\r\n${error instanceof Error ? error.message : ''}`);
+    }
   });
   await new Promise<void>((resolveListen, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', () => resolveListen()); });
   const address = server.address();
@@ -90,6 +97,7 @@ export async function createSafeProxy(options: SafeProxyOptions = {}): Promise<S
   let closed: Promise<void> | undefined;
   return {
     url: `http://127.0.0.1:${address.port}`,
+    policyError: () => firstPolicyError,
     // Idempotent: a second close() awaits the first rather than asking an
     // already-stopped server to close again.
     close: () => (closed ??= new Promise((resolveClose, reject) => {
