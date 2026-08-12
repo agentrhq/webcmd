@@ -405,8 +405,10 @@ export class CloakSessionManager {
     const surface = normalizeSurface(input.surface);
     const runtime = this.profiles.get(profileId);
     if (!runtime) return null;
-    const sessionRuntime = this.getSessionRuntime(runtime, sessionId);
-    let match = input.pageId ? this.findEntryByPageId(runtime, input.pageId) : this.openEntries(sessionRuntime)[input.index ?? -1];
+    const existingSession = runtime.sessions.get(sessionId);
+    let match = input.pageId
+      ? this.findEntryByPageId(runtime, input.pageId)
+      : existingSession && this.openEntries(existingSession)[input.index ?? -1];
     if (!match && input.index !== undefined) {
       const page = runtime.context.pages().filter(candidate => !pageIsClosed(candidate))[input.index];
       if (page) {
@@ -429,6 +431,10 @@ export class CloakSessionManager {
     if (!match) return null;
 
     const entry = match[1];
+    if (entry.sessionId && entry.sessionId !== sessionId) {
+      throw new SessionWindowConflictError(entry.pageId, sessionId, entry.sessionId);
+    }
+    const sessionRuntime = existingSession ?? this.getSessionRuntime(runtime, sessionId);
     await this.assertBindableWindow(runtime, sessionRuntime, entry);
     const sourceSession = entry.sessionId ? runtime.sessions.get(entry.sessionId) : undefined;
     const sourceKey = entry.leaseKey;
@@ -636,8 +642,10 @@ export class CloakSessionManager {
     session: SessionRuntime,
     windowMode?: BrowserWindowMode,
   ): Promise<PlaywrightPage> {
-    const opener = this.openEntries(session)[0]?.[1].page;
-    if (!opener) return this.createWindowPage(runtime, windowMode);
+    const openerEntry = this.openEntries(session)[0]?.[1];
+    if (!openerEntry) return this.createWindowPage(runtime, windowMode);
+    await this.assertOwnedWindow(runtime, session.id, openerEntry);
+    const opener = openerEntry.page;
 
     const popup = opener.waitForEvent('popup', { timeout: 1_000 }).catch(() => null);
     try {
@@ -831,6 +839,13 @@ export class CloakSessionManager {
   }
 
   private async assertBindableWindow(runtime: ProfileRuntime, session: SessionRuntime, entry: PageEntry): Promise<void> {
+    if (entry.sessionId) {
+      if (entry.sessionId !== session.id) {
+        throw new SessionWindowConflictError(entry.pageId, session.id, entry.sessionId);
+      }
+      await this.assertOwnedWindow(runtime, session.id, entry);
+      return;
+    }
     const actual = await this.windowIdForTarget(runtime, entry.targetId);
     const owner = runtime.windowOwners.get(actual);
     if (owner !== undefined && owner !== session.id) {

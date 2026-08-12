@@ -275,6 +275,39 @@ describe('CloakSessionManager', () => {
     expect(await manager.findPageById(second.pageId, a)).toBeNull();
   });
 
+  it('does not let another Session bind an owned page moved to an unowned window', async () => {
+    const launched = fakeContext();
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
+    });
+    const a = { profileId: 'default', session: 'session_a', sessionId: 'session_a', surface: 'browser' as const };
+    const b = { profileId: 'default', session: 'session_b', sessionId: 'session_b', surface: 'browser' as const };
+    const first = await manager.getPage(a);
+    launched.moveToWindow(first.page, 999);
+
+    await expect(manager.bindPage({ ...b, pageId: first.pageId }))
+      .rejects.toMatchObject({ code: 'SESSION_WINDOW_CONFLICT' });
+    expect(first.page.close).not.toHaveBeenCalled();
+    expect(await manager.listPages(b)).toEqual([]);
+    await expect(manager.listPages(a)).rejects.toMatchObject({ code: 'SESSION_WINDOW_CONFLICT' });
+  });
+
+  it('checks opener window ownership before calling window.open', async () => {
+    const launched = fakeContext();
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
+    });
+    const key = { profileId: 'default', session: 'session_a', sessionId: 'session_a', surface: 'browser' as const };
+    const first = await manager.getPage(key);
+    launched.moveToWindow(first.page, 999);
+
+    await expect(manager.newPage(key)).rejects.toMatchObject({ code: 'SESSION_WINDOW_CONFLICT' });
+    expect(first.page.evaluate).not.toHaveBeenCalled();
+    expect(first.page.close).not.toHaveBeenCalled();
+  });
+
   it('binds an unowned context page without adopting another Session page', async () => {
     const launched = fakeContext();
     const manager = new CloakSessionManager({

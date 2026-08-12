@@ -366,6 +366,25 @@ describe('runBrowserProgram', () => {
     expect(seen).toEqual([owned]);
   });
 
+  it('filters context request events from sibling Session pages', async () => {
+    const sibling = await context.newPage();
+    await sibling.goto('data:text/html,sibling');
+    const output = runBrowserProgram({
+      ...sessionScope(() => [page]),
+      pageId: 'page-1',
+    }, `
+      const request = context.waitForEvent('request');
+      await page.evaluate(() => document.body.dataset.contextListener = 'ready');
+      return (await request).frame().page().url();
+    `, { timeoutMs: 2_000 });
+
+    await page.waitForFunction(() => document.body.dataset.contextListener === 'ready');
+    await sibling.evaluate(() => fetch('https://example.test/data').catch(() => undefined));
+    await page.evaluate(() => fetch('https://example.test/data').catch(() => undefined));
+
+    await expect(output).resolves.toMatchObject({ result: page.url() });
+  });
+
   it('delegates context.newPage to the Session-owned page creator', async () => {
     const createPage = vi.fn(() => context.newPage());
     const output = await runBrowserProgram({

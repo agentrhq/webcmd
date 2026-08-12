@@ -88,6 +88,37 @@ function scopedContext(
   },
 ): object {
   const pageListeners = new Map<Function, Set<() => void>>();
+  const contextListeners = new Map<string, Map<Function, Set<() => void>>>();
+  const related = (value: unknown, property: string): unknown => {
+    if ((typeof value !== 'object' || value === null) && typeof value !== 'function') return undefined;
+    try {
+      const candidate = Reflect.get(value as object, property, value);
+      return typeof candidate === 'function' ? Reflect.apply(candidate, value, []) : candidate;
+    } catch {
+      return undefined;
+    }
+  };
+  const requestPage = (request: unknown): unknown => {
+    const frame = related(request, 'frame') ?? related(request, '_frame');
+    return related(frame, 'page') ?? related(frame, '_page');
+  };
+  const eventBelongsToScope = (event: string, args: unknown[]): boolean => {
+    let eventPage: unknown;
+    if (event === 'request' || event === 'requestfailed') {
+      eventPage = requestPage(args[0]);
+    } else if (event === 'response') {
+      eventPage = requestPage(related(args[0], 'request'));
+    } else if (event === 'requestfinished') {
+      eventPage = requestPage(related(args[0], 'request'));
+    } else if (event === 'console') {
+      eventPage = related(args[0], 'page');
+    } else if (event === 'pageerror') {
+      eventPage = args[1];
+    } else if (event === 'recorderevent') {
+      eventPage = related(args[0], 'page');
+    }
+    return eventPage !== undefined && scope.pages().includes(eventPage as object);
+  };
   const addPageListener = (listener: Function, once = false) => {
     let dispose: () => void = () => undefined;
     const registered = (page: object) => {
@@ -109,6 +140,38 @@ function scopedContext(
   const removeAllPageListeners = () => {
     for (const listener of pageListeners.keys()) removePageListener(listener);
   };
+  const addContextListener = (event: string, listener: Function, once = false) => {
+    let dispose: () => void = () => undefined;
+    const registered = (...args: unknown[]) => {
+      if (event !== 'close' && !eventBelongsToScope(event, args)) return;
+      if (once) {
+        dispose();
+        contextListeners.get(event)?.get(listener)?.delete(dispose);
+      }
+      listener(...args);
+    };
+    Reflect.apply(Reflect.get(context, 'on'), context, [event, registered]);
+    dispose = () => Reflect.apply(Reflect.get(context, 'off'), context, [event, registered]);
+    const byListener = contextListeners.get(event) ?? new Map();
+    const disposers = byListener.get(listener) ?? new Set();
+    disposers.add(dispose);
+    byListener.set(listener, disposers);
+    contextListeners.set(event, byListener);
+  };
+  const removeContextListener = (event: string, listener: Function) => {
+    const byListener = contextListeners.get(event);
+    for (const dispose of byListener?.get(listener) ?? []) dispose();
+    byListener?.delete(listener);
+    if (byListener?.size === 0) contextListeners.delete(event);
+  };
+  const removeAllContextListeners = (event?: string) => {
+    const events = event === undefined ? [...contextListeners.keys()] : [event];
+    for (const name of events) {
+      for (const listener of contextListeners.get(name)?.keys() ?? []) {
+        removeContextListener(name, listener);
+      }
+    }
+  };
   let proxy: object;
   proxy = new Proxy(context, {
     get(target, property) {
@@ -121,7 +184,7 @@ function scopedContext(
             addPageListener(listener);
             return proxy;
           }
-          Reflect.apply(Reflect.get(target, property), target, [event, listener]);
+          addContextListener(event, listener);
           return proxy;
         };
       }
@@ -131,7 +194,7 @@ function scopedContext(
             removePageListener(listener);
             return proxy;
           }
-          Reflect.apply(Reflect.get(target, property), target, [event, listener]);
+          removeContextListener(event, listener);
           return proxy;
         };
       }
@@ -141,21 +204,19 @@ function scopedContext(
             addPageListener(listener, true);
             return proxy;
           }
-          Reflect.apply(Reflect.get(target, property), target, [event, listener]);
+          addContextListener(event, listener, true);
           return proxy;
         };
       }
       if (property === 'removeAllListeners') {
         return (event?: string) => {
           if (event === undefined || event === 'page') removeAllPageListeners();
+          if (event !== 'page') removeAllContextListeners(event);
           return proxy;
         };
       }
       if (property === 'waitForEvent') {
         return (event: string, optionsOrPredicate?: object | Function) => {
-          if (event !== 'page') {
-            return Reflect.apply(Reflect.get(target, property), target, [event, optionsOrPredicate]);
-          }
           const options = typeof optionsOrPredicate === 'object' ? optionsOrPredicate as {
             predicate?: (page: object) => boolean | Promise<boolean>;
             timeout?: number;
@@ -163,22 +224,27 @@ function scopedContext(
           const predicate = typeof optionsOrPredicate === 'function' ? optionsOrPredicate : options?.predicate;
           return new Promise<object>((resolve, reject) => {
             let timer: ReturnType<typeof setTimeout> | undefined;
-            const listener = async (page: object) => {
+            const removeListener = (listener: Function) => {
+              if (event === 'page') removePageListener(listener);
+              else removeContextListener(event, listener);
+            };
+            const listener = async (value: object) => {
               try {
-                if (predicate && !await predicate(page)) return;
-                removePageListener(listener);
+                if (predicate && !await predicate(value)) return;
+                removeListener(listener);
                 if (timer) clearTimeout(timer);
-                resolve(page);
+                resolve(value);
               } catch (error) {
-                removePageListener(listener);
+                removeListener(listener);
                 if (timer) clearTimeout(timer);
                 reject(error);
               }
             };
-            addPageListener(listener);
+            if (event === 'page') addPageListener(listener);
+            else addContextListener(event, listener);
             if (options?.timeout) {
               timer = setTimeout(() => {
-                removePageListener(listener);
+                removeListener(listener);
                 reject(new Error(`Timeout while waiting for event "${event}"`));
               }, options.timeout);
             }
