@@ -227,7 +227,7 @@ describe('webcmd skills content', () => {
     expect(usage).toContain('webcmd session create -f json');
     expect(usage).toContain('webcmd --session session_abc browser');
     expect(usage).toMatch(/Adapter commands may omit `--session`[\s\S]{0,200}adapter-default session/i);
-    expect(usage).toMatch(/retired `webcmd browser <session> \.\.\.` syntax is invalid/i);
+    expect(usage).toMatch(/retired positional session form is invalid/i);
     expect(browser).toMatch(/Profiles are cookie jars[\s\S]{0,180}sessions are browser workspaces\/windows/i);
     expect(browser).toMatch(/Parallel agents use separate sessions/i);
     for (const skill of [usage, browser, autofix]) {

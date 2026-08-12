@@ -27,9 +27,11 @@ describe('rejectPositionalBrowserSessionArgv details', () => {
 });
 
 describe('rejectMisplacedSessionSelectorArgv', () => {
-  it('rejects trailing --session with a stable diagnostic code', () => {
+  it('rejects trailing --session with a copy-pasteable root-selector command', () => {
     expect(() => rejectMisplacedSessionSelectorArgv(['browser', 'run', '--session', 'session_a']))
-      .toThrowError(/SESSION_SELECTOR_POSITION/);
+      .toThrowError(/SESSION_SELECTOR_POSITION: --session must appear before the command\. Use: webcmd --session session_a browser run/);
+    expect(() => rejectMisplacedSessionSelectorArgv(['github', 'issues', '--session=session_b']))
+      .toThrowError(/Use: webcmd --session session_b github issues/);
   });
 
   it('keeps the root --session selector unchanged', () => {

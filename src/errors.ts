@@ -151,14 +151,17 @@ function formatBusyMessage(holder: SessionLeaseHolder): string {
 
 function formatBusyHint(holder: SessionLeaseHolder, platform: string, pidAlive: (pid: number) => boolean): string {
   const hasLivePid = isActionablePid(holder.pid) && pidAlive(holder.pid);
+  const scope = holder.sessionId
+    ? `Session ${holder.sessionId}${holder.admissionSite ? `, site ${holder.admissionSite}` : ''}. `
+    : '';
   if (platform === 'win32') {
-    return !hasLivePid
+    return scope + (!hasLivePid
       ? 'Wait for it to finish, or use Task Manager to stop the owning process if it is stuck.'
-      : `Wait for it to finish, or run \`Stop-Process -Id ${holder.pid}\` in PowerShell if it is stuck.`;
+      : `Wait for it to finish, or run \`Stop-Process -Id ${holder.pid}\` in PowerShell if it is stuck.`);
   }
-  return !hasLivePid
+  return scope + (!hasLivePid
     ? 'Wait for it to finish, or stop the owning process if it is stuck.'
-    : `Wait for it to finish, or run \`kill ${holder.pid}\` if it is stuck.`;
+    : `Wait for it to finish, or run \`kill ${holder.pid}\` if it is stuck.`);
 }
 
 /** A persistent write session is temporarily owned by another logical run. */

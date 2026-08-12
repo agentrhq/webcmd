@@ -198,6 +198,12 @@ describe('SessionBusyError platform hints', () => {
     expect(err.hint).not.toContain('Stop-Process');
   });
 
+  it('includes local Session and site details when daemon admission reports them', () => {
+    const err = new SessionBusyError({ ...holder, sessionId: 'session_a', admissionSite: 'github' }, 'linux', () => true);
+    expect(err.hint).toContain('Session session_a');
+    expect(err.hint).toContain('site github');
+  });
+
   it('does not suggest killing a holder pid that is no longer alive', () => {
     const err = new SessionBusyError(holder, 'linux', () => false);
     expect(err.message).toContain('chatgpt ask');

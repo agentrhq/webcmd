@@ -70,7 +70,7 @@ webcmd session close session_abc
 ```
 
 `webcmd session close <session-id>` is blocked while that Session has a live human handoff.
-Adapter commands may omit `--session` and use the selected profile's adapter-default session. Pass `--session <session-id>` to route one into an explicit session. Raw `webcmd browser` commands never omit it; retired `webcmd browser <session> ...` syntax is invalid.
+Adapter commands may omit `--session` and use the selected profile's adapter-default session. Pass `--session <session-id>` to route one into an explicit session. Raw browser commands never omit it; the retired positional session form is invalid.
 
 ## Prerequisites By Strategy
 

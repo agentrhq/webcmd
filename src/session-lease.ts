@@ -93,6 +93,8 @@ export function isUnknownOutcomeError(error: unknown): boolean {
 export interface SessionLeaseHolder {
   command: string;
   pid?: number;
+  sessionId?: string;
+  admissionSite?: string;
   acquiredAt: number;
   heartbeatAt: number;
 }

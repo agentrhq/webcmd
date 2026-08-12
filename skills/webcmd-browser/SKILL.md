@@ -31,7 +31,7 @@ Until `doctor` is green, browser commands may fail. Registry and plugin discover
 ## Session lifecycle
 
 - Create an opaque browser session before raw browser work: `webcmd session create -f json`.
-- Raw `webcmd browser *` commands require that ID at the root: `webcmd --session <session-id> browser ...`; positional `webcmd browser <session> ...` is retired.
+- Raw browser commands require that ID at the root: `webcmd --session <session-id> browser ...`; the old positional session form is retired.
 - Profiles are cookie jars and auth scope; sessions are browser workspaces/windows within a profile. Parallel agents use separate sessions.
 - `webcmd session list` shows sessions and their handoff/runtime state; close finished work with `webcmd session close <session-id>`. Close is blocked while that Session has a live handoff.
 - Browser state in the bound page persists between calls, but each `run` gets a fresh JavaScript scope.

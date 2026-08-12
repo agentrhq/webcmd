@@ -23,10 +23,11 @@ function fakeContext() {
       goto: vi.fn().mockResolvedValue(undefined),
       evaluate: vi.fn(async (fn: unknown) => {
         if (typeof fn !== 'function' || !String(fn).includes('window.open')) return 'ok';
-        const popup = fakePage(page, windowId);
+        const source = String(fn);
+        const popup = fakePage(source.includes('noopener') ? undefined : page, windowId);
         allPages.push(popup);
         queueMicrotask(() => {
-          emitPageEvent(page, 'popup', popup);
+          if (!source.includes('noopener')) emitPageEvent(page, 'popup', popup);
           emit('page', popup);
         });
         return null;
@@ -117,6 +118,9 @@ function fakeContext() {
         const bucket = listeners.get(event) ?? new Set();
         bucket.add(listener);
         listeners.set(event, bucket);
+      },
+      off(event: string, listener: (...args: unknown[]) => void) {
+        listeners.get(event)?.delete(listener);
       },
       emit,
       waitForEvent(event: string) {
@@ -221,7 +225,7 @@ describe('CloakSessionManager', () => {
     expect(launched.targetIdFor(lease.page)).toEqual(expect.stringMatching(/^target-/));
   });
 
-  it('creates later Session pages through the opener in the same window', async () => {
+  it('creates later Session pages with noopener and adopts the context page in the same window', async () => {
     const launched = fakeContext();
     const manager = new CloakSessionManager({
       baseDir: '/tmp/webcmd-test',
@@ -234,11 +238,13 @@ describe('CloakSessionManager', () => {
     const second = await manager.newPage(key);
     const evaluate = vi.mocked(first.page.evaluate);
     expect(evaluate).toHaveBeenCalledTimes(1);
+    expect(String(evaluate.mock.calls[0]?.[0])).toContain('noopener');
     expect(launched.context.newCDPSession.mock.calls.length).toBeGreaterThanOrEqual(2);
     expect(launched.cdp.send.mock.calls.filter(([method, params]) => (
       method === 'Target.createTarget' && !(params as { hidden?: boolean })?.hidden
     ))).toHaveLength(1);
     expect(launched.windowIdFor(second.page)).toBe(launched.windowIdFor(first.page));
+    expect(await second.page.opener()).toBeNull();
     expect((await manager.listPages(key)).every(tab => tab.session === 'session_a')).toBe(true);
   });
 
@@ -259,7 +265,7 @@ describe('CloakSessionManager', () => {
     expect((await manager.listPages(key)).map(tab => tab.sessionId)).toEqual(['session_a', 'session_a']);
   });
 
-  it('adopts an opener popup when Chromium creates it in an unowned window', async () => {
+  it('keeps a site popup owned while noopener tab creation uses another page', async () => {
     const launched = fakeContext();
     const manager = new CloakSessionManager({
       baseDir: '/tmp/webcmd-test',
@@ -279,8 +285,8 @@ describe('CloakSessionManager', () => {
 
     const second = await manager.newPage(key);
 
-    expect(second.page).toBe(popup);
-    expect((await manager.listPages(key)).map(tab => tab.sessionId)).toEqual(['session_a', 'session_a']);
+    expect(second.page).not.toBe(popup);
+    expect((await manager.listPages(key)).map(tab => tab.sessionId)).toEqual(['session_a', 'session_a', 'session_a']);
   });
 
   it('creates a later page in its Session window when another Session was used last', async () => {

@@ -304,6 +304,8 @@ describe('daemon-client', () => {
         holder: {
           command: 'other write',
           pid: 4242,
+          sessionId: 'session_a',
+          admissionSite: 'github',
           acquiredAt: 1_000,
           heartbeatAt: 2_000,
         },
@@ -314,6 +316,7 @@ describe('daemon-client', () => {
       name: 'SessionBusyError',
       code: 'SESSION_BUSY',
       message: expect.stringContaining('other write'),
+      hint: expect.stringContaining('session_a'),
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });

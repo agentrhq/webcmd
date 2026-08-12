@@ -566,6 +566,7 @@ describe('runHostedCli', () => {
       return new Response(JSON.stringify({ ok: true, result: [session] }));
     });
 
+    const outputs: string[] = [];
     for (const argv of [
       ['--profile', 'work', 'session', 'create', '-f', 'json'],
       ['--profile', 'work', 'session', 'list', '-f', 'json'],
@@ -579,7 +580,10 @@ describe('runHostedCli', () => {
       });
       expect(result).toEqual({ handled: true, exitCode: 0 });
       expect(stdout.text()).toContain(session.id);
+      outputs.push(stdout.text());
     }
+    expect(outputs[0]).toContain('"runtimeState": "idle"');
+    expect(outputs[0]).not.toContain('"profileId"');
 
     expect(requests).toEqual([
       { url: 'https://api.example.com/v1/manifest', method: 'GET' },

@@ -1740,7 +1740,10 @@ describe('browser Session lifecycle commands', () => {
     await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'create']);
 
     expect(mockSendCommand).toHaveBeenCalledWith('session-create', { contextId: 'default' });
-    expect(consoleLogSpy.mock.calls.flat().join('\n')).toContain('session_abc');
+    const output = consoleLogSpy.mock.calls.flat().join('\n');
+    expect(output).toContain('session_abc');
+    expect(output).toContain('runtimeState');
+    expect(output).not.toContain('profileId');
   });
 
   it('lists persisted Sessions without creating the adapter default when daemon is absent', async () => {

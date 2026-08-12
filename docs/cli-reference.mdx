@@ -61,8 +61,8 @@ Create an opaque session before raw browser work. Profiles hold cookie/auth
 state; sessions are browser workspaces within that profile. Adapter commands
 may omit `--session` and use their profile's adapter-default session; pass
 `--session <session-id>` only when intentionally routing an adapter into an
-explicit session. Raw browser commands must always pass it. Retired positional
-syntax such as `webcmd browser <session> ...` is invalid:
+explicit session. Raw browser commands must always pass it. The retired
+positional session form is invalid:
 
 ```bash
 webcmd session create -f json

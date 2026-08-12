@@ -566,6 +566,12 @@ function formatHandoff(row: BrowserSessionListRow): string {
   return row.handoff ? `${row.handoff.site} until ${row.handoff.expiresAt}` : '';
 }
 
+function sessionCreateOutput(data: unknown): unknown {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return data;
+  const row = data as Record<string, unknown>;
+  return { id: row.id, kind: row.kind, runtimeState: row.runtimeState };
+}
+
 function applyVerbose(opts: { verbose?: boolean }): void {
   if (opts.verbose) process.env.WEBCMD_VERBOSE = '1';
 }
@@ -809,7 +815,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
     .action(async (opts, command) => {
       const profileId = getSelectedProfileId(command);
       const data = await sendCommand('session-create', { contextId: profileId });
-      await renderOutput(data, { fmt: opts.format, columns: ['id', 'kind', 'profileId'] });
+      await renderOutput(sessionCreateOutput(data), { fmt: opts.format, columns: ['id', 'kind', 'runtimeState'] });
     });
 
   sessionCmd

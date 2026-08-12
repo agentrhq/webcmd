@@ -97,8 +97,15 @@ export function rejectMisplacedSessionSelectorArgv(argv: readonly string[]): str
     const token = result[index];
     if (token === '--') break;
     if (token === '--session' || token.startsWith('--session=')) {
+      const sessionId = token === '--session'
+        ? (result[index + 1] && !result[index + 1]!.startsWith('-') ? result[index + 1]! : '<session-id>')
+        : token.slice('--session='.length);
+      const withoutMisplaced = [
+        ...result.slice(0, index),
+        ...result.slice(index + (token === '--session' && sessionId !== '<session-id>' ? 2 : 1)),
+      ];
       throw new BrowserSessionArgvError(
-        `SESSION_SELECTOR_POSITION: --session must appear before the command. Use: webcmd --session <session-id> ${result.slice(0, commandIndex + 1).join(' ')}`,
+        `SESSION_SELECTOR_POSITION: --session must appear before the command. Use: webcmd --session ${sessionId} ${withoutMisplaced.join(' ')}`,
       );
     }
   }

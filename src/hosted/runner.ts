@@ -487,7 +487,7 @@ async function dispatchHostedSession(
   profile?: string,
 ): Promise<void> {
   if (parsed.command === 'create') {
-    await renderOutput((await client.createBrowserSession(profile)).result, { fmt: parsed.format, columns: ['id', 'kind', 'profileId'], stdout });
+    await renderOutput(sessionCreateOutput((await client.createBrowserSession(profile)).result), { fmt: parsed.format, columns: ['id', 'kind', 'runtimeState'], stdout });
     return;
   }
   if (parsed.command === 'list') {
@@ -500,6 +500,12 @@ async function dispatchHostedSession(
     return;
   }
   await renderOutput((await client.closeBrowserSession(parsed.session!, profile, parsed.force === true)).result, { fmt: parsed.format, stdout });
+}
+
+function sessionCreateOutput(data: unknown): unknown {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return data;
+  const row = data as Record<string, unknown>;
+  return { id: row.id, kind: row.kind, runtimeState: row.runtimeState };
 }
 
 function hasPresentFileArgument(

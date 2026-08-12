@@ -328,11 +328,11 @@ export function createDaemonServer(provider: BrowserRuntimeProvider, opts: Daemo
           || lease.key.startsWith(`${sessionKey}␟`)
           || sessionKey.startsWith(`${lease.key}␟`)
         ));
-        const publicSessionHolder = (sessionKey: string) => {
-          const holder = activeSessionLeases(sessionKey)[0];
+        const publicSessionHolder = (holder: ReturnType<typeof activeSessionLeases>[number] | undefined) => {
           if (!holder) return null;
           const { key: _key, runId: _runId, ...publicHolder } = holder;
-          return publicHolder;
+          const [, sessionId, admissionSite] = holder.key.split('␟');
+          return { ...publicHolder, ...(sessionId ? { sessionId } : {}), ...(admissionSite ? { admissionSite } : {}) };
         };
         if (resolved.session && !(resolvedBody.action === 'session-close' && resolvedBody.force === true)) {
           const paused = handoffPauseResult(resolvedBody, resolved.session);
@@ -347,7 +347,7 @@ export function createDaemonServer(provider: BrowserRuntimeProvider, opts: Daemo
           const holders = activeSessionLeases(sessionKey);
           const holder = holders[0];
           if (holder && resolvedBody.force !== true) {
-            jsonResponse(res, 409, { ok: false, code: 'session_busy', holder: publicSessionHolder(sessionKey) });
+            jsonResponse(res, 409, { ok: false, code: 'session_busy', holder: publicSessionHolder(holder) });
             return;
           }
           const forcedRunIds = resolvedBody.force === true
@@ -396,8 +396,7 @@ export function createDaemonServer(provider: BrowserRuntimeProvider, opts: Daemo
             pid: resolvedBody.pid,
           }, hasPendingWork);
           if (!acquired.acquired) {
-            const { key: _key, runId: _runId, ...holder } = acquired.holder;
-            jsonResponse(res, 409, { ok: false, code: 'session_busy', holder });
+            jsonResponse(res, 409, { ok: false, code: 'session_busy', holder: publicSessionHolder(acquired.holder) });
             return;
           }
         }

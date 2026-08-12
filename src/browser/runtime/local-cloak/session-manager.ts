@@ -942,20 +942,47 @@ export class CloakSessionManager {
     if (!openerEntry) return this.createWindowPage(runtime, windowMode);
     await this.assertOwnedWindow(runtime, session.id, openerEntry);
     const opener = openerEntry.page;
+    const openerWindowId = await this.windowIdForTarget(runtime, openerEntry.targetId, opener);
+    const openedPage = this.waitForContextPageInWindow(runtime, session.id, openerWindowId, TARGET_PAGE_MATCH_TIMEOUT_MS);
 
-    const popup = opener.waitForEvent('popup', { timeout: 1_000 }).catch(() => null);
     try {
-      await opener.evaluate(() => window.open('about:blank', '_blank'));
+      await opener.evaluate(() => window.open('about:blank', '_blank', 'noopener,noreferrer'));
     } catch {}
-    const page = await popup;
-    if (page) {
-      const targetId = await this.targetIdForPage(runtime, page);
-      const windowId = await this.windowIdForTarget(runtime, targetId, page);
-      if (session.windowIds.has(windowId) || runtime.windowOwners.get(windowId) === undefined) return page;
-      if (!pageIsClosed(page)) await page.close().catch(() => {});
-      throw new SessionWindowConflictError('unknown', session.id, runtime.windowOwners.get(windowId));
-    }
+    const page = await openedPage;
+    if (page) return page;
     return this.createWindowPage(runtime, windowMode);
+  }
+
+  private async waitForContextPageInWindow(
+    runtime: ProfileRuntime,
+    sessionId: string,
+    windowId: number,
+    timeoutMs: number,
+  ): Promise<PlaywrightPage | null> {
+    return new Promise((resolve) => {
+      let settled = false;
+      const done = (page: PlaywrightPage | null) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        runtime.context.off('page', onPage);
+        resolve(page);
+      };
+      const tryPage = async (page: PlaywrightPage) => {
+        if (settled || pageIsClosed(page)) return;
+        const targetId = await this.targetIdForPage(runtime, page).catch(() => undefined);
+        if (!targetId) return;
+        const actualWindowId = await this.windowIdForTarget(runtime, targetId, page).catch(() => undefined);
+        if (actualWindowId !== windowId) return;
+        const owner = runtime.windowOwners.get(actualWindowId);
+        if (owner !== undefined && owner !== sessionId) return;
+        done(page);
+      };
+      const onPage = (page: PlaywrightPage) => { void tryPage(page); };
+      const timer = setTimeout(() => done(null), timeoutMs);
+      runtime.context.on('page', onPage);
+      for (const page of this.pendingTargetPages.get(runtime)?.values() ?? []) void tryPage(page);
+    });
   }
 
   private async acquireSessionPage(
