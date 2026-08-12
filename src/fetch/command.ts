@@ -1,4 +1,7 @@
+import { Command } from 'commander';
 import { cli, Strategy, type CommandArgs } from '../registry.js';
+import { registerCommandToProgram } from '../commanderAdapter.js';
+import { configureRootCommandSurface } from '../root-command-surface.js';
 import { ArgumentError } from '../errors.js';
 import type { WebFetchOptions, WebFetchResult } from './client.js';
 
@@ -19,6 +22,14 @@ export const webFetchCommand = cli({
     return webFetch(clientOptionsFromKwargs(kwargs));
   },
 });
+
+/** Run only the client-owned fetch command without loading the main CLI. */
+export async function runWebFetchCommand(argv: string[]): Promise<void> {
+  const program = configureRootCommandSurface(new Command('webcmd'))
+    .option('--workspace <id>', 'Hosted workspace id/slug for the request');
+  registerCommandToProgram(program.command('web'), webFetchCommand);
+  await program.parseAsync(argv, { from: 'user' });
+}
 
 function clientOptionsFromKwargs(kwargs: CommandArgs): WebFetchOptions {
   return {

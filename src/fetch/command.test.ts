@@ -7,13 +7,16 @@ const { mockWebFetch, mockRenderOutput } = vi.hoisted(() => ({
 }));
 
 vi.mock('./client.js', () => ({ webFetch: mockWebFetch }));
+vi.mock('../execution.js', () => {
+  throw new Error('web fetch must not import the generic executor');
+});
 vi.mock('../output.js', async () => ({
   ...(await vi.importActual<typeof import('../output.js')>('../output.js')),
   render: mockRenderOutput,
 }));
 
 import { registerCommandToProgram } from '../commanderAdapter.js';
-import { formatWebFetchMarkdown, webFetchCommand } from './command.js';
+import { formatWebFetchMarkdown, runWebFetchCommand, webFetchCommand } from './command.js';
 
 const plainResult = { status: 200, requestedUrl: 'https://example.com', finalUrl: 'https://example.com', contentType: 'text/plain', tier: 'plain' as const, title: 'Example', extractionSource: 'raw' as const, truncated: false, content: 'ok' };
 
@@ -32,6 +35,12 @@ describe('web fetch command', () => {
 
   it('is the client-owned, non-browser core command', () => {
     expect(webFetchCommand).toMatchObject({ site: 'web', name: 'fetch', browser: false, clientOwned: true, defaultFormat: 'md' });
+  });
+
+  it('accepts hosted root options without importing execution', async () => {
+    await runWebFetchCommand(['--profile', 'work', '--workspace', 'test', 'web', 'fetch', '--url', 'https://example.com']);
+
+    expect(mockWebFetch).toHaveBeenCalledWith({ url: 'https://example.com', timeoutSeconds: 30, maxChars: 50_000, allowPrivate: false });
   });
 
   it('uses Commander coercion for canonical fetch options', async () => {

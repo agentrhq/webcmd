@@ -40,7 +40,8 @@ import { isElectronApp } from './electron-apps.js';
 import { probeCDP, resolveElectronEndpoint } from './launcher.js';
 import { ObservationSession, exportObservationSession, type ObservationExportResult, type ObservationExportStatus } from './observation/index.js';
 import { resolveAdapterSourcePath } from './adapter-source.js';
-import { coerceCommandArguments, TRACE_MODES, type TraceMode } from './command-surface.js';
+import { prepareCommandArgs, TRACE_MODES, type TraceMode } from './command-surface.js';
+export { prepareCommandArgs } from './command-surface.js';
 import { clearDaemonRunContext, generateRunId, isUnknownOutcomeError, runWithDaemonRunContext } from './session-lease.js';
 
 const _loadedModules = new Map<string, Promise<void>>();
@@ -511,15 +512,6 @@ function exportTraceArtifact(
     log.warn(`[trace] Failed to export trace artifact: ${err instanceof Error ? err.message : String(err)}`);
     return undefined;
   }
-}
-
-export function prepareCommandArgs(
-  cmd: CliCommand,
-  rawKwargs: CommandArgs,
-): CommandArgs {
-  const kwargs = coerceCommandArguments(cmd.args, rawKwargs);
-  cmd.validateArgs?.(kwargs);
-  return kwargs;
 }
 
 /**

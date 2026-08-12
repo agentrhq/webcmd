@@ -79,8 +79,8 @@ if (!fastPathHandled) {
     const { createProgram } = await import('./cli.js');
     await createProgram(BUILTIN_CLIS, USER_CLIS).parseAsync(argv, { from: 'user' });
   } else if (isWebFetch(argv)) {
-    const { createProgram } = await import('./cli.js');
-    await createProgram('', '').parseAsync(argv, { from: 'user' });
+    const { runWebFetchCommand } = await import('./fetch/command.js');
+    await runWebFetchCommand(argv);
   } else {
     const { shouldUseHostedMode } = await import('./hosted/config.js');
     if (shouldUseHostedMode()) {
