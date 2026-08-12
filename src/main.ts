@@ -23,6 +23,7 @@ import { PKG_VERSION } from './version.js';
 import { EXIT_CODES } from './errors.js';
 import { isSupportedNodeVersion, MIN_SUPPORTED_NODE_MAJOR } from './runtime-detect.js';
 import { CONFIG_DIR_NAME } from './brand.js';
+import { parseHostedRootCommandSurface } from './root-command-surface.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -35,23 +36,6 @@ const USER_PLUGINS = path.join(os.homedir(), CONFIG_DIR_NAME, 'plugins');
 // ── Ultra-fast path: lightweight commands bypass full discovery ──────────
 // These are high-frequency or trivial paths that must not pay the startup tax.
 const argv = process.argv.slice(2);
-
-// Flags the fast path's hand-rolled parser does not implement: seeing one means
-// handing `web fetch` to the registered command, which renders real help and
-// honours `-f`. Inlined so the common case costs no import. `--format=json` is
-// split so the equals form is caught too.
-const WEB_FETCH_FULL_CLI_FLAGS = new Set(['-h', '--help', '-f', '--format', '--trace', '-v', '--verbose']);
-
-/**
- * Hosted mode always keeps the fast path. Falling through there would hand the
- * hosted runner a command the cloud cannot execute yet, so hosted `web fetch`
- * behaves exactly as it did before this became a registered command.
- */
-async function webFetchWantsFullCli(args: readonly string[]): Promise<boolean> {
-  if (!args.some(arg => WEB_FETCH_FULL_CLI_FLAGS.has(arg.split('=')[0]!))) return false;
-  const { shouldUseHostedMode } = await import('./hosted/config.js');
-  return !shouldUseHostedMode();
-}
 
 if (typeof (globalThis as { Bun?: unknown }).Bun === 'undefined' && !isSupportedNodeVersion(process.version)) {
   process.stderr.write(
@@ -94,12 +78,9 @@ if (!fastPathHandled) {
   } else if (argv[0] === 'skills' || argv[0] === 'update') {
     const { createProgram } = await import('./cli.js');
     await createProgram(BUILTIN_CLIS, USER_CLIS).parseAsync(argv, { from: 'user' });
-  } else if (argv[0] === 'web' && argv[1] === 'fetch' && !await webFetchWantsFullCli(argv)) {
-    // `web fetch` is client-owned in both modes, so a plain fetch never pays
-    // discovery startup. Help, `-f` and tracing fall through to the registered
-    // command in ./fetch/command.ts, which owns the same flags (#252).
-    const { runClientOwnedWebFetchCli } = await import('./fetch/command.js');
-    process.exitCode = await runClientOwnedWebFetchCli(argv);
+  } else if (isWebFetch(argv)) {
+    const { createProgram } = await import('./cli.js');
+    await createProgram('', '').parseAsync(argv, { from: 'user' });
   } else {
     const { shouldUseHostedMode } = await import('./hosted/config.js');
     if (shouldUseHostedMode()) {
@@ -115,6 +96,15 @@ if (!fastPathHandled) {
         uninstallSignalCancellation();
       }
     }
+  }
+}
+
+function isWebFetch(args: readonly string[]): boolean {
+  try {
+    const parsed = parseHostedRootCommandSurface(args);
+    return parsed.kind === 'dispatch' && parsed.argv[0] === 'web' && parsed.argv[1] === 'fetch';
+  } catch {
+    return false;
   }
 }
 

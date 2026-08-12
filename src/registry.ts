@@ -75,6 +75,8 @@ interface BaseCliCommand {
    * on any other path.
    */
   renderMarkdown?: (data: unknown) => string | undefined;
+  /** Execute locally before either hosted or adapter-discovery mode boundary. */
+  clientOwned?: boolean;
   validateArgs?: (kwargs: CommandArgs) => void;
   /**
    * Control pre-navigation and browser-session requirement.
@@ -180,6 +182,7 @@ export function cli(opts: CliOptions): CliCommand {
     pipeline: opts.pipeline,
     footerExtra: opts.footerExtra,
     renderMarkdown: opts.renderMarkdown,
+    clientOwned: opts.clientOwned,
     validateArgs: opts.validateArgs,
     navigateBefore: opts.navigateBefore,
     siteSession: opts.siteSession,

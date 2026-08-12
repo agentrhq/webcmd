@@ -1,128 +1,76 @@
-import { describe, expect, it, vi } from 'vitest';
-import { CliError, TimeoutError } from '../errors.js';
-import { formatWebFetchMarkdown, runClientOwnedWebFetch, webFetchBrowserCommand, webFetchCommand } from './command.js';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { Command } from 'commander';
 
-const { mockExecuteCommand } = vi.hoisted(() => ({ mockExecuteCommand: vi.fn() }));
-vi.mock('../execution.js', () => ({ executeCommand: mockExecuteCommand, prepareCommandArgs: (_cmd: unknown, k: unknown) => k }));
+const { mockWebFetch, mockRenderOutput } = vi.hoisted(() => ({
+  mockWebFetch: vi.fn(),
+  mockRenderOutput: vi.fn(),
+}));
 
-const plainResult = { status: 200, requestedUrl: 'https://a', finalUrl: 'https://a', contentType: 'text/plain', tier: 'plain' as const, title: '', extractionSource: 'raw' as const, truncated: false, content: 'ok' };
+vi.mock('./client.js', () => ({ webFetch: mockWebFetch }));
+vi.mock('../output.js', async () => ({
+  ...(await vi.importActual<typeof import('../output.js')>('../output.js')),
+  render: mockRenderOutput,
+}));
+
+import { registerCommandToProgram } from '../commanderAdapter.js';
+import { formatWebFetchMarkdown, webFetchBrowserCommand, webFetchCommand } from './command.js';
+
+const plainResult = { status: 200, requestedUrl: 'https://example.com', finalUrl: 'https://example.com', contentType: 'text/plain', tier: 'plain' as const, title: 'Example', extractionSource: 'raw' as const, truncated: false, content: 'ok' };
+
+function program(): Command {
+  const root = new Command().exitOverride();
+  registerCommandToProgram(root.command('web'), webFetchCommand);
+  return root;
+}
 
 describe('web fetch command', () => {
-  it('renders fetch metadata before content', () => {
-    expect(formatWebFetchMarkdown({ ...plainResult, requestedUrl: 'https://a', finalUrl: 'https://b', title: 'T', content: 'body' })).toContain('Source: https://a');
+  beforeEach(() => {
+    mockWebFetch.mockReset().mockResolvedValue(plainResult);
+    mockRenderOutput.mockReset();
+    process.exitCode = undefined;
   });
 
-  it('runs the client-owned command without Cloud routing', async () => {
-    const webFetch = vi.fn().mockResolvedValue(plainResult);
-    await runClientOwnedWebFetch(['web', 'fetch', '--url', 'https://a'], { webFetch, stdout: { write: vi.fn() } as never });
-    expect(webFetch).toHaveBeenCalledOnce();
-  });
-
-  it('registers both tiers under the web site', () => {
-    expect(webFetchCommand.site).toBe('web');
-    expect(webFetchCommand.browser).toBe(false);
+  it('is the client-owned, non-browser core command', () => {
+    expect(webFetchCommand).toMatchObject({ site: 'web', name: 'fetch', browser: false, clientOwned: true, defaultFormat: 'md' });
     expect(webFetchBrowserCommand.name).toBe('fetch-browser');
-    expect(webFetchBrowserCommand.browser).toBe(true);
-  });
-});
-
-describe('web fetch browser escalation', () => {
-  const run = (kwargs: Record<string, unknown>) => (webFetchCommand.func as (k: unknown, d?: boolean) => Promise<unknown>)(kwargs);
-
-  it('escalates to the browser tier when the site blocks plain HTTP', async () => {
-    mockExecuteCommand.mockReset().mockResolvedValue({ title: 'Real Title', content: '# rendered' });
-    const blocked = new CliError('FETCH_BLOCKED', 'The site blocked non-browser fetches.');
-    vi.spyOn(await import('./client.js'), 'webFetch').mockRejectedValueOnce(blocked);
-
-    const result = await run({ url: 'https://blocked.example', timeout: 30, 'max-chars': 50000, browser: true });
-
-    expect(mockExecuteCommand).toHaveBeenCalledOnce();
-    expect(result).toMatchObject({ tier: 'browser', title: 'Real Title', content: '# rendered', extractionSource: 'browser' });
   });
 
-  it('escalates when the page needs browser rendering', async () => {
-    mockExecuteCommand.mockReset().mockResolvedValue({ title: 'App', content: 'shell content' });
-    const needsBrowser = new CliError('FETCH_REQUIRES_BROWSER', 'This page requires browser rendering.');
-    vi.spyOn(await import('./client.js'), 'webFetch').mockRejectedValueOnce(needsBrowser);
+  it('uses Commander coercion for canonical fetch options', async () => {
+    await program().parseAsync(['web', 'fetch', '--url=https://example.com', '--timeout=9', '--max-chars=1200', '--allow-private=false', '--format=json'], { from: 'user' });
 
-    const result = await run({ url: 'https://spa.example', browser: true });
-
-    expect(result).toMatchObject({ tier: 'browser', content: 'shell content' });
+    expect(mockWebFetch).toHaveBeenCalledWith({ url: 'https://example.com', timeoutSeconds: 9, maxChars: 1200, allowPrivate: false });
   });
 
-  // --browser false is the opt-out for callers that must never launch a browser.
-  it('rethrows instead of escalating when --browser false is given', async () => {
-    mockExecuteCommand.mockReset();
-    const blocked = new CliError('FETCH_BLOCKED', 'The site blocked non-browser fetches.');
-    vi.spyOn(await import('./client.js'), 'webFetch').mockRejectedValueOnce(blocked);
-
-    await expect(run({ url: 'https://blocked.example', browser: false })).rejects.toThrow('The site blocked non-browser fetches.');
-    expect(mockExecuteCommand).not.toHaveBeenCalled();
+  it('shows help without requiring a URL', async () => {
+    await expect(program().parseAsync(['web', 'fetch', '--help'], { from: 'user' })).rejects.toMatchObject({ code: 'commander.helpDisplayed' });
+    expect(mockWebFetch).not.toHaveBeenCalled();
   });
 
-  // The stock hint tells the caller the browser tier runs automatically. When
-  // they turned it off, that hint is actively wrong — say what to do instead.
-  it('replaces the hint with the reason escalation was declined', async () => {
-    mockExecuteCommand.mockReset();
-    vi.spyOn(await import('./client.js'), 'webFetch').mockRejectedValueOnce(new CliError('FETCH_BLOCKED', 'The site blocked non-browser fetches.', 'stock hint'));
-
-    const error = await run({ url: 'https://blocked.example', browser: false }).catch((e: CliError) => e);
-
-    expect(error).toBeInstanceOf(CliError);
-    expect((error as CliError).code).toBe('FETCH_BLOCKED');
-    expect((error as CliError).hint).toContain('--browser false');
+  it('accepts both output-format spellings', async () => {
+    for (const args of [['--format', 'json'], ['--format=json']]) {
+      await program().parseAsync(['web', 'fetch', '--url', 'https://example.com', ...args], { from: 'user' });
+    }
+    expect(mockRenderOutput).toHaveBeenCalledTimes(2);
+    expect(mockRenderOutput.mock.calls.map(call => call[1].fmt)).toEqual(['json', 'json']);
   });
 
-  // A cloud worker runs this func directly and owns browser execution itself.
-  // Self-dispatching there reaches for a local Chromium the worker does not
-  // have, so a blocked page hangs on a CDP connect before failing.
-  it('does not self-dispatch when an embedding runtime drives the command', async () => {
-    mockExecuteCommand.mockReset();
-    vi.stubEnv('WEBCMD_EMBEDDED_EXECUTOR', '1');
-    vi.spyOn(await import('./client.js'), 'webFetch').mockRejectedValueOnce(new CliError('FETCH_BLOCKED', 'blocked', 'stock hint'));
-
-    const error = await run({ url: 'https://blocked.example', browser: true }).catch((e: CliError) => e);
-
-    expect(mockExecuteCommand).not.toHaveBeenCalled();
-    expect((error as CliError).code).toBe('FETCH_BLOCKED');
-    expect((error as CliError).hint).toContain('fetch-browser');
-    vi.unstubAllEnvs();
+  it('renders fetched documents as markdown but preserves structured JSON', async () => {
+    await program().parseAsync(['web', 'fetch', '--url', 'https://example.com', '-f', 'md'], { from: 'user' });
+    await program().parseAsync(['web', 'fetch', '--url', 'https://example.com', '-f', 'json'], { from: 'user' });
+    const markdown = mockRenderOutput.mock.calls[0][1].markdown as (data: unknown) => string | undefined;
+    expect(markdown(plainResult)).toBe(formatWebFetchMarkdown(plainResult));
+    expect(mockRenderOutput.mock.calls[1][1]).toMatchObject({ fmt: 'json' });
   });
 
-  // A timeout or a refused connection is a real failure. Escalating would hide
-  // a broken URL behind a slow browser run.
-  it('does not escalate a timeout', async () => {
-    mockExecuteCommand.mockReset();
-    vi.spyOn(await import('./client.js'), 'webFetch').mockRejectedValueOnce(new TimeoutError('web fetch', 30));
-
-    await expect(run({ url: 'https://slow.example', browser: true })).rejects.toThrow();
-    expect(mockExecuteCommand).not.toHaveBeenCalled();
+  it.each([
+    ['--timeout', 'nope'], ['--timeout', '-1'], ['--max-chars', '-1'], ['--url', 'ftp://example.com'],
+  ])('rejects invalid fetch arguments (%s %s)', async (...args) => {
+    await program().parseAsync(['web', 'fetch', '--url', 'https://example.com', ...args], { from: 'user' });
+    expect(mockWebFetch).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(2);
   });
 
-  it('does not escalate an unrelated CliError', async () => {
-    mockExecuteCommand.mockReset();
-    vi.spyOn(await import('./client.js'), 'webFetch').mockRejectedValueOnce(new CliError('FETCH_BODY_TOO_LARGE', 'Fetched body exceeds 10 MiB'));
-
-    await expect(run({ url: 'https://big.example', browser: true })).rejects.toThrow('Fetched body exceeds 10 MiB');
-    expect(mockExecuteCommand).not.toHaveBeenCalled();
-  });
-
-  it('escalates on the client-owned fast path too', async () => {
-    mockExecuteCommand.mockReset().mockResolvedValue({ title: 'Rendered', content: 'browser body' });
-    const webFetch = vi.fn().mockRejectedValue(new CliError('FETCH_BLOCKED', 'blocked'));
-    const write = vi.fn();
-
-    await runClientOwnedWebFetch(['web', 'fetch', '--url', 'https://blocked.example'], { webFetch, stdout: { write } as never });
-
-    expect(mockExecuteCommand).toHaveBeenCalledOnce();
-    expect(write.mock.calls[0][0]).toContain('browser body');
-  });
-
-  it('honours --browser false on the client-owned fast path', async () => {
-    mockExecuteCommand.mockReset();
-    const webFetch = vi.fn().mockRejectedValue(new CliError('FETCH_BLOCKED', 'blocked'));
-
-    await expect(runClientOwnedWebFetch(['web', 'fetch', '--url', 'https://blocked.example', '--browser', 'false'], { webFetch, stdout: { write: vi.fn() } as never })).rejects.toThrow('blocked');
-    expect(mockExecuteCommand).not.toHaveBeenCalled();
+  it.each([['--browser'], ['--wait', '1'], ['--unknown']])('rejects removed and unknown options (%s)', async (...args) => {
+    await expect(program().parseAsync(['web', 'fetch', '--url', 'https://example.com', ...args], { from: 'user' })).rejects.toMatchObject({ code: 'commander.unknownOption' });
   });
 });
