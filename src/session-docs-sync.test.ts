@@ -32,6 +32,26 @@ describe('Session documentation sync', () => {
 
     expect(offenders).toEqual([]);
   });
+
+  it('documents structured Session runtime errors', () => {
+    const troubleshooting = fs.readFileSync(path.join(ROOT, 'docs', 'troubleshooting.mdx'), 'utf8');
+
+    for (const code of [
+      'SESSION_REQUIRED',
+      'INVALID_SESSION_SELECTOR',
+      'SESSION_SELECTOR_POSITION',
+      'SESSION_NOT_FOUND',
+      'INVALID_SESSION_LIMIT',
+      'SESSION_BUSY',
+      'SESSION_PAUSED_FOR_HUMAN_HANDOFF',
+      'SESSION_WINDOW_CONFLICT',
+      'SESSION_CAPACITY_EXCEEDED',
+      'HOSTED_CONTRACT_MISMATCH',
+    ]) {
+      expect(troubleshooting).toContain(code);
+    }
+    expect(troubleshooting).toContain('webcmd session close <session-id> --force');
+  });
 });
 
 function findRemovedSessionSyntaxes(text: string): string[] {

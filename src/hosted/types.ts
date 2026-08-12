@@ -67,30 +67,31 @@ export interface HostedProfilesResponse {
 
 export interface HostedBrowserSession {
   id: string;
-  kind: 'browser';
+  kind: 'explicit' | 'adapter-default';
   profileId: string;
   runtimeState: 'active' | 'idle';
+  handoff: { site: string; expiresAt: string } | null;
   createdAt: string;
+  updatedAt: string;
   lastUsedAt: string;
 }
 
 export interface HostedBrowserSessionResponse {
   ok: true;
-  result: HostedBrowserSession;
+  session: HostedBrowserSession;
 }
 
 export interface HostedBrowserSessionsResponse {
   ok: true;
-  result: HostedBrowserSession[];
+  sessions: HostedBrowserSession[];
 }
 
 export interface HostedBrowserSessionCloseResponse {
   ok: true;
-  result: {
-    closed: boolean;
-    alreadyIdle: boolean;
-    session: string;
-  };
+  closed: boolean;
+  alreadyIdle: boolean;
+  session: string;
+  displaced?: { executionId?: string; handoffSite?: string };
 }
 
 export interface HostedMarketplacePlugin {

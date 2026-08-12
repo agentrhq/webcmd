@@ -549,8 +549,9 @@ describe('runHostedCli', () => {
   it('preflights the hosted contract before managing browser Sessions', async () => {
     const requests: Array<{ url: string; method: string; body?: unknown }> = [];
     const session = {
-      id: 'session_abc', kind: 'browser', profileId: 'profile_work', runtimeState: 'idle',
-      createdAt: '2026-01-01T00:00:00.000Z', lastUsedAt: '2026-01-01T00:00:00.000Z',
+      id: 'session_abc', kind: 'explicit', profileId: 'profile_work', runtimeState: 'idle',
+      handoff: { site: 'github', expiresAt: '2026-01-01T00:15:00.000Z' },
+      createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:01:00.000Z', lastUsedAt: '2026-01-01T00:02:00.000Z',
     };
     const fetchImpl = vi.fn<typeof fetch>(async (url, init) => {
       const request = {
@@ -559,11 +560,11 @@ describe('runHostedCli', () => {
       };
       requests.push(request);
       if (request.url.endsWith('/v1/manifest')) return manifestResponse();
-      if (request.method === 'POST' && request.url.endsWith('/v1/sessions')) return new Response(JSON.stringify({ ok: true, result: session }));
+      if (request.method === 'POST' && request.url.endsWith('/v1/sessions')) return new Response(JSON.stringify({ ok: true, session }));
       if (request.method === 'POST' && request.url.endsWith(`/v1/sessions/${session.id}/close?profile=work`)) {
-        return new Response(JSON.stringify({ ok: true, result: { closed: false, alreadyIdle: true, session: session.id } }));
+        return new Response(JSON.stringify({ ok: true, closed: false, alreadyIdle: true, session: session.id }));
       }
-      return new Response(JSON.stringify({ ok: true, result: [session] }));
+      return new Response(JSON.stringify({ ok: true, sessions: [session] }));
     });
 
     const outputs: string[] = [];
@@ -583,6 +584,7 @@ describe('runHostedCli', () => {
       outputs.push(stdout.text());
     }
     expect(outputs[0]).toContain('"runtimeState": "idle"');
+    expect(outputs[1]).toContain('"handoff": "github until 2026-01-01T00:15:00.000Z"');
     expect(outputs[0]).not.toContain('"profileId"');
 
     expect(requests).toEqual([
@@ -619,7 +621,7 @@ describe('runHostedCli', () => {
       fetchImpl: async (url, init) => {
         requests.push({ url: String(url), method: init?.method ?? 'GET' });
         if (String(url).endsWith('/v1/manifest')) return manifestResponse();
-        return new Response(JSON.stringify({ ok: true, result: [] }));
+        return new Response(JSON.stringify({ ok: true, sessions: [] }));
       },
     });
 

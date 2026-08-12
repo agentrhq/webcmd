@@ -72,6 +72,13 @@ webcmd session close session_abc
 `webcmd session close <session-id>` is blocked while that Session has a live human handoff.
 Adapter commands may omit `--session` and use the selected profile's adapter-default session. Pass `--session <session-id>` to route one into an explicit session. Raw browser commands never omit it; the retired positional session form is invalid.
 
+Structured Session failures are runtime state, not adapter breakage. `SESSION_REQUIRED`
+means add a root `--session <session-id>` selector before `browser`; `SESSION_BUSY`
+means another holder owns the same Session or site scope, so wait, inspect
+`webcmd session list`, and use `webcmd session close <session-id> --force` only
+when the holder is dead. `SESSION_PAUSED_FOR_HUMAN_HANDOFF` means finish the
+handoff and run its verifier before retrying.
+
 ## Prerequisites By Strategy
 
 | Strategy | Needs |

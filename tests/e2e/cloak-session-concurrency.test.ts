@@ -27,7 +27,7 @@ afterAll(async () => {
   for (const dir of tempDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
 
-describe('Cloak Session concurrency gate', () => {
+describe.skipIf(process.env.WEBCMD_LIVE_CLOAK !== '1')('Cloak Session concurrency gate', () => {
   it('keeps Cloak and Playwright pinned to the supported live gate runtime', () => {
     const appPkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
     const cloakPkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'node_modules/cloakbrowser/package.json'), 'utf8'));
@@ -66,19 +66,25 @@ describe('Cloak Session concurrency gate', () => {
     };
     try {
       const [first, profileBFirst] = await Promise.all([manager.getPage(keyA), manager.getPage(keyB)]);
-      await first.page.goto(`${baseUrl}/first`);
-      await profileBFirst.page.goto(`${baseUrl}/profile-b`);
+      await Promise.all([
+        first.page.goto(`${baseUrl}/first`),
+        profileBFirst.page.goto(`${baseUrl}/profile-b`),
+      ]);
 
       const otherSession = await manager.getPage(keyA2);
       await otherSession.page.goto(`${baseUrl}/other-session`);
       expect(await windowId(otherSession.page)).not.toBe(await windowId(first.page));
 
-      const second = await manager.newPage(keyA);
+      await first.page.bringToFront();
+      expect(await first.page.evaluate(() => document.hasFocus())).toBe(true);
+
+      const second = await manager.newPage({ ...keyA, windowMode: 'background' });
       await second.page.goto(`${baseUrl}/second`);
 
       expect(await windowId(second.page)).toEqual(expect.any(Number));
       expect(await second.page.evaluate(() => window.opener === null)).toBe(true);
       expect(await second.page.evaluate(() => document.referrer)).toBe('');
+      expect(await first.page.evaluate(() => document.hasFocus())).toBe(true);
       expect((await manager.listPages(keyA)).map((tab) => tab.url)).toEqual([
         `${baseUrl}/first`,
         `${baseUrl}/second`,

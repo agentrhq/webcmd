@@ -489,19 +489,20 @@ async function dispatchHostedSession(
   profile?: string,
 ): Promise<void> {
   if (parsed.command === 'create') {
-    await renderOutput(sessionCreateOutput((await client.createBrowserSession(profile)).result), { fmt: parsed.format, columns: ['id', 'kind', 'runtimeState'], stdout });
+    await renderOutput(sessionCreateOutput((await client.createBrowserSession(profile)).session), { fmt: parsed.format, columns: ['id', 'kind', 'runtimeState'], stdout });
     return;
   }
   if (parsed.command === 'list') {
-    const rows = (await client.listBrowserSessions(profile, parsed.limit)).result;
+    const rows = (await client.listBrowserSessions(profile, parsed.limit)).sessions
+      .map((row) => ({ ...row, handoff: formatHostedSessionHandoff(row.handoff) }));
     if (rows.length === 0 && parsed.format === 'table') {
       await writeToStream(stdout, `No browser Sessions found${profile ? ` for Profile ${profile}` : ''}.\n`);
       return;
     }
-    await renderOutput(rows, { fmt: parsed.format, columns: ['id', 'kind', 'runtimeState'], stdout });
+    await renderOutput(rows, { fmt: parsed.format, columns: ['id', 'kind', 'runtimeState', 'handoff'], stdout });
     return;
   }
-  await renderOutput((await client.closeBrowserSession(parsed.session!, profile, parsed.force === true)).result, { fmt: parsed.format, stdout });
+  await renderOutput(await client.closeBrowserSession(parsed.session!, profile, parsed.force === true), { fmt: parsed.format, stdout });
 }
 
 function parseHostedSessionListLimit(value: string): number {
@@ -516,6 +517,14 @@ function sessionCreateOutput(data: unknown): unknown {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return data;
   const row = data as Record<string, unknown>;
   return { id: row.id, kind: row.kind, runtimeState: row.runtimeState };
+}
+
+function formatHostedSessionHandoff(handoff: unknown): string {
+  if (!handoff || typeof handoff !== 'object') return '';
+  const row = handoff as { site?: unknown; expiresAt?: unknown };
+  return typeof row.site === 'string' && typeof row.expiresAt === 'string'
+    ? `${row.site} until ${row.expiresAt}`
+    : '';
 }
 
 function hasPresentFileArgument(

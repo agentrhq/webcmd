@@ -212,6 +212,9 @@ Use `run` and inspect `page.frames()`; target the frame by URL/name and keep ifr
 | Bound page is wrong or stale | Run `tabs`, choose the current page id, then `bind --page <id>` again. |
 | `run` times out before returning | Increase `--timeout` only after checking whether the wait condition is wrong. |
 | Write may have happened before timeout | Take a fresh snapshot before retrying. Avoid duplicate submissions. |
+| `SESSION_REQUIRED` | Create a Session, then retry with root `--session <session-id>`. |
+| `SESSION_BUSY` | Wait for the listed holder; if it is dead, `webcmd session close <session-id> --force` is the last resort. |
+| `SESSION_PAUSED_FOR_HUMAN_HANDOFF` | Finish the handoff and run the returned verifier before retrying. |
 | Login wall appears | Use the Authentication and human handoff recipe. |
 | User reports login complete | Run the returned verifier first. Without one, inspect fresh state and verify identity/post-action state. |
 | Page shows expected data but returned extraction is empty | Use `snapshot --snapshot-mode tree` to locate scope, or capture the network response in `run`. |

@@ -71,6 +71,48 @@ const validTraceUrlCases = [
 ] as const;
 
 describe('HostedClient', () => {
+  it('accepts the hosted Session API wire contract', async () => {
+    const requests: Array<{ url: string; method: string; body?: string }> = [];
+    const session = {
+      id: 'session_wire',
+      kind: 'explicit',
+      profileId: 'profile_default',
+      runtimeState: 'active',
+      handoff: { site: 'github', expiresAt: '2026-08-12T00:15:00.000Z' },
+      createdAt: '2026-08-12T00:00:00.000Z',
+      updatedAt: '2026-08-12T00:01:00.000Z',
+      lastUsedAt: '2026-08-12T00:02:00.000Z',
+    };
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async (url, init) => {
+        requests.push({
+          url: String(url),
+          method: init?.method ?? 'GET',
+          ...(init?.body ? { body: String(init.body) } : {}),
+        });
+        if (String(url).endsWith('/v1/sessions')) return new Response(JSON.stringify({ ok: true, session }));
+        if (String(url).endsWith('/v1/sessions?profile=default&limit=20')) return new Response(JSON.stringify({ ok: true, sessions: [session] }));
+        return new Response(JSON.stringify({ ok: true, closed: true, alreadyIdle: false, session: 'session_wire' }));
+      },
+    });
+
+    await expect(client.createBrowserSession()).resolves.toEqual({ ok: true, session });
+    await expect(client.listBrowserSessions('default', 20)).resolves.toEqual({ ok: true, sessions: [session] });
+    await expect(client.closeBrowserSession('session_wire')).resolves.toEqual({
+      ok: true,
+      closed: true,
+      alreadyIdle: false,
+      session: 'session_wire',
+    });
+    expect(requests.map(({ url, method }) => ({ url, method }))).toEqual([
+      { url: 'https://api.example.com/v1/sessions', method: 'POST' },
+      { url: 'https://api.example.com/v1/sessions?profile=default&limit=20', method: 'GET' },
+      { url: 'https://api.example.com/v1/sessions/session_wire/close', method: 'POST' },
+    ]);
+  });
+
   it('searches the authenticated marketplace and validates every public plugin field', async () => {
     const requests: Array<{ url: string; method: string }> = [];
     const client = new HostedClient({

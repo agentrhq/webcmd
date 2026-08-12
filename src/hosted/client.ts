@@ -522,35 +522,50 @@ function isHostedProfilesResponse(value: unknown): value is HostedProfilesRespon
 }
 
 function isHostedBrowserSessionResponse(value: unknown): value is HostedBrowserSessionResponse {
-  return hasExactKeys(value, ['ok', 'result'])
+  return hasExactKeys(value, ['ok', 'session'])
     && value.ok === true
-    && isHostedBrowserSession(value.result);
+    && isHostedBrowserSession(value.session);
 }
 
 function isHostedBrowserSessionsResponse(value: unknown): value is HostedBrowserSessionsResponse {
-  return hasExactKeys(value, ['ok', 'result'])
+  return hasExactKeys(value, ['ok', 'sessions'])
     && value.ok === true
-    && Array.isArray(value.result)
-    && value.result.every(isHostedBrowserSession);
+    && Array.isArray(value.sessions)
+    && value.sessions.every(isHostedBrowserSession);
 }
 
 function isHostedBrowserSessionCloseResponse(value: unknown): value is HostedBrowserSessionCloseResponse {
-  return hasExactKeys(value, ['ok', 'result'])
+  return hasOnlyKeys(value, ['ok', 'closed', 'alreadyIdle', 'session', 'displaced'])
     && value.ok === true
-    && hasExactKeys(value.result, ['closed', 'alreadyIdle', 'session'])
-    && typeof value.result.closed === 'boolean'
-    && typeof value.result.alreadyIdle === 'boolean'
-    && typeof value.result.session === 'string';
+    && typeof value.closed === 'boolean'
+    && typeof value.alreadyIdle === 'boolean'
+    && typeof value.session === 'string'
+    && (value.displaced === undefined || isHostedSessionDisplacement(value.displaced));
 }
 
 function isHostedBrowserSession(value: unknown): boolean {
-  return hasExactKeys(value, ['id', 'kind', 'profileId', 'runtimeState', 'createdAt', 'lastUsedAt'])
+  return hasExactKeys(value, ['id', 'kind', 'profileId', 'runtimeState', 'handoff', 'createdAt', 'updatedAt', 'lastUsedAt'])
     && typeof value.id === 'string'
-    && value.kind === 'browser'
+    && (value.kind === 'explicit' || value.kind === 'adapter-default')
     && typeof value.profileId === 'string'
     && (value.runtimeState === 'active' || value.runtimeState === 'idle')
+    && isHostedSessionHandoff(value.handoff)
     && typeof value.createdAt === 'string'
+    && typeof value.updatedAt === 'string'
     && typeof value.lastUsedAt === 'string';
+}
+
+function isHostedSessionHandoff(value: unknown): boolean {
+  return value === null
+    || (hasExactKeys(value, ['site', 'expiresAt'])
+      && typeof value.site === 'string'
+      && typeof value.expiresAt === 'string');
+}
+
+function isHostedSessionDisplacement(value: unknown): boolean {
+  return hasOnlyKeys(value, ['executionId', 'handoffSite'])
+    && (value.executionId === undefined || typeof value.executionId === 'string')
+    && (value.handoffSite === undefined || typeof value.handoffSite === 'string');
 }
 
 function profileQuery(profile: string | undefined): string {

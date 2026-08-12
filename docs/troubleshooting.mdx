@@ -35,6 +35,27 @@ Webcmd says the browser bridge is unavailable. Diagnose the daemon and runtime, 
 
 Public adapters may still work. Authenticated, intercepted, UI, and browser-backed workflows need the bridge.
 
+## Browser Session Errors
+
+```text
+Webcmd returned a SESSION_* error. Explain which Profile/Session is involved, whether another command or human handoff is holding it, and give me the next safe command.
+```
+
+Common Session codes:
+
+| Code | Meaning | Next step |
+| --- | --- | --- |
+| `SESSION_REQUIRED` | A raw browser command needs a root Session selector. | Run `webcmd session create -f json`, then retry as `webcmd --session <session-id> browser ...`. |
+| `INVALID_SESSION_SELECTOR` | The selector is not an opaque Webcmd Session ID. | Use an ID returned by `webcmd session create` or `webcmd session list`. |
+| `SESSION_SELECTOR_POSITION` | `--session` was placed after the command name. | Move it before the command: `webcmd --session <session-id> browser ...`. |
+| `SESSION_NOT_FOUND` | The selected Session is missing for the current Profile. | Run `webcmd session list -f json`; create a new Session if needed. |
+| `INVALID_SESSION_LIMIT` | `session list --limit` is outside 1-100. | Retry with a limit from 1 to 100. |
+| `SESSION_BUSY` | Another command is writing in the same Session or site scope. | Wait for the holder to finish; if it is dead, use `webcmd session close <session-id> --force` as the last resort. |
+| `SESSION_PAUSED_FOR_HUMAN_HANDOFF` | The Session is waiting for user action such as sign-in. | Finish the action in the browser, then run the returned verifier before retrying. |
+| `SESSION_WINDOW_CONFLICT` | The Session's window ownership no longer matches Webcmd's expected window. | Inspect with `webcmd session list`; close and recreate the Session if needed. |
+| `SESSION_CAPACITY_EXCEEDED` | The account or runtime has reached its concurrent Session limit. | Close idle Sessions or wait for one to finish. |
+| `HOSTED_CONTRACT_MISMATCH` | The hosted CLI and cloud API disagree about the Session protocol. | Upgrade `webcmd` to the version pinned by the cloud service, then retry. |
+
 ## Multiple Profiles Are Connected
 
 ```text
