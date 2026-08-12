@@ -8,6 +8,7 @@ import { describe, it, expect } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { buildManifest, buildManifestArtifacts } from './build-manifest.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -41,9 +42,8 @@ describe('adapter packaging', () => {
     expect(pkgJson.scripts.postinstall).not.toMatch(/fetch-adapters/);
   });
 
-  // webcmd-cloud resolves core-owned commands through `packageExport` rather
-  // than a clis/ path. A rename that broke this would only surface as a hosted
-  // runtime failure after publish, so assert the contract here.
+  // packageExport supports package discovery and import verification for
+  // core-owned commands; it does not make them Cloud-executable.
   it('every manifest entry is resolvable: a clis/ path or a real package export', () => {
     const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'cli-manifest.json'), 'utf-8')) as Array<Record<string, string>>;
     const exports = pkgJson.exports as Record<string, string>;
@@ -69,9 +69,11 @@ describe('adapter packaging', () => {
       .toBe('./dist/src/fetch/command.js');
   });
 
-  it('publishes only client-owned web/fetch in generated artifacts', () => {
-    const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'cli-manifest.json'), 'utf-8')) as Array<Record<string, unknown>>;
-    const contract = JSON.parse(fs.readFileSync(path.join(ROOT, 'hosted-contract.json'), 'utf-8')) as {
+  it('publishes only client-owned web/fetch in generated artifacts', async () => {
+    const { entries } = await buildManifest();
+    const artifacts = buildManifestArtifacts(entries, String(pkgJson.version), []);
+    const manifest = JSON.parse(artifacts.manifestJson) as Array<Record<string, unknown>>;
+    const contract = JSON.parse(artifacts.hostedContractJson) as {
       commands: Array<Record<string, unknown>>;
     };
     const manifestEntries = manifest.filter(entry => entry.site === 'web');
