@@ -46,6 +46,23 @@ describe('web fetch command', () => {
     expect(mockWebFetch).not.toHaveBeenCalled();
   });
 
+  it('uses structured JSON help without requiring a URL', async () => {
+    const originalArgv = process.argv;
+    const output: string[] = [];
+    const write = vi.spyOn(process.stdout, 'write').mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+    process.argv = ['node', 'webcmd', 'web', 'fetch', '--help', '-f', 'json'];
+    try {
+      await expect(program().parseAsync(['web', 'fetch', '--help', '-f', 'json'], { from: 'user' })).rejects.toMatchObject({ code: 'commander.helpDisplayed' });
+      expect(JSON.parse(output.join(''))).toMatchObject({ site: 'web', name: 'fetch' });
+    } finally {
+      process.argv = originalArgv;
+      write.mockRestore();
+    }
+  });
+
   it('accepts both output-format spellings', async () => {
     for (const args of [['--format', 'json'], ['--format=json']]) {
       await program().parseAsync(['web', 'fetch', '--url', 'https://example.com', ...args], { from: 'user' });
@@ -65,9 +82,19 @@ describe('web fetch command', () => {
   it.each([
     ['--timeout', 'nope'], ['--timeout', '-1'], ['--max-chars', '-1'], ['--url', 'ftp://example.com'],
   ])('rejects invalid fetch arguments (%s %s)', async (...args) => {
-    await program().parseAsync(['web', 'fetch', '--url', 'https://example.com', ...args], { from: 'user' });
-    expect(mockWebFetch).not.toHaveBeenCalled();
-    expect(process.exitCode).toBe(2);
+    const output: string[] = [];
+    const write = vi.spyOn(process.stderr, 'write').mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+    try {
+      await program().parseAsync(['web', 'fetch', '--url', 'https://example.com', ...args], { from: 'user' });
+      expect(mockWebFetch).not.toHaveBeenCalled();
+      expect(output.join('')).toContain('code: ARGUMENT');
+      expect(process.exitCode).toBe(2);
+    } finally {
+      write.mockRestore();
+    }
   });
 
   it.each([['--browser'], ['--wait', '1'], ['--unknown']])('rejects removed and unknown options (%s)', async (...args) => {
