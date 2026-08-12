@@ -65,9 +65,10 @@ function invalidRequest(command: BrowserRuntimeCommand, error: string): BrowserR
 async function resolveLease(manager: CloakSessionManager, command: BrowserRuntimeCommand) {
   const profileId = resolveCloakCommandProfileId(manager, command);
   if (command.page) {
-    const existing = manager.findPageById(command.page, {
+    const existing = await manager.findPageById(command.page, {
       profileId,
       session: command.session,
+      sessionId: command.sessionId,
       surface: command.surface,
       idleTimeout: command.idleTimeout,
     });
@@ -88,19 +89,20 @@ async function resolveLease(manager: CloakSessionManager, command: BrowserRuntim
   });
 }
 
-function resolveExistingLease(manager: CloakSessionManager, command: BrowserRuntimeCommand) {
+async function resolveExistingLease(manager: CloakSessionManager, command: BrowserRuntimeCommand) {
   const profileId = resolveCloakCommandProfileId(manager, command);
   if (command.page) {
-    const existing = manager.findPageById(command.page, {
+    const existing = await manager.findPageById(command.page, {
       profileId,
       session: command.session,
+      sessionId: command.sessionId,
       surface: command.surface,
       idleTimeout: command.idleTimeout,
     });
     if (existing) return existing;
     throw new CloakActionError('stale_page_identity', `Page not found: ${command.page} — stale page identity`);
   }
-  const existing = manager.findPage({
+  const existing = await manager.findPage({
     profileId,
     session: command.session,
     surface: command.surface,
@@ -227,30 +229,20 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
           };
         }
         const lease = await resolveLease(manager, command);
-        const browser = lease.context.browser();
-        if (!browser) throw new CloakActionError(
-          'BROWSER_RUN_API_UNSUPPORTED',
-          'The selected browser context is not attached to a browser.',
-          lease.pageId,
-        );
+        const scope = await manager.browserRunScope({
+          profileId: lease.profileId,
+          session: command.session,
+          sessionId: command.sessionId,
+          surface: command.surface,
+          siteSession: command.siteSession,
+          adapterSite: command.adapterSite,
+          runId: command.runId,
+          idleTimeout: command.idleTimeout,
+          windowMode: command.windowMode,
+        }, lease.page);
         const data = await runBrowserProgram({
-          browser,
-          context: lease.context,
-          page: lease.page,
+          ...scope,
           pageId: lease.pageId,
-          pages: manager.sessionPages({
-            profileId: lease.profileId,
-            session: command.session,
-            surface: command.surface,
-          }),
-          registerPage: (page) => manager.registerPage({
-            profileId: lease.profileId,
-            session: command.session,
-            surface: command.surface,
-            siteSession: command.siteSession,
-            idleTimeout: command.idleTimeout,
-            windowMode: command.windowMode,
-          }, page),
         }, command.source, {
           timeoutMs: command.timeoutMs,
           maxOutputChars: command.maxOutputChars,
@@ -267,7 +259,7 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
         };
       }
       case 'snapshot': {
-        const lease = resolveExistingLease(manager, command);
+        const lease = await resolveExistingLease(manager, command);
         if (command.snapshotMode === 'read') {
           const readable = readableSnapshotText(await extractArticle(lease.page, { force: true }));
           const redacted = redactUrl(redactText(readable.text, { maxStringLength: Number.MAX_SAFE_INTEGER }));
@@ -508,7 +500,7 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
       err instanceof Error
       && 'code' in err
       && typeof err.code === 'string'
-      && err.code.startsWith('BROWSER_RUN_')
+      && (err.code.startsWith('BROWSER_RUN_') || err.code === 'SESSION_WINDOW_CONFLICT')
     ) {
       const hint = 'hint' in err && typeof err.hint === 'string'
         ? err.hint

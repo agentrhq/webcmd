@@ -35,14 +35,18 @@ import {
   type BrowserRunWarning,
 } from './types.js';
 
-export interface BrowserRunProgramHost {
+export interface BrowserRunSessionScope {
   browser: PlaywrightBrowser;
   context: PlaywrightBrowserContext;
   page: PlaywrightPage;
+  pages(): readonly PlaywrightPage[];
+  createPage(): Promise<PlaywrightPage>;
+  onPage(listener: (page: PlaywrightPage) => void): () => void;
+}
+
+export interface BrowserRunProgramHost extends BrowserRunSessionScope {
   pageId: string;
-  pages?: PlaywrightPage[];
   artifactSink?: BrowserRunArtifactSink;
-  registerPage?: (page: PlaywrightPage) => string;
 }
 
 const PLAYWRIGHT_CLIENT_SOURCE = fs.readFileSync(
@@ -298,15 +302,14 @@ export async function runBrowserProgram(
   } finally {
     timings.quickjs_boot_ms = Math.max(0, Date.now() - quickjsBootStartedAt);
   }
-  const knownPages = new Set(input.pages?.length ? input.pages : [input.page]);
+  const knownPages = new Set(input.pages());
   for (const page of knownPages) transport.registerPage(page);
   const registerNewPage = (page: PlaywrightPage) => {
     if (knownPages.has(page)) return;
     knownPages.add(page);
     transport.registerPage(page);
-    input.registerPage?.(page);
   };
-  input.page.on('popup', registerNewPage);
+  const unsubscribePages = input.onPage(registerNewPage);
 
   let timeout: ReturnType<typeof setTimeout> | undefined;
   let timeoutCleanup: Promise<void> | undefined;
@@ -324,7 +327,7 @@ export async function runBrowserProgram(
       .finally(() => {
         host.dispose();
         void transport.dispose(timeoutError);
-        input.page.off('popup', registerNewPage);
+        unsubscribePages();
       });
   };
   try {
@@ -597,7 +600,7 @@ export async function runBrowserProgram(
       ).catch(() => undefined);
       await transport.dispose(completionError);
       host.dispose();
-    input.page.off('popup', registerNewPage);
+      unsubscribePages();
     }
   }
 }

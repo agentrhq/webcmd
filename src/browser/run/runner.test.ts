@@ -8,6 +8,7 @@ import {
   describe,
   expect,
   it,
+  vi,
 } from 'vitest';
 import {
   chromium,
@@ -26,11 +27,23 @@ let browser: Browser;
 let context: BrowserContext;
 let page: Page;
 
-function run(source: string, options = {}) {
-  return runBrowserProgram({
+function sessionScope(pages: () => readonly Page[] = () => context.pages()) {
+  return {
     browser,
     context,
     page,
+    pages,
+    createPage: () => context.newPage(),
+    onPage(listener: (page: Page) => void) {
+      context.on('page', listener);
+      return () => context.off('page', listener);
+    },
+  };
+}
+
+function run(source: string, options = {}) {
+  return runBrowserProgram({
+    ...sessionScope(),
     pageId: 'page-1',
   }, source, options);
 }
@@ -240,13 +253,15 @@ describe('runBrowserProgram', () => {
   it('waits for popups and exposes context pages', async () => {
     const registered: Page[] = [];
     const output = await runBrowserProgram({
-      browser,
-      context,
-      page,
+      ...sessionScope(),
       pageId: 'page-1',
-      registerPage: popup => {
-        registered.push(popup);
-        return 'popup-1';
+      onPage(listener) {
+        const registeredListener = (popup: Page) => {
+          if (!registered.includes(popup)) registered.push(popup);
+          listener(popup);
+        };
+        context.on('page', registeredListener);
+        return () => context.off('page', registeredListener);
       },
     }, `
       const popupPromise = page.waitForEvent('popup');
@@ -268,11 +283,8 @@ describe('runBrowserProgram', () => {
     await other.setContent('<button>Other</button>');
 
     const output = await runBrowserProgram({
-      browser,
-      context,
-      page,
+      ...sessionScope(() => [page]),
       pageId: 'page-1',
-      pages: [page],
     }, `
       return {
         pages: context.pages().length,
@@ -286,16 +298,91 @@ describe('runBrowserProgram', () => {
     });
   });
 
-  it('rejects context.newPage so browser-run cannot create unowned session pages', async () => {
-    await expect(runBrowserProgram({
+  it.each([
+    ['once', `
+      const seen = new Promise(resolve => context.once('page', page => resolve(page.url())));
+      await context.newPage();
+      return await seen;
+    `],
+    ['waitForEvent', `
+      const seen = context.waitForEvent('page');
+      await context.newPage();
+      return (await seen).url();
+    `],
+  ])('scopes context.%s page events to Session-owned creation', async (_api, source) => {
+    const sibling = await context.newPage();
+    const owned = await context.newPage();
+    await owned.goto('data:text/plain,owned');
+    let pageListener: ((page: Page) => void) | undefined;
+    const createPage = vi.fn(async () => {
+      queueMicrotask(() => pageListener?.(owned));
+      return owned;
+    });
+
+    const output = await runBrowserProgram({
+      ...sessionScope(() => [page, owned]),
+      pageId: 'page-1',
+      createPage,
+      onPage(listener) {
+        pageListener = listener;
+        return () => {
+          if (pageListener === listener) pageListener = undefined;
+        };
+      },
+    }, source);
+
+    expect(output.result).toBe(owned.url());
+    expect(output.result).not.toBe(sibling.url());
+    expect(createPage).toHaveBeenCalledOnce();
+  });
+
+  it('does not let removeAllListeners remove the Session ownership listener', async () => {
+    const seen: Page[] = [];
+    const owned = await context.newPage();
+    let pageListener: ((page: Page) => void) | undefined;
+    const output = await runBrowserProgram({
+      ...sessionScope(() => [page, owned]),
+      pageId: 'page-1',
+      createPage: async () => {
+        queueMicrotask(() => pageListener?.(owned));
+        return owned;
+      },
+      onPage(listener) {
+        pageListener = (candidate: Page) => {
+          seen.push(candidate);
+          listener(candidate);
+        };
+        return () => {
+          pageListener = undefined;
+        };
+      },
+    }, `
+      context.removeAllListeners('page');
+      await context.newPage();
+      return context.pages().length;
+    `);
+
+    expect(output.result).toBe(2);
+    expect(seen).toEqual([owned]);
+  });
+
+  it('delegates context.newPage to the Session-owned page creator', async () => {
+    const createPage = vi.fn(() => context.newPage());
+    const output = await runBrowserProgram({
       browser,
       context,
       page,
       pageId: 'page-1',
-      pages: [page],
+      pages: () => [page],
+      createPage,
+      onPage: () => () => undefined,
     }, `
       await context.newPage();
-    `)).rejects.toThrow(/context\.newPage\(\) is not supported/);
+      return context.pages().length;
+    `);
+
+    expect(output.result).toBe(1);
+    expect(createPage).toHaveBeenCalledOnce();
   });
 
   it('waits for requests and responses', async () => {

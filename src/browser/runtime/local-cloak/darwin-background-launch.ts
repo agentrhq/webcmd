@@ -92,6 +92,7 @@ export async function launchDarwinBackgroundPersistentContext(
       ...(launchOptions.args ?? []),
       '--password-store=basic',
       '--use-mock-keychain',
+      '--disable-popup-blocking',
       `--user-data-dir=${options.userDataDir}`,
       '--remote-debugging-address=127.0.0.1',
       '--remote-debugging-port=0',

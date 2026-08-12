@@ -20,10 +20,11 @@ function runOutput(result: unknown) {
   };
 }
 
-function fakePage(url: string, initialViewport: { width: number; height: number } | null = { width: 1280, height: 720 }) {
+function fakePage(url: string, initialViewport: { width: number; height: number } | null = { width: 1280, height: 720 }, opener: object | null = null) {
   let closed = false;
   let viewportSize = initialViewport;
-  return {
+  const listeners = new Map<string, Set<(...args: unknown[]) => void>>();
+  const page = {
     isClosed: vi.fn(() => closed),
     goto: vi.fn(async (nextUrl: string) => {
       url = nextUrl;
@@ -39,11 +40,29 @@ function fakePage(url: string, initialViewport: { width: number; height: number 
     }),
     locator: vi.fn(),
     waitForEvent: vi.fn(),
+    opener: vi.fn().mockResolvedValue(opener),
+    on(event: string, listener: (...args: unknown[]) => void) {
+      const bucket = listeners.get(event) ?? new Set();
+      bucket.add(listener);
+      listeners.set(event, bucket);
+    },
+    once(event: string, listener: (...args: unknown[]) => void) {
+      const once = (...args: unknown[]) => {
+        page.off(event, once);
+        listener(...args);
+      };
+      page.on(event, once);
+    },
+    off(event: string, listener: (...args: unknown[]) => void) {
+      listeners.get(event)?.delete(listener);
+    },
     bringToFront: vi.fn().mockResolvedValue(undefined),
     close: vi.fn().mockImplementation(async () => {
       closed = true;
+      for (const listener of listeners.get('close') ?? []) listener();
     }),
   };
+  return page;
 }
 
 function makeProviderWithFakePage(initialViewport: { width: number; height: number } | null = { width: 1280, height: 720 }) {
@@ -52,7 +71,19 @@ function makeProviderWithFakePage(initialViewport: { width: number; height: numb
   const emit = (event: string, ...args: unknown[]) => {
     for (const listener of listeners.get(event) ?? []) listener(...args);
   };
-  const cdpSession = { send: vi.fn().mockResolvedValue(undefined), detach: vi.fn().mockResolvedValue(undefined) };
+  const targetIds = new WeakMap<object, string>();
+  const windowIds = new Map<string, number>();
+  let targetCounter = 0;
+  let windowCounter = 0;
+  const assignTarget = (page: object) => {
+    const targetId = `target-${++targetCounter}`;
+    targetIds.set(page, targetId);
+    windowIds.set(targetId, ++windowCounter);
+    return targetId;
+  };
+  assignTarget(pages[0]);
+  const cdpSession = { send: vi.fn(), detach: vi.fn().mockResolvedValue(undefined) };
+  const pageCdpSessions: { send: ReturnType<typeof vi.fn>; detach: ReturnType<typeof vi.fn> }[] = [];
   const browser = { contexts: vi.fn(() => [context]), newBrowserCDPSession: vi.fn().mockResolvedValue(cdpSession) };
   const context = {
     browser: vi.fn(() => browser),
@@ -69,23 +100,42 @@ function makeProviderWithFakePage(initialViewport: { width: number; height: numb
     newPage: vi.fn(async () => {
       const page = fakePage('about:blank');
       pages.push(page);
+      assignTarget(page);
       return page;
     }),
-    newCDPSession: vi.fn().mockResolvedValue(cdpSession),
+    newCDPSession: vi.fn(async (target: object) => {
+      const pageSession = {
+        send: vi.fn(async (command: string, params?: unknown) => {
+        if (params === undefined) cdpSession.send(command);
+        else cdpSession.send(command, params);
+        if (command === 'Target.getTargetInfo') return { targetInfo: { targetId: targetIds.get(target) } };
+        return {};
+        }),
+        detach: vi.fn().mockResolvedValue(undefined),
+      };
+      pageCdpSessions.push(pageSession);
+      return pageSession;
+    }),
     cookies: vi.fn().mockResolvedValue([{ name: 'sid', value: '1', domain: 'example.com', path: '/' }]),
     close: vi.fn().mockResolvedValue(undefined),
   };
-  cdpSession.send.mockImplementation(async (command: string) => {
+  let usedInitialPage = false;
+  cdpSession.send.mockImplementation(async (command: string, params?: { targetId?: string }) => {
     if (command === 'Target.createTarget') {
-      const page = await context.newPage();
+      const page = usedInitialPage ? await context.newPage() : pages[0];
+      usedInitialPage = true;
       queueMicrotask(() => emit('page', page));
+      return { targetId: targetIds.get(page) };
     }
+    if (command === 'Browser.getWindowForTarget') return { windowId: windowIds.get(params?.targetId ?? '') };
+    if (command === 'Target.closeTarget') return { success: true };
+    return {};
   });
   const provider = new LocalCloakRuntimeProvider({
     baseDir: '/tmp/webcmd-test',
     launchPersistentContext: vi.fn().mockResolvedValue(context),
   });
-  return { provider, browser, page: pages[0], pages, context, cdpSession };
+  return { provider, browser, page: pages[0], pages, context, cdpSession, pageCdpSessions };
 }
 
 describe('LocalCloakRuntimeProvider', () => {
@@ -165,7 +215,7 @@ describe('LocalCloakRuntimeProvider', () => {
       browser,
       context,
       page,
-      pages: [page],
+      pages: expect.any(Function),
     }), expect.stringContaining('return page.url()'), expect.objectContaining({
       snapshotDiff: undefined,
     }));
@@ -187,8 +237,9 @@ describe('LocalCloakRuntimeProvider', () => {
     });
 
     expect(runBrowserProgram).toHaveBeenCalledWith(expect.objectContaining({
-      pages: [pages[0]],
+      pages: expect.any(Function),
     }), expect.any(String), expect.any(Object));
+    expect(runBrowserProgram.mock.calls[0][0].pages()).toEqual([pages[0]]);
   });
 
   it('preserves structured browser-run error details', async () => {
@@ -328,209 +379,59 @@ describe('LocalCloakRuntimeProvider', () => {
     expect(page.evaluate).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps popup pages under the originating session queue lock', async () => {
-    const { provider, page, pages } = makeProviderWithFakePage();
-    const popup = fakePage('https://popup.example/');
-    pages.push(popup);
-    page.waitForEvent.mockResolvedValue(popup);
+  it('does not adopt a sibling Session page created during browser-run', async () => {
+    const { provider } = makeProviderWithFakePage();
     runBrowserProgram.mockImplementationOnce(async (input) => {
-      const registeredPopup = await input.page.waitForEvent('popup');
-      input.registerPage?.(registeredPopup);
-      await new Promise(resolve => setTimeout(resolve, 30));
+      await provider.dispatch({
+        id: 'sibling',
+        action: 'tabs',
+        op: 'new',
+        session: 'session_b',
+        surface: 'browser',
+        profileId: 'default',
+      });
+      expect(input.pages().map((candidate: { url(): string }) => candidate.url()))
+        .toEqual(['https://example.com/']);
       return runOutput(null);
     });
-    const nav = await provider.dispatch({
-      id: 'nav',
+    await provider.dispatch({
+      id: 'nav-a',
       action: 'navigate',
-      session: 'work',
+      session: 'session_a',
       surface: 'browser',
       url: 'https://example.com/',
       profileId: 'default',
     });
-    const manager = (
-      provider as unknown as {
-        manager: { pageIdFor(target: unknown): string | undefined };
-      }
-    ).manager;
-
-    const first = provider.dispatch({
-      id: 'run',
+    await provider.dispatch({
+      id: 'run-a',
       action: 'run',
-      page: nav.page,
-      session: 'work',
+      session: 'session_a',
       surface: 'browser',
-      source: `
-        await page.waitForEvent("popup");
-        await new Promise(resolve => setTimeout(resolve, 30));
-        return null;
-      `,
+      source: 'return null;',
       profileId: 'default',
     });
-    await vi.waitFor(() => {
-      expect(manager.pageIdFor(popup)).toEqual(expect.any(String));
-    }, { interval: 1, timeout: 100 });
-    const popupPageId = manager.pageIdFor(popup)!;
-    popup.evaluate.mockClear();
-
-    const second = provider.dispatch({
-      id: 'exec',
-      action: 'exec',
-      page: popupPageId,
-      session: 'work',
-      surface: 'browser',
-      code: 'document.title',
-      profileId: 'default',
-    });
-
-    await new Promise((resolve) => setTimeout(resolve, 5));
-    expect(popup.evaluate).not.toHaveBeenCalled();
-    await Promise.all([first, second]);
-    expect(popup.evaluate).toHaveBeenCalledTimes(1);
   });
 
-  it('holds the original page queue lock throughout a bind transition', async () => {
+  it('denies misleading Session metadata for an owned page', async () => {
     const { provider, page } = makeProviderWithFakePage();
     const nav = await provider.dispatch({
       id: 'nav',
       action: 'navigate',
-      session: 'before-bind',
+      session: 'session_a',
       surface: 'browser',
       url: 'https://example.com/',
       profileId: 'default',
     });
-    let markBindStarted!: () => void;
-    let finishBind!: () => void;
-    const bindStarted = new Promise<void>((resolve) => {
-      markBindStarted = resolve;
-    });
-    page.bringToFront.mockImplementation(() => {
-      markBindStarted();
-      return new Promise<void>((resolve) => {
-        finishBind = resolve;
-      });
-    });
-    page.evaluate.mockClear();
-
-    const bind = provider.dispatch({
+    await expect(provider.dispatch({
       id: 'bind',
       action: 'bind',
       page: nav.page,
-      session: 'after-bind',
+      session: 'session_b',
       surface: 'browser',
       profileId: 'default',
-    });
-    await bindStarted;
-    const exec = provider.dispatch({
-      id: 'exec',
-      action: 'exec',
-      page: nav.page,
-      session: 'after-bind',
-      surface: 'browser',
-      code: 'document.title',
-      profileId: 'default',
-    });
-
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    })).resolves.toMatchObject({ ok: false, errorCode: 'SESSION_WINDOW_CONFLICT' });
+    expect(page.bringToFront).not.toHaveBeenCalled();
     expect(page.evaluate).not.toHaveBeenCalled();
-    finishBind();
-    await Promise.all([bind, exec]);
-    expect(page.evaluate).toHaveBeenCalledTimes(1);
-  });
-
-  it('keeps explicit page commands queued behind a bind transition', async () => {
-    const { provider, page, pages, context } = makeProviderWithFakePage();
-    const nav = await provider.dispatch({
-      id: 'nav',
-      action: 'navigate',
-      session: 'source',
-      surface: 'browser',
-      url: 'https://example.com/',
-      profileId: 'default',
-    });
-
-    const priorTargetPage = fakePage('https://prior-target.example/');
-    pages.push(priorTargetPage);
-    context.newPage.mockResolvedValueOnce(priorTargetPage);
-    let releaseBlocker!: () => void;
-    let markBlockerStarted!: () => void;
-    const blockerStarted = new Promise<void>((resolve) => {
-      markBlockerStarted = resolve;
-    });
-    priorTargetPage.evaluate.mockImplementationOnce(() => {
-      markBlockerStarted();
-      return new Promise((resolve) => {
-        releaseBlocker = () => resolve({ ok: true });
-      });
-    });
-    const blocker = provider.dispatch({
-      id: 'blocker',
-      action: 'exec',
-      session: 'target',
-      surface: 'browser',
-      code: 'document.title',
-      profileId: 'default',
-    });
-    await blockerStarted;
-
-    let finishBind!: () => void;
-    let markBindStarted!: () => void;
-    const bindStarted = new Promise<void>((resolve) => {
-      markBindStarted = resolve;
-    });
-    page.bringToFront.mockImplementation(() => {
-      markBindStarted();
-      return new Promise<void>((resolve) => {
-        finishBind = resolve;
-      });
-    });
-    const bind = provider.dispatch({
-      id: 'bind',
-      action: 'bind',
-      page: nav.page,
-      session: 'target',
-      surface: 'browser',
-      profileId: 'default',
-    });
-    const beforeMapping = provider.dispatch({
-      id: 'before-mapping',
-      action: 'exec',
-      page: nav.page,
-      session: 'target',
-      surface: 'browser',
-      code: 'document.title',
-      profileId: 'default',
-    });
-
-    releaseBlocker();
-    await blocker;
-    await bindStarted;
-
-    let finishFirstTargetExec!: () => void;
-    page.evaluate.mockImplementationOnce(() => (
-      new Promise((resolve) => {
-        finishFirstTargetExec = () => resolve({ ok: true });
-      })
-    ));
-    const afterMapping = provider.dispatch({
-      id: 'after-mapping',
-      action: 'exec',
-      session: 'target',
-      surface: 'browser',
-      code: 'document.title',
-      profileId: 'default',
-    });
-
-    finishBind();
-    await vi.waitFor(() => {
-      expect(page.evaluate).toHaveBeenCalledTimes(1);
-    }, { interval: 1, timeout: 100 });
-    await new Promise((resolve) => setTimeout(resolve, 5));
-    expect(page.evaluate).toHaveBeenCalledTimes(1);
-
-    finishFirstTargetExec();
-    await Promise.all([bind, beforeMapping, afterMapping]);
-    expect(page.evaluate).toHaveBeenCalledTimes(1);
-    expect(priorTargetPage.evaluate).toHaveBeenCalledTimes(2);
   });
 
   it('evaluates JavaScript in the requested iframe', async () => {
@@ -629,7 +530,7 @@ describe('LocalCloakRuntimeProvider', () => {
   });
 
   it('reversibly overrides via CDP and never pins the viewport when the context has no fixed viewport', async () => {
-    const { provider, page, cdpSession } = makeProviderWithFakePage(null);
+    const { provider, page, cdpSession, pageCdpSessions } = makeProviderWithFakePage(null);
     const nav = await provider.dispatch({ id: 'nav', action: 'navigate', session: 'work', surface: 'browser', url: 'https://example.com/', profileId: 'default' });
 
     await provider.dispatch({ id: 'shot', action: 'screenshot', session: 'work', surface: 'browser', page: nav.page, format: 'png', width: 375, height: 812, profileId: 'default' });
@@ -639,7 +540,7 @@ describe('LocalCloakRuntimeProvider', () => {
     expect(cdpSession.send).toHaveBeenCalledWith('Emulation.setDeviceMetricsOverride', expect.objectContaining({ width: 375, height: 812 }));
     // ...and it must be cleared afterward so the override is per-shot only.
     expect(cdpSession.send).toHaveBeenCalledWith('Emulation.clearDeviceMetricsOverride');
-    expect(cdpSession.detach).toHaveBeenCalledTimes(1);
+    expect(pageCdpSessions.some(session => session.detach.mock.calls.length > 0)).toBe(true);
     expect(page.screenshot).toHaveBeenCalledTimes(1);
   });
 
@@ -664,37 +565,23 @@ describe('LocalCloakRuntimeProvider', () => {
       });
   });
 
-  it('binds a browser session to an existing Cloak tab by page id', async () => {
+  it('rejects binding a page owned by another Session', async () => {
     const { provider, pages } = makeProviderWithFakePage();
     const created = await provider.dispatch({ id: 'new', action: 'tabs', op: 'new', session: 'manual', surface: 'browser', url: 'https://signed-in.example/', profileId: 'default' });
 
     await expect(provider.dispatch({ id: 'bind', action: 'bind', session: 'work', surface: 'browser', page: created.page, profileId: 'default' }))
-      .resolves.toMatchObject({
-        id: 'bind',
-        ok: true,
-        page: created.page,
-        data: { bound: true, session: 'work', page: created.page, url: 'https://signed-in.example/' },
-      });
-
-    await provider.dispatch({ id: 'exec', action: 'exec', session: 'work', surface: 'browser', code: 'window.__loggedIn', profileId: 'default' });
-    expect(pages[1].evaluate).toHaveBeenCalledWith('window.__loggedIn');
-    expect(pages[0].evaluate).not.toHaveBeenCalledWith('window.__loggedIn');
+      .resolves.toMatchObject({ id: 'bind', ok: false, errorCode: 'SESSION_WINDOW_CONFLICT' });
+    expect(pages[0].bringToFront).not.toHaveBeenCalled();
   });
 
-  it('binds a browser session to an existing Cloak tab by index', async () => {
+  it('does not enumerate another Session page by bind index', async () => {
     const { provider, pages } = makeProviderWithFakePage();
     await provider.dispatch({ id: 'nav', action: 'navigate', session: 'first', surface: 'browser', url: 'https://first.example/', profileId: 'default' });
     await provider.dispatch({ id: 'new', action: 'tabs', op: 'new', session: 'manual', surface: 'browser', url: 'https://second.example/', profileId: 'default' });
 
     await expect(provider.dispatch({ id: 'bind', action: 'bind', session: 'work', surface: 'browser', index: 1, profileId: 'default' }))
-      .resolves.toMatchObject({
-        id: 'bind',
-        ok: true,
-        data: { bound: true, session: 'work', url: 'https://second.example/' },
-      });
-
-    await provider.dispatch({ id: 'exec', action: 'exec', session: 'work', surface: 'browser', code: 'document.readyState', profileId: 'default' });
-    expect(pages[1].evaluate).toHaveBeenCalledWith('document.readyState');
+      .resolves.toMatchObject({ id: 'bind', ok: false, errorCode: 'SESSION_WINDOW_CONFLICT' });
+    expect(pages[0].bringToFront).not.toHaveBeenCalled();
   });
 
   it('returns a typed bind error when the requested Cloak tab is missing', async () => {
@@ -737,15 +624,15 @@ describe('LocalCloakRuntimeProvider', () => {
 
     const created = await provider.dispatch({ id: 'new', action: 'tabs', op: 'new', session: 'work', surface: 'browser', url: 'https://second.example/', profileId: 'default' });
     expect(created).toMatchObject({ id: 'new', ok: true, page: expect.any(String), data: { url: 'https://second.example/' } });
-    expect(pages[1].goto).toHaveBeenCalledWith('https://second.example/', expect.objectContaining({ waitUntil: 'load' }));
+    expect(pages[0].goto).toHaveBeenCalledWith('https://second.example/', expect.objectContaining({ waitUntil: 'load' }));
 
     await expect(provider.dispatch({ id: 'select', action: 'tabs', op: 'select', session: 'work', surface: 'browser', page: created.page, profileId: 'default' }))
       .resolves.toMatchObject({ id: 'select', ok: true, page: created.page, data: { selected: true } });
-    expect(pages[1].bringToFront).toHaveBeenCalled();
+    expect(pages[0].bringToFront).toHaveBeenCalled();
 
     await expect(provider.dispatch({ id: 'close', action: 'tabs', op: 'close', session: 'work', surface: 'browser', page: created.page, profileId: 'default' }))
       .resolves.toMatchObject({ id: 'close', ok: true, data: { closed: created.page } });
-    expect(pages[1].close).toHaveBeenCalled();
+    expect(pages[0].close).toHaveBeenCalled();
   });
 
   it('does not bring selected tabs to front in background window mode', async () => {
@@ -763,7 +650,7 @@ describe('LocalCloakRuntimeProvider', () => {
       profileId: 'default',
       windowMode: 'background',
     })).resolves.toMatchObject({ id: 'select', ok: true });
-    expect(pages[1].bringToFront).not.toHaveBeenCalled();
+    expect(pages[0].bringToFront).not.toHaveBeenCalled();
   });
 
   it('does not bring bound tabs to front in background window mode', async () => {
@@ -778,8 +665,8 @@ describe('LocalCloakRuntimeProvider', () => {
       page: created.page,
       profileId: 'default',
       windowMode: 'background',
-    })).resolves.toMatchObject({ id: 'bind', ok: true });
-    expect(pages[1].bringToFront).not.toHaveBeenCalled();
+    })).resolves.toMatchObject({ id: 'bind', ok: false, errorCode: 'SESSION_WINDOW_CONFLICT' });
+    expect(pages[0].bringToFront).not.toHaveBeenCalled();
   });
 
   it('brings bound tabs to front by default', async () => {
@@ -787,8 +674,8 @@ describe('LocalCloakRuntimeProvider', () => {
     const created = await provider.dispatch({ id: 'new', action: 'tabs', op: 'new', session: 'source', surface: 'browser', url: 'https://second.example/', profileId: 'default' });
 
     await expect(provider.dispatch({ id: 'bind', action: 'bind', session: 'target', surface: 'browser', page: created.page, profileId: 'default' }))
-      .resolves.toMatchObject({ id: 'bind', ok: true });
-    expect(pages[1].bringToFront).toHaveBeenCalledOnce();
+      .resolves.toMatchObject({ id: 'bind', ok: false, errorCode: 'SESSION_WINDOW_CONFLICT' });
+    expect(pages[0].bringToFront).not.toHaveBeenCalled();
   });
 
   it('rejects a page identity from a different session', async () => {

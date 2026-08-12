@@ -4,6 +4,7 @@ import {
   BROWSER_RUN_PLAYWRIGHT_VERSION,
   BrowserRunError,
 } from './types.js';
+import type { BrowserRunSessionScope } from './runner.js';
 
 interface DispatcherConnection {
   onmessage: (message: Record<string, unknown>) => void;
@@ -78,50 +79,110 @@ function implementation<T>(object: T): unknown {
   return value;
 }
 
-function scopedContext(context: object, pages: () => object[]): object {
-  const pageListeners = new WeakMap<Function, Function>();
-  const isAllowedPage = (candidate: object) => {
-    const allowed = pages();
-    if (allowed.includes(candidate)) return true;
-    const opener = Reflect.get(candidate, 'opener', candidate);
-    if (typeof opener !== 'function') return false;
-    try {
-      return allowed.includes(Reflect.apply(opener, candidate, []));
-    } catch {
-      return false;
-    }
+function scopedContext(
+  context: object,
+  scope: {
+    pages(): object[];
+    createPage(): Promise<object>;
+    onPage(listener: (page: object) => void): () => void;
+  },
+): object {
+  const pageListeners = new Map<Function, Set<() => void>>();
+  const addPageListener = (listener: Function, once = false) => {
+    let dispose: () => void = () => undefined;
+    const registered = (page: object) => {
+      if (once) {
+        dispose();
+        pageListeners.get(listener)?.delete(dispose);
+      }
+      listener(page);
+    };
+    dispose = scope.onPage(registered);
+    const disposers = pageListeners.get(listener) ?? new Set();
+    disposers.add(dispose);
+    pageListeners.set(listener, disposers);
+  };
+  const removePageListener = (listener: Function) => {
+    for (const dispose of pageListeners.get(listener) ?? []) dispose();
+    pageListeners.delete(listener);
+  };
+  const removeAllPageListeners = () => {
+    for (const listener of pageListeners.keys()) removePageListener(listener);
   };
   let proxy: object;
   proxy = new Proxy(context, {
     get(target, property) {
-      if (property === 'pages') return pages;
-      if (property === 'newPage') {
-        return async () => {
-          throw new BrowserRunError(
-            'BROWSER_RUN_API_UNSUPPORTED',
-            'context.newPage() is not supported inside browser run; create or bind a Webcmd Session tab instead.',
-          );
-        };
-      }
+      if (property === 'pages') return scope.pages;
+      if (property === 'newPage') return scope.createPage;
+      if (property === 'backgroundPages' || property === 'serviceWorkers') return () => [];
       if (property === 'on' || property === 'addListener') {
         return (event: string, listener: Function) => {
-          let registered = listener;
           if (event === 'page') {
-            registered = (candidate: object, ...args: unknown[]) => {
-              if (isAllowedPage(candidate)) listener(candidate, ...args);
-            };
-            pageListeners.set(listener, registered);
+            addPageListener(listener);
+            return proxy;
           }
-          Reflect.apply(Reflect.get(target, property), target, [event, registered]);
+          Reflect.apply(Reflect.get(target, property), target, [event, listener]);
           return proxy;
         };
       }
       if (property === 'off' || property === 'removeListener') {
         return (event: string, listener: Function) => {
-          const registered = pageListeners.get(listener) ?? listener;
-          Reflect.apply(Reflect.get(target, property), target, [event, registered]);
-          pageListeners.delete(listener);
+          if (event === 'page') {
+            removePageListener(listener);
+            return proxy;
+          }
+          Reflect.apply(Reflect.get(target, property), target, [event, listener]);
           return proxy;
+        };
+      }
+      if (property === 'once') {
+        return (event: string, listener: Function) => {
+          if (event === 'page') {
+            addPageListener(listener, true);
+            return proxy;
+          }
+          Reflect.apply(Reflect.get(target, property), target, [event, listener]);
+          return proxy;
+        };
+      }
+      if (property === 'removeAllListeners') {
+        return (event?: string) => {
+          if (event === undefined || event === 'page') removeAllPageListeners();
+          return proxy;
+        };
+      }
+      if (property === 'waitForEvent') {
+        return (event: string, optionsOrPredicate?: object | Function) => {
+          if (event !== 'page') {
+            return Reflect.apply(Reflect.get(target, property), target, [event, optionsOrPredicate]);
+          }
+          const options = typeof optionsOrPredicate === 'object' ? optionsOrPredicate as {
+            predicate?: (page: object) => boolean | Promise<boolean>;
+            timeout?: number;
+          } : undefined;
+          const predicate = typeof optionsOrPredicate === 'function' ? optionsOrPredicate : options?.predicate;
+          return new Promise<object>((resolve, reject) => {
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            const listener = async (page: object) => {
+              try {
+                if (predicate && !await predicate(page)) return;
+                removePageListener(listener);
+                if (timer) clearTimeout(timer);
+                resolve(page);
+              } catch (error) {
+                removePageListener(listener);
+                if (timer) clearTimeout(timer);
+                reject(error);
+              }
+            };
+            addPageListener(listener);
+            if (options?.timeout) {
+              timer = setTimeout(() => {
+                removePageListener(listener);
+                reject(new Error(`Timeout while waiting for event "${event}"`));
+              }, options.timeout);
+            }
+          });
         };
       }
       const value = Reflect.get(target, property, target);
@@ -176,7 +237,7 @@ export class PlaywrightTransport {
   #browserWaitMs = 0;
 
   constructor(
-    input: { browser: Browser; context: BrowserContext; page: Page; pages?: Page[] },
+    input: BrowserRunSessionScope,
     deliver: (message: string) => void,
   ) {
     if (
@@ -190,11 +251,14 @@ export class PlaywrightTransport {
     }
 
     const browser = implementation(input.browser) as object;
-    const allowedPages = new Set<object>();
-    const context = scopedContext(implementation(input.context) as object, () => [...allowedPages]);
+    const context = scopedContext(implementation(input.context) as object, {
+      pages: () => input.pages().map(page => implementation(page) as object),
+      createPage: async () => implementation(await input.createPage()) as object,
+      onPage: listener => input.onPage(page => listener(implementation(page) as object)),
+    });
     this.pageGuid = pageGuid(input.page);
-    this.#registerPageImpl = page => allowedPages.add(implementation(page) as object);
-    for (const page of input.pages?.length ? input.pages : [input.page]) this.registerPage(page);
+    this.#registerPageImpl = page => { implementation(page); };
+    for (const page of input.pages()) this.registerPage(page);
     this.#deliver = deliver;
     this.#connection = new server.DispatcherConnection();
     this.#connection.onmessage = message => {
