@@ -9,6 +9,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildManifest, buildManifestArtifacts } from './build-manifest.js';
+import { getRegistry } from './registry.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -67,6 +68,23 @@ describe('adapter packaging', () => {
     expect(fs.existsSync(path.join(ROOT, 'src/fetch/command.ts'))).toBe(true);
     expect((pkgJson.exports as Record<string, string>)['./fetch/command'])
       .toBe('./dist/src/fetch/command.js');
+  });
+
+  it('generates only web/fetch and its command package export', async () => {
+    const { entries } = await buildManifest();
+    const webCommands = entries
+      .filter(entry => entry.site === 'web')
+      .map(entry => `${entry.site}/${entry.name}`);
+    const registeredWebCommands = [...getRegistry().values()]
+      .filter(command => command.site === 'web')
+      .map(command => `${command.site}/${command.name}`)
+      .sort();
+    const fetchExports = Object.keys(pkgJson.exports as Record<string, string>)
+      .filter(exportPath => exportPath.startsWith('./fetch/'));
+
+    expect(webCommands).toEqual(['web/fetch']);
+    expect(registeredWebCommands).toEqual(['web/fetch']);
+    expect(fetchExports).toEqual(['./fetch/command']);
   });
 
   it('publishes only client-owned web/fetch in generated artifacts', async () => {

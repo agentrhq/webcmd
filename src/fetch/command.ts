@@ -2,30 +2,6 @@ import { cli, Strategy, type CommandArgs } from '../registry.js';
 import { ArgumentError } from '../errors.js';
 import type { WebFetchOptions, WebFetchResult } from './client.js';
 
-/** Kept in sync with `DEFAULT_OUTPUT_DIR` in ./browser.js, which is imported
- *  lazily so Turndown and the download pipeline stay out of CLI startup. */
-const DEFAULT_OUTPUT_DIR = './web-articles';
-
-export const webFetchBrowserCommand = cli({
-  site: 'web', name: 'fetch-browser', access: 'read',
-  description: 'Fetch any web page in a real browser and export as Markdown',
-  strategy: Strategy.COOKIE,
-  navigateBefore: false, // we handle navigation ourselves
-  args: [
-    { name: 'url', required: true, help: 'Any web page URL' },
-    { name: 'output', default: DEFAULT_OUTPUT_DIR, help: 'Output directory' },
-    { name: 'download-images', type: 'boolean', default: true, help: 'Download images locally' },
-    { name: 'wait', type: 'int', default: 3, help: 'Seconds to wait after page load' },
-    { name: 'wait-for', valueRequired: true, help: 'CSS selector to wait for in the main document or same-origin iframes' },
-    { name: 'wait-until', default: 'domstable', choices: ['domstable', 'networkidle'], help: 'Readiness policy after navigation: domstable or networkidle' },
-    { name: 'frames', default: 'same-origin', choices: ['same-origin', 'all-same-origin', 'none'], help: 'Iframe handling mode: relevant same-origin, all-same-origin, or none' },
-    { name: 'diagnose', type: 'boolean', default: false, help: 'Print render diagnostics (frames, empty containers, XHR/API-like requests) to stderr' },
-    { name: 'stdout', type: 'boolean', default: false, help: 'Print markdown to stdout instead of saving to a file' },
-  ],
-  columns: ['title', 'author', 'publish_time', 'status', 'size', 'saved'],
-  func: async (page, kwargs, debug) => (await import('./browser.js')).runFetchBrowser(page, kwargs, debug),
-});
-
 export const webFetchCommand = cli({
   site: 'web', name: 'fetch', access: 'read', strategy: Strategy.PUBLIC, browser: false,
   clientOwned: true,

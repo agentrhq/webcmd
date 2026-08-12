@@ -13,7 +13,7 @@ vi.mock('../output.js', async () => ({
 }));
 
 import { registerCommandToProgram } from '../commanderAdapter.js';
-import { formatWebFetchMarkdown, webFetchBrowserCommand, webFetchCommand } from './command.js';
+import { formatWebFetchMarkdown, webFetchCommand } from './command.js';
 
 const plainResult = { status: 200, requestedUrl: 'https://example.com', finalUrl: 'https://example.com', contentType: 'text/plain', tier: 'plain' as const, title: 'Example', extractionSource: 'raw' as const, truncated: false, content: 'ok' };
 
@@ -32,7 +32,6 @@ describe('web fetch command', () => {
 
   it('is the client-owned, non-browser core command', () => {
     expect(webFetchCommand).toMatchObject({ site: 'web', name: 'fetch', browser: false, clientOwned: true, defaultFormat: 'md' });
-    expect(webFetchBrowserCommand.name).toBe('fetch-browser');
   });
 
   it('uses Commander coercion for canonical fetch options', async () => {
