@@ -23,9 +23,9 @@ assert.equal(manifest.skills, './skills/');
 assert.equal(manifest.author?.name, 'AgentRHQ');
 assert.equal(manifest.interface?.developerName, 'AgentRHQ');
 const expectedDefaultPrompts = [
-  'Use Webcmd to complete this task with an existing command.',
-  'Use Webcmd to research this topic and return source links.',
-  'Use Webcmd to turn this browser workflow into a reusable CLI.',
+  'Create a Zillow rental-search plugin for WebCMD with city, max rent, and bedroom filters. Test it and show me the command.',
+  'Compare MacBook Air M5 prices and availability on Amazon, Walmart, and Best Buy.',
+  'Find and rank today\u2019s most-discussed AI agent launches across Hacker News, Reddit, Product Hunt, and arXiv.',
 ];
 assert.deepEqual(manifest.interface?.defaultPrompt, expectedDefaultPrompts);
 assert.ok(expectedDefaultPrompts.every((prompt) => prompt.length <= 128));
