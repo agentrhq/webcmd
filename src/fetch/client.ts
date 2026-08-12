@@ -22,16 +22,24 @@ const MAX_BODY_BYTES = 10 * 1024 * 1024;
 const BROWSER_WORKFLOW = 'Create a browser Session with `webcmd --profile work session create`, then navigate with `webcmd --profile work --session <session-id> browser run --stdin`.';
 
 function headersOf(response: ResponseLike): Record<string, string> { return Object.fromEntries(response.headers.entries()); }
-async function readBody(response: ResponseLike): Promise<string> {
+function beforeDeadline<T>(promise: Promise<T>, deadline: number, timeoutSeconds: number, cancel?: () => void): Promise<T> {
+  const ms = deadline - Date.now();
+  if (ms <= 0) { cancel?.(); return Promise.reject(new TimeoutError('web fetch', timeoutSeconds)); }
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => { cancel?.(); reject(new TimeoutError('web fetch', timeoutSeconds)); }, ms);
+    promise.then(value => { clearTimeout(timer); resolve(value); }, error => { clearTimeout(timer); reject(error); });
+  });
+}
+async function readBody(response: ResponseLike, deadline: number, timeoutSeconds: number): Promise<string> {
   if (!response.body && response.bytes) {
-    const bytes = await response.bytes();
+    const bytes = await beforeDeadline(response.bytes(), deadline, timeoutSeconds);
     if (bytes.byteLength > MAX_BODY_BYTES) throw new CliError('FETCH_BODY_TOO_LARGE', 'Fetched body exceeds 10 MiB');
     return new TextDecoder().decode(bytes);
   }
   const reader = response.body?.getReader();
   if (!reader) return '';
   const chunks: Uint8Array[] = []; let size = 0;
-  while (true) { const { done, value } = await reader.read(); if (done) break; size += value.byteLength; if (size > MAX_BODY_BYTES) { await reader.cancel(); throw new CliError('FETCH_BODY_TOO_LARGE', 'Fetched body exceeds 10 MiB'); } chunks.push(value); }
+  while (true) { const { done, value } = await beforeDeadline(reader.read(), deadline, timeoutSeconds, () => { void reader.cancel(); }); if (done) break; size += value.byteLength; if (size > MAX_BODY_BYTES) { await reader.cancel(); throw new CliError('FETCH_BODY_TOO_LARGE', 'Fetched body exceeds 10 MiB'); } chunks.push(value); }
   return new TextDecoder().decode(Buffer.concat(chunks));
 }
 function truncate(content: string, limit: number): { content: string; truncated: boolean } {
@@ -57,7 +65,7 @@ export async function webFetch(options: WebFetchOptions, dependencies: WebFetchD
           : await plainFetch(options.url, { redirect: 'manual', dispatcher: new ProxyAgent(proxy.url), signal: AbortSignal.timeout(timeout) });
         const policyError = proxy.policyError();
         if (policyError) throw new CliError('FETCH_UNSAFE_ADDRESS', policyError.message);
-        const body = await readBody(response);
+        const body = await readBody(response, deadline, options.timeoutSeconds);
         if (proxy.policyError()) throw new CliError('FETCH_UNSAFE_ADDRESS', proxy.policyError()!.message);
         if (isJavaScriptShell(body)) throw new CliError('FETCH_REQUIRES_BROWSER', 'This page requires browser rendering.', BROWSER_WORKFLOW);
         if (isChallengeResponse(response.status, headersOf(response), body)) {

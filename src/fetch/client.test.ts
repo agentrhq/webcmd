@@ -48,6 +48,23 @@ describe('webFetch', () => {
       createSafeProxy: async () => safeProxy(),
     })).rejects.toMatchObject({ code: 'TIMEOUT', message: 'web fetch timed out after 0.05s' });
   });
+  it('times out a body read and closes the proxy', async () => {
+    const close = vi.fn().mockResolvedValue(undefined);
+    const cancel = vi.fn();
+    const hanging = {
+      status: 200,
+      headers: new Headers({ 'content-type': 'text/plain' }),
+      url: 'https://example.com',
+      body: new ReadableStream<Uint8Array>({ pull: () => new Promise(() => {}), cancel }),
+    };
+    await expect(webFetch({ url: 'https://example.com', timeoutSeconds: 0.05, maxChars: 0, allowPrivate: false }, {
+      plainFetch: vi.fn().mockResolvedValue(hanging),
+      createImpit: vi.fn(),
+      createSafeProxy: async () => safeProxy(close),
+    })).rejects.toMatchObject({ code: 'TIMEOUT' });
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(close).toHaveBeenCalledOnce();
+  });
   it('does not relabel a failure that happened with budget left', async () => {
     await expect(webFetch({ url: 'https://example.com', timeoutSeconds: 30, maxChars: 0, allowPrivate: false }, {
       plainFetch: vi.fn().mockRejectedValue(Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' })),

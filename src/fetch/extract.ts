@@ -32,10 +32,13 @@ export function extractFetchedContent(input: ExtractFetchedContentInput): Extrac
     return { title: '', content: input.body, source: 'raw' };
   }
   if (!['text/html', 'application/xhtml+xml', ''].includes(contentType)) {
+    const hint = contentType === 'application/pdf'
+      ? 'Create a browser Session with `webcmd --profile work session create`, then navigate with `webcmd --profile work --session <session-id> browser run --stdin`.'
+      : undefined;
     throw new CliError(
       'FETCH_UNSUPPORTED_CONTENT_TYPE',
       `Unsupported content type: ${contentType || 'unknown'}`,
-      'Create a browser Session with `webcmd --profile work session create`, then navigate with `webcmd --profile work --session <session-id> browser run --stdin`.',
+      hint,
     );
   }
 
