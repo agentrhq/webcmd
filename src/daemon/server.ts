@@ -59,10 +59,9 @@ function waitForCommandResult(
   });
 }
 
-const SESSION_LIFECYCLE_ACTIONS = new Set<BrowserRuntimeCommand['action']>([
+const UNRESOLVED_SESSION_LIFECYCLE_ACTIONS = new Set<BrowserRuntimeCommand['action']>([
   'session-create',
   'session-list',
-  'session-close',
 ]);
 
 function commandProfileId(provider: BrowserRuntimeProvider, command: BrowserRuntimeCommand): string | undefined {
@@ -76,7 +75,7 @@ async function resolveBrowserSession(
   provider: BrowserRuntimeProvider,
   command: BrowserRuntimeCommand,
 ): Promise<{ command: BrowserRuntimeCommand; session?: BrowserSessionRecord }> {
-  if (command.action === 'lease-release' || command.action === 'run-cancel' || SESSION_LIFECYCLE_ACTIONS.has(command.action)) {
+  if (command.action === 'lease-release' || command.action === 'run-cancel' || UNRESOLVED_SESSION_LIFECYCLE_ACTIONS.has(command.action)) {
     return { command };
   }
   let session: BrowserSessionRecord | undefined;
@@ -308,10 +307,12 @@ export function createDaemonServer(provider: BrowserRuntimeProvider, opts: Daemo
           jsonResponse(res, 200, { id: body.id, ok: true, data: { released } });
           return;
         }
-        const lifecycleResult = await handleSessionLifecycle(provider, body);
-        if (lifecycleResult) {
-          jsonResponse(res, 200, lifecycleResult);
-          return;
+        if (body.action !== 'session-close') {
+          const lifecycleResult = await handleSessionLifecycle(provider, body);
+          if (lifecycleResult) {
+            jsonResponse(res, 200, lifecycleResult);
+            return;
+          }
         }
         const resolved = await resolveBrowserSession(provider, body);
         const resolvedBody = resolved.command;
@@ -319,6 +320,13 @@ export function createDaemonServer(provider: BrowserRuntimeProvider, opts: Daemo
           const paused = handoffPauseResult(resolvedBody, resolved.session);
           if (paused) {
             jsonResponse(res, 409, paused);
+            return;
+          }
+        }
+        if (resolvedBody.action === 'session-close') {
+          const lifecycleResult = await handleSessionLifecycle(provider, resolvedBody);
+          if (lifecycleResult) {
+            jsonResponse(res, 200, lifecycleResult);
             return;
           }
         }

@@ -243,6 +243,38 @@ describe('createDaemonServer', () => {
     expect(provider.commands).toEqual([]);
   });
 
+  it('rejects Session close while its live human handoff owns the window', async () => {
+    const provider = new FakeProvider();
+    provider.sessions.push({
+      id: 'session_a',
+      profileId: 'profile_work',
+      kind: 'explicit',
+      createdAt: '2026-08-11T00:00:00.000Z',
+      updatedAt: '2026-08-11T00:00:00.000Z',
+      lastUsedAt: '2026-08-11T00:00:00.000Z',
+      handoff: {
+        site: 'github',
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      },
+    });
+    provider.activeSessions.add('session_a');
+    const { baseUrl } = await start(provider);
+
+    const close = await postCommand(baseUrl, {
+      id: 'close-handoff-session',
+      action: 'session-close',
+      contextId: 'profile_work',
+      session: 'session_a',
+    });
+
+    expect(close.status).toBe(409);
+    await expect(close.json()).resolves.toMatchObject({
+      errorCode: 'SESSION_PAUSED_FOR_HUMAN_HANDOFF',
+      details: { sessionId: 'session_a', site: 'github' },
+    });
+    expect(provider.activeSessions).toContain('session_a');
+  });
+
   it('accepts the maximum browser-run source envelope', async () => {
     const { provider, baseUrl } = await start();
     const source = 'x'.repeat(256 * 1024);
