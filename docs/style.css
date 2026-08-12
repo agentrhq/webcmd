@@ -189,19 +189,19 @@ pre code {
   pointer-events: none;
 }
 
-.webcmd-agent-icons img {
+.webcmd-agent-icon {
   display: block;
   width: 1.125rem;
   height: 1.125rem;
-  object-fit: contain;
+  fill: currentColor;
   cursor: inherit !important;
   pointer-events: none;
   transform: none !important;
   transition: none !important;
 }
 
-.webcmd-agent-icon-mono {
-  filter: invert(1);
+.webcmd-agent-icon-claude {
+  fill: #d97757;
 }
 
 .dark .webcmd-setup-action > p {
@@ -217,10 +217,6 @@ pre code {
 .dark .webcmd-copy-stack:hover .webcmd-copy-prompt {
   border-color: #fff;
   background: #fff;
-}
-
-.dark .webcmd-agent-icon-mono {
-  filter: none;
 }
 
 @media (max-width: 640px) {
