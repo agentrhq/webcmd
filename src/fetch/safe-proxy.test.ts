@@ -1,6 +1,13 @@
 import * as net from 'node:net';
+import { spawn } from 'node:child_process';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import * as path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { createSafeProxy, isSafeAddress } from './safe-proxy.js';
+
+const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 
 describe('isSafeAddress', () => {
   it.each(['127.0.0.1', '10.0.0.1', '172.16.0.1', '192.168.1.1', '169.254.169.254', '0.0.0.0', '::1', '::', 'fe80::1', '::ffff:127.0.0.1'])('rejects private address %s', address => {
@@ -10,6 +17,69 @@ describe('isSafeAddress', () => {
 });
 
 describe('createSafeProxy close', () => {
+  it('does not crash the process when a tunnel client resets', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'webcmd-safe-proxy-rst-'));
+    const scriptPath = path.join(dir, 'repro.mjs');
+    const safeProxyUrl = pathToFileURL(path.join(moduleDir, 'safe-proxy.ts')).href;
+    await writeFile(scriptPath, [
+      "import * as net from 'node:net';",
+      `import { createSafeProxy } from ${JSON.stringify(safeProxyUrl)};`,
+      "const upstream = net.createServer(socket => socket.resume());",
+      "await new Promise(done => upstream.listen(0, '127.0.0.1', done));",
+      'const proxy = await createSafeProxy({ allowPrivate: true });',
+      'const client = net.connect({ host: "127.0.0.1", port: Number(new URL(proxy.url).port) });',
+      'await new Promise((resolve, reject) => {',
+      '  client.once("error", reject);',
+      '  client.once("data", resolve);',
+      '  client.write(`CONNECT 127.0.0.1:${upstream.address().port} HTTP/1.1\\r\\nHost: 127.0.0.1\\r\\n\\r\\n`);',
+      '});',
+      'client.resetAndDestroy();',
+      'await new Promise(done => setTimeout(done, 100));',
+      'await proxy.close();',
+      'await new Promise(done => upstream.close(done));',
+    ].join('\n'));
+
+    try {
+      const result = await new Promise<{ status: number | null; stderr: string }>((resolve, reject) => {
+        const child = spawn(process.execPath, ['--import', 'tsx', scriptPath], { stdio: ['ignore', 'ignore', 'pipe'] });
+        const stderr: Buffer[] = [];
+        child.stderr.on('data', chunk => stderr.push(Buffer.from(chunk)));
+        child.once('error', reject);
+        child.once('close', status => resolve({ status, stderr: Buffer.concat(stderr).toString('utf8') }));
+      });
+      expect(result.stderr).not.toContain('ECONNRESET');
+      expect(result.status).toBe(0);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 15_000);
+
+  it('destroys the upstream tunnel when the client leg resets', async () => {
+    let upstreamSocket: net.Socket | undefined;
+    const upstream = net.createServer(socket => { upstreamSocket = socket; socket.resume(); });
+    await new Promise<void>(done => upstream.listen(0, '127.0.0.1', () => done()));
+    const upstreamPort = (upstream.address() as net.AddressInfo).port;
+    const proxy = await createSafeProxy({ allowPrivate: true });
+
+    const client = net.connect({ host: '127.0.0.1', port: Number(new URL(proxy.url).port) });
+    client.on('error', () => {});
+    await new Promise<void>(done => {
+      client.once('data', () => done());
+      client.write(`CONNECT 127.0.0.1:${upstreamPort} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n`);
+    });
+    expect(upstreamSocket).toBeDefined();
+
+    const upstreamClosed = new Promise<boolean>(resolve => {
+      upstreamSocket!.once('close', () => resolve(true));
+      setTimeout(() => resolve(false), 250);
+    });
+    client.resetAndDestroy();
+
+    expect(await upstreamClosed).toBe(true);
+    await proxy.close();
+    await new Promise<void>(done => upstream.close(() => done()));
+  });
+
   it('does not wait for an idle CONNECT tunnel to drain', async () => {
     // Stands in for the upstream host: accepts and then never says anything,
     // exactly like the keep-alive tunnels impit leaves behind.

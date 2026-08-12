@@ -59,11 +59,14 @@ export async function createSafeProxy(options: SafeProxyOptions = {}): Promise<S
     return socket;
   };
   const server = http.createServer(async (request, response) => {
+    let upstream: http.ClientRequest | undefined;
+    request.on('error', () => { upstream?.destroy(); response.destroy(); });
+    response.on('error', () => { upstream?.destroy(); request.destroy(); });
     try {
       const target = new URL(request.url ?? '');
       const address = await resolve(target.hostname, lookup, allowPrivate);
       if (closing) { response.destroy(); return; }
-      const upstream = http.request({ host: address, port: Number(target.port) || 80, method: request.method, path: `${target.pathname}${target.search}`, headers: { ...request.headers, host: target.host } }, upstreamResponse => {
+      upstream = http.request({ host: address, port: Number(target.port) || 80, method: request.method, path: `${target.pathname}${target.search}`, headers: { ...request.headers, host: target.host } }, upstreamResponse => {
         response.writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
         upstreamResponse.pipe(response);
       });
@@ -78,14 +81,18 @@ export async function createSafeProxy(options: SafeProxyOptions = {}): Promise<S
   server.on('connection', track);
   server.on('connect', async (request, client, head) => {
     track(client);
+    let upstream: net.Socket | undefined;
+    client.on('error', () => upstream?.destroy());
+    client.on('close', () => upstream?.destroy());
     try {
       const [host, portText] = (request.url ?? '').replace(/^\[/, '').replace(']', '').split(':');
       if (!host) throw new Error('Invalid CONNECT target');
       const address = await resolve(host, lookup, allowPrivate);
       if (closing) { client.destroy(); return; }
-      const upstream = track(net.connect({ host: address, port: Number(portText) || 443 }));
-      upstream.once('connect', () => { client.write('HTTP/1.1 200 Connection Established\r\n\r\n'); if (head.length) upstream.write(head); upstream.pipe(client); client.pipe(upstream); });
-      upstream.once('error', error => client.destroy(error));
+      const tunnel = track(net.connect({ host: address, port: Number(portText) || 443 }));
+      upstream = tunnel;
+      tunnel.once('connect', () => { client.write('HTTP/1.1 200 Connection Established\r\n\r\n'); if (head.length) tunnel.write(head); tunnel.pipe(client); client.pipe(tunnel); });
+      tunnel.on('error', error => client.destroy(error));
     } catch (error) {
       if (error instanceof Error && error.message.startsWith('Unsafe fetch destination:')) firstPolicyError ??= error;
       client.end(`HTTP/1.1 403 Forbidden\r\n\r\n${error instanceof Error ? error.message : ''}`);
