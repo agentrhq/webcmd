@@ -1,7 +1,7 @@
 /**
  * E2E regression tests for the HTML → Markdown article pipeline.
  *
- * Drives real pages through `webcmd web read` and asserts the hardened
+ * Drives real pages through `webcmd web fetch-browser` and asserts the hardened
  * converter's invariants hold on the produced file:
  *   - no base64 `data:image/…` leaks
  *   - no <script> / <style> leakage
@@ -57,7 +57,7 @@ async function runWebReadOrSkip(
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-article-e2e-'));
   tempDirs.push(tempDir);
 
-  const args = ['web', 'read', '--url', url, '--output', tempDir, '--download-images', 'false', '--format', 'json'];
+  const args = ['web', 'fetch-browser', '--url', url, '--output', tempDir, '--download-images', 'false', '--format', 'json'];
   let result = await runCli(args, { timeout: 90_000 });
   if (result.code !== 0 && isTransient(result.stderr + result.stdout)) {
     result = await runCli(args, { timeout: 90_000 });
@@ -157,7 +157,7 @@ const SITES: SiteCase[] = [
   },
 ];
 
-describe('web read — hardened article pipeline (real-site regression)', () => {
+describe('web fetch-browser — hardened article pipeline (real-site regression)', () => {
   for (const site of SITES) {
     it(`${site.label} survives the hardened pipeline`, async () => {
       const row = await runWebReadOrSkip(site.url, site.label);

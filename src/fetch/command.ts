@@ -92,6 +92,9 @@ async function escalateToBrowser(kwargs: CommandArgs, result: Partial<WebFetchRe
 export const webFetchCommand = cli({
   site: 'web', name: 'fetch', access: 'read', strategy: Strategy.PUBLIC, browser: false,
   description: 'Fetch a URL, escalating to a real browser only if plain HTTP is blocked', defaultFormat: 'md',
+  // Without this, `-f md` renders a nine-column table of the result object
+  // while the fast path prints a document — same command, two shapes.
+  renderMarkdown: data => (isWebFetchResult(data) ? formatWebFetchMarkdown(data) : undefined),
   args: [
     { name: 'url', type: 'string', required: true, help: 'Any http or https URL' },
     { name: 'timeout', type: 'int', default: 30, help: 'Total budget in seconds across every tier' },
@@ -118,6 +121,10 @@ function clientOptionsFromKwargs(kwargs: CommandArgs): WebFetchOptions {
     maxChars: Number(kwargs['max-chars'] ?? 50000),
     allowPrivate: kwargs['allow-private'] === true,
   };
+}
+
+function isWebFetchResult(data: unknown): data is WebFetchResult {
+  return typeof data === 'object' && data !== null && 'requestedUrl' in data && 'content' in data;
 }
 
 export function formatWebFetchMarkdown(result: WebFetchResult): string {
@@ -162,18 +169,6 @@ export async function runClientOwnedWebFetch(argv: readonly string[], dependenci
     result = await escalateToBrowser({ url: options.url, wait: options.wait }, {}, false);
   }
   (dependencies.stdout ?? process.stdout).write(`${formatWebFetchMarkdown(result)}\n`);
-}
-
-/**
- * Flags the hand-rolled fast-path parser does not implement. Seeing any of them
- * means falling through to the full CLI, where the registered command renders
- * real help and honours `-f` — the fast path is an optimisation, never the only
- * way to reach the command (#252).
- */
-const FULL_CLI_FLAGS = new Set(['-h', '--help', '-f', '--format', '--trace', '-v', '--verbose']);
-
-export function canUseClientOwnedFastPath(argv: readonly string[]): boolean {
-  return argv[0] === 'web' && argv[1] === 'fetch' && !argv.some(arg => FULL_CLI_FLAGS.has(arg));
 }
 
 /**

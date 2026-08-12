@@ -130,6 +130,7 @@ export function registerCommandToProgram(
         elapsed: (now() - startTime) / 1000,
         source: fullName(resolved),
         footerExtra: resolved.footerExtra?.(kwargs),
+        ...(resolved.renderMarkdown ? { markdown: resolved.renderMarkdown } : {}),
         ...(runtime.stdout ? { stdout: runtime.stdout } : {}),
       });
     } catch (err) {

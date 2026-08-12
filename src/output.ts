@@ -18,6 +18,8 @@ export interface RenderOptions {
   elapsed?: number;
   source?: string;
   footerExtra?: string;
+  /** Command-supplied markdown renderer — see CliCommand.renderMarkdown. */
+  markdown?: (data: unknown) => string | undefined;
 }
 
 export interface ErrorRenderOptions {
@@ -146,6 +148,8 @@ function formatPlain(data: unknown): string {
 }
 
 function formatMarkdown(data: unknown, opts: RenderOptions): string {
+  const custom = opts.markdown?.(data);
+  if (custom !== undefined) return custom.endsWith('\n') ? custom : `${custom}\n`;
   const rows = normalizeRows(data);
   if (!rows.length) return '';
   if (rows.length === 1) {
