@@ -79,6 +79,9 @@ async function resolveLease(manager: CloakSessionManager, command: BrowserRuntim
     session: command.session,
     surface: command.surface,
     siteSession: command.siteSession,
+    sessionId: command.sessionId,
+    adapterSite: command.adapterSite,
+    runId: command.runId,
     idleTimeout: command.idleTimeout,
     freshPage: command.freshPage,
     windowMode: command.windowMode,
@@ -101,6 +104,10 @@ function resolveExistingLease(manager: CloakSessionManager, command: BrowserRunt
     profileId,
     session: command.session,
     surface: command.surface,
+    siteSession: command.siteSession,
+    sessionId: command.sessionId,
+    adapterSite: command.adapterSite,
+    runId: command.runId,
     idleTimeout: command.idleTimeout,
   });
   if (existing) return existing;
@@ -340,6 +347,10 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
             profileId: resolveCloakCommandProfileId(manager, command),
             session: command.session,
             surface: command.surface,
+            siteSession: command.siteSession,
+            sessionId: command.sessionId,
+            adapterSite: command.adapterSite,
+            runId: command.runId,
           });
           return { id: command.id, ok: true, data: { closed: true, session: command.session } };
         }
@@ -360,6 +371,9 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
               session: command.session,
               surface: command.surface,
               siteSession: command.siteSession,
+              sessionId: command.sessionId,
+              adapterSite: command.adapterSite,
+              runId: command.runId,
               idleTimeout: command.idleTimeout,
               url: command.url,
               windowMode: command.windowMode,
@@ -453,6 +467,9 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
             session: command.session,
             surface: command.surface,
             siteSession: command.siteSession,
+            sessionId: command.sessionId,
+            adapterSite: command.adapterSite,
+            runId: command.runId,
             idleTimeout: command.idleTimeout,
             windowMode: command.windowMode,
             pageId: command.page,

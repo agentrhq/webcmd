@@ -71,7 +71,10 @@ class FakeProvider implements BrowserRuntimeProvider {
   }
 
   async resolveAdapterDefault(command: BrowserRuntimeCommand): Promise<BrowserSessionRecord> {
-    return this.requireSession({ ...command, session: command.session ?? 'session_default' });
+    return {
+      ...await this.requireSession({ ...command, session: command.session ?? 'session_default' }),
+      kind: 'adapter-default',
+    };
   }
 
   async dispatch(command: BrowserRuntimeCommand) {
@@ -142,6 +145,19 @@ describe('createDaemonServer', () => {
       pid: 4242,
       ...overrides,
     };
+  }
+
+  function adapterCommand(
+    id: string,
+    runId: string,
+    adapterSite: string,
+    session?: string,
+  ): BrowserRuntimeCommand {
+    return persistentWrite(id, runId, {
+      adapterSite,
+      command: `${adapterSite} read`,
+      ...(session === undefined ? { session: undefined } : { session }),
+    });
   }
 
   it('returns runtime-named status fields without extension aliases', async () => {
@@ -334,6 +350,29 @@ describe('createDaemonServer', () => {
     expect(provider.commands.map((command) => command.id)).toEqual(['first']);
   });
 
+  it('partitions adapter-default admission by site', async () => {
+    const { provider, baseUrl } = await start();
+
+    expect((await postCommand(baseUrl, adapterCommand('github-owner', 'run_100_1_1', 'github'))).status).toBe(200);
+    expect((await postCommand(baseUrl, adapterCommand('linkedin-owner', 'run_200_2_2', 'linkedin'))).status).toBe(200);
+    expect((await postCommand(baseUrl, adapterCommand('github-conflict', 'run_300_3_3', 'github'))).status).toBe(409);
+    expect(provider.commands.map(({ id }) => id)).toEqual(['github-owner', 'linkedin-owner']);
+    expect(provider.commands[0]).toMatchObject({
+      sessionId: 'session_default',
+      sessionKind: 'adapter-default',
+      adapterSite: 'github',
+    });
+  });
+
+  it('keeps explicit Session admission wide across sites and isolated across Sessions', async () => {
+    const { provider, baseUrl } = await start();
+
+    expect((await postCommand(baseUrl, adapterCommand('github-a', 'run_100_1_1', 'github', 'session_a'))).status).toBe(200);
+    expect((await postCommand(baseUrl, adapterCommand('linkedin-a', 'run_200_2_2', 'linkedin', 'session_a'))).status).toBe(409);
+    expect((await postCommand(baseUrl, adapterCommand('linkedin-b', 'run_300_3_3', 'linkedin', 'session_b'))).status).toBe(200);
+    expect(provider.commands.map(({ id }) => id)).toEqual(['github-a', 'linkedin-b']);
+  });
+
   it('lets one logical run issue multiple operations and heartbeat its lease', async () => {
     let now = 1_000;
     vi.spyOn(Date, 'now').mockImplementation(() => now);
@@ -346,7 +385,7 @@ describe('createDaemonServer', () => {
     const status = await fetch(`${baseUrl}/status`, { headers: { [DAEMON_HEADER_NAME]: '1' } });
     await expect(status.json()).resolves.toMatchObject({
       sessionLeases: [{
-        key: 'default␟site%3Aexample',
+        key: 'default␟site:example',
         command: 'example write',
         acquiredAt: 1_000,
         heartbeatAt: 20_000,

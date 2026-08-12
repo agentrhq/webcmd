@@ -365,6 +365,7 @@ export async function executeCommand(
         windowMode,
         surface,
         siteSession,
+        adapterSite: cmd.site,
         freshPage: cmd.freshPage === true && siteSession === 'persistent',
       });
 

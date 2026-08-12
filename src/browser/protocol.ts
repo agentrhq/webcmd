@@ -39,6 +39,8 @@ export interface BrowserRuntimeCommand {
   sessionKind?: 'explicit' | 'adapter-default';
   surface?: BrowserSurface;
   siteSession?: SiteSessionMode;
+  /** Trusted adapter identity used for admission and tab routing. */
+  adapterSite?: string;
   /** Close any existing leased page and start on a new one (sent on the first action of a command run). */
   freshPage?: boolean;
   url?: string;

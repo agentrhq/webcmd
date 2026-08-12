@@ -109,6 +109,16 @@ describe('session lease partitions', () => {
     expect(workSession).not.toBe(getSessionLeaseKey('work', 'session_b'));
   });
 
+  it('partitions only the adapter-default Session by trusted adapter site', () => {
+    const github = getSessionLeaseKey('work', 'session_default', 'github');
+    const linkedin = getSessionLeaseKey('work', 'session_default', 'linkedin');
+
+    expect(github).toBe('work␟session_default␟github');
+    expect(linkedin).toBe('work␟session_default␟linkedin');
+    expect(github).not.toBe(linkedin);
+    expect(getSessionLeaseKey('work', 'session_a')).toBe('work␟session_a');
+  });
+
   it('arbitrates any resolved browser-backed command with complete run identity', () => {
     const eligible = {
       action: 'exec',

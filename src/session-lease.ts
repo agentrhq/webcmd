@@ -119,8 +119,12 @@ export type AcquireResult =
 /**
  * Lease key after the daemon has resolved the immutable browser Session.
  */
-export function getSessionLeaseKey(profileId: string, sessionId: string): string {
-  return `${profileId}␟${encodeURIComponent(sessionId)}`;
+export function getSessionLeaseKey(
+  profileId: string,
+  sessionId: string,
+  admissionSite?: string,
+): string {
+  return `${profileId}␟${sessionId}${admissionSite === undefined ? '' : `␟${admissionSite}`}`;
 }
 
 /** Whether a process id is safe to interpolate into local process guidance. */

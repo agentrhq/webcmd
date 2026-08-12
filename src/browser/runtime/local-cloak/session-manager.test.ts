@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import path from 'node:path';
 import type { BrowserContext, Page as PlaywrightPage } from 'playwright-core';
-import { CloakSessionManager } from './session-manager.js';
+import { CloakSessionManager, resolveLeaseKey } from './session-manager.js';
 import { dispatchCloakAction } from './actions.js';
 
 function fakeContext() {
@@ -539,6 +539,45 @@ describe('CloakSessionManager', () => {
 
     const reused = await manager.getPage(key);
     expect(reused.page).toBe(fresh.page);
+  });
+
+  it('keeps persistent adapter pages separate by Session and site', async () => {
+    const launched = fakeContext();
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
+    });
+    const base = {
+      profileId: 'default',
+      session: 'session_a',
+      sessionId: 'session_a',
+      surface: 'adapter' as const,
+      siteSession: 'persistent' as const,
+    };
+
+    const githubA = await manager.getPage({ ...base, adapterSite: 'github' });
+    const linkedinA = await manager.getPage({ ...base, adapterSite: 'linkedin' });
+    const githubB = await manager.getPage({ ...base, session: 'session_b', sessionId: 'session_b', adapterSite: 'github' });
+
+    expect(linkedinA.page).not.toBe(githubA.page);
+    expect(githubB.page).not.toBe(githubA.page);
+    expect((await manager.getPage({ ...base, adapterSite: 'github' })).page).toBe(githubA.page);
+  });
+
+  it('keys ephemeral adapter pages by Session, site, and run', () => {
+    const base = {
+      session: 'session_a',
+      sessionId: 'session_a',
+      surface: 'adapter' as const,
+      siteSession: 'ephemeral' as const,
+    };
+
+    expect(resolveLeaseKey({ ...base, adapterSite: 'github', runId: 'run_a' }))
+      .toBe('session_a\0ephemeral:github:run_a');
+    expect(resolveLeaseKey({ ...base, adapterSite: 'linkedin', runId: 'run_a' }))
+      .not.toBe(resolveLeaseKey({ ...base, adapterSite: 'github', runId: 'run_a' }));
+    expect(resolveLeaseKey({ ...base, adapterSite: 'github', runId: 'run_b' }))
+      .not.toBe(resolveLeaseKey({ ...base, adapterSite: 'github', runId: 'run_a' }));
   });
 
   it('freshPage never adopts a leftover context tab', async () => {

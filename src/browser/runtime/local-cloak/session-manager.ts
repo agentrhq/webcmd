@@ -42,6 +42,9 @@ export interface SessionKeyInput {
   session?: string;
   surface?: BrowserSurface;
   siteSession?: SiteSessionMode;
+  sessionId?: string;
+  adapterSite?: string;
+  runId?: string;
   idleTimeout?: number;
   windowMode?: BrowserWindowMode;
   /** Discard the existing leased page (if any) and create a new one under the same lease. */
@@ -100,6 +103,13 @@ export function resolveLeaseKey(input: SessionKeyInput): string {
   const surface = input.surface === 'adapter' ? 'adapter' : 'browser';
   const session = input.session?.trim();
   if (!session) throw new Error('Browser session is required.');
+  const sessionId = input.sessionId?.trim() || session;
+  if (surface === 'adapter' && input.siteSession === 'persistent' && input.adapterSite) {
+    return `${sessionId}\u0000site:${input.adapterSite}`;
+  }
+  if (surface === 'adapter' && input.runId) {
+    return `${sessionId}\u0000ephemeral:${input.adapterSite ?? 'browser'}:${input.runId}`;
+  }
   return `${surface}\u0000${encodeURIComponent(session)}`;
 }
 
@@ -359,7 +369,7 @@ export class CloakSessionManager {
     if (!match) return null;
 
     const [sourceKey, entry] = match;
-    const canonicalKey = resolveLeaseKey({ profileId, session, surface });
+    const canonicalKey = resolveLeaseKey(input);
     const currentCanonical = runtime.pages.get(canonicalKey);
 
     if (input.windowMode !== 'background') {
