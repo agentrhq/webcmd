@@ -3,11 +3,12 @@ import { DAEMON_HEADER_NAME, DEFAULT_DAEMON_PORT } from '../constants.js';
 import type { BrowserRuntimeCommand, BrowserRuntimeResult } from '../browser/protocol.js';
 import type { BrowserRuntimeProvider } from '../browser/runtime/provider.js';
 import { buildCommandTimeoutFailure, getResponseCorsHeaders } from '../daemon-utils.js';
-import { getSessionLeaseKey, isSessionLeaseCommand, SessionLeaseRegistry } from '../session-lease.js';
+import { getSessionLeaseKey, isSessionLeaseCommand, type SessionLease, SessionLeaseRegistry } from '../session-lease.js';
 import type { BrowserSessionRecord } from '../browser/sessions.js';
 
 const MAX_BODY = 1024 * 1024;
 const LOG_BUFFER_SIZE = 200;
+const CANCEL_SETTLE_TIMEOUT_MS = 2_000;
 
 export interface DaemonServerOptions {
   port?: number;
@@ -26,6 +27,33 @@ interface PendingCommand {
   runId?: string;
   leaseKey?: string;
   abortController: AbortController;
+}
+
+async function cancelAndSettle(entries: PendingCommand[]): Promise<boolean> {
+  entries.forEach((entry) => entry.abortController.abort());
+  if (entries.length === 0) return true;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const settled = await Promise.race([
+    Promise.allSettled(entries.map((entry) => entry.promise)).then(() => true),
+    new Promise<boolean>((resolve) => {
+      timeout = setTimeout(() => resolve(false), CANCEL_SETTLE_TIMEOUT_MS);
+      timeout.unref?.();
+    }),
+  ]);
+  if (timeout) clearTimeout(timeout);
+  return settled;
+}
+
+function publicSessionHolder(holder: SessionLease | undefined) {
+  if (!holder) return null;
+  const { key: _key, runId: _runId, ...publicHolder } = holder;
+  const [, sessionId, admissionSite] = holder.key.split('␟');
+  return { ...publicHolder, ...(sessionId ? { sessionId } : {}), ...(admissionSite ? { admissionSite } : {}) };
+}
+
+function displacedSessionHolder(holder: SessionLease | undefined): { command: string; pid?: number } | null {
+  if (!holder) return null;
+  return { command: holder.command, ...(holder.pid === undefined ? {} : { pid: holder.pid }) };
 }
 
 function commandTimeoutMs(command: BrowserRuntimeCommand): number {
@@ -322,8 +350,14 @@ export function createDaemonServer(provider: BrowserRuntimeProvider, opts: Daemo
           const matching = body.action === 'run-cancel' && typeof body.runId === 'string'
             ? [...pending.values()].filter((entry) => entry.runId === body.runId)
             : [];
-          matching.forEach((entry) => entry.abortController.abort());
-          await Promise.allSettled(matching.map((entry) => entry.promise));
+          const canceled = await cancelAndSettle(matching);
+          if (!canceled) {
+            const holder = typeof body.runId === 'string'
+              ? leases.list(hasPendingWork).find((lease) => lease.runId === body.runId)
+              : undefined;
+            jsonResponse(res, 409, { id: body.id, ok: false, code: 'session_busy', holder: publicSessionHolder(holder) });
+            return;
+          }
           const released = typeof body.runId === 'string' ? leases.releaseByRunId(body.runId) : 0;
           jsonResponse(res, 200, { id: body.id, ok: true, data: { released } });
           return;
@@ -342,12 +376,6 @@ export function createDaemonServer(provider: BrowserRuntimeProvider, opts: Daemo
           || lease.key.startsWith(`${sessionKey}␟`)
           || sessionKey.startsWith(`${lease.key}␟`)
         ));
-        const publicSessionHolder = (holder: ReturnType<typeof activeSessionLeases>[number] | undefined) => {
-          if (!holder) return null;
-          const { key: _key, runId: _runId, ...publicHolder } = holder;
-          const [, sessionId, admissionSite] = holder.key.split('␟');
-          return { ...publicHolder, ...(sessionId ? { sessionId } : {}), ...(admissionSite ? { admissionSite } : {}) };
-        };
         if (resolved.session && !(resolvedBody.action === 'session-close' && resolvedBody.force === true)) {
           const paused = handoffPauseResult(resolvedBody, resolved.session);
           if (paused) {
@@ -369,12 +397,14 @@ export function createDaemonServer(provider: BrowserRuntimeProvider, opts: Daemo
             : new Set<string>();
           const forcedCommands = [...pending.values()]
             .filter((entry) => entry.runId && forcedRunIds.has(entry.runId))
-            .map((entry) => {
-              entry.abortController.abort();
-              return entry.promise;
-            });
+            .map((entry) => entry);
           forcedRunIds.forEach((runId) => forceClosingRuns.add(runId));
-          await Promise.allSettled(forcedCommands);
+          const canceled = await cancelAndSettle(forcedCommands);
+          if (!canceled) {
+            forcedRunIds.forEach((runId) => forceClosingRuns.delete(runId));
+            jsonResponse(res, 409, { ok: false, code: 'session_busy', holder: publicSessionHolder(holder) });
+            return;
+          }
           const lifecycleResult = await handleSessionLifecycle(provider, resolvedBody);
           if (lifecycleResult) {
             for (const runId of forcedRunIds) {
@@ -385,7 +415,7 @@ export function createDaemonServer(provider: BrowserRuntimeProvider, opts: Daemo
               ...lifecycleResult,
               data: {
                 ...(lifecycleResult.data as Record<string, unknown>),
-                displaced: forcedRunIds.size,
+                displaced: displacedSessionHolder(holder),
                 clearedHandoff: Boolean(resolved.session?.handoff),
               },
             } : lifecycleResult);

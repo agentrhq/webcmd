@@ -5,6 +5,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CloakSessionManager } from '../../src/browser/runtime/local-cloak/session-manager.js';
+import { findExactCloakProfileProcesses } from '../../src/browser/runtime/local-cloak/process-matcher.js';
+import { resolveCloakProfileDir } from '../../src/browser/runtime/local-cloak/profiles.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 let server: http.Server;
@@ -128,6 +130,29 @@ describe.skipIf(process.env.WEBCMD_LIVE_CLOAK !== '1')('Cloak Session concurrenc
         `${baseUrl}/first`,
         `${baseUrl}/fallback`,
       ]);
+    } finally {
+      await manager.shutdown();
+    }
+  }, 180_000);
+
+  it('distinguishes work and work-2 Cloak processes from real ps output', async () => {
+    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-cloak-process-gate-'));
+    tempDirs.push(configDir);
+    const manager = new CloakSessionManager({ baseDir: configDir });
+    const work = { profileId: 'work', session: 'session_55555555-5555-4555-8555-555555555555', sessionId: 'session_55555555-5555-4555-8555-555555555555', surface: 'browser' as const };
+    const work2 = { profileId: 'work-2', session: 'session_66666666-6666-4666-8666-666666666666', sessionId: 'session_66666666-6666-4666-8666-666666666666', surface: 'browser' as const };
+    try {
+      const [workPage, work2Page] = await Promise.all([manager.getPage(work), manager.getPage(work2)]);
+      await Promise.all([
+        workPage.page.goto(`${baseUrl}/work`),
+        work2Page.page.goto(`${baseUrl}/work-2`),
+      ]);
+
+      const workProcesses = await findExactCloakProfileProcesses(resolveCloakProfileDir('work', { baseDir: configDir }));
+      const work2Processes = await findExactCloakProfileProcesses(resolveCloakProfileDir('work-2', { baseDir: configDir }));
+      expect(workProcesses.length).toBeGreaterThan(0);
+      expect(work2Processes.length).toBeGreaterThan(0);
+      expect(workProcesses.every(pid => !work2Processes.includes(pid))).toBe(true);
     } finally {
       await manager.shutdown();
     }

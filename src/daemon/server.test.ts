@@ -145,6 +145,13 @@ describe('createDaemonServer', () => {
     });
   }
 
+  async function promiseState<T>(promise: Promise<T>, waitMs = 0): Promise<'pending' | 'settled'> {
+    return Promise.race([
+      promise.then(() => 'settled' as const, () => 'settled' as const),
+      new Promise<'pending'>((resolve) => setTimeout(() => resolve('pending'), waitMs)),
+    ]);
+  }
+
   function persistentWrite(
     id: string,
     runId: string,
@@ -368,7 +375,7 @@ describe('createDaemonServer', () => {
           closed: true,
           alreadyIdle: false,
           session: 'session_a',
-          displaced: 1,
+          displaced: { command: 'browser/run' },
           clearedHandoff: false,
         },
       });
@@ -383,6 +390,51 @@ describe('createDaemonServer', () => {
       runId: 'run_200_2_2', command: 'browser/run',
     });
     expect(admitted.status).toBe(200);
+  });
+
+  it('returns SESSION_BUSY when force-close cancellation does not settle promptly', async () => {
+    const provider = new FakeProvider();
+    provider.activeSessions.add('session_a');
+    let aborted = false;
+    let settle!: () => void;
+    provider.dispatchImpl = (command, signal) => new Promise((resolve) => {
+      settle = () => resolve({ id: command.id, ok: true, data: 'done' });
+      signal?.addEventListener('abort', () => { aborted = true; }, { once: true });
+    });
+    const { baseUrl } = await start(provider);
+
+    const active = postCommand(baseUrl, {
+      id: 'active-force-timeout',
+      action: 'exec',
+      surface: 'browser',
+      session: 'session_a',
+      runId: 'run_100_1_2',
+      command: 'browser/run',
+    });
+    try {
+      await vi.waitFor(() => expect(provider.commands).toHaveLength(1));
+      const closeRequest = postCommand(baseUrl, {
+        id: 'force-close-timeout',
+        action: 'session-close',
+        contextId: 'default',
+        session: 'session_a',
+        force: true,
+      });
+      await vi.waitFor(() => expect(aborted).toBe(true));
+
+      expect(await promiseState(closeRequest, 2_500)).toBe('settled');
+      const close = await closeRequest;
+      expect(close.status).toBe(409);
+      await expect(close.json()).resolves.toMatchObject({
+        ok: false,
+        code: 'session_busy',
+        holder: { command: 'browser/run', sessionId: 'session_a' },
+      });
+      expect(provider.activeSessions).toContain('session_a');
+    } finally {
+      settle();
+      await active.catch(() => undefined);
+    }
   });
 
   it('force-closes every site-partitioned lease in an adapter-default Session', async () => {
@@ -855,6 +907,40 @@ describe('createDaemonServer', () => {
 
     expect((await postCommand(baseUrl, persistentWrite('next-owner', 'run_200_2_2'))).status).toBe(200);
     expect(provider.commands.map((command) => command.id)).toEqual(['owner', 'next-owner']);
+  });
+
+  it('returns SESSION_BUSY when run-cancel does not settle promptly', async () => {
+    const provider = new FakeProvider();
+    let aborted = false;
+    let settle!: () => void;
+    provider.dispatchImpl = (command, signal) => new Promise((resolve) => {
+      settle = () => resolve({ id: command.id, ok: true, data: 'done' });
+      signal?.addEventListener('abort', () => { aborted = true; }, { once: true });
+    });
+    const { baseUrl } = await start(provider);
+    const active = postCommand(baseUrl, persistentWrite('owner', 'run_100_1_1'));
+    try {
+      await vi.waitFor(() => expect(provider.commands).toHaveLength(1));
+      const canceled = postCommand(baseUrl, {
+        id: 'cancel',
+        action: 'run-cancel' as BrowserRuntimeCommand['action'],
+        runId: 'run_100_1_1',
+      });
+      await vi.waitFor(() => expect(aborted).toBe(true));
+
+      expect(await promiseState(canceled, 2_500)).toBe('settled');
+      const response = await canceled;
+      expect(response.status).toBe(409);
+      await expect(response.json()).resolves.toMatchObject({
+        id: 'cancel',
+        ok: false,
+        code: 'session_busy',
+        holder: { command: 'example write' },
+      });
+    } finally {
+      settle();
+      await active.catch(() => undefined);
+    }
   });
 
   it('aborts pending work when the command request disconnects', async () => {
