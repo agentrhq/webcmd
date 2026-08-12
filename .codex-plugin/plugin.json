@@ -29,10 +29,9 @@
     ],
     "websiteURL": "https://webcmd.dev/",
     "defaultPrompt": [
-      "Find and rank today’s most-discussed AI agent launches across Hacker News, Reddit, Product Hunt, and arXiv.",
       "Create a Zillow rental-search plugin for WebCMD with city, max rent, and bedroom filters. Test it and show me the command.",
       "Compare MacBook Air M5 prices and availability on Amazon, Walmart, and Best Buy.",
-      ""
+      "Find and rank today’s most-discussed AI agent launches across Hacker News, Reddit, Product Hunt, and arXiv."
     ],
     "brandColor": "#56C5FF",
     "composerIcon": "./docs/webcmd.svg",
