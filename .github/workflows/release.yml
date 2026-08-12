@@ -56,6 +56,10 @@ jobs:
         if: ${{ steps.release.outputs.release_created || inputs.publish_tag != '' }}
         run: npm ci
 
+      - name: Install Playwright Chromium
+        if: ${{ steps.release.outputs.release_created || inputs.publish_tag != '' }}
+        run: npx playwright-core install chromium --with-deps
+
       - name: Verify existing release tag
         if: ${{ inputs.publish_tag != '' }}
         run: test "${{ inputs.publish_tag }}" = "webcmd-v$(node -p "require('./package.json').version")"

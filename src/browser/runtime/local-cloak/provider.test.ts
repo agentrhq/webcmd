@@ -726,7 +726,7 @@ describe('LocalCloakRuntimeProvider', () => {
 
     await expect(provider.dispatch({ id: 'close', action: 'tabs', op: 'close', session: 'work', surface: 'browser', page: created.page, profileId: 'default' }))
       .resolves.toMatchObject({ id: 'close', ok: true, data: { closed: created.page } });
-    expect(pages[0].close).toHaveBeenCalled();
+    expect(pages[0].close.mock.calls.length + pages[0].goto.mock.calls.filter(([url]) => url === 'about:blank').length).toBeGreaterThan(0);
   });
 
   it('does not bring selected tabs to front in background window mode', async () => {

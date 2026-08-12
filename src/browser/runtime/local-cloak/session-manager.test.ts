@@ -170,6 +170,7 @@ describe('CloakSessionManager', () => {
     const launched = fakeContext();
     const manager = new CloakSessionManager({
       baseDir: '/tmp/webcmd-test',
+      platform: 'darwin',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
     });
 
@@ -193,6 +194,7 @@ describe('CloakSessionManager', () => {
     });
     const manager = new CloakSessionManager({
       baseDir: '/tmp/webcmd-test',
+      platform: 'darwin',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
     });
 
@@ -207,6 +209,7 @@ describe('CloakSessionManager', () => {
     const launched = fakeContext();
     const manager = new CloakSessionManager({
       baseDir: '/tmp/webcmd-test',
+      platform: 'darwin',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
     });
     const key = { profileId: 'default', session: 'session_a', sessionId: 'session_a', surface: 'browser' as const };
@@ -240,6 +243,7 @@ describe('CloakSessionManager', () => {
     ));
     const manager = new CloakSessionManager({
       baseDir: '/tmp/webcmd-test',
+      platform: 'darwin',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
     });
     const key = { profileId: 'default', session: 'session_a', sessionId: 'session_a', surface: 'browser' as const };
@@ -880,6 +884,7 @@ describe('CloakSessionManager', () => {
     const launched = fakeContext();
     const manager = new CloakSessionManager({
       baseDir: '/tmp/webcmd-test',
+      platform: 'darwin',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
     });
     const key = { profileId: 'default', session: 'session_default', sessionId: 'session_default', surface: 'adapter' as const, siteSession: 'ephemeral' as const, adapterSite: 'github', runId: 'run_a' };
@@ -892,6 +897,7 @@ describe('CloakSessionManager', () => {
     const launched = fakeContext();
     const manager = new CloakSessionManager({
       baseDir: '/tmp/webcmd-test',
+      platform: 'darwin',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
     });
     const base = { profileId: 'default', session: 'session_default', sessionId: 'session_default', surface: 'adapter' as const, siteSession: 'ephemeral' as const };
@@ -928,6 +934,7 @@ describe('CloakSessionManager', () => {
     const launched = fakeContext();
     const manager = new CloakSessionManager({
       baseDir: '/tmp/webcmd-test',
+      platform: 'darwin',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
     });
     const lease = await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser', idleTimeout: 25 });
@@ -945,6 +952,7 @@ describe('CloakSessionManager', () => {
     const launched = fakeContext();
     const manager = new CloakSessionManager({
       baseDir: '/tmp/webcmd-test',
+      platform: 'darwin',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
     });
     const first = await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser', idleTimeout: 25 });

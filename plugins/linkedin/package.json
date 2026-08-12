@@ -4,6 +4,6 @@
   "type": "module",
   "description": "LinkedIn profile, network, messaging, job, and Sales Navigator commands for WebCMD",
   "peerDependencies": {
-    "@agentrhq/webcmd": ">=0.6.0"
+    "@agentrhq/webcmd": ">=0.6.1"
   }
 }
