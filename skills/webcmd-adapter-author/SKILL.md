@@ -13,7 +13,7 @@ plus `webcmd doctor`, `webcmd browser init`,
 and `webcmd browser verify`. Browser-run programs are discovery evidence, not
 adapter source.
 
-Browser-profile auth commands must reuse `registerSiteAuthCommands`. Keep only site-specific `verify` and `openLogin` logic in the adapter. The login row must return `action_required` and `verify_command` (normally `webcmd <site> whoami`); after the user reports done, agents run that returned command and verification must succeed before retrying the original workflow. Credentials, MFA, and CAPTCHA always use human handoff: CAPTCHA stops automation until the user reports done and verification succeeds, and adapter code must not collect or type passwords or secrets.
+Browser-profile auth commands must reuse `registerSiteAuthCommands`. Keep only site-specific `verify` and `openLogin` logic in the adapter. The login row must return `action_required` and `verify_command`; after the user reports done, agents run that returned command verbatim (it includes `--session` when applicable), and verification must succeed before retrying the original workflow. Credentials, MFA, and CAPTCHA always use human handoff: CAPTCHA stops automation until the user reports done and verification succeeds, and adapter code must not collect or type passwords or secrets.
 
 Commands whose primary operation searches or discovers matching items from a corpus must set `tags: ['search']`. Add short `keywords` only for non-obvious intent synonyms; do not infer tags from command names alone when authoring new adapters.
 

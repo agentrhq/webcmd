@@ -59,8 +59,10 @@ The old `web read` command has been renamed to `web fetch-browser`.
 
 Create an opaque session before raw browser work. Profiles hold cookie/auth
 state; sessions are browser workspaces within that profile. Adapter commands
-may omit `--session` and use their profile's default session, but raw browser
-commands must always pass it:
+may omit `--session` and use their profile's adapter-default session; pass
+`--session <session-id>` only when intentionally routing an adapter into an
+explicit session. Raw browser commands must always pass it. Retired positional
+syntax such as `webcmd browser <session> ...` is invalid:
 
 ```bash
 webcmd session create -f json
@@ -71,6 +73,11 @@ webcmd --session session_abc browser run --stdin --no-snapshot-diff
 webcmd session list
 webcmd session close session_abc
 ```
+
+Agents sharing a profile can work in parallel by creating separate Sessions.
+An authentication handoff is scoped to the Session that started it: run the
+returned verification command verbatim because it includes `--session` when
+needed. `session close` is blocked while that Session has a live handoff.
 
 Use `snapshot` for explicit page inspection. `act` is the default
 action-first mode, `tree` preserves fuller page structure, and `read` extracts readable article/content text. Exactly one of `--file

@@ -219,6 +219,24 @@ describe('webcmd skills content', () => {
     expect(siteReconReference).not.toMatch(/webcmd browser \S+ (?:open|state|click|type|select|find|extract|network|wait|eval)/i);
   });
 
+  it('keeps raw browser and handoff work scoped to explicit Sessions', () => {
+    const usage = bundledSkill('webcmd-usage');
+    const browser = bundledSkill('webcmd-browser');
+    const autofix = bundledSkill('webcmd-autofix');
+
+    expect(usage).toContain('webcmd session create -f json');
+    expect(usage).toContain('webcmd --session session_abc browser');
+    expect(usage).toMatch(/Adapter commands may omit `--session`[\s\S]{0,200}adapter-default session/i);
+    expect(usage).toMatch(/retired `webcmd browser <session> \.\.\.` syntax is invalid/i);
+    expect(browser).toMatch(/Profiles are cookie jars[\s\S]{0,180}sessions are browser workspaces\/windows/i);
+    expect(browser).toMatch(/Parallel agents use separate sessions/i);
+    for (const skill of [usage, browser, autofix]) {
+      expect(skill).toMatch(/handoff is scoped to (?:its|the) Session/i);
+      expect(skill).toMatch(/(?:verify_command|handoff\.verifyCommand)[\s\S]{0,200}verbatim[\s\S]{0,120}`--session`/i);
+      expect(skill).toMatch(/(?:cannot be closed|close is blocked|do not close)[\s\S]{0,100}handoff|handoff[\s\S]{0,100}(?:cannot be closed|close is blocked|do not close)/i);
+    }
+  });
+
   it('keeps browser behavioral policy while pruning removed command instructions', () => {
     const browser = bundledSkill('webcmd-browser');
 

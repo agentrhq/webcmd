@@ -33,7 +33,7 @@ Until `doctor` is green, browser commands may fail. Registry and plugin discover
 - Create an opaque browser session before raw browser work: `webcmd session create -f json`.
 - Raw `webcmd browser *` commands require that ID at the root: `webcmd --session <session-id> browser ...`; positional `webcmd browser <session> ...` is retired.
 - Profiles are cookie jars and auth scope; sessions are browser workspaces/windows within a profile. Parallel agents use separate sessions.
-- `webcmd session list` shows sessions and their handoff/runtime state; close finished work with `webcmd session close <session-id>`.
+- `webcmd session list` shows sessions and their handoff/runtime state; close finished work with `webcmd session close <session-id>`. Close is blocked while that Session has a live handoff.
 - Browser state in the bound page persists between calls, but each `run` gets a fresh JavaScript scope.
 - `webcmd --session <session-id> browser tabs` lists existing pages without creating a new one.
 - `webcmd --session <session-id> browser bind --page <page-id>` explicitly attaches the session to an existing page.
@@ -119,6 +119,10 @@ If Webcmd reports sitemap context, load `webcmd-browser-sitemap` before continui
 ### Authentication and human handoff
 
 If a failure returns `handoff.status === action_required`, stop browser writes. Give the user `handoff.action` and any `Webcmd browser:` or `handoff.viewUrl` link, then wait. After the user reports done, run `handoff.verifyCommand` when present; verification must succeed before retrying.
+
+The handoff is scoped to the Session that started it. Run the returned
+`verify_command` or `handoff.verifyCommand` verbatim; it includes `--session`
+when applicable. Do not close that Session during the live handoff.
 
 1. On a clear login redirect or auth wall, stop browser writes.
 2. If the site exposes a login command, run `webcmd <site> login`.

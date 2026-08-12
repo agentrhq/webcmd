@@ -40,10 +40,15 @@ Playwright-style program to an explicit browser session:
 ```bash
 webcmd session create -f json
 webcmd --session session_abc browser run --file explore.js
-printf 'const page = await browser.currentPage(); return await page.title();' \
+printf 'return await page.title();' \
   | webcmd --session session_abc browser run --stdin
 webcmd session close session_abc
 ```
+
+Profiles are cookie jars; Sessions are independent browser windows within a
+profile, so parallel agents should create separate Sessions. Adapter commands
+use an adapter-default Session unless `--session` intentionally routes them to
+an explicit one.
 
 ## Demo
 

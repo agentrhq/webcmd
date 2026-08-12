@@ -63,7 +63,7 @@ do: <agent action, adapter command, or semantic browser command>
 post: <URL / state / output that proves success>
 fail: <failure signal 1> | <signal 2>
 recover: <fallback instruction>; adapter_health_update: <adapter> -> suspect
-evidence: webcmd browser <cmd> or trace:<path>
+evidence: webcmd --session <session-id> browser <cmd> or trace:<path>
 ```
 
 Use this compact form by default. Use the longer Markdown form from `references/sitemap-schema.md` only when an action genuinely needs longer explanation. `verified_at` and `source` are inherited from file front matter; do not repeat them per action.

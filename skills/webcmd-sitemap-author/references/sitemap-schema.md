@@ -175,7 +175,7 @@ do: <agent action, adapter command, or semantic browser command>
 post: <URL / state / output that proves success>
 fail: <failure signal 1> | <failure signal 2>
 recover: <fallback instruction>; adapter_health_update: <adapter> -> suspect
-evidence: webcmd browser <cmd> or trace:<path>
+evidence: webcmd --session <session-id> browser <cmd> or trace:<path>
 
 ## Linked APIs
 
@@ -390,7 +390,7 @@ do: <agent action, adapter command, or semantic browser command>
 post: <URL / state / output that proves success>
 fail: <failure signal 1> | <failure signal 2>
 recover: <fallback instruction>; adapter_health_update: <adapter> -> suspect
-evidence: webcmd browser <cmd> or trace:<path>
+evidence: webcmd --session <session-id> browser <cmd> or trace:<path>
 ```
 
 Field rules:
