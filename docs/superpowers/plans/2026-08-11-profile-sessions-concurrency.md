@@ -6,14 +6,14 @@
 
 **Architecture:** Raw browser work starts with `session create`, carries the returned immutable ID, and is admitted one top-level execution at a time. Browser-backed adapters may instead resolve the Profile's system-managed adapter-default Session; non-browser adapters allocate none. Locally, a Session owns an exclusive Cloak window group inside one Profile context; Webcmd Cloud keys Browser Use allocations and admission leases by `(userId, workspaceId, profileId, sessionId)`.
 
-**Tech Stack:** TypeScript, Node.js 20.6+, Commander 14, Playwright Core 1.61.1, Cloak Browser package 0.4.5 with Chromium v145.0.7632.159, Vitest, PostgreSQL, Browser Use, GCP release gates.
+**Tech Stack:** TypeScript, Node.js 20.6+, Commander 14, Playwright Core 1.61.1, Cloak Browser package 0.4.5 with Chromium v145.0.7632.109.2, Vitest, PostgreSQL, Browser Use, GCP release gates.
 
 ## Global Constraints
 
 - Implement the approved contract in `docs/superpowers/specs/2026-08-11-profile-sessions-concurrency-design.md`; do not reintroduce Spaces.
 - Work in `/Users/beubax/Desktop/AgentR/OpenCLI` for CLI/local tasks and `/Users/beubax/Desktop/AgentR/webcmd-cloud` for hosted tasks.
 - Preserve unrelated user changes. Before every commit, stage only that task's files and inspect `git diff --cached`.
-- Keep `cloakbrowser` exactly pinned to `0.4.5`, Playwright Core exactly pinned to `1.61.1`, and the supported Chromium artifact at v145.0.7632.159. Do not add capability/licence fallback branches.
+- Keep `cloakbrowser` exactly pinned to `0.4.5`, Playwright Core exactly pinned to `1.61.1`, and the supported Chromium artifact at v145.0.7632.109.2. Do not add capability/licence fallback branches.
 - Add no dependency. Reuse Commander, Playwright/CDP, the local `SessionLeaseRegistry`, the hosted persistent write lease, existing Profile services, existing live-view storage, and existing rendering.
 - `--session <session-id>` is a root option. Raw browser commands require an existing opaque ID; omission returns `SESSION_REQUIRED` with exit 2. No PID default, ambient `session use`, caller-chosen name, takeover, complete, or positional compatibility alias is allowed.
 - `session create` always returns a new Webcmd-generated ID. `session list` is read-only. `session close` idempotently stops runtime state but preserves the record. Passing an ID is attachment; there is no `session bind` command.
@@ -1661,7 +1661,7 @@ describe.skipIf(!live)('pinned Cloak Profile Sessions', () => {
 
 The body must use barriers and real navigations to two locally served pages, not timing guesses. It must assert all of these in one cleanup-safe suite:
 
-1. `resolveCloakBrowserVersion()` is exactly `0.4.5`, and the runtime-reported Chromium version is `145.0.7632.159`.
+1. `resolveCloakBrowserVersion()` is exactly `0.4.5`, and the runtime-reported Chromium version is `145.0.7632.109.2`.
 2. Two Profile contexts with distinct temp user-data directories launch through `Promise.all` and both navigate.
 3. Two Sessions in one Profile receive distinct window IDs and navigate simultaneously.
 4. Same-Session extra tabs and popups retain ownership; background creation does not change `document.hasFocus()` in the foreground human window.

@@ -391,7 +391,7 @@ allocation.
 ## Pinned Cloak concurrency and issues #225/#242
 
 Webcmd pins `cloakbrowser` `0.4.5`, Playwright Core `1.61.1`, and Chromium
-`v145.0.7632.159`. Release evidence, not runtime licence probing, defines support. The live gate
+`v145.0.7632.109.2`. Release evidence, not runtime licence probing, defines support. The live gate
 must prove:
 
 - two Profile contexts with separate user-data directories launch and navigate concurrently;
