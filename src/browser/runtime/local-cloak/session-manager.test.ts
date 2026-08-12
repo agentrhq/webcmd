@@ -601,9 +601,45 @@ describe('CloakSessionManager', () => {
       baseDir: '/tmp/webcmd-test',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
     });
-    const lease = await manager.getPage({ profileId: 'default', session: 'site:x:uuid', surface: 'adapter', siteSession: 'ephemeral' });
-    await manager.release({ profileId: 'default', session: 'site:x:uuid', surface: 'adapter' });
+    const key = { profileId: 'default', session: 'session_default', sessionId: 'session_default', surface: 'adapter' as const, siteSession: 'ephemeral' as const, adapterSite: 'github', runId: 'run_a' };
+    const lease = await manager.getPage(key);
+    await manager.release(key);
     expect(lease.page.close).toHaveBeenCalled();
+  });
+
+  it('releases only the owning ephemeral adapter site and run', async () => {
+    const launched = fakeContext();
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
+    });
+    const base = { profileId: 'default', session: 'session_default', sessionId: 'session_default', surface: 'adapter' as const, siteSession: 'ephemeral' as const };
+    const github = { ...base, adapterSite: 'github', runId: 'run_a' };
+    const linkedin = { ...base, adapterSite: 'linkedin', runId: 'run_b' };
+    const githubLease = await manager.getPage(github);
+    const linkedinLease = await manager.getPage(linkedin);
+
+    await manager.release(github);
+
+    expect(githubLease.page.close).toHaveBeenCalledOnce();
+    expect(linkedinLease.page.close).not.toHaveBeenCalled();
+    expect((await manager.getPage(linkedin)).page).toBe(linkedinLease.page);
+  });
+
+  it('keeps persistent adapter pages tracked when release is requested', async () => {
+    const launched = fakeContext();
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
+    });
+    const key = { profileId: 'default', session: 'session_default', sessionId: 'session_default', surface: 'adapter' as const, siteSession: 'persistent' as const, adapterSite: 'github', runId: 'run_a' };
+    const lease = await manager.getPage(key);
+
+    await manager.release(key);
+
+    expect(lease.page.close).not.toHaveBeenCalled();
+    await expect(manager.listPages(key)).resolves.toHaveLength(1);
+    expect((await manager.getPage(key)).page).toBe(lease.page);
   });
 
   it('closes non-persistent leases when their idle timeout expires', async () => {

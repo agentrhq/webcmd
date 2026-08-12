@@ -78,12 +78,15 @@ async function resolveBrowserSession(
 ): Promise<BrowserRuntimeCommand> {
   if (command.action === 'lease-release' || command.action === 'run-cancel' || SESSION_LIFECYCLE_ACTIONS.has(command.action)) return command;
   let session: BrowserSessionRecord | undefined;
+  let sessionKind: BrowserRuntimeCommand['sessionKind'];
   if (command.surface === 'adapter' && !command.session) {
     session = await provider.resolveAdapterDefault?.(command);
+    sessionKind = 'adapter-default';
   } else {
     session = await provider.requireSession?.(command);
+    sessionKind = 'explicit';
   }
-  return session ? { ...command, session: session.id, sessionId: session.id, sessionKind: session.kind } : command;
+  return session ? { ...command, session: session.id, sessionId: session.id, sessionKind } : command;
 }
 
 async function handleSessionLifecycle(

@@ -63,7 +63,7 @@ class FakeProvider implements BrowserRuntimeProvider {
     return {
       id: String(command.session),
       profileId,
-      kind: 'explicit',
+      kind: command.session === 'session_default' ? 'adapter-default' : 'explicit',
       createdAt: '2026-08-11T00:00:00.000Z',
       updatedAt: '2026-08-11T00:00:00.000Z',
       lastUsedAt: '2026-08-11T00:00:00.000Z',
@@ -361,6 +361,34 @@ describe('createDaemonServer', () => {
       sessionId: 'session_default',
       sessionKind: 'adapter-default',
       adapterSite: 'github',
+    });
+  });
+
+  it('conflicts an explicitly selected adapter-default Session with its implicit adapter work', async () => {
+    const { provider, baseUrl } = await start();
+
+    expect((await postCommand(baseUrl, adapterCommand('github-owner', 'run_100_1_1', 'github'))).status).toBe(200);
+    const rawConflict = await postCommand(baseUrl, {
+      id: 'raw-conflict',
+      action: 'exec',
+      code: '1',
+      surface: 'browser',
+      session: 'session_default',
+      runId: 'run_200_2_2',
+      command: 'browser/run',
+    });
+
+    expect(rawConflict.status).toBe(409);
+    expect(provider.commands.map(({ id }) => id)).toEqual(['github-owner']);
+  });
+
+  it('marks an explicitly selected adapter-default ID as explicit routing', async () => {
+    const { provider, baseUrl } = await start();
+
+    expect((await postCommand(baseUrl, adapterCommand('explicit-default', 'run_100_1_1', 'github', 'session_default'))).status).toBe(200);
+    expect(provider.commands[0]).toMatchObject({
+      sessionId: 'session_default',
+      sessionKind: 'explicit',
     });
   });
 

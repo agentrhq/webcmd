@@ -417,16 +417,18 @@ export class CloakSessionManager {
     const runtime = this.profiles.get(profileId);
     if (!runtime) return;
     const leaseKey = resolveLeaseKey(input);
-    const entries = this.openEntries(runtime)
-      .filter(([key, entry]) => key === leaseKey || (
-        entry.session === requireSession(input.session)
-        && entry.surface === normalizeSurface(input.surface)
-      ));
+    const surface = normalizeSurface(input.surface);
+    const entries = this.openEntries(runtime).filter(([key, entry]) => (
+      surface === 'adapter'
+        ? key === leaseKey
+        : entry.session === requireSession(input.session) && entry.surface === surface
+    ));
     for (const [key, entry] of entries) {
+      if (entry.siteSession === 'persistent') continue;
       runtime.pages.delete(key);
       this.clearIdleTimer(entry);
       this.clearSelectedPage(runtime, entry);
-      if (entry.siteSession !== 'persistent' && !pageIsClosed(entry.page)) {
+      if (!pageIsClosed(entry.page)) {
         await entry.page.close().catch(() => {});
       }
     }

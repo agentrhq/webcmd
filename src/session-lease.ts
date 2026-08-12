@@ -181,17 +181,20 @@ export class SessionLeaseRegistry {
   ): AcquireResult {
     const now = this.now();
     const current = this.leases.get(input.key);
-    const currentIsLive = current !== undefined
+    const conflict = [...this.leases.values()].find((lease) => (
+      lease.runId !== input.runId
+      && (lease.key === input.key || lease.key.startsWith(`${input.key}␟`) || input.key.startsWith(`${lease.key}␟`))
       && (
-        hasPendingWork(current.runId)
+        hasPendingWork(lease.runId)
         || (
-          now - current.heartbeatAt <= SESSION_LEASE_TTL_MS
-          && (!isActionablePid(current.pid) || this.pidAlive(current.pid))
+          now - lease.heartbeatAt <= SESSION_LEASE_TTL_MS
+          && (!isActionablePid(lease.pid) || this.pidAlive(lease.pid))
         )
-      );
+      )
+    ));
 
-    if (current && currentIsLive && current.runId !== input.runId) {
-      return { acquired: false, holder: { ...current } };
+    if (conflict) {
+      return { acquired: false, holder: { ...conflict } };
     }
 
     const pid = input.pid === undefined

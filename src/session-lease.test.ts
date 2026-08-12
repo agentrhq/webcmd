@@ -159,6 +159,18 @@ describe('SessionLeaseRegistry', () => {
       .toBe(true);
   });
 
+  it('conflicts Session-wide admission with any site partition while allowing sibling sites', () => {
+    const leases = registry();
+    const session = getSessionLeaseKey('profile_work', 'session_default');
+    const github = getSessionLeaseKey('profile_work', 'session_default', 'github');
+    const linkedin = getSessionLeaseKey('profile_work', 'session_default', 'linkedin');
+
+    expect(leases.acquire({ key: github, runId: 'run_1', command: 'github/issues' }, () => true).acquired).toBe(true);
+    expect(leases.acquire({ key: linkedin, runId: 'run_2', command: 'linkedin/posts' }, () => true).acquired).toBe(true);
+    expect(leases.acquire({ key: session, runId: 'run_3', command: 'browser/run' }, () => true))
+      .toMatchObject({ acquired: false });
+  });
+
   function registry(): SessionLeaseRegistry {
     return new SessionLeaseRegistry(() => now, () => true);
   }
