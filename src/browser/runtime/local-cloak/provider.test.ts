@@ -343,6 +343,95 @@ describe('LocalCloakRuntimeProvider', () => {
     expect(page.evaluate).toHaveBeenCalledTimes(1);
   });
 
+  it('partitions the local queue by adapter site only for adapter-default Sessions', () => {
+    const { provider } = makeProviderWithFakePage();
+    const queueKey = (provider as unknown as {
+      commandQueueKey(command: Parameters<LocalCloakRuntimeProvider['dispatch']>[0]): string;
+    }).commandQueueKey.bind(provider);
+
+    expect(queueKey({
+      id: 'github',
+      action: 'exec',
+      surface: 'adapter',
+      session: 'session_default',
+      sessionKind: 'adapter-default',
+      adapterSite: 'github',
+      profileId: 'default',
+    })).not.toBe(queueKey({
+      id: 'linkedin',
+      action: 'exec',
+      surface: 'adapter',
+      session: 'session_default',
+      sessionKind: 'adapter-default',
+      adapterSite: 'linkedin',
+      profileId: 'default',
+    }));
+    expect(queueKey({
+      id: 'github-explicit',
+      action: 'exec',
+      surface: 'adapter',
+      session: 'session_default',
+      sessionKind: 'explicit',
+      adapterSite: 'github',
+      profileId: 'default',
+    })).toBe(queueKey({
+      id: 'linkedin-explicit',
+      action: 'exec',
+      surface: 'adapter',
+      session: 'session_default',
+      sessionKind: 'explicit',
+      adapterSite: 'linkedin',
+      profileId: 'default',
+    }));
+  });
+
+  it('keeps adapter-default page-scoped queue keys partitioned by site', async () => {
+    const { provider } = makeProviderWithFakePage();
+    const queueKey = (provider as unknown as {
+      commandQueueKey(command: Parameters<LocalCloakRuntimeProvider['dispatch']>[0]): string;
+    }).commandQueueKey.bind(provider);
+    const github = await provider.dispatch({
+      id: 'github-nav',
+      action: 'navigate',
+      surface: 'adapter',
+      session: 'session_default',
+      sessionId: 'session_default',
+      sessionKind: 'adapter-default',
+      siteSession: 'persistent',
+      adapterSite: 'github',
+      profileId: 'default',
+      url: 'https://github.example/',
+    });
+    const linkedin = await provider.dispatch({
+      id: 'linkedin-nav',
+      action: 'navigate',
+      surface: 'adapter',
+      session: 'session_default',
+      sessionId: 'session_default',
+      sessionKind: 'adapter-default',
+      siteSession: 'persistent',
+      adapterSite: 'linkedin',
+      profileId: 'default',
+      url: 'https://linkedin.example/',
+    });
+
+    expect(queueKey({
+      id: 'github-followup',
+      action: 'exec',
+      surface: 'adapter',
+      session: 'session_default',
+      page: github.page,
+      profileId: 'default',
+    })).not.toBe(queueKey({
+      id: 'linkedin-followup',
+      action: 'exec',
+      surface: 'adapter',
+      session: 'session_default',
+      page: linkedin.page,
+      profileId: 'default',
+    }));
+  });
+
   it('serializes commands by the resolved page lease when explicit page metadata differs', async () => {
     const { provider, page } = makeProviderWithFakePage();
     runBrowserProgram.mockImplementationOnce(async () => {

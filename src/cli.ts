@@ -54,7 +54,7 @@ import { loadBrowserRunSource } from './browser/run/input.js';
 import { BrowserRunError } from './browser/run/types.js';
 import { classifyCommandOrigin, formatCommandOrigin } from './command-origin.js';
 import { readOverrideRecords, removeOverrideRecords } from './override-provenance.js';
-import { clearDaemonRunContext, generateRunId, runWithDaemonRunContext } from './session-lease.js';
+import { clearDaemonRunContext, generateRunId, isUnknownOutcomeError, runWithDaemonRunContext } from './session-lease.js';
 
 const CLI_FILE = fileURLToPath(import.meta.url);
 const FOLLOW_POLL_MS = 1_000;
@@ -1087,12 +1087,14 @@ cli({
     return async (opts: Record<string, unknown>, command: Command) => {
       const runId = generateRunId();
       const commandName = `browser/${command.name()}`;
+      let releaseRun = true;
       try {
         const session = getBrowserSession(command);
         const routing = profileRouteParams(getBrowserProfileSelection(command));
         const result = await runWithDaemonRunContext({ runId, command: commandName }, () => fn(session, routing, opts));
         console.log(JSON.stringify(result, null, 2));
       } catch (error) {
+        if (isUnknownOutcomeError(error)) releaseRun = false;
         if (error instanceof BrowserCommandError && error.code) {
           console.log(JSON.stringify({
             error: {
@@ -1108,7 +1110,7 @@ cli({
         process.exitCode = error instanceof CliError ? error.exitCode : EXIT_CODES.GENERIC_ERROR;
       } finally {
         clearDaemonRunContext(runId);
-        await releaseSiteSessionLease(runId);
+        if (releaseRun) await releaseSiteSessionLease(runId);
       }
     };
   }

@@ -46,6 +46,7 @@ export interface SessionKeyInput {
   session?: string;
   surface?: BrowserSurface;
   siteSession?: SiteSessionMode;
+  sessionKind?: 'explicit' | 'adapter-default';
   sessionId?: string;
   adapterSite?: string;
   runId?: string;
@@ -64,6 +65,8 @@ type PageEntry = {
   session: string;
   surface: BrowserSurface;
   siteSession?: SiteSessionMode;
+  sessionKind?: 'explicit' | 'adapter-default';
+  adapterSite?: string;
   idleTimeout?: number;
   idleTimer?: ReturnType<typeof setTimeout>;
 };
@@ -277,6 +280,8 @@ export class CloakSessionManager {
         session,
         surface,
         siteSession: input.siteSession,
+        sessionKind: input.sessionKind,
+        adapterSite: input.adapterSite,
         idleTimeout: input.idleTimeout,
       });
       if (existing && freshPage && existing !== entry) await this.removeEntry(acquired.runtime, sessionRuntime, existing, true);
@@ -325,11 +330,17 @@ export class CloakSessionManager {
     return null;
   }
 
-  pageOwner(pageId: string): { profileId: string; session: string; surface: BrowserSurface } | null {
+  pageOwner(pageId: string): { profileId: string; session: string; surface: BrowserSurface; sessionKind?: 'explicit' | 'adapter-default'; adapterSite?: string } | null {
     for (const [profileId, runtime] of this.profiles.entries()) {
       for (const entry of runtime.targetPages.values()) {
         if (entry.pageId === pageId && !pageIsClosed(entry.page)) {
-          return { profileId, session: entry.session, surface: entry.surface };
+          return {
+            profileId,
+            session: entry.session,
+            surface: entry.surface,
+            sessionKind: entry.sessionKind,
+            adapterSite: entry.adapterSite,
+          };
         }
       }
     }
@@ -424,6 +435,8 @@ export class CloakSessionManager {
       session,
       surface,
       siteSession: input.siteSession,
+      sessionKind: input.sessionKind,
+      adapterSite: input.adapterSite,
       idleTimeout: input.idleTimeout,
     });
     const leaseKey = entry.leaseKey;
@@ -990,6 +1003,8 @@ export class CloakSessionManager {
       session: openerEntry.session,
       surface: openerEntry.surface,
       siteSession: openerEntry.siteSession,
+      sessionKind: openerEntry.sessionKind,
+      adapterSite: openerEntry.adapterSite,
       idleTimeout: openerEntry.idleTimeout,
     });
   }
@@ -998,7 +1013,7 @@ export class CloakSessionManager {
     runtime: ProfileRuntime,
     session: SessionRuntime,
     page: PlaywrightPage,
-    input: Pick<PageEntry, 'session' | 'surface' | 'siteSession' | 'idleTimeout'> & { leaseKey?: string },
+    input: Pick<PageEntry, 'session' | 'surface' | 'siteSession' | 'sessionKind' | 'adapterSite' | 'idleTimeout'> & { leaseKey?: string },
   ): Promise<PageEntry> {
     const targetId = await this.targetIdForPage(runtime, page);
     this.pendingTargetPages.get(runtime)?.delete(targetId);
@@ -1026,6 +1041,8 @@ export class CloakSessionManager {
         session: input.session,
         surface: input.surface,
         siteSession: input.siteSession,
+        sessionKind: input.sessionKind,
+        adapterSite: input.adapterSite,
         idleTimeout: input.idleTimeout,
       };
       runtime.targetPages.set(targetId, entry);
@@ -1039,6 +1056,8 @@ export class CloakSessionManager {
       entry.session = input.session;
       entry.surface = input.surface;
       entry.siteSession = input.siteSession;
+      entry.sessionKind = input.sessionKind;
+      entry.adapterSite = input.adapterSite;
       entry.idleTimeout = input.idleTimeout;
       entry.leaseKey = input.leaseKey ?? (entry.leaseKey.startsWith('unowned\u0000') ? `page\u0000${entry.pageId}` : entry.leaseKey);
     }

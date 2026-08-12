@@ -116,7 +116,12 @@ export class LocalCloakRuntimeProvider implements BrowserRuntimeProvider {
   private commandQueueKey(command: BrowserRuntimeCommand): string {
     if (command.page) {
       const owner = this.manager.pageOwner(command.page);
-      if (owner) return `session\u0000${owner.profileId}\u0000${owner.surface}\u0000${owner.session}`;
+      if (owner) {
+        const adapterDefaultSite = owner.surface === 'adapter' && owner.sessionKind === 'adapter-default'
+          ? owner.adapterSite?.trim()
+          : undefined;
+        return `session\u0000${owner.profileId}\u0000${owner.surface}\u0000${owner.session}${adapterDefaultSite ? `\u0000${adapterDefaultSite}` : ''}`;
+      }
     }
 
     let profileId: string;
@@ -128,6 +133,9 @@ export class LocalCloakRuntimeProvider implements BrowserRuntimeProvider {
         ?? command.preferredContextId
         ?? 'default';
     }
-    return `session\u0000${profileId.trim() || 'default'}\u0000${command.surface ?? 'browser'}\u0000${command.session ?? ''}`;
+    const adapterDefaultSite = command.surface === 'adapter' && command.sessionKind === 'adapter-default'
+      ? command.adapterSite?.trim()
+      : undefined;
+    return `session\u0000${profileId.trim() || 'default'}\u0000${command.surface ?? 'browser'}\u0000${command.session ?? ''}${adapterDefaultSite ? `\u0000${adapterDefaultSite}` : ''}`;
   }
 }

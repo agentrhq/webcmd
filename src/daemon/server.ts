@@ -316,6 +316,16 @@ export function createDaemonServer(provider: BrowserRuntimeProvider, opts: Daemo
         }
         const resolved = await resolveBrowserSession(provider, body);
         const resolvedBody = resolved.command;
+        const activeSessionHolder = (sessionKey: string) => {
+          const holder = leases.list(hasPendingWork).find((lease) => (
+            lease.key === sessionKey
+            || lease.key.startsWith(`${sessionKey}␟`)
+            || sessionKey.startsWith(`${lease.key}␟`)
+          ));
+          if (!holder) return null;
+          const { key: _key, runId: _runId, ...publicHolder } = holder;
+          return publicHolder;
+        };
         if (resolved.session) {
           const paused = handoffPauseResult(resolvedBody, resolved.session);
           if (paused) {
@@ -324,6 +334,12 @@ export function createDaemonServer(provider: BrowserRuntimeProvider, opts: Daemo
           }
         }
         if (resolvedBody.action === 'session-close') {
+          const profileId = commandProfileId(provider, resolvedBody) ?? 'default';
+          const holder = activeSessionHolder(getSessionLeaseKey(profileId, resolvedBody.sessionId!));
+          if (holder) {
+            jsonResponse(res, 409, { ok: false, code: 'session_busy', holder });
+            return;
+          }
           const lifecycleResult = await handleSessionLifecycle(provider, resolvedBody);
           if (lifecycleResult) {
             jsonResponse(res, 200, lifecycleResult);

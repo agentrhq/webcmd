@@ -275,6 +275,45 @@ describe('createDaemonServer', () => {
     expect(provider.activeSessions).toContain('session_a');
   });
 
+  it('rejects Session close while work is active in that Session', async () => {
+    let settle!: () => void;
+    const provider = new FakeProvider();
+    provider.activeSessions.add('session_a');
+    provider.dispatchImpl = (command) => new Promise((resolve) => {
+      settle = () => resolve({ id: command.id, ok: true, data: 'done' });
+    });
+    const { baseUrl } = await start(provider);
+
+    const active = postCommand(baseUrl, {
+      id: 'active-work',
+      action: 'exec',
+      surface: 'browser',
+      session: 'session_a',
+      runId: 'run_100_1_1',
+      command: 'browser/run',
+    });
+    try {
+      await vi.waitFor(() => expect(provider.commands).toHaveLength(1));
+      const close = await postCommand(baseUrl, {
+        id: 'close-active-session',
+        action: 'session-close',
+        contextId: 'default',
+        session: 'session_a',
+      });
+
+      expect(close.status).toBe(409);
+      await expect(close.json()).resolves.toMatchObject({
+        ok: false,
+        code: 'session_busy',
+        holder: { command: 'browser/run' },
+      });
+      expect(provider.activeSessions).toContain('session_a');
+    } finally {
+      settle();
+      await active.catch(() => undefined);
+    }
+  });
+
   it('accepts the maximum browser-run source envelope', async () => {
     const { provider, baseUrl } = await start();
     const source = 'x'.repeat(256 * 1024);

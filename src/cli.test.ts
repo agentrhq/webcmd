@@ -1674,6 +1674,16 @@ describe('browser raw session commands', () => {
     expect(getDaemonRunContext()).toBeUndefined();
   });
 
+  it('keeps the raw browser lease when the daemon outcome is unknown', async () => {
+    mockSendCommand.mockRejectedValue(new BrowserCommandError('Result unknown', 'command_result_unknown'));
+    const program = createProgram('', '');
+
+    await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'snapshot']);
+
+    expect(process.exitCode).toBe(1);
+    expect(mockReleaseSiteSessionLease).not.toHaveBeenCalled();
+  });
+
   it('reads program files for run and rejects mutually exclusive input', async () => {
     const sourcePath = path.join(os.tmpdir(), `webcmd-run-${Date.now()}.js`);
     fs.writeFileSync(sourcePath, 'return 42;', 'utf8');
