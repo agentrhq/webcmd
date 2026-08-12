@@ -41,9 +41,11 @@ The agent chooses the strategy; the human describes the outcome and constraints.
 | `UI` | Drives the live page UI. |
 | `LOCAL` | Talks to a local app, service, or CLI. |
 
-## Site Sessions and State
+## Profiles, Sessions, And Tabs
 
-Adapter browser commands can use `siteSession: 'ephemeral'` for an isolated tab or `siteSession: 'persistent'` for a longer same-site workflow. Raw browser work uses an explicit opaque Session created with `webcmd session create` and selected at the root with `--session <session-id>`.
+A Profile is the browser identity and storage bucket, such as `default` or `work`. A Session is an opaque browser workspace inside a Profile; raw browser work creates one with `webcmd session create` and selects it at the root with `--session <session-id>`. A tab is one page inside that Session.
+
+Adapter browser commands can use `siteSession: 'ephemeral'` for an isolated tab or `siteSession: 'persistent'` for a longer same-site workflow. Those adapter site-session modes are separate from raw browser Sessions.
 
 ## What the Human Needs to Decide
 

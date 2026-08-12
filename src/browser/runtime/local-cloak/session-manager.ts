@@ -10,6 +10,7 @@ import { CloakNetworkCapture } from './network.js';
 import { findPackageRoot } from '../../../package-paths.js';
 import { findExactCloakProfileProcesses } from './process-matcher.js';
 import { log } from '../../../logger.js';
+import { CliError, EXIT_CODES } from '../../../errors.js';
 
 const UNRESOLVED = Symbol('unresolved');
 const TARGET_PAGE_MATCH_TIMEOUT_MS = 1_000;
@@ -128,11 +129,14 @@ export interface BrowserRunSessionScope {
   onPage(listener: (page: PlaywrightPage) => void): () => void;
 }
 
-export class SessionWindowConflictError extends Error {
-  readonly code = 'SESSION_WINDOW_CONFLICT';
-
+export class SessionWindowConflictError extends CliError {
   constructor(pageId: string, sessionId: string, owner?: string) {
-    super(`Page ${pageId} is in a window owned by Session ${owner ?? 'unknown'}, not ${sessionId}.`);
+    super(
+      'SESSION_WINDOW_CONFLICT',
+      `Page ${pageId} is in a window owned by Session ${owner ?? 'unknown'}, not ${sessionId}.`,
+      undefined,
+      EXIT_CODES.TEMPFAIL,
+    );
   }
 }
 
@@ -943,20 +947,22 @@ export class CloakSessionManager {
     await this.assertOwnedWindow(runtime, session.id, openerEntry);
     const opener = openerEntry.page;
     const openerWindowId = await this.windowIdForTarget(runtime, openerEntry.targetId, opener);
-    const openedPage = this.waitForContextPageInWindow(runtime, session.id, openerWindowId, TARGET_PAGE_MATCH_TIMEOUT_MS);
+    const targetUrl = `about:blank#webcmd-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const openedPage = this.waitForContextPageForSession(runtime, session.id, openerWindowId, targetUrl, TARGET_PAGE_MATCH_TIMEOUT_MS);
 
     try {
-      await opener.evaluate(() => window.open('about:blank', '_blank', 'noopener,noreferrer'));
+      await opener.evaluate((url) => window.open(url, '_blank', 'noopener,noreferrer'), targetUrl);
     } catch {}
     const page = await openedPage;
     if (page) return page;
     return this.createWindowPage(runtime, windowMode);
   }
 
-  private async waitForContextPageInWindow(
+  private async waitForContextPageForSession(
     runtime: ProfileRuntime,
     sessionId: string,
-    windowId: number,
+    openerWindowId: number,
+    targetUrl: string,
     timeoutMs: number,
   ): Promise<PlaywrightPage | null> {
     return new Promise((resolve) => {
@@ -973,9 +979,12 @@ export class CloakSessionManager {
         const targetId = await this.targetIdForPage(runtime, page).catch(() => undefined);
         if (!targetId) return;
         const actualWindowId = await this.windowIdForTarget(runtime, targetId, page).catch(() => undefined);
-        if (actualWindowId !== windowId) return;
+        if (actualWindowId === undefined) return;
         const owner = runtime.windowOwners.get(actualWindowId);
         if (owner !== undefined && owner !== sessionId) return;
+        const isRequestedTarget = page.url() === targetUrl;
+        const opener = await page.opener().catch(() => null);
+        if (opener && !isRequestedTarget) return;
         done(page);
       };
       const onPage = (page: PlaywrightPage) => { void tryPage(page); };

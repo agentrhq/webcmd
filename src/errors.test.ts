@@ -123,6 +123,13 @@ describe('toEnvelope', () => {
     expect(envelope.error).not.toHaveProperty('help');
   });
 
+  it('keeps Session window conflicts on the structured temporary-failure contract', async () => {
+    const { SessionWindowConflictError } = await import('./browser/runtime/local-cloak/session-manager.js');
+
+    expect(toEnvelope(new SessionWindowConflictError('page_1', 'session_a', 'session_b')).error)
+      .toMatchObject({ code: 'SESSION_WINDOW_CONFLICT', exitCode: 75 });
+  });
+
   it('converts unknown Error to UNKNOWN envelope', () => {
     const envelope = toEnvelope(new Error('random failure'));
     expect(envelope).toEqual({
@@ -205,10 +212,11 @@ describe('SessionBusyError platform hints', () => {
   });
 
   it('does not suggest killing a holder pid that is no longer alive', () => {
-    const err = new SessionBusyError(holder, 'linux', () => false);
+    const err = new SessionBusyError({ ...holder, sessionId: 'session_a' }, 'linux', () => false);
     expect(err.message).toContain('chatgpt ask');
     expect(err.hint).toMatch(/wait/i);
     expect(err.hint).not.toContain('kill 4242');
+    expect(err.hint).toContain('webcmd session close --force session_a');
   });
 
   it.each([

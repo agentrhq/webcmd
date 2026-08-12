@@ -5,7 +5,7 @@
  */
 
 import { sleep } from '../utils.js';
-import { BrowserConnectError, SessionBusyError } from '../errors.js';
+import { BrowserConnectError, CliError, EXIT_CODES, SessionBusyError, type ExitCode } from '../errors.js';
 import { COMMAND_RESULT_UNKNOWN_CODE, COMMAND_RESULT_UNKNOWN_HINT } from '../daemon-utils.js';
 import { getDaemonRunContext, type SessionLeaseHolder } from '../session-lease.js';
 import { classifyBrowserError } from './errors.js';
@@ -83,16 +83,21 @@ function isPreConnectFetchError(err: unknown): boolean {
 export type DaemonCommand = BrowserRuntimeCommand;
 export type DaemonResult = BrowserRuntimeResult;
 
-export class BrowserCommandError extends Error {
+export class BrowserCommandError extends CliError {
   constructor(
     message: string,
-    readonly code?: string,
-    readonly hint?: string,
+    code?: string,
+    hint?: string,
     readonly details?: unknown,
   ) {
-    super(message);
-    this.name = 'BrowserCommandError';
+    super(code ?? 'BROWSER_COMMAND', message, hint, browserCommandExitCode(code));
   }
+}
+
+function browserCommandExitCode(code?: string): ExitCode {
+  return code === 'SESSION_PAUSED_FOR_HUMAN_HANDOFF' || code === 'SESSION_WINDOW_CONFLICT'
+    ? EXIT_CODES.TEMPFAIL
+    : EXIT_CODES.GENERIC_ERROR;
 }
 
 export {

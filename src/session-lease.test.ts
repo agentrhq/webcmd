@@ -6,6 +6,7 @@ import {
   clearDaemonRunContext,
   generateRunId,
   getDaemonRunContext,
+  getSignalDaemonRunContext,
   getSessionLeaseKey,
   isSessionLeaseCommand,
   isUnknownOutcomeError,
@@ -77,6 +78,26 @@ describe('logical daemon run context', () => {
     resumeFirst();
     expect(await first).toEqual(firstContext);
     expect(getDaemonRunContext()).toBeUndefined();
+  });
+
+  it('exposes a running async context only to out-of-band signal handlers', async () => {
+    let resume!: () => void;
+    const gate = new Promise<void>(resolve => { resume = resolve; });
+    const context: DaemonRunContext = {
+      runId: 'run_111_1_1',
+      command: 'browser run',
+    };
+
+    const pending = runWithDaemonRunContext(context, async () => {
+      await gate;
+      return getDaemonRunContext();
+    });
+
+    expect(getDaemonRunContext()).toBeUndefined();
+    expect(getSignalDaemonRunContext()).toEqual(context);
+    resume();
+    await expect(pending).resolves.toEqual(context);
+    expect(getSignalDaemonRunContext()).toBeUndefined();
   });
 });
 

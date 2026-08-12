@@ -87,7 +87,13 @@ if (!fastPathHandled) {
       const result = await runHostedCli(argv);
       process.exitCode = result.exitCode;
     } else {
-      await runLocalMain();
+      const { installDaemonRunSignalCancellation } = await import('./signal-cancel.js');
+      const uninstallSignalCancellation = installDaemonRunSignalCancellation();
+      try {
+        await runLocalMain();
+      } finally {
+        uninstallSignalCancellation();
+      }
     }
   }
 }

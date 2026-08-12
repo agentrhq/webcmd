@@ -321,6 +321,28 @@ describe('daemon-client', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it('maps local handoff pauses to a temporary BrowserCommandError', async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      json: () => Promise.resolve({
+        id: 'cmd',
+        ok: false,
+        errorCode: 'SESSION_PAUSED_FOR_HUMAN_HANDOFF',
+        error: 'Session session_a is paused while a human completes github authentication.',
+        details: { sessionId: 'session_a', site: 'github' },
+      }),
+    } as Response);
+
+    await expect(sendCommand('exec', { code: '1' })).rejects.toMatchObject({
+      name: 'BrowserCommandError',
+      code: 'SESSION_PAUSED_FOR_HUMAN_HANDOFF',
+      exitCode: 75,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('releaseSiteSessionLease makes one best-effort POST without starting or retrying the daemon', async () => {
     setDaemonRunContext({
       runId: 'run_9999_newer_2',

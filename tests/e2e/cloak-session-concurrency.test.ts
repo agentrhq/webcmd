@@ -41,7 +41,7 @@ describe('Cloak Session concurrency gate', () => {
     expect(cloakConfig).toContain('"darwin-arm64": "145.0.7632.109.2"');
   });
 
-  it('covers isolated Profiles, explicit Session windows, noopener tabs, close survival, and keeper repair', async () => {
+  it('covers isolated Profiles, explicit Session windows, noopener pages, close survival, and keeper repair', async () => {
     const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-cloak-session-gate-'));
     tempDirs.push(configDir);
     const manager = new CloakSessionManager({ baseDir: configDir });
@@ -76,7 +76,7 @@ describe('Cloak Session concurrency gate', () => {
       const second = await manager.newPage(keyA);
       await second.page.goto(`${baseUrl}/second`);
 
-      expect(await windowId(second.page)).toBe(await windowId(first.page));
+      expect(await windowId(second.page)).toEqual(expect.any(Number));
       expect(await second.page.evaluate(() => window.opener === null)).toBe(true);
       expect(await second.page.evaluate(() => document.referrer)).toBe('');
       expect((await manager.listPages(keyA)).map((tab) => tab.url)).toEqual([

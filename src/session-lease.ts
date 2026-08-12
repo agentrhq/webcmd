@@ -16,11 +16,29 @@ export interface DaemonRunContext {
 }
 
 let activeRun: DaemonRunContext | undefined;
+let signalRun: DaemonRunContext | undefined;
 const daemonRunContextStorage = new AsyncLocalStorage<DaemonRunContext>();
 
 /** Run one logical execution with context isolated across its async chain. */
 export function runWithDaemonRunContext<T>(context: DaemonRunContext, callback: () => T): T {
-  return daemonRunContextStorage.run(context, callback);
+  const previousSignalRun = signalRun;
+  signalRun = context;
+  const restore = () => {
+    if (signalRun?.runId === context.runId) signalRun = previousSignalRun;
+  };
+  try {
+    return daemonRunContextStorage.run(context, () => {
+      const result = callback();
+      if (result && typeof (result as { finally?: unknown }).finally === 'function') {
+        return (result as unknown as Promise<T>).finally(restore) as T;
+      }
+      restore();
+      return result;
+    });
+  } catch (err) {
+    restore();
+    throw err;
+  }
 }
 
 export function setDaemonRunContext(context: DaemonRunContext): void {
@@ -29,6 +47,10 @@ export function setDaemonRunContext(context: DaemonRunContext): void {
 
 export function getDaemonRunContext(): DaemonRunContext | undefined {
   return daemonRunContextStorage.getStore() ?? activeRun;
+}
+
+export function getSignalDaemonRunContext(): DaemonRunContext | undefined {
+  return signalRun ?? activeRun;
 }
 
 /**

@@ -17,14 +17,17 @@ function fakeContext() {
   const emitPageEvent = (page: any, event: string, ...args: unknown[]) => {
     for (const listener of pageListeners.get(page)?.get(event) ?? []) listener(...args);
   };
-  const fakePage = (opener?: any, windowId = ++windowCounter) => {
+  const fakePage = (opener?: any, windowId = ++windowCounter, initialUrl = 'https://example.com/') => {
     let closed = false;
+    let currentUrl = initialUrl;
     const page: any = {
-      goto: vi.fn().mockResolvedValue(undefined),
-      evaluate: vi.fn(async (fn: unknown) => {
+      goto: vi.fn().mockImplementation(async (url: string) => {
+        currentUrl = url;
+      }),
+      evaluate: vi.fn(async (fn: unknown, ...args: unknown[]) => {
         if (typeof fn !== 'function' || !String(fn).includes('window.open')) return 'ok';
         const source = String(fn);
-        const popup = fakePage(source.includes('noopener') ? undefined : page, windowId);
+        const popup = fakePage(source.includes('noopener') ? undefined : page, windowId, typeof args[0] === 'string' ? args[0] : 'about:blank');
         allPages.push(popup);
         queueMicrotask(() => {
           if (!source.includes('noopener')) emitPageEvent(page, 'popup', popup);
@@ -33,7 +36,7 @@ function fakeContext() {
         return null;
       }),
       title: vi.fn().mockResolvedValue('Title'),
-      url: vi.fn().mockReturnValue('https://example.com/'),
+      url: vi.fn(() => currentUrl),
       screenshot: vi.fn().mockResolvedValue(Buffer.from('png')),
       bringToFront: vi.fn().mockResolvedValue(undefined),
       isClosed: vi.fn(() => closed),
@@ -262,6 +265,30 @@ describe('CloakSessionManager', () => {
     const second = await manager.newPage(key);
 
     expect(launched.windowIdFor(second.page)).not.toBe(launched.windowIdFor(first.page));
+    expect((await manager.listPages(key)).map(tab => tab.sessionId)).toEqual(['session_a', 'session_a']);
+  });
+
+  it('adopts a noopener page when Chromium opens it in a new window', async () => {
+    const launched = fakeContext();
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      platform: 'darwin',
+      launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
+    });
+    const key = { profileId: 'default', session: 'session_a', sessionId: 'session_a', surface: 'browser' as const };
+    const first = await manager.getPage(key);
+    const opened = launched.makePage(undefined, 999);
+    vi.mocked(first.page.evaluate).mockImplementationOnce(async () => {
+      queueMicrotask(() => launched.emitPage(opened));
+      return null;
+    });
+
+    const second = await manager.newPage(key);
+
+    expect(second.page).toBe(opened);
+    expect(launched.cdp.send.mock.calls.filter(([method, params]) => (
+      method === 'Target.createTarget' && !(params as { hidden?: boolean })?.hidden
+    ))).toHaveLength(1);
     expect((await manager.listPages(key)).map(tab => tab.sessionId)).toEqual(['session_a', 'session_a']);
   });
 
