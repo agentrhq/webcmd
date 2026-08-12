@@ -291,7 +291,9 @@ function scopedBrowser(browser: object, context: object): object {
   let proxy: object;
   proxy = new Proxy(browser, {
     get(target, property) {
-      if (property === 'contexts') return () => [context];
+      if (property === 'contexts') return () => (
+        Reflect.get(target, '_defaultContext', target) ? [] : [context]
+      );
       if (property === 'on' || property === 'addListener') {
         return (event: string, listener: Function) => {
           let registered = listener;

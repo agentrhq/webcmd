@@ -127,6 +127,8 @@ describe('buildHostedContract', () => {
 
     expect(contract).toEqual({
       schemaVersion: HOSTED_CONTRACT_SCHEMA_VERSION,
+      sessionProtocolVersion: 1,
+      sessionSelectorPosition: 'root',
       webcmdVersion: '9.8.7',
       outputFormats: ['table', 'plain', 'json', 'yaml', 'md', 'csv'],
       traceModes: ['off', 'on', 'retain-on-failure'],

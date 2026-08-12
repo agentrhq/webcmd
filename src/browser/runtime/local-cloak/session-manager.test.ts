@@ -77,10 +77,25 @@ function fakeContext() {
     for (const listener of listeners.get(event) ?? []) listener(...args);
   };
   const cdp = {
-    send: vi.fn(async (command: string, params?: { targetId?: string; hidden?: boolean }) => {
+    send: vi.fn(async (command: string, params?: { targetId?: string; hidden?: boolean; newWindow?: boolean }) => {
       if (command === 'Target.createTarget') {
-        const backgroundPage = params?.hidden ? fakePage() : await context.newPage();
-        if (params?.hidden) allPages.push(backgroundPage);
+        let backgroundPage;
+        if (params?.hidden) {
+          backgroundPage = fakePage();
+          allPages.push(backgroundPage);
+        } else if (params?.newWindow === false) {
+          let opener;
+          for (let index = allPages.length - 1; index >= 0; index -= 1) {
+            if (!allPages[index]!.isClosed()) {
+              opener = allPages[index];
+              break;
+            }
+          }
+          backgroundPage = fakePage(undefined, opener ? windowIds.get(targetIds.get(opener)!) : undefined);
+          allPages.push(backgroundPage);
+        } else {
+          backgroundPage = await context.newPage();
+        }
         backgroundPages.push(backgroundPage);
         queueMicrotask(() => emit('page', backgroundPage));
         return { targetId: targetIds.get(backgroundPage) };
@@ -132,6 +147,7 @@ function fakeContext() {
     windowIdFor: (target: object) => windowIds.get(targetIds.get(target) ?? ''),
     moveToWindow: (target: object, windowId: number) => windowIds.set(targetIds.get(target)!, windowId),
     emitPage: (target: object) => emit('page', target),
+    emitPageEvent,
     emitCdp: (event: string, payload: unknown) => {
       for (const listener of cdpListeners.get(event) ?? []) listener(payload);
     },
@@ -205,7 +221,7 @@ describe('CloakSessionManager', () => {
     expect(launched.targetIdFor(lease.page)).toEqual(expect.stringMatching(/^target-/));
   });
 
-  it('uses the noopener popup even though window.open returns null and falls back when no popup appears', async () => {
+  it('creates later Session pages through the opener in the same window', async () => {
     const launched = fakeContext();
     const manager = new CloakSessionManager({
       baseDir: '/tmp/webcmd-test',
@@ -215,21 +231,71 @@ describe('CloakSessionManager', () => {
     const key = { profileId: 'default', session: 'session_a', sessionId: 'session_a', surface: 'browser' as const };
     const first = await manager.getPage(key);
 
-    await manager.newPage(key);
+    const second = await manager.newPage(key);
     const evaluate = vi.mocked(first.page.evaluate);
-    expect(String(evaluate.mock.calls[0][0])).toContain('noopener');
+    expect(evaluate).toHaveBeenCalledTimes(1);
     expect(launched.context.newCDPSession.mock.calls.length).toBeGreaterThanOrEqual(2);
-    expect(launched.cdp.send.mock.calls.filter(([method, params]) => method === 'Target.createTarget' && !(params as { hidden?: boolean })?.hidden)).toHaveLength(1);
-
-    evaluate.mockRejectedValueOnce(new Error('Execution context was destroyed'));
-    const afterThrow = await manager.newPage(key);
-    evaluate.mockResolvedValueOnce(null);
-    const afterNull = await manager.newPage(key);
-
-    expect(launched.cdp.send.mock.calls.filter(([method, params]) => method === 'Target.createTarget' && !(params as { hidden?: boolean })?.hidden)).toHaveLength(3);
-    expect(launched.windowIdFor(afterThrow.page)).not.toBe(launched.windowIdFor(first.page));
-    expect(launched.windowIdFor(afterNull.page)).not.toBe(launched.windowIdFor(first.page));
+    expect(launched.cdp.send.mock.calls.filter(([method, params]) => (
+      method === 'Target.createTarget' && !(params as { hidden?: boolean })?.hidden
+    ))).toHaveLength(1);
+    expect(launched.windowIdFor(second.page)).toBe(launched.windowIdFor(first.page));
     expect((await manager.listPages(key)).every(tab => tab.session === 'session_a')).toBe(true);
+  });
+
+  it('falls back to another owned window when Chromium does not create the requested tab', async () => {
+    const launched = fakeContext();
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      platform: 'darwin',
+      launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
+    });
+    const key = { profileId: 'default', session: 'session_a', sessionId: 'session_a', surface: 'browser' as const };
+    const first = await manager.getPage(key);
+    vi.mocked(first.page.evaluate).mockResolvedValueOnce(null);
+
+    const second = await manager.newPage(key);
+
+    expect(launched.windowIdFor(second.page)).not.toBe(launched.windowIdFor(first.page));
+    expect((await manager.listPages(key)).map(tab => tab.sessionId)).toEqual(['session_a', 'session_a']);
+  });
+
+  it('adopts an opener popup when Chromium creates it in an unowned window', async () => {
+    const launched = fakeContext();
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      platform: 'darwin',
+      launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
+    });
+    const key = { profileId: 'default', session: 'session_a', sessionId: 'session_a', surface: 'browser' as const };
+    const first = await manager.getPage(key);
+    const popup = launched.makePage(first.page, 999);
+    vi.mocked(first.page.evaluate).mockImplementationOnce(async () => {
+      queueMicrotask(() => {
+        launched.emitPageEvent(first.page, 'popup', popup);
+        launched.emitPage(popup);
+      });
+      return null;
+    });
+
+    const second = await manager.newPage(key);
+
+    expect(second.page).toBe(popup);
+    expect((await manager.listPages(key)).map(tab => tab.sessionId)).toEqual(['session_a', 'session_a']);
+  });
+
+  it('creates a later page in its Session window when another Session was used last', async () => {
+    const launched = fakeContext();
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test', platform: 'darwin',
+      launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
+    });
+    const firstKey = { profileId: 'default', session: 'session_a', sessionId: 'session_a', surface: 'browser' as const };
+    const first = await manager.getPage(firstKey);
+    await manager.getPage({ profileId: 'default', session: 'session_b', sessionId: 'session_b', surface: 'browser' });
+
+    const second = await manager.newPage(firstKey);
+
+    expect(launched.windowIdFor(second.page)).toBe(launched.windowIdFor(first.page));
   });
 
   it('times out target correlation and releases the profile creation lock', async () => {
@@ -767,25 +833,31 @@ describe('CloakSessionManager', () => {
     expect(vi.getTimerCount()).toBe(1);
   });
 
-  it('does not retry or retain a page when navigation fails after creation', async () => {
+  it('retries initial navigation once after a closed-context failure', async () => {
     const navigationFailure = new Error('Target page, context or browser has been closed');
     const launched = fakeContext();
     launched.page.goto.mockRejectedValue(navigationFailure);
     launched.context.newPage.mockResolvedValue(launched.page);
-    const launchPersistentContext = vi.fn().mockResolvedValue(launched.context);
+    const replacement = fakeContext();
+    replacement.context.newPage.mockResolvedValue(replacement.page);
+    const launchPersistentContext = vi.fn()
+      .mockResolvedValueOnce(launched.context)
+      .mockResolvedValueOnce(replacement.context);
     const manager = new CloakSessionManager({ baseDir: '/tmp/webcmd-test', launchPersistentContext });
 
-    await expect(manager.newPage({
+    const lease = await manager.newPage({
       profileId: 'default',
       session: 'work',
       surface: 'browser',
       url: 'https://example.com/',
-    })).rejects.toBe(navigationFailure);
+    });
 
-    expect(launchPersistentContext).toHaveBeenCalledTimes(1);
+    expect(lease.context).toBe(replacement.context);
+    expect(launchPersistentContext).toHaveBeenCalledTimes(2);
     expect(launched.page.goto).toHaveBeenCalledTimes(1);
     expect(launched.page.close).toHaveBeenCalledTimes(1);
-    expect(await manager.listPages({ profileId: 'default', session: 'work' })).toEqual([]);
+    expect(replacement.page.goto).toHaveBeenCalledWith('https://example.com/', { waitUntil: 'load' });
+    expect(await manager.listPages({ profileId: 'default', session: 'work' })).toHaveLength(1);
   });
 
   it('clears a stale Cloak profile owner and retries when Chromium reports an existing session', async () => {
@@ -1001,6 +1073,59 @@ describe('CloakSessionManager', () => {
 
     expect(launchPersistentContext).toHaveBeenCalledTimes(1);
     expect(launchPersistentContext.mock.calls[0][0].userDataDir).toBe(expectedProfileDir('profile-default'));
+  });
+
+  it('retries action navigation once after a closed-context failure', async () => {
+    const first = fakeContext();
+    first.page.goto.mockRejectedValue(new Error('Target page, context or browser has been closed'));
+    first.context.newPage.mockResolvedValue(first.page);
+    const replacement = fakeContext();
+    replacement.context.newPage.mockResolvedValue(replacement.page);
+    const launchPersistentContext = vi.fn()
+      .mockResolvedValueOnce(first.context)
+      .mockResolvedValueOnce(replacement.context);
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      launchPersistentContext,
+    });
+
+    const result = await dispatchCloakAction(manager, {
+      id: 'cmd-retry-navigation',
+      action: 'navigate',
+      session: 'work',
+      surface: 'browser',
+      url: 'https://example.com/',
+      profileId: 'default',
+    });
+
+    expect(result).toMatchObject({ ok: true });
+    expect(first.page.goto).toHaveBeenCalledTimes(1);
+    expect(launchPersistentContext).toHaveBeenCalledTimes(2);
+    expect(replacement.page.goto).toHaveBeenCalledWith('https://example.com/', { waitUntil: 'load' });
+  });
+
+  it('does not invalidate a replacement runtime when stale navigation fails', async () => {
+    const first = fakeContext();
+    first.context.newPage.mockResolvedValue(first.page);
+    let rejectNavigation!: (error: Error) => void;
+    first.page.goto.mockImplementationOnce(() => new Promise((_, reject) => { rejectNavigation = reject; }));
+    const replacement = fakeContext();
+    replacement.context.newPage.mockResolvedValue(replacement.page);
+    const launchPersistentContext = vi.fn()
+      .mockResolvedValueOnce(first.context)
+      .mockResolvedValueOnce(replacement.context);
+    const manager = new CloakSessionManager({ baseDir: '/tmp/webcmd-test', launchPersistentContext });
+    const key = { profileId: 'default', session: 'work', sessionId: 'session_a', surface: 'browser' as const };
+    await manager.getPage(key);
+    const navigation = manager.navigatePage(key, 'https://example.com/', 'load');
+    await vi.waitFor(() => expect(first.page.goto).toHaveBeenCalledTimes(1));
+    first.context.emit('close');
+    const replacementLease = await manager.getPage(key);
+    rejectNavigation(new Error('Target page, context or browser has been closed'));
+
+    await expect(navigation).resolves.toMatchObject({ context: replacement.context });
+    expect(replacementLease.context).toBe(replacement.context);
+    expect(launchPersistentContext).toHaveBeenCalledTimes(2);
   });
 
   it('falls back to the only active profile when the preferred profile is stale', async () => {

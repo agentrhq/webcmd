@@ -41,9 +41,9 @@ The agent chooses the strategy; the human describes the outcome and constraints.
 | `UI` | Drives the live page UI. |
 | `LOCAL` | Talks to a local app, service, or CLI. |
 
-## Sessions and State
+## Site Sessions and State
 
-Browser commands can use an `ephemeral` session for an isolated tab or a `persistent` session for a longer workflow. A command can request `freshPage: true` when it needs a clean tab while keeping its session state.
+Adapter browser commands can use `siteSession: 'ephemeral'` for an isolated tab or `siteSession: 'persistent'` for a longer same-site workflow. Raw browser work uses an explicit opaque Session created with `webcmd session create` and selected at the root with `--session <session-id>`.
 
 ## What the Human Needs to Decide
 

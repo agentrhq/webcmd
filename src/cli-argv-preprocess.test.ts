@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { rejectPositionalBrowserSessionArgv } from './cli-argv-preprocess.js';
+import { rejectMisplacedSessionSelectorArgv, rejectPositionalBrowserSessionArgv } from './cli-argv-preprocess.js';
 
 describe('rejectPositionalBrowserSessionArgv', () => {
   it('rejects retired positional browser sessions with the canonical replacement', () => {
@@ -23,6 +23,18 @@ describe('rejectPositionalBrowserSessionArgv details', () => {
   it('leaves non-browser commands unchanged', () => {
     expect(rejectPositionalBrowserSessionArgv(['twitter', 'browser', 'session_a', 'state']))
       .toEqual(['twitter', 'browser', 'session_a', 'state']);
+  });
+});
+
+describe('rejectMisplacedSessionSelectorArgv', () => {
+  it('rejects trailing --session with a stable diagnostic code', () => {
+    expect(() => rejectMisplacedSessionSelectorArgv(['browser', 'run', '--session', 'session_a']))
+      .toThrowError(/SESSION_SELECTOR_POSITION/);
+  });
+
+  it('keeps the root --session selector unchanged', () => {
+    expect(rejectMisplacedSessionSelectorArgv(['--session', 'session_a', 'browser', 'run']))
+      .toEqual(['--session', 'session_a', 'browser', 'run']);
   });
 });
 

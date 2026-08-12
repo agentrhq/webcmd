@@ -198,16 +198,32 @@ async function captureScreenshot(page: PlaywrightPage, context: BrowserContext, 
   }
 }
 
-export async function dispatchCloakAction(manager: CloakSessionManager, command: BrowserRuntimeCommand): Promise<BrowserRuntimeResult> {
+export async function dispatchCloakAction(manager: CloakSessionManager, command: BrowserRuntimeCommand, signal?: AbortSignal): Promise<BrowserRuntimeResult> {
   try {
     switch (command.action) {
       case 'navigate': {
         if (!command.url) return invalidRequest(command, 'Missing url');
-        const lease = await resolveLease(manager, command);
+        const profileId = resolveCloakCommandProfileId(manager, command);
         // 'none' maps to Playwright's 'commit': sites that stream analytics forever
         // never fire the load event, so adapters gating readiness on their own
         // selector waits must be able to skip it.
-        await lease.page.goto(command.url, { waitUntil: command.waitUntil === 'none' ? 'commit' : 'load' });
+        const lease = await manager.navigatePage(
+          {
+            profileId,
+            session: command.session,
+            surface: command.surface,
+            siteSession: command.siteSession,
+            sessionKind: command.sessionKind,
+            sessionId: command.sessionId,
+            adapterSite: command.adapterSite,
+            runId: command.runId,
+            idleTimeout: command.idleTimeout,
+            freshPage: command.freshPage,
+            windowMode: command.windowMode,
+          },
+          command.url,
+          command.waitUntil === 'none' ? 'commit' : 'load',
+        );
         return { id: command.id, ok: true, data: { title: await lease.page.title(), url: lease.page.url(), timedOut: false }, page: lease.pageId };
       }
       case 'exec': {
@@ -252,6 +268,7 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
           snapshotDiff: command.noSnapshotDiff ? false : command.snapshotDiff,
           snapshotMode: command.snapshotMode === 'tree' ? 'tree' : 'act',
           snapshotBaselineStore: snapshotBaselineStore(manager),
+          ...(signal ? { signal } : {}),
         });
         return {
           id: command.id,

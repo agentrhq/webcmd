@@ -187,6 +187,38 @@ describe('LocalCloakRuntimeProvider', () => {
     expect(page.goto).toHaveBeenCalledWith('https://example.com/', expect.objectContaining({ waitUntil: 'commit' }));
   });
 
+  it('does not execute a queued command after its daemon deadline expires', async () => {
+    const { provider, page } = makeProviderWithFakePage();
+    let releaseFirst!: () => void;
+    page.goto.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    }));
+    const first = provider.dispatch({
+      id: 'first',
+      action: 'navigate',
+      session: 'work',
+      surface: 'browser',
+      url: 'https://first.example/',
+      profileId: 'default',
+    });
+    await vi.waitFor(() => expect(page.goto).toHaveBeenCalledTimes(1));
+    const second = provider.dispatch({
+      id: 'second',
+      action: 'navigate',
+      session: 'work',
+      surface: 'browser',
+      url: 'https://late.example/',
+      profileId: 'default',
+      deadlineAt: Date.now() - 1,
+    });
+
+    releaseFirst();
+
+    await expect(first).resolves.toMatchObject({ ok: true });
+    await expect(second).resolves.toMatchObject({ ok: false, errorCode: 'command_result_unknown' });
+    expect(page.goto).toHaveBeenCalledTimes(1);
+  });
+
   it('evaluates JavaScript in the resolved page', async () => {
     const { provider } = makeProviderWithFakePage();
     const nav = await provider.dispatch({ id: 'nav', action: 'navigate', session: 'work', surface: 'browser', url: 'https://example.com/', profileId: 'default' });
@@ -343,6 +375,44 @@ describe('LocalCloakRuntimeProvider', () => {
     expect(page.evaluate).toHaveBeenCalledTimes(1);
   });
 
+  it('serializes raw and adapter commands in the same explicit Session', async () => {
+    const { provider } = makeProviderWithFakePage();
+    const manager = (provider as unknown as { manager: {
+      runWithProfileActivity<T>(profileId: string, operation: () => Promise<T>): Promise<T>;
+    } }).manager;
+    const runWithProfileActivity = manager.runWithProfileActivity.bind(manager);
+    let active = 0;
+    let maxActive = 0;
+    vi.spyOn(manager, 'runWithProfileActivity').mockImplementation(async (profileId, operation) => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      try {
+        return await runWithProfileActivity(profileId, operation);
+      } finally {
+        active -= 1;
+      }
+    });
+    let finishRun!: () => void;
+    runBrowserProgram.mockImplementationOnce(() => new Promise((resolve) => {
+      finishRun = () => resolve(runOutput(1));
+    }));
+    const raw = provider.dispatch({
+      id: 'raw-run', action: 'run', session: 'session_a', sessionKind: 'explicit',
+      surface: 'browser', source: 'return 1;', profileId: 'default',
+    });
+    await vi.waitFor(() => expect(runBrowserProgram).toHaveBeenCalledTimes(1));
+    const adapter = provider.dispatch({
+      id: 'adapter-exec', action: 'exec', session: 'session_a', sessionKind: 'explicit',
+      surface: 'adapter', adapterSite: 'github', code: 'document.title', profileId: 'default',
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(runBrowserProgram).toHaveBeenCalledTimes(1);
+    finishRun();
+    await Promise.all([raw, adapter]);
+    expect(maxActive).toBe(1);
+  });
+
   it('partitions the local queue by adapter site only for adapter-default Sessions', () => {
     const { provider } = makeProviderWithFakePage();
     const queueKey = (provider as unknown as {
@@ -382,6 +452,13 @@ describe('LocalCloakRuntimeProvider', () => {
       sessionKind: 'explicit',
       adapterSite: 'linkedin',
       profileId: 'default',
+    }));
+    expect(queueKey({
+      id: 'github-explicit', action: 'exec', surface: 'adapter', session: 'session_a',
+      sessionKind: 'explicit', adapterSite: 'github', profileId: 'default',
+    })).toBe(queueKey({
+      id: 'raw-explicit', action: 'exec', surface: 'browser', session: 'session_a',
+      sessionKind: 'explicit', profileId: 'default',
     }));
   });
 

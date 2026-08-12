@@ -25,6 +25,7 @@ interface PendingCommand {
   promise: Promise<BrowserRuntimeResult>;
   runId?: string;
   leaseKey?: string;
+  abortController: AbortController;
 }
 
 function commandTimeoutMs(command: BrowserRuntimeCommand): number {
@@ -155,7 +156,7 @@ async function handleSessionLifecycle(
       return session ? { id: command.id, ok: true, data: session } : null;
     }
     case 'session-list': {
-      const sessions = await provider.listSessions?.({ profileId: commandProfileId(provider, command) });
+      const sessions = await provider.listSessions?.({ profileId: commandProfileId(provider, command), limit: command.limit });
       return sessions ? { id: command.id, ok: true, data: sessions } : null;
     }
     case 'session-close': {
@@ -207,6 +208,7 @@ export function createDaemonServer(provider: BrowserRuntimeProvider, opts: Daemo
   const logBuffer: Array<{ level: string; msg: string; ts: number }> = [];
   const pending = new Map<string, PendingCommand>();
   const leases = new SessionLeaseRegistry();
+  const forceClosingRuns = new Set<string>();
   const hasPendingWork = (runId: string) => [...pending.values()].some((entry) => entry.runId === runId);
   let shutdownStarted = false;
 
@@ -303,6 +305,11 @@ export function createDaemonServer(provider: BrowserRuntimeProvider, opts: Daemo
           return;
         }
         if (body.action === 'lease-release' || body.action === 'run-cancel') {
+          const matching = body.action === 'run-cancel' && typeof body.runId === 'string'
+            ? [...pending.values()].filter((entry) => entry.runId === body.runId)
+            : [];
+          matching.forEach((entry) => entry.abortController.abort());
+          await Promise.allSettled(matching.map((entry) => entry.promise));
           const released = typeof body.runId === 'string' ? leases.releaseByRunId(body.runId) : 0;
           jsonResponse(res, 200, { id: body.id, ok: true, data: { released } });
           return;
@@ -316,17 +323,18 @@ export function createDaemonServer(provider: BrowserRuntimeProvider, opts: Daemo
         }
         const resolved = await resolveBrowserSession(provider, body);
         const resolvedBody = resolved.command;
-        const activeSessionHolder = (sessionKey: string) => {
-          const holder = leases.list(hasPendingWork).find((lease) => (
-            lease.key === sessionKey
-            || lease.key.startsWith(`${sessionKey}␟`)
-            || sessionKey.startsWith(`${lease.key}␟`)
-          ));
+        const activeSessionLeases = (sessionKey: string) => leases.list(hasPendingWork).filter((lease) => (
+          lease.key === sessionKey
+          || lease.key.startsWith(`${sessionKey}␟`)
+          || sessionKey.startsWith(`${lease.key}␟`)
+        ));
+        const publicSessionHolder = (sessionKey: string) => {
+          const holder = activeSessionLeases(sessionKey)[0];
           if (!holder) return null;
           const { key: _key, runId: _runId, ...publicHolder } = holder;
           return publicHolder;
         };
-        if (resolved.session) {
+        if (resolved.session && !(resolvedBody.action === 'session-close' && resolvedBody.force === true)) {
           const paused = handoffPauseResult(resolvedBody, resolved.session);
           if (paused) {
             jsonResponse(res, 409, paused);
@@ -335,14 +343,38 @@ export function createDaemonServer(provider: BrowserRuntimeProvider, opts: Daemo
         }
         if (resolvedBody.action === 'session-close') {
           const profileId = commandProfileId(provider, resolvedBody) ?? 'default';
-          const holder = activeSessionHolder(getSessionLeaseKey(profileId, resolvedBody.sessionId!));
-          if (holder) {
-            jsonResponse(res, 409, { ok: false, code: 'session_busy', holder });
+          const sessionKey = getSessionLeaseKey(profileId, resolvedBody.sessionId!);
+          const holders = activeSessionLeases(sessionKey);
+          const holder = holders[0];
+          if (holder && resolvedBody.force !== true) {
+            jsonResponse(res, 409, { ok: false, code: 'session_busy', holder: publicSessionHolder(sessionKey) });
             return;
           }
+          const forcedRunIds = resolvedBody.force === true
+            ? new Set(holders.map((lease) => lease.runId))
+            : new Set<string>();
+          const forcedCommands = [...pending.values()]
+            .filter((entry) => entry.runId && forcedRunIds.has(entry.runId))
+            .map((entry) => {
+              entry.abortController.abort();
+              return entry.promise;
+            });
+          forcedRunIds.forEach((runId) => forceClosingRuns.add(runId));
           const lifecycleResult = await handleSessionLifecycle(provider, resolvedBody);
           if (lifecycleResult) {
-            jsonResponse(res, 200, lifecycleResult);
+            await Promise.allSettled(forcedCommands);
+            for (const runId of forcedRunIds) {
+              leases.releaseByRunId(runId);
+              forceClosingRuns.delete(runId);
+            }
+            jsonResponse(res, 200, resolvedBody.force === true ? {
+              ...lifecycleResult,
+              data: {
+                ...(lifecycleResult.data as Record<string, unknown>),
+                displaced: forcedRunIds.size,
+                clearedHandoff: Boolean(resolved.session?.handoff),
+              },
+            } : lifecycleResult);
             return;
           }
         }
@@ -377,11 +409,13 @@ export function createDaemonServer(provider: BrowserRuntimeProvider, opts: Daemo
             return;
           }
         }
-        const commandPromise = provider.dispatch(resolvedBody).finally(() => {
+        const abortController = new AbortController();
+        const commandPromise = provider.dispatch(resolvedBody, abortController.signal).finally(() => {
           if (leaseKey && runId) leases.heartbeat(leaseKey, runId);
           pending.delete(body.id);
+          if (runId && forceClosingRuns.delete(runId)) leases.releaseByRunId(runId);
         });
-        pending.set(body.id, { promise: commandPromise, runId, leaseKey });
+        pending.set(body.id, { promise: commandPromise, runId, leaseKey, abortController });
         const result = await waitForCommandResult(body, commandPromise);
         if (!result.ok) pushLog('warn', `Command ${body.id} failed: ${result.error ?? result.errorCode ?? 'unknown error'}`);
         jsonResponse(res, result.ok ? 200 : result.errorCode === 'command_result_unknown' ? 408 : 400, result);

@@ -426,6 +426,32 @@ describe('runBrowserProgram', () => {
     expect(createPage).toHaveBeenCalledOnce();
   });
 
+  it('initializes against a pre-launched persistent context without registering it twice', async () => {
+    const userDataDir = fs.mkdtempSync('/tmp/webcmd-persistent-browser-run-');
+    const persistent = await chromium.launchPersistentContext(userDataDir, { headless: true });
+    try {
+      const persistentPage = persistent.pages()[0] ?? await persistent.newPage();
+      const persistentBrowser = persistent.browser();
+      if (!persistentBrowser) throw new Error('persistent browser missing');
+
+      await expect(runBrowserProgram({
+        browser: persistentBrowser,
+        context: persistent,
+        page: persistentPage,
+        pageId: 'persistent-page',
+        pages: () => persistent.pages(),
+        createPage: () => persistent.newPage(),
+        onPage(listener) {
+          persistent.on('page', listener);
+          return () => persistent.off('page', listener);
+        },
+      }, 'return 1;')).resolves.toMatchObject({ result: 1 });
+    } finally {
+      await persistent.close();
+      fs.rmSync(userDataDir, { recursive: true, force: true });
+    }
+  });
+
   it('waits for requests and responses', async () => {
     const output = await run(`
       const requestPromise = page.waitForRequest('**/data');
@@ -533,6 +559,18 @@ describe('runBrowserProgram', () => {
     });
     expect(browser.isConnected()).toBe(true);
     expect(page.isClosed()).toBe(false);
+  });
+
+  it('cancels an in-flight run through its abort signal', async () => {
+    const controller = new AbortController();
+    const pending = run(`await page.waitForEvent('popup');`, {
+      timeoutMs: 2_000,
+      signal: controller.signal,
+    });
+
+    setTimeout(() => controller.abort(), 10);
+
+    await expect(pending).rejects.toMatchObject({ code: 'BROWSER_RUN_CANCELLED' });
   });
 
   it('cancels an in-flight popup operation without closing the popup', async () => {

@@ -19,10 +19,13 @@ export class LocalCloakRuntimeProvider implements BrowserRuntimeProvider {
   private readonly sessionQueues = new Map<string, Promise<void>>();
 
   constructor(private readonly opts: LocalCloakRuntimeProviderOptions = {}) {
-    this.sessions = new LocalBrowserSessionStore({ baseDir: opts.baseDir });
+    this.sessions = new LocalBrowserSessionStore({
+      baseDir: opts.baseDir,
+      isActive: session => this.manager?.hasSession(session.profileId, session.id) ?? false,
+    });
     this.manager = new CloakSessionManager({
       ...opts,
-      hasActiveHandoff: profileId => this.sessions.list(profileId).some(session => (
+      hasActiveHandoff: profileId => this.sessions.list(profileId, 100).some(session => (
         Boolean(session.handoff) && Date.parse(session.handoff!.expiresAt) > Date.now()
       )),
     });
@@ -72,8 +75,8 @@ export class LocalCloakRuntimeProvider implements BrowserRuntimeProvider {
     return this.sessions.clearHandoff(this.resolveProfileId(command), command.sessionId!);
   }
 
-  async listSessions(input: { profileId?: string }): Promise<BrowserSessionListRow[]> {
-    return this.sessions.list(input.profileId).map((session) => ({
+  async listSessions(input: { profileId?: string; limit?: number }): Promise<BrowserSessionListRow[]> {
+    return this.sessions.list(input.profileId, input.limit).map((session) => ({
       ...session,
       runtimeState: this.manager.hasSession(session.profileId, session.id) ? 'active' : 'idle',
     }));
@@ -82,11 +85,12 @@ export class LocalCloakRuntimeProvider implements BrowserRuntimeProvider {
   async closeSession(command: BrowserRuntimeCommand): Promise<{ closed: boolean; alreadyIdle: boolean; session: string }> {
     const record = this.sessions.require(this.resolveProfileId(command), command.session);
     const closedCount = await this.manager.closeSession(record.profileId, record.id);
-    this.sessions.touch(record.profileId, record.id);
+    if (command.force && record.handoff) this.sessions.clearHandoff(record.profileId, record.id);
+    else this.sessions.touch(record.profileId, record.id);
     return { closed: closedCount > 0, alreadyIdle: closedCount === 0, session: record.id };
   }
 
-  async dispatch(command: BrowserRuntimeCommand): Promise<BrowserRuntimeResult> {
+  async dispatch(command: BrowserRuntimeCommand, signal?: AbortSignal): Promise<BrowserRuntimeResult> {
     const key = this.commandQueueKey(command);
     const previous = this.sessionQueues.get(key) ?? Promise.resolve();
     let release!: () => void;
@@ -97,9 +101,18 @@ export class LocalCloakRuntimeProvider implements BrowserRuntimeProvider {
 
     await previous.catch(() => {});
     try {
+      signal?.throwIfAborted();
+      if (typeof command.deadlineAt === 'number' && command.deadlineAt > 0 && Date.now() >= command.deadlineAt) {
+        return {
+          id: command.id,
+          ok: false,
+          errorCode: 'command_result_unknown',
+          error: 'Command deadline expired before browser work started.',
+        };
+      }
       return await this.manager.runWithProfileActivity(
         this.resolveProfileId(command),
-        () => dispatchCloakAction(this.manager, command),
+        () => dispatchCloakAction(this.manager, command, signal),
       );
     } finally {
       release();
@@ -120,7 +133,7 @@ export class LocalCloakRuntimeProvider implements BrowserRuntimeProvider {
         const adapterDefaultSite = owner.surface === 'adapter' && owner.sessionKind === 'adapter-default'
           ? owner.adapterSite?.trim()
           : undefined;
-        return `session\u0000${owner.profileId}\u0000${owner.surface}\u0000${owner.session}${adapterDefaultSite ? `\u0000${adapterDefaultSite}` : ''}`;
+        return `session\u0000${owner.profileId}\u0000${owner.session}${adapterDefaultSite ? `\u0000${adapterDefaultSite}` : ''}`;
       }
     }
 
@@ -136,6 +149,6 @@ export class LocalCloakRuntimeProvider implements BrowserRuntimeProvider {
     const adapterDefaultSite = command.surface === 'adapter' && command.sessionKind === 'adapter-default'
       ? command.adapterSite?.trim()
       : undefined;
-    return `session\u0000${profileId.trim() || 'default'}\u0000${command.surface ?? 'browser'}\u0000${command.session ?? ''}${adapterDefaultSite ? `\u0000${adapterDefaultSite}` : ''}`;
+    return `session\u0000${profileId.trim() || 'default'}\u0000${command.session ?? ''}${adapterDefaultSite ? `\u0000${adapterDefaultSite}` : ''}`;
   }
 }

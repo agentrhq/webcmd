@@ -11,7 +11,7 @@ import {
   configurePluginUninstallSurface,
   configurePluginUpdateSurface,
 } from '../builtin-command-surface.js';
-import { BrowserSessionArgvError, rejectPositionalBrowserSessionArgv } from '../cli-argv-preprocess.js';
+import { BrowserSessionArgvError, rejectMisplacedSessionSelectorArgv, rejectPositionalBrowserSessionArgv } from '../cli-argv-preprocess.js';
 import { CommanderStructuralError, MissingRequiredPositionalError } from '../command-surface.js';
 import { filterCommandsByTag, formatRootHelp, getCommandCompletionCandidates } from '../command-presentation.js';
 import {
@@ -32,6 +32,7 @@ import { BrowserRunError } from '../browser/run/types.js';
 import { CLI_COMMAND } from '../brand.js';
 import { missingPluginGuidance } from '../discovery.js';
 import { HostedClient, HostedClientError, resolveWorkspace } from './client.js';
+import { HOSTED_SESSION_PROTOCOL_VERSION } from './types.js';
 import { parseHostedInvocation } from './args.js';
 import { HostedBrowserHelp, parseHostedBrowserStructure, validateRawBrowserSession } from './browser-args.js';
 import { materializeHostedOutputs, prepareHostedFiles, rewriteHostedOutputResultPaths } from './files.js';
@@ -93,7 +94,7 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
   const stderr = opts.stderr ?? process.stderr;
 
   try {
-    argv = rejectPositionalBrowserSessionArgv(argv);
+    argv = rejectMisplacedSessionSelectorArgv(rejectPositionalBrowserSessionArgv(argv));
     const credential = await resolveHostedApiKey(config, {
       credentialStore: opts.credentialStore,
       env: opts.env,
@@ -197,6 +198,8 @@ async function dispatchHosted(
       await writeToStream(stdout, parsed.output);
       return;
     }
+    const manifest = await client.getManifest();
+    validateManifestContractIdentity(manifest);
     await dispatchHostedSession(parsed, client, stdout, normalized.profile);
     return;
   }
@@ -446,7 +449,7 @@ async function dispatchHosted(
 
 type ParsedHostedSessionSurface =
   | { kind: 'help'; output: string }
-  | { kind: 'run'; command: 'create' | 'list' | 'close'; format: string; session?: string };
+  | { kind: 'run'; command: 'create' | 'list' | 'close'; format: string; session?: string; force?: boolean };
 
 function parseHostedSessionSurface(argv: readonly string[], literal: boolean): ParsedHostedSessionSurface {
   let stdout = '';
@@ -463,8 +466,8 @@ function parseHostedSessionSurface(argv: readonly string[], literal: boolean): P
   const configure = (command: Command, format: string): Command => command.option('-f, --format <fmt>', 'Output format: table, json, yaml', format);
   configure(session.command('create'), 'yaml').action((options: { format: string }) => { parsed = { kind: 'run', command: 'create', format: options.format }; });
   configure(session.command('list'), 'table').action((options: { format: string }) => { parsed = { kind: 'run', command: 'list', format: options.format }; });
-  configure(session.command('close').argument('<session-id>'), 'yaml').action((sessionId: string, options: { format: string }) => {
-    parsed = { kind: 'run', command: 'close', format: options.format, session: sessionId };
+  configure(session.command('close').argument('<session-id>').option('--force', 'Close even while the Session is busy or paused for handoff'), 'yaml').action((sessionId: string, options: { format: string; force?: boolean }) => {
+    parsed = { kind: 'run', command: 'close', format: options.format, session: sessionId, force: options.force === true };
   });
   try {
     root.parse(literal ? ['--', 'session', ...argv] : ['session', ...argv], { from: 'user' });
@@ -496,7 +499,7 @@ async function dispatchHostedSession(
     await renderOutput(rows, { fmt: parsed.format, columns: ['id', 'kind', 'runtimeState'], stdout });
     return;
   }
-  await renderOutput((await client.closeBrowserSession(parsed.session!, profile)).result, { fmt: parsed.format, stdout });
+  await renderOutput((await client.closeBrowserSession(parsed.session!, profile, parsed.force === true)).result, { fmt: parsed.format, stdout });
 }
 
 function hasPresentFileArgument(
@@ -1190,12 +1193,13 @@ function validateManifestContractIdentity(manifest: HostedManifest): void {
   const manifestLine = hostedContractCompatibilityLine(manifest.metadata.webcmdPackageVersion);
   if (
     manifest.metadata.contractSchemaVersion !== installed.schemaVersion
+    || manifest.metadata.sessionProtocolVersion !== HOSTED_SESSION_PROTOCOL_VERSION
     || !installedLine
     || !manifestLine
     || manifestLine !== installedLine
   ) {
     throw new HostedClientError(
-      'HOSTED_PROTOCOL',
+      'HOSTED_CONTRACT_MISMATCH',
       'Webcmd Cloud manifest does not match this installed Webcmd hosted contract.',
     );
   }

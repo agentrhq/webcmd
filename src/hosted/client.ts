@@ -1,4 +1,5 @@
 import { attachTraceReceipt, CliError, EXIT_CODES, type ExitCode } from '../errors.js';
+import { HOSTED_SESSION_PROTOCOL_VERSION } from './types.js';
 import type {
   HostedBrowserActionRequest,
   HostedBrowserActionResponse,
@@ -85,6 +86,31 @@ export class HostedClient {
 
   async getManifest(): Promise<HostedManifest> {
     const body = await this.request('/v1/manifest');
+    const manifestMetadata = isRecord(body)
+      && isRecord(body.manifest)
+      && isRecord(body.manifest.metadata)
+      ? body.manifest.metadata
+      : undefined;
+    const sessionProtocolVersion = manifestMetadata?.sessionProtocolVersion;
+    if (
+      manifestMetadata
+      && (
+        sessionProtocolVersion === undefined
+        || (
+          typeof sessionProtocolVersion === 'number'
+          && Number.isInteger(sessionProtocolVersion)
+          && sessionProtocolVersion > 0
+          && sessionProtocolVersion !== HOSTED_SESSION_PROTOCOL_VERSION
+        )
+      )
+    ) {
+      throw new HostedClientError(
+        'HOSTED_CONTRACT_MISMATCH',
+        'Webcmd Cloud manifest does not match this installed Webcmd hosted contract.',
+        'Upgrade Webcmd or use a compatible Webcmd Cloud endpoint.',
+        EXIT_CODES.CONFIG_ERROR,
+      );
+    }
     if (!hasExactKeys(body, ['ok', 'manifest']) || !isHostedManifest(body.manifest)) {
       throw protocolError('Webcmd Cloud returned an invalid manifest.');
     }
@@ -126,8 +152,11 @@ export class HostedClient {
     return body;
   }
 
-  async closeBrowserSession(session: string, profile?: string): Promise<HostedBrowserSessionCloseResponse> {
-    const body = await this.request(`/v1/sessions/${encodeURIComponent(session)}${profileQuery(profile)}`, { method: 'DELETE' });
+  async closeBrowserSession(session: string, profile?: string, force = false): Promise<HostedBrowserSessionCloseResponse> {
+    const body = await this.request(`/v1/sessions/${encodeURIComponent(session)}/close${profileQuery(profile)}`, {
+      method: 'POST',
+      body: JSON.stringify(force ? { force: true } : {}),
+    });
     if (!isHostedBrowserSessionCloseResponse(body)) {
       throw protocolError('Webcmd Cloud returned an invalid browser session close response.');
     }
@@ -362,6 +391,7 @@ export class HostedClient {
         accept: 'application/json',
         ...(init.body ? { 'content-type': 'application/json' } : {}),
         authorization: `Bearer ${this.apiKey}`,
+        'x-webcmd-session-protocol-version': String(HOSTED_SESSION_PROTOCOL_VERSION),
         ...(this.workspace ? { 'x-webcmd-workspace': this.workspace } : {}),
         ...(init.headers ?? {}),
       },
@@ -421,10 +451,13 @@ function isHostedError(value: unknown): value is HostedErrorResponse {
 function isHostedManifest(value: unknown): value is HostedManifest {
   return hasExactKeys(value, ['userId', 'metadata', 'commands'])
     && typeof value.userId === 'string'
-    && hasExactKeys(value.metadata, ['contractSchemaVersion', 'webcmdPackageVersion', 'generatedAt'])
+    && hasExactKeys(value.metadata, ['contractSchemaVersion', 'sessionProtocolVersion', 'webcmdPackageVersion', 'generatedAt'])
     && typeof value.metadata.contractSchemaVersion === 'number'
     && Number.isInteger(value.metadata.contractSchemaVersion)
     && value.metadata.contractSchemaVersion > 0
+    && typeof value.metadata.sessionProtocolVersion === 'number'
+    && Number.isInteger(value.metadata.sessionProtocolVersion)
+    && value.metadata.sessionProtocolVersion > 0
     && typeof value.metadata.webcmdPackageVersion === 'string'
     && typeof value.metadata.generatedAt === 'string'
     && Array.isArray(value.commands)

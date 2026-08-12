@@ -178,9 +178,9 @@ if (getCompIdx !== -1) {
   process.exit(EXIT_CODES.SUCCESS);
 }
 
-const { rejectPositionalBrowserSessionArgv, BrowserSessionArgvError, escapeLeadingDashPositional } = await import('./cli-argv-preprocess.js');
+const { rejectMisplacedSessionSelectorArgv, rejectPositionalBrowserSessionArgv, BrowserSessionArgvError, escapeLeadingDashPositional } = await import('./cli-argv-preprocess.js');
 try {
-  let rewritten = rejectPositionalBrowserSessionArgv(process.argv.slice(2));
+  let rewritten = rejectMisplacedSessionSelectorArgv(rejectPositionalBrowserSessionArgv(process.argv.slice(2)));
   // Use the metadata that discovery actually registered. The core manifest is
   // intentionally empty, while installed plugins and legacy user CLIs are not.
   const { getRegistry } = await import('./registry.js');

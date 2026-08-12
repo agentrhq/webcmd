@@ -1,6 +1,8 @@
 import type { CommandSurfaceMetadata } from '../command-surface.js';
 import type { Arg } from '../registry.js';
 
+export const HOSTED_SESSION_PROTOCOL_VERSION = 1 as const;
+
 export type HostedCommandStrategy = 'PUBLIC' | 'COOKIE' | 'INTERCEPT' | 'UI' | 'LOCAL' | string;
 
 export interface HostedCommandArg extends Arg {}
@@ -40,6 +42,7 @@ export interface HostedManifest {
   userId: string;
   metadata: {
     contractSchemaVersion: number;
+    sessionProtocolVersion: number;
     webcmdPackageVersion: string;
     generatedAt: string;
   };

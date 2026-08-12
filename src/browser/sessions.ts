@@ -23,9 +23,11 @@ export interface LocalBrowserSessionStoreOptions {
   baseDir?: string;
   now?: () => Date;
   idFactory?: () => string;
+  isActive?: (record: BrowserSessionRecord) => boolean;
 }
 
 type StateFile = { version: 1; sessions: BrowserSessionRecord[] };
+const SESSION_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 export class SessionNotFoundError extends CliError {
   constructor(sessionId: string, profileId: string) {
@@ -53,11 +55,13 @@ export class LocalBrowserSessionStore {
   private readonly baseDir: string;
   private readonly now: () => Date;
   private readonly idFactory: () => string;
+  private readonly isActive: (record: BrowserSessionRecord) => boolean;
 
   constructor(opts: LocalBrowserSessionStoreOptions = {}) {
     this.baseDir = opts.baseDir ?? getWebcmdConfigDir();
     this.now = opts.now ?? (() => new Date());
     this.idFactory = opts.idFactory ?? (() => `session_${randomUUID()}`);
+    this.isActive = opts.isActive ?? (() => false);
   }
 
   create(profileId: string): BrowserSessionRecord {
@@ -98,9 +102,14 @@ export class LocalBrowserSessionStore {
     return { ...record };
   }
 
-  list(profileId?: string): BrowserSessionListRow[] {
+  list(profileId?: string, limit = 20): BrowserSessionListRow[] {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+      throw new CliError('INVALID_SESSION_LIMIT', 'Session list limit must be an integer from 1 to 100.', undefined, EXIT_CODES.USAGE_ERROR);
+    }
     const rows = this.load().sessions
-      .filter((row) => profileId === undefined || row.profileId === profileId);
+      .filter((row) => profileId === undefined || row.profileId === profileId)
+      .sort((left, right) => right.lastUsedAt.localeCompare(left.lastUsedAt) || left.id.localeCompare(right.id))
+      .slice(0, limit);
     return rows.map((row) => ({ ...row, runtimeState: 'idle' as const }));
   }
 
@@ -181,6 +190,15 @@ export class LocalBrowserSessionStore {
         changed = true;
       }
     }
+    const retained = state.sessions.filter((record) => {
+      const expired = record.kind === 'explicit'
+        && !record.handoff
+        && !this.isActive(record)
+        && Date.parse(record.lastUsedAt) <= now - SESSION_RETENTION_MS;
+      if (expired) changed = true;
+      return !expired;
+    });
+    state.sessions = retained;
     if (changed) this.save(state);
     return state;
   }

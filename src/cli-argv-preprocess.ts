@@ -90,6 +90,21 @@ export function rejectPositionalBrowserSessionArgv(argv: readonly string[]): str
   );
 }
 
+export function rejectMisplacedSessionSelectorArgv(argv: readonly string[]): string[] {
+  const result = [...argv];
+  const commandIndex = findRootCommandIndex(result);
+  for (let index = commandIndex + 1; index < result.length; index += 1) {
+    const token = result[index];
+    if (token === '--') break;
+    if (token === '--session' || token.startsWith('--session=')) {
+      throw new BrowserSessionArgvError(
+        `SESSION_SELECTOR_POSITION: --session must appear before the command. Use: webcmd --session <session-id> ${result.slice(0, commandIndex + 1).join(' ')}`,
+      );
+    }
+  }
+  return result;
+}
+
 function findRootCommandIndex(argv: readonly string[]): number {
   let index = 0;
   while (index < argv.length) {

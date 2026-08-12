@@ -13,7 +13,7 @@ class FakeProvider implements BrowserRuntimeProvider {
   foregroundedSessions: string[] = [];
   shutdownCalled = false;
   delayMs = 0;
-  dispatchImpl?: (command: BrowserRuntimeCommand) => Promise<BrowserRuntimeResult>;
+  dispatchImpl?: (command: BrowserRuntimeCommand, signal?: AbortSignal) => Promise<BrowserRuntimeResult>;
   resolveProfileId?: (command: BrowserRuntimeCommand) => string;
   sessionId = 'session_11111111-1111-4111-8111-111111111111';
 
@@ -94,9 +94,9 @@ class FakeProvider implements BrowserRuntimeProvider {
     return record;
   }
 
-  async dispatch(command: BrowserRuntimeCommand) {
+  async dispatch(command: BrowserRuntimeCommand, signal?: AbortSignal) {
     this.commands.push(command);
-    if (this.dispatchImpl) return this.dispatchImpl(command);
+    if (this.dispatchImpl) return this.dispatchImpl(command, signal);
     if (this.delayMs > 0) await new Promise((resolve) => setTimeout(resolve, this.delayMs));
     return this.result(command);
   }
@@ -279,8 +279,9 @@ describe('createDaemonServer', () => {
     let settle!: () => void;
     const provider = new FakeProvider();
     provider.activeSessions.add('session_a');
-    provider.dispatchImpl = (command) => new Promise((resolve) => {
+    provider.dispatchImpl = (command, signal) => new Promise((resolve) => {
       settle = () => resolve({ id: command.id, ok: true, data: 'done' });
+      signal?.addEventListener('abort', settle, { once: true });
     });
     const { baseUrl } = await start(provider);
 
@@ -312,6 +313,80 @@ describe('createDaemonServer', () => {
       settle();
       await active.catch(() => undefined);
     }
+  });
+
+  it('force-closes a Session while work is active', async () => {
+    let settle!: () => void;
+    let settled = false;
+    const provider = new FakeProvider();
+    provider.activeSessions.add('session_a');
+    provider.dispatchImpl = (command, signal) => new Promise((resolve) => {
+      settle = () => {
+        settled = true;
+        resolve({ id: command.id, ok: true, data: 'done' });
+      };
+      signal?.addEventListener('abort', settle, { once: true });
+    });
+    const { baseUrl } = await start(provider);
+
+    const active = postCommand(baseUrl, {
+      id: 'active-force-work',
+      action: 'exec',
+      surface: 'browser',
+      session: 'session_a',
+      runId: 'run_100_1_2',
+      command: 'browser/run',
+    });
+    try {
+      await vi.waitFor(() => expect(provider.commands).toHaveLength(1));
+      const closeRequest = postCommand(baseUrl, {
+        id: 'force-close-active-session',
+        action: 'session-close',
+        contextId: 'default',
+        session: 'session_a',
+        force: true,
+      });
+      await vi.waitFor(() => expect(provider.activeSessions).not.toContain('session_a'));
+      const close = await closeRequest;
+      expect(settled).toBe(true);
+      expect(close.status).toBe(200);
+      await expect(close.json()).resolves.toMatchObject({
+        ok: true,
+        data: {
+          closed: true,
+          alreadyIdle: false,
+          session: 'session_a',
+          displaced: 1,
+          clearedHandoff: false,
+        },
+      });
+    } finally {
+      settle();
+      await active.catch(() => undefined);
+    }
+    provider.dispatchImpl = async (command) => ({ id: command.id, ok: true });
+    const admitted = await postCommand(baseUrl, {
+      id: 'after-force-settled', action: 'exec', surface: 'browser', session: 'session_a',
+      runId: 'run_200_2_2', command: 'browser/run',
+    });
+    expect(admitted.status).toBe(200);
+  });
+
+  it('force-closes every site-partitioned lease in an adapter-default Session', async () => {
+    const provider = new FakeProvider();
+    provider.activeSessions.add('session_default');
+    const { baseUrl } = await start(provider);
+    expect((await postCommand(baseUrl, adapterCommand('github-owner', 'run_100_1_1', 'github'))).status).toBe(200);
+    expect((await postCommand(baseUrl, adapterCommand('linkedin-owner', 'run_200_2_2', 'linkedin'))).status).toBe(200);
+
+    const close = await postCommand(baseUrl, {
+      id: 'force-close-default', action: 'session-close', contextId: 'default',
+      session: 'session_default', force: true,
+    });
+    const status = await fetch(`${baseUrl}/status`, { headers: { [DAEMON_HEADER_NAME]: '1' } });
+
+    expect(close.status).toBe(200);
+    await expect(status.json()).resolves.toMatchObject({ sessionLeases: [] });
   });
 
   it('accepts the maximum browser-run source envelope', async () => {

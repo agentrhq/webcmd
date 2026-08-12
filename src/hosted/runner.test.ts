@@ -32,7 +32,8 @@ const manifest = {
   userId: 'user_demo',
   metadata: {
     contractSchemaVersion: 1,
-    webcmdPackageVersion: PKG_VERSION,
+            sessionProtocolVersion: 1,
+            webcmdPackageVersion: PKG_VERSION,
     generatedAt: '2026-07-08T00:00:00.000Z',
   },
   commands: [
@@ -545,7 +546,7 @@ describe('runHostedCli', () => {
     expect(requests.some(request => request.url.endsWith('/v1/manifest'))).toBe(false);
   });
 
-  it('manages hosted browser sessions without contacting the local daemon or manifest', async () => {
+  it('preflights the hosted contract before managing browser Sessions', async () => {
     const requests: Array<{ url: string; method: string; body?: unknown }> = [];
     const session = {
       id: 'session_abc', kind: 'browser', profileId: 'profile_work', runtimeState: 'idle',
@@ -557,15 +558,18 @@ describe('runHostedCli', () => {
         ...(init?.body ? { body: JSON.parse(String(init.body)) } : {}),
       };
       requests.push(request);
-      if (request.method === 'POST') return new Response(JSON.stringify({ ok: true, result: session }));
-      if (request.method === 'DELETE') return new Response(JSON.stringify({ ok: true, result: { closed: false, alreadyIdle: true, session: session.id } }));
+      if (request.url.endsWith('/v1/manifest')) return manifestResponse();
+      if (request.method === 'POST' && request.url.endsWith('/v1/sessions')) return new Response(JSON.stringify({ ok: true, result: session }));
+      if (request.method === 'POST' && request.url.endsWith(`/v1/sessions/${session.id}/close?profile=work`)) {
+        return new Response(JSON.stringify({ ok: true, result: { closed: false, alreadyIdle: true, session: session.id } }));
+      }
       return new Response(JSON.stringify({ ok: true, result: [session] }));
     });
 
     for (const argv of [
       ['--profile', 'work', 'session', 'create', '-f', 'json'],
       ['--profile', 'work', 'session', 'list', '-f', 'json'],
-      ['--profile', 'work', 'session', 'close', session.id, '-f', 'json'],
+      ['--profile', 'work', 'session', 'close', session.id, '--force', '-f', 'json'],
     ]) {
       const stdout = sink();
       const result = await runHostedCli(argv, {
@@ -578,11 +582,28 @@ describe('runHostedCli', () => {
     }
 
     expect(requests).toEqual([
+      { url: 'https://api.example.com/v1/manifest', method: 'GET' },
       { url: 'https://api.example.com/v1/sessions', method: 'POST', body: { profile: 'work' } },
+      { url: 'https://api.example.com/v1/manifest', method: 'GET' },
       { url: 'https://api.example.com/v1/sessions?profile=work', method: 'GET' },
-      { url: 'https://api.example.com/v1/sessions/session_abc?profile=work', method: 'DELETE' },
+      { url: 'https://api.example.com/v1/manifest', method: 'GET' },
+      { url: 'https://api.example.com/v1/sessions/session_abc/close?profile=work', method: 'POST', body: { force: true } },
     ]);
-    expect(requests.some(request => request.url.endsWith('/v1/manifest'))).toBe(false);
+  });
+
+  it('rejects Session lifecycle calls when the hosted Session protocol differs', async () => {
+    const stderr = sink();
+    const result = await runHostedCli(['session', 'list', '-f', 'json'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stderr: stderr.stream,
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        manifest: { ...manifest, metadata: { ...manifest.metadata, sessionProtocolVersion: 99 } },
+      }), { status: 200 }),
+    });
+
+    expect(result.exitCode).toBe(78);
+    expect(stderr.text()).toMatch(/HOSTED_CONTRACT_MISMATCH/);
   });
 
   it.each(['create', 'get'])('rejects the removed profile %s subcommand', async (command) => {
@@ -1648,8 +1669,24 @@ describe('runHostedCli', () => {
     });
 
     expect(result.exitCode).toBe(1);
-    expect(stderr.text()).toMatch(/HOSTED_PROTOCOL|hosted contract/i);
+    expect(stderr.text()).toMatch(/HOSTED_CONTRACT_MISMATCH|hosted contract/i);
     expect(requests).toEqual(['https://api.example.com/v1/manifest']);
+  });
+
+  it('rejects a manifest whose Session protocol differs before execution', async () => {
+    const stderr = sink();
+    const mismatched = {
+      ...manifest,
+      metadata: { ...manifest.metadata, sessionProtocolVersion: 99 },
+    };
+    const result = await runHostedCli(['github', 'whoami'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stderr: stderr.stream,
+      fetchImpl: async () => new Response(JSON.stringify({ ok: true, manifest: mismatched }), { status: 200 }),
+    });
+
+    expect(result.exitCode).toBe(78);
+    expect(stderr.text()).toMatch(/HOSTED_CONTRACT_MISMATCH/);
   });
 
   it('writes a result larger than 1 MiB completely through injected stdout', async () => {

@@ -192,6 +192,7 @@ async function createHostedFixture(outcome: 'success' | 'failure'): Promise<{
           userId: 'user_lifecycle',
           metadata: {
             contractSchemaVersion: 1,
+            sessionProtocolVersion: 1,
             webcmdPackageVersion: PKG_VERSION,
             generatedAt: '2026-07-14T00:00:00.000Z',
           },

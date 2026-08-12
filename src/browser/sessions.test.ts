@@ -103,4 +103,59 @@ describe('LocalBrowserSessionStore', () => {
     expect(store.require('work', session.id).handoff).toBeUndefined();
     expect(store.list('work')[0]?.handoff).toBeUndefined();
   });
+
+  it('prunes explicit Sessions idle for 30 days while preserving adapter defaults and handoffs', () => {
+    const baseDir = tempDir();
+    fs.writeFileSync(path.join(baseDir, 'browser-sessions.json'), `${JSON.stringify({
+      version: 1,
+      sessions: [
+        sessionRecord('session_old', 'explicit', '2026-07-11T23:59:59.000Z'),
+        sessionRecord('session_boundary', 'explicit', '2026-07-12T00:00:01.000Z'),
+        sessionRecord('session_handoff', 'explicit', '2026-07-01T00:00:00.000Z', { site: 'github', expiresAt: '2026-08-12T00:15:00.000Z' }),
+        sessionRecord('session_expired_handoff', 'explicit', '2026-07-01T00:00:00.000Z', { site: 'github', expiresAt: '2026-08-10T00:15:00.000Z' }),
+        sessionRecord('session_default', 'adapter-default', '2026-07-01T00:00:00.000Z'),
+      ],
+    })}\n`, { mode: 0o600 });
+
+    const rows = new LocalBrowserSessionStore({
+      baseDir,
+      now: () => new Date('2026-08-11T00:00:00.000Z'),
+    }).list('work');
+
+    expect(rows.map((row) => row.id)).toEqual(['session_boundary', 'session_default', 'session_handoff']);
+  });
+
+  it('retains active Sessions and limits newest-first listings', () => {
+    const baseDir = tempDir();
+    fs.writeFileSync(path.join(baseDir, 'browser-sessions.json'), `${JSON.stringify({
+      version: 1,
+      sessions: [
+        sessionRecord('session_active', 'explicit', '2026-07-01T00:00:00.000Z'),
+        sessionRecord('session_newest', 'explicit', '2026-08-10T00:00:00.000Z'),
+        sessionRecord('session_middle', 'explicit', '2026-08-09T00:00:00.000Z'),
+      ],
+    })}\n`, { mode: 0o600 });
+
+    const rows = new LocalBrowserSessionStore({
+      baseDir,
+      now: () => new Date('2026-08-11T00:00:00.000Z'),
+      isActive: session => session.id === 'session_active',
+    }).list('work', 2);
+
+    expect(rows.map((row) => row.id)).toEqual(['session_newest', 'session_middle']);
+    expect(new LocalBrowserSessionStore({
+      baseDir,
+      now: () => new Date('2026-08-11T00:00:00.000Z'),
+      isActive: session => session.id === 'session_active',
+    }).find('work', 'session_active')).toBeDefined();
+  });
 });
+
+function sessionRecord(
+  id: string,
+  kind: 'explicit' | 'adapter-default',
+  lastUsedAt: string,
+  handoff?: { site: string; expiresAt: string },
+) {
+  return { id, profileId: 'work', kind, createdAt: lastUsedAt, updatedAt: lastUsedAt, lastUsedAt, ...(handoff ? { handoff } : {}) };
+}

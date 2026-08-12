@@ -2,7 +2,7 @@
  * Tests for plugin management: install, uninstall, list, and lock file support.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -12,10 +12,18 @@ import type { LockEntry } from './plugin.js';
 import * as pluginModule from './plugin.js';
 import { createAdapterOverride } from './adapter-override.js';
 
-const { mockExecFileSync, mockExecSync } = vi.hoisted(() => ({
-  mockExecFileSync: vi.fn(),
-  mockExecSync: vi.fn(),
-}));
+const { mockExecFileSync, mockExecSync, testConfigDir, previousConfigDir } = vi.hoisted(() => {
+  const previousConfigDir = process.env.WEBCMD_CONFIG_DIR;
+  const testConfigDir = `${process.env.TMPDIR ?? '/tmp'}/webcmd-plugin-test-${process.pid}-${Date.now()}`;
+  process.env.WEBCMD_CONFIG_DIR = testConfigDir;
+  return { mockExecFileSync: vi.fn(), mockExecSync: vi.fn(), testConfigDir, previousConfigDir };
+});
+
+afterAll(() => {
+  fs.rmSync(testConfigDir, { recursive: true, force: true });
+  if (previousConfigDir === undefined) delete process.env.WEBCMD_CONFIG_DIR;
+  else process.env.WEBCMD_CONFIG_DIR = previousConfigDir;
+});
 
 const {
   _getCommitHash,

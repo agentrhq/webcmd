@@ -13,8 +13,8 @@ export interface BrowserRuntimeProvider {
   resolveAdapterDefault?(command: BrowserRuntimeCommand): Promise<BrowserSessionRecord>;
   startSessionHandoff?(command: BrowserRuntimeCommand): Promise<BrowserSessionRecord>;
   clearSessionHandoff?(command: BrowserRuntimeCommand): Promise<BrowserSessionRecord>;
-  listSessions?(input: { profileId?: string }): Promise<BrowserSessionListRow[]>;
+  listSessions?(input: { profileId?: string; limit?: number }): Promise<BrowserSessionListRow[]>;
   closeSession?(command: BrowserRuntimeCommand): Promise<{ closed: boolean; alreadyIdle: boolean; session: string }>;
-  dispatch(command: BrowserRuntimeCommand): Promise<BrowserRuntimeResult>;
+  dispatch(command: BrowserRuntimeCommand, signal?: AbortSignal): Promise<BrowserRuntimeResult>;
   shutdown(): Promise<void>;
 }

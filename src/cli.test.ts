@@ -1766,6 +1766,7 @@ describe('browser Session lifecycle commands', () => {
   });
 
   it('closes an idle persisted Session as a no-op when daemon is absent', async () => {
+    mockSendCommand.mockRejectedValueOnce(new Error('daemon unavailable'));
     const baseDir = path.join(isolatedCliTestHome, '.webcmd');
     fs.mkdirSync(baseDir, { recursive: true });
     fs.writeFileSync(path.join(baseDir, 'browser-sessions.json'), JSON.stringify({
@@ -1782,7 +1783,11 @@ describe('browser Session lifecycle commands', () => {
 
     await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'close', 'session_idle', '-f', 'json']);
 
-    expect(mockSendCommand).not.toHaveBeenCalled();
+    expect(mockSendCommand).toHaveBeenCalledWith('session-close', {
+      contextId: 'default',
+      session: 'session_idle',
+      force: false,
+    });
     expect(JSON.parse(consoleLogSpy.mock.calls.flat().join('\n'))).toMatchObject({
       closed: false,
       alreadyIdle: true,

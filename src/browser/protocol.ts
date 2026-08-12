@@ -65,6 +65,10 @@ export interface BrowserRuntimeCommand {
   timeout?: number;
   /** Absolute command deadline in epoch milliseconds. Preferred by newer daemons. */
   deadlineAt?: number;
+  /** Force Session lifecycle actions such as close past active work/handoff guards. */
+  force?: boolean;
+  /** Maximum Session rows returned by session-list. */
+  limit?: number;
   cdpMethod?: string;
   cdpParams?: Record<string, unknown>;
   windowMode?: BrowserWindowMode;

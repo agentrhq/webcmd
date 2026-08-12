@@ -411,6 +411,14 @@ export class CloakSessionManager {
   }
 
   async newPage(input: SessionKeyInput & { url?: string }): Promise<CloakPageLease> {
+    return this.newPageAttempt(input, 0);
+  }
+
+  async navigatePage(input: SessionKeyInput, url: string, waitUntil: 'load' | 'commit'): Promise<CloakPageLease> {
+    return this.navigatePageAttempt(input, url, waitUntil, 0);
+  }
+
+  private async newPageAttempt(input: SessionKeyInput & { url?: string }, attempt: number): Promise<CloakPageLease> {
     const profileId = normalizeProfileId(input.profileId);
     const session = requireSession(input.session);
     const sessionId = requireSessionId(input);
@@ -423,6 +431,11 @@ export class CloakSessionManager {
       try {
         await acquired.page.goto(input.url, { waitUntil: 'load' });
       } catch (error) {
+        if (attempt === 0 && isClosedContextError(error)) {
+          this.invalidateProfileRuntime(profileId, acquired.runtime);
+          if (!pageIsClosed(acquired.page)) await acquired.page.close().catch(() => {});
+          return this.newPageAttempt(input, 1);
+        }
         if (!pageIsClosed(acquired.page)) await acquired.page.close().catch(() => {});
         throw error;
       }
@@ -444,6 +457,21 @@ export class CloakSessionManager {
     this.selectEntry(acquired.sessionRuntime, entry);
     acquired.runtime.lastSeenAt = Date.now();
     return { profileId, leaseKey, context: acquired.runtime.context, page: acquired.page, pageId: entry.pageId };
+  }
+
+  private async navigatePageAttempt(input: SessionKeyInput, url: string, waitUntil: 'load' | 'commit', attempt: number): Promise<CloakPageLease> {
+    const profileId = normalizeProfileId(input.profileId);
+    const lease = await this.getPage(input);
+    const runtime = this.profiles.get(profileId);
+    try {
+      await lease.page.goto(url, { waitUntil });
+      return lease;
+    } catch (error) {
+      if (attempt !== 0 || !isClosedContextError(error)) throw error;
+      if (runtime?.context === lease.context) this.invalidateProfileRuntime(profileId, runtime);
+      if (!pageIsClosed(lease.page)) await lease.page.close().catch(() => {});
+      return this.navigatePageAttempt(input, url, waitUntil, 1);
+    }
   }
 
   async selectPage(input: Pick<SessionKeyInput, 'profileId' | 'session' | 'sessionId' | 'surface' | 'windowMode'> & { pageId?: string; index?: number }): Promise<CloakPageLease | null> {
@@ -917,10 +945,16 @@ export class CloakSessionManager {
 
     const popup = opener.waitForEvent('popup', { timeout: 1_000 }).catch(() => null);
     try {
-      await opener.evaluate(() => window.open('about:blank', '_blank', 'noopener'));
+      await opener.evaluate(() => window.open('about:blank', '_blank'));
     } catch {}
     const page = await popup;
-    if (page) return page;
+    if (page) {
+      const targetId = await this.targetIdForPage(runtime, page);
+      const windowId = await this.windowIdForTarget(runtime, targetId, page);
+      if (session.windowIds.has(windowId) || runtime.windowOwners.get(windowId) === undefined) return page;
+      if (!pageIsClosed(page)) await page.close().catch(() => {});
+      throw new SessionWindowConflictError('unknown', session.id, runtime.windowOwners.get(windowId));
+    }
     return this.createWindowPage(runtime, windowMode);
   }
 
@@ -947,11 +981,11 @@ export class CloakSessionManager {
     return { runtime, session, page };
   }
 
-  private async createWindowPage(runtime: ProfileRuntime, windowMode?: BrowserWindowMode): Promise<PlaywrightPage> {
+  private async createWindowPage(runtime: ProfileRuntime, windowMode?: BrowserWindowMode, newWindow = true): Promise<PlaywrightPage> {
     if (!runtime.cdp) return runtime.context.newPage();
     const result = await runtime.cdp.send('Target.createTarget', {
       url: 'about:blank',
-      newWindow: true,
+      newWindow,
       background: windowMode === 'background',
       focus: windowMode !== 'background',
     }) as { targetId: string };

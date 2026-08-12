@@ -314,6 +314,7 @@ export async function runBrowserProgram(
   let timeout: ReturnType<typeof setTimeout> | undefined;
   let timeoutCleanup: Promise<void> | undefined;
   let execution: Promise<unknown> | undefined;
+  let interrupted = false;
   const disposeTimedOutRun = (timeoutError: BrowserRunError): void => {
     if (timeoutCleanup) return;
     host.cancelPending(timeoutError);
@@ -490,10 +491,22 @@ export async function runBrowserProgram(
         reject(error);
       }, remainingMs);
     });
+    const cancelled = new Promise<never>((_resolve, reject) => {
+      const signal = options.signal;
+      if (!signal) return;
+      const abort = () => {
+        interrupted = true;
+        const error = new BrowserRunError('BROWSER_RUN_CANCELLED', 'Browser-run execution was cancelled.');
+        disposeTimedOutRun(error);
+        reject(error);
+      };
+      if (signal.aborted) abort();
+      else signal.addEventListener('abort', abort, { once: true });
+    });
     execution.catch(() => {});
     let serialized: unknown;
     try {
-      serialized = await Promise.race([execution, deadline]);
+      serialized = await Promise.race([execution, deadline, cancelled]);
     } finally {
       timings.program_ms = Math.max(0, Date.now() - programStartedAt);
       timings.browser_wait_ms = transport.browserWaitMs;
@@ -585,7 +598,7 @@ export async function runBrowserProgram(
     throw await failure(normalized);
   } finally {
     if (timeout) clearTimeout(timeout);
-    if (timedOut) {
+    if (timedOut || interrupted) {
       void timeoutCleanup;
     } else {
       const completionError = new BrowserRunError(

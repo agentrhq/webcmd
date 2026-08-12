@@ -68,6 +68,14 @@ function parsePositiveIntOption(value: string | undefined, _label: string, fallb
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function parseSessionListLimit(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 100) {
+    throw new ArgumentError('Session list limit must be an integer from 1 to 100.');
+  }
+  return parsed;
+}
+
 type BrowserNetworkItem = {
   url: string;
   method: string;
@@ -807,15 +815,16 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
   sessionCmd
     .command('list')
     .description('List browser Sessions for the selected Profile')
+    .option('--limit <number>', 'Maximum Sessions to return (1-100)', parseSessionListLimit, 20)
     .option('-f, --format <fmt>', 'Output format: table, json, yaml', 'table')
     .action(async (opts, command) => {
       const profileId = getSelectedProfileId(command);
       let rows: BrowserSessionListRow[];
       const status = await fetchDaemonStatus({ contextId: profileId });
       if (status?.runtimeConnected && !isDaemonStale(status, PKG_VERSION)) {
-        rows = await sendCommand('session-list', { contextId: profileId }) as BrowserSessionListRow[];
+        rows = await sendCommand('session-list', { contextId: profileId, limit: opts.limit }) as BrowserSessionListRow[];
       } else {
-        rows = new LocalBrowserSessionStore().list(profileId);
+        rows = new LocalBrowserSessionStore().list(profileId, opts.limit);
       }
       const output = rows.map((row) => ({ ...row, handoff: formatHandoff(row) }));
       if (output.length === 0 && String(opts.format ?? 'table') === 'table') {
@@ -830,12 +839,26 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
     .description('Close a browser Session runtime without deleting its durable record')
     .argument('<session-id>', 'Existing opaque Session ID from `webcmd session create`')
     .option('-f, --format <fmt>', 'Output format: table, json, yaml', 'yaml')
-    .action(async (sessionId: string, opts, command) => {
+    .option('--force', 'Close even while the Session is busy or paused for handoff')
+    .action(async (sessionId: string, opts: { format?: string; force?: boolean }, command) => {
       const profileId = getSelectedProfileId(command);
       requireSessionIdShape(sessionId);
       const status = await fetchDaemonStatus({ contextId: profileId });
-      if (status?.runtimeConnected && !isDaemonStale(status, PKG_VERSION)) {
-        const data = await sendCommand('session-close', { contextId: profileId, session: sessionId });
+      if (!status || (status.runtimeConnected && !isDaemonStale(status, PKG_VERSION))) {
+        try {
+          const data = await sendCommand('session-close', {
+            contextId: profileId,
+            session: sessionId,
+            force: opts.force === true,
+          });
+          await renderOutput(data, { fmt: opts.format });
+          return;
+        } catch (error) {
+          if (status || opts.force === true) throw error;
+        }
+      }
+      if (opts.force === true) {
+        const data = await sendCommand('session-close', { contextId: profileId, session: sessionId, force: true });
         await renderOutput(data, { fmt: opts.format });
         return;
       }
