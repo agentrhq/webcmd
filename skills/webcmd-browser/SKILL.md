@@ -30,7 +30,7 @@ Until `doctor` is green, browser commands may fail. Registry and plugin discover
 
 ## Session lifecycle
 
-- Create an opaque browser session before raw browser work: `webcmd session create -f json`.
+- Create an opaque browser session before raw browser work: `webcmd --profile <profile> session create`.
 - Raw browser commands require that ID at the root: `webcmd --session <session-id> browser ...`; the old positional session form is retired.
 - Profiles are cookie jars and auth scope; sessions are browser workspaces/windows within a profile. Parallel agents use separate sessions.
 - `webcmd session list` shows sessions and their handoff/runtime state; close finished work with `webcmd session close <session-id>`. Close is blocked while that Session has a live handoff.
@@ -38,6 +38,28 @@ Until `doctor` is green, browser commands may fail. Registry and plugin discover
 - `webcmd --session <session-id> browser tabs` lists existing pages without creating a new one.
 - `webcmd --session <session-id> browser bind --page <page-id>` explicitly attaches the session to an existing page.
 - If the user manually signs in or changes the visible tab, re-bind or inspect with a fresh snapshot before continuing.
+
+For a `FETCH_BLOCKED` or `FETCH_REQUIRES_BROWSER` fallback, use one Session for the browser portion, preserve its complete opaque ID, and close it in cleanup. Local browser commands use Cloak; hosted browser commands use Webcmd Cloud and Browser Use. `web fetch` remains local in both modes and never opens a browser.
+
+```bash
+webcmd --profile work session create
+# Copy the returned full ID:
+# session_7d8f2c10-4a11-4f3e-9c22-1b6de0a91f45
+
+webcmd --profile work \
+  --session session_7d8f2c10-4a11-4f3e-9c22-1b6de0a91f45 \
+  browser run --stdin <<'JS'
+await page.goto('https://example.com');
+return { url: page.url(), title: await page.title() };
+JS
+
+webcmd --profile work \
+  --session session_7d8f2c10-4a11-4f3e-9c22-1b6de0a91f45 \
+  browser snapshot --snapshot-mode read
+
+webcmd --profile work session close \
+  session_7d8f2c10-4a11-4f3e-9c22-1b6de0a91f45
+```
 
 ---
 
