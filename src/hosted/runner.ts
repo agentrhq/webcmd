@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Command, CommanderError } from 'commander';
+import { Command, CommanderError, InvalidArgumentError } from 'commander';
 import {
   configureCompletionCommandSurface,
   configureListCommandSurface,
@@ -449,7 +449,7 @@ async function dispatchHosted(
 
 type ParsedHostedSessionSurface =
   | { kind: 'help'; output: string }
-  | { kind: 'run'; command: 'create' | 'list' | 'close'; format: string; session?: string; force?: boolean };
+  | { kind: 'run'; command: 'create' | 'list' | 'close'; format: string; session?: string; force?: boolean; limit?: number };
 
 function parseHostedSessionSurface(argv: readonly string[], literal: boolean): ParsedHostedSessionSurface {
   let stdout = '';
@@ -465,7 +465,9 @@ function parseHostedSessionSurface(argv: readonly string[], literal: boolean): P
   session.exitOverride().configureOutput(output);
   const configure = (command: Command, format: string): Command => command.option('-f, --format <fmt>', 'Output format: table, json, yaml', format);
   configure(session.command('create'), 'yaml').action((options: { format: string }) => { parsed = { kind: 'run', command: 'create', format: options.format }; });
-  configure(session.command('list'), 'table').action((options: { format: string }) => { parsed = { kind: 'run', command: 'list', format: options.format }; });
+  configure(session.command('list').option('--limit <number>', 'Maximum Sessions to return (1-100)', parseHostedSessionListLimit, 20), 'table').action((options: { format: string; limit: number }) => {
+    parsed = { kind: 'run', command: 'list', format: options.format, limit: options.limit };
+  });
   configure(session.command('close').argument('<session-id>').option('--force', 'Close even while the Session is busy or paused for handoff'), 'yaml').action((sessionId: string, options: { format: string; force?: boolean }) => {
     parsed = { kind: 'run', command: 'close', format: options.format, session: sessionId, force: options.force === true };
   });
@@ -491,7 +493,7 @@ async function dispatchHostedSession(
     return;
   }
   if (parsed.command === 'list') {
-    const rows = (await client.listBrowserSessions(profile)).result;
+    const rows = (await client.listBrowserSessions(profile, parsed.limit)).result;
     if (rows.length === 0 && parsed.format === 'table') {
       await writeToStream(stdout, `No browser Sessions found${profile ? ` for Profile ${profile}` : ''}.\n`);
       return;
@@ -500,6 +502,14 @@ async function dispatchHostedSession(
     return;
   }
   await renderOutput((await client.closeBrowserSession(parsed.session!, profile, parsed.force === true)).result, { fmt: parsed.format, stdout });
+}
+
+function parseHostedSessionListLimit(value: string): number {
+  const limit = Number(value);
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+    throw new InvalidArgumentError('Session list limit must be an integer from 1 to 100.');
+  }
+  return limit;
 }
 
 function sessionCreateOutput(data: unknown): unknown {

@@ -952,7 +952,9 @@ export class CloakSessionManager {
 
     try {
       await opener.evaluate((url) => window.open(url, '_blank', 'noopener,noreferrer'), targetUrl);
-    } catch {}
+    } catch (error) {
+      log.warn(`Cloak window.open failed while creating a Session tab; falling back to a new window: ${errorMessage(error)}`);
+    }
     const page = await openedPage;
     if (page) return page;
     return this.createWindowPage(runtime, windowMode);

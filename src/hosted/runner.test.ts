@@ -589,7 +589,7 @@ describe('runHostedCli', () => {
       { url: 'https://api.example.com/v1/manifest', method: 'GET' },
       { url: 'https://api.example.com/v1/sessions', method: 'POST', body: { profile: 'work' } },
       { url: 'https://api.example.com/v1/manifest', method: 'GET' },
-      { url: 'https://api.example.com/v1/sessions?profile=work', method: 'GET' },
+      { url: 'https://api.example.com/v1/sessions?profile=work&limit=20', method: 'GET' },
       { url: 'https://api.example.com/v1/manifest', method: 'GET' },
       { url: 'https://api.example.com/v1/sessions/session_abc/close?profile=work', method: 'POST', body: { force: true } },
     ]);
@@ -608,6 +608,26 @@ describe('runHostedCli', () => {
 
     expect(result.exitCode).toBe(78);
     expect(stderr.text()).toMatch(/HOSTED_CONTRACT_MISMATCH/);
+  });
+
+  it('forwards hosted session list limit to Cloud', async () => {
+    const requests: Array<{ url: string; method: string }> = [];
+    const stdout = sink();
+    const result = await runHostedCli(['session', 'list', '--limit', '50', '-f', 'json'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      fetchImpl: async (url, init) => {
+        requests.push({ url: String(url), method: init?.method ?? 'GET' });
+        if (String(url).endsWith('/v1/manifest')) return manifestResponse();
+        return new Response(JSON.stringify({ ok: true, result: [] }));
+      },
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 0 });
+    expect(requests).toContainEqual({
+      url: 'https://api.example.com/v1/sessions?limit=50',
+      method: 'GET',
+    });
   });
 
   it.each(['create', 'get'])('rejects the removed profile %s subcommand', async (command) => {

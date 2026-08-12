@@ -9,7 +9,7 @@ describe('Session documentation sync', () => {
   it('does not call adapter siteSession modes browser Sessions', () => {
     const offenders = walkDocs()
       .map((file) => ({ file, text: fs.readFileSync(file, 'utf8') }))
-      .filter(({ text }) => /persistent sessions?/i.test(text));
+      .filter(({ text }) => siteSessionModeAsSessionPattern.test(text));
 
     expect(offenders.map(({ file }) => path.relative(ROOT, file))).toEqual([]);
   });
@@ -19,7 +19,8 @@ describe('Session documentation sync', () => {
     expect(findRemovedSessionSyntaxes('Use webcmd browser <session-id> tabs')).toEqual(['positional browser session']);
     expect(findRemovedSessionSyntaxes('Use browser --session for this')).toEqual(['browser-local session selector']);
     expect(findRemovedSessionSyntaxes('session_abc...')).toEqual(['truncated session id']);
-    expect(/persistent sessions?/i.test('a persistent session')).toBe(true);
+    expect(siteSessionModeAsSessionPattern.test('a persistent session')).toBe(true);
+    expect(siteSessionModeAsSessionPattern.test('an ephemeral session')).toBe(true);
   });
 
   it('keeps removed Session syntaxes out of docs and skills', () => {
@@ -42,6 +43,8 @@ function findRemovedSessionSyntaxes(text: string): string[] {
   ].filter(([pattern]) => (pattern as RegExp).test(text))
     .map(([, label]) => label as string);
 }
+
+const siteSessionModeAsSessionPattern = /\b(?:persistent|ephemeral) sessions?\b/i;
 
 function walkDocs(): string[] {
   const files: string[] = [];

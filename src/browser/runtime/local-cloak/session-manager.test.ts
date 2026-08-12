@@ -268,6 +268,26 @@ describe('CloakSessionManager', () => {
     expect((await manager.listPages(key)).map(tab => tab.sessionId)).toEqual(['session_a', 'session_a']);
   });
 
+  it('logs when window.open fails before falling back to another owned window', async () => {
+    const launched = fakeContext();
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      platform: 'darwin',
+      launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
+    });
+    const key = { profileId: 'default', session: 'session_a', sessionId: 'session_a', surface: 'browser' as const };
+    const first = await manager.getPage(key);
+    vi.mocked(first.page.evaluate).mockRejectedValueOnce(new Error('window.open blocked'));
+    const warn = vi.spyOn(log, 'warn').mockImplementation(() => {});
+    vi.useFakeTimers();
+
+    const second = manager.newPage(key);
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    await expect(second).resolves.toMatchObject({ page: expect.any(Object) });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('window.open failed'));
+  });
+
   it('adopts a noopener page when Chromium opens it in a new window', async () => {
     const launched = fakeContext();
     const manager = new CloakSessionManager({

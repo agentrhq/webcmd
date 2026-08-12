@@ -144,8 +144,8 @@ export class HostedClient {
     return body;
   }
 
-  async listBrowserSessions(profile?: string): Promise<HostedBrowserSessionsResponse> {
-    const body = await this.request(`/v1/sessions${profileQuery(profile)}`);
+  async listBrowserSessions(profile?: string, limit?: number): Promise<HostedBrowserSessionsResponse> {
+    const body = await this.request(`/v1/sessions${sessionListQuery(profile, limit)}`);
     if (!isHostedBrowserSessionsResponse(body)) {
       throw protocolError('Webcmd Cloud returned an invalid browser session list.');
     }
@@ -557,6 +557,13 @@ function profileQuery(profile: string | undefined): string {
   if (profile === undefined) return '';
   const params = new URLSearchParams({ profile });
   return `?${params}`;
+}
+
+function sessionListQuery(profile: string | undefined, limit: number | undefined): string {
+  const params = new URLSearchParams();
+  if (profile !== undefined) params.set('profile', profile);
+  if (limit !== undefined) params.set('limit', String(limit));
+  return params.size ? `?${params}` : '';
 }
 
 function isHostedMarketplaceSearchResult(value: unknown): value is HostedMarketplaceSearchResult {
