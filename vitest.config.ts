@@ -26,6 +26,7 @@ export default defineConfig({
             'src/*.test.ts',
             'src/!(browser)/**/*.test.ts',
             'src/browser/verify-fixture.test.ts',
+            'src/browser/command-catalog.test.ts',
             'src/browser/sessions.test.ts',
             'src/browser/daemon-client.test.ts',
             'src/browser/run/runner.test.ts',
