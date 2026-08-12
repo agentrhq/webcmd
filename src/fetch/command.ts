@@ -62,6 +62,13 @@ const escalationCommand = {
 async function escalationDecision(allowBrowser: boolean, error: unknown): Promise<{ escalate: boolean; hint?: string }> {
   if (!(error instanceof CliError) || !ESCALATION_CODES.has(error.code)) return { escalate: false };
   if (!allowBrowser) return { escalate: false, hint: 'Re-run without --browser false to render this page in a browser.' };
+  // An embedding runtime — the hosted cloud executor — calls this func directly
+  // and owns browser execution itself. Self-dispatching would reach for a local
+  // Chromium that a cloud worker does not have, so a blocked page would hang on
+  // a CDP connect before failing. The embedder sets this; the CLI never does.
+  if (process.env.WEBCMD_EMBEDDED_EXECUTOR === '1') {
+    return { escalate: false, hint: 'Retry this URL with the browser-backed command: web fetch-browser.' };
+  }
   const { shouldUseHostedMode } = await import('../hosted/config.js');
   if (shouldUseHostedMode()) return { escalate: false, hint: 'Hosted mode does not launch a local browser. Switch to local mode with: webcmd setup' };
   return { escalate: true };

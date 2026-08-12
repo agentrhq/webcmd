@@ -73,6 +73,22 @@ describe('web fetch browser escalation', () => {
     expect((error as CliError).hint).toContain('--browser false');
   });
 
+  // A cloud worker runs this func directly and owns browser execution itself.
+  // Self-dispatching there reaches for a local Chromium the worker does not
+  // have, so a blocked page hangs on a CDP connect before failing.
+  it('does not self-dispatch when an embedding runtime drives the command', async () => {
+    mockExecuteCommand.mockReset();
+    vi.stubEnv('WEBCMD_EMBEDDED_EXECUTOR', '1');
+    vi.spyOn(await import('./client.js'), 'webFetch').mockRejectedValueOnce(new CliError('FETCH_BLOCKED', 'blocked', 'stock hint'));
+
+    const error = await run({ url: 'https://blocked.example', browser: true }).catch((e: CliError) => e);
+
+    expect(mockExecuteCommand).not.toHaveBeenCalled();
+    expect((error as CliError).code).toBe('FETCH_BLOCKED');
+    expect((error as CliError).hint).toContain('fetch-browser');
+    vi.unstubAllEnvs();
+  });
+
   // A timeout or a refused connection is a real failure. Escalating would hide
   // a broken URL behind a slow browser run.
   it('does not escalate a timeout', async () => {

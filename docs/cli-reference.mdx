@@ -56,6 +56,8 @@ Extraction: browser       # escalated
 
 Pass `--browser false` to stop at HTTP and get the `FETCH_BLOCKED` / `FETCH_REQUIRES_BROWSER` error instead. Escalation is local-mode only; in hosted mode the error is returned unchanged.
 
+A runtime that embeds Webcmd and drives command functions itself — the hosted cloud executor — must set `WEBCMD_EMBEDDED_EXECUTOR=1`. Escalation then never self-dispatches, since the embedder owns browser execution and a worker has no local browser to reach.
+
 Use `webcmd web fetch-browser` directly when you want the browser tier's article export — it writes Markdown plus downloaded images to a directory, and takes render controls `web fetch` does not expose:
 
 ```bash
