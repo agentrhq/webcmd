@@ -69,7 +69,7 @@ describe('LocalBrowserSessionStore', () => {
 
     const statePath = path.join(baseDir, 'browser-sessions.json');
     expect(fs.existsSync(statePath)).toBe(true);
-    expect(fs.statSync(statePath).mode & 0o777).toBe(0o600);
+    if (process.platform !== 'win32') expect(fs.statSync(statePath).mode & 0o777).toBe(0o600);
     expect(fs.readdirSync(baseDir).filter((name) => name.includes('.tmp'))).toEqual([]);
   });
 

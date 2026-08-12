@@ -70,16 +70,20 @@ vi.mock('node:child_process', async () => {
 import { createProgram, findPackageRoot, loadAntigravityServe, normalizeVerifyRows, renderVerifyPreview, resolveBrowserVerifyInvocation, resolveSitemapAvailabilityForUrl, selectFreshByTimestamp } from './cli.js';
 
 const realHome = process.env.HOME;
+const realConfigDir = process.env.WEBCMD_CONFIG_DIR;
 let isolatedCliTestHome: string;
 
 beforeEach(() => {
   isolatedCliTestHome = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-cli-home-'));
   process.env.HOME = isolatedCliTestHome;
+  process.env.WEBCMD_CONFIG_DIR = path.join(isolatedCliTestHome, '.webcmd');
 });
 
 afterEach(() => {
   if (realHome === undefined) delete process.env.HOME;
   else process.env.HOME = realHome;
+  if (realConfigDir === undefined) delete process.env.WEBCMD_CONFIG_DIR;
+  else process.env.WEBCMD_CONFIG_DIR = realConfigDir;
   fs.rmSync(isolatedCliTestHome, { recursive: true, force: true });
 });
 
