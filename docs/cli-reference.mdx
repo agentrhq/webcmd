@@ -39,7 +39,7 @@ Agents should prefer existing adapters before raw browser exploration. For searc
 
 ## Search and Fetch
 
-Use `webcmd web fetch` for direct URL fetches and fetch-first web search. It runs locally and does not launch a browser, including when Webcmd is configured for hosted mode.
+Use `webcmd web fetch` for direct URL fetches and fetch-first web search. It is built into the CLI, so it works on a fresh install with no plugins.
 
 ```bash
 webcmd web fetch --url https://example.com/article
@@ -47,10 +47,20 @@ webcmd web fetch --url "https://duckduckgo.com/html/?q=agentic%20browser%20autom
 webcmd web fetch --url "https://www.bing.com/search?q=agentic%20browser%20automation"
 ```
 
-Use `webcmd web fetch-browser` only when `web fetch` reports that browser rendering is required or the page is blocked:
+`web fetch` tries plain HTTP first, then a browser-impersonating TLS client. If the site blocks both, it escalates to a real browser on its own and returns the rendered page — you do not have to notice the failure and retry. The result reports which tier answered:
+
+```
+Extraction: readability   # plain HTTP or impit
+Extraction: browser       # escalated
+```
+
+Pass `--browser false` to stop at HTTP and get the `FETCH_BLOCKED` / `FETCH_REQUIRES_BROWSER` error instead. Escalation is local-mode only; in hosted mode the error is returned unchanged.
+
+Use `webcmd web fetch-browser` directly when you want the browser tier's article export — it writes Markdown plus downloaded images to a directory, and takes render controls `web fetch` does not expose:
 
 ```bash
-webcmd web fetch-browser --url https://example.com/app-shell
+webcmd web fetch-browser --url https://example.com/app-shell --output ./articles
+webcmd web fetch-browser --url https://example.com/grid --wait-for "#results tr" --diagnose true
 ```
 
 The old `web read` command has been renamed to `web fetch-browser`.

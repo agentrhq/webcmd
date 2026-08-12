@@ -111,7 +111,7 @@ function isCliCommandValue(value: unknown, site: string): value is CliCommand {
     && Array.isArray(value.args);
 }
 
-function toManifestEntry(cmd: CliCommand, modulePath: string, sourceFile?: string): ManifestEntry {
+function toManifestEntry(cmd: CliCommand, modulePath?: string, sourceFile?: string): ManifestEntry {
   return {
     site: cmd.site,
     name: cmd.name,
@@ -247,8 +247,39 @@ export async function scanClisDir(
   return { entries, failures };
 }
 
+/**
+ * Sites the core package owns and ships in `dist/`, rather than as adapter
+ * files under `clis/`. `web` moved here so the whole fetch ladder installs by
+ * default instead of living in a plugin nobody had (#247).
+ */
+const CORE_SITES = new Set(['web']);
+
+/**
+ * Manifest entries for core-registered commands.
+ *
+ * These deliberately carry no `modulePath`/`sourceFile`: there is no adapter
+ * file under `clis/` to resolve, and claiming one would point every consumer at
+ * a path that does not exist in the published tarball. Consumers that load
+ * adapters by path must treat a missing `modulePath` as "core-owned, import it
+ * from the package itself".
+ */
+export async function coreCommandEntries(
+  importer: (moduleHref: string) => Promise<unknown> = moduleHref => import(moduleHref),
+): Promise<ManifestEntry[]> {
+  await importer(pathToFileURL(path.join(PACKAGE_ROOT, 'src/fetch/command.ts')).href);
+  return [...getRegistry().values()]
+    .filter(cmd => CORE_SITES.has(cmd.site))
+    .sort((a, b) => a.site.localeCompare(b.site) || a.name.localeCompare(b.name))
+    .map(cmd => toManifestEntry(cmd));
+}
+
 export async function buildManifest(): Promise<BuildManifestResult> {
-  return scanClisDir(LEGACY_CLIS_DIR);
+  const scanned = await scanClisDir(LEGACY_CLIS_DIR);
+  const core = await coreCommandEntries();
+  const entries = [...scanned.entries, ...core].sort(
+    (a, b) => a.site.localeCompare(b.site) || a.name.localeCompare(b.name),
+  );
+  return { entries, failures: scanned.failures };
 }
 
 export function serializeManifest(manifest: ManifestEntry[]): string {

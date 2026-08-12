@@ -13,6 +13,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Command, Option } from 'commander';
 import { findPackageRoot, getBuiltEntryCandidates } from './package-paths.js';
 import { type CliCommand, getRegistry } from './registry.js';
+// Side-effect import: registers `web fetch` / `web fetch-browser` in the core
+// registry so they reach help, `list`, completions and the manifests without a
+// plugin install (#252, #247). Both tiers load their implementations lazily.
+import './fetch/command.js';
 import { commandListPresentation, filterCommandsByTag, toPresentableCommand } from './command-presentation.js';
 import { configureCompletionCommandSurface, configureListCommandSurface, configurePluginInstallSurface, configurePluginSearchSurface } from './builtin-command-surface.js';
 import { render as renderOutput } from './output.js';

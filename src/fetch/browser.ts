@@ -1,7 +1,8 @@
 /**
- * Generic web page reader — fetch any URL and export as Markdown.
+ * Browser tier of `webcmd web fetch`.
  *
- * Uses browser-side DOM heuristics to extract the main content:
+ * Renders a page in a real browser and extracts the main content with DOM
+ * heuristics:
  *   1. <article> element
  *   2. [role="main"] element
  *   3. <main> element
@@ -9,102 +10,143 @@
  *
  * Pipes through the shared article-download pipeline (Turndown + image download).
  *
- * Usage:
- *   webcmd web fetch-browser --url "https://www.anthropic.com/research/..." --output ./articles
- *   webcmd web fetch-browser --url "https://..." --download-images false
+ * This is the escalation target when the plain and impit tiers in `client.ts`
+ * cannot read a page. It moved here from `clis/web/fetch-browser.js` so the
+ * whole fetch ladder ships in the core package rather than an adapter that was
+ * never installed by default (#247).
  */
-import { cli, Strategy } from '@agentrhq/webcmd/registry';
-import { downloadArticle } from '@agentrhq/webcmd/download/article-download';
+import { articleHtmlToMarkdown, downloadArticle } from '../download/article-download.js';
+import type { CommandArgs } from '../registry.js';
+import type { IPage } from '../types.js';
+
+export const DEFAULT_OUTPUT_DIR = './web-articles';
 
 const NETWORK_IDLE_QUIET_MS = 1000;
 const NETWORK_IDLE_POLL_MS = 500;
 const MIN_NON_STRUCTURAL_IFRAME_TEXT_CHARS = 50;
 
-function sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+export type FrameMode = 'same-origin' | 'all-same-origin' | 'none';
+export type WaitUntil = 'domstable' | 'networkidle';
+
+export interface NetworkEntry {
+  method: string;
+  url: string;
+  status: number;
+  contentType: string;
+  size: number;
+  bodyTruncated: boolean;
 }
 
-function boolish(value) {
-    if (value === true) return true;
-    if (typeof value === 'string') return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
+export interface FrameDiagnostic {
+  index: number;
+  src: string;
+  title: string;
+  sameOrigin: boolean;
+  accessible: boolean;
+  textLength: number;
+}
+
+export interface ExtractedPage {
+  title: string;
+  author: string;
+  publishTime: string;
+  contentHtml: string;
+  imageUrls: string[];
+  diagnostics: {
+    url: string;
+    frames: FrameDiagnostic[];
+    emptyContainers: Array<{ scope: string; url: string; tag: string; id: string; className: string }>;
+    includedFrameCount: number;
+  };
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+export function boolish(value: unknown): boolean {
+  if (value === true) return true;
+  if (typeof value === 'string') return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
+  return false;
+}
+
+export function normalizeFrameMode(value: unknown): FrameMode {
+  const mode = String(value || 'same-origin').toLowerCase();
+  if (mode === 'same-origin' || mode === 'all-same-origin' || mode === 'none') return mode;
+  return 'same-origin';
+}
+
+export function normalizeWaitUntil(value: unknown): WaitUntil {
+  const waitUntil = String(value || 'domstable').toLowerCase();
+  if (waitUntil === 'domstable' || waitUntil === 'networkidle') return waitUntil;
+  return 'domstable';
+}
+
+function normalizeNetworkEntry(entry: Record<string, unknown> | null | undefined): NetworkEntry {
+  const preview = typeof entry?.responsePreview === 'string' ? entry.responsePreview : '';
+  return {
+    method: typeof entry?.method === 'string' ? entry.method : 'GET',
+    url: typeof entry?.url === 'string' ? entry.url : '',
+    status: typeof entry?.responseStatus === 'number' ? entry.responseStatus : 0,
+    contentType: typeof entry?.responseContentType === 'string' ? entry.responseContentType : '',
+    size: typeof entry?.responseBodyFullSize === 'number' ? entry.responseBodyFullSize : preview.length,
+    bodyTruncated: entry?.responseBodyTruncated === true,
+  };
+}
+
+export function isInterestingNetworkEntry(entry: NetworkEntry): boolean {
+  const ct = (entry.contentType || '').toLowerCase();
+  const url = entry.url || '';
+  const method = (entry.method || 'GET').toUpperCase();
+  const staticAsset = /\.(js|css|png|jpg|jpeg|gif|svg|woff|woff2|ico|map)(\?|$)/i.test(url);
+  const noisy = /analytics|tracking|telemetry|beacon|pixel|gtag|fbevents/i.test(url);
+  const apiLikeUrl = /\/(api|ajax|graphql|rest|service|handler)(\/|[?._-]|$)|\.(ashx|aspx|asmx|php)(\?|$)/i.test(url);
+  const dataLikeContent = ct.includes('json')
+    || ct.includes('xml')
+    || ct.includes('text/plain')
+    || ct.includes('javascript')
+    || (apiLikeUrl && ct.includes('text/html'));
+  return (
+    !staticAsset
+    && !noisy
+    && (dataLikeContent || apiLikeUrl || method !== 'GET')
+  );
+}
+
+async function drainNetworkCapture(page: IPage, sink: NetworkEntry[]): Promise<NetworkEntry[]> {
+  if (!page.readNetworkCapture) return [];
+  const raw = await page.readNetworkCapture().catch(() => []);
+  const entries = Array.isArray(raw)
+    ? raw.map(entry => normalizeNetworkEntry(entry as Record<string, unknown>)).filter(entry => entry.url)
+    : [];
+  sink.push(...entries);
+  return entries;
+}
+
+async function maybeStartNetworkCapture(page: IPage): Promise<boolean> {
+  if (!page.startNetworkCapture) return false;
+  try {
+    return await page.startNetworkCapture('');
+  } catch {
     return false;
+  }
 }
 
-function normalizeFrameMode(value) {
-    const mode = String(value || 'same-origin').toLowerCase();
-    if (['same-origin', 'all-same-origin', 'none'].includes(mode)) return mode;
-    return 'same-origin';
+async function waitForNetworkIdle(page: IPage, maxSeconds: number, sink: NetworkEntry[]): Promise<{ ok: boolean; timedOut?: boolean }> {
+  const timeoutMs = Math.max(1, Number(maxSeconds) || 1) * 1000;
+  const deadline = Date.now() + timeoutMs;
+  let quietSince = Date.now();
+  while (Date.now() < deadline) {
+    const entries = await drainNetworkCapture(page, sink);
+    if (entries.length > 0) quietSince = Date.now();
+    if (Date.now() - quietSince >= NETWORK_IDLE_QUIET_MS) return { ok: true };
+    await sleep(NETWORK_IDLE_POLL_MS);
+  }
+  return { ok: false, timedOut: true };
 }
 
-function normalizeWaitUntil(value) {
-    const waitUntil = String(value || 'domstable').toLowerCase();
-    if (['domstable', 'networkidle'].includes(waitUntil)) return waitUntil;
-    return 'domstable';
-}
-
-function normalizeNetworkEntry(entry) {
-    const preview = typeof entry?.responsePreview === 'string' ? entry.responsePreview : '';
-    return {
-        method: typeof entry?.method === 'string' ? entry.method : 'GET',
-        url: typeof entry?.url === 'string' ? entry.url : '',
-        status: typeof entry?.responseStatus === 'number' ? entry.responseStatus : 0,
-        contentType: typeof entry?.responseContentType === 'string' ? entry.responseContentType : '',
-        size: typeof entry?.responseBodyFullSize === 'number' ? entry.responseBodyFullSize : preview.length,
-        bodyTruncated: entry?.responseBodyTruncated === true,
-    };
-}
-
-function isInterestingNetworkEntry(entry) {
-    const ct = (entry.contentType || '').toLowerCase();
-    const url = entry.url || '';
-    const method = (entry.method || 'GET').toUpperCase();
-    const staticAsset = /\.(js|css|png|jpg|jpeg|gif|svg|woff|woff2|ico|map)(\?|$)/i.test(url);
-    const noisy = /analytics|tracking|telemetry|beacon|pixel|gtag|fbevents/i.test(url);
-    const apiLikeUrl = /\/(api|ajax|graphql|rest|service|handler)(\/|[?._-]|$)|\.(ashx|aspx|asmx|php)(\?|$)/i.test(url);
-    const dataLikeContent = ct.includes('json')
-        || ct.includes('xml')
-        || ct.includes('text/plain')
-        || ct.includes('javascript')
-        || (apiLikeUrl && ct.includes('text/html'));
-    return (
-        !staticAsset
-        && !noisy
-        && (dataLikeContent || apiLikeUrl || method !== 'GET')
-    );
-}
-
-async function drainNetworkCapture(page, sink) {
-    if (!page.readNetworkCapture) return [];
-    const raw = await page.readNetworkCapture().catch(() => []);
-    const entries = Array.isArray(raw) ? raw.map(normalizeNetworkEntry).filter(entry => entry.url) : [];
-    sink.push(...entries);
-    return entries;
-}
-
-async function maybeStartNetworkCapture(page) {
-    if (!page.startNetworkCapture) return false;
-    try {
-        return await page.startNetworkCapture('');
-    } catch {
-        return false;
-    }
-}
-
-async function waitForNetworkIdle(page, maxSeconds, sink) {
-    const timeoutMs = Math.max(1, Number(maxSeconds) || 1) * 1000;
-    const deadline = Date.now() + timeoutMs;
-    let quietSince = Date.now();
-    while (Date.now() < deadline) {
-        const entries = await drainNetworkCapture(page, sink);
-        if (entries.length > 0) quietSince = Date.now();
-        if (Date.now() - quietSince >= NETWORK_IDLE_QUIET_MS) return { ok: true };
-        await sleep(NETWORK_IDLE_POLL_MS);
-    }
-    return { ok: false, timedOut: true };
-}
-
-function buildWaitForSelectorAcrossFramesJs(selector, timeoutMs) {
-    return `
+export function buildWaitForSelectorAcrossFramesJs(selector: string, timeoutMs: number): string {
+  return `
       (async () => {
         const selector = ${JSON.stringify(selector)};
         const timeoutAt = Date.now() + ${Number(timeoutMs) || 10000};
@@ -141,8 +183,8 @@ function buildWaitForSelectorAcrossFramesJs(selector, timeoutMs) {
     `;
 }
 
-function buildRenderAwareExtractorJs(options) {
-    return `
+export function buildRenderAwareExtractorJs(options: { frames: FrameMode }): string {
+  return `
       (() => {
         const frameMode = ${JSON.stringify(options.frames)};
         const minNonStructuralIframeTextChars = ${MIN_NON_STRUCTURAL_IFRAME_TEXT_CHARS};
@@ -368,124 +410,144 @@ function buildRenderAwareExtractorJs(options) {
     `;
 }
 
-function formatDiagnostics(data, networkEntries, captureSupported) {
-    const lines = [];
-    const diag = data?.diagnostics || {};
-    lines.push('[web-fetch-browser diagnose]');
-    lines.push(`url: ${diag.url || '-'}`);
-    lines.push(`frames: ${Array.isArray(diag.frames) ? diag.frames.length : 0}, included_same_origin: ${diag.includedFrameCount || 0}`);
-    for (const frame of (diag.frames || []).slice(0, 20)) {
-        lines.push(`  [frame ${frame.index}] ${frame.sameOrigin ? 'same-origin' : 'cross-origin'} ${frame.accessible ? 'accessible' : 'blocked'} text=${frame.textLength || 0} ${frame.src || '-'}`);
-    }
-    if (Array.isArray(diag.emptyContainers) && diag.emptyContainers.length > 0) {
-        lines.push(`empty_containers: ${diag.emptyContainers.length}`);
-        for (const item of diag.emptyContainers.slice(0, 12)) {
-            const selector = `${item.tag}${item.id ? `#${item.id}` : ''}${item.className ? `.${String(item.className).trim().split(/\\s+/).filter(Boolean).join('.')}` : ''}`;
-            lines.push(`  ${item.scope}: ${selector} (${item.url || '-'})`);
-        }
-    }
-    const interesting = networkEntries.filter(isInterestingNetworkEntry);
-    lines.push(`network_capture: ${captureSupported ? 'enabled' : 'unavailable'}, entries=${networkEntries.length}, api_like=${interesting.length}`);
-    for (const entry of interesting.slice(0, 20)) {
-        lines.push(`  ${entry.method} ${entry.status || '-'} ${entry.contentType || '-'} ${entry.url}`);
-    }
-    return `${lines.join('\n')}\n`;
+/**
+ * A page that navigates after load — a challenge interstitial handing off to
+ * the real page, a client-side redirect — destroys the execution context out
+ * from under `evaluate`. That is the normal case on the escalation path, since
+ * escalation only happens for pages that blocked plain HTTP in the first place.
+ * Retry once after letting the new document settle; a second failure is real.
+ */
+async function evaluateAfterNavigation<T>(page: IPage, js: string, settleSeconds: number): Promise<T> {
+  try {
+    return await page.evaluate<T>(js);
+  } catch (error) {
+    if (!/execution context was destroyed|context was destroyed|navigation/i.test(String((error as Error)?.message ?? error))) throw error;
+    await page.wait(Math.max(1, settleSeconds));
+    return page.evaluate<T>(js);
+  }
 }
 
-const command = cli({
-    site: 'web',
-    name: 'fetch-browser',
-    access: 'read',
-    description: 'Fetch any web page and export as Markdown',
-    strategy: Strategy.COOKIE,
-    navigateBefore: false, // we handle navigation ourselves
-    args: [
-        { name: 'url', required: true, help: 'Any web page URL' },
-        { name: 'output', default: './web-articles', help: 'Output directory' },
-        { name: 'download-images', type: 'boolean', default: true, help: 'Download images locally' },
-        { name: 'wait', type: 'int', default: 3, help: 'Seconds to wait after page load' },
-        { name: 'wait-for', valueRequired: true, help: 'CSS selector to wait for in the main document or same-origin iframes' },
-        { name: 'wait-until', default: 'domstable', choices: ['domstable', 'networkidle'], help: 'Readiness policy after navigation: domstable or networkidle' },
-        { name: 'frames', default: 'same-origin', choices: ['same-origin', 'all-same-origin', 'none'], help: 'Iframe handling mode: relevant same-origin, all-same-origin, or none' },
-        { name: 'diagnose', type: 'boolean', default: false, help: 'Print render diagnostics (frames, empty containers, XHR/API-like requests) to stderr' },
-        { name: 'stdout', type: 'boolean', default: false, help: 'Print markdown to stdout instead of saving to a file' },
-    ],
-    columns: ['title', 'author', 'publish_time', 'status', 'size', 'saved'],
-    func: async (page, kwargs, debug = false) => {
-        const url = kwargs.url;
-        const waitSeconds = kwargs.wait ?? 3;
-        const waitUntil = normalizeWaitUntil(kwargs['wait-until']);
-        const frameMode = normalizeFrameMode(kwargs.frames);
-        const shouldDiagnose = boolish(kwargs.diagnose) || debug || !!process.env.WEBCMD_VERBOSE;
-        const networkEntries = [];
-        const captureSupported = (waitUntil === 'networkidle' || shouldDiagnose)
-            ? await maybeStartNetworkCapture(page)
-            : false;
-        // Navigate to the target URL
-        await page.goto(url);
-        if (kwargs['wait-for']) {
-            const waitResult = await page.evaluate(buildWaitForSelectorAcrossFramesJs(String(kwargs['wait-for']), waitSeconds * 1000));
-            if (waitResult?.invalidSelector) {
-                throw new Error(`Invalid --wait-for selector "${kwargs['wait-for']}": ${waitResult.error || 'querySelector failed'}`);
-            }
-            if (!waitResult?.ok) {
-                throw new Error(`Timed out waiting for selector "${kwargs['wait-for']}" in main document or same-origin iframes`);
-            }
-        } else if (waitUntil !== 'networkidle') {
-            await page.wait(waitSeconds);
-        }
-        if (waitUntil === 'networkidle') {
-            if (!captureSupported) {
-                throw new Error('Network capture is unavailable, so --wait-until networkidle cannot be satisfied');
-            }
-            const idle = await waitForNetworkIdle(page, waitSeconds, networkEntries);
-            if (!idle?.ok) {
-                throw new Error(`Timed out waiting for network idle after ${waitSeconds}s`);
-            }
-        }
-        // Extract article content using browser-side heuristics
-        const data = await page.evaluate(buildRenderAwareExtractorJs({ frames: frameMode }));
-        if (captureSupported) await drainNetworkCapture(page, networkEntries);
-        if (shouldDiagnose) process.stderr.write(formatDiagnostics(data, networkEntries, captureSupported));
-        // Determine Referer from URL for image downloads
-        let referer = '';
-        try {
-            const parsed = new URL(url);
-            referer = parsed.origin + '/';
-        }
-        catch { /* ignore */ }
-        const result = await downloadArticle({
-            title: data?.title || 'untitled',
-            author: data?.author,
-            publishTime: data?.publishTime,
-            sourceUrl: url,
-            contentHtml: data?.contentHtml || '',
-            imageUrls: data?.imageUrls,
-        }, {
-            output: kwargs.output,
-            downloadImages: kwargs['download-images'],
-            imageHeaders: referer ? { Referer: referer } : undefined,
-            stdout: kwargs.stdout,
-            configureTurndown: (td) => {
-                td.addRule('preserveButtons', {
-                    filter: (node) => node.nodeName === 'BUTTON',
-                    replacement: (content) => content,
-                });
-            },
-        });
-        // `--stdout` is a content-streaming mode. The markdown body already went
-        // to process.stdout inside downloadArticle(), so returning rows here
-        // would make Commander append table/JSON output to the same stdout
-        // stream and break piping.
-        return kwargs.stdout ? null : result;
+export function formatDiagnostics(
+  data: Partial<ExtractedPage> | null | undefined,
+  networkEntries: NetworkEntry[],
+  captureSupported: boolean,
+): string {
+  const lines: string[] = [];
+  const diag = data?.diagnostics ?? ({} as Partial<ExtractedPage['diagnostics']>);
+  lines.push('[web-fetch-browser diagnose]');
+  lines.push(`url: ${diag.url || '-'}`);
+  lines.push(`frames: ${Array.isArray(diag.frames) ? diag.frames.length : 0}, included_same_origin: ${diag.includedFrameCount || 0}`);
+  for (const frame of (diag.frames || []).slice(0, 20)) {
+    lines.push(`  [frame ${frame.index}] ${frame.sameOrigin ? 'same-origin' : 'cross-origin'} ${frame.accessible ? 'accessible' : 'blocked'} text=${frame.textLength || 0} ${frame.src || '-'}`);
+  }
+  if (Array.isArray(diag.emptyContainers) && diag.emptyContainers.length > 0) {
+    lines.push(`empty_containers: ${diag.emptyContainers.length}`);
+    for (const item of diag.emptyContainers.slice(0, 12)) {
+      const selector = `${item.tag}${item.id ? `#${item.id}` : ''}${item.className ? `.${String(item.className).trim().split(/\s+/).filter(Boolean).join('.')}` : ''}`;
+      lines.push(`  ${item.scope}: ${selector} (${item.url || '-'})`);
+    }
+  }
+  const interesting = networkEntries.filter(isInterestingNetworkEntry);
+  lines.push(`network_capture: ${captureSupported ? 'enabled' : 'unavailable'}, entries=${networkEntries.length}, api_like=${interesting.length}`);
+  for (const entry of interesting.slice(0, 20)) {
+    lines.push(`  ${entry.method} ${entry.status || '-'} ${entry.contentType || '-'} ${entry.url}`);
+  }
+  return `${lines.join('\n')}\n`;
+}
+
+/**
+ * Render `--url` in the browser and return its main content as markdown.
+ *
+ * This is the escalation target for `web fetch`: it deliberately writes no
+ * files and downloads no images, so an escalated fetch answers in the same
+ * shape as the plain and impit tiers and still honours `-f`. The file-export
+ * pipeline stays behind `web fetch-browser`.
+ */
+export async function extractPageMarkdown(page: IPage, kwargs: CommandArgs): Promise<{ title: string; content: string }> {
+  const url = String(kwargs.url);
+  const waitSeconds = Number(kwargs.wait ?? 3);
+  await page.goto(url);
+  await page.wait(waitSeconds);
+  const data = await evaluateAfterNavigation<ExtractedPage>(
+    page,
+    buildRenderAwareExtractorJs({ frames: normalizeFrameMode(kwargs.frames) }),
+    waitSeconds,
+  );
+  return {
+    title: data?.title || '',
+    content: articleHtmlToMarkdown(data?.contentHtml || ''),
+  };
+}
+
+/**
+ * Render `--url` in the browser and hand the extracted article to the shared
+ * download pipeline. Returns `null` in `--stdout` mode: the markdown body has
+ * already gone to process.stdout inside downloadArticle(), so returning rows
+ * would make Commander append table/JSON output to the same stream and break
+ * piping.
+ */
+export async function runFetchBrowser(page: IPage, kwargs: CommandArgs, debug: boolean = false): Promise<unknown> {
+  const url = String(kwargs.url);
+  const waitSeconds = Number(kwargs.wait ?? 3);
+  const waitUntil = normalizeWaitUntil(kwargs['wait-until']);
+  const frameMode = normalizeFrameMode(kwargs.frames);
+  const shouldDiagnose = boolish(kwargs.diagnose) || debug || !!process.env.WEBCMD_VERBOSE;
+  const networkEntries: NetworkEntry[] = [];
+  const captureSupported = (waitUntil === 'networkidle' || shouldDiagnose)
+    ? await maybeStartNetworkCapture(page)
+    : false;
+  // Navigate to the target URL
+  await page.goto(url);
+  if (kwargs['wait-for']) {
+    const waitResult = await page.evaluate<{ ok?: boolean; invalidSelector?: boolean; error?: string }>(
+      buildWaitForSelectorAcrossFramesJs(String(kwargs['wait-for']), waitSeconds * 1000),
+    );
+    if (waitResult?.invalidSelector) {
+      throw new Error(`Invalid --wait-for selector "${kwargs['wait-for']}": ${waitResult.error || 'querySelector failed'}`);
+    }
+    if (!waitResult?.ok) {
+      throw new Error(`Timed out waiting for selector "${kwargs['wait-for']}" in main document or same-origin iframes`);
+    }
+  } else if (waitUntil !== 'networkidle') {
+    await page.wait(waitSeconds);
+  }
+  if (waitUntil === 'networkidle') {
+    if (!captureSupported) {
+      throw new Error('Network capture is unavailable, so --wait-until networkidle cannot be satisfied');
+    }
+    const idle = await waitForNetworkIdle(page, waitSeconds, networkEntries);
+    if (!idle?.ok) {
+      throw new Error(`Timed out waiting for network idle after ${waitSeconds}s`);
+    }
+  }
+  // Extract article content using browser-side heuristics
+  const data = await evaluateAfterNavigation<ExtractedPage>(page, buildRenderAwareExtractorJs({ frames: frameMode }), waitSeconds);
+  if (captureSupported) await drainNetworkCapture(page, networkEntries);
+  if (shouldDiagnose) process.stderr.write(formatDiagnostics(data, networkEntries, captureSupported));
+  // Determine Referer from URL for image downloads
+  let referer = '';
+  try {
+    const parsed = new URL(url);
+    referer = `${parsed.origin}/`;
+  } catch { /* ignore */ }
+  const result = await downloadArticle({
+    title: data?.title || 'untitled',
+    author: data?.author,
+    publishTime: data?.publishTime,
+    sourceUrl: url,
+    contentHtml: data?.contentHtml || '',
+    imageUrls: data?.imageUrls,
+  }, {
+    output: String(kwargs.output ?? DEFAULT_OUTPUT_DIR),
+    downloadImages: kwargs['download-images'] !== false,
+    imageHeaders: referer ? { Referer: referer } : undefined,
+    stdout: kwargs.stdout === true,
+    configureTurndown: (td) => {
+      td.addRule('preserveButtons', {
+        filter: (node) => node.nodeName === 'BUTTON',
+        replacement: (content) => content,
+      });
     },
-});
-export const __test__ = {
-    command,
-    buildRenderAwareExtractorJs,
-    buildWaitForSelectorAcrossFramesJs,
-    formatDiagnostics,
-    isInterestingNetworkEntry,
-    normalizeFrameMode,
-    normalizeWaitUntil,
-};
+  });
+  return kwargs.stdout ? null : result;
+}

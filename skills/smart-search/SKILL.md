@@ -11,7 +11,7 @@ Use live fetch results, command metadata, and command help. Do not infer command
 
 Do not use this skill for plugin inventory, plugin management, or listing available extensions. Marketplace commands appear here only to find and install search-capable adapters needed for the current search/fetch task.
 
-Cost order is mandatory when the request does not name a site: `webcmd web fetch` first, `webcmd web fetch-browser` second, search adapters last. Do not call search adapters until plain HTTP/TLS fetch and browser fetch cannot satisfy the task.
+Cost order is mandatory when the request does not name a site: `webcmd web fetch` first, search adapters last. `web fetch` walks the HTTP → TLS → browser ladder itself, so one call already covers plain and browser fetching. Do not call search adapters until it has failed.
 
 When the request does name a site or community, take the site-native fast path below instead.
 
@@ -35,21 +35,15 @@ Prefer primary sources, official docs, and direct content over search snippets. 
 
 ## Direct URL
 
-For a supplied HTTP(S) URL, fetch it first:
+For a supplied HTTP(S) URL, fetch it:
 
 ```bash
 webcmd web fetch --url <url>
 ```
 
-Only when the structured error code is `FETCH_BLOCKED` or `FETCH_REQUIRES_BROWSER`, use:
+That single call handles browser escalation itself: if the site blocks plain HTTP and TLS impersonation, it renders the page in a browser and returns the content, reporting `Extraction: browser`. Do not chase a `FETCH_BLOCKED` with a second command — if you received that error, the browser tier already ran or was unavailable.
 
-```bash
-webcmd web fetch-browser --url <url>
-```
-
-Do not escalate on message prose and do not make `web fetch` launch a browser.
-
-If direct fetch is rate-limited, blocked, CAPTCHA-gated, login-gated, geo-gated, or returns unusable extracted text, report that state. Only browser-escalate for `FETCH_BLOCKED` or `FETCH_REQUIRES_BROWSER`.
+If the fetch is rate-limited, login-gated, geo-gated, or returns unusable extracted text, report that state rather than retrying the same URL.
 
 ## Fetch-first web search
 
@@ -67,7 +61,7 @@ Query terms that collide with everyday English (`puppeteer`, `playwright`, `rust
 
 Extract useful result URLs from the fetched page and then fetch the target pages with `webcmd web fetch`. Search snippets and result titles are discovery only, not evidence. A page that yields zero usable result URLs is a failed search, not a search with no results: move to the next engine.
 
-If the search-engine result page itself needs browser rendering, use at most one browser fetch for a search results page before trying another search engine. A recognised block, CAPTCHA, or challenge page retires that engine for this request: do not re-fetch variants of the same engine. Do not jump to adapters because one engine blocked, unless the request names a site.
+If the search-engine result page itself needs browser rendering, `web fetch` escalates once on its own; do not re-run it for the same engine. A recognised block, CAPTCHA, or challenge page retires that engine for this request: do not re-fetch variants of the same engine. Do not jump to adapters because one engine blocked, unless the request names a site.
 
 ## Fetch evidence
 
@@ -77,7 +71,7 @@ Fetch up to three result URLs by default (five for a broad comparison):
 webcmd web fetch --url <url>
 ```
 
-Use up to two browser fetches by default, only when target-page `web fetch` returns `FETCH_BLOCKED` or `FETCH_REQUIRES_BROWSER`. Cite or link the source URL with substantive claims.
+Browser escalation happens inside `web fetch`, so a blocked page costs one command, not two. Pass `--browser false` when you want a cheap HTTP-only probe and are willing to skip blocked pages. Cite or link the source URL with substantive claims.
 
 If fetch is rate-limited, auth-gated, CAPTCHA-gated, bot-detected, quota-limited, or geo-blocked, do not loop. Try another relevant URL/source when available; otherwise report the blocker.
 
@@ -120,7 +114,7 @@ Do not add custom marketplaces in this workflow. In hosted mode, only verified h
 - One fetched search-engine page by default; second if weak/blocked; third only if the first two fail.
 - Up to five candidate commands before choosing.
 - Three URLs by default; five only for broad comparison.
-- Two browser fetches by default.
+- Two escalated (browser-tier) fetches by default; use `--browser false` once that budget is spent.
 - One adapter search by default; second only for weakness or corroboration.
 - Do not retry the same blocked command more than once.
 

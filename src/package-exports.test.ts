@@ -1,69 +1,37 @@
 /**
  * Regression tests for package exports.
  *
- * Ensures adapter files use @agentrhq/webcmd public package imports
- * (not fragile relative paths) and that all declared exports resolve
- * to real files.
+ * Ensures no adapter tree sneaks back into the published package and that all
+ * declared exports resolve to real files.
  */
 import { describe, it, expect } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { builtinModules } from 'node:module';
 import { fileURLToPath } from 'node:url';
-import ts from 'typescript';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
-const CLIS_DIR = path.join(ROOT, 'clis', 'web');
+const CLIS_DIR = path.join(ROOT, 'clis');
 const pkgJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf-8'));
 
 /** Recursively collect all JS adapter files in a directory. */
-function collectAdapterFiles(dir: string, opts?: { excludeTests?: boolean }): string[] {
+function collectAdapterFiles(dir: string): string[] {
   const results: string[] = [];
   if (!fs.existsSync(dir)) return results;
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      results.push(...collectAdapterFiles(full, opts));
-    } else if (entry.name.endsWith('.js') && !entry.name.endsWith('.d.js')) {
-      if (opts?.excludeTests && (entry.name.endsWith('.test.js') || entry.name.startsWith('test-'))) continue;
-      results.push(full);
-    }
+    if (entry.isDirectory()) results.push(...collectAdapterFiles(full));
+    else if (entry.name.endsWith('.js') && !entry.name.endsWith('.d.js')) results.push(full);
   }
   return results;
 }
 
-const ALLOWED_BARE_IMPORTS = new Set([
-  '@agentrhq/webcmd',
-  ...builtinModules.flatMap((name) => name.startsWith('node:')
-    ? [name, name.slice(5)]
-    : [name, `node:${name}`]),
-]);
-
-function isAllowedImport(specifier: string): boolean {
-  return specifier.startsWith('./')
-    || specifier.startsWith('../')
-    || specifier.startsWith('/')
-    || specifier.startsWith('@agentrhq/webcmd/')
-    || ALLOWED_BARE_IMPORTS.has(specifier);
-}
-
-/** Forbidden relative import patterns that should have been replaced.
- * Uses (?:\.\./)+ to catch any depth of ../ traversal.
- * Covers: import/export from, vi.mock(), vi.importActual(). */
-const FORBIDDEN_PATTERNS = [
-  /(?:from|mock|importActual)\s*\(?['"](?:\.\.\/)+src\//,
-  /(?:from|mock|importActual)\s*\(?['"](?:\.\.\/)+browser\//,
-  /(?:from|mock|importActual)\s*\(?['"](?:\.\.\/)+download\//,
-  /(?:from|mock|importActual)\s*\(?['"](?:\.\.\/)+pipeline\//,
-];
-
-describe('bundled web adapter imports use package exports', () => {
-  const adapterFiles = collectAdapterFiles(CLIS_DIR);
-  const runtimeAdapterFiles = collectAdapterFiles(CLIS_DIR, { excludeTests: true });
-
-  it('bundles the web adapter under clis/web', () => {
-    expect(adapterFiles.length).toBeGreaterThan(0);
+describe('adapter packaging', () => {
+  // The `web` site used to live in clis/web. It is core TypeScript under
+  // src/fetch now, so import hygiene is enforced by tsc rather than by scanning
+  // adapter sources — but the packaging boundary below still needs asserting.
+  it('ships no bundled adapter tree', () => {
+    expect(collectAdapterFiles(CLIS_DIR)).toEqual([]);
   });
 
   it('excludes adapters from package files and the install lifecycle', () => {
@@ -71,43 +39,6 @@ describe('bundled web adapter imports use package exports', () => {
 
     expect(files.some(file => /^(?:clis|plugins)(?:\/|$)/.test(file))).toBe(false);
     expect(pkgJson.scripts.postinstall).not.toMatch(/fetch-adapters/);
-  });
-
-  it('no adapter uses relative imports to src/, browser/, download/, or pipeline/', () => {
-    const violations: string[] = [];
-    for (const file of adapterFiles) {
-      const content = fs.readFileSync(file, 'utf-8');
-      for (const pattern of FORBIDDEN_PATTERNS) {
-        if (pattern.test(content)) {
-          const rel = path.relative(ROOT, file);
-          const match = content.match(pattern)?.[0];
-          violations.push(`${rel}: ${match}`);
-        }
-      }
-    }
-    expect(violations).toEqual([]);
-  });
-
-  it('non-test adapters only import node builtins, relative modules, or webcmd public APIs', () => {
-    const violations: Array<{ file: string; specifier: string }> = [];
-
-    for (const file of runtimeAdapterFiles) {
-      const source = fs.readFileSync(file, 'utf-8');
-      const module = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
-
-      for (const stmt of module.statements) {
-        if (!ts.isImportDeclaration(stmt) && !ts.isExportDeclaration(stmt)) continue;
-        const specifier = stmt.moduleSpecifier?.getText(module).slice(1, -1);
-        if (specifier && !isAllowedImport(specifier)) {
-          violations.push({
-            file: path.relative(ROOT, file),
-            specifier,
-          });
-        }
-      }
-    }
-
-    expect(violations).toEqual([]);
   });
 });
 

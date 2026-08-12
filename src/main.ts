@@ -36,6 +36,10 @@ const USER_PLUGINS = path.join(os.homedir(), CONFIG_DIR_NAME, 'plugins');
 // These are high-frequency or trivial paths that must not pay the startup tax.
 const argv = process.argv.slice(2);
 
+// Kept in sync with FULL_CLI_FLAGS in ./fetch/command.ts. Inlined so deciding
+// which path to take costs no import.
+const WEB_FETCH_FULL_CLI_FLAGS = new Set(['-h', '--help', '-f', '--format', '--trace', '-v', '--verbose']);
+
 if (typeof (globalThis as { Bun?: unknown }).Bun === 'undefined' && !isSupportedNodeVersion(process.version)) {
   process.stderr.write(
     [
@@ -77,9 +81,12 @@ if (!fastPathHandled) {
   } else if (argv[0] === 'skills' || argv[0] === 'update') {
     const { createProgram } = await import('./cli.js');
     await createProgram(BUILTIN_CLIS, USER_CLIS).parseAsync(argv, { from: 'user' });
-  } else if (argv[0] === 'web' && argv[1] === 'fetch') {
-    const { runClientOwnedWebFetch } = await import('./fetch/command.js');
-    await runClientOwnedWebFetch(argv);
+  } else if (argv[0] === 'web' && argv[1] === 'fetch' && !argv.some(arg => WEB_FETCH_FULL_CLI_FLAGS.has(arg))) {
+    // `web fetch` is client-owned in both modes, so a plain fetch never pays
+    // discovery startup. Help, `-f` and tracing fall through to the registered
+    // command in ./fetch/command.ts, which owns the same flags (#252).
+    const { runClientOwnedWebFetchCli } = await import('./fetch/command.js');
+    process.exitCode = await runClientOwnedWebFetchCli(argv);
   } else {
     const { shouldUseHostedMode } = await import('./hosted/config.js');
     if (shouldUseHostedMode()) {

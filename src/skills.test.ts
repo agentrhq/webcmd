@@ -50,19 +50,22 @@ function bundledSkill(name: string): string {
 }
 
 describe('webcmd skills content', () => {
-  it('keeps smart search on live discovery and explicit fetch escalation', () => {
+  it('keeps smart search on live discovery and automatic fetch escalation', () => {
     const skill = bundledSkill('smart-search');
     expect(skill).toContain('webcmd list --tag search -f json');
     expect(skill).toContain('webcmd plugin search');
     expect(skill).toContain('webcmd plugin install');
+    expect(skill).toContain('webcmd web fetch --url');
     expect(skill).toContain('FETCH_BLOCKED');
-    expect(skill).toContain('FETCH_REQUIRES_BROWSER');
-    expect(skill).toContain('webcmd web fetch-browser');
+    // `web fetch` escalates to the browser itself, so the skill must not send
+    // agents chasing a separate command after a block (#247).
+    expect(skill).not.toContain('webcmd web fetch-browser');
+    expect(skill).toContain('--browser false');
     expect(skill).toContain('Search Summary');
     expect(skill).toMatch(/at most three.*plugin/i);
     expect(skill).toMatch(/up to five.*candidate/i);
     expect(skill).toMatch(/three.*URL.*default/i);
-    expect(skill).toMatch(/two.*browser fetch/i);
+    expect(skill).toMatch(/two.*fetch/i);
     expect(skill).toContain('## Site-named fast path');
     expect(skill).toMatch(/cost order is mandatory when the request does not name a site/i);
     expect(skill).not.toContain('references/sources-');

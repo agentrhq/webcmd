@@ -7,8 +7,8 @@ import { isChallengeResponse, isJavaScriptShell } from './classify.js';
 
 export interface WebFetchOptions { url: string; timeoutSeconds: number; maxChars: number; allowPrivate: boolean; }
 export interface WebFetchResult {
-  status: number; requestedUrl: string; finalUrl: string; contentType: string; tier: 'plain' | 'impit'; profile?: 'chrome' | 'firefox';
-  title: string; extractionSource: ExtractFetchedContentResult['source']; truncated: boolean; content: string;
+  status: number; requestedUrl: string; finalUrl: string; contentType: string; tier: 'plain' | 'impit' | 'browser'; profile?: 'chrome' | 'firefox';
+  title: string; extractionSource: ExtractFetchedContentResult['source'] | 'browser'; truncated: boolean; content: string;
 }
 type ResponseLike = Pick<Response, 'status' | 'headers' | 'url'> & { body?: ReadableStream<Uint8Array> | null; bytes?: () => Promise<Uint8Array>; };
 type FetchLike = (url: string, options?: Record<string, unknown>) => Promise<ResponseLike>;
@@ -49,7 +49,7 @@ export async function webFetch(options: WebFetchOptions, dependencies: WebFetchD
     let response = await plainFetch(options.url, { redirect: 'manual', dispatcher: new ProxyAgent(proxy.url), signal: AbortSignal.timeout(remaining()) });
     let body = await readBody(response);
     let tier: WebFetchResult['tier'] = 'plain'; let profile: WebFetchResult['profile'];
-    if (isJavaScriptShell(body)) throw new CliError('FETCH_REQUIRES_BROWSER', 'This page requires browser rendering.', 'Use webcmd web fetch-browser for this URL.');
+    if (isJavaScriptShell(body)) throw new CliError('FETCH_REQUIRES_BROWSER', 'This page requires browser rendering.', 'The browser tier renders this page; web fetch escalates to it automatically.');
     if (isChallengeResponse(response.status, headersOf(response), body)) {
       // ponytail: impit's timeout covers the request, not the body stream, so a
       // trickling escalation body can outlive the budget. Race readBody against
@@ -58,10 +58,10 @@ export async function webFetch(options: WebFetchOptions, dependencies: WebFetchD
         const impit = createImpit({ browser, proxyUrl: proxy.url, timeout: remaining() });
         response = await impit.fetch(options.url, { redirect: 'manual', timeout: remaining() });
         body = await readBody(response); tier = 'impit'; profile = browser;
-        if (isJavaScriptShell(body)) throw new CliError('FETCH_REQUIRES_BROWSER', 'This page requires browser rendering.', 'Use webcmd web fetch-browser for this URL.');
+        if (isJavaScriptShell(body)) throw new CliError('FETCH_REQUIRES_BROWSER', 'This page requires browser rendering.', 'The browser tier renders this page; web fetch escalates to it automatically.');
         if (!isChallengeResponse(response.status, headersOf(response), body)) break;
       }
-      if (isChallengeResponse(response.status, headersOf(response), body)) throw new CliError('FETCH_BLOCKED', 'The site blocked non-browser fetches.', 'Use webcmd web fetch-browser for this URL.');
+      if (isChallengeResponse(response.status, headersOf(response), body)) throw new CliError('FETCH_BLOCKED', 'The site blocked non-browser fetches.', 'The browser tier renders this page; web fetch escalates to it automatically.');
     }
     const extracted = extractFetchedContent({ body, contentType: response.headers.get('content-type') ?? '', url: options.url });
     const clipped = truncate(extracted.content, options.maxChars);
