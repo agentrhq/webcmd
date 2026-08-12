@@ -723,12 +723,17 @@ export class CloakSessionManager {
       on?: (event: string, listener: (payload: { targetId: string }) => void) => void;
     }) | undefined)?.on;
     onCdpEvent?.call(runtime.cdp, 'Target.targetDestroyed', ({ targetId }: { targetId: string }) => {
-      if (targetId !== runtime.anchorTargetId) return;
-      runtime.anchorTargetId = undefined;
-      void this.withProfileLifecycleLock(profileId, async () => {
-        if (this.shuttingDown || runtime.closing || this.profiles.get(profileId) !== runtime) return;
-        await this.repairAnchor(profileId, runtime);
-      });
+      this.queueAnchorRepair(profileId, runtime, targetId);
+    });
+  }
+
+  private queueAnchorRepair(profileId: string, runtime: ProfileRuntime, destroyedTargetId: string): void {
+    if (runtime.anchorTargetId !== destroyedTargetId) return;
+    runtime.anchorTargetId = undefined;
+    void this.withProfileLifecycleLock(profileId, async () => {
+      if (this.shuttingDown || runtime.closing || this.profiles.get(profileId) !== runtime) return;
+      if (runtime.anchorTargetId !== undefined) return;
+      await this.repairAnchor(profileId, runtime);
     });
   }
 
@@ -754,12 +759,16 @@ export class CloakSessionManager {
 
   private scheduleProfileIdle(profileId: string, runtime: ProfileRuntime): void {
     if (this.profiles.get(profileId) !== runtime || runtime.closing || runtime.idleTimer) return;
-    if (runtime.activeCommands > 0 || this.hasActiveHandoff(profileId) || this.hasVisiblePages(runtime)) return;
+    if (runtime.activeCommands > 0 || this.hasVisiblePages(runtime)) return;
     runtime.idleTimer = setTimeout(() => {
       runtime.idleTimer = undefined;
       void this.withProfileLifecycleLock(profileId, async () => {
         if (this.profiles.get(profileId) !== runtime || runtime.closing) return;
-        if (runtime.activeCommands > 0 || this.hasActiveHandoff(profileId) || this.hasVisiblePages(runtime)) return;
+        if (runtime.activeCommands > 0 || this.hasVisiblePages(runtime)) return;
+        if (this.hasActiveHandoff(profileId)) {
+          this.scheduleProfileIdle(profileId, runtime);
+          return;
+        }
         runtime.closing = true;
         this.profiles.delete(profileId);
         await this.closeRuntime(runtime, true);
@@ -925,11 +934,7 @@ export class CloakSessionManager {
     const targetId = await this.targetIdForPage(runtime, page);
     if (targetId === runtime.anchorTargetId) {
       page.once('close', () => {
-        runtime.anchorTargetId = undefined;
-        void this.withProfileLifecycleLock(runtime.profileId, async () => {
-          if (this.shuttingDown || runtime.closing || this.profiles.get(runtime.profileId) !== runtime) return;
-          await this.repairAnchor(runtime.profileId, runtime);
-        });
+        this.queueAnchorRepair(runtime.profileId, runtime, targetId);
       });
       return;
     }

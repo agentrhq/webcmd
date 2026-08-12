@@ -7,6 +7,7 @@ import { dispatchCloakAction } from './actions.js';
 
 function fakeContext() {
   const listeners = new Map<string, Set<(...args: unknown[]) => void>>();
+  const cdpListeners = new Map<string, Set<(...args: any[]) => void>>();
   const pageListeners = new WeakMap<object, Map<string, Set<(...args: unknown[]) => void>>>();
   const targetIds = new WeakMap<object, string>();
   const windowIds = new Map<string, number>();
@@ -87,7 +88,11 @@ function fakeContext() {
       if (command === 'Target.closeTarget') return { success: true };
       return {};
     }),
-    on: vi.fn(),
+    on: vi.fn((event: string, listener: (...args: any[]) => void) => {
+      const bucket = cdpListeners.get(event) ?? new Set();
+      bucket.add(listener);
+      cdpListeners.set(event, bucket);
+    }),
     detach: vi.fn().mockResolvedValue(undefined),
   };
   return {
@@ -126,6 +131,10 @@ function fakeContext() {
     windowIdFor: (target: object) => windowIds.get(targetIds.get(target) ?? ''),
     moveToWindow: (target: object, windowId: number) => windowIds.set(targetIds.get(target)!, windowId),
     emitPage: (target: object) => emit('page', target),
+    emitCdp: (event: string, payload: unknown) => {
+      for (const listener of cdpListeners.get(event) ?? []) listener(payload);
+    },
+    pageListenerCount: (target: object, event: string) => pageListeners.get(target)?.get(event)?.size ?? 0,
     makePage: fakePage,
   };
 }
@@ -1149,13 +1158,13 @@ describe('CloakSessionManager', () => {
     expect(warn).toHaveBeenCalledOnce();
   });
 
-  it('reuses a warm profile and replaces its parking page on the next Session', async () => {
+  it.each(['linux', 'win32'] as const)('reuses a warm %s profile and replaces its parking page on the next Session', async (platform) => {
     vi.useFakeTimers();
     const launched = fakeContext();
     const launchPersistentContext = vi.fn().mockResolvedValue(launched.context);
     const manager = new CloakSessionManager({
       baseDir: '/tmp/webcmd-test',
-      platform: 'linux',
+      platform,
       launchPersistentContext,
     });
     const first = await manager.getPage({ profileId: 'work', session: 'session_a', surface: 'browser' });
@@ -1172,6 +1181,69 @@ describe('CloakSessionManager', () => {
     expect(await manager.listPages({ profileId: 'work', session: 'session_a' })).toEqual([]);
     expect(await manager.listPages({ profileId: 'work', session: 'session_b' })).toHaveLength(1);
     expect(launchPersistentContext).toHaveBeenCalledOnce();
+  });
+
+  it('rechecks an empty profile after its active handoff expires', async () => {
+    vi.useFakeTimers();
+    let handoffActive = true;
+    const launched = fakeContext();
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
+      hasActiveHandoff: () => handoffActive,
+    });
+    await manager.getPage({ profileId: 'work', session: 'session_a', surface: 'browser' });
+    await manager.closeSession('work', 'session_a');
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(manager.activeProfileIds()).toEqual(['work']);
+    handoffActive = false;
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(manager.activeProfileIds()).toEqual([]);
+    expect(launched.context.close).toHaveBeenCalledOnce();
+  });
+
+  it('unrefs the profile idle timer', async () => {
+    const timer = setTimeout(() => {}, 0);
+    const unref = vi.spyOn(Object.getPrototypeOf(timer), 'unref');
+    clearTimeout(timer);
+    const launched = fakeContext();
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
+    });
+    await manager.getPage({ profileId: 'work', session: 'session_a', surface: 'browser' });
+
+    await manager.closeSession('work', 'session_a');
+
+    expect(unref).toHaveBeenCalled();
+    await manager.shutdown();
+  });
+
+  it('repairs one anchor for duplicate destruction and page-close notifications', async () => {
+    const launched = fakeContext();
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      platform: 'darwin',
+      launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
+    });
+    await manager.getPage({ profileId: 'work', session: 'session_a', surface: 'browser' });
+    const anchor = launched.backgroundPages[0];
+    const anchorTargetId = launched.targetIdFor(anchor)!;
+    launched.emitPage(anchor);
+    await vi.waitFor(() => expect(launched.pageListenerCount(anchor, 'close')).toBeGreaterThan(0));
+
+    launched.emitCdp('Target.targetDestroyed', { targetId: anchorTargetId });
+    await anchor.close();
+    await vi.waitFor(() => expect(launched.cdp.send.mock.calls.filter(([, params]) => (
+      (params as { hidden?: boolean })?.hidden
+    ))).toHaveLength(2));
+    await Promise.resolve();
+
+    expect(launched.cdp.send.mock.calls.filter(([, params]) => (
+      (params as { hidden?: boolean })?.hidden
+    ))).toHaveLength(2);
   });
 
   it('recovers one timed-out idle close before launching one replacement', async () => {

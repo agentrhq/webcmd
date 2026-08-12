@@ -3,7 +3,11 @@ import { execFile } from 'node:child_process';
 
 export function matchCloakProfileCommand(command: string, userDataDir: string): boolean {
   const args = splitCommand(command);
-  if (!args[0]?.includes('/.cloakbrowser/') && !args[0]?.includes('\\.cloakbrowser\\')) return false;
+  const executable = args[0];
+  const executableParts = executable?.split(/[\\/]/u) ?? [];
+  const cacheIndex = executableParts.lastIndexOf('.cloakbrowser');
+  if (cacheIndex < 0 || !/^chromium-\d+(?:\.\d+)*(?:-pro)?$/u.test(executableParts[cacheIndex + 1] ?? '')) return false;
+  if (!['chrome', 'chrome.exe', 'chromium'].includes(executableParts.at(-1)?.toLowerCase() ?? '')) return false;
   for (let index = 0; index < args.length; index += 1) {
     if (args[index] === '--user-data-dir' && args[index + 1] === userDataDir) return true;
     if (args[index] === `--user-data-dir=${userDataDir}`) return true;
