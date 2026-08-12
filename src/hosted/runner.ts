@@ -45,6 +45,7 @@ import {
   isLocalOnlyHostedCommand,
   renderHostedCommandHelp,
   renderHostedSiteHelp,
+  withClientOwnedCommands,
 } from './manifest.js';
 import { isHostedConfig, loadWebcmdConfig, type WebcmdConfig } from './config.js';
 import { resolveHostedApiKey, type HostedCredentialStore } from './credentials.js';
@@ -163,8 +164,7 @@ async function dispatchHosted(
     return;
   }
   if (normalized.kind === 'completion') {
-    const manifest = await client.getManifest();
-    validateManifestContractIdentity(manifest);
+    const manifest = await getPresentationManifest(client);
     await writeToStream(stdout, hostedCompletions(manifest, normalized.argv).join('\n') + '\n');
     return;
   }
@@ -217,8 +217,7 @@ async function dispatchHosted(
       await writeToStream(stdout, parsed.output);
       return;
     }
-    const manifest = await client.getManifest();
-    validateManifestContractIdentity(manifest);
+    const manifest = await getPresentationManifest(client);
     await renderHostedList(manifest, parsed.format, parsed.formatExplicit, stdout, parsed.tag);
     return;
   }
@@ -341,10 +340,9 @@ async function dispatchHosted(
     return;
   }
 
-  // The API manifest is tenant-scoped. Never merge package or local plugin
-  // commands into it: the installed package contract contains no site commands.
-  const manifest = await client.getManifest();
-  validateManifestContractIdentity(manifest);
+  // The API manifest is tenant-scoped. Only the core client-owned presentation
+  // entry is merged; package and local plugin commands stay out.
+  const manifest = await getPresentationManifest(client);
 
   const site = args[0]!;
   const commandName = args[1];
@@ -404,6 +402,9 @@ async function dispatchHosted(
   if (parsed.help) {
     await writeHostedHelp(stdout, args, hostedCommandHelpData(command), renderHostedCommandHelp(command));
     return;
+  }
+  if (command.clientOwned) {
+    throw new Error(`Internal invariant: client-owned command ${command.command} reached hosted dispatch.`);
   }
 
   const startTime = now();
@@ -1195,7 +1196,7 @@ function hostedCompletions(manifest: HostedManifest, argv: string[]): string[] {
     hostedCommands(manifest),
     words,
     Number.isFinite(cursor) ? cursor! : words.length,
-    HOSTED_BUILTIN_COMMANDS,
+    HOSTED_BUILTIN_COMMANDS.filter(command => command !== 'web'),
   );
 }
 
@@ -1228,6 +1229,12 @@ function validateManifestContractIdentity(manifest: HostedManifest): void {
       'Webcmd Cloud manifest does not match this installed Webcmd hosted contract.',
     );
   }
+}
+
+async function getPresentationManifest(client: HostedClient): Promise<HostedManifest> {
+  const manifest = await client.getManifest();
+  validateManifestContractIdentity(manifest);
+  return withClientOwnedCommands(manifest);
 }
 
 function hostedContractCompatibilityLine(version: string): string | undefined {

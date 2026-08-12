@@ -261,6 +261,24 @@ function captureLocalBrowserStructure(argv: string[]): {
 }
 
 describe('runHostedCli', () => {
+  it('presents web fetch help from local metadata without dispatching it to Cloud', async () => {
+    const stdout = sink();
+    const fetchImpl = vi.fn<typeof fetch>(async () => manifestResponse());
+
+    const result = await runHostedCli(['web', 'fetch', '--help'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      fetchImpl,
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 0 });
+    expect(stdout.text()).toContain('--url <value>');
+    expect(stdout.text()).toContain('--timeout [value]');
+    expect(stdout.text()).toContain('--max-chars [value]');
+    expect(stdout.text()).toContain('--allow-private [value]');
+    expect(fetchImpl.mock.calls.map(([url]) => String(url))).toEqual(['https://api.example.com/v1/manifest']);
+  });
+
   const publicProfile = {
     id: 'profile_work',
     name: 'Work',

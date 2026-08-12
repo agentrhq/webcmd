@@ -21,6 +21,7 @@ export interface HostedFileArgument {
 }
 
 export interface HostedCommand extends CommandSurfaceMetadata {
+  clientOwned?: boolean;
   site: string;
   name: string;
   aliases?: string[];

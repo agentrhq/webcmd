@@ -193,6 +193,13 @@ describe('hosted root command surface', () => {
     });
   });
 
+  it('advertises client-owned web fetch at the hosted root', () => {
+    expect(HOSTED_ROOT_HELP.commands).toContainEqual({
+      name: 'web',
+      description: 'Fetch URLs locally without launching a browser',
+    });
+  });
+
   it('advertises hosted profile management as a root command, not a local-only namespace', () => {
     expect(HOSTED_ROOT_HELP.commands).toContainEqual({
       name: 'profile',
