@@ -50,7 +50,8 @@
       }
     ],
     "defaultFormat": "md",
-    "type": "js"
+    "type": "js",
+    "packageExport": "./fetch/command"
   },
   {
     "site": "web",
@@ -141,6 +142,7 @@
       "saved"
     ],
     "type": "js",
-    "navigateBefore": false
+    "navigateBefore": false,
+    "packageExport": "./fetch/command"
   }
 ]

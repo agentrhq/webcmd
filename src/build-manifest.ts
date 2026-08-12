@@ -251,26 +251,30 @@ export async function scanClisDir(
  * Sites the core package owns and ships in `dist/`, rather than as adapter
  * files under `clis/`. `web` moved here so the whole fetch ladder installs by
  * default instead of living in a plugin nobody had (#247).
+ *
+ * The value is the package subpath export whose import registers the site's
+ * commands. It must stay listed in package.json `exports`, which
+ * `package-exports.test.ts` verifies resolves to a real source file.
  */
-const CORE_SITES = new Set(['web']);
+const CORE_SITE_EXPORTS = new Map([['web', './fetch/command']]);
 
 /**
  * Manifest entries for core-registered commands.
  *
  * These deliberately carry no `modulePath`/`sourceFile`: there is no adapter
  * file under `clis/` to resolve, and claiming one would point every consumer at
- * a path that does not exist in the published tarball. Consumers that load
- * adapters by path must treat a missing `modulePath` as "core-owned, import it
- * from the package itself".
+ * a path that does not exist in the published tarball. They carry
+ * `packageExport` instead, so a consumer that loads adapters by path can import
+ * the command from the package itself rather than guessing its layout.
  */
 export async function coreCommandEntries(
   importer: (moduleHref: string) => Promise<unknown> = moduleHref => import(moduleHref),
 ): Promise<ManifestEntry[]> {
   await importer(pathToFileURL(path.join(PACKAGE_ROOT, 'src/fetch/command.ts')).href);
   return [...getRegistry().values()]
-    .filter(cmd => CORE_SITES.has(cmd.site))
+    .filter(cmd => CORE_SITE_EXPORTS.has(cmd.site))
     .sort((a, b) => a.site.localeCompare(b.site) || a.name.localeCompare(b.name))
-    .map(cmd => toManifestEntry(cmd));
+    .map(cmd => ({ ...toManifestEntry(cmd), packageExport: CORE_SITE_EXPORTS.get(cmd.site)! }));
 }
 
 export async function buildManifest(): Promise<BuildManifestResult> {

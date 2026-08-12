@@ -40,6 +40,24 @@ describe('adapter packaging', () => {
     expect(files.some(file => /^(?:clis|plugins)(?:\/|$)/.test(file))).toBe(false);
     expect(pkgJson.scripts.postinstall).not.toMatch(/fetch-adapters/);
   });
+
+  // webcmd-cloud resolves core-owned commands through `packageExport` rather
+  // than a clis/ path. A rename that broke this would only surface as a hosted
+  // runtime failure after publish, so assert the contract here.
+  it('every manifest entry is resolvable: a clis/ path or a real package export', () => {
+    const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'cli-manifest.json'), 'utf-8')) as Array<Record<string, string>>;
+    const exports = pkgJson.exports as Record<string, string>;
+
+    expect(manifest.length).toBeGreaterThan(0);
+    for (const entry of manifest) {
+      const command = `${entry.site}/${entry.name}`;
+      if (entry.modulePath) continue;
+      expect(entry.packageExport, `${command} has neither modulePath nor packageExport`).toBeTruthy();
+      expect(exports[entry.packageExport!], `${command} declares a packageExport missing from package.json exports`).toBeTruthy();
+      const source = exports[entry.packageExport!]!.replace(/^\.\/dist\//, './').replace(/\.js$/, '.ts');
+      expect(fs.existsSync(path.join(ROOT, source)), `${command} export has no source file`).toBe(true);
+    }
+  });
 });
 
 describe('package.json exports resolve to real files', () => {
