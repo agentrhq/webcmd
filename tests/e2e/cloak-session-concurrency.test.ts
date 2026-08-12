@@ -102,4 +102,34 @@ describe.skipIf(process.env.WEBCMD_LIVE_CLOAK !== '1')('Cloak Session concurrenc
       await manager.shutdown();
     }
   }, 180_000);
+
+  it('falls back to a Session-owned page when window.open is blocked', async () => {
+    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-cloak-fallback-gate-'));
+    tempDirs.push(configDir);
+    const manager = new CloakSessionManager({ baseDir: configDir });
+    const key = {
+      profileId: `gate-fallback-${Date.now()}`,
+      session: 'session_44444444-4444-4444-8444-444444444444',
+      sessionId: 'session_44444444-4444-4444-8444-444444444444',
+      surface: 'browser' as const,
+    };
+    try {
+      const first = await manager.getPage(key);
+      await first.page.goto(`${baseUrl}/first`);
+      await first.page.evaluate(() => {
+        (window as unknown as { open: () => null }).open = () => null;
+      });
+
+      const fallback = await manager.newPage({ ...key, windowMode: 'background' });
+      await fallback.page.goto(`${baseUrl}/fallback`);
+
+      expect(await fallback.page.evaluate(() => window.opener === null)).toBe(true);
+      expect((await manager.listPages(key)).map((tab) => tab.url)).toEqual([
+        `${baseUrl}/first`,
+        `${baseUrl}/fallback`,
+      ]);
+    } finally {
+      await manager.shutdown();
+    }
+  }, 180_000);
 });

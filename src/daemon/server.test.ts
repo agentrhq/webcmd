@@ -1,4 +1,5 @@
 import { AddressInfo } from 'node:net';
+import { request as httpRequest } from 'node:http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DAEMON_HEADER_NAME } from '../constants.js';
 import type { BrowserRuntimeCommand, BrowserRuntimeResult, BrowserRuntimeStatus } from '../browser/protocol.js';
@@ -840,6 +841,41 @@ describe('createDaemonServer', () => {
     });
     expect(provider.commands.map((command) => command.id)).toEqual(['owner']);
 
+    expect((await postCommand(baseUrl, persistentWrite('next-owner', 'run_200_2_2'))).status).toBe(200);
+    expect(provider.commands.map((command) => command.id)).toEqual(['owner', 'next-owner']);
+  });
+
+  it('aborts pending work when the command request disconnects', async () => {
+    const provider = new FakeProvider();
+    let aborted = false;
+    provider.dispatchImpl = (command, signal) => new Promise((resolve) => {
+      if (command.id !== 'owner') {
+        resolve({ id: command.id, ok: true, data: 'done' });
+        return;
+      }
+      signal?.addEventListener('abort', () => {
+        aborted = true;
+        resolve({ id: command.id, ok: false, errorCode: 'aborted', error: 'aborted' });
+      });
+    });
+    const { baseUrl } = await start(provider);
+    const url = new URL('/command', baseUrl);
+    const body = JSON.stringify(persistentWrite('owner', 'run_100_1_1'));
+    const req = httpRequest(url, {
+      method: 'POST',
+      headers: {
+        [DAEMON_HEADER_NAME]: '1',
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body),
+      },
+    });
+    req.on('error', () => undefined);
+    req.end(body);
+
+    await vi.waitFor(() => expect(provider.commands.map((command) => command.id)).toEqual(['owner']));
+    req.destroy();
+
+    await vi.waitFor(() => expect(aborted).toBe(true));
     expect((await postCommand(baseUrl, persistentWrite('next-owner', 'run_200_2_2'))).status).toBe(200);
     expect(provider.commands.map((command) => command.id)).toEqual(['owner', 'next-owner']);
   });

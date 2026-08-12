@@ -202,6 +202,20 @@ function jsonResponse(
   res.end(JSON.stringify(data));
 }
 
+function abortOnResponseClose(res: ServerResponse, controller: AbortController, onAbort: () => void): () => void {
+  let completed = false;
+  const onClose = () => {
+    if (completed) return;
+    onAbort();
+    controller.abort();
+  };
+  res.once('close', onClose);
+  return () => {
+    completed = true;
+    res.off('close', onClose);
+  };
+}
+
 export function createDaemonServer(provider: BrowserRuntimeProvider, opts: DaemonServerOptions): DaemonServerHandle {
   const port = opts.port ?? DEFAULT_DAEMON_PORT;
   const host = opts.host ?? '127.0.0.1';
@@ -409,15 +423,21 @@ export function createDaemonServer(provider: BrowserRuntimeProvider, opts: Daemo
           }
         }
         const abortController = new AbortController();
+        let responseAborted = false;
+        const removeResponseAbort = abortOnResponseClose(res, abortController, () => {
+          responseAborted = true;
+        });
         const commandPromise = provider.dispatch(resolvedBody, abortController.signal).finally(() => {
-          if (leaseKey && runId) leases.heartbeat(leaseKey, runId);
+          removeResponseAbort();
+          if (leaseKey && runId && !responseAborted) leases.heartbeat(leaseKey, runId);
           pending.delete(body.id);
-          if (runId && forceClosingRuns.delete(runId)) leases.releaseByRunId(runId);
+          if (runId && (responseAborted || forceClosingRuns.delete(runId))) leases.releaseByRunId(runId);
         });
         pending.set(body.id, { promise: commandPromise, runId, leaseKey, abortController });
         const result = await waitForCommandResult(body, commandPromise);
+        removeResponseAbort();
         if (!result.ok) pushLog('warn', `Command ${body.id} failed: ${result.error ?? result.errorCode ?? 'unknown error'}`);
-        jsonResponse(res, result.ok ? 200 : result.errorCode === 'command_result_unknown' ? 408 : 400, result);
+        if (!responseAborted) jsonResponse(res, result.ok ? 200 : result.errorCode === 'command_result_unknown' ? 408 : 400, result);
       } catch (err) {
         jsonResponse(res, 400, { ok: false, error: err instanceof Error ? err.message : 'Invalid request' });
       }
