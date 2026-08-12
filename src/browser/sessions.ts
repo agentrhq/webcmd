@@ -172,7 +172,17 @@ export class LocalBrowserSessionStore {
     } catch (error) {
       throw new ConfigError(`Could not read browser sessions: ${error instanceof Error ? error.message : String(error)}`);
     }
-    return validateState(parsed);
+    const state = validateState(parsed);
+    const now = this.now().getTime();
+    let changed = false;
+    for (const record of state.sessions) {
+      if (record.handoff && Date.parse(record.handoff.expiresAt) <= now) {
+        delete record.handoff;
+        changed = true;
+      }
+    }
+    if (changed) this.save(state);
+    return state;
   }
 
   private save(state: StateFile): void {
@@ -224,6 +234,15 @@ function validateRecord(value: unknown, adapterDefaults: Set<string>): BrowserSe
     if (adapterDefaults.has(key)) throw new ConfigError(`browser-sessions.json contains multiple adapter-default Sessions for ${key}.`);
     adapterDefaults.add(key);
   }
+  const handoff = row.handoff;
+  if (handoff && (
+    typeof handoff.site !== 'string'
+    || !handoff.site.trim()
+    || typeof handoff.expiresAt !== 'string'
+    || Number.isNaN(Date.parse(handoff.expiresAt))
+  )) {
+    throw new ConfigError('browser-sessions.json contains an invalid handoff.');
+  }
   return {
     id: row.id,
     profileId: row.profileId,
@@ -231,7 +250,7 @@ function validateRecord(value: unknown, adapterDefaults: Set<string>): BrowserSe
     createdAt,
     updatedAt,
     lastUsedAt,
-    ...(row.handoff ? { handoff: row.handoff } : {}),
+    ...(handoff ? { handoff } : {}),
   };
 }
 

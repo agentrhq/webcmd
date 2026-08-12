@@ -11,6 +11,8 @@ export interface BrowserRuntimeProvider {
   createSession?(command: BrowserRuntimeCommand): Promise<BrowserSessionRecord>;
   requireSession?(command: BrowserRuntimeCommand): Promise<BrowserSessionRecord>;
   resolveAdapterDefault?(command: BrowserRuntimeCommand): Promise<BrowserSessionRecord>;
+  startSessionHandoff?(command: BrowserRuntimeCommand): Promise<BrowserSessionRecord>;
+  clearSessionHandoff?(command: BrowserRuntimeCommand): Promise<BrowserSessionRecord>;
   listSessions?(input: { profileId?: string }): Promise<BrowserSessionListRow[]>;
   closeSession?(command: BrowserRuntimeCommand): Promise<{ closed: boolean; alreadyIdle: boolean; session: string }>;
   dispatch(command: BrowserRuntimeCommand): Promise<BrowserRuntimeResult>;

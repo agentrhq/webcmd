@@ -10,6 +10,7 @@ class FakeProvider implements BrowserRuntimeProvider {
   commands: BrowserRuntimeCommand[] = [];
   sessions: BrowserSessionRecord[] = [];
   activeSessions = new Set<string>();
+  foregroundedSessions: string[] = [];
   shutdownCalled = false;
   delayMs = 0;
   dispatchImpl?: (command: BrowserRuntimeCommand) => Promise<BrowserRuntimeResult>;
@@ -75,6 +76,22 @@ class FakeProvider implements BrowserRuntimeProvider {
       ...await this.requireSession({ ...command, session: command.session ?? 'session_default' }),
       kind: 'adapter-default',
     };
+  }
+
+  async startSessionHandoff(command: BrowserRuntimeCommand): Promise<BrowserSessionRecord> {
+    const record = await this.requireSession(command);
+    record.handoff = { site: String(command.site), expiresAt: String(command.expiresAt) };
+    const index = this.sessions.findIndex((session) => session.profileId === record.profileId && session.id === record.id);
+    if (index === -1) this.sessions.push(record);
+    else this.sessions[index] = record;
+    this.foregroundedSessions.push(record.id);
+    return record;
+  }
+
+  async clearSessionHandoff(command: BrowserRuntimeCommand): Promise<BrowserSessionRecord> {
+    const record = await this.requireSession(command);
+    delete record.handoff;
+    return record;
   }
 
   async dispatch(command: BrowserRuntimeCommand) {
@@ -399,6 +416,89 @@ describe('createDaemonServer', () => {
     expect((await postCommand(baseUrl, adapterCommand('linkedin-a', 'run_200_2_2', 'linkedin', 'session_a'))).status).toBe(409);
     expect((await postCommand(baseUrl, adapterCommand('linkedin-b', 'run_300_3_3', 'linkedin', 'session_b'))).status).toBe(200);
     expect(provider.commands.map(({ id }) => id)).toEqual(['github-a', 'linkedin-b']);
+  });
+
+  it('pauses only the handoff Session and admits only its internal site verification', async () => {
+    const { provider, baseUrl } = await start();
+    const expiresAt = new Date(Date.now() + 60_000).toISOString();
+
+    const started = await postCommand(baseUrl, {
+      id: 'handoff-start',
+      action: 'session-handoff-start' as BrowserRuntimeCommand['action'],
+      surface: 'adapter',
+      session: 'session_a',
+      adapterSite: 'github',
+      site: 'github',
+      expiresAt,
+      runId: 'run_100_1_1',
+      command: 'github/login',
+    });
+    expect(started.status).toBe(200);
+    expect(provider.foregroundedSessions).toEqual(['session_a']);
+
+    await postCommand(baseUrl, { id: 'release-login', action: 'lease-release', runId: 'run_100_1_1' });
+    const paused = await postCommand(baseUrl, adapterCommand('paused', 'run_200_2_2', 'github', 'session_a'));
+    expect(paused.status).toBe(409);
+    await expect(paused.json()).resolves.toMatchObject({
+      errorCode: 'SESSION_PAUSED_FOR_HUMAN_HANDOFF',
+      details: { sessionId: 'session_a', site: 'github', expiresAt },
+    });
+
+    const sibling = await postCommand(baseUrl, adapterCommand('sibling', 'run_300_3_3', 'linkedin', 'session_b'));
+    expect(sibling.status).toBe(200);
+
+    const rawWhoami = await postCommand(baseUrl, {
+      ...adapterCommand('raw-whoami', 'run_400_4_4', 'github', 'session_a'),
+      surface: 'browser',
+      command: 'github/whoami',
+    });
+    expect(rawWhoami.status).toBe(409);
+
+    const wrongSite = await postCommand(baseUrl, {
+      ...adapterCommand('wrong-site', 'run_400_4_4', 'linkedin', 'session_a'),
+      command: 'github/whoami',
+    });
+    expect(wrongSite.status).toBe(409);
+
+    const verification = await postCommand(baseUrl, {
+      ...adapterCommand('verify', 'run_500_5_5', 'github', 'session_a'),
+      command: 'github/whoami',
+    });
+    expect(verification.status).toBe(200);
+
+    const cleared = await postCommand(baseUrl, {
+      id: 'handoff-clear',
+      action: 'session-handoff-clear' as BrowserRuntimeCommand['action'],
+      surface: 'adapter',
+      session: 'session_a',
+      adapterSite: 'github',
+      site: 'github',
+      runId: 'run_500_5_5',
+      command: 'github/whoami',
+    });
+    expect(cleared.status).toBe(200);
+
+    await postCommand(baseUrl, { id: 'release-verify', action: 'lease-release', runId: 'run_500_5_5' });
+    const resumed = await postCommand(baseUrl, adapterCommand('resumed', 'run_600_6_6', 'github', 'session_a'));
+    expect(resumed.status).toBe(200);
+  });
+
+  it('ignores expired handoffs before admission', async () => {
+    const provider = new FakeProvider();
+    provider.sessions.push({
+      id: 'session_a',
+      profileId: 'default',
+      kind: 'explicit',
+      createdAt: '2026-08-11T00:00:00.000Z',
+      updatedAt: '2026-08-11T00:00:00.000Z',
+      lastUsedAt: '2026-08-11T00:00:00.000Z',
+      handoff: { site: 'github', expiresAt: '2026-08-11T00:15:00.000Z' },
+    });
+    const { baseUrl } = await start(provider);
+
+    const result = await postCommand(baseUrl, adapterCommand('after-expiry', 'run_700_7_7', 'github', 'session_a'));
+
+    expect(result.status).toBe(200);
   });
 
   it('lets one logical run issue multiple operations and heartbeat its lease', async () => {

@@ -57,6 +57,21 @@ export class LocalCloakRuntimeProvider implements BrowserRuntimeProvider {
     return this.sessions.resolveAdapterDefault(this.resolveProfileId(command));
   }
 
+  async startSessionHandoff(command: BrowserRuntimeCommand): Promise<BrowserSessionRecord> {
+    const profileId = this.resolveProfileId(command);
+    const sessionId = command.sessionId!;
+    const record = this.sessions.markHandoff(profileId, sessionId, {
+      site: command.site!,
+      expiresAt: command.expiresAt!,
+    });
+    await this.manager.foregroundSession(profileId, sessionId);
+    return record;
+  }
+
+  async clearSessionHandoff(command: BrowserRuntimeCommand): Promise<BrowserSessionRecord> {
+    return this.sessions.clearHandoff(this.resolveProfileId(command), command.sessionId!);
+  }
+
   async listSessions(input: { profileId?: string }): Promise<BrowserSessionListRow[]> {
     return this.sessions.list(input.profileId).map((session) => ({
       ...session,

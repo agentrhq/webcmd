@@ -103,6 +103,7 @@ interface ProfileRuntime {
   keeperWarningLogged: boolean;
   activeCommands: number;
   idleTimer?: ReturnType<typeof setTimeout>;
+  handoffTimer?: ReturnType<typeof setTimeout>;
   closing: boolean;
   disposed: boolean;
   lastSeenAt: number;
@@ -453,6 +454,23 @@ export class CloakSessionManager {
     return { profileId, leaseKey, context: runtime.context, page: entry.page, pageId: entry.pageId };
   }
 
+  async foregroundSession(profileIdInput: string, sessionId: string): Promise<boolean> {
+    const profileId = normalizeProfileId(profileIdInput);
+    const runtime = this.profiles.get(profileId);
+    const session = runtime?.sessions.get(sessionId);
+    if (!runtime || !session) return false;
+    const entries = this.openEntries(session);
+    const match = entries.find(([, entry]) => entry.pageId === session.selectedPageId) ?? entries[0];
+    if (!match) return false;
+    const entry = match[1];
+    await this.assertOwnedWindow(runtime, sessionId, entry);
+    await entry.page.bringToFront?.().catch(() => {});
+    await this.activateBackgroundContext(runtime.context);
+    this.selectEntry(session, entry);
+    runtime.lastSeenAt = Date.now();
+    return true;
+  }
+
   async bindPage(input: SessionKeyInput & { pageId?: string; index?: number }): Promise<CloakPageLease | null> {
     const profileId = normalizeProfileId(input.profileId);
     const session = requireSession(input.session);
@@ -758,15 +776,19 @@ export class CloakSessionManager {
   }
 
   private scheduleProfileIdle(profileId: string, runtime: ProfileRuntime): void {
-    if (this.profiles.get(profileId) !== runtime || runtime.closing || runtime.idleTimer) return;
+    if (this.profiles.get(profileId) !== runtime || runtime.closing || runtime.idleTimer || runtime.handoffTimer) return;
     if (runtime.activeCommands > 0 || this.hasVisiblePages(runtime)) return;
+    if (this.hasActiveHandoff(profileId)) {
+      this.scheduleHandoffWake(profileId, runtime);
+      return;
+    }
     runtime.idleTimer = setTimeout(() => {
       runtime.idleTimer = undefined;
       void this.withProfileLifecycleLock(profileId, async () => {
         if (this.profiles.get(profileId) !== runtime || runtime.closing) return;
         if (runtime.activeCommands > 0 || this.hasVisiblePages(runtime)) return;
         if (this.hasActiveHandoff(profileId)) {
-          this.scheduleProfileIdle(profileId, runtime);
+          this.scheduleHandoffWake(profileId, runtime);
           return;
         }
         runtime.closing = true;
@@ -777,9 +799,19 @@ export class CloakSessionManager {
     runtime.idleTimer.unref?.();
   }
 
+  private scheduleHandoffWake(profileId: string, runtime: ProfileRuntime): void {
+    runtime.handoffTimer = setTimeout(() => {
+      runtime.handoffTimer = undefined;
+      this.scheduleProfileIdle(profileId, runtime);
+    }, PROFILE_IDLE_TIMEOUT_MS);
+    runtime.handoffTimer.unref?.();
+  }
+
   private cancelProfileIdle(runtime: ProfileRuntime): void {
     if (runtime.idleTimer) clearTimeout(runtime.idleTimer);
+    if (runtime.handoffTimer) clearTimeout(runtime.handoffTimer);
     runtime.idleTimer = undefined;
+    runtime.handoffTimer = undefined;
   }
 
   private hasVisiblePages(runtime: ProfileRuntime): boolean {

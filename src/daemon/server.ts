@@ -75,8 +75,10 @@ function commandProfileId(provider: BrowserRuntimeProvider, command: BrowserRunt
 async function resolveBrowserSession(
   provider: BrowserRuntimeProvider,
   command: BrowserRuntimeCommand,
-): Promise<BrowserRuntimeCommand> {
-  if (command.action === 'lease-release' || command.action === 'run-cancel' || SESSION_LIFECYCLE_ACTIONS.has(command.action)) return command;
+): Promise<{ command: BrowserRuntimeCommand; session?: BrowserSessionRecord }> {
+  if (command.action === 'lease-release' || command.action === 'run-cancel' || SESSION_LIFECYCLE_ACTIONS.has(command.action)) {
+    return { command };
+  }
   let session: BrowserSessionRecord | undefined;
   let sessionKind: BrowserRuntimeCommand['sessionKind'];
   if (command.surface === 'adapter' && !command.session) {
@@ -86,7 +88,62 @@ async function resolveBrowserSession(
     session = await provider.requireSession?.(command);
     sessionKind = 'explicit';
   }
-  return session ? { ...command, session: session.id, sessionId: session.id, sessionKind } : command;
+  return {
+    command: session ? { ...command, session: session.id, sessionId: session.id, sessionKind } : command,
+    session,
+  };
+}
+
+const HANDOFF_ACTIONS = new Set<BrowserRuntimeCommand['action']>([
+  'session-handoff-start',
+  'session-handoff-clear',
+]);
+
+function isHandoffVerification(command: BrowserRuntimeCommand, site: string): boolean {
+  return command.surface === 'adapter'
+    && command.adapterSite === site
+    && command.command === `${site}/whoami`;
+}
+
+function handoffPauseResult(command: BrowserRuntimeCommand, session: BrowserSessionRecord): BrowserRuntimeResult | null {
+  const handoff = session.handoff;
+  if (!handoff || Date.parse(handoff.expiresAt) <= Date.now()) return null;
+  if (isHandoffVerification(command, handoff.site)) return null;
+  return {
+    id: command.id,
+    ok: false,
+    errorCode: 'SESSION_PAUSED_FOR_HUMAN_HANDOFF',
+    error: `Session ${session.id} is paused while a human completes ${handoff.site} authentication.`,
+    details: { sessionId: session.id, sessionKind: session.kind, ...handoff },
+  };
+}
+
+async function handleSessionHandoff(
+  provider: BrowserRuntimeProvider,
+  command: BrowserRuntimeCommand,
+  session: BrowserSessionRecord,
+): Promise<BrowserRuntimeResult | null> {
+  if (!HANDOFF_ACTIONS.has(command.action)) return null;
+  if (!command.runId || !command.site?.trim()) {
+    return { id: command.id, ok: false, errorCode: 'invalid_request', error: 'Session handoff controls require runId and site.' };
+  }
+  if (command.action === 'session-handoff-start') {
+    const expiresAt = command.expiresAt ? Date.parse(command.expiresAt) : Number.NaN;
+    if (command.command !== `${command.site}/login` || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+      return { id: command.id, ok: false, errorCode: 'invalid_request', error: 'Invalid Session handoff start control.' };
+    }
+    const record = await provider.startSessionHandoff?.(command);
+    return record
+      ? { id: command.id, ok: true, data: record }
+      : { id: command.id, ok: false, errorCode: 'runtime_command_failed', error: 'Session handoff is not supported by this runtime.' };
+  }
+  if (!isHandoffVerification(command, command.site) || (session.handoff && command.site !== session.handoff.site)) {
+    return { id: command.id, ok: false, errorCode: 'invalid_request', error: 'Invalid Session handoff clear control.' };
+  }
+  const record = await provider.clearSessionHandoff?.(command);
+  return record
+    ? { id: command.id, ok: true, data: record }
+    : { id: command.id, ok: false, errorCode: 'runtime_command_failed', error: 'Session handoff is not supported by this runtime.' };
 }
 
 async function handleSessionLifecycle(
@@ -256,7 +313,15 @@ export function createDaemonServer(provider: BrowserRuntimeProvider, opts: Daemo
           jsonResponse(res, 200, lifecycleResult);
           return;
         }
-        const resolvedBody = await resolveBrowserSession(provider, body);
+        const resolved = await resolveBrowserSession(provider, body);
+        const resolvedBody = resolved.command;
+        if (resolved.session) {
+          const paused = handoffPauseResult(resolvedBody, resolved.session);
+          if (paused) {
+            jsonResponse(res, 409, paused);
+            return;
+          }
+        }
         let leaseKey: string | undefined;
         let runId: string | undefined;
         if (isSessionLeaseCommand(resolvedBody)) {
@@ -277,6 +342,14 @@ export function createDaemonServer(provider: BrowserRuntimeProvider, opts: Daemo
           if (!acquired.acquired) {
             const { key: _key, runId: _runId, ...holder } = acquired.holder;
             jsonResponse(res, 409, { ok: false, code: 'session_busy', holder });
+            return;
+          }
+        }
+        if (resolved.session) {
+          const handoffResult = await handleSessionHandoff(provider, resolvedBody, resolved.session);
+          if (handoffResult) {
+            if (leaseKey && runId) leases.heartbeat(leaseKey, runId);
+            jsonResponse(res, handoffResult.ok ? 200 : 400, handoffResult);
             return;
           }
         }

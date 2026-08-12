@@ -80,4 +80,27 @@ describe('LocalBrowserSessionStore', () => {
     expect(() => new LocalBrowserSessionStore({ baseDir }).list('profile_work'))
       .toThrowError(expect.objectContaining({ code: 'CONFIG' }));
   });
+
+  it('clears expired handoffs while resolving and listing Sessions', () => {
+    let now = new Date('2026-08-11T00:00:00.000Z');
+    const store = new LocalBrowserSessionStore({
+      baseDir: tempDir(),
+      now: () => now,
+      idFactory: () => 'session_a',
+    });
+    const session = store.create('work');
+    store.markHandoff('work', session.id, {
+      site: 'github',
+      expiresAt: '2026-08-11T00:15:00.000Z',
+    });
+
+    expect(store.require('work', session.id).handoff).toEqual({
+      site: 'github',
+      expiresAt: '2026-08-11T00:15:00.000Z',
+    });
+    now = new Date('2026-08-11T00:15:00.000Z');
+
+    expect(store.require('work', session.id).handoff).toBeUndefined();
+    expect(store.list('work')[0]?.handoff).toBeUndefined();
+  });
 });

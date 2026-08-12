@@ -23,7 +23,9 @@ export type BrowserRuntimeAction =
   | 'run-cancel'
   | 'session-create'
   | 'session-list'
-  | 'session-close';
+  | 'session-close'
+  | 'session-handoff-start'
+  | 'session-handoff-clear';
 
 export type BrowserSurface = 'browser' | 'adapter';
 export type SiteSessionMode = 'ephemeral' | 'persistent';
@@ -87,6 +89,9 @@ export interface BrowserRuntimeCommand {
   access?: 'read' | 'write';
   /** Originating CLI process, used only for actionable local busy guidance. */
   pid?: number;
+  /** Site and expiry payload for internal Session handoff controls. */
+  site?: string;
+  expiresAt?: string;
 }
 
 export interface BrowserRuntimeResult {

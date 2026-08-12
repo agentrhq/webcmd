@@ -4,17 +4,26 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import type { CliCommand } from './registry.js';
 
-const { mockReleaseSiteSessionLease, mockSetDaemonCommandTimeoutSeconds } = vi.hoisted(() => ({
+const {
+  mockClearSessionHandoff,
+  mockReleaseSiteSessionLease,
+  mockSetDaemonCommandTimeoutSeconds,
+  mockStartSessionHandoff,
+} = vi.hoisted(() => ({
+  mockClearSessionHandoff: vi.fn().mockResolvedValue(undefined),
   mockReleaseSiteSessionLease: vi.fn().mockResolvedValue(undefined),
   mockSetDaemonCommandTimeoutSeconds: vi.fn(),
+  mockStartSessionHandoff: vi.fn().mockResolvedValue({ id: 'session_a' }),
 }));
 
 vi.mock('./browser/daemon-client.js', async () => {
   const actual = await vi.importActual<typeof import('./browser/daemon-client.js')>('./browser/daemon-client.js');
   return {
     ...actual,
+    clearSessionHandoff: mockClearSessionHandoff,
     releaseSiteSessionLease: mockReleaseSiteSessionLease,
     setDaemonCommandTimeoutSeconds: mockSetDaemonCommandTimeoutSeconds,
+    startSessionHandoff: mockStartSessionHandoff,
   };
 });
 
@@ -666,6 +675,83 @@ describe('executeCommand — non-browser timeout', () => {
 
       finishSecond.resolve();
       await expect(secondExecution).resolves.toBeUndefined();
+    });
+  });
+
+  describe('local authentication handoff', () => {
+    afterEach(() => {
+      mockClearSessionHandoff.mockReset().mockResolvedValue(undefined);
+      mockStartSessionHandoff.mockReset().mockResolvedValue({ id: 'session_a' });
+      vi.restoreAllMocks();
+    });
+
+    it('starts a Session handoff and returns its immutable verification command', async () => {
+      const mockPage = { closeWindow: vi.fn().mockResolvedValue(undefined) } as any;
+      vi.spyOn(capRouting, 'shouldUseBrowserSession').mockReturnValue(true);
+      vi.spyOn(runtime, 'browserSession').mockImplementation(async (_Factory, fn) => fn(mockPage));
+      const cmd = cli({
+        site: 'github',
+        name: 'login',
+        access: 'write',
+        description: 'test scoped handoff',
+        browser: true,
+        strategy: Strategy.PUBLIC,
+        siteSession: 'persistent',
+        func: async () => [{
+          status: 'action_required',
+          logged_in: false,
+          site: 'github',
+          action: 'sign in',
+          verify_command: 'webcmd github whoami',
+        }],
+      });
+
+      const result = await executeCommand(cmd, {}, false, {
+        profile: 'work',
+        session: 'session_a',
+      });
+
+      expect(result).toEqual([{
+        status: 'action_required',
+        logged_in: false,
+        site: 'github',
+        action: 'sign in',
+        verify_command: "webcmd --profile 'work' --session session_a github whoami",
+      }]);
+      expect(mockStartSessionHandoff).toHaveBeenCalledWith(expect.objectContaining({
+        session: 'session_a',
+        site: 'github',
+        expiresAt: expect.any(String),
+      }));
+    });
+
+    it('clears the handoff only after successful internal auth verification', async () => {
+      const mockPage = { closeWindow: vi.fn().mockResolvedValue(undefined) } as any;
+      vi.spyOn(capRouting, 'shouldUseBrowserSession').mockReturnValue(true);
+      vi.spyOn(runtime, 'browserSession').mockImplementation(async (_Factory, fn) => fn(mockPage));
+      const verified = cli({
+        site: 'handoff-test',
+        name: 'whoami',
+        access: 'read',
+        description: 'test handoff verification',
+        browser: true,
+        strategy: Strategy.PUBLIC,
+        siteSession: 'persistent',
+        func: async () => [{ logged_in: true, site: 'handoff-test' }],
+      }) as CliCommand & { _authVerification?: true };
+      verified._authVerification = true;
+
+      await executeCommand(verified, {}, false, { profile: 'work', session: 'session_a' });
+
+      expect(mockClearSessionHandoff).toHaveBeenCalledWith(expect.objectContaining({
+        session: 'session_a',
+        site: 'handoff-test',
+      }));
+
+      mockClearSessionHandoff.mockClear();
+      verified.func = async () => [{ logged_in: false, site: 'handoff-test' }];
+      await executeCommand(verified, {}, false, { profile: 'work', session: 'session_a' });
+      expect(mockClearSessionHandoff).not.toHaveBeenCalled();
     });
   });
 

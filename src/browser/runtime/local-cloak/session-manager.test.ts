@@ -34,6 +34,7 @@ function fakeContext() {
       title: vi.fn().mockResolvedValue('Title'),
       url: vi.fn().mockReturnValue('https://example.com/'),
       screenshot: vi.fn().mockResolvedValue(Buffer.from('png')),
+      bringToFront: vi.fn().mockResolvedValue(undefined),
       isClosed: vi.fn(() => closed),
       close: vi.fn(async () => {
         closed = true;
@@ -386,6 +387,25 @@ describe('CloakSessionManager', () => {
 
     await manager.selectPage({ profileId: 'default', session: 'work', surface: 'browser', pageId: lease.pageId, windowMode: 'foreground' });
 
+    expect(activateBackgroundContext).toHaveBeenCalledWith(launched.context);
+  });
+
+  it('foregrounds only the selected Session window during handoff', async () => {
+    const launched = fakeContext();
+    const activateBackgroundContext = vi.fn().mockResolvedValue(undefined);
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      platform: 'darwin',
+      launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
+      activateBackgroundContext,
+    });
+    const first = await manager.getPage({ profileId: 'work', session: 'session_a', sessionId: 'session_a', surface: 'adapter' });
+    const sibling = await manager.getPage({ profileId: 'work', session: 'session_b', sessionId: 'session_b', surface: 'adapter' });
+
+    await manager.foregroundSession('work', 'session_a');
+
+    expect(first.page.bringToFront).toHaveBeenCalledOnce();
+    expect(sibling.page.bringToFront).not.toHaveBeenCalled();
     expect(activateBackgroundContext).toHaveBeenCalledWith(launched.context);
   });
 
@@ -1199,6 +1219,34 @@ describe('CloakSessionManager', () => {
     expect(manager.activeProfileIds()).toEqual(['work']);
     handoffActive = false;
     await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(manager.activeProfileIds()).toEqual(['work']);
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(manager.activeProfileIds()).toEqual([]);
+    expect(launched.context.close).toHaveBeenCalledOnce();
+  });
+
+  it('starts a fresh idle grace when handoff expiry is observed near a wakeup boundary', async () => {
+    vi.useFakeTimers();
+    let handoffActive = true;
+    const launched = fakeContext();
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
+      hasActiveHandoff: () => handoffActive,
+    });
+    await manager.getPage({ profileId: 'work', session: 'session_a', surface: 'browser' });
+    await manager.closeSession('work', 'session_a');
+
+    await vi.advanceTimersByTimeAsync(119_999);
+    handoffActive = false;
+    await vi.advanceTimersByTimeAsync(1);
+    expect(manager.activeProfileIds()).toEqual(['work']);
+
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(manager.activeProfileIds()).toEqual(['work']);
+    await vi.advanceTimersByTimeAsync(1);
 
     expect(manager.activeProfileIds()).toEqual([]);
     expect(launched.context.close).toHaveBeenCalledOnce();

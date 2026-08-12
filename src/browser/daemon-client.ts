@@ -23,6 +23,7 @@ import {
   type DaemonStatus,
 } from './daemon-transport.js';
 import type { BrowserRuntimeCommand, BrowserRuntimeResult, BrowserWindowMode } from './protocol.js';
+import type { BrowserSessionRecord } from './sessions.js';
 
 let _idCounter = 0;
 
@@ -34,6 +35,7 @@ const DEFAULT_COMMAND_TIMEOUT_SECONDS = 120;
 const RUNTIME_OP_TIMEOUT_MARGIN_MS = 15_000;
 const HTTP_TIMEOUT_MARGIN_MS = 10_000;
 const TRANSPORT_MAX_ATTEMPTS = 4;
+type DaemonCommandParams = Omit<DaemonCommand, 'id' | 'action'>;
 
 let _userCommandTimeoutSeconds: number | null = null;
 
@@ -41,7 +43,7 @@ export function setDaemonCommandTimeoutSeconds(seconds: number | null): void {
   _userCommandTimeoutSeconds = typeof seconds === 'number' && seconds > 0 ? Math.ceil(seconds) : null;
 }
 
-function effectiveCommandTimeoutSeconds(params: Omit<DaemonCommand, 'id' | 'action'>): number {
+function effectiveCommandTimeoutSeconds(params: DaemonCommandParams): number {
   const base = _userCommandTimeoutSeconds ?? DEFAULT_COMMAND_TIMEOUT_SECONDS;
   if (typeof params.timeoutMs === 'number' && params.timeoutMs > 0) {
     return Math.max(base, Math.ceil((params.timeoutMs + RUNTIME_OP_TIMEOUT_MARGIN_MS) / 1000));
@@ -115,7 +117,7 @@ export {
  */
 async function sendCommandRaw(
   action: DaemonCommand['action'],
-  params: Omit<DaemonCommand, 'id' | 'action'>,
+  params: DaemonCommandParams,
 ): Promise<DaemonResult> {
   const timeoutSeconds = effectiveCommandTimeoutSeconds(params);
   const deadlineAt = Date.now() + timeoutSeconds * 1000;
@@ -251,7 +253,7 @@ async function sendCommandRaw(
  */
 export async function sendCommand(
   action: DaemonCommand['action'],
-  params: Omit<DaemonCommand, 'id' | 'action'> = {},
+  params: DaemonCommandParams = {},
 ): Promise<unknown> {
   const result = await sendCommandRaw(action, params);
   return result.data;
@@ -263,7 +265,7 @@ export async function sendCommand(
  */
 export async function sendCommandFull(
   action: DaemonCommand['action'],
-  params: Omit<DaemonCommand, 'id' | 'action'> = {},
+  params: DaemonCommandParams = {},
 ): Promise<{ data: unknown; page?: string }> {
   const result = await sendCommandRaw(action, params);
   return { data: result.data, page: result.page };
@@ -275,6 +277,31 @@ export async function releaseSiteSessionLease(runId: string): Promise<void> {
 
 export async function cancelDaemonRun(runId: string): Promise<void> {
   await postRunControl('run-cancel', runId);
+}
+
+type SessionHandoffParams = {
+  session?: string;
+  site: string;
+  contextId?: string;
+  preferredContextId?: string;
+};
+
+export async function startSessionHandoff(
+  params: SessionHandoffParams & { expiresAt: string },
+): Promise<BrowserSessionRecord> {
+  return sendCommand('session-handoff-start', {
+    ...params,
+    surface: 'adapter',
+    adapterSite: params.site,
+  }) as Promise<BrowserSessionRecord>;
+}
+
+export async function clearSessionHandoff(params: SessionHandoffParams): Promise<BrowserSessionRecord> {
+  return sendCommand('session-handoff-clear', {
+    ...params,
+    surface: 'adapter',
+    adapterSite: params.site,
+  }) as Promise<BrowserSessionRecord>;
 }
 
 async function postRunControl(action: 'lease-release' | 'run-cancel', runId: string): Promise<void> {
