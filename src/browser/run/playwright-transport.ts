@@ -172,11 +172,39 @@ function scopedContext(
       }
     }
   };
+  const dialogManager = Reflect.get(context, 'dialogManager', context) as object;
+  const dialogHandlers = new Map<Function, Function>();
+  const scopedDialogManager = new Proxy(dialogManager, {
+    get(target, property) {
+      if (property === 'addDialogHandler') {
+        return (handler: Function) => {
+          const registered = (dialog: object) => {
+            const page = related(dialog, 'page');
+            return page !== undefined && scope.pages().includes(page as object)
+              ? handler(dialog)
+              : false;
+          };
+          dialogHandlers.set(handler, registered);
+          Reflect.apply(Reflect.get(target, property), target, [registered]);
+        };
+      }
+      if (property === 'removeDialogHandler') {
+        return (handler: Function) => {
+          const registered = dialogHandlers.get(handler) ?? handler;
+          dialogHandlers.delete(handler);
+          Reflect.apply(Reflect.get(target, property), target, [registered]);
+        };
+      }
+      const value = Reflect.get(target, property, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
   let proxy: object;
   proxy = new Proxy(context, {
     get(target, property) {
       if (property === 'pages') return scope.pages;
       if (property === 'newPage') return scope.createPage;
+      if (property === 'dialogManager') return scopedDialogManager;
       if (property === 'backgroundPages' || property === 'serviceWorkers') return () => [];
       if (property === 'on' || property === 'addListener') {
         return (event: string, listener: Function) => {

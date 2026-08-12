@@ -385,6 +385,28 @@ describe('runBrowserProgram', () => {
     await expect(output).resolves.toMatchObject({ result: page.url() });
   });
 
+  it('filters context dialog events from sibling Session pages', async () => {
+    const sibling = await context.newPage();
+    await sibling.goto('data:text/html,sibling');
+    const output = runBrowserProgram({
+      ...sessionScope(() => [page]),
+      pageId: 'page-1',
+    }, `
+      const pendingDialog = context.waitForEvent('dialog');
+      await page.evaluate(() => document.body.dataset.dialogListener = 'ready');
+      const dialog = await pendingDialog;
+      const url = dialog.page().url();
+      await dialog.dismiss();
+      return url;
+    `, { timeoutMs: 2_000 });
+
+    await page.waitForFunction(() => document.body.dataset.dialogListener === 'ready');
+    await sibling.evaluate(() => alert('sibling'));
+    await page.evaluate(() => alert('owned'));
+
+    await expect(output).resolves.toMatchObject({ result: page.url() });
+  });
+
   it('delegates context.newPage to the Session-owned page creator', async () => {
     const createPage = vi.fn(() => context.newPage());
     const output = await runBrowserProgram({
