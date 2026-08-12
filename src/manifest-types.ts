@@ -49,6 +49,8 @@ export interface ManifestEntry {
    * consumers that load adapters by path must import this export instead.
    */
   packageExport?: string;
+  /** Command runs only in the local client, never in hosted execution. */
+  clientOwned?: boolean;
   /** Pre-navigation control — see CliCommand.navigateBefore */
   navigateBefore?: boolean | string;
   /** Site session lifecycle defaults — see CliCommand.siteSession */

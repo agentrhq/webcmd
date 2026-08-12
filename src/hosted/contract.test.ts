@@ -349,6 +349,22 @@ describe('buildHostedContract', () => {
     expect(command.keywords).not.toBe(keywords);
   });
 
+  it('marks client-owned commands local-only while public commands remain hosted', () => {
+    const contract = buildHostedContract([
+      { ...commands[0], name: 'fetch', clientOwned: true },
+      { ...commands[0], aliases: undefined },
+    ], [], '1.0.0');
+
+    expect(contract.commands.find(command => command.command === 'web/fetch')).toMatchObject({
+      sessionPolicy: 'local-only',
+      availability: { mode: 'local-only', reason: 'client-owned' },
+    });
+    expect(contract.commands.find(command => command.command === 'web/profile')).toMatchObject({
+      sessionPolicy: 'create-or-reuse',
+      availability: { mode: 'hosted' },
+    });
+  });
+
   it('rejects incomplete file and browser session metadata', () => {
     const missingDirection = {
       ...commands[2],

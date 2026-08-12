@@ -105,6 +105,7 @@ export interface HostedContract {
 }
 
 export interface HostedContractCommandInput {
+  clientOwned?: boolean;
   site: string;
   name: string;
   aliases?: string[];

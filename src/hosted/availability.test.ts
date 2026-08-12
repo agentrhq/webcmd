@@ -165,6 +165,11 @@ function exceptionDiff(actual: readonly string[], expected: readonly string[]) {
 }
 
 describe('hosted availability', () => {
+  it('keeps client-owned commands local before strategy and domain classification', () => {
+    expect(deriveHostedAvailability({ clientOwned: true, strategy: 'public', domain: 'example.com' }))
+      .toEqual({ mode: 'local-only', reason: 'client-owned' });
+  });
+
   it('derives decisions only from normalized strategy and domain metadata', () => {
     expect(deriveHostedAvailability({ strategy: 'local', domain: 'localhost' }))
       .toEqual({ mode: 'local-only', reason: 'local-tool' });

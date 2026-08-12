@@ -111,7 +111,10 @@ function isCliCommandValue(value: unknown, site: string): value is CliCommand {
     && Array.isArray(value.args);
 }
 
-function toManifestEntry(cmd: CliCommand, modulePath?: string, sourceFile?: string): ManifestEntry {
+function toManifestEntry(
+  cmd: CliCommand,
+  adapterPath?: Pick<ManifestEntry, 'modulePath' | 'sourceFile'>,
+): ManifestEntry {
   return {
     site: cmd.site,
     name: cmd.name,
@@ -128,8 +131,8 @@ function toManifestEntry(cmd: CliCommand, modulePath?: string, sourceFile?: stri
     ...(cmd.keywords?.length ? { keywords: [...cmd.keywords] } : {}),
     defaultFormat: cmd.defaultFormat,
     type: 'js',
-    modulePath,
-    sourceFile,
+    ...adapterPath,
+    ...(cmd.clientOwned ? { clientOwned: true } : {}),
     navigateBefore: cmd.navigateBefore,
     siteSession: cmd.siteSession,
     freshPage: cmd.freshPage,
@@ -195,7 +198,7 @@ export async function loadManifestEntries(
         return true;
       })
       .sort((a, b) => a.name.localeCompare(b.name))
-      .map(cmd => toManifestEntry(cmd, modulePath, sourceRelative));
+      .map(cmd => toManifestEntry(cmd, { modulePath, sourceFile: sourceRelative }));
   } catch (err) {
     throw new ManifestImportError(filePath, err);
   }
@@ -272,7 +275,7 @@ export async function coreCommandEntries(
 ): Promise<ManifestEntry[]> {
   await importer(pathToFileURL(path.join(PACKAGE_ROOT, 'src/fetch/command.ts')).href);
   return [...getRegistry().values()]
-    .filter(cmd => CORE_SITE_EXPORTS.has(cmd.site))
+    .filter(cmd => cmd.clientOwned && CORE_SITE_EXPORTS.has(cmd.site))
     .sort((a, b) => a.site.localeCompare(b.site) || a.name.localeCompare(b.name))
     .map(cmd => ({ ...toManifestEntry(cmd), packageExport: CORE_SITE_EXPORTS.get(cmd.site)! }));
 }
@@ -280,7 +283,9 @@ export async function coreCommandEntries(
 export async function buildManifest(): Promise<BuildManifestResult> {
   const scanned = await scanClisDir(LEGACY_CLIS_DIR);
   const core = await coreCommandEntries();
-  const entries = [...scanned.entries, ...core].sort(
+  const entriesByCommand = new Map(scanned.entries.map(entry => [`${entry.site}/${entry.name}`, entry]));
+  for (const entry of core) entriesByCommand.set(`${entry.site}/${entry.name}`, entry);
+  const entries = [...entriesByCommand.values()].sort(
     (a, b) => a.site.localeCompare(b.site) || a.name.localeCompare(b.name),
   );
   return { entries, failures: scanned.failures };

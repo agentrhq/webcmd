@@ -58,6 +58,36 @@ describe('adapter packaging', () => {
       expect(fs.existsSync(path.join(ROOT, source)), `${command} export has no source file`).toBe(true);
     }
   });
+
+  it('maps web/fetch to its source and built package export', () => {
+    const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'cli-manifest.json'), 'utf-8')) as Array<Record<string, string>>;
+    const command = manifest.find(entry => entry.site === 'web' && entry.name === 'fetch');
+
+    expect(command).toMatchObject({ packageExport: './fetch/command' });
+    expect(fs.existsSync(path.join(ROOT, 'src/fetch/command.ts'))).toBe(true);
+    expect((pkgJson.exports as Record<string, string>)['./fetch/command'])
+      .toBe('./dist/src/fetch/command.js');
+  });
+
+  it('publishes only client-owned web/fetch in generated artifacts', () => {
+    const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'cli-manifest.json'), 'utf-8')) as Array<Record<string, unknown>>;
+    const contract = JSON.parse(fs.readFileSync(path.join(ROOT, 'hosted-contract.json'), 'utf-8')) as {
+      commands: Array<Record<string, unknown>>;
+    };
+    const manifestEntries = manifest.filter(entry => entry.site === 'web');
+    const contractEntries = contract.commands.filter(entry => entry.site === 'web');
+
+    expect(manifestEntries).toEqual([expect.objectContaining({
+      name: 'fetch', clientOwned: true, packageExport: './fetch/command',
+    })]);
+    expect(manifestEntries[0]).not.toHaveProperty('modulePath');
+    expect(manifestEntries[0]).not.toHaveProperty('sourceFile');
+    expect(contractEntries).toEqual([expect.objectContaining({
+      name: 'fetch',
+      sessionPolicy: 'local-only',
+      availability: { mode: 'local-only', reason: 'client-owned' },
+    })]);
+  });
 });
 
 describe('package.json exports resolve to real files', () => {
