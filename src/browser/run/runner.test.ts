@@ -26,6 +26,7 @@ const playwrightServer = createRequire(import.meta.url)(
 let browser: Browser;
 let context: BrowserContext;
 let page: Page;
+const describeWithChromium = fs.existsSync(chromium.executablePath()) ? describe : describe.skip;
 
 function sessionScope(pages: () => readonly Page[] = () => context.pages()) {
   return {
@@ -48,6 +49,7 @@ function run(source: string, options = {}) {
   }, source, options);
 }
 
+describeWithChromium('runBrowserProgram', () => {
 beforeAll(async () => {
   browser = await chromium.launch({ headless: true });
 });
@@ -78,7 +80,6 @@ afterAll(async () => {
   await browser.close();
 });
 
-describe('runBrowserProgram', () => {
   it('returns snapshotDiff by default after successful runs', async () => {
     const output = await run(`
       await page.setContent('<main><button>Saved</button></main>');
