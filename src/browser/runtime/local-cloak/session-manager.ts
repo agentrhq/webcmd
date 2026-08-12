@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execFile } from 'node:child_process';
 import type { Browser, BrowserContext, CDPSession, Page as PlaywrightPage } from 'playwright-core';
 import { launchPersistentContext as cloakLaunchPersistentContext } from 'cloakbrowser';
 import type { BrowserSurface, BrowserWindowMode, SiteSessionMode } from '../../protocol.js';
@@ -9,9 +8,13 @@ import { activateDarwinBackgroundContext, launchDarwinBackgroundPersistentContex
 import { normalizeProfileId, resolveCloakProfileDir } from './profiles.js';
 import { CloakNetworkCapture } from './network.js';
 import { findPackageRoot } from '../../../package-paths.js';
+import { findExactCloakProfileProcesses } from './process-matcher.js';
+import { log } from '../../../logger.js';
 
 const UNRESOLVED = Symbol('unresolved');
 const TARGET_PAGE_MATCH_TIMEOUT_MS = 1_000;
+export const PROFILE_IDLE_TIMEOUT_MS = 60_000;
+export const PROFILE_CLOSE_TIMEOUT_MS = 3_000;
 let cachedCloakBrowserVersion: string | undefined | typeof UNRESOLVED = UNRESOLVED;
 
 /**
@@ -87,11 +90,21 @@ export interface CloakTabInfo {
 }
 
 interface ProfileRuntime {
+  profileId: string;
   context: BrowserContext;
-  cdp: CDPSession;
+  cdp?: CDPSession;
   sessions: Map<string, SessionRuntime>;
   windowOwners: Map<number, string>;
   targetPages: Map<string, PageEntry>;
+  userDataDir: string;
+  anchorTargetId?: string;
+  parkingPage?: PlaywrightPage;
+  useParkingKeeper: boolean;
+  keeperWarningLogged: boolean;
+  activeCommands: number;
+  idleTimer?: ReturnType<typeof setTimeout>;
+  closing: boolean;
+  disposed: boolean;
   lastSeenAt: number;
 }
 
@@ -126,6 +139,7 @@ export interface CloakSessionManagerOptions {
   activateBackgroundContext?: typeof activateDarwinBackgroundContext;
   recoverLockedProfile?: RecoverLockedProfile;
   platform?: NodeJS.Platform;
+  hasActiveHandoff?: (profileId: string) => boolean;
 }
 
 let pageCounter = 0;
@@ -153,6 +167,14 @@ function isClosedContextError(error: unknown): boolean {
   return /Target page, context or browser has been closed/i.test(message);
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function daemonShuttingDownError(): Error & { code: 'DAEMON_SHUTTING_DOWN' } {
+  return Object.assign(new Error('The browser daemon is shutting down.'), { code: 'DAEMON_SHUTTING_DOWN' as const });
+}
+
 export class CloakSessionManager {
   readonly networkCapture = new CloakNetworkCapture();
 
@@ -161,8 +183,11 @@ export class CloakSessionManager {
   private readonly activateBackgroundContext: typeof activateDarwinBackgroundContext;
   private readonly platform: NodeJS.Platform;
   private readonly recoverLockedProfile: RecoverLockedProfile;
+  private readonly hasActiveHandoff: (profileId: string) => boolean;
   private readonly profiles = new Map<string, ProfileRuntime>();
   private readonly profileLaunches = new Map<string, Promise<ProfileRuntime>>();
+  private readonly profileLifecycleQueues = new Map<string, Promise<void>>();
+  private readonly profileActivities = new Map<string, number>();
   private readonly pageCreationQueues = new Map<string, Promise<void>>();
   private readonly pageTargetIds = new WeakMap<PlaywrightPage, string>();
   private readonly pageTargetIdPromises = new WeakMap<PlaywrightPage, Promise<string>>();
@@ -174,6 +199,7 @@ export class CloakSessionManager {
     timer: ReturnType<typeof setTimeout>;
   }>>();
   private readonly sessionPageListeners = new WeakMap<SessionRuntime, Set<(page: PlaywrightPage) => void>>();
+  private shuttingDown = false;
 
   constructor(private readonly opts: CloakSessionManagerOptions = {}) {
     this.launchPersistentContext = opts.launchPersistentContext ?? cloakLaunchPersistentContext;
@@ -181,6 +207,7 @@ export class CloakSessionManager {
     this.activateBackgroundContext = opts.activateBackgroundContext ?? activateDarwinBackgroundContext;
     this.platform = opts.platform ?? process.platform;
     this.recoverLockedProfile = opts.recoverLockedProfile ?? recoverLockedCloakProfile;
+    this.hasActiveHandoff = opts.hasActiveHandoff ?? (() => false);
   }
 
   profileStatuses() {
@@ -195,6 +222,34 @@ export class CloakSessionManager {
 
   activeProfileIds(): string[] {
     return [...this.profiles.keys()];
+  }
+
+  async runWithProfileActivity<T>(profileIdInput: string | undefined, task: () => Promise<T>): Promise<T> {
+    const profileId = normalizeProfileId(profileIdInput);
+    await this.withProfileLifecycleLock(profileId, async () => {
+      this.assertRunning();
+      const count = (this.profileActivities.get(profileId) ?? 0) + 1;
+      this.profileActivities.set(profileId, count);
+      const runtime = this.profiles.get(profileId);
+      if (runtime) {
+        runtime.activeCommands = count;
+        this.cancelProfileIdle(runtime);
+      }
+    });
+    try {
+      return await task();
+    } finally {
+      await this.withProfileLifecycleLock(profileId, async () => {
+        const count = Math.max(0, (this.profileActivities.get(profileId) ?? 1) - 1);
+        if (count === 0) this.profileActivities.delete(profileId);
+        else this.profileActivities.set(profileId, count);
+        const runtime = this.profiles.get(profileId);
+        if (runtime) {
+          runtime.activeCommands = count;
+          this.scheduleProfileIdle(profileId, runtime);
+        }
+      });
+    }
   }
 
   async getPage(input: SessionKeyInput): Promise<CloakPageLease> {
@@ -410,7 +465,13 @@ export class CloakSessionManager {
       ? this.findEntryByPageId(runtime, input.pageId)
       : existingSession && this.openEntries(existingSession)[input.index ?? -1];
     if (!match && input.index !== undefined) {
-      const page = runtime.context.pages().filter(candidate => !pageIsClosed(candidate))[input.index];
+      const candidates: PlaywrightPage[] = [];
+      for (const candidate of runtime.context.pages()) {
+        if (pageIsClosed(candidate) || candidate === runtime.parkingPage) continue;
+        if (await this.targetIdForPage(runtime, candidate) === runtime.anchorTargetId) continue;
+        candidates.push(candidate);
+      }
+      const page = candidates[input.index];
       if (page) {
         const targetId = await this.targetIdForPage(runtime, page);
         const entry = runtime.targetPages.get(targetId) ?? {
@@ -528,26 +589,38 @@ export class CloakSessionManager {
   }
 
   async shutdown(): Promise<void> {
-    for (const runtime of this.profiles.values()) {
-      for (const entry of runtime.targetPages.values()) this.clearIdleTimer(entry);
-      await runtime.context.close().catch(() => {});
+    this.shuttingDown = true;
+    while (this.profileLaunches.size > 0) {
+      await Promise.allSettled([...this.profileLaunches.values()]);
     }
+    await Promise.all([...this.profiles.keys()].map(profileId => this.withProfileLifecycleLock(profileId, async () => {
+      const runtime = this.profiles.get(profileId);
+      if (!runtime) return;
+      this.profiles.delete(profileId);
+      runtime.closing = true;
+      await this.closeRuntime(runtime, false).catch(() => {});
+    })));
     this.profiles.clear();
+    this.profileLaunches.clear();
+    this.profileActivities.clear();
   }
 
   private async getProfileRuntime(profileId: string, windowMode?: BrowserWindowMode): Promise<ProfileRuntime> {
-    const existing = this.profiles.get(profileId);
-    if (existing) return existing;
-    const pending = this.profileLaunches.get(profileId);
-    if (pending) return pending;
-
-    const launch = this.launchProfileRuntime(profileId, windowMode);
-    this.profileLaunches.set(profileId, launch);
-    try {
-      return await launch;
-    } finally {
-      this.profileLaunches.delete(profileId);
-    }
+    return this.withProfileLifecycleLock(profileId, async () => {
+      this.assertRunning();
+      const existing = this.profiles.get(profileId);
+      if (existing && !existing.closing) {
+        this.cancelProfileIdle(existing);
+        return existing;
+      }
+      const launch = this.launchProfileRuntime(profileId, windowMode);
+      this.profileLaunches.set(profileId, launch);
+      try {
+        return await launch;
+      } finally {
+        if (this.profileLaunches.get(profileId) === launch) this.profileLaunches.delete(profileId);
+      }
+    });
   }
 
   private async launchProfileRuntime(profileId: string, windowMode?: BrowserWindowMode): Promise<ProfileRuntime> {
@@ -569,25 +642,62 @@ export class CloakSessionManager {
       context = await launchPersistentContext(launchOptions);
     }
     const browser = context.browser();
-    if (!browser) throw new Error('Cloak page creation requires a Chromium browser connection.');
+    let cdp: CDPSession | undefined;
+    let keeperError: unknown;
+    try {
+      cdp = await browser?.newBrowserCDPSession();
+    } catch (error) {
+      keeperError = error;
+    }
     const runtime: ProfileRuntime = {
+      profileId,
       context,
-      cdp: await browser.newBrowserCDPSession(),
+      cdp,
       sessions: new Map(),
       windowOwners: new Map(),
       targetPages: new Map(),
+      userDataDir,
+      useParkingKeeper: this.platform !== 'darwin' || !cdp,
+      keeperWarningLogged: false,
+      activeCommands: this.profileActivities.get(profileId) ?? 0,
+      closing: false,
+      disposed: false,
       lastSeenAt: Date.now(),
     };
     this.pendingTargetPages.set(runtime, new Map());
     this.targetPageWaiters.set(runtime, new Map());
     this.attachRuntimeLifecycle(profileId, runtime);
+    if (cdp) {
+      try {
+        runtime.anchorTargetId = (await cdp.send('Target.createTarget', {
+          url: 'about:blank',
+          hidden: true,
+          background: true,
+        }) as { targetId: string }).targetId;
+      } catch (error) {
+        this.warnKeeperFallback(profileId, runtime, error);
+      }
+    } else {
+      this.warnKeeperFallback(profileId, runtime, keeperError ?? new Error('browser connection unavailable'));
+    }
+    if (this.shuttingDown) {
+      runtime.closing = true;
+      await this.closeRuntime(runtime, false).catch(() => {});
+      throw daemonShuttingDownError();
+    }
     this.profiles.set(profileId, runtime);
     return runtime;
   }
 
   private invalidateProfileRuntime(profileId: string, runtime: ProfileRuntime): void {
-    if (this.profiles.get(profileId) !== runtime) return;
-    this.profiles.delete(profileId);
+    if (this.profiles.get(profileId) === runtime) this.profiles.delete(profileId);
+    this.cleanupRuntime(runtime);
+  }
+
+  private cleanupRuntime(runtime: ProfileRuntime): void {
+    if (runtime.disposed) return;
+    runtime.disposed = true;
+    this.cancelProfileIdle(runtime);
     for (const entry of runtime.targetPages.values()) {
       if (entry.idleTimer) clearTimeout(entry.idleTimer);
       this.networkCapture.stop(entry.page);
@@ -601,7 +711,7 @@ export class CloakSessionManager {
       waiter.reject(new Error('Target page, context or browser has been closed'));
     }
     this.targetPageWaiters.get(runtime)?.clear();
-    void runtime.cdp.detach().catch(() => {});
+    void runtime.cdp?.detach().catch(() => {});
   }
 
   private attachRuntimeLifecycle(profileId: string, runtime: ProfileRuntime): void {
@@ -609,6 +719,110 @@ export class CloakSessionManager {
     runtime.context.on('page', page => {
       void this.handleContextPage(runtime, page).catch(() => {});
     });
+    const onCdpEvent = (runtime.cdp as (CDPSession & {
+      on?: (event: string, listener: (payload: { targetId: string }) => void) => void;
+    }) | undefined)?.on;
+    onCdpEvent?.call(runtime.cdp, 'Target.targetDestroyed', ({ targetId }: { targetId: string }) => {
+      if (targetId !== runtime.anchorTargetId) return;
+      runtime.anchorTargetId = undefined;
+      void this.withProfileLifecycleLock(profileId, async () => {
+        if (this.shuttingDown || runtime.closing || this.profiles.get(profileId) !== runtime) return;
+        await this.repairAnchor(profileId, runtime);
+      });
+    });
+  }
+
+  private async repairAnchor(profileId: string, runtime: ProfileRuntime): Promise<void> {
+    if (!runtime.cdp) return;
+    try {
+      runtime.anchorTargetId = (await runtime.cdp.send('Target.createTarget', {
+        url: 'about:blank',
+        hidden: true,
+        background: true,
+      }) as { targetId: string }).targetId;
+    } catch (error) {
+      this.warnKeeperFallback(profileId, runtime, error);
+    }
+  }
+
+  private warnKeeperFallback(profileId: string, runtime: ProfileRuntime, error: unknown): void {
+    runtime.useParkingKeeper = true;
+    if (runtime.keeperWarningLogged) return;
+    runtime.keeperWarningLogged = true;
+    log.warn(`Cloak Profile ${profileId} hidden keeper unavailable; using a parking page: ${errorMessage(error)}`);
+  }
+
+  private scheduleProfileIdle(profileId: string, runtime: ProfileRuntime): void {
+    if (this.profiles.get(profileId) !== runtime || runtime.closing || runtime.idleTimer) return;
+    if (runtime.activeCommands > 0 || this.hasActiveHandoff(profileId) || this.hasVisiblePages(runtime)) return;
+    runtime.idleTimer = setTimeout(() => {
+      runtime.idleTimer = undefined;
+      void this.withProfileLifecycleLock(profileId, async () => {
+        if (this.profiles.get(profileId) !== runtime || runtime.closing) return;
+        if (runtime.activeCommands > 0 || this.hasActiveHandoff(profileId) || this.hasVisiblePages(runtime)) return;
+        runtime.closing = true;
+        this.profiles.delete(profileId);
+        await this.closeRuntime(runtime, true);
+      });
+    }, PROFILE_IDLE_TIMEOUT_MS);
+    runtime.idleTimer.unref?.();
+  }
+
+  private cancelProfileIdle(runtime: ProfileRuntime): void {
+    if (runtime.idleTimer) clearTimeout(runtime.idleTimer);
+    runtime.idleTimer = undefined;
+  }
+
+  private hasVisiblePages(runtime: ProfileRuntime): boolean {
+    for (const session of runtime.sessions.values()) {
+      if (this.openEntries(session).length > 0) return true;
+    }
+    return false;
+  }
+
+  private async closeRuntime(runtime: ProfileRuntime, recoverOnTimeout: boolean): Promise<void> {
+    this.cancelProfileIdle(runtime);
+    for (const entry of runtime.targetPages.values()) this.clearIdleTimer(entry);
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        runtime.context.close(),
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(() => reject(new Error('Cloak Profile close timed out')), PROFILE_CLOSE_TIMEOUT_MS);
+          timeout.unref?.();
+        }),
+      ]);
+    } catch (error) {
+      if (recoverOnTimeout && error instanceof Error && error.message === 'Cloak Profile close timed out') {
+        await this.recoverLockedProfile(runtime.userDataDir);
+      } else {
+        throw error;
+      }
+    } finally {
+      if (timeout) clearTimeout(timeout);
+      this.cleanupRuntime(runtime);
+    }
+  }
+
+  private async withProfileLifecycleLock<T>(profileId: string, operation: () => Promise<T>): Promise<T> {
+    const previous = this.profileLifecycleQueues.get(profileId);
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const queue = (previous ?? Promise.resolve()).then(() => released);
+    this.profileLifecycleQueues.set(profileId, queue);
+    if (previous) await previous.catch(() => {});
+    try {
+      return await operation();
+    } finally {
+      release();
+      if (this.profileLifecycleQueues.get(profileId) === queue) this.profileLifecycleQueues.delete(profileId);
+    }
+  }
+
+  private assertRunning(): void {
+    if (this.shuttingDown) throw daemonShuttingDownError();
   }
 
   private async withPageCreationLock<T>(profileId: string, operation: () => Promise<T>): Promise<T> {
@@ -680,6 +894,7 @@ export class CloakSessionManager {
   }
 
   private async createWindowPage(runtime: ProfileRuntime, windowMode?: BrowserWindowMode): Promise<PlaywrightPage> {
+    if (!runtime.cdp) return runtime.context.newPage();
     const result = await runtime.cdp.send('Target.createTarget', {
       url: 'about:blank',
       newWindow: true,
@@ -708,6 +923,16 @@ export class CloakSessionManager {
 
   private async handleContextPage(runtime: ProfileRuntime, page: PlaywrightPage): Promise<void> {
     const targetId = await this.targetIdForPage(runtime, page);
+    if (targetId === runtime.anchorTargetId) {
+      page.once('close', () => {
+        runtime.anchorTargetId = undefined;
+        void this.withProfileLifecycleLock(runtime.profileId, async () => {
+          if (this.shuttingDown || runtime.closing || this.profiles.get(runtime.profileId) !== runtime) return;
+          await this.repairAnchor(runtime.profileId, runtime);
+        });
+      });
+      return;
+    }
     const waiter = this.targetPageWaiters.get(runtime)?.get(targetId);
     if (waiter) {
       this.targetPageWaiters.get(runtime)!.delete(targetId);
@@ -740,7 +965,7 @@ export class CloakSessionManager {
   ): Promise<PageEntry> {
     const targetId = await this.targetIdForPage(runtime, page);
     this.pendingTargetPages.get(runtime)?.delete(targetId);
-    const windowId = await this.windowIdForTarget(runtime, targetId);
+    const windowId = await this.windowIdForTarget(runtime, targetId, page);
     const owner = runtime.windowOwners.get(windowId);
     if (owner !== undefined && owner !== session.id) {
       throw new SessionWindowConflictError(runtime.targetPages.get(targetId)?.pageId ?? 'unknown', session.id, owner);
@@ -781,8 +1006,10 @@ export class CloakSessionManager {
       entry.leaseKey = input.leaseKey ?? (entry.leaseKey.startsWith('unowned\u0000') ? `page\u0000${entry.pageId}` : entry.leaseKey);
     }
     session.pages.set(entry.leaseKey, entry);
+    this.cancelProfileIdle(runtime);
     this.refreshIdleTimer(runtime, session, entry.leaseKey, entry);
     if (!wasOwned) for (const listener of this.sessionPageListeners.get(session) ?? []) listener(page);
+    await this.closeParkingPage(runtime);
     return entry;
   }
 
@@ -794,6 +1021,8 @@ export class CloakSessionManager {
         if (session?.pages.get(entry.leaseKey) === entry) session.pages.delete(entry.leaseKey);
       }
       this.clearIdleTimer(entry);
+      if (runtime.parkingPage === entry.page) runtime.parkingPage = undefined;
+      this.scheduleProfileIdle(runtime.profileId, runtime);
     });
   }
 
@@ -822,13 +1051,17 @@ export class CloakSessionManager {
     }
   }
 
-  private async windowIdForTarget(runtime: ProfileRuntime, targetId: string): Promise<number> {
-    const { windowId } = await runtime.cdp.send('Browser.getWindowForTarget', { targetId }) as { windowId: number };
+  private async windowIdForTarget(runtime: ProfileRuntime, targetId: string, page?: PlaywrightPage): Promise<number> {
+    const entry = runtime.targetPages.get(targetId);
+    const targetPage = page ?? entry?.page;
+    const cdp = runtime.cdp ?? (targetPage ? this.pageCdpSessions.get(targetPage) : undefined);
+    if (!cdp) throw new Error('Cloak page has no CDP session.');
+    const { windowId } = await cdp.send('Browser.getWindowForTarget', { targetId }) as { windowId: number };
     return windowId;
   }
 
   private async assertOwnedWindow(runtime: ProfileRuntime, sessionId: string, entry: PageEntry): Promise<void> {
-    const actual = await this.windowIdForTarget(runtime, entry.targetId);
+    const actual = await this.windowIdForTarget(runtime, entry.targetId, entry.page);
     const owner = runtime.windowOwners.get(actual);
     if (owner !== undefined && owner !== sessionId) {
       throw new SessionWindowConflictError(entry.pageId, sessionId, owner);
@@ -846,7 +1079,7 @@ export class CloakSessionManager {
       await this.assertOwnedWindow(runtime, session.id, entry);
       return;
     }
-    const actual = await this.windowIdForTarget(runtime, entry.targetId);
+    const actual = await this.windowIdForTarget(runtime, entry.targetId, entry.page);
     const owner = runtime.windowOwners.get(actual);
     if (owner !== undefined && owner !== session.id) {
       throw new SessionWindowConflictError(entry.pageId, session.id, owner);
@@ -894,15 +1127,42 @@ export class CloakSessionManager {
   }
 
   private async removeEntry(runtime: ProfileRuntime, session: SessionRuntime, entry: PageEntry, close: boolean): Promise<void> {
+    const shouldPark = close && runtime.useParkingKeeper
+      && [...runtime.targetPages.values()].every(candidate => candidate === entry || pageIsClosed(candidate.page));
+    const parkingWindowId = shouldPark
+      ? await this.windowIdForTarget(runtime, entry.targetId, entry.page).catch(() => undefined)
+      : undefined;
     if (session.pages.get(entry.leaseKey) === entry) session.pages.delete(entry.leaseKey);
     runtime.targetPages.delete(entry.targetId);
     this.clearIdleTimer(entry);
     this.clearSelectedPage(session, entry);
     this.networkCapture.stop(entry.page);
     if (close && !pageIsClosed(entry.page)) {
-      await runtime.cdp.send('Target.closeTarget', { targetId: entry.targetId }).catch(() => {});
-      if (!pageIsClosed(entry.page)) await entry.page.close().catch(() => {});
+      if (shouldPark) {
+        await entry.page.goto('about:blank', { waitUntil: 'load' }).catch(() => {});
+        entry.sessionId = undefined;
+        runtime.parkingPage = pageIsClosed(entry.page) ? undefined : entry.page;
+        if (parkingWindowId !== undefined) {
+          runtime.windowOwners.delete(parkingWindowId);
+          session.windowIds.delete(parkingWindowId);
+          await runtime.cdp?.send('Browser.setWindowBounds', {
+            windowId: parkingWindowId,
+            bounds: { windowState: 'minimized' },
+          }).catch(() => {});
+        }
+      } else {
+        await runtime.cdp?.send('Target.closeTarget', { targetId: entry.targetId }).catch(() => {});
+        if (!pageIsClosed(entry.page)) await entry.page.close().catch(() => {});
+      }
     }
+    this.scheduleProfileIdle(runtime.profileId, runtime);
+  }
+
+  private async closeParkingPage(runtime: ProfileRuntime): Promise<void> {
+    const parkingPage = runtime.parkingPage;
+    if (!parkingPage) return;
+    runtime.parkingPage = undefined;
+    if (!pageIsClosed(parkingPage)) await parkingPage.close().catch(() => {});
   }
 
   private clearIdleTimer(entry: PageEntry): void {
@@ -937,13 +1197,13 @@ function isProfileAlreadyInUseError(err: unknown): boolean {
 
 async function recoverLockedCloakProfile(userDataDir: string): Promise<boolean> {
   if (process.platform === 'win32') return false;
-  const initial = await findCloakProfileProcesses(userDataDir);
+  const initial = await findExactCloakProfileProcesses(userDataDir);
   if (initial.length === 0) return false;
 
   signalPids(initial, 'SIGTERM');
   if (await waitForProfileProcessesToExit(userDataDir, 2500)) return true;
 
-  signalPids(await findCloakProfileProcesses(userDataDir), 'SIGKILL');
+  signalPids(await findExactCloakProfileProcesses(userDataDir), 'SIGKILL');
   return waitForProfileProcessesToExit(userDataDir, 1500);
 }
 
@@ -951,9 +1211,9 @@ async function waitForProfileProcessesToExit(userDataDir: string, timeoutMs: num
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     await new Promise<void>((resolve) => setTimeout(resolve, 100));
-    if ((await findCloakProfileProcesses(userDataDir)).length === 0) return true;
+    if ((await findExactCloakProfileProcesses(userDataDir)).length === 0) return true;
   }
-  return (await findCloakProfileProcesses(userDataDir)).length === 0;
+  return (await findExactCloakProfileProcesses(userDataDir)).length === 0;
 }
 
 function signalPids(pids: number[], signal: NodeJS.Signals): void {
@@ -964,54 +1224,4 @@ function signalPids(pids: number[], signal: NodeJS.Signals): void {
       // Already exited or not signalable; the follow-up poll decides recovery.
     }
   }
-}
-
-async function findCloakProfileProcesses(userDataDir: string): Promise<number[]> {
-  const profileDirs = profileDirAliases(userDataDir);
-  const stdout = await psOutput();
-  const pids: number[] = [];
-  for (const line of stdout.split('\n')) {
-    const match = line.match(/^\s*(\d+)\s+(.+)$/);
-    if (!match) continue;
-    const pid = Number(match[1]);
-    const command = match[2];
-    if (!Number.isInteger(pid) || pid === process.pid) continue;
-    if (!isCloakBrowserCommand(command)) continue;
-    if (!commandUsesProfileDir(command, profileDirs)) continue;
-    pids.push(pid);
-  }
-  return [...new Set(pids)];
-}
-
-function commandUsesProfileDir(command: string, profileDirs: string[]): boolean {
-  for (const dir of profileDirs) {
-    const marker = `--user-data-dir=${dir}`;
-    const index = command.indexOf(marker);
-    if (index < 0) continue;
-    const next = command[index + marker.length];
-    if (next === undefined || /\s/.test(next)) return true;
-  }
-  return false;
-}
-
-function profileDirAliases(userDataDir: string): string[] {
-  const aliases = new Set([userDataDir]);
-  try {
-    aliases.add(fs.realpathSync.native(userDataDir));
-  } catch {
-    // The launch path is still useful even if realpath cannot resolve it.
-  }
-  return [...aliases];
-}
-
-function isCloakBrowserCommand(command: string): boolean {
-  return command.includes('/.cloakbrowser/') || command.includes('\\.cloakbrowser\\');
-}
-
-function psOutput(): Promise<string> {
-  return new Promise((resolve) => {
-    execFile('ps', ['-axo', 'pid=,command='], { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, timeout: 2000 }, (err, stdout) => {
-      resolve(err ? '' : String(stdout));
-    });
-  });
 }

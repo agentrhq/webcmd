@@ -120,10 +120,15 @@ function makeProviderWithFakePage(initialViewport: { width: number; height: numb
     close: vi.fn().mockResolvedValue(undefined),
   };
   let usedInitialPage = false;
-  cdpSession.send.mockImplementation(async (command: string, params?: { targetId?: string }) => {
+  cdpSession.send.mockImplementation(async (command: string, params?: { targetId?: string; hidden?: boolean }) => {
     if (command === 'Target.createTarget') {
-      const page = usedInitialPage ? await context.newPage() : pages[0];
-      usedInitialPage = true;
+      const page = params?.hidden ? fakePage('about:blank') : usedInitialPage ? await context.newPage() : pages[0];
+      if (params?.hidden) {
+        pages.push(page);
+        assignTarget(page);
+      } else {
+        usedInitialPage = true;
+      }
       queueMicrotask(() => emit('page', page));
       return { targetId: targetIds.get(page) };
     }

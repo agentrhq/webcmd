@@ -19,8 +19,13 @@ export class LocalCloakRuntimeProvider implements BrowserRuntimeProvider {
   private readonly sessionQueues = new Map<string, Promise<void>>();
 
   constructor(private readonly opts: LocalCloakRuntimeProviderOptions = {}) {
-    this.manager = new CloakSessionManager(opts);
     this.sessions = new LocalBrowserSessionStore({ baseDir: opts.baseDir });
+    this.manager = new CloakSessionManager({
+      ...opts,
+      hasActiveHandoff: profileId => this.sessions.list(profileId).some(session => (
+        Boolean(session.handoff) && Date.parse(session.handoff!.expiresAt) > Date.now()
+      )),
+    });
   }
 
   async status(opts: RuntimeStatusOptions = {}): Promise<BrowserRuntimeStatus> {
@@ -77,7 +82,10 @@ export class LocalCloakRuntimeProvider implements BrowserRuntimeProvider {
 
     await previous.catch(() => {});
     try {
-      return await dispatchCloakAction(this.manager, command);
+      return await this.manager.runWithProfileActivity(
+        this.resolveProfileId(command),
+        () => dispatchCloakAction(this.manager, command),
+      );
     } finally {
       release();
       if (this.sessionQueues.get(key) === current) {
