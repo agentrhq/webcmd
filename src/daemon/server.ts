@@ -3,10 +3,12 @@ import { DAEMON_HEADER_NAME, DEFAULT_DAEMON_PORT } from '../constants.js';
 import type { BrowserRuntimeCommand, BrowserRuntimeResult } from '../browser/protocol.js';
 import type { BrowserRuntimeProvider } from '../browser/runtime/provider.js';
 import { buildCommandTimeoutFailure, getResponseCorsHeaders } from '../daemon-utils.js';
-import { getSessionLeaseKey, isSessionLeaseCommand, SessionLeaseRegistry } from '../session-lease.js';
+import { getSessionLeaseKey, isSessionLeaseCommand, type SessionLease, SessionLeaseRegistry } from '../session-lease.js';
+import type { BrowserSessionRecord } from '../browser/sessions.js';
 
 const MAX_BODY = 1024 * 1024;
 const LOG_BUFFER_SIZE = 200;
+const CANCEL_SETTLE_TIMEOUT_MS = 2_000;
 
 export interface DaemonServerOptions {
   port?: number;
@@ -24,6 +26,34 @@ interface PendingCommand {
   promise: Promise<BrowserRuntimeResult>;
   runId?: string;
   leaseKey?: string;
+  abortController: AbortController;
+}
+
+async function cancelAndSettle(entries: PendingCommand[]): Promise<boolean> {
+  entries.forEach((entry) => entry.abortController.abort());
+  if (entries.length === 0) return true;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const settled = await Promise.race([
+    Promise.allSettled(entries.map((entry) => entry.promise)).then(() => true),
+    new Promise<boolean>((resolve) => {
+      timeout = setTimeout(() => resolve(false), CANCEL_SETTLE_TIMEOUT_MS);
+      timeout.unref?.();
+    }),
+  ]);
+  if (timeout) clearTimeout(timeout);
+  return settled;
+}
+
+function publicSessionHolder(holder: SessionLease | undefined) {
+  if (!holder) return null;
+  const { key: _key, runId: _runId, ...publicHolder } = holder;
+  const [, sessionId, admissionSite] = holder.key.split('␟');
+  return { ...publicHolder, ...(sessionId ? { sessionId } : {}), ...(admissionSite ? { admissionSite } : {}) };
+}
+
+function displacedSessionHolder(holder: SessionLease | undefined): { command: string; pid?: number } | null {
+  if (!holder) return null;
+  return { command: holder.command, ...(holder.pid === undefined ? {} : { pid: holder.pid }) };
 }
 
 function commandTimeoutMs(command: BrowserRuntimeCommand): number {
@@ -56,6 +86,114 @@ function waitForCommandResult(
   return responsePromise.finally(() => {
     if (timeoutId) clearTimeout(timeoutId);
   });
+}
+
+const UNRESOLVED_SESSION_LIFECYCLE_ACTIONS = new Set<BrowserRuntimeCommand['action']>([
+  'session-create',
+  'session-list',
+]);
+
+function commandProfileId(provider: BrowserRuntimeProvider, command: BrowserRuntimeCommand): string | undefined {
+  return provider.resolveProfileId?.(command)
+    ?? command.profileId
+    ?? command.contextId
+    ?? command.preferredContextId;
+}
+
+async function resolveBrowserSession(
+  provider: BrowserRuntimeProvider,
+  command: BrowserRuntimeCommand,
+): Promise<{ command: BrowserRuntimeCommand; session?: BrowserSessionRecord }> {
+  if (command.action === 'lease-release' || command.action === 'run-cancel' || UNRESOLVED_SESSION_LIFECYCLE_ACTIONS.has(command.action)) {
+    return { command };
+  }
+  let session: BrowserSessionRecord | undefined;
+  let sessionKind: BrowserRuntimeCommand['sessionKind'];
+  if (command.surface === 'adapter' && !command.session) {
+    session = await provider.resolveAdapterDefault?.(command);
+    sessionKind = 'adapter-default';
+  } else {
+    session = await provider.requireSession?.(command);
+    sessionKind = 'explicit';
+  }
+  return {
+    command: session ? { ...command, session: session.id, sessionId: session.id, sessionKind } : command,
+    session,
+  };
+}
+
+const HANDOFF_ACTIONS = new Set<BrowserRuntimeCommand['action']>([
+  'session-handoff-start',
+  'session-handoff-clear',
+]);
+
+function isHandoffVerification(command: BrowserRuntimeCommand, site: string): boolean {
+  return command.surface === 'adapter'
+    && command.adapterSite === site
+    && command.command === `${site}/whoami`;
+}
+
+function handoffPauseResult(command: BrowserRuntimeCommand, session: BrowserSessionRecord): BrowserRuntimeResult | null {
+  const handoff = session.handoff;
+  if (!handoff || Date.parse(handoff.expiresAt) <= Date.now()) return null;
+  if (isHandoffVerification(command, handoff.site)) return null;
+  return {
+    id: command.id,
+    ok: false,
+    errorCode: 'SESSION_PAUSED_FOR_HUMAN_HANDOFF',
+    error: `Session ${session.id} is paused while a human completes ${handoff.site} authentication.`,
+    details: { sessionId: session.id, sessionKind: session.kind, ...handoff },
+  };
+}
+
+async function handleSessionHandoff(
+  provider: BrowserRuntimeProvider,
+  command: BrowserRuntimeCommand,
+  session: BrowserSessionRecord,
+): Promise<BrowserRuntimeResult | null> {
+  if (!HANDOFF_ACTIONS.has(command.action)) return null;
+  if (!command.runId || !command.site?.trim()) {
+    return { id: command.id, ok: false, errorCode: 'invalid_request', error: 'Session handoff controls require runId and site.' };
+  }
+  if (command.action === 'session-handoff-start') {
+    const expiresAt = command.expiresAt ? Date.parse(command.expiresAt) : Number.NaN;
+    if (command.command !== `${command.site}/login` || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+      return { id: command.id, ok: false, errorCode: 'invalid_request', error: 'Invalid Session handoff start control.' };
+    }
+    const record = await provider.startSessionHandoff?.(command);
+    return record
+      ? { id: command.id, ok: true, data: record }
+      : { id: command.id, ok: false, errorCode: 'runtime_command_failed', error: 'Session handoff is not supported by this runtime.' };
+  }
+  if (!isHandoffVerification(command, command.site) || (session.handoff && command.site !== session.handoff.site)) {
+    return { id: command.id, ok: false, errorCode: 'invalid_request', error: 'Invalid Session handoff clear control.' };
+  }
+  const record = await provider.clearSessionHandoff?.(command);
+  return record
+    ? { id: command.id, ok: true, data: record }
+    : { id: command.id, ok: false, errorCode: 'runtime_command_failed', error: 'Session handoff is not supported by this runtime.' };
+}
+
+async function handleSessionLifecycle(
+  provider: BrowserRuntimeProvider,
+  command: BrowserRuntimeCommand,
+): Promise<BrowserRuntimeResult | null> {
+  switch (command.action) {
+    case 'session-create': {
+      const session = await provider.createSession?.(command);
+      return session ? { id: command.id, ok: true, data: session } : null;
+    }
+    case 'session-list': {
+      const sessions = await provider.listSessions?.({ profileId: commandProfileId(provider, command), limit: command.limit });
+      return sessions ? { id: command.id, ok: true, data: sessions } : null;
+    }
+    case 'session-close': {
+      const closed = await provider.closeSession?.(command);
+      return closed ? { id: command.id, ok: true, data: closed } : null;
+    }
+    default:
+      return null;
+  }
 }
 
 function readBody(req: IncomingMessage): Promise<string> {
@@ -92,12 +230,27 @@ function jsonResponse(
   res.end(JSON.stringify(data));
 }
 
+function abortOnResponseClose(res: ServerResponse, controller: AbortController, onAbort: () => void): () => void {
+  let completed = false;
+  const onClose = () => {
+    if (completed) return;
+    onAbort();
+    controller.abort();
+  };
+  res.once('close', onClose);
+  return () => {
+    completed = true;
+    res.off('close', onClose);
+  };
+}
+
 export function createDaemonServer(provider: BrowserRuntimeProvider, opts: DaemonServerOptions): DaemonServerHandle {
   const port = opts.port ?? DEFAULT_DAEMON_PORT;
   const host = opts.host ?? '127.0.0.1';
   const logBuffer: Array<{ level: string; msg: string; ts: number }> = [];
   const pending = new Map<string, PendingCommand>();
   const leases = new SessionLeaseRegistry();
+  const forceClosingRuns = new Set<string>();
   const hasPendingWork = (runId: string) => [...pending.values()].some((entry) => entry.runId === runId);
   let shutdownStarted = false;
 
@@ -193,41 +346,128 @@ export function createDaemonServer(provider: BrowserRuntimeProvider, opts: Daemo
           jsonResponse(res, result.ok ? 200 : result.errorCode === 'command_result_unknown' ? 408 : 400, result);
           return;
         }
-        if (body.action === 'lease-release') {
+        if (body.action === 'lease-release' || body.action === 'run-cancel') {
+          const matching = body.action === 'run-cancel' && typeof body.runId === 'string'
+            ? [...pending.values()].filter((entry) => entry.runId === body.runId)
+            : [];
+          const canceled = await cancelAndSettle(matching);
+          if (!canceled) {
+            const holder = typeof body.runId === 'string'
+              ? leases.list(hasPendingWork).find((lease) => lease.runId === body.runId)
+              : undefined;
+            jsonResponse(res, 409, { id: body.id, ok: false, code: 'session_busy', holder: publicSessionHolder(holder) });
+            return;
+          }
           const released = typeof body.runId === 'string' ? leases.releaseByRunId(body.runId) : 0;
           jsonResponse(res, 200, { id: body.id, ok: true, data: { released } });
           return;
         }
-        let leaseKey: string | undefined;
-        let runId: string | undefined;
-        if (isSessionLeaseCommand(body)) {
-          const profileId = provider.resolveProfileId?.(body)
-            ?? body.profileId
-            ?? body.contextId
-            ?? body.preferredContextId
-            ?? 'default';
-          leaseKey = getSessionLeaseKey(profileId, body.surface, body.session);
-          runId = body.runId;
-          const acquired = leases.acquire({
-            key: leaseKey,
-            runId,
-            command: body.command ?? body.action,
-            pid: body.pid,
-          }, hasPendingWork);
-          if (!acquired.acquired) {
-            const { key: _key, runId: _runId, ...holder } = acquired.holder;
-            jsonResponse(res, 409, { ok: false, code: 'session_busy', holder });
+        if (body.action !== 'session-close') {
+          const lifecycleResult = await handleSessionLifecycle(provider, body);
+          if (lifecycleResult) {
+            jsonResponse(res, 200, lifecycleResult);
             return;
           }
         }
-        const commandPromise = provider.dispatch(body).finally(() => {
-          if (leaseKey && runId) leases.heartbeat(leaseKey, runId);
-          pending.delete(body.id);
+        const resolved = await resolveBrowserSession(provider, body);
+        const resolvedBody = resolved.command;
+        const activeSessionLeases = (sessionKey: string) => leases.list(hasPendingWork).filter((lease) => (
+          lease.key === sessionKey
+          || lease.key.startsWith(`${sessionKey}␟`)
+          || sessionKey.startsWith(`${lease.key}␟`)
+        ));
+        if (resolved.session && !(resolvedBody.action === 'session-close' && resolvedBody.force === true)) {
+          const paused = handoffPauseResult(resolvedBody, resolved.session);
+          if (paused) {
+            jsonResponse(res, 409, paused);
+            return;
+          }
+        }
+        if (resolvedBody.action === 'session-close') {
+          const profileId = commandProfileId(provider, resolvedBody) ?? 'default';
+          const sessionKey = getSessionLeaseKey(profileId, resolvedBody.sessionId!);
+          const holders = activeSessionLeases(sessionKey);
+          const holder = holders[0];
+          if (holder && resolvedBody.force !== true) {
+            jsonResponse(res, 409, { ok: false, code: 'session_busy', holder: publicSessionHolder(holder) });
+            return;
+          }
+          const forcedRunIds = resolvedBody.force === true
+            ? new Set(holders.map((lease) => lease.runId))
+            : new Set<string>();
+          const forcedCommands = [...pending.values()]
+            .filter((entry) => entry.runId && forcedRunIds.has(entry.runId))
+            .map((entry) => entry);
+          forcedRunIds.forEach((runId) => forceClosingRuns.add(runId));
+          const canceled = await cancelAndSettle(forcedCommands);
+          if (!canceled) {
+            forcedRunIds.forEach((runId) => forceClosingRuns.delete(runId));
+            jsonResponse(res, 409, { ok: false, code: 'session_busy', holder: publicSessionHolder(holder) });
+            return;
+          }
+          const lifecycleResult = await handleSessionLifecycle(provider, resolvedBody);
+          if (lifecycleResult) {
+            for (const runId of forcedRunIds) {
+              leases.releaseByRunId(runId);
+              forceClosingRuns.delete(runId);
+            }
+            jsonResponse(res, 200, resolvedBody.force === true ? {
+              ...lifecycleResult,
+              data: {
+                ...(lifecycleResult.data as Record<string, unknown>),
+                displaced: displacedSessionHolder(holder),
+                clearedHandoff: Boolean(resolved.session?.handoff),
+              },
+            } : lifecycleResult);
+            return;
+          }
+        }
+        let leaseKey: string | undefined;
+        let runId: string | undefined;
+        if (isSessionLeaseCommand(resolvedBody)) {
+          const profileId = commandProfileId(provider, resolvedBody)
+            ?? 'default';
+          const admissionSite = resolvedBody.sessionKind === 'adapter-default'
+            && resolvedBody.surface === 'adapter'
+            ? resolvedBody.adapterSite
+            : undefined;
+          leaseKey = getSessionLeaseKey(profileId, resolvedBody.sessionId, admissionSite);
+          runId = resolvedBody.runId;
+          const acquired = leases.acquire({
+            key: leaseKey,
+            runId,
+            command: resolvedBody.command ?? resolvedBody.action,
+            pid: resolvedBody.pid,
+          }, hasPendingWork);
+          if (!acquired.acquired) {
+            jsonResponse(res, 409, { ok: false, code: 'session_busy', holder: publicSessionHolder(acquired.holder) });
+            return;
+          }
+        }
+        if (resolved.session) {
+          const handoffResult = await handleSessionHandoff(provider, resolvedBody, resolved.session);
+          if (handoffResult) {
+            if (leaseKey && runId) leases.heartbeat(leaseKey, runId);
+            jsonResponse(res, handoffResult.ok ? 200 : 400, handoffResult);
+            return;
+          }
+        }
+        const abortController = new AbortController();
+        let responseAborted = false;
+        const removeResponseAbort = abortOnResponseClose(res, abortController, () => {
+          responseAborted = true;
         });
-        pending.set(body.id, { promise: commandPromise, runId, leaseKey });
+        const commandPromise = provider.dispatch(resolvedBody, abortController.signal).finally(() => {
+          removeResponseAbort();
+          if (leaseKey && runId && !responseAborted) leases.heartbeat(leaseKey, runId);
+          pending.delete(body.id);
+          if (runId && (responseAborted || forceClosingRuns.delete(runId))) leases.releaseByRunId(runId);
+        });
+        pending.set(body.id, { promise: commandPromise, runId, leaseKey, abortController });
         const result = await waitForCommandResult(body, commandPromise);
+        removeResponseAbort();
         if (!result.ok) pushLog('warn', `Command ${body.id} failed: ${result.error ?? result.errorCode ?? 'unknown error'}`);
-        jsonResponse(res, result.ok ? 200 : result.errorCode === 'command_result_unknown' ? 408 : 400, result);
+        if (!responseAborted) jsonResponse(res, result.ok ? 200 : result.errorCode === 'command_result_unknown' ? 408 : 400, result);
       } catch (err) {
         jsonResponse(res, 400, { ok: false, error: err instanceof Error ? err.message : 'Invalid request' });
       }

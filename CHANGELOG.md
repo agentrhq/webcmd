@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.6.2](https://github.com/agentrhq/webcmd/compare/webcmd-v0.6.1...webcmd-v0.6.2) (2026-08-12)
+
+_webcmd v0.6.2: Browser Sessions, Plugins Everywhere, and Cloud Parity_
+
+### Highlights
+- Added explicit browser Sessions: create, carry, list, and close stable Session IDs for raw browser workflows across local and hosted mode.
+- Added `browser run` code execution for Playwright-style browser automation, including hosted routing and file transfer support.
+- Moved CLI surfaces into plugins, with marketplace search/install paths and command discovery metadata.
+- Added plugin override precedence and reconciliation: `~/.webcmd/clis` wins over installed plugins, update detection is content-based, and overrides report actionable status.
+- Expanded Webcmd Cloud parity for browser commands, hosted manifests, profiles/workspaces, auth handoff, and verify fixture evaluation.
+
+### Improvements
+- Added bundled agent guides and updated Webcmd skills for the plugin-first workflow.
+- Added hosted contract checks, plugin parity checks, and live Cloak session gates.
+- Added release tooling improvements for package, plugin, and manifest consistency.
+
+### Fixes
+- Hardened session admission/cancellation, background tab focus, Cloak process matching, and browser run timeout behavior.
+- Fixed plugin discovery/install edge cases, adapter status output, hosted output flushing, and local override reconciliation.
+- Restored and hardened adapter behavior across Amazon, Facebook, Twitter, TikTok, YouTube, and others.
+
 ## [0.5.4](https://github.com/agentrhq/webcmd/compare/webcmd-v0.5.3...webcmd-v0.5.4) (2026-08-09)
 
 ### Highlights

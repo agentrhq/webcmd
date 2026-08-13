@@ -23,6 +23,7 @@ import { PKG_VERSION } from './version.js';
 import { EXIT_CODES } from './errors.js';
 import { isSupportedNodeVersion, MIN_SUPPORTED_NODE_MAJOR } from './runtime-detect.js';
 import { CONFIG_DIR_NAME } from './brand.js';
+import { parseHostedRootCommandSurface } from './root-command-surface.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -77,9 +78,9 @@ if (!fastPathHandled) {
   } else if (argv[0] === 'skills' || argv[0] === 'update') {
     const { createProgram } = await import('./cli.js');
     await createProgram(BUILTIN_CLIS, USER_CLIS).parseAsync(argv, { from: 'user' });
-  } else if (argv[0] === 'web' && argv[1] === 'fetch') {
-    const { runClientOwnedWebFetch } = await import('./fetch/command.js');
-    await runClientOwnedWebFetch(argv);
+  } else if (isWebFetch(argv)) {
+    const { runWebFetchCommand } = await import('./fetch/command.js');
+    await runWebFetchCommand(argv);
   } else {
     const { shouldUseHostedMode } = await import('./hosted/config.js');
     if (shouldUseHostedMode()) {
@@ -87,8 +88,23 @@ if (!fastPathHandled) {
       const result = await runHostedCli(argv);
       process.exitCode = result.exitCode;
     } else {
-      await runLocalMain();
+      const { installDaemonRunSignalCancellation } = await import('./signal-cancel.js');
+      const uninstallSignalCancellation = installDaemonRunSignalCancellation();
+      try {
+        await runLocalMain();
+      } finally {
+        uninstallSignalCancellation();
+      }
     }
+  }
+}
+
+function isWebFetch(args: readonly string[]): boolean {
+  try {
+    const parsed = parseHostedRootCommandSurface(args);
+    return parsed.kind === 'dispatch' && parsed.argv[0] === 'web' && parsed.argv[1] === 'fetch';
+  } catch {
+    return false;
   }
 }
 
@@ -178,13 +194,9 @@ if (getCompIdx !== -1) {
   process.exit(EXIT_CODES.SUCCESS);
 }
 
-// Rewrite `webcmd browser <session> <subcommand> ...` so commander (which
-// can't combine a parent positional with subcommand dispatch) sees the internal
-// `--session <name>` flag form. Also refuses the retired `webcmd browser
-// --session foo ...` user form with a friendly usage error.
-const { rewriteBrowserArgv, BrowserSessionArgvError, escapeLeadingDashPositional } = await import('./cli-argv-preprocess.js');
+const { rejectMisplacedSessionSelectorArgv, rejectPositionalBrowserSessionArgv, BrowserSessionArgvError, escapeLeadingDashPositional } = await import('./cli-argv-preprocess.js');
 try {
-  let rewritten = rewriteBrowserArgv(process.argv.slice(2));
+  let rewritten = rejectMisplacedSessionSelectorArgv(rejectPositionalBrowserSessionArgv(process.argv.slice(2)));
   // Use the metadata that discovery actually registered. The core manifest is
   // intentionally empty, while installed plugins and legacy user CLIs are not.
   const { getRegistry } = await import('./registry.js');
@@ -193,7 +205,7 @@ try {
 } catch (err) {
   if (err instanceof BrowserSessionArgvError) {
     process.stderr.write(`error: ${err.message}\n`);
-    process.exit(EXIT_CODES.GENERIC_ERROR);
+    process.exit(EXIT_CODES.USAGE_ERROR);
   }
   throw err;
 }

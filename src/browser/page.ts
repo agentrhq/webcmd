@@ -43,7 +43,7 @@ export class Page extends BasePage {
   private readonly _idleTimeout: number | undefined;
 
   constructor(
-    private readonly session: string,
+    private readonly session: string | undefined,
     idleTimeout?: number,
     public readonly contextId?: string,
     private readonly windowMode?: 'foreground' | 'background',
@@ -51,6 +51,7 @@ export class Page extends BasePage {
     private readonly siteSession?: 'ephemeral' | 'persistent',
     public readonly preferredContextId?: string,
     freshPage?: boolean,
+    private readonly adapterSite?: string,
   ) {
     super();
     this._idleTimeout = idleTimeout;
@@ -72,15 +73,16 @@ export class Page extends BasePage {
   private _networkCaptureWarned = false;
 
   /** Helper: spread session into command params */
-  private _sessionOpts(): { session: string; surface: 'browser' | 'adapter'; idleTimeout?: number; contextId?: string; preferredContextId?: string; windowMode?: 'foreground' | 'background'; siteSession?: 'ephemeral' | 'persistent' } {
+  private _sessionOpts(): { session?: string; surface: 'browser' | 'adapter'; idleTimeout?: number; contextId?: string; preferredContextId?: string; windowMode?: 'foreground' | 'background'; siteSession?: 'ephemeral' | 'persistent'; adapterSite?: string } {
     return {
-      session: this.session,
       surface: this.surface,
+      ...(this.session && { session: this.session }),
       ...(this.contextId && { contextId: this.contextId }),
       ...(this.preferredContextId && { preferredContextId: this.preferredContextId }),
       ...(this._idleTimeout != null && { idleTimeout: this._idleTimeout }),
       ...(this.windowMode && { windowMode: this.windowMode }),
       ...(this.siteSession && { siteSession: this.siteSession }),
+      ...(this.adapterSite && { adapterSite: this.adapterSite }),
       ...this._freshPageOpts(),
     };
   }
@@ -88,14 +90,15 @@ export class Page extends BasePage {
   /** Helper: spread session + page identity into command params */
   private _cmdOpts(): Record<string, unknown> {
     return {
-      session: this.session,
       surface: this.surface,
+      ...(this.session && { session: this.session }),
       ...(this.contextId && { contextId: this.contextId }),
       ...(this.preferredContextId && { preferredContextId: this.preferredContextId }),
       ...(this._page !== undefined && { page: this._page }),
       ...(this._idleTimeout != null && { idleTimeout: this._idleTimeout }),
       ...(this.windowMode && { windowMode: this.windowMode }),
       ...(this.siteSession && { siteSession: this.siteSession }),
+      ...(this.adapterSite && { adapterSite: this.adapterSite }),
       ...this._freshPageOpts(),
     };
   }

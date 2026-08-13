@@ -56,6 +56,10 @@ jobs:
         if: ${{ steps.release.outputs.release_created || inputs.publish_tag != '' }}
         run: npm ci
 
+      - name: Install Playwright Chromium
+        if: ${{ steps.release.outputs.release_created || inputs.publish_tag != '' }}
+        run: npx playwright-core install chromium --with-deps
+
       - name: Verify existing release tag
         if: ${{ inputs.publish_tag != '' }}
         run: test "${{ inputs.publish_tag }}" = "webcmd-v$(node -p "require('./package.json').version")"
@@ -105,8 +109,8 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_RELEASE_NOTES_MODEL: ${{ vars.GEMINI_RELEASE_NOTES_MODEL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_RELEASE_NOTES_MODEL: ${{ vars.OPENAI_RELEASE_NOTES_MODEL }}
         run: |
           set -euo pipefail
           npm --silent run generate-release-notes -- "${{ steps.release.outputs.tag_name || inputs.publish_tag }}" > "$RUNNER_TEMP/release-notes.md"

@@ -174,6 +174,8 @@ describe('site auth command helper', () => {
     });
     expect(getRegistry().get('auth-helper-registration/auth-status'))
       .toBe(getRegistry().get('auth-helper-registration/whoami'));
+    expect(getRegistry().get('auth-helper-registration/whoami'))
+      .toMatchObject({ _authVerification: true });
     const login = getRegistry().get('auth-helper-registration/login')!;
     expect(login).toMatchObject({
       access: 'write',

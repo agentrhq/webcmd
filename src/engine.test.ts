@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { discoverClis, discoverPlugins, ensureUserCliCompatShims, ensureUserAdapters, PLUGINS_DIR } from './discovery.js';
+import { discoverClis, discoverPlugins, ensureUserCliCompatShims, ensureUserAdapters } from './discovery.js';
 import { executeCommand } from './execution.js';
 import { getRegistry, cli, Strategy } from './registry.js';
 import { clearAllHooks, onAfterExecute } from './hooks.js';
@@ -135,7 +135,7 @@ cli({
 
       expect(sessionOpts).toHaveLength(1);
       expect(sessionOpts[0]).toMatchObject({
-        session: `site:${site}`,
+        session: undefined,
         siteSession: 'persistent',
         freshPage: true,
       });
@@ -255,21 +255,17 @@ describe('ensureUserAdapters', () => {
 });
 
 describe('discoverPlugins', () => {
-  const testPluginDir = path.join(PLUGINS_DIR, '__test-plugin__');
-  const yamlPath = path.join(testPluginDir, 'greeting.yaml');
   const symlinkTargetDir = path.join(os.tmpdir(), '__test-plugin-symlink-target__');
-  const symlinkPluginDir = path.join(PLUGINS_DIR, '__test-plugin-symlink__');
-  const brokenSymlinkDir = path.join(PLUGINS_DIR, '__test-plugin-broken__');
   const dirSymlinkType: fs.symlink.Type = process.platform === 'win32' ? 'junction' : 'dir';
 
   afterEach(async () => {
-    try { await fs.promises.rm(testPluginDir, { recursive: true }); } catch {}
-    try { await fs.promises.rm(symlinkPluginDir, { recursive: true, force: true }); } catch {}
     try { await fs.promises.rm(symlinkTargetDir, { recursive: true, force: true }); } catch {}
-    try { await fs.promises.rm(brokenSymlinkDir, { recursive: true, force: true }); } catch {}
   });
 
   it('ignores YAML files in plugin directories (YAML format removed)', async () => {
+    const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'webcmd-yaml-plugin-'));
+    const testPluginDir = path.join(root, '__test-plugin__');
+    const yamlPath = path.join(testPluginDir, 'greeting.yaml');
     await fs.promises.mkdir(testPluginDir, { recursive: true });
     await fs.promises.writeFile(yamlPath, `
 site: __test-plugin__
@@ -279,16 +275,17 @@ strategy: public
 browser: false
 `);
 
-    await discoverPlugins();
+    await discoverPlugins(root);
 
     const registry = getRegistry();
     const cmd = registry.get('__test-plugin__/greeting');
     expect(cmd).toBeUndefined();
+    await fs.promises.rm(root, { recursive: true, force: true });
   });
 
   it('handles non-existent plugins directory gracefully', async () => {
     // discoverPlugins should not throw if ~/.webcmd/plugins/ does not exist
-    await expect(discoverPlugins()).resolves.not.toThrow();
+    await expect(discoverPlugins(path.join(os.tmpdir(), 'missing-webcmd-plugin-root'))).resolves.not.toThrow();
   });
 
   it('discovers only the explicitly supplied installed-plugin root', async () => {
@@ -313,7 +310,8 @@ cli({
   });
 
   it('ignores YAML files in symlinked plugin directories (YAML format removed)', async () => {
-    await fs.promises.mkdir(PLUGINS_DIR, { recursive: true });
+    const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'webcmd-yaml-plugin-link-'));
+    const symlinkPluginDir = path.join(root, '__test-plugin-symlink__');
     await fs.promises.mkdir(symlinkTargetDir, { recursive: true });
     await fs.promises.writeFile(path.join(symlinkTargetDir, 'hello.yaml'), `
 site: __test-plugin-symlink__
@@ -324,18 +322,21 @@ browser: false
 `);
     await fs.promises.symlink(symlinkTargetDir, symlinkPluginDir, dirSymlinkType);
 
-    await discoverPlugins();
+    await discoverPlugins(root);
 
     const cmd = getRegistry().get('__test-plugin-symlink__/hello');
     expect(cmd).toBeUndefined();
+    await fs.promises.rm(root, { recursive: true, force: true });
   });
 
   it('skips broken plugin symlinks without throwing', async () => {
-    await fs.promises.mkdir(PLUGINS_DIR, { recursive: true });
+    const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'webcmd-broken-plugin-link-'));
+    const brokenSymlinkDir = path.join(root, '__test-plugin-broken__');
     await fs.promises.symlink(path.join(os.tmpdir(), '__missing-plugin-target__'), brokenSymlinkDir, dirSymlinkType);
 
-    await expect(discoverPlugins()).resolves.not.toThrow();
+    await expect(discoverPlugins(root)).resolves.not.toThrow();
     expect(getRegistry().get('__test-plugin-broken__/hello')).toBeUndefined();
+    await fs.promises.rm(root, { recursive: true, force: true });
   });
 });
 

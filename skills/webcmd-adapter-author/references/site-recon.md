@@ -9,7 +9,7 @@ This file only classifies sites. It does not explain how to discover endpoints.
 Preferred flow:
 
 ```bash
-webcmd browser recon run --stdin --snapshot-mode tree <<'JS'
+webcmd --session <session-id> browser run --stdin --snapshot-mode tree <<'JS'
 const responses = [];
 page.on('response', response => {
   const contentType = response.headers()['content-type'] || '';
@@ -42,7 +42,7 @@ JS
 Then inspect page structure when needed:
 
 ```bash
-webcmd browser recon snapshot --snapshot-mode tree
+webcmd --session <session-id> browser snapshot --snapshot-mode tree
 ```
 
 Use this evidence to choose Pattern A/B/C/D/E. Do not paste the Playwright-style program into the adapter.
@@ -53,9 +53,9 @@ Use this when the user already has a relevant tab open. List pages, bind the cho
 then run dependent recon steps together:
 
 ```bash
-webcmd browser recon tabs
-webcmd browser recon bind --page page-123
-webcmd browser recon run --stdin <<'JS'
+webcmd --session <session-id> browser tabs
+webcmd --session <session-id> browser bind --page page-123
+webcmd --session <session-id> browser run --stdin <<'JS'
 const responsePromise = page.waitForResponse(
   response => response.url().includes('/api/path-fragment'),
 );
@@ -72,7 +72,7 @@ JS
 Then inspect the current page when a snapshot is needed:
 
 ```bash
-webcmd browser recon snapshot --snapshot-mode tree
+webcmd --session <session-id> browser snapshot --snapshot-mode tree
 ```
 
 Use the snapshot and any response evidence collected in the run to classify the site:

@@ -2,7 +2,7 @@
  * Tests for plugin management: install, uninstall, list, and lock file support.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -12,10 +12,18 @@ import type { LockEntry } from './plugin.js';
 import * as pluginModule from './plugin.js';
 import { createAdapterOverride } from './adapter-override.js';
 
-const { mockExecFileSync, mockExecSync } = vi.hoisted(() => ({
-  mockExecFileSync: vi.fn(),
-  mockExecSync: vi.fn(),
-}));
+const { mockExecFileSync, mockExecSync, testConfigDir, previousConfigDir } = vi.hoisted(() => {
+  const previousConfigDir = process.env.WEBCMD_CONFIG_DIR;
+  const testConfigDir = `${process.env.TMPDIR ?? '/tmp'}/webcmd-plugin-test-${process.pid}-${Date.now()}`;
+  process.env.WEBCMD_CONFIG_DIR = testConfigDir;
+  return { mockExecFileSync: vi.fn(), mockExecSync: vi.fn(), testConfigDir, previousConfigDir };
+});
+
+afterAll(() => {
+  fs.rmSync(testConfigDir, { recursive: true, force: true });
+  if (previousConfigDir === undefined) delete process.env.WEBCMD_CONFIG_DIR;
+  else process.env.WEBCMD_CONFIG_DIR = previousConfigDir;
+});
 
 const {
   _getCommitHash,
@@ -1262,6 +1270,47 @@ describe('installPlugin with existing monorepo', () => {
     expect(npmCalls.some(([, , opts]) => opts?.cwd === repoDir)).toBe(true);
     expect(fs.realpathSync(pluginLink)).toBe(fs.realpathSync(subDir));
   });
+
+  it('refreshes an existing monorepo cache when the requested sub-plugin is missing locally', () => {
+    fs.mkdirSync(path.join(repoDir, 'packages', 'alpha'), { recursive: true });
+    fs.writeFileSync(path.join(repoDir, 'webcmd-plugin.json'), JSON.stringify({
+      plugins: {
+        alpha: { path: 'packages/alpha' },
+      },
+    }));
+
+    mockExecFileSync.mockImplementation((cmd, args) => {
+      if (cmd === 'git' && Array.isArray(args) && args[0] === 'clone') {
+        const cloneDir = String(args[4]);
+        const subDir = path.join(cloneDir, 'packages', pluginName);
+        fs.mkdirSync(subDir, { recursive: true });
+        fs.writeFileSync(path.join(cloneDir, 'package.json'), JSON.stringify({
+          name: repoName,
+          private: true,
+          workspaces: ['packages/*'],
+        }));
+        fs.writeFileSync(path.join(cloneDir, 'webcmd-plugin.json'), JSON.stringify({
+          plugins: {
+            alpha: { path: 'packages/alpha' },
+            [pluginName]: { path: `packages/${pluginName}` },
+          },
+        }));
+        fs.writeFileSync(path.join(subDir, 'hello.js'), 'cli({ site: "test", name: "hello", access: "read" })');
+        return '';
+      }
+      if (cmd === 'git' && Array.isArray(args) && args[0] === 'rev-parse' && args[1] === 'HEAD') {
+        return '1234567890abcdef1234567890abcdef12345678\n';
+      }
+      return '';
+    });
+
+    installPlugin(`github:user/${repoName}/${pluginName}`);
+
+    const refreshedSubDir = path.join(repoDir, 'packages', pluginName);
+    const refreshedManifest = JSON.parse(fs.readFileSync(path.join(repoDir, 'webcmd-plugin.json'), 'utf-8'));
+    expect(refreshedManifest.plugins[pluginName]).toEqual({ path: `packages/${pluginName}` });
+    expect(fs.realpathSync(pluginLink)).toBe(fs.realpathSync(refreshedSubDir));
+  });
 });
 
 describe('updatePlugin transactional staging', () => {
@@ -1871,6 +1920,42 @@ describe('getDirtyFiles', () => {
       return ' M foo.js\n?? untracked.js\n';
     });
     expect(pluginModule.getDirtyFiles('/some/dir')).toEqual(['M foo.js', '?? untracked.js']);
+  });
+
+  it('ignores the node_modules/package-lock.json that install itself created', () => {
+    mockExecFileSync.mockImplementation((cmd, args) => {
+      if (Array.isArray(args) && args[0] === 'rev-parse') return '.git\n';
+      return '?? node_modules/\n?? package-lock.json\n?? packages/alpha/node_modules/\n?? packages/alpha/package-lock.json\n';
+    });
+    expect(pluginModule.getDirtyFiles('/some/dir')).toEqual([]);
+  });
+
+  it('still reports user work that merely looks like an install artifact', () => {
+    mockExecFileSync.mockImplementation((cmd, args) => {
+      if (Array.isArray(args) && args[0] === 'rev-parse') return '.git\n';
+      return '?? node_modules_notes.md\n M src/package-lock.json.bak\n';
+    });
+    expect(pluginModule.getDirtyFiles('/some/dir')).toEqual(['?? node_modules_notes.md', 'M src/package-lock.json.bak']);
+  });
+
+  // Only `??` is npm's own output. Every tracked status at the same path is
+  // user work that updatePlugin would destroy, so it must keep blocking.
+  it.each([
+    [' M package-lock.json', 'M package-lock.json'],
+    ['M  package-lock.json', 'M  package-lock.json'],
+    [' D package-lock.json', 'D package-lock.json'],
+    ['D  package-lock.json', 'D  package-lock.json'],
+    ['A  package-lock.json', 'A  package-lock.json'],
+    [' M packages/alpha/package-lock.json', 'M packages/alpha/package-lock.json'],
+    [' M node_modules/vendored/patch.js', 'M node_modules/vendored/patch.js'],
+    ['R  old-lock.json -> package-lock.json', 'R  old-lock.json -> package-lock.json'],
+    ['UU package-lock.json', 'UU package-lock.json'],
+  ])('keeps tracked entry %j dirty', (porcelain, expected) => {
+    mockExecFileSync.mockImplementation((cmd, args) => {
+      if (Array.isArray(args) && args[0] === 'rev-parse') return '.git\n';
+      return `${porcelain}\n`;
+    });
+    expect(pluginModule.getDirtyFiles('/some/dir')).toEqual([expected]);
   });
 
   it('does not pass --untracked-files=no, so untracked files are reported (git already omits gitignored paths)', () => {

@@ -30,7 +30,7 @@ export const HOSTED_ROOT_HELP: RootHelpPresentation = {
   description: 'Make any website your CLI. Zero setup. AI-powered.',
   usage: [
     `${CLI_COMMAND} <site> <command> [args] [options]`,
-    `${CLI_COMMAND} browser <session> <command> [args] [options]`,
+    `${CLI_COMMAND} --session <session-id> browser <command> [args] [options]`,
     `${CLI_COMMAND} list [options]`,
     `${CLI_COMMAND} setup`,
   ],
@@ -45,6 +45,7 @@ export const HOSTED_ROOT_HELP: RootHelpPresentation = {
     { name: 'list', description: 'List all available hosted CLI commands' },
     { name: 'profile', description: 'Manage hosted browser profiles' },
     { name: 'setup', description: 'Configure local or hosted mode' },
+    { name: 'web', description: 'Fetch URLs locally without launching a browser' },
   ],
   localOnlyCommands: [
     { name: 'adapter', description: 'Manage adapters installed on this computer' },

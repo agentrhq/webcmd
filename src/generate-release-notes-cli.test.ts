@@ -38,7 +38,7 @@ describe('runGenerateReleaseNotes', () => {
     });
   });
 
-  it('exits 0 and leaves stdout empty when GEMINI_API_KEY is missing', async () => {
+  it('exits 0 and leaves stdout empty when OPENAI_API_KEY is missing', async () => {
     const { io, read } = createIo();
 
     const exitCode = await runGenerateReleaseNotes(['node', 'script', 'v0.0.0'], {}, {}, io);
@@ -46,7 +46,7 @@ describe('runGenerateReleaseNotes', () => {
     expect(exitCode).toBe(0);
     expect(read()).toEqual({
       stdout: '',
-      stderr: 'GEMINI_API_KEY is not set; leaving release-please notes unchanged.\n',
+      stderr: 'OPENAI_API_KEY is not set; leaving release-please notes unchanged.\n',
     });
   });
 
@@ -72,13 +72,13 @@ describe('runGenerateReleaseNotes', () => {
 
     const exitCode = await runGenerateReleaseNotes(
       ['node', 'script', 'v1.2.3'],
-      { GEMINI_API_KEY: 'test-key' },
+      { OPENAI_API_KEY: 'test-key' },
       { loadContext, generateText },
       io,
     );
 
     expect(exitCode).toBe(0);
-    expect(loadContext).toHaveBeenCalledWith('v1.2.3', { GEMINI_API_KEY: 'test-key' });
+    expect(loadContext).toHaveBeenCalledWith('v1.2.3', { OPENAI_API_KEY: 'test-key' });
     expect(generateText).toHaveBeenCalledOnce();
     expect(read()).toEqual({
       stdout: [
@@ -126,7 +126,7 @@ describe('runGenerateReleaseNotes', () => {
 
     const exitCode = await runGenerateReleaseNotes(
       ['node', 'script', 'v1.2.3'],
-      { GEMINI_API_KEY: 'test-key' },
+      { OPENAI_API_KEY: 'test-key' },
       { loadContext, generateText },
       io,
     );
@@ -146,7 +146,7 @@ describe('runGenerateReleaseNotes', () => {
 
     const exitCode = await runGenerateReleaseNotes(
       ['node', 'script', 'v1.2.3'],
-      { GEMINI_API_KEY: 'test-key' },
+      { OPENAI_API_KEY: 'test-key' },
       { loadContext },
       io,
     );
@@ -154,7 +154,7 @@ describe('runGenerateReleaseNotes', () => {
     expect(exitCode).toBe(0);
     expect(read()).toEqual({
       stdout: '',
-      stderr: 'Gemini release notes failed: gh timed out\n',
+      stderr: 'OpenAI release notes failed: gh timed out\n',
     });
   });
 

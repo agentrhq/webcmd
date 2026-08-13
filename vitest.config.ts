@@ -22,7 +22,19 @@ export default defineConfig({
       {
         test: {
           name: 'unit',
-          include: ['src/*.test.ts', 'src/!(browser)/**/*.test.ts', 'src/browser/verify-fixture.test.ts'],
+          include: [
+            'src/*.test.ts',
+            'src/!(browser)/**/*.test.ts',
+            'src/browser/verify-fixture.test.ts',
+            'src/browser/command-catalog.test.ts',
+            'src/browser/sessions.test.ts',
+            'src/browser/daemon-client.test.ts',
+            'src/browser/run/runner.test.ts',
+            'src/browser/runtime/local-cloak/provider.test.ts',
+            'src/browser/runtime/local-cloak/process-matcher.test.ts',
+            'src/browser/runtime/local-cloak/session-manager.test.ts',
+            'src/browser/runtime/local-cloak/darwin-background-launch.test.ts',
+          ],
           sequence: { groupOrder: 0 },
         },
       },
@@ -30,7 +42,7 @@ export default defineConfig({
         resolve: { alias: packageAliases },
         test: {
           name: 'plugin',
-          include: ['plugins/*/test/**/*.test.{ts,js}'],
+          include: ['plugins/*/test/**/*.test.{ts,js}', 'clis/*/test/**/*.test.{ts,js}'],
           sequence: { groupOrder: 1 },
         },
       },
@@ -54,6 +66,7 @@ export default defineConfig({
             'tests/e2e/plugin-management.test.ts',
             'tests/e2e/article-download-pipeline.test.ts',
             'tests/e2e/cloak-runtime.test.ts',
+            'tests/e2e/cloak-session-concurrency.test.ts',
             'tests/e2e/browser-run.test.ts',
             // Extended browser tests (20+ sites) — opt-in only:
             //   WEBCMD_E2E=1 npx vitest run

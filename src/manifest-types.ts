@@ -40,6 +40,17 @@ export interface ManifestEntry {
   modulePath?: string;
   /** Relative path to the source file from clis/ dir (e.g. 'site/cmd.js') */
   sourceFile?: string;
+  /**
+   * Package subpath export that registers this command, e.g. './fetch/command'.
+   *
+   * Present only on core-owned commands, which ship in the package's own
+   * `dist/` rather than as adapter files under `clis/`. Such an entry has no
+   * `modulePath`/`sourceFile`: there is no adapter file to resolve, and
+   * consumers that load adapters by path must import this export instead.
+   */
+  packageExport?: string;
+  /** Command runs only in the local client, never in hosted execution. */
+  clientOwned?: boolean;
   /** Pre-navigation control — see CliCommand.navigateBefore */
   navigateBefore?: boolean | string;
   /** Site session lifecycle defaults — see CliCommand.siteSession */

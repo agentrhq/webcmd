@@ -19,6 +19,7 @@ webcmd plugin install github:agentrhq/webcmd/twitter
 | `webcmd twitter bookmark-folder` | Read the tweets inside a single Twitter/X bookmark folder. Get the folder id from `webcmd twitter bookmark-folders`. |
 | `webcmd twitter bookmark-folders` | List your Twitter/X bookmark folders (the user-created collections under Bookmarks). Returns folder id, name, item count, and created_at. |
 | `webcmd twitter bookmarks` | Fetch your Twitter/X bookmarks (the logged-in user's saved tweets, newest first) |
+| `webcmd twitter collection` | Fetch a user timeline with relationship facts and a bounded completion receipt. |
 | `webcmd twitter delete` | Delete a specific tweet by URL |
 | `webcmd twitter device-follow` | Read the /i/timeline device-follow notification stream (tweets aggregated under a bell-icon "new posts from @userA and N others" notification) |
 | `webcmd twitter download` | Download Twitter/X media (images and videos). Provide either <username> to fetch every media item from their profile via the GraphQL UserMedia endpoint with cursor pagination, or --tweet-url to download a single tweet. |

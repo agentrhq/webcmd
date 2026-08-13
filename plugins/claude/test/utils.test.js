@@ -82,7 +82,10 @@ describe('claude sendWithFile', () => {
         const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-claude-'));
         tempDirs.push(dir);
         const filePath = path.join(dir, 'big.bin');
-        fs.writeFileSync(filePath, Buffer.alloc(31 * 1024 * 1024));
+        // Sparse: the guard only reads stats.size, and writing 31 MB for real
+        // timed out the 5s default on Windows CI.
+        fs.writeFileSync(filePath, '');
+        fs.truncateSync(filePath, 31 * 1024 * 1024);
 
         const page = { setFileInput: vi.fn(), evaluate: vi.fn(), wait: vi.fn() };
         const result = await sendWithFile(page, filePath, 'hi');

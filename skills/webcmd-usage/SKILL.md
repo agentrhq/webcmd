@@ -34,7 +34,7 @@ Do not install Node.js or silently fall back to `npx`.
 ## The Three Pillars
 
 - **Adapter commands:** `webcmd <site> <command> [...]`. Core ships no site adapters; every site — official and community — lives as an independently installable plugin under `plugins/<site>/` in the main repo, or `~/.webcmd/plugins/<site>/` once installed. Private iteration adapters live in `~/.webcmd/clis/`. A command in `~/.webcmd/clis/<site>/<command>.js` takes precedence over the same command from an installed plugin. Each command has a strategy such as `PUBLIC`, `COOKIE`, `INTERCEPT`, `UI`, or `LOCAL`.
-- **Browser driving:** use an existing adapter command first; otherwise load `webcmd-browser` and run Playwright.
+- **Browser driving:** use an existing adapter command first; otherwise load `webcmd-browser`, create a session, and run Playwright with root `--session <session-id>`.
 - **External CLI passthrough:** `webcmd gh`, `webcmd docker`, `webcmd vercel`, and similar wrappers. Manage them with `webcmd external install <name>` or `webcmd external register <name>`.
 
 **REQUIRED SUB-SKILL:** Before raw browser work, load `webcmd-browser`.
@@ -56,6 +56,28 @@ npx tsx src/main.ts <command>
 ```
 
 `webcmd doctor` reports daemon status, runtime connection, version checks, and live browser connectivity. It is required for `COOKIE`, `INTERCEPT`, `UI`, and `webcmd browser *` work. It is not required for `PUBLIC`, `LOCAL`, `webcmd list`, `validate`, `verify`, plugin commands, or external CLI passthrough.
+
+## Sessions
+
+Profiles are cookie jars and authentication scope. Sessions are browser workspaces/windows within a profile. Create one for each parallel raw-browser agent, then route every raw command through the opaque ID:
+
+```bash
+webcmd session create -f json
+webcmd --session session_abc browser snapshot --snapshot-mode act
+webcmd --session session_abc browser run --stdin
+webcmd session list
+webcmd session close session_abc
+```
+
+`webcmd session close <session-id>` is blocked while that Session has a live human handoff.
+Adapter commands may omit `--session` and use the selected profile's adapter-default session. Pass `--session <session-id>` to route one into an explicit session. Raw browser commands never omit it; the retired positional session form is invalid.
+
+Structured Session failures are runtime state, not adapter breakage. `SESSION_REQUIRED`
+means add a root `--session <session-id>` selector before `browser`; `SESSION_BUSY`
+means another holder owns the same Session or site scope, so wait, inspect
+`webcmd session list`, and use `webcmd session close <session-id> --force` only
+when the holder is dead. `SESSION_PAUSED_FOR_HUMAN_HANDOFF` means finish the
+handoff and run its verifier before retrying.
 
 ## Prerequisites By Strategy
 
@@ -147,9 +169,13 @@ The error envelope includes a `trace` block pointing at `summary.md`. Patch only
 
 If a failure returns `handoff.status === action_required`, stop before AutoFix. Give the user `handoff.action` and any `Webcmd browser:` or `handoff.viewUrl` link, then wait. After the user reports done, run `handoff.verifyCommand` when present; verification must succeed before retrying.
 
+Human handoff is scoped to the Session that started it. Run the returned
+`verify_command` or `handoff.verifyCommand` verbatim; it includes `--session`
+when applicable. Do not close that Session during the live handoff.
+
 `AUTH_REQUIRED` is not an adapter failure. Run `webcmd <site> login`: `already_logged_in` is verified; `in_progress` means no current user action, so do not ask the user or wait for confirmation, and do not poll; `action_required` is a hard stop. For `action_required`, give the user its instructions and any returned `action_url` or `view_url`, then wait. If Webcmd returned no URL, use the current visible browser.
 
-Run the returned `verify_command` (normally `webcmd <site> whoami`) or `handoff.verifyCommand` only after the user reports done; verification must succeed before retrying. Without a verifier, take fresh browser state and verify the intended post-action state before any retry, especially for write commands. Use `webcmd auth refresh` only when an explicit auth-state refresh is needed. Their report alone is not verification. Never request, type, echo, store, or automate passwords, OTPs, recovery codes, cookies, session secrets, or CAPTCHA answers; CAPTCHA stops automation and follows the same verification rule.
+Run the returned `verify_command` or `handoff.verifyCommand` only after the user reports done; verification must succeed before retrying. Without a verifier, take fresh browser state and verify the intended post-action state before any retry, especially for write commands. Use `webcmd auth refresh` only when an explicit auth-state refresh is needed. Their report alone is not verification. Never request, type, echo, store, or automate passwords, OTPs, recovery codes, cookies, session secrets, or CAPTCHA answers; CAPTCHA stops automation and follows the same verification rule.
 
 ## Report A Webcmd Defect
 
@@ -181,18 +207,18 @@ Adapters import only `@agentrhq/webcmd/registry` and `@agentrhq/webcmd/errors`. 
 ## Plugins
 
 ```bash
-webcmd plugin install github:user/repo
+webcmd plugin search [query] -f json
+webcmd plugin install <installSource>
 webcmd plugin list [-f json]
 webcmd plugin update [name] | --all
 webcmd plugin uninstall <name>
 webcmd plugin create <name>
-webcmd plugin search [query] -f json
 webcmd plugin catalog list -f json
 webcmd plugin catalog add <source>
 webcmd plugin catalog remove <id>
 ```
 
-Plugins are installable extensions pulled from git or local paths. Use `plugin search` for marketplace discovery and `plugin list` for already-installed plugins. Main-repo sites (official and community alike) are exposed through the root plugin catalog manifest; none of them are bundled into the npm package.
+Plugins are installable extensions pulled from git or local paths. Use `plugin search` for marketplace discovery and `plugin list` for already-installed plugins. Direct `plugin install github:...` is only for a source you already know; for a missing or unknown site, search first and install the returned `installSource`. Main-repo sites (official and community alike) are exposed through the root plugin catalog manifest; none of them are bundled into the npm package.
 
 > **Note:** The repository's `plugins/` directory is not shipped in the npm package. Find the required plugin with `webcmd plugin search`, then install its `installSource` with `webcmd plugin install <installSource>`.
 

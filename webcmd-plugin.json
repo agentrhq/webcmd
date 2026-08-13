@@ -638,7 +638,7 @@
       "path": "plugins/linkedin",
       "version": "0.1.0",
       "description": "LinkedIn profile, network, messaging, job, and Sales Navigator commands for WebCMD",
-      "webcmd": ">=0.5.4",
+      "webcmd": ">=0.6.2",
       "author": {
         "name": "WebCMD Agent",
         "handle": "agentrhq"
@@ -1108,16 +1108,6 @@
       "path": "plugins/upwork",
       "version": "0.1.0",
       "description": "Webcmd commands for upwork",
-      "webcmd": ">=0.5.3",
-      "author": {
-        "name": "WebCMD Agent",
-        "handle": "agentrhq"
-      }
-    },
-    "web": {
-      "path": "plugins/web",
-      "version": "0.1.0",
-      "description": "Webcmd commands for web",
       "webcmd": ">=0.5.3",
       "author": {
         "name": "WebCMD Agent",
