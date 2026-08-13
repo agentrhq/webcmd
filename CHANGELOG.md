@@ -1,18 +1,25 @@
 # Changelog
 
-## [0.6.0](https://github.com/agentrhq/webcmd/compare/webcmd-v0.5.4...webcmd-v0.6.0) (2026-08-10)
+## [0.6.2](https://github.com/agentrhq/webcmd/compare/webcmd-v0.6.1...webcmd-v0.6.2) (2026-08-12)
 
+_webcmd v0.6.2: Browser Sessions, Plugins Everywhere, and Cloud Parity_
 
-### Features
+### Highlights
+- Added explicit browser Sessions: create, carry, list, and close stable Session IDs for raw browser workflows across local and hosted mode.
+- Added `browser run` code execution for Playwright-style browser automation, including hosted routing and file transfer support.
+- Moved CLI surfaces into plugins, with marketplace search/install paths and command discovery metadata.
+- Added plugin override precedence and reconciliation: `~/.webcmd/clis` wins over installed plugins, update detection is content-based, and overrides report actionable status.
+- Expanded Webcmd Cloud parity for browser commands, hosted manifests, profiles/workspaces, auth handoff, and verify fixture evaluation.
 
-* migrate release tooling to openai ([#256](https://github.com/agentrhq/webcmd/issues/256)) ([dca5bbb](https://github.com/agentrhq/webcmd/commit/dca5bbb3184218853502e0af3d24726d9c505296))
+### Improvements
+- Added bundled agent guides and updated Webcmd skills for the plugin-first workflow.
+- Added hosted contract checks, plugin parity checks, and live Cloak session gates.
+- Added release tooling improvements for package, plugin, and manifest consistency.
 
-
-### Bug Fixes
-
-* **adapters,output:** repair site drift and markdown/console output bugs ([4d2d45b](https://github.com/agentrhq/webcmd/commit/4d2d45b27199c800108a40fe5d6e64782d0c6ea1))
-* harden docs review structured output ([#259](https://github.com/agentrhq/webcmd/issues/259)) ([a1a426a](https://github.com/agentrhq/webcmd/commit/a1a426af82ab9b3d8c973a5b627c5f76723de710))
-* use a lighter review model ([#257](https://github.com/agentrhq/webcmd/issues/257)) ([5fc7e49](https://github.com/agentrhq/webcmd/commit/5fc7e490bb6085d12273ad766675da4148b0ef22))
+### Fixes
+- Hardened session admission/cancellation, background tab focus, Cloak process matching, and browser run timeout behavior.
+- Fixed plugin discovery/install edge cases, adapter status output, hosted output flushing, and local override reconciliation.
+- Restored and hardened adapter behavior across Amazon, Facebook, Twitter, TikTok, YouTube, and others.
 
 ## [0.5.4](https://github.com/agentrhq/webcmd/compare/webcmd-v0.5.3...webcmd-v0.5.4) (2026-08-09)
 

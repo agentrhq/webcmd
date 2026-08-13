@@ -3,13 +3,11 @@ title: Pi Agent
 sidebarTitle: Pi
 ---
 
-> **Agent prompt**
->
-> Fetch and follow [start.md](https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md) to set up Webcmd end to end, then read this page's Manual — especially [Override default tools](#override-default-tools) — before doing browser work.
+## Agent prompt
 
-> Use Webcmd with [Pi](https://pi.dev) to give it a browser surface. Pi ships no built-in web, search, or browser tools, so Webcmd is driven through Pi's default `bash` tool with no permission or config changes.
-
-Pi is a minimal terminal coding harness whose default tools are filesystem and shell only (`read`, `bash`, `edit`, `write`, with `grep`, `find`, and `ls` available). Its agent drives Webcmd through the `bash` tool. Adapter-first commands and compact snapshots usually use fewer tokens than the official `brave-search` and `browser-tools` skills, and logged-in profiles handle authenticated pages.
+```text
+Fetch and follow https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md to set up Webcmd end to end.
+```
 
 ## Manual
 
@@ -43,14 +41,21 @@ Project skills under `.pi/skills` and `.agents/skills` load only after the proje
 
 ### Override default tools
 
-Pi has no built-in web, search, or browser tools, so there is nothing to turn off. Webcmd works through the default `bash` tool as soon as the CLI is on PATH.
+Pi ships seven built-in tools — `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls` — and no web, search, or browser tool at all, so there is nothing built in to turn off. Webcmd works through `bash` as soon as the CLI is on PATH. Do not reach for `--no-builtin-tools`: it strips `read`/`write`/`edit`/`bash`, and `bash` is how Webcmd runs.
 
-If you also installed the official [pi-skills](https://github.com/badlogic/pi-skills) collection, two skills overlap with Webcmd:
+Pi is the harness where competing tools are most likely to come from what the user installed, since every web capability it has is an extension or skill. Check for these and ask before removing any:
 
-* `brave-search` — web search and content extraction via the Brave Search API
-* `browser-tools` — browser automation via the Chrome DevTools Protocol (Chrome on `:9222`)
+| Installed | Overlaps | What to do |
+| --- | --- | --- |
+| [`pi-skills/browser-tools`](https://github.com/badlogic/pi-skills/tree/main/browser-tools) | Browser automation over CDP (Chrome on `:9222`) | Recommend removing, or tell Pi to prefer Webcmd |
+| [`pi-agent-browser-native`](https://github.com/fitchmultz/pi-agent-browser-native) | Exposes agent-browser as a native tool | Recommend removing |
+| [`pi-web-fetch`](https://github.com/georgebashi/pi-web-fetch) | Headless-Chrome fetch plus trafilatura extraction | Recommend removing |
+| [`pi-web-access`](https://github.com/nicobailon/pi-web-access) | Search **and** content extraction | Keep the search half; set `webSearch.enabled: false` only if the user wants search gone too |
+| `pi-skills/brave-search` | Brave Search API, plus content extraction | Keep it for search; tell Pi to prefer Webcmd for reading pages |
 
-If both are present, tell Pi to prefer Webcmd, or remove the competing folders (for example `~/.pi/agent/skills/pi-skills/browser-tools`) so the model does not fall back to them.
+Extensions that mix search with extraction are the awkward case: the search half is worth keeping, and only some expose a config toggle to split them. When there is no toggle, steer Pi with instructions instead of removing the extension.
+
+To remove one outright, delete its folder — for example `~/.pi/agent/skills/pi-skills/browser-tools` — and restart Pi.
 
 ### Troubleshooting
 
@@ -58,9 +63,10 @@ If both are present, tell Pi to prefer Webcmd, or remove the competing folders (
 | --- | --- |
 | `webcmd doctor` is red | Fix the browser runtime first; browser commands depend on it. |
 | Skills not surfacing in Pi | Confirm links exist under `~/.agents/skills/`, `.agents/skills/`, `~/.pi/agent/skills/`, or `.pi/skills/` (rerun `webcmd skills add`), ensure the project is trusted, then restart Pi. |
-| Pi still uses `brave-search` / `browser-tools` | Remove those skill folders or prompt Pi to prefer Webcmd. |
+| Pi still uses `browser-tools` or a web-fetch extension | Remove the skill folder or prompt Pi to prefer Webcmd, then restart Pi. |
+| Search stopped working after removing an extension | Some extensions bundle search with extraction. Reinstall it and steer Pi with instructions instead — Webcmd does not replace search. |
 | `webcmd` not found in Pi's shell | Confirm `webcmd` is on the PATH Pi's `bash` tool uses; restart Pi after installing the CLI. |
-| Browser sessions stop working after idle | Ask the agent to open a fresh session or re-bind with `tabs` and `bind --page`. |
+| Browser Session idles or loses its window | Keep the same Session ID; the next `webcmd --session <session-id> browser ...` command reopens it. Use `webcmd session create -f json`, `webcmd session list`, and `webcmd session close <session-id>` for lifecycle. |
 
 ## See also
 

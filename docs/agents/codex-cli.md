@@ -3,13 +3,11 @@ title: Codex CLI Agent
 sidebarTitle: Codex CLI
 ---
 
-> **Agent prompt**
->
-> Fetch and follow [start.md](https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md) to set up Webcmd end to end, then read this page's Manual — especially [Override default tools](#override-default-tools) — before doing browser work.
+## Agent prompt
 
-> Use Webcmd with [Codex CLI](https://developers.openai.com/codex/) to replace its native `web_search` tool with the Webcmd browser surface.
-
-Codex CLI's native `web_search` tool returns cached or indexed search results but cannot read pages or run authenticated sessions. Point Codex at Webcmd's browser CLI instead: adapters return exact, stable fields, and `webcmd browser` sessions render real pages with logged-in profiles. Codex runs `webcmd` through its shell tool.
+```text
+Fetch and follow https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md to set up Webcmd end to end.
+```
 
 ## Manual
 
@@ -22,7 +20,29 @@ Codex CLI's native `web_search` tool returns cached or indexed search results bu
 
 ### Install and configure
 
-Install Webcmd and its skills:
+Pick one of the two paths below. Do not use both — the plugin already carries the skills, and installing them again leaves duplicates.
+
+#### Plugin (recommended)
+
+Add the marketplace and install the plugin:
+
+```bash
+codex plugin marketplace add agentrhq/webcmd
+```
+
+```bash
+codex plugin add webcmd@webcmd
+```
+
+`codex plugin add` takes `PLUGIN@MARKETPLACE`, or a bare plugin name with `-m webcmd`. Pin a version with `codex plugin marketplace add agentrhq/webcmd --ref <tag>`.
+
+The same flow is available in the TUI: run `/plugins`, choose **Add plugin marketplace**, and enter `agentrhq/webcmd` or `https://github.com/agentrhq/webcmd`.
+
+The plugin bundles all seven Webcmd skills, and installs the npm CLI on first use if `webcmd` is missing. Start a new task after installing.
+
+Useful follow-ups: `codex plugin list`, `codex plugin remove webcmd`, `codex plugin marketplace upgrade`. All accept `--json`.
+
+#### Manual
 
 ```bash
 npm install -g @agentrhq/webcmd
@@ -36,15 +56,24 @@ Restart Codex (or start a new session) after installing skills.
 
 ### Override default tools
 
-Codex CLI's native web tool is `web_search`, controlled by the top-level `web_search` setting in `~/.codex/config.toml`. Set it to `"disabled"` to remove the tool so Codex relies on Webcmd for web work:
+**Nothing to disable.** Codex CLI has no fetch tool and no browser tool, so Webcmd does not displace anything — it adds the surface Codex is missing. Codex drives it through the shell tool.
+
+Its one web tool is `web_search`, set by the top-level `web_search` key in `~/.codex/config.toml`. **Keep it enabled.** Webcmd has no search index of its own, and search is how a question becomes URLs for Webcmd to read.
+
+One change is worth recommending. `web_search` defaults to `"cached"`, an OpenAI-maintained index with no external web access, so results can be stale. Switching to `"live"` pairs better with Webcmd:
 
 ```toml
-web_search = "disabled"
+web_search = "live"
 ```
 
-Do not rely on the CLI flag `--dangerously-allow-web-search`; it only gates the tool and does not replace Webcmd's browser surface. Note that `web_search` defaults to `"cached"` (results from an OpenAI-maintained index without external web access) unless overridden.
+Accepted values are `"disabled"`, `"cached"` (default), `"indexed"`, and `"live"`. Ask before changing it — `"live"` means real network egress from the user's machine.
 
-The setting removes only the search tool; it does not affect the shell tool, which is how `webcmd` is driven.
+If the user has installed a browser or scraping MCP server, that does overlap with Webcmd. Individual MCP tools are denied per server:
+
+```toml
+[mcp_servers.some_browser_mcp]
+disabled_tools = ["navigate", "screenshot"]
+```
 
 ### Troubleshooting
 
@@ -52,9 +81,10 @@ The setting removes only the search tool; it does not affect the shell tool, whi
 | --- | --- |
 | `webcmd doctor` is red | Fix the browser runtime first; browser commands depend on it. |
 | Skills not loading in Codex | Run `webcmd skills add` with the `agents` provider, then restart `codex`. |
-| Codex still uses `web_search` | Confirm `web_search = "disabled"` in `~/.codex/config.toml`, then restart `codex`. |
+| Search results look stale | `web_search` defaults to `"cached"`. Set `web_search = "live"` in `~/.codex/config.toml`, then restart `codex`. |
+| `web_search` was disabled and search stopped working | Expected. Set it back to `"live"` or `"cached"` — Webcmd does not replace search. |
 | `webcmd` not found in Codex shell | Confirm `webcmd` is on the PATH Codex uses; restart after installing the CLI. |
-| Browser sessions stop working after idle | Ask the agent to open a fresh session or re-bind with `tabs` and `bind --page`. |
+| Browser Session idles or loses its window | Keep the same Session ID; the next `webcmd --session <session-id> browser ...` command reopens it. Use `webcmd session create -f json`, `webcmd session list`, and `webcmd session close <session-id>` for lifecycle. |
 
 ## See also
 

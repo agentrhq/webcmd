@@ -4,17 +4,26 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import type { CliCommand } from './registry.js';
 
-const { mockReleaseSiteSessionLease, mockSetDaemonCommandTimeoutSeconds } = vi.hoisted(() => ({
+const {
+  mockClearSessionHandoff,
+  mockReleaseSiteSessionLease,
+  mockSetDaemonCommandTimeoutSeconds,
+  mockStartSessionHandoff,
+} = vi.hoisted(() => ({
+  mockClearSessionHandoff: vi.fn().mockResolvedValue(undefined),
   mockReleaseSiteSessionLease: vi.fn().mockResolvedValue(undefined),
   mockSetDaemonCommandTimeoutSeconds: vi.fn(),
+  mockStartSessionHandoff: vi.fn().mockResolvedValue({ id: 'session_a' }),
 }));
 
 vi.mock('./browser/daemon-client.js', async () => {
   const actual = await vi.importActual<typeof import('./browser/daemon-client.js')>('./browser/daemon-client.js');
   return {
     ...actual,
+    clearSessionHandoff: mockClearSessionHandoff,
     releaseSiteSessionLease: mockReleaseSiteSessionLease,
     setDaemonCommandTimeoutSeconds: mockSetDaemonCommandTimeoutSeconds,
+    startSessionHandoff: mockStartSessionHandoff,
   };
 });
 
@@ -207,7 +216,8 @@ describe('executeCommand — non-browser timeout', () => {
       vi.unstubAllGlobals();
     });
 
-    it('binds a run only for browser-backed persistent writes', async () => {
+    it('binds a run for every browser-backed command and skips non-browser commands', async () => {
+      mockReleaseSiteSessionLease.mockClear();
       const seen = new Map<string, ReturnType<typeof getDaemonRunContext>>();
       const mockPage = { closeWindow: vi.fn().mockResolvedValue(undefined) } as any;
 
@@ -242,12 +252,17 @@ describe('executeCommand — non-browser timeout', () => {
       expect(eligibleRun).toMatchObject({
         runId: expect.stringMatching(/^run_/),
         command: 'test-execution/run-eligible',
-        access: 'write',
       });
-      expect(seen.get('run-read')).toBeUndefined();
-      expect(seen.get('run-ephemeral')).toBeUndefined();
+      expect(seen.get('run-read')).toMatchObject({
+        runId: expect.stringMatching(/^run_/),
+        command: 'test-execution/run-read',
+      });
+      expect(seen.get('run-ephemeral')).toMatchObject({
+        runId: expect.stringMatching(/^run_/),
+        command: 'test-execution/run-ephemeral',
+      });
       expect(seen.get('run-non-browser')).toBeUndefined();
-      expect(mockReleaseSiteSessionLease).toHaveBeenCalledOnce();
+      expect(mockReleaseSiteSessionLease).toHaveBeenCalledTimes(3);
       expect(mockReleaseSiteSessionLease).toHaveBeenCalledWith(eligibleRun?.runId);
     });
 
@@ -298,7 +313,6 @@ describe('executeCommand — non-browser timeout', () => {
         expect(entry.run).toEqual({
           runId,
           command: 'test-execution/run-bound-before-operations',
-          access: 'write',
         });
       }
       expect(getDaemonRunContext()).toBeUndefined();
@@ -664,10 +678,87 @@ describe('executeCommand — non-browser timeout', () => {
     });
   });
 
+  describe('local authentication handoff', () => {
+    afterEach(() => {
+      mockClearSessionHandoff.mockReset().mockResolvedValue(undefined);
+      mockStartSessionHandoff.mockReset().mockResolvedValue({ id: 'session_a' });
+      vi.restoreAllMocks();
+    });
+
+    it('starts a Session handoff and returns its immutable verification command', async () => {
+      const mockPage = { closeWindow: vi.fn().mockResolvedValue(undefined) } as any;
+      vi.spyOn(capRouting, 'shouldUseBrowserSession').mockReturnValue(true);
+      vi.spyOn(runtime, 'browserSession').mockImplementation(async (_Factory, fn) => fn(mockPage));
+      const cmd = cli({
+        site: 'github',
+        name: 'login',
+        access: 'write',
+        description: 'test scoped handoff',
+        browser: true,
+        strategy: Strategy.PUBLIC,
+        siteSession: 'persistent',
+        func: async () => [{
+          status: 'action_required',
+          logged_in: false,
+          site: 'github',
+          action: 'sign in',
+          verify_command: 'webcmd github whoami',
+        }],
+      });
+
+      const result = await executeCommand(cmd, {}, false, {
+        profile: 'work',
+        session: 'session_a',
+      });
+
+      expect(result).toEqual([{
+        status: 'action_required',
+        logged_in: false,
+        site: 'github',
+        action: 'sign in',
+        verify_command: "webcmd --profile 'work' --session session_a github whoami",
+      }]);
+      expect(mockStartSessionHandoff).toHaveBeenCalledWith(expect.objectContaining({
+        session: 'session_a',
+        site: 'github',
+        expiresAt: expect.any(String),
+      }));
+    });
+
+    it('clears the handoff only after successful internal auth verification', async () => {
+      const mockPage = { closeWindow: vi.fn().mockResolvedValue(undefined) } as any;
+      vi.spyOn(capRouting, 'shouldUseBrowserSession').mockReturnValue(true);
+      vi.spyOn(runtime, 'browserSession').mockImplementation(async (_Factory, fn) => fn(mockPage));
+      const verified = cli({
+        site: 'handoff-test',
+        name: 'whoami',
+        access: 'read',
+        description: 'test handoff verification',
+        browser: true,
+        strategy: Strategy.PUBLIC,
+        siteSession: 'persistent',
+        func: async () => [{ logged_in: true, site: 'handoff-test' }],
+      }) as CliCommand & { _authVerification?: true };
+      verified._authVerification = true;
+
+      await executeCommand(verified, {}, false, { profile: 'work', session: 'session_a' });
+
+      expect(mockClearSessionHandoff).toHaveBeenCalledWith(expect.objectContaining({
+        session: 'session_a',
+        site: 'handoff-test',
+      }));
+
+      mockClearSessionHandoff.mockClear();
+      verified.func = async () => [{ logged_in: false, site: 'handoff-test' }];
+      await executeCommand(verified, {}, false, { profile: 'work', session: 'session_a' });
+      expect(mockClearSessionHandoff).not.toHaveBeenCalled();
+    });
+  });
+
   it('reuses a persistent site browser session and keeps the tab lease open', async () => {
     const closeWindow = vi.fn().mockResolvedValue(undefined);
     const mockPage = { closeWindow } as any;
-    const sessionOpts: Array<{ session?: string; idleTimeout?: number; windowMode?: string; siteSession?: string }> = [];
+    const sessionOpts: Array<{ session?: string; idleTimeout?: number; windowMode?: string; siteSession?: string; adapterSite?: string }> = [];
 
     vi.spyOn(capRouting, 'shouldUseBrowserSession').mockReturnValue(true);
     vi.spyOn(runtime, 'browserSession').mockImplementation(async (_Factory, fn, opts) => {
@@ -689,8 +780,10 @@ describe('executeCommand — non-browser timeout', () => {
     await executeCommand(cmd, {}, false, { keepTab: 'false' });
 
     expect(sessionOpts).toHaveLength(2);
-    expect(sessionOpts[0]).toMatchObject({ session: 'site:test-execution', windowMode: 'background', siteSession: 'persistent' });
-    expect(sessionOpts[1]).toMatchObject({ session: 'site:test-execution', windowMode: 'background', siteSession: 'persistent' });
+    expect(sessionOpts[0]).toMatchObject({ windowMode: 'background', siteSession: 'persistent', adapterSite: 'test-execution' });
+    expect(sessionOpts[1]).toMatchObject({ windowMode: 'background', siteSession: 'persistent', adapterSite: 'test-execution' });
+    expect(sessionOpts[0]?.session).toBeUndefined();
+    expect(sessionOpts[1]?.session).toBeUndefined();
     expect(sessionOpts[0]?.idleTimeout).toBeUndefined();
     expect(sessionOpts[1]?.idleTimeout).toBeUndefined();
     expect(closeWindow).not.toHaveBeenCalled();
@@ -721,9 +814,8 @@ describe('executeCommand — non-browser timeout', () => {
     await executeCommand(cmd, {});
 
     expect(sessionOpts).toHaveLength(2);
-    expect(sessionOpts[0]?.session).toMatch(/^site:test-execution:/);
-    expect(sessionOpts[1]?.session).toMatch(/^site:test-execution:/);
-    expect(sessionOpts[0]?.session).not.toBe(sessionOpts[1]?.session);
+    expect(sessionOpts[0]?.session).toBeUndefined();
+    expect(sessionOpts[1]?.session).toBeUndefined();
     expect(sessionOpts[0]?.idleTimeout).toBeUndefined();
     expect(sessionOpts[1]?.idleTimeout).toBeUndefined();
     expect(sessionOpts[0]?.windowMode).toBe('background');
@@ -757,7 +849,7 @@ describe('executeCommand — non-browser timeout', () => {
       await executeCommand(cmd, {}, false, { siteSession: 'ephemeral' });
 
       expect(sessionOpts).toHaveLength(1);
-      expect(sessionOpts[0]?.session).toMatch(/^site:test-execution:/);
+      expect(sessionOpts[0]?.session).toBeUndefined();
       expect(sessionOpts[0]?.idleTimeout).toBeUndefined();
       expect(closeWindow).toHaveBeenCalledTimes(1);
     } finally {

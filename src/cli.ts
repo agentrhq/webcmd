@@ -13,6 +13,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Command, Option } from 'commander';
 import { findPackageRoot, getBuiltEntryCandidates } from './package-paths.js';
 import { type CliCommand, getRegistry } from './registry.js';
+// Side-effect import: registers client-owned `web fetch` in the core registry
+// so it reaches help, `list`, completions and manifests without a plugin.
+import './fetch/command.js';
 import { commandListPresentation, filterCommandsByTag, toPresentableCommand } from './command-presentation.js';
 import { configureCompletionCommandSurface, configureListCommandSurface, configurePluginInstallSurface, configurePluginSearchSurface } from './builtin-command-surface.js';
 import { render as renderOutput } from './output.js';
@@ -38,7 +41,7 @@ import { browserOptionValueParser } from './browser/command-catalog.js';
 import { registerAuthCommands } from './commands/auth.js';
 import { daemonRestart, daemonStatus, daemonStop } from './commands/daemon.js';
 import { isVerbose, log } from './logger.js';
-import { BrowserCommandError, listExistingBrowserTabs, sendCommand } from './browser/daemon-client.js';
+import { BrowserCommandError, listExistingBrowserTabs, releaseSiteSessionLease, sendCommand } from './browser/daemon-client.js';
 import { fetchDaemonStatus } from './browser/daemon-transport.js';
 import { aliasForContextId, loadProfileConfig, profileRouteParams, renameProfile, resolveProfileSelection, setDefaultProfile, type ProfileSelection } from './browser/profile.js';
 import { formatDaemonVersion, isDaemonStale } from './browser/daemon-version.js';
@@ -47,11 +50,14 @@ import { CLI_COMMAND, PACKAGE_NAME } from './brand.js';
 import type { BrowserDownloadWaitResult, IPage, ScreenshotOptions } from './types.js';
 import type { BrowserWindowMode } from './runtime.js';
 import { configureRootCommandSurface } from './root-command-surface.js';
+import { validateRawBrowserSession } from './hosted/browser-args.js';
+import { LocalBrowserSessionStore, requireSessionIdShape, type BrowserSessionListRow } from './browser/sessions.js';
 import { missingPluginGuidance, PLUGINS_DIR } from './discovery.js';
 import { loadBrowserRunSource } from './browser/run/input.js';
 import { BrowserRunError } from './browser/run/types.js';
 import { classifyCommandOrigin, formatCommandOrigin } from './command-origin.js';
 import { readOverrideRecords, removeOverrideRecords } from './override-provenance.js';
+import { clearDaemonRunContext, generateRunId, isUnknownOutcomeError, runWithDaemonRunContext } from './session-lease.js';
 
 const CLI_FILE = fileURLToPath(import.meta.url);
 const FOLLOW_POLL_MS = 1_000;
@@ -63,6 +69,14 @@ function getBrowserCacheDir(): string {
 function parsePositiveIntOption(value: string | undefined, _label: string, fallback: number): number {
   const parsed = value === undefined ? fallback : Number.parseInt(value, 10);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parseSessionListLimit(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 100) {
+    throw new ArgumentError('Session list limit must be an integer from 1 to 100.');
+  }
+  return parsed;
 }
 
 type BrowserNetworkItem = {
@@ -539,17 +553,26 @@ function getCommandOption(command: Command | undefined, option: string): unknown
 }
 
 function getBrowserSession(command?: Command): string {
-  // The CLI surface is `webcmd browser <session> <subcommand>`. main.ts rewrites
-  // argv to insert `--session <name>` before commander parses it; this helper
-  // reads back the rewritten flag.
-  const raw = getCommandOption(command, 'session');
-  if (typeof raw === 'string' && raw.trim()) return raw.trim();
-  throw new Error('<session> is a required positional argument: webcmd browser <session> <command>');
+  return validateRawBrowserSession(getCommandOption(command, 'session'), getCommandOption(command, 'profile') as string | undefined);
 }
 
 function getBrowserProfileSelection(command?: Command): ProfileSelection | undefined {
   const raw = getCommandOption(command, 'profile');
   return resolveProfileSelection(typeof raw === 'string' && raw.trim() ? raw.trim() : undefined);
+}
+
+function getSelectedProfileId(command?: Command): string {
+  return getBrowserProfileSelection(command)?.contextId ?? 'default';
+}
+
+function formatHandoff(row: BrowserSessionListRow): string {
+  return row.handoff ? `${row.handoff.site} until ${row.handoff.expiresAt}` : '';
+}
+
+function sessionCreateOutput(data: unknown): unknown {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return data;
+  const row = data as Record<string, unknown>;
+  return { id: row.id, kind: row.kind, runtimeState: row.runtimeState };
 }
 
 function applyVerbose(opts: { verbose?: boolean }): void {
@@ -786,6 +809,72 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
       if (opts.strict && !report.ok) process.exitCode = EXIT_CODES.GENERIC_ERROR;
     });
 
+  const sessionCmd = program.command('session').description('Create, list, and close browser Sessions');
+
+  sessionCmd
+    .command('create')
+    .description('Create a new opaque browser Session ID for the selected Profile')
+    .option('-f, --format <fmt>', 'Output format: table, json, yaml', 'yaml')
+    .action(async (opts, command) => {
+      const profileId = getSelectedProfileId(command);
+      const data = await sendCommand('session-create', { contextId: profileId });
+      await renderOutput(sessionCreateOutput(data), { fmt: opts.format, columns: ['id', 'kind', 'runtimeState'] });
+    });
+
+  sessionCmd
+    .command('list')
+    .description('List browser Sessions for the selected Profile')
+    .option('--limit <number>', 'Maximum Sessions to return (1-100)', parseSessionListLimit, 20)
+    .option('-f, --format <fmt>', 'Output format: table, json, yaml', 'table')
+    .action(async (opts, command) => {
+      const profileId = getSelectedProfileId(command);
+      let rows: BrowserSessionListRow[];
+      const status = await fetchDaemonStatus({ contextId: profileId });
+      if (status?.runtimeConnected && !isDaemonStale(status, PKG_VERSION)) {
+        rows = await sendCommand('session-list', { contextId: profileId, limit: opts.limit }) as BrowserSessionListRow[];
+      } else {
+        rows = new LocalBrowserSessionStore().list(profileId, opts.limit);
+      }
+      const output = rows.map((row) => ({ ...row, handoff: formatHandoff(row) }));
+      if (output.length === 0 && String(opts.format ?? 'table') === 'table') {
+        console.log(`No browser Sessions found for Profile ${profileId}.`);
+        return;
+      }
+      await renderOutput(output, { fmt: opts.format, columns: ['id', 'kind', 'runtimeState', 'handoff'] });
+    });
+
+  sessionCmd
+    .command('close')
+    .description('Close a browser Session runtime without deleting its durable record')
+    .argument('<session-id>', 'Existing opaque Session ID from `webcmd session create`')
+    .option('-f, --format <fmt>', 'Output format: table, json, yaml', 'yaml')
+    .option('--force', 'Close even while the Session is busy or paused for handoff')
+    .action(async (sessionId: string, opts: { format?: string; force?: boolean }, command) => {
+      const profileId = getSelectedProfileId(command);
+      requireSessionIdShape(sessionId);
+      const status = await fetchDaemonStatus({ contextId: profileId });
+      if (!status || (status.runtimeConnected && !isDaemonStale(status, PKG_VERSION))) {
+        try {
+          const data = await sendCommand('session-close', {
+            contextId: profileId,
+            session: sessionId,
+            force: opts.force === true,
+          });
+          await renderOutput(data, { fmt: opts.format });
+          return;
+        } catch (error) {
+          if (status || opts.force === true) throw error;
+        }
+      }
+      if (opts.force === true) {
+        const data = await sendCommand('session-close', { contextId: profileId, session: sessionId, force: true });
+        await renderOutput(data, { fmt: opts.format });
+        return;
+      }
+      new LocalBrowserSessionStore().require(profileId, sessionId);
+      await renderOutput({ closed: false, alreadyIdle: true, session: sessionId }, { fmt: opts.format });
+    });
+
   // ── Built-in: browser (browser control for Claude Code skill) ───────────────
   //
   // Make websites accessible for AI agents.
@@ -793,20 +882,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
 
   const browser = program
     .command('browser')
-    // --session is an internal hidden option used by the daemon protocol and direct
-    // program.parseAsync callers (tests). User-facing surface is the <session>
-    // positional; main.ts argv preprocessor rewrites positional -> --session.
-    .addOption(new Option('--session <name>', 'Internal — set automatically from the <session> positional').hideHelp())
-    .description('Run Playwright programs against named browser sessions')
-    .usage('<session> <command> [options]')
-    .addHelpText('after', `
-<session> is a required positional: pass the name of the browser session every subcommand should operate on. Reuse the same name across calls to keep the tab/state alive; pick a different name to isolate parallel browser work.
-
-Examples:
-  $ webcmd browser work tabs
-  $ webcmd browser work bind --page page-123
-  $ printf 'await page.goto("https://example.com")' | webcmd browser work run --stdin
-`);
+    .description('Run Playwright programs against an explicit browser Session');
   const originalBrowserDescription = browser.description();
 
   // ── Init (adapter scaffolding) ──
@@ -868,7 +944,7 @@ cli({
         fs.mkdirSync(dir, { recursive: true });
         fs.writeFileSync(filePath, template, 'utf-8');
         console.log(`Created: ${filePath}`);
-        console.log('First time on this site? Run: webcmd browser recon run --stdin');
+        console.log('First time on this site? Run: webcmd session create, then webcmd --session <session-id> browser run --stdin');
         console.log(`Edit the file to implement your adapter, then run: webcmd browser verify ${name}`);
       } catch (err) {
         console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
@@ -891,8 +967,9 @@ cli({
     .option('--strict-memory', 'Fail (not just warn) when ~/.webcmd/sites/<site>/endpoints.json or notes.md is missing')
     .option('--seed-args <value>', 'Seed args when no fixture exists; use JSON array/object for multiple args or flags')
     .option('--trace <mode>', 'Trace capture for the adapter subprocess: off, on, retain-on-failure', 'off')
+    .option('--max-top-level-keys <n>', 'Override the row-shape top-level key cap (default: 12) for adapters whose rows are wide by design')
     .description('Execute an adapter and validate output; uses fixture at ~/.webcmd/sites/<site>/verify/<cmd>.json when present')
-    .action(async (name: string, opts: { fixture?: boolean; writeFixture?: boolean; updateFixture?: boolean; strictMemory?: boolean; seedArgs?: string; trace?: string } = {}) => {
+    .action(async (name: string, opts: { fixture?: boolean; writeFixture?: boolean; updateFixture?: boolean; strictMemory?: boolean; seedArgs?: string; trace?: string; maxTopLevelKeys?: string } = {}) => {
       try {
         const parts = name.split('/');
         if (parts.length !== 2) { console.error('Name must be site/command format'); process.exitCode = EXIT_CODES.USAGE_ERROR; return; }
@@ -901,6 +978,16 @@ cli({
           console.error('Name parts must be alphanumeric/dash/underscore only');
           process.exitCode = EXIT_CODES.USAGE_ERROR;
           return;
+        }
+
+        let maxTopLevelKeys: number | undefined;
+        if (opts.maxTopLevelKeys !== undefined) {
+          maxTopLevelKeys = Number(opts.maxTopLevelKeys);
+          if (!Number.isInteger(maxTopLevelKeys) || maxTopLevelKeys <= 0) {
+            console.error('--max-top-level-keys must be a positive integer');
+            process.exitCode = EXIT_CODES.USAGE_ERROR;
+            return;
+          }
         }
 
         const { execFileSync } = await import('node:child_process');
@@ -971,7 +1058,7 @@ cli({
         console.log(renderVerifyPreview(rows));
         console.log(`\n  → ${rows.length} row${rows.length === 1 ? '' : 's'}`);
 
-        const shapeFailures = validateRowShape(rows);
+        const shapeFailures = validateRowShape(rows, { maxTopLevelKeys });
         if (shapeFailures.length > 0) {
           console.log(`\n  ✗ Adapter output violates row shape conventions:`);
           for (const f of shapeFailures.slice(0, 20)) {
@@ -981,7 +1068,8 @@ cli({
           if (shapeFailures.length > 20) {
             console.log(`    ... and ${shapeFailures.length - 20} more failure(s)`);
           }
-          console.log(`\n  Keep rows agent-native: <=12 top-level keys, nesting depth <=1, and id-shaped fields at top level.`);
+          console.log(`\n  Keep rows agent-native: <=${maxTopLevelKeys ?? 12} top-level keys, nesting depth <=1, and id-shaped fields at top level.`);
+          console.log(`  If this adapter's rows are wide by design, rerun with --max-top-level-keys <n>.`);
           process.exitCode = EXIT_CODES.GENERIC_ERROR;
           return;
         }
@@ -1041,11 +1129,16 @@ cli({
 
   function rawBrowserAction(fn: (session: string, routing: { contextId?: string; preferredContextId?: string }, opts: Record<string, unknown>) => Promise<unknown>) {
     return async (opts: Record<string, unknown>, command: Command) => {
+      const runId = generateRunId();
+      const commandName = `browser/${command.name()}`;
+      let releaseRun = true;
       try {
         const session = getBrowserSession(command);
         const routing = profileRouteParams(getBrowserProfileSelection(command));
-        console.log(JSON.stringify(await fn(session, routing, opts), null, 2));
+        const result = await runWithDaemonRunContext({ runId, command: commandName }, () => fn(session, routing, opts));
+        console.log(JSON.stringify(result, null, 2));
       } catch (error) {
+        if (isUnknownOutcomeError(error)) releaseRun = false;
         if (error instanceof BrowserCommandError && error.code) {
           console.log(JSON.stringify({
             error: {
@@ -1056,8 +1149,12 @@ cli({
             },
           }, null, 2));
         }
-        log.error(error instanceof Error ? error.message : String(error));
-        process.exitCode = EXIT_CODES.GENERIC_ERROR;
+        log.error(error instanceof CliError ? `${error.code}: ${error.message}` : error instanceof Error ? error.message : String(error));
+        if (error instanceof CliError && error.hint) log.error(error.hint);
+        process.exitCode = error instanceof CliError ? error.exitCode : EXIT_CODES.GENERIC_ERROR;
+      } finally {
+        clearDaemonRunContext(runId);
+        if (releaseRun) await releaseSiteSessionLease(runId);
       }
     };
   }
@@ -1866,28 +1963,6 @@ cli({
   program.configureHelp({
     visibleCommands: (command) => command.commands.filter(child => command !== program || !adapterNameSet.has(child.name())),
   });
-  // When an ancestor command declares a leading positional via `.usage(...)`
-  // (e.g. `browser` -> `<session> <command> [options]`), inject the positional
-  // between that ancestor's name and the next path segment so the help Usage
-  // line is accurate: `Usage: webcmd browser <session> run [options]`
-  // instead of `webcmd browser run [options]`. Commander does NOT
-  // inherit configureHelp into subcommands, so we walk the descendant tree and
-  // apply the override on each.
-  const ancestorAwareCommandUsage = (cmd: Command): string => {
-    const ancestors: string[] = [];
-    let ancestor: Command | null = cmd.parent;
-    while (ancestor) {
-      const positional = leadingPositionalFromUsage(ancestor);
-      ancestors.unshift(positional ? `${ancestor.name()} ${positional}` : ancestor.name());
-      ancestor = ancestor.parent;
-    }
-    return [...ancestors, cmd.name(), cmd.usage()].filter(Boolean).join(' ').trim();
-  };
-  function applyAncestorAwareUsage(cmd: Command): void {
-    cmd.configureHelp({ commandUsage: ancestorAwareCommandUsage });
-    for (const sub of cmd.commands) applyAncestorAwareUsage(sub);
-  }
-  applyAncestorAwareUsage(browser);
   installRootPresentationHelp(
     program,
     () => rootHelpData(program, adapterGroups),

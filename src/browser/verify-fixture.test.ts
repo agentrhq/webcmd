@@ -221,6 +221,24 @@ describe('validateRowShape', () => {
         ]);
     });
 
+    it('honors a raised maxTopLevelKeys override for wide-row adapters', () => {
+        const row = Object.fromEntries(Array.from({ length: 52 }, (_, i) => [`k${i}`, i]));
+        const failures = validateRowShape([row], { maxTopLevelKeys: 52 });
+        expect(failures).toEqual([]);
+    });
+
+    it('still reports keys beyond a raised maxTopLevelKeys override', () => {
+        const row = Object.fromEntries(Array.from({ length: 53 }, (_, i) => [`k${i}`, i]));
+        const failures = validateRowShape([row], { maxTopLevelKeys: 52 });
+        expect(failures).toEqual([
+            {
+                rule: 'shapeKeyCount',
+                detail: 'row has 53 top-level keys, expected at most 52',
+                rowIndex: 0,
+            },
+        ]);
+    });
+
     it('reports nesting deeper than one level', () => {
         const failures = validateRowShape([
             { title: 'A', stats: { author: { name: 'Ada' } } },

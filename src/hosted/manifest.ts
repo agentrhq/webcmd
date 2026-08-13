@@ -11,6 +11,37 @@ import {
   type CommandListPresentation,
 } from '../command-presentation.js';
 import type { HostedCommand, HostedManifest } from './types.js';
+import { webFetchCommand } from '../fetch/command.js';
+
+const clientOwnedCommands: HostedCommand[] = [{
+  site: webFetchCommand.site,
+  name: webFetchCommand.name,
+  ...(webFetchCommand.aliases ? { aliases: [...webFetchCommand.aliases] } : {}),
+  command: `${webFetchCommand.site}/${webFetchCommand.name}`,
+  description: webFetchCommand.description,
+  access: webFetchCommand.access,
+  strategy: (webFetchCommand.strategy ?? 'public').toUpperCase(),
+  browser: webFetchCommand.browser === true,
+  args: webFetchCommand.args.map(arg => ({ ...arg, ...(arg.choices ? { choices: [...arg.choices] } : {}) })),
+  columns: [...(webFetchCommand.columns ?? [])],
+  ...(webFetchCommand.tags ? { tags: [...webFetchCommand.tags] } : {}),
+  ...(webFetchCommand.keywords ? { keywords: [...webFetchCommand.keywords] } : {}),
+  ...(webFetchCommand.domain ? { domain: webFetchCommand.domain } : {}),
+  ...(webFetchCommand.defaultFormat ? { defaultFormat: webFetchCommand.defaultFormat } : {}),
+  ...(webFetchCommand.freshPage ? { freshPage: true } : {}),
+  clientOwned: true,
+}];
+
+export function withClientOwnedCommands(manifest: HostedManifest): HostedManifest {
+  const localCommandNames = new Set(clientOwnedCommands.map(command => command.command));
+  return {
+    ...manifest,
+    commands: [
+      ...manifest.commands.filter(command => !localCommandNames.has(command.command)),
+      ...clientOwnedCommands,
+    ],
+  };
+}
 
 export function isLocalOnlyHostedCommand(command: HostedCommand): boolean {
   return command.strategy.toUpperCase() === 'LOCAL';
@@ -33,11 +64,20 @@ export function presentHostedCommand(command: HostedCommand): PresentableCommand
 }
 
 export function hostedListRows(manifest: HostedManifest, structured: boolean): Record<string, unknown>[] {
-  return commandListRows(hostedCommands(manifest).map(presentHostedCommand), structured);
+  return markClientOwned(commandListRows(hostedCommands(manifest).map(presentHostedCommand), structured), structured);
 }
 
 export function hostedListPresentation(manifest: HostedManifest, format: string): CommandListPresentation {
-  return commandListPresentation(hostedCommands(manifest).map(presentHostedCommand), format);
+  const presentation = commandListPresentation(hostedCommands(manifest).map(presentHostedCommand), format);
+  return {
+    ...presentation,
+    rows: markClientOwned(presentation.rows, presentation.structured),
+  };
+}
+
+function markClientOwned(rows: Record<string, unknown>[], structured: boolean): Record<string, unknown>[] {
+  if (!structured) return rows;
+  return rows.map(row => row.command === 'web/fetch' ? { ...row, clientOwned: true } : row);
 }
 
 export function siteNames(manifest: HostedManifest): string[] {

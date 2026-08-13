@@ -7,6 +7,7 @@ import { buildLaunchOptions, humanizeBrowser } from 'cloakbrowser';
 import type { LaunchPersistentContextOptions } from 'cloakbrowser';
 import { chromium } from 'playwright-core';
 import type { Browser, BrowserContext } from 'playwright-core';
+import { findExactCloakProfileProcesses } from './process-matcher.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -40,13 +41,7 @@ export async function waitForDevToolsPort(portFile: string, timeoutMs = 10_000):
 }
 
 async function terminateProfile(userDataDir: string): Promise<void> {
-  const { stdout } = await execFileAsync('/bin/ps', ['-axo', 'pid=,command=']);
-  const needle = `--user-data-dir=${userDataDir}`;
-  for (const line of stdout.split('\n')) {
-    if (!line.includes(needle)) continue;
-    const pid = Number.parseInt(line.trim().split(/\s+/, 1)[0], 10);
-    if (Number.isInteger(pid) && pid !== process.pid) process.kill(pid, 'SIGTERM');
-  }
+  for (const pid of await findExactCloakProfileProcesses(userDataDir)) process.kill(pid, 'SIGTERM');
 }
 
 const defaultDependencies: Dependencies = {
@@ -92,6 +87,7 @@ export async function launchDarwinBackgroundPersistentContext(
       ...(launchOptions.args ?? []),
       '--password-store=basic',
       '--use-mock-keychain',
+      '--disable-popup-blocking',
       `--user-data-dir=${options.userDataDir}`,
       '--remote-debugging-address=127.0.0.1',
       '--remote-debugging-port=0',

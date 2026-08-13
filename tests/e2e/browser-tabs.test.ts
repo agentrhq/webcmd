@@ -118,29 +118,29 @@ describe('browser public command surface e2e', () => {
   it('uses tabs, bind, run, and close through the built CLI', async () => {
     const daemon = await startFakeDaemon();
     daemons.push(daemon);
-    const session = 'four-command-surface';
+    const session = 'session_four-command-surface';
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-browser-tabs-'));
     tempDirs.push(tempDir);
     const sourcePath = path.join(tempDir, 'program.js');
     fs.writeFileSync(sourcePath, "return 'from file';");
 
-    const tabs = await runCli(['browser', session, 'tabs']);
+    const tabs = await runCli(['--session', session, 'browser', 'tabs']);
     expect(tabs.code).toBe(0);
     expect(parseJsonOutput(tabs.stdout)).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'page-one', title: 'One' }),
       expect.objectContaining({ id: 'page-two', title: 'Two' }),
     ]));
 
-    const bound = await runCli(['browser', session, 'bind', '--page', 'page-two']);
+    const bound = await runCli(['--session', session, 'browser', 'bind', '--page', 'page-two']);
     expect(bound.code).toBe(0);
     expect(parseJsonOutput(bound.stdout)).toMatchObject({ bound: true, page: 'page-two', title: 'Two' });
 
-    const run = await runCli(['browser', session, 'run', '--file', sourcePath]);
+    const run = await runCli(['--session', session, 'browser', 'run', '--file', sourcePath]);
     expect(run.code).toBe(0);
     expect(parseJsonOutput(run.stdout)).toEqual({ result: 'ran' });
     expect(daemon.lastRunSource()).toBe("return 'from file';");
 
-    const closed = await runCli(['browser', session, 'close']);
+    const closed = await runCli(['--session', session, 'browser', 'close']);
     expect(closed.code).toBe(0);
     expect(parseJsonOutput(closed.stdout)).toEqual({ closed: true });
   }, 30_000);

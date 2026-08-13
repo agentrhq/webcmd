@@ -10,6 +10,8 @@ const core = read('cli-manifest.json');
 const frozen = read('test/fixtures/core-cli-manifest-v0.5.3.json');
 const coreKeys = new Set(core.map(key));
 const pluginByKey = new Map(plugins.map(entry => [key(entry), entry]));
+// This command was intentionally removed rather than migrated to a plugin.
+const intentionallyRemoved = new Set(['web/fetch-browser']);
 // `args` is checked separately: a migrated command may still gain new optional
 // flags, so strict deep-equality would forbid ordinary feature work rather than
 // the regression this guards against.
@@ -24,6 +26,7 @@ const issues = [];
 for (const expected of frozen) {
   const command = key(expected);
   if (coreKeys.has(command)) continue;
+  if (intentionallyRemoved.has(command)) continue;
   const actual = pluginByKey.get(command);
   if (!actual) {
     issues.push(`${command} is missing from plugin-command-manifest.json`);

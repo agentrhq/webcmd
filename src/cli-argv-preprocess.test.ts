@@ -1,256 +1,42 @@
 import { describe, expect, it } from 'vitest';
-import { getBrowserSubcommandNames, rewriteBrowserArgv } from './cli-argv-preprocess.js';
+import { rejectMisplacedSessionSelectorArgv, rejectPositionalBrowserSessionArgv } from './cli-argv-preprocess.js';
 
-describe('rewriteBrowserArgv', () => {
-  it('rewrites `browser <session> <subcommand>` into `browser --session <name> <subcommand>`', () => {
-    expect(rewriteBrowserArgv(['browser', 'work', 'state'])).toEqual([
-      'browser',
-      '--session',
-      'work',
-      'state',
+describe('rejectPositionalBrowserSessionArgv', () => {
+  it('rejects retired positional browser sessions with the canonical replacement', () => {
+    expect(() => rejectPositionalBrowserSessionArgv(['browser', 'session_a', 'run', '--stdin']))
+      .toThrowError(/webcmd --session session_a browser run --stdin/);
+  });
+
+  it('keeps the canonical root selector unchanged', () => {
+    expect(rejectPositionalBrowserSessionArgv(['--session', 'session_a', 'browser', 'run', '--stdin']))
+      .toEqual(['--session', 'session_a', 'browser', 'run', '--stdin']);
+  });
+});
+
+describe('rejectPositionalBrowserSessionArgv details', () => {
+  it('keeps browser subcommands and hoists trailing --window', () => {
+    expect(rejectPositionalBrowserSessionArgv(['--session', 'session_a', 'browser', 'state', '--window', 'background'])).toEqual([
+      '--session', 'session_a', 'browser', '--window', 'background', 'state',
     ]);
   });
 
-  it('rewrites with subcommand arguments preserved', () => {
-    expect(rewriteBrowserArgv(['browser', 'mercury', 'open', 'https://x.com'])).toEqual([
-      'browser',
-      '--session',
-      'mercury',
-      'open',
-      'https://x.com',
-    ]);
+  it('leaves non-browser commands unchanged', () => {
+    expect(rejectPositionalBrowserSessionArgv(['twitter', 'browser', 'session_a', 'state']))
+      .toEqual(['twitter', 'browser', 'session_a', 'state']);
+  });
+});
+
+describe('rejectMisplacedSessionSelectorArgv', () => {
+  it('rejects trailing --session with a copy-pasteable root-selector command', () => {
+    expect(() => rejectMisplacedSessionSelectorArgv(['browser', 'run', '--session', 'session_a']))
+      .toThrowError(/SESSION_SELECTOR_POSITION: --session must appear before the command\. Use: webcmd --session session_a browser run/);
+    expect(() => rejectMisplacedSessionSelectorArgv(['github', 'issues', '--session=session_b']))
+      .toThrowError(/Use: webcmd --session session_b github issues/);
   });
 
-  it('rewrites `browser <session> bind`', () => {
-    expect(rewriteBrowserArgv(['browser', 'mercury', 'bind'])).toEqual([
-      'browser',
-      '--session',
-      'mercury',
-      'bind',
-    ]);
-  });
-
-  it('rewrites `browser <session> run` with source options preserved', () => {
-    expect(rewriteBrowserArgv(['browser', 'mercury', 'run', '--file', 'task.js'])).toEqual([
-      'browser',
-      '--session',
-      'mercury',
-      'run',
-      '--file',
-      'task.js',
-    ]);
-  });
-
-  it('leaves argv alone when session omitted and a subcommand follows', () => {
-    // Commander surfaces the required-flag error itself.
-    expect(rewriteBrowserArgv(['browser', 'state'])).toEqual(['browser', 'state']);
-    expect(rewriteBrowserArgv(['browser', 'bind'])).toEqual(['browser', 'bind']);
-  });
-
-  it('leaves argv alone when the token after `browser` is a flag', () => {
-    expect(rewriteBrowserArgv(['browser', '--help'])).toEqual(['browser', '--help']);
-    expect(rewriteBrowserArgv(['browser', '-h'])).toEqual(['browser', '-h']);
-  });
-
-  it('refuses the retired `webcmd browser --session foo ...` user form', () => {
-    // The flag form is no longer a public entrance. Tests calling
-    // program.parseAsync directly bypass the preprocessor, so internal
-    // callers still work; but the user-facing pipeline throws.
-    expect(() => rewriteBrowserArgv(['browser', '--session', 'foo', 'state']))
-      .toThrowError(/no longer a public option/i);
-    expect(() => rewriteBrowserArgv(['browser', '--session=foo', 'state']))
-      .toThrowError(/no longer a public option/i);
-  });
-
-  it('leaves argv alone when `browser` is not present', () => {
-    expect(rewriteBrowserArgv(['twitter', 'tweets', '@elonmusk'])).toEqual([
-      'twitter',
-      'tweets',
-      '@elonmusk',
-    ]);
-    expect(rewriteBrowserArgv(['doctor'])).toEqual(['doctor']);
-  });
-
-  it('returns argv unchanged when `browser` is the last token', () => {
-    expect(rewriteBrowserArgv(['browser'])).toEqual(['browser']);
-  });
-
-  it('only rewrites when `browser` is the root command, not deeper in argv', () => {
-    // `webcmd adapter init browser/x` — the literal `browser` is a path argument,
-    // not the root command. Must not be touched.
-    expect(rewriteBrowserArgv(['adapter', 'init', 'browser', 'x'])).toEqual([
-      'adapter',
-      'init',
-      'browser',
-      'x',
-    ]);
-    // Same for URLs or arbitrary arg values that happen to contain `browser`.
-    expect(rewriteBrowserArgv(['twitter', 'tweets', 'https://browser.example.com'])).toEqual([
-      'twitter',
-      'tweets',
-      'https://browser.example.com',
-    ]);
-    // First-match heuristic must NOT rewrite when an earlier non-flag token
-    // already established a different root command.
-    expect(rewriteBrowserArgv(['list', 'browser', 'state'])).toEqual([
-      'list',
-      'browser',
-      'state',
-    ]);
-  });
-
-  it('skips leading root flags before identifying the root command', () => {
-    // `--profile` takes a value — the value is not the command.
-    expect(rewriteBrowserArgv(['--profile', 'work', 'browser', 'mercury', 'state'])).toEqual([
-      '--profile',
-      'work',
-      'browser',
-      '--session',
-      'mercury',
-      'state',
-    ]);
-    // Long form with `=` separator consumes one slot only.
-    expect(rewriteBrowserArgv(['--profile=work', 'browser', 'mercury', 'state'])).toEqual([
-      '--profile=work',
-      'browser',
-      '--session',
-      'mercury',
-      'state',
-    ]);
-    // Boolean flags don't consume values.
-    expect(rewriteBrowserArgv(['-v', 'browser', 'mercury', 'state'])).toEqual([
-      '-v',
-      'browser',
-      '--session',
-      'mercury',
-      'state',
-    ]);
-  });
-
-  it('hoists a trailing browser --window option to the namespace slot', () => {
-    expect(rewriteBrowserArgv(['browser', 'work', 'open', 'https://x.com', '--window', 'background'])).toEqual([
-      'browser',
-      '--session',
-      'work',
-      '--window',
-      'background',
-      'open',
-      'https://x.com',
-    ]);
-    expect(rewriteBrowserArgv(['browser', 'work', 'state', '--window', 'foreground'])).toEqual([
-      'browser',
-      '--session',
-      'work',
-      '--window',
-      'foreground',
-      'state',
-    ]);
-  });
-
-  it('hoists trailing browser --window after leading root options', () => {
-    expect(rewriteBrowserArgv(['--profile', 'sandbox', 'browser', 'work', 'state', '--window', 'background'])).toEqual([
-      '--profile',
-      'sandbox',
-      'browser',
-      '--session',
-      'work',
-      '--window',
-      'background',
-      'state',
-    ]);
-  });
-
-  it('hoists a trailing browser --window=<mode> option', () => {
-    expect(rewriteBrowserArgv(['browser', 'work', 'open', 'https://x.com', '--window=background'])).toEqual([
-      'browser',
-      '--session',
-      'work',
-      '--window=background',
-      'open',
-      'https://x.com',
-    ]);
-  });
-
-  it('hoists browser --window after nested browser leaf commands', () => {
-    expect(rewriteBrowserArgv(['browser', 'work', 'get', 'url', '--window', 'background'])).toEqual([
-      'browser',
-      '--session',
-      'work',
-      '--window',
-      'background',
-      'get',
-      'url',
-    ]);
-    expect(rewriteBrowserArgv(['browser', 'work', 'tab', 'close', 'abc123', '--window', 'background'])).toEqual([
-      'browser',
-      '--session',
-      'work',
-      '--window',
-      'background',
-      'tab',
-      'close',
-      'abc123',
-    ]);
-  });
-
-  it('leaves an already parent-slot browser --window option untouched', () => {
-    expect(rewriteBrowserArgv(['browser', 'work', '--window', 'background', 'open', 'https://x.com'])).toEqual([
-      'browser',
-      '--session',
-      'work',
-      '--window',
-      'background',
-      'open',
-      'https://x.com',
-    ]);
-  });
-
-  it('does not hoist browser --window after a literal -- separator', () => {
-    expect(rewriteBrowserArgv(['browser', 'work', 'eval', 'console.log(1)', '--', '--window', 'background'])).toEqual([
-      'browser',
-      '--session',
-      'work',
-      'eval',
-      'console.log(1)',
-      '--',
-      '--window',
-      'background',
-    ]);
-  });
-
-  it('does not hoist a bare trailing browser --window without a value', () => {
-    expect(rewriteBrowserArgv(['browser', 'work', 'open', 'https://x.com', '--window'])).toEqual([
-      'browser',
-      '--session',
-      'work',
-      'open',
-      'https://x.com',
-      '--window',
-    ]);
-  });
-
-  it('leaves argv alone when the root command is not `browser`, even if `browser` appears later', () => {
-    // The first browser keyword does NOT win — it must be at the root.
-    expect(rewriteBrowserArgv(['twitter', 'browser', 'work', 'state'])).toEqual([
-      'twitter',
-      'browser',
-      'work',
-      'state',
-    ]);
-  });
-
-  it('reserved subcommand list covers every known browser subcommand registered in cli.ts', () => {
-    const names = getBrowserSubcommandNames();
-    const required = [
-      'analyze', 'back', 'bind', 'check', 'click', 'close', 'console', 'dblclick',
-      'dialog', 'drag', 'eval', 'extract', 'fill', 'find', 'focus', 'frames',
-      'get', 'hover', 'init', 'keys', 'network', 'open', 'screenshot', 'scroll',
-      'run', 'select', 'state', 'tab', 'type', 'unbind', 'uncheck', 'upload', 'verify',
-      'wait',
-    ];
-    for (const name of required) {
-      expect(names.has(name)).toBe(true);
-    }
+  it('keeps the root --session selector unchanged', () => {
+    expect(rejectMisplacedSessionSelectorArgv(['--session', 'session_a', 'browser', 'run']))
+      .toEqual(['--session', 'session_a', 'browser', 'run']);
   });
 });
 

@@ -1,4 +1,5 @@
 import type { SessionLeaseStatus } from '../session-lease.js';
+import type { BrowserSessionListRow } from './sessions.js';
 import type { SnapshotMode } from './snapshot/index.js';
 
 export type BrowserRuntimeAction =
@@ -18,7 +19,13 @@ export type BrowserRuntimeAction =
   | 'frames'
   | 'run'
   | 'snapshot'
-  | 'lease-release';
+  | 'lease-release'
+  | 'run-cancel'
+  | 'session-create'
+  | 'session-list'
+  | 'session-close'
+  | 'session-handoff-start'
+  | 'session-handoff-clear';
 
 export type BrowserSurface = 'browser' | 'adapter';
 export type SiteSessionMode = 'ephemeral' | 'persistent';
@@ -30,8 +37,12 @@ export interface BrowserRuntimeCommand {
   page?: string;
   code?: string;
   session?: string;
+  sessionId?: string;
+  sessionKind?: 'explicit' | 'adapter-default';
   surface?: BrowserSurface;
   siteSession?: SiteSessionMode;
+  /** Trusted adapter identity used for admission and tab routing. */
+  adapterSite?: string;
   /** Close any existing leased page and start on a new one (sent on the first action of a command run). */
   freshPage?: boolean;
   url?: string;
@@ -54,6 +65,12 @@ export interface BrowserRuntimeCommand {
   timeout?: number;
   /** Absolute command deadline in epoch milliseconds. Preferred by newer daemons. */
   deadlineAt?: number;
+  /** Force Session lifecycle actions such as close past active work/handoff guards. */
+  force?: boolean;
+  /** Remove an explicit Session record after closing it. Internal probes only. */
+  discard?: boolean;
+  /** Maximum Session rows returned by session-list. */
+  limit?: number;
   cdpMethod?: string;
   cdpParams?: Record<string, unknown>;
   windowMode?: BrowserWindowMode;
@@ -78,6 +95,9 @@ export interface BrowserRuntimeCommand {
   access?: 'read' | 'write';
   /** Originating CLI process, used only for actionable local busy guidance. */
   pid?: number;
+  /** Site and expiry payload for internal Session handoff controls. */
+  site?: string;
+  expiresAt?: string;
 }
 
 export interface BrowserRuntimeResult {
@@ -111,4 +131,5 @@ export interface BrowserRuntimeStatus {
   commandResultUnknown?: number;
   /** Active local leases with internal run ownership tokens removed. */
   sessionLeases?: SessionLeaseStatus[];
+  sessions?: BrowserSessionListRow[];
 }
