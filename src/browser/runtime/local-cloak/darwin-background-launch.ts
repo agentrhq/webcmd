@@ -11,6 +11,14 @@ import { findExactCloakProfileProcesses } from './process-matcher.js';
 
 const execFileAsync = promisify(execFile);
 
+// macOS LaunchServices' registration database for `.app` bundles. A script-driven
+// unzip of a new/updated Chromium bundle (rather than a Finder/.pkg install) can
+// land outside the triggers that make LS pick it up, leaving `open` unable to
+// resolve a bundle that runs fine when executed directly (kLSNoExecutableErr).
+const LSREGISTER_PATH =
+  '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister';
+const LS_NO_EXECUTABLE_MARKER = 'kLSNoExecutableErr';
+
 type Dependencies = {
   buildLaunchOptions: typeof buildLaunchOptions;
   humanizeBrowser: typeof humanizeBrowser;
@@ -20,10 +28,47 @@ type Dependencies = {
   connectOverCDP: (endpoint: string) => Promise<Browser>;
   terminateProfile: (userDataDir: string) => Promise<void>;
   removePortFile: (portFile: string) => Promise<void>;
+  /** Force LaunchServices to re-scan a bundle after a stale-cache `open` failure. */
+  registerBundle: (appPath: string) => Promise<void>;
 };
 
 async function openApplication(appPath: string, args: string[]): Promise<void> {
   await execFileAsync('/usr/bin/open', ['-g', '-n', appPath, '--args', ...args]);
+}
+
+async function registerBundle(appPath: string): Promise<void> {
+  await execFileAsync(LSREGISTER_PATH, ['-f', appPath]);
+}
+
+function isStaleLaunchServicesError(err: unknown): boolean {
+  return err instanceof Error && err.message.includes(LS_NO_EXECUTABLE_MARKER);
+}
+
+/**
+ * Open the app, retrying once via `lsregister -f` when macOS reports the bundle
+ * as missing due to a stale LaunchServices cache entry rather than an actually
+ * missing executable (see #220).
+ */
+async function openApplicationWithLsRegisterRetry(
+  deps: Dependencies,
+  appPath: string,
+  args: string[],
+): Promise<void> {
+  try {
+    await deps.openApplication(appPath, args);
+  } catch (err) {
+    if (!isStaleLaunchServicesError(err)) throw err;
+    try {
+      await deps.registerBundle(appPath);
+      await deps.openApplication(appPath, args);
+    } catch {
+      throw new Error(
+        `Cloak Chromium bundle exists but macOS LaunchServices has a stale record for it (${LS_NO_EXECUTABLE_MARKER}): ${appPath}\n` +
+        `Re-registering it automatically did not resolve the issue. Fix it manually with:\n` +
+        `  ${LSREGISTER_PATH} -f "${appPath}"`,
+      );
+    }
+  }
 }
 
 export async function waitForDevToolsPort(portFile: string, timeoutMs = 10_000): Promise<number> {
@@ -55,6 +100,7 @@ const defaultDependencies: Dependencies = {
   connectOverCDP: endpoint => chromium.connectOverCDP(endpoint),
   terminateProfile,
   removePortFile: portFile => rm(portFile, { force: true }),
+  registerBundle,
 };
 
 const contextActivators = new WeakMap<BrowserContext, () => Promise<void>>();
@@ -83,7 +129,7 @@ export async function launchDarwinBackgroundPersistentContext(
   let browser: Browser | undefined;
   let launched = false;
   try {
-    await deps.openApplication(appPath, [
+    await openApplicationWithLsRegisterRetry(deps, appPath, [
       ...(launchOptions.args ?? []),
       '--password-store=basic',
       '--use-mock-keychain',
