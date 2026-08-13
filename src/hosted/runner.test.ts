@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Writable, type WritableOptions } from 'node:stream';
 import type { Command } from 'commander';
+import yaml from 'js-yaml';
 import { describe, expect, it, vi } from 'vitest';
 import { browserCommandCatalog } from '../browser/command-catalog.js';
 import { buildHostedContract } from './contract.js';
@@ -529,6 +530,9 @@ describe('runHostedCli', () => {
     ['plugin search'],
     ['profile list'],
     ['list'],
+    ['session create'],
+    ['session list'],
+    ['session close session_abc'],
   ])('rejects an unknown hosted %s format without an API call', async (argvCommand) => {
     const stdout = sink();
     const stderr = sink();
@@ -652,6 +656,70 @@ describe('runHostedCli', () => {
       { url: 'https://api.example.com/v1/manifest', method: 'GET' },
       { url: 'https://api.example.com/v1/sessions/session_abc/close?profile=work', method: 'POST', body: { force: true } },
     ]);
+  });
+
+  it('normalizes aliases and case across hosted Session create/list/close', async () => {
+    const session = {
+      id: 'session_abc', kind: 'explicit', profileId: 'profile_work', runtimeState: 'idle',
+      handoff: null,
+      createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:01:00.000Z', lastUsedAt: '2026-01-01T00:02:00.000Z',
+    };
+    const fetchImpl = vi.fn<typeof fetch>(async (url, init) => {
+      const requestUrl = String(url);
+      if (requestUrl.endsWith('/v1/manifest')) return manifestResponse();
+      if (init?.method === 'POST' && requestUrl.endsWith('/v1/sessions')) {
+        return new Response(JSON.stringify({ ok: true, session }));
+      }
+      if (requestUrl.includes('/close')) {
+        return new Response(JSON.stringify({ ok: true, closed: true, alreadyIdle: false, session: session.id }));
+      }
+      return new Response(JSON.stringify({ ok: true, sessions: [session] }));
+    });
+
+    const create = sink();
+    await runHostedCli(['session', 'create', '-f', 'JSON'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }), stdout: create.stream, fetchImpl,
+    });
+    expect(JSON.parse(create.text())).toMatchObject({ id: session.id });
+
+    const list = sink();
+    await runHostedCli(['session', 'list', '-f', 'YML'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }), stdout: list.stream, fetchImpl,
+    });
+    expect(list.text()).toContain(`id: ${session.id}`);
+
+    const close = sink();
+    await runHostedCli(['session', 'close', session.id, '-f', 'Markdown'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }), stdout: close.stream, fetchImpl,
+    });
+    expect(close.text()).toContain('| ok | closed | alreadyIdle | session |');
+    expect(close.text()).toContain(`| true | true | false | ${session.id} |`);
+  });
+
+  it.each(['JSON', 'YML'])('keeps an empty hosted Session list machine-readable with explicit %s', async (format) => {
+    const stdout = sink();
+    await runHostedCli(['session', 'list', '-f', format], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      fetchImpl: async (url) => String(url).endsWith('/v1/manifest')
+        ? manifestResponse()
+        : new Response(JSON.stringify({ ok: true, sessions: [] })),
+    });
+
+    expect(format === 'JSON' ? JSON.parse(stdout.text()) : yaml.load(stdout.text())).toEqual([]);
+  });
+
+  it('keeps an explicit empty hosted Session table outside a TTY', async () => {
+    const stdout = sink(false);
+    await runHostedCli(['session', 'list', '-f', 'table'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      fetchImpl: async (url) => String(url).endsWith('/v1/manifest')
+        ? manifestResponse()
+        : new Response(JSON.stringify({ ok: true, sessions: [] })),
+    });
+
+    expect(stdout.text()).toBe('(no data)\n');
   });
 
   it('rejects Session lifecycle calls when the hosted Session protocol differs', async () => {

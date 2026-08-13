@@ -844,7 +844,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
         rows = new LocalBrowserSessionStore().list(profileId, opts.limit);
       }
       const output = rows.map((row) => ({ ...row, handoff: formatHandoff(row) }));
-      if (output.length === 0 && fmt === 'table') {
+      if (output.length === 0 && fmt === 'table' && command.getOptionValueSource('format') !== 'cli') {
         console.log(`No browser Sessions found for Profile ${profileId}.`);
         return;
       }

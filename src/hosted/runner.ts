@@ -518,7 +518,7 @@ async function dispatchHostedSession(
   if (parsed.command === 'list') {
     const rows = (await client.listBrowserSessions(profile, parsed.limit)).sessions
       .map((row) => ({ ...row, handoff: formatHostedSessionHandoff(row.handoff) }));
-    if (rows.length === 0 && parsed.format === 'table') {
+    if (rows.length === 0 && parsed.format === 'table' && !parsed.formatExplicit) {
       await writeToStream(stdout, `No browser Sessions found${profile ? ` for Profile ${profile}` : ''}.\n`);
       return;
     }

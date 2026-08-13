@@ -1879,6 +1879,55 @@ describe('browser Session lifecycle commands', () => {
       session: 'session_idle',
     });
   });
+
+  it.each([
+    ['create'],
+    ['list'],
+    ['close', 'session_abc'],
+  ])('rejects an unsupported format before local Session %s side effects', async (...subcommand) => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await createProgram('', '').parseAsync(['node', 'webcmd', 'session', ...subcommand, '-f', 'xml']);
+
+      expect(process.exitCode).toBe(2);
+      expect(consoleErrorSpy.mock.calls.flat().join('\n')).toContain('Unknown output format "xml"');
+      expect(mockSendCommand).not.toHaveBeenCalled();
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
+  });
+
+  it('normalizes aliases and case across local Session create/list/close', async () => {
+    mockSendCommand.mockImplementation(async (command) => command === 'session-create'
+      ? { id: 'session_abc', kind: 'explicit', runtimeState: 'idle' }
+      : { closed: true, session: 'session_abc' });
+
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'create', '-f', 'JSON']);
+    expect(JSON.parse(consoleLogSpy.mock.calls.flat().join('\n'))).toMatchObject({ id: 'session_abc' });
+
+    consoleLogSpy.mockClear();
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'list', '-f', 'YML']);
+    expect(yaml.load(consoleLogSpy.mock.calls.flat().join('\n'))).toEqual([]);
+
+    consoleLogSpy.mockClear();
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'close', 'session_abc', '-f', 'Markdown']);
+    expect(consoleLogSpy.mock.calls.flat().join('\n')).toContain('| closed | session |');
+  });
+
+  it.each(['JSON', 'YML'])('keeps an empty local Session list machine-readable with explicit %s', async (format) => {
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'list', '-f', format]);
+
+    const output = consoleLogSpy.mock.calls.flat().join('\n');
+    expect(format === 'JSON' ? JSON.parse(output) : yaml.load(output)).toEqual([]);
+  });
+
+  it('keeps an explicit empty local Session table outside a TTY', async () => {
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'list', '-f', 'table']);
+
+    const output = consoleLogSpy.mock.calls.flat().join('\n');
+    expect(output).toContain('(no data)');
+    expect(output).not.toContain('No browser Sessions found');
+  });
 });
 
 // Shared helper for the selector-first describe blocks below.

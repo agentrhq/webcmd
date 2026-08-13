@@ -92,6 +92,11 @@ webcmd session list
 webcmd session close session_abc
 ```
 
+`session create`, `session list`, and `session close` accept the universal output
+formats. An explicit `-f table` stays in table format when redirected, while
+an empty structured `session list` remains machine-readable (for example, `[]`
+with `-f json`).
+
 Agents sharing a profile can work in parallel by creating separate Sessions.
 An authentication handoff is scoped to the Session that started it: run the
 returned verification command verbatim because it includes `--session` when
