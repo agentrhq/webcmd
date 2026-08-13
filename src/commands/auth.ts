@@ -468,6 +468,8 @@ export function registerAuthCommands(program: Command): Command {
     .addOption(new Option('--only <status>', 'Filter rows by status').choices(['all', 'logged-in', 'not-logged-in', 'unknown', 'error']).default('all'))
     .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table')
     .action(async (opts) => {
+      const fmt = resolveOutputFormat(opts.format);
+      if (fmt === null) return;
       const globals = typeof status.optsWithGlobals === 'function' ? status.optsWithGlobals() as Record<string, unknown> : {};
       const rows = await collectAuthStatus({
         sites: opts.site,
@@ -477,8 +479,6 @@ export function registerAuthCommands(program: Command): Command {
         only: opts.only,
         profile: typeof globals.profile === 'string' && globals.profile.trim() ? globals.profile.trim() : undefined,
       });
-      const fmt = resolveOutputFormat(opts.format);
-      if (fmt === null) return;
       renderOutput(rows, {
         fmt,
         fmtExplicit: status.getOptionValueSource('format') === 'cli',
@@ -497,6 +497,8 @@ export function registerAuthCommands(program: Command): Command {
     .option('--timeout <seconds>', 'Per-site timeout in seconds')
     .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table')
     .action(async (opts) => {
+      const fmt = resolveOutputFormat(opts.format);
+      if (fmt === null) return;
       const globals = typeof refresh.optsWithGlobals === 'function' ? refresh.optsWithGlobals() as Record<string, unknown> : {};
       const rows = await collectAuthRefresh({
         sites: opts.site,
@@ -505,8 +507,6 @@ export function registerAuthCommands(program: Command): Command {
         timeout: opts.timeout,
         profile: typeof globals.profile === 'string' && globals.profile.trim() ? globals.profile.trim() : undefined,
       });
-      const fmt = resolveOutputFormat(opts.format);
-      if (fmt === null) return;
       renderOutput(rows, {
         fmt,
         fmtExplicit: refresh.getOptionValueSource('format') === 'cli',

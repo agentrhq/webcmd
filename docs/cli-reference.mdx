@@ -204,7 +204,7 @@ webcmd plugin install <installSource-from-search>
 
 Use direct `plugin install github:...` only when you already know the source. For missing or unknown sites, `plugin search` is the freshness boundary; it reads the current catalog instead of relying on package contents.
 
-Hosted mode supports the same `plugin search` and `plugin install` grammar for Webcmd-verified marketplace adapters. Other plugin management commands remain local-only in hosted mode.
+Hosted mode supports `plugin search`, `plugin install`, `plugin list`, `plugin uninstall`, `plugin update`, and `plugin create` for Webcmd-verified marketplace adapters. Plugin catalog source management remains local-only.
 
 `plugin list`, `plugin search`, and `plugin catalog` honor the universal `-f/--format` flag. `-f json` returns arrays (including `[]` when no plugins are installed), `yml` and `markdown` normalize to `yaml` and `md`, and unknown format names are usage errors.
 

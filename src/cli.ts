@@ -759,7 +759,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
     .option('--json', 'Output a JSON envelope', false)
     .action((opts) => handleSkillRemoveCommand(opts.path, opts.json));
 
-  const conventionAuditCmd = program
+  program
     .command('update')
     .description('Update webcmd to the latest version and refresh bundled skills')
     .option('--skip-skills', 'Skip refreshing bundled skill links after updating', false)
@@ -792,7 +792,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
 
   const authCmd = registerAuthCommands(program);
 
-  program
+  const conventionAuditCmd = program
     .command('convention-audit')
     .description('Scan adapters for agent-native convention violations')
     .argument('[target]', 'site or site/name')

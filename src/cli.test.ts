@@ -494,6 +494,17 @@ describe('createProgram root help descriptions', () => {
     expect(skills.commands.find((command) => command.name() === 'add')?.aliases()).toEqual([]);
   });
 
+  it('binds update and convention-audit actions to their own commands', () => {
+    const program = createProgram('', '');
+    const update = program.commands.find((command) => command.name() === 'update')!;
+    const audit = program.commands.find((command) => command.name() === 'convention-audit')!;
+
+    expect((update as unknown as { _actionHandler?: unknown })._actionHandler).toEqual(expect.any(Function));
+    expect((audit as unknown as { _actionHandler?: unknown })._actionHandler).toEqual(expect.any(Function));
+    expect((update as unknown as { _actionHandler?: unknown })._actionHandler)
+      .not.toBe((audit as unknown as { _actionHandler?: unknown })._actionHandler);
+  });
+
   it('keeps legacy local adapters manageable without claiming a bundled baseline', () => {
     const adapter = createProgram('', '').commands.find((command) => command.name() === 'adapter')!;
 
