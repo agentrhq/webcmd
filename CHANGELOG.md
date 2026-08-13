@@ -1,7 +1,8 @@
 # Changelog
 
-## [0.6.3](https://github.com/agentrhq/webcmd/compare/webcmd-v0.6.2...webcmd-v0.6.3) (2026-08-13)
+## [0.7.0](https://github.com/agentrhq/webcmd/compare/webcmd-v0.6.2...webcmd-v0.7.0) (2026-08-14)
 
+_webcmd v0.7.0: Browser Session stability and plugin discoverability improvements_
 
 ### Bug Fixes
 
@@ -9,8 +10,6 @@
 * **browser:** repair doctor session and first cloak window ([#298](https://github.com/agentrhq/webcmd/issues/298)) ([41a4109](https://github.com/agentrhq/webcmd/commit/41a41099560617a426ed9a52147c88bdf76220c6))
 * run src/browser unit tests in CI and stabilize the vendor digest ([#238](https://github.com/agentrhq/webcmd/issues/238)) ([399d742](https://github.com/agentrhq/webcmd/commit/399d7427b89351eebbc341f20b3ac0d5f6f7eace))
 * support multi-word plugin search ([#285](https://github.com/agentrhq/webcmd/issues/285)) ([46f3ddd](https://github.com/agentrhq/webcmd/commit/46f3ddddfae33d881fe30d6be1f2335d30cd465b))
-
-## [0.6.2](https://github.com/agentrhq/webcmd/compare/webcmd-v0.6.1...webcmd-v0.6.2) (2026-08-12)
 
 _webcmd v0.6.2: Browser Sessions, Plugins Everywhere, and Cloud Parity_
 
