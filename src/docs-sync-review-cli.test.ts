@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
-  generateGeminiReview,
+  generateOpenAIReview,
   loadDocumentation,
   loadPullRequestContext,
   runDocsSyncReview,
@@ -13,7 +13,6 @@ import {
 import {
   MAX_DIFF_CHARACTERS,
   REVIEW_COMMENT_MARKER,
-  REVIEW_JSON_SCHEMA,
   type PullRequestReviewContext,
 } from './docs-sync-review.js';
 
@@ -75,7 +74,7 @@ function baseDependencies(pr = context()) {
 const ENV = {
   GITHUB_REPOSITORY: 'acme/webcmd',
   GH_TOKEN: 'github-token',
-  GEMINI_API_KEY: 'gemini-key',
+  OPENAI_API_KEY: 'openai-key',
   GITHUB_STEP_SUMMARY: '/tmp/summary.md',
 };
 
@@ -128,9 +127,9 @@ describe('runDocsSyncReview', () => {
     );
   });
 
-  it('posts unavailable orange without a Gemini key', async () => {
+  it('posts unavailable orange without an OpenAI key', async () => {
     const deps = baseDependencies();
-    const { GEMINI_API_KEY: _key, ...env } = ENV;
+    const { OPENAI_API_KEY: _key, ...env } = ENV;
 
     const exitCode = await runDocsSyncReview(['node', 'script', '72'], env, deps);
 
@@ -141,7 +140,7 @@ describe('runDocsSyncReview', () => {
     );
   });
 
-  it('posts a validated Gemini review', async () => {
+  it('posts a validated OpenAI review', async () => {
     const deps = baseDependencies();
 
     const exitCode = await runDocsSyncReview(['node', 'script', '72'], ENV, deps);
@@ -155,7 +154,7 @@ describe('runDocsSyncReview', () => {
 
   it('turns provider errors into a neutral non-blocking orange comment', async () => {
     const deps = baseDependencies();
-    deps.generateReview.mockRejectedValueOnce(new Error('Gemini quota exceeded'));
+    deps.generateReview.mockRejectedValueOnce(new Error('OpenAI quota exceeded'));
 
     const exitCode = await runDocsSyncReview(['node', 'script', '72'], ENV, deps);
 
@@ -341,35 +340,78 @@ describe('GitHub API boundaries', () => {
   });
 });
 
-describe('Gemini and documentation boundaries', () => {
-  it('requests structured Gemini JSON with the selected model', async () => {
-    const generateContent = vi.fn(async () => ({
-      text: JSON.stringify({ verdict: 'no_update_needed', summary: 'Covered.', findings: [] }),
+describe('OpenAI and documentation boundaries', () => {
+  it('requests JSON from OpenAI with the selected model', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({
+      choices: [{ message: { content: JSON.stringify({ verdict: 'no_update_needed', summary: 'Covered.', findings: [] }) } }],
     }));
-    const createClient = vi.fn(() => ({ models: { generateContent } }));
 
-    const result = await generateGeminiReview('review prompt', 'gemini-test', 'api-key', createClient);
+    const result = await generateOpenAIReview('review prompt', 'gpt-test', 'api-key', fetchImpl);
 
-    expect(createClient).toHaveBeenCalledWith('api-key');
-    expect(generateContent).toHaveBeenCalledWith({
-      model: 'gemini-test',
-      contents: 'review prompt',
-      config: expect.objectContaining({
-        responseMimeType: 'application/json',
-        responseJsonSchema: REVIEW_JSON_SCHEMA,
-        temperature: 0.1,
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://api.openai.com/v1/chat/completions',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ authorization: 'Bearer api-key' }),
+        body: expect.stringContaining('"reasoning_effort":"low"'),
+      }),
+    );
+    expect(result).toEqual({ verdict: 'no_update_needed', summary: 'Covered.', findings: [] });
+  });
+
+  it('accepts fenced OpenAI JSON output', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({
+      choices: [{ message: { content: '```json\n{"verdict":"no_update_needed","summary":"Covered.","findings":[]}\n```' } }],
+    }));
+
+    await expect(generateOpenAIReview('review prompt', 'gpt-test', 'api-key', fetchImpl))
+      .resolves.toEqual({ verdict: 'no_update_needed', summary: 'Covered.', findings: [] });
+  });
+
+  it('retries without low reasoning when the selected model rejects it', async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ error: { message: 'unsupported parameter' } }, 400))
+      .mockResolvedValueOnce(jsonResponse({
+        choices: [{ message: { content: '{"verdict":"no_update_needed","summary":"Covered.","findings":[]}' } }],
+      }));
+
+    await expect(generateOpenAIReview('review prompt', 'gpt-test', 'api-key', fetchImpl))
+      .resolves.toEqual({ verdict: 'no_update_needed', summary: 'Covered.', findings: [] });
+    expect((fetchImpl.mock.calls as unknown as Array<[unknown, { body?: string }]>)[0]?.[1]?.body)
+      .toContain('"reasoning_effort":"low"');
+    expect((fetchImpl.mock.calls as unknown as Array<[unknown, { body?: string }]>)[1]?.[1]?.body)
+      .not.toContain('reasoning_effort');
+  });
+
+  it('defaults the docs review model to gpt-5.4-mini', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({
+      choices: [{ message: { content: JSON.stringify({ verdict: 'no_update_needed', summary: 'Covered.', findings: [] }) } }],
+    }));
+
+    await runDocsSyncReview(['node', 'script', '72'], ENV, {
+      ...baseDependencies(),
+      generateReview: vi.fn(async (prompt: string, model: string, apiKey: string) => {
+        return generateOpenAIReview(prompt, model, apiKey, fetchImpl);
       }),
     });
-    expect(result).toEqual({ verdict: 'no_update_needed', summary: 'Covered.', findings: [] });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://api.openai.com/v1/chat/completions',
+      expect.objectContaining({
+        body: expect.stringContaining('"model":"gpt-5.4-mini"'),
+      }),
+    );
   });
 
   it.each([
     ['empty', ''],
     ['invalid JSON', '{not json'],
-  ])('rejects %s Gemini output', async (_name, text) => {
-    const createClient = () => ({ models: { generateContent: async () => ({ text }) } });
+  ])('rejects %s OpenAI output', async (_name, text) => {
+    const fetchImpl = vi.fn(async () => jsonResponse({
+      choices: [{ message: { content: text || null } }],
+    }));
 
-    await expect(generateGeminiReview('prompt', 'model', 'key', createClient)).rejects.toThrow();
+    await expect(generateOpenAIReview('prompt', 'model', 'key', fetchImpl)).rejects.toThrow();
   });
 
   it('reads only regular documentation files inside the repository root', () => {
@@ -412,8 +454,8 @@ describe('documentation sync workflow', () => {
     expect(workflow).toContain('issues: write');
     expect(workflow).toContain('ref: ${{ github.event.repository.default_branch }}');
     expect(workflow).toContain('GH_TOKEN: ${{ github.token }}');
-    expect(workflow).toContain('GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}');
-    expect(workflow).toContain('GEMINI_DOCS_REVIEW_MODEL: ${{ vars.GEMINI_DOCS_REVIEW_MODEL }}');
+    expect(workflow).toContain('OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}');
+    expect(workflow).toContain('OPENAI_DOCS_REVIEW_MODEL: ${{ vars.OPENAI_DOCS_REVIEW_MODEL }}');
     expect(workflow).toContain('npm --silent run docs-sync-review -- "${{ github.event.pull_request.number }}"');
     expect(workflow).not.toMatch(/pull_request\.head|head\.sha|github\.head_ref/);
   });

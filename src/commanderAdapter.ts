@@ -14,8 +14,7 @@ import { Command } from 'commander';
 import { log } from './logger.js';
 import { type CliCommand, fullName, getRegistry } from './registry.js';
 import { formatErrorEnvelope, render as renderOutput } from './output.js';
-import { executeCommand, prepareCommandArgs } from './execution.js';
-import { configureCommandSurface, parseOutputFormat } from './command-surface.js';
+import { configureCommandSurface, parseOutputFormat, prepareCommandArgs } from './command-surface.js';
 import {
   commandHelpData,
   formatCommandHelpText,
@@ -101,14 +100,17 @@ export function registerCommandToProgram(
       const formatExplicit = subCmd.getOptionValueSource('format') === 'cli';
       if (verbose) process.env.WEBCMD_VERBOSE = '1';
       const globals = typeof subCmd.optsWithGlobals === 'function' ? subCmd.optsWithGlobals() as Record<string, unknown> : {};
-      const result = await executeCommand(cmd, kwargs, verbose, {
-        prepared: true,
-        ...(typeof globals.profile === 'string' && globals.profile.trim() ? { profile: globals.profile.trim() } : {}),
-        ...(typeof optionsRecord.trace === 'string' && optionsRecord.trace !== 'off' ? { trace: optionsRecord.trace } : {}),
-        ...(cmd.browser && typeof optionsRecord.window === 'string' ? { windowMode: optionsRecord.window } : {}),
-        ...(cmd.browser && typeof optionsRecord.siteSession === 'string' ? { siteSession: optionsRecord.siteSession } : {}),
-        ...(cmd.browser && typeof optionsRecord.keepTab === 'string' ? { keepTab: optionsRecord.keepTab } : {}),
-      });
+      const result = cmd.clientOwned && cmd.browser === false
+        ? await cmd.func?.(kwargs, verbose)
+        : await (await import('./execution.js')).executeCommand(cmd, kwargs, verbose, {
+          prepared: true,
+          ...(typeof globals.profile === 'string' && globals.profile.trim() ? { profile: globals.profile.trim() } : {}),
+          ...(typeof globals.session === 'string' && globals.session.trim() ? { session: globals.session.trim() } : {}),
+          ...(typeof optionsRecord.trace === 'string' && optionsRecord.trace !== 'off' ? { trace: optionsRecord.trace } : {}),
+          ...(cmd.browser && typeof optionsRecord.window === 'string' ? { windowMode: optionsRecord.window } : {}),
+          ...(cmd.browser && typeof optionsRecord.siteSession === 'string' ? { siteSession: optionsRecord.siteSession } : {}),
+          ...(cmd.browser && typeof optionsRecord.keepTab === 'string' ? { keepTab: optionsRecord.keepTab } : {}),
+        });
       if (result === null || result === undefined) {
         return;
       }
@@ -129,6 +131,7 @@ export function registerCommandToProgram(
         elapsed: (now() - startTime) / 1000,
         source: fullName(resolved),
         footerExtra: resolved.footerExtra?.(kwargs),
+        ...(resolved.renderMarkdown ? { markdown: resolved.renderMarkdown } : {}),
         ...(runtime.stdout ? { stdout: runtime.stdout } : {}),
       });
     } catch (err) {

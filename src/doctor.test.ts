@@ -5,12 +5,14 @@ const {
   mockConnect,
   mockClose,
   mockFindShadowedUserAdapters,
+  mockSendCommand,
   mockSetDaemonCommandTimeoutSeconds,
 } = vi.hoisted(() => ({
   mockGetDaemonHealth: vi.fn(),
   mockConnect: vi.fn(),
   mockClose: vi.fn(),
   mockFindShadowedUserAdapters: vi.fn(),
+  mockSendCommand: vi.fn(),
   mockSetDaemonCommandTimeoutSeconds: vi.fn(),
 }));
 
@@ -26,6 +28,7 @@ vi.mock('./browser/index.js', () => ({
 }));
 
 vi.mock('./browser/daemon-client.js', () => ({
+  sendCommand: mockSendCommand,
   setDaemonCommandTimeoutSeconds: mockSetDaemonCommandTimeoutSeconds,
 }));
 
@@ -52,6 +55,11 @@ describe('doctor report rendering', () => {
       closeWindow: vi.fn().mockResolvedValue(undefined),
     });
     mockClose.mockResolvedValue(undefined);
+    mockSendCommand.mockImplementation(async (action: string) => {
+      if (action === 'session-create') return { id: 'session_doctor_11111111' };
+      if (action === 'session-close') return { closed: true };
+      throw new Error(`Unexpected doctor command: ${action}`);
+    });
   });
 
   it('renders OK-style report when daemon and runtime connected', () => {
@@ -268,12 +276,12 @@ describe('doctor report rendering', () => {
     ]));
   });
 
-  it('uses the fast default timeout for live connectivity checks', async () => {
+  it('uses a temporary opaque Session for live connectivity checks', async () => {
     let timeoutSeen: number | undefined;
     const closeWindow = vi.fn().mockResolvedValue(undefined);
     mockConnect.mockImplementationOnce(async (opts?: { timeout?: number; session?: string; surface?: string }) => {
       timeoutSeen = opts?.timeout;
-      expect(opts?.session).toBe('__doctor__');
+      expect(opts?.session).toBe('session_doctor_11111111');
       expect(opts?.surface).toBe('browser');
       return {
         evaluate: vi.fn().mockResolvedValue(2),
@@ -286,6 +294,13 @@ describe('doctor report rendering', () => {
 
     expect(timeoutSeen).toBe(8);
     expect(closeWindow).toHaveBeenCalledTimes(1);
+    expect(mockSendCommand).toHaveBeenNthCalledWith(1, 'session-create', {});
+    expect(mockSendCommand).toHaveBeenLastCalledWith('session-close', {
+      session: 'session_doctor_11111111',
+      surface: 'browser',
+      force: true,
+      discard: true,
+    });
     expect(mockSetDaemonCommandTimeoutSeconds).toHaveBeenNthCalledWith(1, 8);
     expect(mockSetDaemonCommandTimeoutSeconds).toHaveBeenLastCalledWith(null);
   });
@@ -363,7 +378,9 @@ describe('doctor report rendering', () => {
       {
         name: 'instagram/saved',
         userPath: '/home/me/.webcmd/clis/instagram/saved.js',
-        builtinPath: '/pkg/clis/instagram/saved.js',
+        pluginPath: '/home/me/.webcmd/plugins/instagram/saved.js',
+        plugin: 'instagram',
+        hasProvenance: false,
       },
     ]);
 
@@ -371,7 +388,32 @@ describe('doctor report rendering', () => {
 
     expect(report.adapterShadows).toHaveLength(1);
     expect(report.issues).toEqual(expect.arrayContaining([
-      expect.stringContaining('Local adapter overrides shadow packaged adapters'),
+      expect.stringContaining('Local adapter overrides shadow installed plugin adapters'),
+    ]));
+  });
+
+  it('reports a diagnostic issue instead of throwing when adapter shadow detection fails', async () => {
+    const status = {
+      state: 'ready' as const,
+      status: {
+        daemonVersion: '1.7.9',
+        runtimeConnected: true,
+        runtimeName: 'Cloak',
+        runtimeVersion: '1.0.3',
+      },
+    };
+    mockGetDaemonHealth.mockResolvedValue(status);
+    mockFindShadowedUserAdapters.mockImplementationOnce(() => {
+      throw new Error('Malformed override provenance store at /home/me/.webcmd/override-provenance.json: invalid JSON');
+    });
+
+    const report = await runBrowserDoctor({ cliVersion: '1.7.9' });
+
+    expect(report.adapterShadows).toEqual([]);
+    expect(report.daemonRunning).toBe(true);
+    expect(report.runtimeConnected).toBe(true);
+    expect(report.issues).toEqual(expect.arrayContaining([
+      expect.stringContaining('Could not check adapter overrides: Malformed override provenance store'),
     ]));
   });
 

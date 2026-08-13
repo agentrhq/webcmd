@@ -47,6 +47,19 @@
             ]
           },
           {
+            "group": "Agent Harnesses",
+            "pages": [
+              "agents/cursor",
+              "agents/opencode",
+              "agents/claude-code",
+              "agents/codex-cli",
+              "agents/hermes",
+              "agents/pi",
+              "agents/openclaw",
+              "agents/custom-sdk"
+            ]
+          },
+          {
             "group": "Understand Webcmd",
             "pages": [
               "concepts",

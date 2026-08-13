@@ -1,8 +1,8 @@
 {
-  "name": "webcmd-plugin-web",
+  "name": "webcmd-plugin-omnisearch",
   "version": "0.1.0",
   "type": "module",
-  "description": "Webcmd commands for web",
+  "description": "No-login research across seven public platforms",
   "peerDependencies": {
     "@agentrhq/webcmd": ">=0.5.3"
   }

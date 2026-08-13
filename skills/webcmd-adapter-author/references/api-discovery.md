@@ -28,7 +28,7 @@ For example, a page on `jobs.51job.com` fetching an API on `cupid.51job.com` wil
 Probe it explicitly:
 
 ```bash
-webcmd browser recon run --stdin <<'JS'
+webcmd --session <session-id> browser run --stdin <<'JS'
 await page.goto('https://<current-subdomain>/');
 return await page.evaluate(async () => {
   try {
@@ -54,7 +54,7 @@ When it is blocked, `credentials: include` is not a CORS fix across subdomains. 
 Use for Pattern A and for deeper data in Pattern B.
 
 ```bash
-webcmd browser recon run --stdin <<'JS'
+webcmd --session <session-id> browser run --stdin <<'JS'
 const candidates = [];
 page.on('response', async response => {
   const url = response.url();
@@ -92,7 +92,7 @@ Reject candidates that only contain telemetry, unrelated recommendations, beacon
 Replay directly when possible:
 
 ```bash
-webcmd browser recon run --stdin <<'JS'
+webcmd --session <session-id> browser run --stdin <<'JS'
 return await page.evaluate(async () =>
   fetch('<url>', { credentials: 'include' }).then(r => r.text())
 );
@@ -136,7 +136,7 @@ Look for:
 Commands:
 
 ```bash
-webcmd browser recon run --stdin <<'JS'
+webcmd --session <session-id> browser run --stdin <<'JS'
 return await page.evaluate(() => ({
   globals: Object.keys(window).filter(k => /STATE|DATA|NUXT|APP/i.test(k)),
   jsonScriptCount: document.querySelectorAll('script[type="application/json"], script:not([src])').length,
@@ -154,7 +154,7 @@ Use for Pattern C.
 Collect script sources:
 
 ```bash
-webcmd browser recon run --stdin <<'JS'
+webcmd --session <session-id> browser run --stdin <<'JS'
 return await page.evaluate(() => [...document.querySelectorAll('script[src]')].map(s => s.src));
 JS
 ```
@@ -194,7 +194,7 @@ Find token sources in this order:
 Useful probes:
 
 ```bash
-webcmd browser recon run --stdin <<'JS'
+webcmd --session <session-id> browser run --stdin <<'JS'
 return await page.evaluate(() => ({
   csrf: document.querySelector('meta[name="csrf-token"]')?.content ?? null,
   localStorageKeys: Object.keys(localStorage),
@@ -218,7 +218,7 @@ Use only after public API, cookie API, DOM state, and UI selector options are in
 For page actions:
 
 ```bash
-webcmd browser recon run --stdin <<'JS'
+webcmd --session <session-id> browser run --stdin <<'JS'
 const pending = page.waitForResponse(response => response.url().includes('<target-fragment>'));
 await page.locator('<selector>').click();
 const response = await pending;

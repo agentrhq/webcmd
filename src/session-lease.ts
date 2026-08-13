@@ -13,15 +13,32 @@ export function generateRunId(): string {
 export interface DaemonRunContext {
   runId: string;
   command: string;
-  access: 'read' | 'write';
 }
 
 let activeRun: DaemonRunContext | undefined;
+let signalRun: DaemonRunContext | undefined;
 const daemonRunContextStorage = new AsyncLocalStorage<DaemonRunContext>();
 
 /** Run one logical execution with context isolated across its async chain. */
 export function runWithDaemonRunContext<T>(context: DaemonRunContext, callback: () => T): T {
-  return daemonRunContextStorage.run(context, callback);
+  const previousSignalRun = signalRun;
+  signalRun = context;
+  const restore = () => {
+    if (signalRun?.runId === context.runId) signalRun = previousSignalRun;
+  };
+  try {
+    return daemonRunContextStorage.run(context, () => {
+      const result = callback();
+      if (result && typeof (result as { finally?: unknown }).finally === 'function') {
+        return (result as unknown as Promise<T>).finally(restore) as T;
+      }
+      restore();
+      return result;
+    });
+  } catch (err) {
+    restore();
+    throw err;
+  }
 }
 
 export function setDaemonRunContext(context: DaemonRunContext): void {
@@ -30,6 +47,10 @@ export function setDaemonRunContext(context: DaemonRunContext): void {
 
 export function getDaemonRunContext(): DaemonRunContext | undefined {
   return daemonRunContextStorage.getStore() ?? activeRun;
+}
+
+export function getSignalDaemonRunContext(): DaemonRunContext | undefined {
+  return signalRun ?? activeRun;
 }
 
 /**
@@ -94,6 +115,8 @@ export function isUnknownOutcomeError(error: unknown): boolean {
 export interface SessionLeaseHolder {
   command: string;
   pid?: number;
+  sessionId?: string;
+  admissionSite?: string;
   acquiredAt: number;
   heartbeatAt: number;
 }
@@ -118,16 +141,29 @@ export type AcquireResult =
   | { acquired: false; holder: SessionLease };
 
 /**
- * Lease key for a site session after the daemon has resolved its actual Cloak
- * profile. Encoding the session keeps key partitions unambiguous.
+ * Lease key after the daemon has resolved the immutable browser Session.
  */
-export function getSessionLeaseKey(profileId: string, surface: string, session: string): string {
-  return `${profileId}␟${surface}␟${encodeURIComponent(session)}`;
+export function getSessionLeaseKey(
+  profileId: string,
+  sessionId: string,
+  admissionSite?: string,
+): string {
+  return `${profileId}␟${sessionId}${admissionSite === undefined ? '' : `␟${admissionSite}`}`;
 }
 
 /** Whether a process id is safe to interpolate into local process guidance. */
 export function isActionablePid(pid: unknown): pid is number {
   return typeof pid === 'number' && Number.isSafeInteger(pid) && pid > 0;
+}
+
+export function isPidAlive(pid: unknown): boolean {
+  if (!isActionablePid(pid)) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'EPERM';
+  }
 }
 
 function pidFromRunId(runId: string): number | undefined {
@@ -138,28 +174,22 @@ function pidFromRunId(runId: string): number | undefined {
 }
 
 export interface SessionLeaseCommand {
-  surface?: unknown;
-  siteSession?: unknown;
-  access?: unknown;
-  session?: unknown;
+  action?: unknown;
+  sessionId?: unknown;
   runId?: unknown;
 }
 
-/** Only persistent adapter writes with a complete owner identity need a lease. */
+/** Every resolved browser-backed top-level run with a complete owner identity needs a lease. */
 export function isSessionLeaseCommand<T extends SessionLeaseCommand>(
   command: T,
 ): command is T & {
-  surface: 'adapter';
-  siteSession: 'persistent';
-  access: 'write';
-  session: string;
+  sessionId: string;
   runId: string;
 } {
-  return command.surface === 'adapter'
-    && command.siteSession === 'persistent'
-    && command.access === 'write'
-    && typeof command.session === 'string'
-    && command.session.length > 0
+  return command.action !== 'lease-release'
+    && command.action !== 'run-cancel'
+    && typeof command.sessionId === 'string'
+    && command.sessionId.length > 0
     && typeof command.runId === 'string'
     && command.runId.length > 0;
 }
@@ -167,7 +197,7 @@ export function isSessionLeaseCommand<T extends SessionLeaseCommand>(
 export class SessionLeaseRegistry {
   private readonly leases = new Map<string, SessionLease>();
 
-  constructor(private readonly now = Date.now) {}
+  constructor(private readonly now = Date.now, private readonly pidAlive = isPidAlive) {}
 
   acquire(
     input: AcquireSessionLeaseInput,
@@ -175,11 +205,20 @@ export class SessionLeaseRegistry {
   ): AcquireResult {
     const now = this.now();
     const current = this.leases.get(input.key);
-    const currentIsLive = current !== undefined
-      && (now - current.heartbeatAt <= SESSION_LEASE_TTL_MS || hasPendingWork(current.runId));
+    const conflict = [...this.leases.values()].find((lease) => (
+      lease.runId !== input.runId
+      && (lease.key === input.key || lease.key.startsWith(`${input.key}␟`) || input.key.startsWith(`${lease.key}␟`))
+      && (
+        hasPendingWork(lease.runId)
+        || (
+          now - lease.heartbeatAt <= SESSION_LEASE_TTL_MS
+          && (!isActionablePid(lease.pid) || this.pidAlive(lease.pid))
+        )
+      )
+    ));
 
-    if (current && currentIsLive && current.runId !== input.runId) {
-      return { acquired: false, holder: { ...current } };
+    if (conflict) {
+      return { acquired: false, holder: { ...conflict } };
     }
 
     const pid = input.pid === undefined

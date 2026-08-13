@@ -84,6 +84,8 @@ describe('createPluginScaffold', () => {
     const readme = fs.readFileSync(path.join(dir, 'README.md'), 'utf-8');
 
     expect(readme).toContain(`webcmd plugin install file://${dir}`);
+    expect(readme).toContain('webcmd plugin search test-readme -f json');
+    expect(readme).toContain('webcmd plugin install <installSource-from-search>');
   });
 
   it('rejects invalid names', () => {

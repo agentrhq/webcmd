@@ -6,6 +6,7 @@ import { cli, getRegistry, Strategy } from './registry.js';
 import {
   ManifestImportError,
   buildManifestArtifacts,
+  coreCommandEntries,
   diffRemovedEntries,
   findManifestMetadataIssues,
   loadManifestEntries,
@@ -34,6 +35,22 @@ describe('manifest helper rules', () => {
       failures: [],
     });
     expect(serializeManifest([])).toBe('[]\n');
+  });
+
+  it('serializes web fetch as the single client-owned core command', async () => {
+    const entries = await coreCommandEntries();
+
+    expect(entries).toHaveLength(1);
+    expect(entries).toEqual([
+      expect.objectContaining({
+        site: 'web',
+        name: 'fetch',
+        clientOwned: true,
+        packageExport: './fetch/command',
+      }),
+    ]);
+    expect(entries[0]).not.toHaveProperty('modulePath');
+    expect(entries[0]).not.toHaveProperty('sourceFile');
   });
 
   it('skips TS files that do not register a cli', () => {

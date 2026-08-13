@@ -1,1 +1,43 @@
-[]
+[
+  {
+    "site": "web",
+    "name": "fetch",
+    "description": "Fetch a URL with local HTTP clients",
+    "access": "read",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "url",
+        "type": "string",
+        "required": true,
+        "help": "HTTP or HTTPS URL to fetch"
+      },
+      {
+        "name": "timeout",
+        "type": "int",
+        "default": 30,
+        "required": false,
+        "help": "Total fetch budget in seconds"
+      },
+      {
+        "name": "max-chars",
+        "type": "int",
+        "default": 50000,
+        "required": false,
+        "help": "Maximum extracted characters; 0 disables truncation"
+      },
+      {
+        "name": "allow-private",
+        "type": "boolean",
+        "default": false,
+        "required": false,
+        "help": "Allow private and loopback destinations"
+      }
+    ],
+    "defaultFormat": "md",
+    "type": "js",
+    "clientOwned": true,
+    "packageExport": "./fetch/command"
+  }
+]

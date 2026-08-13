@@ -23,7 +23,7 @@ export default defineConfig({
         test: {
           name: 'unit',
           include: ['src/**/*.test.ts'],
-          exclude: ['src/browser/**/*.test.ts'],
+          exclude: ['src/browser/runtime/local-cloak/browser-run.test.ts'],
           sequence: { groupOrder: 0 },
         },
       },
@@ -31,7 +31,7 @@ export default defineConfig({
         resolve: { alias: packageAliases },
         test: {
           name: 'plugin',
-          include: ['plugins/*/test/**/*.test.{ts,js}'],
+          include: ['plugins/*/test/**/*.test.{ts,js}', 'clis/*/test/**/*.test.{ts,js}'],
           sequence: { groupOrder: 1 },
         },
       },
@@ -55,6 +55,7 @@ export default defineConfig({
             'tests/e2e/plugin-management.test.ts',
             'tests/e2e/article-download-pipeline.test.ts',
             'tests/e2e/cloak-runtime.test.ts',
+            'tests/e2e/cloak-session-concurrency.test.ts',
             'tests/e2e/browser-run.test.ts',
             // Extended browser tests (20+ sites) — opt-in only:
             //   WEBCMD_E2E=1 npx vitest run

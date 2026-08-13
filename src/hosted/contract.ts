@@ -7,6 +7,8 @@ import {
   deriveHostedAvailability,
   type HostedAvailability,
 } from './availability.js';
+import { ROOT_SESSION_SELECTOR_POSITION } from '../root-command-surface.js';
+import { HOSTED_SESSION_PROTOCOL_VERSION } from './types.js';
 
 export const HOSTED_CONTRACT_SCHEMA_VERSION = 1 as const;
 
@@ -92,6 +94,8 @@ export interface HostedContractCommand {
 
 export interface HostedContract {
   schemaVersion: typeof HOSTED_CONTRACT_SCHEMA_VERSION;
+  sessionProtocolVersion: typeof HOSTED_SESSION_PROTOCOL_VERSION;
+  sessionSelectorPosition: typeof ROOT_SESSION_SELECTOR_POSITION;
   webcmdVersion: string;
   outputFormats: Array<'table' | 'plain' | 'json' | 'yaml' | 'md' | 'csv'>;
   traceModes: Array<'off' | 'on' | 'retain-on-failure'>;
@@ -101,6 +105,7 @@ export interface HostedContract {
 }
 
 export interface HostedContractCommandInput {
+  clientOwned?: boolean;
   site: string;
   name: string;
   aliases?: string[];
@@ -338,6 +343,8 @@ export function buildHostedContract(
 
   return {
     schemaVersion: HOSTED_CONTRACT_SCHEMA_VERSION,
+    sessionProtocolVersion: HOSTED_SESSION_PROTOCOL_VERSION,
+    sessionSelectorPosition: ROOT_SESSION_SELECTOR_POSITION,
     webcmdVersion: packageVersion,
     outputFormats: shared.outputFormats,
     traceModes: shared.traceModes,
