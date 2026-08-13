@@ -390,6 +390,7 @@ async def run_attempt(*, run_id: str, benchmark: str, task: dict, effective_inde
                     evidence,
                     judge_model,
                     provider=judge_provider,
+                    benchmark=benchmark,
                 )
                 judgement = _redact(judgement_model.model_dump(), (task["confirmed_task"],))
                 judgement = _redact_hidden_answer(judgement, task.get("answer"))

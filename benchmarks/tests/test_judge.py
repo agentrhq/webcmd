@@ -34,6 +34,27 @@ def test_judge_input_omits_ground_truth_rules_without_answer(tmp_path):
     assert "<ground_truth>" not in user
 
 
+def test_general_benchmark_uses_task_completion_contract(tmp_path):
+    system, _, _ = build_judge_input(
+        "task", None, evidence(tmp_path, 0), benchmark="BU_Bench_V1"
+    )
+
+    assert "Task Satisfaction (Most Important)" in system
+    assert "only whether anti-bot protection blocked" not in system
+
+
+@pytest.mark.parametrize("benchmark", ["Stealth_Bench_V1", "Stealth_Webcmd"])
+def test_stealth_benchmark_uses_blocking_only_contract(tmp_path, benchmark):
+    system, _, _ = build_judge_input(
+        "task", "stealth criteria", evidence(tmp_path, 0), benchmark=benchmark
+    )
+
+    assert "only whether anti-bot protection blocked" in system
+    assert "Do not evaluate whether the agent completed the task steps" in system
+    assert "Task Satisfaction (Most Important)" not in system
+    assert "GROUND TRUTH VALIDATION" in system
+
+
 def test_judge_retries_twice_then_returns_structured_result(tmp_path, monkeypatch):
     calls = 0
 

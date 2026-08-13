@@ -16,7 +16,9 @@ from run_controller import ExecutionEvidence
 
 JudgeProvider = Literal["google", "openai"]
 
-CONTRACT_PATH = Path(__file__).resolve().parent.parent / "references" / "judge-contract.md"
+GENERAL_CONTRACT_PATH = Path(__file__).resolve().parent.parent / "references" / "judge-contract.md"
+STEALTH_CONTRACT_PATH = Path(__file__).resolve().parent.parent / "references" / "stealth-judge-contract.md"
+STEALTH_BENCHMARKS = frozenset({"Stealth_Bench_V1", "Stealth_Webcmd"})
 GROUND_TRUTH_RULES = """**GROUND TRUTH VALIDATION (HIGHEST PRIORITY):**
 The <ground_truth> section contains verified correct information for this task. This can be:
 - **Evaluation criteria**: Specific conditions that must be met (e.g., "The success popup should show up", "Must extract exactly 5 items")
@@ -53,8 +55,9 @@ def _last_unique(paths: list[Path], limit: int = 10) -> list[Path]:
     return list(reversed(selected))
 
 
-def build_judge_input(task: str, ground_truth: str | None, evidence: ExecutionEvidence) -> tuple[str, str, list[Path]]:
-    contract = CONTRACT_PATH.read_text(encoding="utf-8")
+def build_judge_input(task: str, ground_truth: str | None, evidence: ExecutionEvidence, benchmark: str = "BU_Bench_V1") -> tuple[str, str, list[Path]]:
+    contract_path = STEALTH_CONTRACT_PATH if benchmark in STEALTH_BENCHMARKS else GENERAL_CONTRACT_PATH
+    contract = contract_path.read_text(encoding="utf-8")
     system = (GROUND_TRUTH_RULES if ground_truth else "") + contract
     truth = f"\n<ground_truth>\n{ground_truth}\n</ground_truth>" if ground_truth else ""
     images = _last_unique(evidence.screenshot_paths)
@@ -126,8 +129,9 @@ async def judge_execution(
     evidence: ExecutionEvidence,
     model: str = "gemini-2.5-flash",
     provider: JudgeProvider = "google",
+    benchmark: str = "BU_Bench_V1",
 ) -> JudgementResult:
-    system, user, images = build_judge_input(task, ground_truth, evidence)
+    system, user, images = build_judge_input(task, ground_truth, evidence, benchmark)
     last_error: Exception | None = None
     for attempt in range(3):
         try:

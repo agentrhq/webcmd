@@ -577,6 +577,7 @@ def test_summary_marks_agent_turns_unavailable_when_any_attempt_is_missing_them(
 
 def test_run_attempt_does_not_persist_task_or_ground_truth(tmp_path, monkeypatch):
     controller_kwargs = {}
+    judge_kwargs = {}
 
     async def fake_controller(*args, **kwargs):
         controller_kwargs.update(kwargs)
@@ -587,6 +588,7 @@ def test_run_attempt_does_not_persist_task_or_ground_truth(tmp_path, monkeypatch
         return ExecutionEvidence("safe final", ["command: safe"], [shot], 0, "completed")
 
     async def fake_judge(*args, **kwargs):
+        judge_kwargs.update(kwargs)
         execution = args[2]
         assert len(execution.screenshot_paths) == 1
         assert execution.screenshot_paths[0].read_bytes() == b"png"
@@ -601,6 +603,7 @@ def test_run_attempt_does_not_persist_task_or_ground_truth(tmp_path, monkeypatch
     assert result["score"] == 1
     assert result["reasoning_effort"] == "high"
     assert controller_kwargs["reasoning_effort"] == "high"
+    assert judge_kwargs["benchmark"] == "BU_Bench_V1"
     assert "protected prompt" not in persisted
     assert "protected truth" not in persisted
     assert (tmp_path / "attempt" / "transcript.jsonl").exists()
