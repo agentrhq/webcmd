@@ -21,7 +21,6 @@ cli({
   tags: ['search'],
   access: 'read',
   description: "Synthesize the community's verdict on a topic across all public platforms (signal, not search)",
-  domain: 'multiple',
   strategy: Strategy.PUBLIC,
   browser: false,
   args: [

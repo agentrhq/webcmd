@@ -2,7 +2,7 @@
   "name": "webcmd-plugin-omnisearch",
   "version": "0.1.0",
   "type": "module",
-  "description": "Universal search across public platforms (Bluesky, Hacker News, Lobsters, Product Hunt) — no login",
+  "description": "No-login research across seven public platforms",
   "peerDependencies": {
     "@agentrhq/webcmd": ">=0.5.3"
   }

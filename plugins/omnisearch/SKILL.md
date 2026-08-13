@@ -15,7 +15,7 @@ description: Read-only, no-login web research across Hacker News, Lobste.rs, Sta
    - `github` / `stackoverflow` — real problems people report/ask.
    - `hackermind "<query>"` — HN opinions and discussions.
    - `arxiv "<query>"` — research papers.
-   - `devto <tag>` — Dev.to articles. **Takes a TAG, not free text** (e.g. `saas`).
+   - `research <tag> --sources devto` — Dev.to articles; use a tag such as `saas`.
    - `lobsters --sort active|newest|hot` — live discussion (no free query).
    - `bluesky-posts <handle>` — one public account's feed.
 3. `research` distributes `--limit` across sources, so use `--limit` >= 24 for

@@ -29,12 +29,11 @@ cli({
   tags: ['search'],
   access: 'read',
   description: "Aggregate results about a topic across all public platforms (Hacker News, Lobsters, Stack Overflow, Dev.to, GitHub, arXiv)",
-  domain: 'multiple',
   strategy: Strategy.PUBLIC,
   browser: false,
   args: [
     { name: 'query', required: true, positional: true, help: 'Topic, product, or problem to research' },
-    { name: 'limit', type: 'int', default: 20, help: 'Number of results per platform' },
+    { name: 'limit', type: 'int', default: 20, help: 'Maximum total results' },
     {
       name: 'sources',
       default: 'hn,lobsters,stackoverflow,devto,github,arxiv',
@@ -49,7 +48,6 @@ cli({
       throw new ArgumentError('limit must be a positive integer');
     }
     const limit = Math.min(raw, 50);
-    const perPlatform = Math.ceil(limit / 6);
 
     const wanted = String(kwargs.sources ?? '')
       .split(',')
@@ -66,6 +64,7 @@ cli({
     };
 
     const selected = wanted.length ? wanted.filter((s) => fetchers[s]) : Object.keys(fetchers);
+    const perPlatform = Math.ceil(limit / Math.max(selected.length, 1));
 
     let rows;
     try {
