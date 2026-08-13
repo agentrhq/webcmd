@@ -112,6 +112,38 @@ export function getEnabledPlugins(
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/**
+ * Find plugin directories under `<repoRoot>/plugins` that have their own
+ * `webcmd-plugin.json` but aren't registered in the root manifest's `plugins`
+ * map. Registration is silently skippable today (see #222) — nothing in
+ * `webcmd plugin create`, `webcmd plugin install`, or `webcmd validate` warns
+ * when a promoted plugin never lands in the root manifest.
+ *
+ * Returns an empty array when the repo root has no monorepo manifest (e.g.
+ * inside an npm install, which doesn't ship `plugins/` or a root manifest).
+ */
+export function findUnregisteredPlugins(repoRoot: string): string[] {
+  const rootManifest = readPluginManifest(repoRoot);
+  if (!rootManifest || !isMonorepo(rootManifest)) return [];
+
+  const pluginsDir = path.join(repoRoot, 'plugins');
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(pluginsDir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  const registered = new Set(Object.keys(rootManifest.plugins ?? {}));
+  const unregistered: string[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    if (readPluginManifest(path.join(pluginsDir, entry.name)) === null) continue;
+    if (!registered.has(entry.name)) unregistered.push(entry.name);
+  }
+  return unregistered.sort();
+}
+
 // ── Version compatibility ───────────────────────────────────────────────────
 
 /**
@@ -233,4 +265,5 @@ export {
   checkCompatibility as _checkCompatibility,
   parseVersion as _parseVersion,
   satisfiesRange as _satisfiesRange,
+  findUnregisteredPlugins as _findUnregisteredPlugins,
 };

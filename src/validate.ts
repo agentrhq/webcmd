@@ -1,7 +1,12 @@
 /** Validate CLI definitions from the registry (JS-first). */
+import { fileURLToPath } from 'node:url';
 import { getRegistry, fullName, type CliCommand, type InternalCliCommand } from './registry.js';
 import { getRegisteredStepNames } from './pipeline/registry.js';
+import { findPackageRoot } from './package-paths.js';
+import { findUnregisteredPlugins } from './plugin-manifest.js';
 import { CLI_COMMAND } from './brand.js';
+
+const MODULE_FILE = fileURLToPath(import.meta.url);
 
 /**
  * Pipeline step names — derived from the live pipeline registry on each
@@ -38,48 +43,76 @@ export function validateClisWithTarget(_dirs: string[], target?: string): Valida
   const registry = getRegistry();
   const results: CommandValidationResult[] = [];
   let errors = 0; let warnings = 0;
+  let commands = 0;
 
   if (registry.size === 0) {
-    const r: CommandValidationResult = {
+    results.push({
       label: '(registry)',
       errors: [],
       warnings: ['Registry is empty — no commands discovered. Did discoverClis() run?'],
-    };
-    return { ok: true, results: [r], errors: 0, warnings: 1, commands: 0 };
-  }
-
-  // Resolve alias target: if target is "site/alias", resolve to canonical "site/name"
-  let resolvedTarget = target;
-  if (target?.includes('/')) {
-    const cmd = registry.get(target);
-    if (cmd) resolvedTarget = fullName(cmd);
-  }
-
-  // Deduplicate: registry maps both canonical "site/name" and aliases to the same command
-  const seen = new Set<CliCommand>();
-
-  for (const [key, cmd] of registry) {
-    if (seen.has(cmd)) continue;
-    // Only validate via canonical key to avoid duplicates from aliases
-    if (key !== fullName(cmd)) continue;
-    seen.add(cmd);
-
-    // Target filter: "site" or "site/name"
-    if (resolvedTarget) {
-      if (resolvedTarget.includes('/')) {
-        if (key !== resolvedTarget) continue;
-      } else {
-        if (cmd.site !== resolvedTarget) continue;
-      }
+    });
+    warnings += 1;
+  } else {
+    // Resolve alias target: if target is "site/alias", resolve to canonical "site/name"
+    let resolvedTarget = target;
+    if (target?.includes('/')) {
+      const cmd = registry.get(target);
+      if (cmd) resolvedTarget = fullName(cmd);
     }
 
-    const r = validateCommand(cmd);
-    results.push(r);
-    errors += r.errors.length;
-    warnings += r.warnings.length;
+    // Deduplicate: registry maps both canonical "site/name" and aliases to the same command
+    const seen = new Set<CliCommand>();
+
+    for (const [key, cmd] of registry) {
+      if (seen.has(cmd)) continue;
+      // Only validate via canonical key to avoid duplicates from aliases
+      if (key !== fullName(cmd)) continue;
+      seen.add(cmd);
+
+      // Target filter: "site" or "site/name"
+      if (resolvedTarget) {
+        if (resolvedTarget.includes('/')) {
+          if (key !== resolvedTarget) continue;
+        } else {
+          if (cmd.site !== resolvedTarget) continue;
+        }
+      }
+
+      const r = validateCommand(cmd);
+      results.push(r);
+      errors += r.errors.length;
+      warnings += r.warnings.length;
+      commands += 1;
+    }
   }
 
-  return { ok: errors === 0, results, errors, warnings, commands: results.length };
+  // Repo-wide check, not scoped to a specific site — only run for the
+  // untargeted `webcmd validate` and only inside a monorepo checkout (no-op
+  // for npm installs, which ship neither `plugins/` nor a root manifest).
+  if (!target) {
+    const pluginResult = validateRootPluginRegistration();
+    if (pluginResult) {
+      results.push(pluginResult);
+      warnings += pluginResult.warnings.length;
+    }
+  }
+
+  return { ok: errors === 0, results, errors, warnings, commands };
+}
+
+function validateRootPluginRegistration(): CommandValidationResult | undefined {
+  const repoRoot = findPackageRoot(MODULE_FILE);
+  const unregistered = findUnregisteredPlugins(repoRoot);
+  if (unregistered.length === 0) return undefined;
+
+  return {
+    label: '(webcmd-plugin.json)',
+    errors: [],
+    warnings: unregistered.map(
+      (name) =>
+        `plugins/${name} has its own webcmd-plugin.json but is not registered in the root webcmd-plugin.json "plugins" map`,
+    ),
+  };
 }
 
 function validateCommand(cmd: CliCommand): CommandValidationResult {

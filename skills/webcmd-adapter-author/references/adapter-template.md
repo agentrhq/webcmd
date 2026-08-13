@@ -34,14 +34,23 @@ Then add `<site>` to the root `webcmd-plugin.json` `plugins` map:
 }
 ```
 
+This step is required, not optional — nothing in `webcmd plugin create`, `webcmd plugin install`, or `webcmd validate <site>` fails if it's skipped, so confirm it actually landed:
+
+```bash
+grep -q '"<site>"' webcmd-plugin.json || echo "MISSING: <site> not registered in root webcmd-plugin.json"
+```
+
 Before handing off, remove the private shadow and prove the plugin path works:
 
 ```bash
 rm -rf ~/.webcmd/clis/<site>
 webcmd plugin install file://$PWD/plugins/<site>
 webcmd validate <site>
+webcmd validate
 webcmd <site> <command> --help
 ```
+
+The bare `webcmd validate` (no target) also warns if `plugins/<site>` exists but was never added to the root `webcmd-plugin.json` `plugins` map.
 
 ## Minimal Registry Shape
 

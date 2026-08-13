@@ -12,6 +12,7 @@ import {
   _getEnabledPlugins as getEnabledPlugins,
   _parseVersion as parseVersion,
   _satisfiesRange as satisfiesRange,
+  _findUnregisteredPlugins as findUnregisteredPlugins,
   MANIFEST_FILENAME,
   validatePluginAuthor,
   type PluginManifest,
@@ -163,6 +164,72 @@ describe('getEnabledPlugins', () => {
     expect(result).toHaveLength(2);
     expect(result[0].name).toBe('alpha');
     expect(result[1].name).toBe('charlie');
+  });
+});
+
+// ── findUnregisteredPlugins ─────────────────────────────────────────────────
+
+describe('findUnregisteredPlugins', () => {
+  let repoRoot: string;
+
+  beforeEach(() => {
+    repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-repo-test-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(repoRoot, { recursive: true, force: true });
+  });
+
+  function writeRootManifest(manifest: PluginManifest): void {
+    fs.writeFileSync(path.join(repoRoot, MANIFEST_FILENAME), JSON.stringify(manifest));
+  }
+
+  function writePluginDir(name: string, manifest: Partial<PluginManifest> = {}): void {
+    const dir = path.join(repoRoot, 'plugins', name);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, MANIFEST_FILENAME), JSON.stringify({ name, version: '0.1.0', ...manifest }));
+  }
+
+  it('returns empty when there is no root manifest', () => {
+    expect(findUnregisteredPlugins(repoRoot)).toEqual([]);
+  });
+
+  it('returns empty when the root manifest is single-plugin (not a monorepo)', () => {
+    writeRootManifest({ name: 'solo', version: '1.0.0' });
+    writePluginDir('foo');
+    expect(findUnregisteredPlugins(repoRoot)).toEqual([]);
+  });
+
+  it('returns empty when plugins/ does not exist', () => {
+    writeRootManifest({ plugins: { foo: { path: 'plugins/foo' } } });
+    expect(findUnregisteredPlugins(repoRoot)).toEqual([]);
+  });
+
+  it('flags a plugin directory with its own manifest that is missing from the root map', () => {
+    writeRootManifest({ plugins: { foo: { path: 'plugins/foo' } } });
+    writePluginDir('foo');
+    writePluginDir('bar'); // on disk, never registered — the #222 scenario
+    expect(findUnregisteredPlugins(repoRoot)).toEqual(['bar']);
+  });
+
+  it('does not flag a plugin dir with no webcmd-plugin.json of its own', () => {
+    writeRootManifest({ plugins: { foo: { path: 'plugins/foo' } } });
+    fs.mkdirSync(path.join(repoRoot, 'plugins', 'scratch'), { recursive: true }); // no manifest inside
+    expect(findUnregisteredPlugins(repoRoot)).toEqual([]);
+  });
+
+  it('does not flag a disabled-but-registered plugin', () => {
+    writeRootManifest({ plugins: { foo: { path: 'plugins/foo', disabled: true } } });
+    writePluginDir('foo');
+    expect(findUnregisteredPlugins(repoRoot)).toEqual([]);
+  });
+
+  it('sorts multiple unregistered plugins', () => {
+    writeRootManifest({ plugins: { registered: { path: 'plugins/registered' } } });
+    writePluginDir('registered');
+    writePluginDir('zeta');
+    writePluginDir('alpha');
+    expect(findUnregisteredPlugins(repoRoot)).toEqual(['alpha', 'zeta']);
   });
 });
 

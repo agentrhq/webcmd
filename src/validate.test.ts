@@ -52,6 +52,22 @@ describe('validate.ts pipeline step allowlist', () => {
     }
   });
 
+  it('untargeted validate does not flag the checked-out repo (currently in sync)', () => {
+    // This repo's plugins/*/webcmd-plugin.json are all registered in the
+    // root webcmd-plugin.json today — regression guard for #222: an
+    // untargeted `webcmd validate` should stay clean, and only add a
+    // "(webcmd-plugin.json)" row if drift is introduced.
+    const report = validateClisWithTarget([]);
+    const pluginRow = report.results.find(r => r.label === '(webcmd-plugin.json)');
+    expect(pluginRow).toBeUndefined();
+  });
+
+  it('targeted validate does not run the repo-wide plugin-registration check', () => {
+    const report = validateClisWithTarget([], 'validate-allowlist-test/all-steps');
+    const pluginRow = report.results.find(r => r.label === '(webcmd-plugin.json)');
+    expect(pluginRow).toBeUndefined();
+  });
+
   it('newly registered step automatically appears in validator allowlist', () => {
     const customStep = '__test_custom_step__';
     expect(getRegisteredStepNames()).not.toContain(customStep);
