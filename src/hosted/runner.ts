@@ -192,6 +192,12 @@ async function dispatchHosted(
       LOCAL_ONLY_COMMAND_HELP,
     );
   }
+  if (args[0] === 'doctor') {
+    throw new ConfigError(
+      'webcmd doctor is local-only. Hosted mode has no local browser bridge.',
+      LOCAL_ONLY_COMMAND_HELP,
+    );
+  }
   if (args[0] === 'session') {
     const parsed = parseHostedSessionSurface(args.slice(1), normalized.literal);
     if (parsed.kind === 'help') {

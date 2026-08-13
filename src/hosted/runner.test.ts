@@ -706,6 +706,20 @@ describe('runHostedCli', () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it('rejects doctor in hosted mode without an API call', async () => {
+    const stderr = sink();
+    const fetchImpl = vi.fn<typeof fetch>();
+    const result = await runHostedCli(['doctor'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stderr: stderr.stream,
+      fetchImpl,
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 78 });
+    expect(stderr.text()).toContain('webcmd doctor is local-only. Hosted mode has no local browser bridge.');
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it.each(['list', 'rename', 'use'])('leaves profile %s to the existing local command surface', async (command) => {
     const result = await runHostedCli(['profile', command, 'value'], {
       config: makeLocalConfig(),

@@ -85,7 +85,7 @@ export class LocalCloakRuntimeProvider implements BrowserRuntimeProvider {
   async closeSession(command: BrowserRuntimeCommand): Promise<{ closed: boolean; alreadyIdle: boolean; session: string }> {
     const record = this.sessions.require(this.resolveProfileId(command), command.session);
     const closedCount = await this.manager.closeSession(record.profileId, record.id);
-    if (command.discard === true && record.kind === 'explicit' && !record.handoff) this.sessions.remove(record.profileId, record.id);
+    if (command.force && command.discard === true && record.kind === 'explicit' && !record.handoff) this.sessions.remove(record.profileId, record.id);
     else if (command.force && record.handoff) this.sessions.clearHandoff(record.profileId, record.id);
     else this.sessions.touch(record.profileId, record.id);
     return { closed: closedCount > 0, alreadyIdle: closedCount === 0, session: record.id };

@@ -187,6 +187,33 @@ describe('LocalCloakRuntimeProvider', () => {
     }
   });
 
+  it('does not discard a Session record unless close is forced', async () => {
+    const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-provider-session-'));
+    try {
+      const provider = new LocalCloakRuntimeProvider({ baseDir });
+      const session = await provider.createSession({
+        id: 'create-user-session',
+        action: 'session-create',
+        contextId: 'default',
+      });
+
+      await provider.closeSession({
+        id: 'close-user-session',
+        action: 'session-close',
+        contextId: 'default',
+        session: session.id,
+        surface: 'browser',
+        discard: true,
+      });
+
+      await expect(provider.listSessions({ profileId: 'default' })).resolves.toMatchObject([
+        { id: session.id, kind: 'explicit' },
+      ]);
+    } finally {
+      fs.rmSync(baseDir, { recursive: true, force: true });
+    }
+  });
+
   it('navigates and returns page identity', async () => {
     const { provider, page } = makeProviderWithFakePage();
     const result = await provider.dispatch({
