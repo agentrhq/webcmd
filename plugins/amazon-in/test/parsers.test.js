@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { getRegistry } from '@agentrhq/webcmd/registry';
 import { __test__ as checkoutTest } from '../checkout.js';
+import '../cart-add.js';
 import {
   buildProductUrl,
   classifyCheckoutSnapshot,
@@ -226,5 +228,37 @@ describe('amazon-in parsers', () => {
     expect(placements).toBe(0);
     expect(await checkoutTest.submitOrder(page, true)).toBe(true);
     expect(placements).toBe(1);
+  });
+
+  it('does not add an item when Amazon fails to select the requested variant', async () => {
+    let variantRead = 0;
+    const page = {
+      goto: async () => {},
+      wait: async () => {},
+      sleep: async () => {},
+      getCookies: async () => [{ name: 'x-acbin' }],
+      evaluateWithArgs: async () => {
+        variantRead += 1;
+        return variantRead === 1 ? { changed: true, matches: 1 } : 'Red';
+      },
+      evaluate: async (script) => {
+        if (script.includes('confirmation:')) {
+          return { confirmation: true, text: 'Added to cart' };
+        }
+        if (script.includes('document.body?.innerText')) {
+          return { url: 'https://www.amazon.in/dp/B0D2QL339Z', text: 'Product page' };
+        }
+        if (script.includes('location.pathname.match')) {
+          return { asin: 'B0D2QL339Z', title: 'Shirt' };
+        }
+        return undefined;
+      },
+    };
+    const command = getRegistry().get('amazon-in/cart-add');
+
+    await expect(command.func(page, {
+      input: 'B0D2QL339Z',
+      colour: 'Blue',
+    })).rejects.toThrow(/did not select color "Blue"/i);
   });
 });

@@ -23,7 +23,7 @@ cli({
   ],
   columns: [
     'asin', 'title', 'price', 'mrp', 'discount', 'availability',
-    'size', 'colour', 'available_sizes', 'available_colours', 'image_url', 'product_url',
+    'size', 'colour', 'image_url', 'product_url',
   ],
   func: async (page, args) => {
     let url;
@@ -46,15 +46,6 @@ cli({
         const text = (selector) => (document.querySelector(selector)?.textContent || '')
           .replace(/\\s+/g, ' ').trim();
         const image = document.querySelector('#landingImage');
-        const labels = (selector, colour) => [...document.querySelectorAll(selector)]
-          .filter((node) => {
-            const style = getComputedStyle(node);
-            const rect = node.getBoundingClientRect();
-            return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden' && !node.classList.contains('aok-hidden');
-          })
-          .map((node) => (colour ? (node.querySelector('img')?.alt || '') : node.textContent || '').replace(/\s+/g, ' ').trim())
-          .filter(Boolean)
-          .filter((value, index, values) => values.indexOf(value) === index);
         const snapshot = {
           href: location.href,
           title: text('#productTitle'),
@@ -64,8 +55,6 @@ cli({
           availabilityText: text('#availability'),
           sizeText: text('#inline-twister-expanded-dimension-text-size_name, #variation_size_name .selection, #variation_size_name li.swatchSelect .a-button-text'),
           colourText: text('#inline-twister-expanded-dimension-text-color_name, #variation_color_name .selection, #variation_color_name li.swatchSelect .a-button-text'),
-          availableSizes: labels('#inline-twister-expander-content-size_name span[id^="size_name_"]:not([id$="-announce"])', false),
-          availableColours: labels('#inline-twister-expander-content-color_name span[id^="color_name_"]:not([id$="-announce"])', true),
           imageUrl: image?.getAttribute('data-old-hires') || image?.currentSrc || image?.src || '',
         };
         return snapshot;

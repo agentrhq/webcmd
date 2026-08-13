@@ -123,7 +123,7 @@ export function normalizeProductSnapshot(snapshot) {
     throw new Error('Amazon product price is missing');
   }
   const discountMatch = cleanText(snapshot.discountText).match(/-?\s*(\d+(?:\.\d+)?)\s*%/);
-  const result = {
+  return {
     asin,
     title,
     price,
@@ -135,11 +135,6 @@ export function normalizeProductSnapshot(snapshot) {
     image_url: cleanText(snapshot.imageUrl),
     product_url: `https://www.amazon.in/dp/${asin}`,
   };
-  const sizes = Array.isArray(snapshot.availableSizes) ? snapshot.availableSizes.map(cleanText).filter(Boolean) : [];
-  const colours = Array.isArray(snapshot.availableColours) ? snapshot.availableColours.map(cleanText).filter(Boolean) : [];
-  if (sizes.length) result.available_sizes = sizes;
-  if (colours.length) result.available_colours = colours;
-  return result;
 }
 
 export function normalizeWishlistRows(listName, cards) {

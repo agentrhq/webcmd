@@ -1,7 +1,7 @@
 import { AuthRequiredError, ArgumentError, CommandExecutionError } from '@agentrhq/webcmd/errors';
 import { cli, Strategy } from '@agentrhq/webcmd/registry';
 import { hasAmazonInAuthCookie, buildProductUrl } from './parsers.js';
-import { assertUsablePage, gotoAmazon, SITE, DOMAIN } from './shared.js';
+import { gotoAmazon, SITE, DOMAIN } from './shared.js';
 
 async function assertAuthenticated(page) {
   const cookies = await page.getCookies({ url: 'https://www.amazon.in/' });
@@ -34,7 +34,16 @@ async function selectVariant(page, dimension, requested) {
     throw new ArgumentError(`${dimension === 'color' ? 'colour' : dimension} "${requested}" is not uniquely available`);
   }
   if (result.changed) await page.sleep(2);
-  return requested;
+  const selected = await page.evaluateWithArgs(`
+    (() => (document.querySelector(
+      '#inline-twister-expanded-dimension-text-' + dimension + '_name, ' +
+      '#variation_' + dimension + '_name .selection'
+    )?.textContent || '').trim())()
+  `, { dimension });
+  if (selected.toLowerCase() !== requested.toLowerCase()) {
+    throw new CommandExecutionError(`Amazon did not select ${dimension} "${requested}"`);
+  }
+  return selected;
 }
 
 cli({
