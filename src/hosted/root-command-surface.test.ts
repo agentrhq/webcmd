@@ -38,7 +38,8 @@ const manifest = {
   userId: 'user_demo',
   metadata: {
     contractSchemaVersion: 1,
-    webcmdPackageVersion: PKG_VERSION,
+            sessionProtocolVersion: 1,
+            webcmdPackageVersion: PKG_VERSION,
     generatedAt: '2026-07-08T00:00:00.000Z',
   },
   commands: [{
@@ -180,6 +181,25 @@ const generatedTerminalCorpus = profileForms.flatMap(profile =>
 );
 
 describe('hosted root command surface', () => {
+  it('parses the canonical root session selector', () => {
+    expect(parseHostedRootCommandSurface([
+      '--profile', 'work', '--session', 'session_a', 'github', 'issues',
+    ])).toEqual({
+      kind: 'dispatch',
+      argv: ['github', 'issues'],
+      profile: 'work',
+      session: 'session_a',
+      literal: false,
+    });
+  });
+
+  it('advertises client-owned web fetch at the hosted root', () => {
+    expect(HOSTED_ROOT_HELP.commands).toContainEqual({
+      name: 'web',
+      description: 'Fetch URLs locally without launching a browser',
+    });
+  });
+
   it('advertises hosted profile management as a root command, not a local-only namespace', () => {
     expect(HOSTED_ROOT_HELP.commands).toContainEqual({
       name: 'profile',

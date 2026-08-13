@@ -1,10 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import yaml from 'js-yaml';
-import { cli, getRegistry, Strategy } from './registry.js';
+import { cli, getRegistry, runWithDiscoverySource, Strategy } from './registry.js';
 import { BrowserCommandError } from './browser/daemon-client.js';
+import { getDaemonRunContext } from './session-lease.js';
 import type { IPage } from './types.js';
 import { TargetError } from './browser/target-errors.js';
 import { PKG_VERSION } from './version.js';
@@ -15,12 +16,15 @@ import {
   toPresentableCommand,
 } from './command-presentation.js';
 import { render as renderOutput } from './output.js';
+import * as pluginModule from './plugin.js';
+import * as discoveryModule from './discovery.js';
 
 const {
   mockBrowserConnect,
   mockBrowserClose,
   mockBindTab,
   mockListExistingBrowserTabs,
+  mockReleaseSiteSessionLease,
   mockSendCommand,
   mockExecFileSync,
   browserState,
@@ -29,6 +33,7 @@ const {
   mockBrowserClose: vi.fn(),
   mockBindTab: vi.fn(),
   mockListExistingBrowserTabs: vi.fn(),
+  mockReleaseSiteSessionLease: vi.fn(),
   mockSendCommand: vi.fn(),
   mockExecFileSync: vi.fn(),
   browserState: { page: null as IPage | null },
@@ -49,6 +54,7 @@ vi.mock('./browser/daemon-client.js', async () => {
     ...actual,
     bindTab: mockBindTab,
     listExistingBrowserTabs: mockListExistingBrowserTabs,
+    releaseSiteSessionLease: mockReleaseSiteSessionLease,
     sendCommand: mockSendCommand,
   };
 });
@@ -62,6 +68,348 @@ vi.mock('node:child_process', async () => {
 });
 
 import { createProgram, findPackageRoot, loadAntigravityServe, normalizeVerifyRows, renderVerifyPreview, resolveBrowserVerifyInvocation, resolveSitemapAvailabilityForUrl, selectFreshByTimestamp } from './cli.js';
+
+const realHome = process.env.HOME;
+const realConfigDir = process.env.WEBCMD_CONFIG_DIR;
+let isolatedCliTestHome: string;
+
+beforeEach(() => {
+  isolatedCliTestHome = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-cli-home-'));
+  process.env.HOME = isolatedCliTestHome;
+  process.env.WEBCMD_CONFIG_DIR = path.join(isolatedCliTestHome, '.webcmd');
+});
+
+afterEach(() => {
+  if (realHome === undefined) delete process.env.HOME;
+  else process.env.HOME = realHome;
+  if (realConfigDir === undefined) delete process.env.WEBCMD_CONFIG_DIR;
+  else process.env.WEBCMD_CONFIG_DIR = realConfigDir;
+  fs.rmSync(isolatedCliTestHome, { recursive: true, force: true });
+});
+
+describe('plugin update reconciliation reporting', () => {
+  const stdoutSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+  beforeEach(() => {
+    stdoutSpy.mockClear();
+    process.exitCode = undefined;
+  });
+
+  it('reports every monorepo plugin refreshed by a named update', async () => {
+    const pluginsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-plugin-update-'));
+    const update = vi.spyOn(pluginModule, 'updatePlugin').mockReturnValue(['alpha', 'beta'] as never);
+    const findNeeds = vi.spyOn(pluginModule, 'findOverridesNeedingReconcile').mockReturnValue([]);
+    const discover = vi.spyOn(discoveryModule, 'discoverPlugins').mockResolvedValue();
+
+    try {
+      await createProgram('', '', pluginsDir).parseAsync(['node', 'webcmd', 'plugin', 'update', 'alpha']);
+
+      expect(update).toHaveBeenCalledWith('alpha', { force: false });
+      expect(findNeeds).toHaveBeenCalledWith(['alpha', 'beta']);
+    } finally {
+      update.mockRestore();
+      findNeeds.mockRestore();
+      discover.mockRestore();
+      fs.rmSync(pluginsDir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports reconciliation only for successful --all updates', async () => {
+    const pluginsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-plugin-update-'));
+    const updateAll = vi.spyOn(pluginModule, 'updateAllPlugins').mockReturnValue([
+      { name: 'alpha', success: true, updatedPlugins: ['alpha'] },
+      { name: 'broken', success: false, error: 'network error' },
+      { name: 'beta', success: true, updatedPlugins: ['beta'] },
+    ]);
+    const findNeeds = vi.spyOn(pluginModule, 'findOverridesNeedingReconcile').mockReturnValue([{
+      commandKey: 'beta/search',
+      plugin: 'beta',
+      yours: '/tmp/home/.webcmd/clis/beta/search.js',
+      upstream: '/tmp/home/.webcmd/plugins/beta/search.js',
+      base: '/tmp/home/.webcmd/clis/.base/beta/search.js',
+    }]);
+    const discover = vi.spyOn(discoveryModule, 'discoverPlugins').mockResolvedValue();
+
+    try {
+      await createProgram('', '', pluginsDir).parseAsync(['node', 'webcmd', 'plugin', 'update', '--all']);
+
+      expect(findNeeds).toHaveBeenCalledWith(['alpha', 'beta']);
+      const output = stdoutSpy.mock.calls.flat().join('\n');
+      expect(output).toContain('beta/search');
+      expect(output).toContain('yours:    /tmp/home/.webcmd/clis/beta/search.js');
+      expect(output).toContain('upstream: /tmp/home/.webcmd/plugins/beta/search.js');
+      expect(output).toContain('base:     /tmp/home/.webcmd/clis/.base/beta/search.js');
+    } finally {
+      updateAll.mockRestore();
+      findNeeds.mockRestore();
+      discover.mockRestore();
+      fs.rmSync(pluginsDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('override reporting surfaces', () => {
+  const stdoutSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+  let home: string;
+  let originalHome: string | undefined;
+
+  beforeEach(() => {
+    stdoutSpy.mockClear();
+    originalHome = process.env.HOME;
+    home = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-cli-overrides-'));
+    process.env.HOME = home;
+  });
+
+  afterEach(() => {
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it('includes override fields in plugin list JSON', async () => {
+    const list = vi.spyOn(pluginModule, 'listPlugins').mockReturnValue([{
+      name: 'linkedin', path: '/tmp/linkedin', commands: ['search'], source: 'github:example/linkedin',
+      overrides: ['search'], updateAvailable: true,
+    }] as never);
+    try {
+      await createProgram('', '', path.join(home, '.webcmd', 'plugins'))
+        .parseAsync(['node', 'webcmd', 'plugin', 'list', '--format', 'json']);
+      expect(JSON.parse(stdoutSpy.mock.calls.flat().join('\n'))).toMatchObject([{
+        name: 'linkedin', commands: ['search'], source: 'github:example/linkedin',
+        overrides: ['search'], updateAvailable: true,
+      }]);
+    } finally {
+      list.mockRestore();
+    }
+  });
+
+  it('renders an empty plugin list as JSON', async () => {
+    const list = vi.spyOn(pluginModule, 'listPlugins').mockReturnValue([]);
+    try {
+      await createProgram('', '', path.join(home, '.webcmd', 'plugins'))
+        .parseAsync(['node', 'webcmd', 'plugin', 'list', '--format', 'json']);
+
+      expect(JSON.parse(stdoutSpy.mock.calls.flat().join('\n'))).toEqual([]);
+    } finally {
+      list.mockRestore();
+    }
+  });
+
+  it('reports override origins in webcmd list JSON', async () => {
+    const registry = getRegistry();
+    const snapshot = new Map(registry);
+    const userClis = path.join(home, '.webcmd', 'clis');
+    const source = path.join(userClis, 'linkedin', 'search.js');
+    registry.clear();
+    try {
+      fs.mkdirSync(path.dirname(source), { recursive: true });
+      fs.writeFileSync(source, '// override\n');
+      fs.mkdirSync(path.join(home, '.webcmd'), { recursive: true });
+      fs.writeFileSync(path.join(home, '.webcmd', 'override-provenance.json'), JSON.stringify({
+        'linkedin/search': {
+          plugin: 'linkedin', commitHash: null, sourcePath: '/tmp/upstream.js', sourceSha256: 'abc',
+          basePath: '/tmp/base.js', createdAt: '2026-08-09T00:00:00.000Z',
+        },
+      }));
+      await runWithDiscoverySource(source, async () => {
+        cli({ site: 'linkedin', name: 'search', access: 'read', browser: false });
+      });
+
+      await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+        .parseAsync(['node', 'webcmd', 'list', '--format', 'json']);
+      expect(JSON.parse(stdoutSpy.mock.calls.flat().join('\n'))).toMatchObject([
+        { command: 'linkedin/search', origin: 'override:linkedin' },
+      ]);
+    } finally {
+      registry.clear();
+      for (const [key, value] of snapshot) registry.set(key, value);
+    }
+  });
+
+  it('marks orphaned overrides in adapter status', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+    fs.mkdirSync(path.join(userClis, 'linkedin'), { recursive: true });
+    fs.writeFileSync(path.join(userClis, 'linkedin', 'search.js'), '// override\n');
+    fs.writeFileSync(path.join(home, '.webcmd', 'override-provenance.json'), JSON.stringify({
+      'linkedin/search': {
+        plugin: 'linkedin', commitHash: null, sourcePath: path.join(home, '.webcmd', 'plugins', 'linkedin', 'search.js'),
+        sourceSha256: 'abc', basePath: '/tmp/base.js', createdAt: '2026-08-09T00:00:00.000Z',
+      },
+    }));
+
+    await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+      .parseAsync(['node', 'webcmd', 'adapter', 'status']);
+    expect(stdoutSpy.mock.calls.flat().join('\n')).toContain('orphaned override: linkedin/search (plugin linkedin is not installed)');
+  });
+
+  it('reports adapter override state as JSON', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+    const pluginsDir = path.join(home, '.webcmd', 'plugins');
+    const upstream = path.join(pluginsDir, 'linkedin', 'search.js');
+    fs.mkdirSync(path.dirname(upstream), { recursive: true });
+    fs.mkdirSync(path.join(userClis, 'linkedin'), { recursive: true });
+    fs.mkdirSync(path.join(userClis, 'local'), { recursive: true });
+    fs.mkdirSync(path.join(userClis, 'old'), { recursive: true });
+    fs.writeFileSync(upstream, '// upstream v2\n');
+    fs.writeFileSync(path.join(userClis, 'linkedin', 'search.js'), '// override\n');
+    fs.writeFileSync(path.join(userClis, 'local', 'run.js'), '// user adapter\n');
+    fs.writeFileSync(path.join(userClis, 'old', 'search.js'), '// orphan\n');
+    fs.writeFileSync(path.join(home, '.webcmd', 'override-provenance.json'), JSON.stringify({
+      'linkedin/search': {
+        plugin: 'linkedin', commitHash: null, sourcePath: upstream, sourceSha256: 'old-hash',
+        basePath: '/tmp/base.js', createdAt: '2026-08-09T00:00:00.000Z',
+      },
+      'old/search': {
+        plugin: 'old', commitHash: null, sourcePath: path.join(pluginsDir, 'old', 'search.js'), sourceSha256: 'old-hash',
+        basePath: '/tmp/base.js', createdAt: '2026-08-09T00:00:00.000Z',
+      },
+    }));
+
+    await createProgram('', userClis, pluginsDir)
+      .parseAsync(['node', 'webcmd', 'adapter', 'status', '--format', 'json']);
+    expect(JSON.parse(stdoutSpy.mock.calls.flat().join('\n'))).toEqual([
+      { command: 'linkedin/search', kind: 'override', plugin: 'linkedin', reconciliationNeeded: true, orphaned: false },
+      { command: 'local/run', kind: 'user', plugin: null, reconciliationNeeded: false, orphaned: false },
+      { command: 'old/search', kind: 'override', plugin: 'old', reconciliationNeeded: false, orphaned: true },
+    ]);
+  });
+
+  it('reports an empty adapter status as JSON', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+
+    await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+      .parseAsync(['node', 'webcmd', 'adapter', 'status', '--format', 'json']);
+
+    expect(JSON.parse(stdoutSpy.mock.calls.flat().join('\n'))).toEqual([]);
+  });
+
+  it('reports a JSON status error when a listed adapter site disappears', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+    const siteDir = path.join(userClis, 'linkedin');
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const previousExitCode = process.exitCode;
+    const originalReaddir = fs.promises.readdir;
+    const readdir = vi.spyOn(fs.promises, 'readdir');
+    fs.mkdirSync(siteDir, { recursive: true });
+    fs.writeFileSync(path.join(siteDir, 'search.js'), '// adapter\n');
+    readdir.mockImplementationOnce(async () => {
+      const entries = await originalReaddir(userClis, { withFileTypes: true });
+      fs.rmSync(siteDir, { recursive: true });
+      return entries as any;
+    });
+    try {
+      await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+        .parseAsync(['node', 'webcmd', 'adapter', 'status', '--format', 'json']);
+
+      expect(stdoutSpy.mock.calls.flat().join('\n')).not.toBe('[]');
+      expect(stderrSpy.mock.calls.flat().join('\n')).toContain('ENOENT');
+      expect(process.exitCode).not.toBe(0);
+    } finally {
+      readdir.mockRestore();
+      process.exitCode = previousExitCode;
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('reports malformed override provenance as a JSON status error', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const previousExitCode = process.exitCode;
+    fs.mkdirSync(path.join(userClis, 'linkedin'), { recursive: true });
+    fs.writeFileSync(path.join(userClis, 'linkedin', 'search.js'), '// override\n');
+    fs.writeFileSync(path.join(home, '.webcmd', 'override-provenance.json'), '{not json');
+    try {
+      await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+        .parseAsync(['node', 'webcmd', 'adapter', 'status', '--format', 'json']);
+
+      expect(stdoutSpy.mock.calls.flat().join('\n')).not.toBe('[]');
+      expect(stderrSpy.mock.calls.flat().join('\n')).toContain('Malformed override provenance store');
+    } finally {
+      process.exitCode = previousExitCode;
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('reports malformed override provenance as a table status error', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const previousExitCode = process.exitCode;
+    fs.mkdirSync(path.join(userClis, 'linkedin'), { recursive: true });
+    fs.writeFileSync(path.join(userClis, 'linkedin', 'search.js'), '// override\n');
+    fs.writeFileSync(path.join(home, '.webcmd', 'override-provenance.json'), '{not json');
+    try {
+      await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+        .parseAsync(['node', 'webcmd', 'adapter', 'status']);
+
+      expect(stdoutSpy.mock.calls.flat().join('\n')).not.toContain('No local adapters installed.');
+      expect(stderrSpy.mock.calls.flat().join('\n')).toContain('Malformed override provenance store');
+      expect(process.exitCode).not.toBe(0);
+    } finally {
+      process.exitCode = previousExitCode;
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('fails reset --all loudly on malformed provenance before deleting adapters', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+    const siteDir = path.join(userClis, 'linkedin');
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const previousExitCode = process.exitCode;
+    fs.mkdirSync(siteDir, { recursive: true });
+    fs.writeFileSync(path.join(siteDir, 'search.js'), '// override\n');
+    fs.writeFileSync(path.join(home, '.webcmd', 'override-provenance.json'), '{not json');
+    try {
+      await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+        .parseAsync(['node', 'webcmd', 'adapter', 'reset', '--all']);
+
+      expect(fs.existsSync(siteDir)).toBe(true);
+      expect(stdoutSpy.mock.calls.flat().join('\n')).not.toContain('No local sites to reset.');
+      expect(stderrSpy.mock.calls.flat().join('\n')).toContain('Malformed override provenance store');
+      expect(process.exitCode).not.toBe(0);
+    } finally {
+      process.exitCode = previousExitCode;
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('fails reset --all loudly on malformed provenance when clis is empty', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const previousExitCode = process.exitCode;
+    fs.mkdirSync(userClis, { recursive: true });
+    fs.writeFileSync(path.join(home, '.webcmd', 'override-provenance.json'), '{not json');
+    try {
+      await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+        .parseAsync(['node', 'webcmd', 'adapter', 'reset', '--all']);
+
+      expect(stdoutSpy.mock.calls.flat().join('\n')).not.toContain('No local sites to reset.');
+      expect(stderrSpy.mock.calls.flat().join('\n')).toContain('Malformed override provenance store');
+      expect(process.exitCode).not.toBe(0);
+    } finally {
+      process.exitCode = previousExitCode;
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('reports no sites when reset --all has no local adapter directory', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+
+    await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+      .parseAsync(['node', 'webcmd', 'adapter', 'reset', '--all']);
+
+    expect(stdoutSpy.mock.calls.flat().join('\n')).toContain('No local sites to reset.');
+  });
+
+  it('reports no sites when reset --all has an empty adapter directory and no provenance', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+    fs.mkdirSync(userClis, { recursive: true });
+
+    await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+      .parseAsync(['node', 'webcmd', 'adapter', 'reset', '--all']);
+
+    expect(stdoutSpy.mock.calls.flat().join('\n')).toContain('No local sites to reset.');
+  });
+});
 
 describe('Antigravity serve plugin loading', () => {
   it('loads serve.js from the installed Antigravity plugin', async () => {
@@ -132,7 +480,7 @@ describe('createProgram root help descriptions', () => {
     expect(descriptionFor(program, 'browser')).not.toContain('Browser control');
     expect(descriptionFor(program, 'auth')).toBe('refresh, status');
     expect(descriptionFor(program, 'plugin')).toBe('catalog, create, install, list, search, uninstall, update');
-    expect(descriptionFor(program, 'adapter')).toBe('reset, status');
+    expect(descriptionFor(program, 'adapter')).toBe('override, reset, status');
     expect(descriptionFor(program, 'profile')).toBe('list, rename, use');
     expect(descriptionFor(program, 'daemon')).toBe('restart, status, stop');
     expect(descriptionFor(program, 'external')).toBe('install, list, register');
@@ -148,7 +496,7 @@ describe('createProgram root help descriptions', () => {
   it('keeps legacy local adapters manageable without claiming a bundled baseline', () => {
     const adapter = createProgram('', '').commands.find((command) => command.name() === 'adapter')!;
 
-    expect(adapter.commands.map((command) => command.name())).toEqual(['status', 'reset']);
+    expect(adapter.commands.map((command) => command.name())).toEqual(['status', 'reset', 'override']);
     expect(adapter.helpInformation()).not.toMatch(/official|baseline|eject/i);
   });
 
@@ -477,7 +825,9 @@ name: 'search',
           args: [{ name: 'limit', type: 'int', default: 20, help: 'Maximum issues' }],
           columns: ['number', 'title'],
         });
-        const presentation = commandListPresentation([toPresentableCommand(command)], format);
+        const presentation = commandListPresentation([
+          { ...toPresentableCommand(command), origin: 'builtin' },
+        ], format);
 
         const outputSpy = vi.mocked(console.log);
         outputSpy.mockClear();
@@ -718,22 +1068,19 @@ name: 'search',
       const browser = program.commands.find(cmd => cmd.name() === 'browser');
       expect(browser).toBeTruthy();
 
-      process.argv = ['node', 'webcmd', 'browser', '--session', 'test', '--help', '-f', 'yaml'];
+      process.argv = ['node', 'webcmd', '--session', 'session_test', 'browser', '--help', '-f', 'yaml'];
       const data = yaml.load(browser!.helpInformation()) as any;
 
       expect(data.namespace).toBe('browser');
       expect(data.command).toBe('webcmd browser');
-      expect(data.description).toBe('Run Playwright programs against named browser sessions');
-      expect(data.command_count).toBe(7);
-      expect(data.commands.map((cmd: any) => cmd.name)).toEqual(['bind', 'close', 'init', 'run', 'snapshot', 'tabs', 'verify']);
-      // `--session` is now a hidden internal option; user-facing surface is the
-      // <session> positional declared via `.usage()`. Structured help drops
-      // hidden options, so namespace_options shouldn't expose it.
+      expect(data.description).toBe('Run Playwright programs against an explicit browser Session');
+      expect(data.command_count).toBe(8);
+      expect(data.commands.map((cmd: any) => cmd.name)).toEqual(['bind', 'close', 'fork', 'init', 'run', 'snapshot', 'tabs', 'verify']);
       expect(data.namespace_options).not.toEqual(expect.arrayContaining([
         expect.objectContaining({ name: 'session' }),
       ]));
       expect(data.namespace_options).toEqual([]);
-      expect(data.usage).toBe('webcmd browser <session> <command> [options]');
+      expect(data.usage).toBe('webcmd browser <command> [args] [options]');
       expect(data.global_options).toEqual(expect.arrayContaining([
         expect.objectContaining({
           name: 'version',
@@ -744,15 +1091,17 @@ name: 'search',
           flags: '--profile <name>',
           takes_value: 'required',
         }),
+        expect.objectContaining({
+          name: 'session',
+          flags: '--session <session-id>',
+          takes_value: 'required',
+        }),
       ]));
 
       const bind = data.commands.find((cmd: any) => cmd.name === 'bind');
-      // Structured help command/usage paths include the <session> positional so
-      // agents construct the correct full invocation. `name` is the leaf
-      // identifier (placeholder positionals are stripped).
       expect(bind).toMatchObject({
-        command: 'webcmd browser <session> bind',
-        usage: 'webcmd browser <session> bind [options]',
+        command: 'webcmd browser bind',
+        usage: 'webcmd browser bind [options]',
         positionals: [],
       });
       expect(bind.command_options.map((option: any) => option.name)).toEqual(['page']);
@@ -844,7 +1193,7 @@ name: 'search',
       // applyRootSubcommandSummaries() rewrites .description() to a child-name listing;
       // structured help must surface the original product description via the snapshot.
       expect(data.description).toBe('Manage CLI adapters');
-      expect(data.commands.map((cmd: any) => cmd.name)).toEqual(['reset', 'status']);
+      expect(data.commands.map((cmd: any) => cmd.name)).toEqual(['override', 'reset', 'status']);
       const reset = data.commands.find((cmd: any) => cmd.name === 'reset');
       expect(reset).toMatchObject({
         usage: 'webcmd adapter reset [site] [options]',
@@ -1072,7 +1421,7 @@ describe('browser verify', () => {
       fs.writeFileSync(path.join(adapterDir, 'top.js'), 'export default {};\n', 'utf-8');
 
       const program = createProgram('', '');
-      await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'verify', 'hn/top', '--no-fixture', '--trace', 'retain-on-failure']);
+      await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'verify', 'hn/top', '--no-fixture', '--trace', 'retain-on-failure']);
 
       expect(mockExecFileSync).toHaveBeenCalledTimes(1);
       const [, execArgs] = mockExecFileSync.mock.calls[0] as [string, string[]];
@@ -1099,7 +1448,7 @@ describe('browser verify', () => {
       fs.writeFileSync(path.join(adapterDir, 'top.js'), 'export default {};\n', 'utf-8');
 
       const program = createProgram('', '');
-      await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'verify', 'hn/top', '--no-fixture', '--seed-args', 'webcmd-verify']);
+      await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'verify', 'hn/top', '--no-fixture', '--seed-args', 'webcmd-verify']);
 
       expect(mockExecFileSync).toHaveBeenCalledTimes(1);
       const [, execArgs] = mockExecFileSync.mock.calls[0] as [string, string[]];
@@ -1127,7 +1476,7 @@ describe('browser verify', () => {
       fs.writeFileSync(path.join(adapterDir, 'top.js'), 'export default {};\n', 'utf-8');
 
       const program = createProgram('', '');
-      await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'verify', 'hn/top', '--write-fixture', '--seed-args', 'webcmd-verify']);
+      await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'verify', 'hn/top', '--write-fixture', '--seed-args', 'webcmd-verify']);
 
       const fixtureFile = path.join(fakeHome, '.webcmd', 'sites', 'hn', 'verify', 'top.json');
       const fixture = JSON.parse(fs.readFileSync(fixtureFile, 'utf-8'));
@@ -1158,7 +1507,7 @@ describe('browser verify', () => {
       fs.writeFileSync(path.join(adapterDir, 'top.js'), 'export default {};\n', 'utf-8');
 
       const program = createProgram('', '');
-      await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'verify', 'hn/top', '--no-fixture']);
+      await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'verify', 'hn/top', '--no-fixture']);
 
       expect(process.exitCode).toBe(1);
       const output = consoleLogSpy.mock.calls.map((args) => args.join(' ')).join('\n');
@@ -1166,6 +1515,71 @@ describe('browser verify', () => {
       expect(output).toContain('author.user_id');
     } finally {
       consoleLogSpy.mockClear();
+      if (originalHome === undefined) delete process.env.HOME;
+      else process.env.HOME = originalHome;
+      if (originalUserProfile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = originalUserProfile;
+      fs.rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a wide row by default but passes with a raised --max-top-level-keys', async () => {
+    const originalHome = process.env.HOME;
+    const originalUserProfile = process.env.USERPROFILE;
+    const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-browser-verify-wide-'));
+    process.env.HOME = fakeHome;
+    process.env.USERPROFILE = fakeHome;
+    const wideRow = Object.fromEntries(Array.from({ length: 20 }, (_, i) => [`col${i}`, i]));
+    mockExecFileSync.mockReturnValue(JSON.stringify([wideRow]));
+    const consoleLogSpy = vi.mocked(console.log);
+    consoleLogSpy.mockClear();
+
+    try {
+      const adapterDir = path.join(fakeHome, '.webcmd', 'clis', 'hn');
+      fs.mkdirSync(adapterDir, { recursive: true });
+      fs.writeFileSync(path.join(adapterDir, 'top.js'), 'export default {};\n', 'utf-8');
+
+      const program = createProgram('', '');
+      await program.parseAsync(['node', 'webcmd', '--session', 'test', 'browser', 'verify', 'hn/top', '--no-fixture']);
+      expect(process.exitCode).toBe(1);
+      let output = consoleLogSpy.mock.calls.map((args) => args.join(' ')).join('\n');
+      expect(output).toContain('row has 20 top-level keys, expected at most 12');
+
+      process.exitCode = undefined;
+      consoleLogSpy.mockClear();
+      const program2 = createProgram('', '');
+      await program2.parseAsync(['node', 'webcmd', '--session', 'test', 'browser', 'verify', 'hn/top', '--no-fixture', '--max-top-level-keys', '20']);
+      expect(process.exitCode).toBeUndefined();
+      output = consoleLogSpy.mock.calls.map((args) => args.join(' ')).join('\n');
+      expect(output).not.toContain('violates row shape conventions');
+    } finally {
+      consoleLogSpy.mockClear();
+      if (originalHome === undefined) delete process.env.HOME;
+      else process.env.HOME = originalHome;
+      if (originalUserProfile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = originalUserProfile;
+      fs.rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a non-positive --max-top-level-keys', async () => {
+    const originalHome = process.env.HOME;
+    const originalUserProfile = process.env.USERPROFILE;
+    const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-browser-verify-badflag-'));
+    process.env.HOME = fakeHome;
+    process.env.USERPROFILE = fakeHome;
+
+    try {
+      const adapterDir = path.join(fakeHome, '.webcmd', 'clis', 'hn');
+      fs.mkdirSync(adapterDir, { recursive: true });
+      fs.writeFileSync(path.join(adapterDir, 'top.js'), 'export default {};\n', 'utf-8');
+
+      const program = createProgram('', '');
+      await program.parseAsync(['node', 'webcmd', '--session', 'test', 'browser', 'verify', 'hn/top', '--no-fixture', '--max-top-level-keys', '0']);
+
+      expect(process.exitCode).toBe(2);
+      expect(mockExecFileSync).not.toHaveBeenCalled();
+    } finally {
       if (originalHome === undefined) delete process.env.HOME;
       else process.env.HOME = originalHome;
       if (originalUserProfile === undefined) delete process.env.USERPROFILE;
@@ -1249,17 +1663,32 @@ describe('browser raw session commands', () => {
     stderrSpy.mockClear();
     mockBrowserConnect.mockClear();
     mockListExistingBrowserTabs.mockReset().mockResolvedValue([]);
+    mockReleaseSiteSessionLease.mockReset().mockResolvedValue(undefined);
     mockSendCommand.mockReset().mockResolvedValue({ ok: true });
+  });
+
+  it.each([
+    { argv: ['browser', 'tabs'], code: 'SESSION_REQUIRED' },
+    { argv: ['--session', 'work', 'browser', 'tabs'], code: 'INVALID_SESSION_SELECTOR' },
+  ])('rejects an unusable raw selector with exit 2 before daemon dispatch: $code', async ({ argv, code }) => {
+    const program = createProgram('', '');
+
+    await program.parseAsync(['node', 'webcmd', ...argv]);
+
+    expect(process.exitCode).toBe(2);
+    expect(mockListExistingBrowserTabs).not.toHaveBeenCalled();
+    expect(mockSendCommand).not.toHaveBeenCalled();
+    expect(stderrSpy.mock.calls.flat().join('')).toContain(code);
   });
 
   it('lists tabs without allocating a local browser runtime', async () => {
     const program = createProgram('', '');
 
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'tabs']);
+    await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'tabs']);
 
     expect(mockBrowserConnect).not.toHaveBeenCalled();
     expect(mockSendCommand).not.toHaveBeenCalled();
-    expect(mockListExistingBrowserTabs).toHaveBeenCalledWith('test', {});
+    expect(mockListExistingBrowserTabs).toHaveBeenCalledWith('session_test', {});
     expect(consoleLogSpy).toHaveBeenLastCalledWith('[]');
   });
 
@@ -1267,34 +1696,61 @@ describe('browser raw session commands', () => {
     mockListExistingBrowserTabs.mockResolvedValue([{ page: 'page-123' }]);
     const program = createProgram('', '');
 
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'tabs']);
+    await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'tabs']);
 
     expect(mockBrowserConnect).not.toHaveBeenCalled();
-    expect(mockListExistingBrowserTabs).toHaveBeenCalledWith('test', {});
+    expect(mockListExistingBrowserTabs).toHaveBeenCalledWith('session_test', {});
   });
 
   it('binds only an explicit stable page id', async () => {
     const program = createProgram('', '');
 
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'bind', '--page', 'page-123']);
+    await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'bind', '--page', 'page-123']);
 
     expect(mockSendCommand).toHaveBeenCalledWith('bind', {
-      session: 'test', surface: 'browser', page: 'page-123',
+      session: 'session_test', surface: 'browser', page: 'page-123',
     });
-    await expect(program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'bind', '--index', '0']))
+    await expect(program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'bind', '--index', '0']))
       .rejects.toThrow(/process\.exit unexpectedly called/);
-    await expect(program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'bind', '--page', '   ']))
+    await expect(program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'bind', '--page', '   ']))
       .rejects.toThrow(/process\.exit unexpectedly called/);
   });
 
   it('sends snapshot inspection options to the browser runtime', async () => {
     const program = createProgram('', '');
 
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'snapshot', '--snapshot-mode', 'read', '--ref', 'e12', '--max-output', '1000']);
+    await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'snapshot', '--snapshot-mode', 'read', '--ref', 'e12', '--max-output', '1000']);
 
     expect(mockSendCommand).toHaveBeenCalledWith('snapshot', {
-      session: 'test', surface: 'browser', snapshotMode: 'read', ref: 'e12', maxOutputChars: 1000,
+      session: 'session_test', surface: 'browser', snapshotMode: 'read', ref: 'e12', maxOutputChars: 1000,
     });
+  });
+
+  it('binds raw browser daemon operations to one logical run', async () => {
+    let run = getDaemonRunContext();
+    mockSendCommand.mockImplementation(async () => {
+      run = getDaemonRunContext();
+      return { ok: true };
+    });
+    const program = createProgram('', '');
+
+    await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'snapshot']);
+
+    expect(run).toMatchObject({
+      runId: expect.stringMatching(/^run_/),
+      command: 'browser/snapshot',
+    });
+    expect(getDaemonRunContext()).toBeUndefined();
+  });
+
+  it('keeps the raw browser lease when the daemon outcome is unknown', async () => {
+    mockSendCommand.mockRejectedValue(new BrowserCommandError('Result unknown', 'command_result_unknown'));
+    const program = createProgram('', '');
+
+    await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'snapshot']);
+
+    expect(process.exitCode).toBe(1);
+    expect(mockReleaseSiteSessionLease).not.toHaveBeenCalled();
   });
 
   it('reads program files for run and rejects mutually exclusive input', async () => {
@@ -1302,18 +1758,18 @@ describe('browser raw session commands', () => {
     fs.writeFileSync(sourcePath, 'return 42;', 'utf8');
     try {
       const program = createProgram('', '');
-      await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'run', '--file', sourcePath]);
+      await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'run', '--file', sourcePath]);
       expect(mockSendCommand).toHaveBeenCalledWith('run', {
-        session: 'test', surface: 'browser', source: 'return 42;', snapshotMode: 'act',
+        session: 'session_test', surface: 'browser', source: 'return 42;', snapshotMode: 'act',
       });
 
-      await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'run', '--stdin', '--file', sourcePath]);
+      await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'run', '--stdin', '--file', sourcePath]);
       expect(mockSendCommand).toHaveBeenCalledTimes(1);
       expect(process.exitCode).toBeDefined();
 
       process.exitCode = undefined;
       fs.writeFileSync(sourcePath, '', 'utf8');
-      await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'run', '--file', sourcePath]);
+      await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'run', '--file', sourcePath]);
       expect(mockSendCommand).toHaveBeenCalledTimes(1);
       expect(process.exitCode).toBeDefined();
     } finally {
@@ -1323,8 +1779,92 @@ describe('browser raw session commands', () => {
 
   it('closes the named session through the daemon', async () => {
     const program = createProgram('', '');
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'close']);
-    expect(mockSendCommand).toHaveBeenCalledWith('close-window', { session: 'test', surface: 'browser' });
+    await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'close']);
+    expect(mockSendCommand).toHaveBeenCalledWith('close-window', { session: 'session_test', surface: 'browser' });
+  });
+});
+
+describe('browser Session lifecycle commands', () => {
+  const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+  beforeEach(() => {
+    process.exitCode = undefined;
+    consoleLogSpy.mockClear();
+    mockSendCommand.mockReset();
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('daemon offline')));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('creates a Session through the daemon mutation path', async () => {
+    mockSendCommand.mockResolvedValue({
+      id: 'session_abc',
+      kind: 'explicit',
+      profileId: 'default',
+      runtimeState: 'idle',
+    });
+
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'create']);
+
+    expect(mockSendCommand).toHaveBeenCalledWith('session-create', { contextId: 'default' });
+    const output = consoleLogSpy.mock.calls.flat().join('\n');
+    expect(output).toContain('session_abc');
+    expect(output).toContain('runtimeState');
+    expect(output).not.toContain('profileId');
+  });
+
+  it('lists persisted Sessions without creating the adapter default when daemon is absent', async () => {
+    const baseDir = path.join(isolatedCliTestHome, '.webcmd');
+    fs.mkdirSync(baseDir, { recursive: true });
+    fs.writeFileSync(path.join(baseDir, 'browser-sessions.json'), JSON.stringify({
+      version: 1,
+      sessions: [{
+        id: 'session_existing',
+        profileId: 'default',
+        kind: 'explicit',
+        createdAt: '2026-08-11T00:00:00.000Z',
+        updatedAt: '2026-08-11T00:00:00.000Z',
+        lastUsedAt: '2026-08-11T00:00:00.000Z',
+      }],
+    }), { mode: 0o600 });
+
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'list', '-f', 'json']);
+
+    expect(mockSendCommand).not.toHaveBeenCalled();
+    const rows = JSON.parse(consoleLogSpy.mock.calls.flat().join('\n'));
+    expect(rows).toEqual([expect.objectContaining({ id: 'session_existing', runtimeState: 'idle' })]);
+  });
+
+  it('closes an idle persisted Session as a no-op when daemon is absent', async () => {
+    mockSendCommand.mockRejectedValueOnce(new Error('daemon unavailable'));
+    const baseDir = path.join(isolatedCliTestHome, '.webcmd');
+    fs.mkdirSync(baseDir, { recursive: true });
+    fs.writeFileSync(path.join(baseDir, 'browser-sessions.json'), JSON.stringify({
+      version: 1,
+      sessions: [{
+        id: 'session_idle',
+        profileId: 'default',
+        kind: 'explicit',
+        createdAt: '2026-08-11T00:00:00.000Z',
+        updatedAt: '2026-08-11T00:00:00.000Z',
+        lastUsedAt: '2026-08-11T00:00:00.000Z',
+      }],
+    }), { mode: 0o600 });
+
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'close', 'session_idle', '-f', 'json']);
+
+    expect(mockSendCommand).toHaveBeenCalledWith('session-close', {
+      contextId: 'default',
+      session: 'session_idle',
+      force: false,
+    });
+    expect(JSON.parse(consoleLogSpy.mock.calls.flat().join('\n'))).toMatchObject({
+      closed: false,
+      alreadyIdle: true,
+      session: 'session_idle',
+    });
   });
 });
 
@@ -1357,7 +1897,7 @@ function installSelectorFirstTestHarness(label: string, pageOverrides: () => Par
       setActivePage: vi.fn(),
       getActivePage: vi.fn().mockReturnValue('tab-1'),
       tabs: vi.fn().mockResolvedValue([{ page: 'tab-1', active: true }]),
-      session: 'test',
+      session: 'session_test',
       ...pageOverrides(),
     } as unknown as IPage;
   });

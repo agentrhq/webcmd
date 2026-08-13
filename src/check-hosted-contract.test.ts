@@ -24,9 +24,12 @@ function createCommittedArtifactFixture(): string {
   const fixtureRoot = mkdtempSync(path.join(tmpdir(), 'webcmd-contract-committed-'));
   fixtureRoots.push(fixtureRoot);
   copyFileSync(path.join(packageRoot, 'cli-manifest.json'), path.join(fixtureRoot, 'cli-manifest.json'));
+  const manifest = JSON.parse(
+    readFileSync(path.join(fixtureRoot, 'cli-manifest.json'), 'utf8'),
+  ) as Parameters<typeof buildManifestArtifacts>[0];
   writeFileSync(
     path.join(fixtureRoot, 'hosted-contract.json'),
-    buildManifestArtifacts([], PKG_VERSION, browserCommandCatalog).hostedContractJson,
+    buildManifestArtifacts(manifest, PKG_VERSION, browserCommandCatalog).hostedContractJson,
   );
   return fixtureRoot;
 }
@@ -39,7 +42,9 @@ function rootArtifactHashes(): Record<string, string> {
 }
 
 function runChecker(committedRoot: string) {
-  return spawnSync(process.execPath, [checkerPath], {
+  // The checker is a Node script; Bun's execPath points at bun, which is not
+  // what we want to exercise here.
+  return spawnSync('node', [checkerPath], {
     cwd: packageRoot,
     encoding: 'utf8',
     env: { ...process.env, WEBCMD_CONTRACT_COMMITTED_ROOT: committedRoot },

@@ -64,7 +64,7 @@ Use when only page-context `fetch` can reuse same-origin/session/runtime state.
 
 Required evidence:
 
-- `webcmd browser recon run --stdin` with page-context `fetch(...)` returns non-empty target data.
+- `webcmd --session <session-id> browser run --stdin` with page-context `fetch(...)` returns non-empty target data.
 - Simpler strategies are ruled out in the strategy note.
 - Internal endpoint drift risk is accepted and documented.
 

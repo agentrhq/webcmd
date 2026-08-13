@@ -2,7 +2,7 @@
   "name": "linkedin",
   "version": "0.1.0",
   "description": "LinkedIn profile, network, messaging, job, and Sales Navigator commands for WebCMD",
-  "webcmd": ">=0.5.3",
+  "webcmd": ">=0.6.2",
   "author": {
     "name": "WebCMD Agent",
     "handle": "agentrhq"

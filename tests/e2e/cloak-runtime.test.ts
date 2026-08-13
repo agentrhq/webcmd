@@ -8,16 +8,40 @@ import { runCli } from './helpers.js';
 let server: http.Server;
 let baseUrl = '';
 const sourceDirs: string[] = [];
+let sharedConfigDir = '';
+let sharedProfile = '';
+
+function isolatedOptions(options: Parameters<typeof runCli>[1] = {}): Parameters<typeof runCli>[1] {
+  return {
+    ...options,
+    env: {
+      HOME: path.join(sharedConfigDir, 'home'),
+      USERPROFILE: path.join(sharedConfigDir, 'home'),
+      WEBCMD_CONFIG_DIR: sharedConfigDir,
+      WEBCMD_PROFILE: sharedProfile,
+      ...options.env,
+    },
+  };
+}
 
 function browserRun(session: string, source: string, options: Parameters<typeof runCli>[1] = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-cloak-run-'));
   sourceDirs.push(dir);
   const sourcePath = path.join(dir, 'program.js');
   fs.writeFileSync(sourcePath, source);
-  return runCli(['browser', session, 'run', '--file', sourcePath], options);
+  return runCli(['--session', session, 'browser', 'run', '--file', sourcePath], isolatedOptions(options));
+}
+
+async function createSession(options: Parameters<typeof runCli>[1] = {}) {
+  const result = await runCli(['session', 'create', '-f', 'json'], isolatedOptions(options));
+  expect(result.code).toBe(0);
+  return JSON.parse(result.stdout).id as string;
 }
 
 beforeAll(async () => {
+  sharedConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-cloak-suite-'));
+  sharedProfile = `cloak-suite-${Date.now()}`;
+  sourceDirs.push(sharedConfigDir);
   server = http.createServer((req, res) => {
     if (req.url === '/cookie') {
       res.setHeader('Set-Cookie', 'webcmd_smoke=ok; Path=/');
@@ -58,7 +82,7 @@ afterAll(async () => {
 
 describe('Cloak runtime e2e', () => {
   it('runs Playwright against a page through webcmd browser', async () => {
-    const session = `cloak-smoke-${Date.now()}`;
+    const session = await createSession({ timeout: 120_000 });
     const result = await browserRun(session, `
       await page.goto(${JSON.stringify(baseUrl)});
       return await page.evaluate(() => document.title + ':' + window.answer);
@@ -68,7 +92,7 @@ describe('Cloak runtime e2e', () => {
   }, 180_000);
 
   it('persists cookies inside the Cloak profile', async () => {
-    const session = `cloak-cookie-${Date.now()}`;
+    const session = await createSession({ timeout: 120_000 });
     const cookies = await browserRun(session, `
       await page.goto(${JSON.stringify(`${baseUrl}/cookie`)});
       return await page.evaluate(() => document.cookie);
@@ -78,7 +102,6 @@ describe('Cloak runtime e2e', () => {
   }, 180_000);
 
   it('survives sequential open and evaluate cycles in one persistent profile', async () => {
-    const session = `cloak-sequential-${Date.now()}`;
     const profile = `task5-${Date.now()}`;
     const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-cloak-sequential-'));
     const run = (args: string[]) => runCli(args, {
@@ -104,6 +127,10 @@ describe('Cloak runtime e2e', () => {
       expect((await waitForStoppedDaemon()).stdout).toContain('Daemon: not running');
 
       try {
+        const session = await createSession({
+          timeout: 120_000,
+          env: { WEBCMD_CONFIG_DIR: configDir, WEBCMD_PROFILE: profile },
+        });
         expect((await browserRun(session, `await page.goto(${JSON.stringify(`${baseUrl}/cookie`)}); return null;`, {
           timeout: 120_000,
           env: { WEBCMD_CONFIG_DIR: configDir, WEBCMD_PROFILE: profile },

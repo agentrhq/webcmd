@@ -15,7 +15,10 @@ Use Webcmd with my `work` profile to complete this task on Acme Billing. If the 
 
 ## Named Profiles
 
-Profiles separate browser identities and their login state. Use a named profile when work and personal accounts, customers, or environments must stay separate.
+Profiles are cookie jars and authentication scope. Sessions are browser
+windows/workspaces within a profile; separate Sessions let multiple agents use
+the same profile in parallel. Use a named profile when work and personal
+accounts, customers, or environments must stay separate.
 
 ## Hosted Profiles
 
@@ -46,7 +49,7 @@ WEBCMD_WORKSPACE=user_64256 webcmd --profile work github whoami
 
 `--profile <name>` still selects a persona within the ambient workspace; it never crosses workspace boundaries.
 
-Hosted `profile list` returns profile rows; `delete` returns `{ "ok": true, "deleted": true }`. Public profile fields are `id`, `name`, `workspace`, `default`, `status`, `createdAt`, `updatedAt`, and `lastUsedAt`. `status` is `pending` while the hosted profile is being provisioned and `available` once it is ready. Kernel identifiers are never exposed as Webcmd API fields.
+Hosted `profile list` returns profile rows; `delete` returns `{ "ok": true, "deleted": true }`. Public profile fields are `id`, `name`, `workspace`, `default`, `status`, `createdAt`, `updatedAt`, and `lastUsedAt`. `status` is `pending` while the hosted profile is being provisioned and `available` once it is ready. Cloud provider identifiers are never exposed as Webcmd API fields.
 
 Delete hosted profiles only by immutable ID:
 
@@ -58,7 +61,11 @@ Deletion permanently removes that hosted browser state and its saved sign-in sta
 
 ## When You Need to Sign In
 
-When a profile needs interactive sign-in, complete it directly in the browser; never share credentials through chat.
+When a profile needs interactive sign-in, complete it directly in the browser;
+never share credentials through chat. The handoff belongs to the Session that
+started it. After signing in, run the returned verification command verbatim;
+it includes the Session selector when applicable. Webcmd blocks `session close`
+while that Session has a live handoff.
 
 ## Credential Safety
 
@@ -66,6 +73,6 @@ Credentials never belong in prompts or adapter code. Ask the agent to use an aut
 
 ## Local and Hosted Authentication
 
-In local mode, `webcmd <site> login` opens the foreground Webcmd browser and returns `action_required` immediately. Complete sign-in in that browser, tell the agent when you are done, and let it run `webcmd <site> whoami` before retrying the original task. Never send credentials, OTPs, cookies, or recovery codes through chat.
+In local mode, `webcmd <site> login` opens the foreground Webcmd browser and returns `action_required` immediately. Complete sign-in in that browser, tell the agent when you are done, and let it run the returned verification command before retrying the original task. Never send credentials, OTPs, cookies, or recovery codes through chat.
 
 Hosted mode returns a Webcmd-owned live authentication view when interactive sign-in is required. Complete the sign-in there before the agent continues.

@@ -111,7 +111,10 @@ function isCliCommandValue(value: unknown, site: string): value is CliCommand {
     && Array.isArray(value.args);
 }
 
-function toManifestEntry(cmd: CliCommand, modulePath: string, sourceFile?: string): ManifestEntry {
+function toManifestEntry(
+  cmd: CliCommand,
+  adapterPath?: Pick<ManifestEntry, 'modulePath' | 'sourceFile'>,
+): ManifestEntry {
   return {
     site: cmd.site,
     name: cmd.name,
@@ -128,8 +131,8 @@ function toManifestEntry(cmd: CliCommand, modulePath: string, sourceFile?: strin
     ...(cmd.keywords?.length ? { keywords: [...cmd.keywords] } : {}),
     defaultFormat: cmd.defaultFormat,
     type: 'js',
-    modulePath,
-    sourceFile,
+    ...adapterPath,
+    ...(cmd.clientOwned ? { clientOwned: true } : {}),
     navigateBefore: cmd.navigateBefore,
     siteSession: cmd.siteSession,
     freshPage: cmd.freshPage,
@@ -195,7 +198,7 @@ export async function loadManifestEntries(
         return true;
       })
       .sort((a, b) => a.name.localeCompare(b.name))
-      .map(cmd => toManifestEntry(cmd, modulePath, sourceRelative));
+      .map(cmd => toManifestEntry(cmd, { modulePath, sourceFile: sourceRelative }));
   } catch (err) {
     throw new ManifestImportError(filePath, err);
   }
@@ -247,8 +250,45 @@ export async function scanClisDir(
   return { entries, failures };
 }
 
+/**
+ * Sites the core package owns and ships in `dist/`, rather than as adapter
+ * files under `clis/`. `web` moved here so the whole fetch ladder installs by
+ * default instead of living in a plugin nobody had (#247).
+ *
+ * The value is the package subpath export whose import registers the site's
+ * commands. It must stay listed in package.json `exports`, which
+ * `package-exports.test.ts` verifies resolves to a real source file.
+ */
+const CORE_SITE_EXPORTS = new Map([['web', './fetch/command']]);
+
+/**
+ * Manifest entries for core-registered commands.
+ *
+ * These deliberately carry no `modulePath`/`sourceFile`: there is no adapter
+ * file under `clis/` to resolve, and claiming one would point every consumer at
+ * a path that does not exist in the published tarball. They carry
+ * `packageExport` instead, so a consumer that loads adapters by path can import
+ * the command from the package itself rather than guessing its layout.
+ */
+export async function coreCommandEntries(
+  importer: (moduleHref: string) => Promise<unknown> = moduleHref => import(moduleHref),
+): Promise<ManifestEntry[]> {
+  await importer(pathToFileURL(path.join(PACKAGE_ROOT, 'src/fetch/command.ts')).href);
+  return [...getRegistry().values()]
+    .filter(cmd => cmd.clientOwned && CORE_SITE_EXPORTS.has(cmd.site))
+    .sort((a, b) => a.site.localeCompare(b.site) || a.name.localeCompare(b.name))
+    .map(cmd => ({ ...toManifestEntry(cmd), packageExport: CORE_SITE_EXPORTS.get(cmd.site)! }));
+}
+
 export async function buildManifest(): Promise<BuildManifestResult> {
-  return scanClisDir(LEGACY_CLIS_DIR);
+  const scanned = await scanClisDir(LEGACY_CLIS_DIR);
+  const core = await coreCommandEntries();
+  const entriesByCommand = new Map(scanned.entries.map(entry => [`${entry.site}/${entry.name}`, entry]));
+  for (const entry of core) entriesByCommand.set(`${entry.site}/${entry.name}`, entry);
+  const entries = [...entriesByCommand.values()].sort(
+    (a, b) => a.site.localeCompare(b.site) || a.name.localeCompare(b.name),
+  );
+  return { entries, failures: scanned.failures };
 }
 
 export function serializeManifest(manifest: ManifestEntry[]): string {

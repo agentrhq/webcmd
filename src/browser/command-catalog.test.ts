@@ -14,15 +14,25 @@ describe('browserCommandCatalog', () => {
     expect(browserCommandCatalog.map(command => command.command)).toEqual([
       'tabs',
       'bind',
+      'fork',
       'run',
       'snapshot',
       'close',
     ]);
   });
 
+  it('exposes hosted adapter fork with a required command name', () => {
+    const fork = browserCommandCatalog.find(command => command.command === 'fork');
+    expect(fork).toMatchObject({ action: 'fork', sessionPolicy: 'require-existing' });
+    expect(fork?.positionals).toEqual([
+      expect.objectContaining({ name: 'name', required: true, positional: true }),
+    ]);
+  });
+
   it('keeps adapter authoring separate from the raw session catalog', () => {
     expect(browserCommand().commands.map(command => command.name())).toEqual([
       'init',
+      'fork',
       'verify',
       'tabs',
       'bind',

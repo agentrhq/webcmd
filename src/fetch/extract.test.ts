@@ -25,4 +25,14 @@ describe('extractFetchedContent', () => {
     }
     throw new Error('expected unsupported content type');
   });
+
+  it('does not recommend browser rendering for binary downloads', () => {
+    try {
+      extractFetchedContent({ url: 'https://example.com/a', contentType: 'application/octet-stream', body: '' });
+    } catch (error) {
+      expect(error).toMatchObject({ code: 'FETCH_UNSUPPORTED_CONTENT_TYPE', hint: undefined });
+      return;
+    }
+    throw new Error('expected unsupported content type');
+  });
 });

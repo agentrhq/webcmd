@@ -1,37 +1,58 @@
-import { cli, Strategy } from '../registry.js';
+import { Command } from 'commander';
+import { cli, Strategy, type CommandArgs } from '../registry.js';
+import { registerCommandToProgram } from '../commanderAdapter.js';
+import { configureRootCommandSurface } from '../root-command-surface.js';
 import { ArgumentError } from '../errors.js';
-import { webFetch, type WebFetchOptions, type WebFetchResult } from './client.js';
+import type { WebFetchOptions, WebFetchResult } from './client.js';
 
 export const webFetchCommand = cli({
   site: 'web', name: 'fetch', access: 'read', strategy: Strategy.PUBLIC, browser: false,
-  description: 'Fetch a URL locally without launching a browser', defaultFormat: 'md',
+  clientOwned: true,
+  description: 'Fetch a URL with local HTTP clients', defaultFormat: 'md',
+  renderMarkdown: data => (isWebFetchResult(data) ? formatWebFetchMarkdown(data) : undefined),
   args: [
-    { name: 'url', type: 'string', required: true },
-    { name: 'timeout', type: 'int', default: 30 },
-    { name: 'max-chars', type: 'int', default: 50000 },
-    { name: 'allow-private', type: 'boolean', default: false },
+    { name: 'url', type: 'string', required: true, help: 'HTTP or HTTPS URL to fetch' },
+    { name: 'timeout', type: 'int', default: 30, help: 'Total fetch budget in seconds' },
+    { name: 'max-chars', type: 'int', default: 50_000, help: 'Maximum extracted characters; 0 disables truncation' },
+    { name: 'allow-private', type: 'boolean', default: false, help: 'Allow private and loopback destinations' },
   ],
-  func: async kwargs => webFetch({ url: String(kwargs.url), timeoutSeconds: Number(kwargs.timeout ?? 30), maxChars: Number(kwargs['max-chars'] ?? 50000), allowPrivate: kwargs['allow-private'] === true }),
+  validateArgs: validateWebFetchArgs,
+  func: async (kwargs) => {
+    const { webFetch } = await import('./client.js');
+    return webFetch(clientOptionsFromKwargs(kwargs));
+  },
 });
+
+/** Run only the client-owned fetch command without loading the main CLI. */
+export async function runWebFetchCommand(argv: string[]): Promise<void> {
+  const program = configureRootCommandSurface(new Command('webcmd'))
+    .option('--workspace <id>', 'Hosted workspace id/slug for the request');
+  registerCommandToProgram(program.command('web'), webFetchCommand);
+  await program.parseAsync(argv, { from: 'user' });
+}
+
+function clientOptionsFromKwargs(kwargs: CommandArgs): WebFetchOptions {
+  return {
+    url: String(kwargs.url),
+    timeoutSeconds: Number(kwargs.timeout ?? 30),
+    maxChars: Number(kwargs['max-chars'] ?? 50000),
+    allowPrivate: kwargs['allow-private'] === true,
+  };
+}
+
+function validateWebFetchArgs(kwargs: CommandArgs): void {
+  let url: URL;
+  try { url = new URL(String(kwargs.url)); } catch { throw new ArgumentError('--url must be an http or https URL'); }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new ArgumentError('--url must be an http or https URL');
+  for (const name of ['timeout', 'max-chars']) {
+    if (!Number.isInteger(kwargs[name]) || kwargs[name] < 0) throw new ArgumentError(`--${name} must be a non-negative integer`);
+  }
+}
+
+function isWebFetchResult(data: unknown): data is WebFetchResult {
+  return typeof data === 'object' && data !== null && 'requestedUrl' in data && 'content' in data;
+}
 
 export function formatWebFetchMarkdown(result: WebFetchResult): string {
   return [`# ${result.title || 'Fetched content'}`, '', `Source: ${result.requestedUrl}`, `Final URL: ${result.finalUrl}`, `Content type: ${result.contentType || 'unknown'}`, `Extraction: ${result.extractionSource}`, '', result.content].join('\n');
-}
-
-function clientOptions(argv: readonly string[]): WebFetchOptions {
-  const values: Record<string, string | boolean> = {};
-  for (let index = 2; index < argv.length; index++) {
-    const arg = argv[index]!;
-    if (!arg.startsWith('--')) continue;
-    const name = arg.slice(2); const value = argv[index + 1];
-    if (value && !value.startsWith('--')) { values[name] = value; index++; } else values[name] = true;
-  }
-  if (typeof values.url !== 'string' || !/^https?:\/\//i.test(values.url)) throw new ArgumentError('--url must be an http or https URL');
-  const int = (name: string, fallback: number) => { const value = values[name]; const number = value === undefined ? fallback : Number(value); if (!Number.isInteger(number) || number < 0) throw new ArgumentError(`--${name} must be a non-negative integer`); return number; };
-  return { url: values.url, timeoutSeconds: int('timeout', 30), maxChars: int('max-chars', 50000), allowPrivate: values['allow-private'] === true || values['allow-private'] === 'true' };
-}
-
-export async function runClientOwnedWebFetch(argv: readonly string[], dependencies: { webFetch?: typeof webFetch; stdout?: NodeJS.WritableStream } = {}): Promise<void> {
-  const result = await (dependencies.webFetch ?? webFetch)(clientOptions(argv));
-  (dependencies.stdout ?? process.stdout).write(`${formatWebFetchMarkdown(result)}\n`);
 }

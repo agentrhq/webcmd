@@ -54,7 +54,7 @@ export class CDPBridge implements IBrowserFactory {
   private _pending = new Map<number, { resolve: (val: unknown) => void; reject: (err: Error) => void; timer: ReturnType<typeof setTimeout> }>();
   private _eventListeners = new Map<string, Set<(params: unknown) => void>>();
 
-  async connect(opts?: { timeout?: number; session?: string; cdpEndpoint?: string; contextId?: string; preferredContextId?: string; idleTimeout?: number; windowMode?: 'foreground' | 'background'; surface?: 'browser' | 'adapter'; siteSession?: 'ephemeral' | 'persistent' }): Promise<IPage> {
+  async connect(opts?: { timeout?: number; session?: string; cdpEndpoint?: string; contextId?: string; preferredContextId?: string; idleTimeout?: number; windowMode?: 'foreground' | 'background'; surface?: 'browser' | 'adapter'; siteSession?: 'ephemeral' | 'persistent'; adapterSite?: string }): Promise<IPage> {
     if (this._ws) throw new Error('CDPBridge is already connected. Call close() before reconnecting.');
 
     const endpoint = opts?.cdpEndpoint ?? process.env.WEBCMD_CDP_ENDPOINT;
@@ -401,7 +401,7 @@ class CDPPage extends BasePage {
     }
     if (level === 'all') return [...this._consoleMessages];
     // 'error' level includes both console.error() and uncaught exceptions
-    if (level === 'error') return this._consoleMessages.filter(m => m.type === 'error' || m.type === 'warning');
+    if (level === 'error') return this._consoleMessages.filter(m => m.type === 'error');
     return this._consoleMessages.filter(m => m.type === level);
   }
 
