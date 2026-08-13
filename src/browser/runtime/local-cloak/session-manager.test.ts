@@ -207,6 +207,24 @@ describe('CloakSessionManager', () => {
       .map(tab => tab.sessionId)).toEqual(['session_a']);
   });
 
+  it('reuses the fresh launch about:blank page for the first Session window', async () => {
+    const launched = fakeContext();
+    await launched.page.goto('about:blank');
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      platform: 'darwin',
+      launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
+    });
+
+    const lease = await manager.getPage({ profileId: 'default', session: 'session_a', sessionId: 'session_a', surface: 'browser' });
+
+    expect(lease.page).toBe(launched.page);
+    expect(launched.cdp.send.mock.calls.filter(([method, params]) => method === 'Target.createTarget' && !(params as { hidden?: boolean })?.hidden))
+      .toHaveLength(0);
+    expect((await manager.listPages({ profileId: 'default', session: 'session_a', sessionId: 'session_a' }))
+      .map(tab => tab.sessionId)).toEqual(['session_a']);
+  });
+
   it('matches Target.createTarget by target id instead of adopting the next context page', async () => {
     const launched = fakeContext();
     const unrelated = launched.makePage();

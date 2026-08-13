@@ -6,7 +6,7 @@
 
 import { DEFAULT_DAEMON_PORT } from './constants.js';
 import { BrowserBridge } from './browser/index.js';
-import { setDaemonCommandTimeoutSeconds } from './browser/daemon-client.js';
+import { sendCommand, setDaemonCommandTimeoutSeconds } from './browser/daemon-client.js';
 import { getDaemonHealth } from './browser/daemon-transport.js';
 import { getErrorMessage } from './errors.js';
 import { getRuntimeLabel } from './runtime-detect.js';
@@ -16,7 +16,6 @@ import { formatDaemonVersion, isDaemonStale, staleDaemonIssue } from './browser/
 import { findShadowedUserAdapters, formatAdapterShadowIssue, type AdapterShadow } from './adapter-shadow.js';
 
 const DOCTOR_LIVE_TIMEOUT_SECONDS = 8;
-const DOCTOR_SESSION = '__doctor__';
 
 export type DoctorOptions = {
   yes?: boolean;
@@ -53,11 +52,15 @@ export async function checkConnectivity(opts?: { timeout?: number }): Promise<Co
   const start = Date.now();
   const timeoutSeconds = opts?.timeout ?? DOCTOR_LIVE_TIMEOUT_SECONDS;
   setDaemonCommandTimeoutSeconds(timeoutSeconds);
+  let sessionId: string | undefined;
   try {
+    const session = await sendCommand('session-create', {}) as { id?: unknown };
+    if (typeof session.id !== 'string') throw new Error('Doctor could not create a browser Session.');
+    sessionId = session.id;
     const bridge = new BrowserBridge();
     const page = await bridge.connect({
       timeout: timeoutSeconds,
-      session: DOCTOR_SESSION,
+      session: sessionId,
       surface: 'browser',
       // Without this, windowMode is undefined, which skips the darwin `open -g`
       // launcher AND trips the explicit bringToFront() in the session manager —
@@ -75,6 +78,9 @@ export async function checkConnectivity(opts?: { timeout?: number }): Promise<Co
   } catch (err) {
     return { ok: false, error: getErrorMessage(err), durationMs: Date.now() - start };
   } finally {
+    if (sessionId) {
+      await sendCommand('session-close', { session: sessionId, surface: 'browser', force: true }).catch(() => undefined);
+    }
     setDaemonCommandTimeoutSeconds(null);
   }
 }
