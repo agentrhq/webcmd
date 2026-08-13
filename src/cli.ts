@@ -13,6 +13,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Command, Option } from 'commander';
 import { findPackageRoot, getBuiltEntryCandidates } from './package-paths.js';
 import { type CliCommand, getRegistry } from './registry.js';
+// Side-effect import: registers client-owned `web fetch` in the core registry
+// so it reaches help, `list`, completions and manifests without a plugin.
+import './fetch/command.js';
 import { commandListPresentation, filterCommandsByTag, toPresentableCommand } from './command-presentation.js';
 import { configureCompletionCommandSurface, configureListCommandSurface, configurePluginInstallSurface, configurePluginSearchSurface } from './builtin-command-surface.js';
 import { render as renderOutput } from './output.js';
@@ -38,7 +41,7 @@ import { browserOptionValueParser } from './browser/command-catalog.js';
 import { registerAuthCommands } from './commands/auth.js';
 import { daemonRestart, daemonStatus, daemonStop } from './commands/daemon.js';
 import { isVerbose, log } from './logger.js';
-import { BrowserCommandError, listExistingBrowserTabs, sendCommand } from './browser/daemon-client.js';
+import { BrowserCommandError, listExistingBrowserTabs, releaseSiteSessionLease, sendCommand } from './browser/daemon-client.js';
 import { fetchDaemonStatus } from './browser/daemon-transport.js';
 import { aliasForContextId, loadProfileConfig, profileRouteParams, renameProfile, resolveProfileSelection, setDefaultProfile, type ProfileSelection } from './browser/profile.js';
 import { formatDaemonVersion, isDaemonStale } from './browser/daemon-version.js';
@@ -47,9 +50,14 @@ import { CLI_COMMAND, PACKAGE_NAME } from './brand.js';
 import type { BrowserDownloadWaitResult, IPage, ScreenshotOptions } from './types.js';
 import type { BrowserWindowMode } from './runtime.js';
 import { configureRootCommandSurface } from './root-command-surface.js';
+import { validateRawBrowserSession } from './hosted/browser-args.js';
+import { LocalBrowserSessionStore, requireSessionIdShape, type BrowserSessionListRow } from './browser/sessions.js';
 import { missingPluginGuidance, PLUGINS_DIR } from './discovery.js';
 import { loadBrowserRunSource } from './browser/run/input.js';
 import { BrowserRunError } from './browser/run/types.js';
+import { classifyCommandOrigin, formatCommandOrigin } from './command-origin.js';
+import { readOverrideRecords, removeOverrideRecords } from './override-provenance.js';
+import { clearDaemonRunContext, generateRunId, isUnknownOutcomeError, runWithDaemonRunContext } from './session-lease.js';
 
 const CLI_FILE = fileURLToPath(import.meta.url);
 const FOLLOW_POLL_MS = 1_000;
@@ -61,6 +69,14 @@ function getBrowserCacheDir(): string {
 function parsePositiveIntOption(value: string | undefined, _label: string, fallback: number): number {
   const parsed = value === undefined ? fallback : Number.parseInt(value, 10);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parseSessionListLimit(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 100) {
+    throw new ArgumentError('Session list limit must be an integer from 1 to 100.');
+  }
+  return parsed;
 }
 
 type BrowserNetworkItem = {
@@ -537,17 +553,26 @@ function getCommandOption(command: Command | undefined, option: string): unknown
 }
 
 function getBrowserSession(command?: Command): string {
-  // The CLI surface is `webcmd browser <session> <subcommand>`. main.ts rewrites
-  // argv to insert `--session <name>` before commander parses it; this helper
-  // reads back the rewritten flag.
-  const raw = getCommandOption(command, 'session');
-  if (typeof raw === 'string' && raw.trim()) return raw.trim();
-  throw new Error('<session> is a required positional argument: webcmd browser <session> <command>');
+  return validateRawBrowserSession(getCommandOption(command, 'session'), getCommandOption(command, 'profile') as string | undefined);
 }
 
 function getBrowserProfileSelection(command?: Command): ProfileSelection | undefined {
   const raw = getCommandOption(command, 'profile');
   return resolveProfileSelection(typeof raw === 'string' && raw.trim() ? raw.trim() : undefined);
+}
+
+function getSelectedProfileId(command?: Command): string {
+  return getBrowserProfileSelection(command)?.contextId ?? 'default';
+}
+
+function formatHandoff(row: BrowserSessionListRow): string {
+  return row.handoff ? `${row.handoff.site} until ${row.handoff.expiresAt}` : '';
+}
+
+function sessionCreateOutput(data: unknown): unknown {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return data;
+  const row = data as Record<string, unknown>;
+  return { id: row.id, kind: row.kind, runtimeState: row.runtimeState };
 }
 
 function applyVerbose(opts: { verbose?: boolean }): void {
@@ -568,6 +593,23 @@ function applyRootSubcommandSummaries(program: Command): void {
   }
 }
 
+async function handleAdapterOverride(commandKey: string): Promise<void> {
+  const { createAdapterOverride } = await import('./adapter-override.js');
+  try {
+    const result = createAdapterOverride(commandKey);
+    console.log(`✅ Override created for ${result.commandKey}`);
+    console.log(`     yours: ${result.overridePath}`);
+    console.log(`     base:  ${result.basePath}`);
+    console.log();
+    console.log(`  Your copy now takes precedence over plugin "${result.plugin}".`);
+    console.log(`  "${CLI_COMMAND} plugin update" keeps updating the plugin copy, not your override,`);
+    console.log('  and will tell you when the upstream file changes so you can merge.');
+  } catch (err) {
+    console.error(`Error: ${getErrorMessage(err)}`);
+    process.exitCode = EXIT_CODES.GENERIC_ERROR;
+  }
+}
+
 export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDir: string = PLUGINS_DIR): Command {
   const program = new Command();
   // enablePositionalOptions: prevents parent from consuming flags meant for subcommands;
@@ -582,8 +624,19 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
   configureListCommandSurface(program.command('list'))
     .action((opts) => {
       const externalClis = opts.format === 'table' ? loadExternalClis() : [];
+      const overrides = readOverrideRecords();
       const presentation = commandListPresentation(
-        filterCommandsByTag([...new Set(getRegistry().values())].map(toPresentableCommand), opts.tag),
+        filterCommandsByTag([...new Set(getRegistry().values())].map((command) => {
+          const commandKey = `${command.site}/${command.name}`;
+          const classified = classifyCommandOrigin(command, {
+            pluginsDir,
+            userClisDir: USER_CLIS,
+          });
+          const origin = classified.kind === 'local' && overrides[commandKey]
+            ? { kind: 'override' as const, plugin: overrides[commandKey].plugin }
+            : classified;
+          return { ...toPresentableCommand(command), origin: formatCommandOrigin(origin) };
+        }), opts.tag),
         opts.format,
         {
           externalClis: externalClis.map((external) => ({
@@ -756,6 +809,72 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
       if (opts.strict && !report.ok) process.exitCode = EXIT_CODES.GENERIC_ERROR;
     });
 
+  const sessionCmd = program.command('session').description('Create, list, and close browser Sessions');
+
+  sessionCmd
+    .command('create')
+    .description('Create a new opaque browser Session ID for the selected Profile')
+    .option('-f, --format <fmt>', 'Output format: table, json, yaml', 'yaml')
+    .action(async (opts, command) => {
+      const profileId = getSelectedProfileId(command);
+      const data = await sendCommand('session-create', { contextId: profileId });
+      await renderOutput(sessionCreateOutput(data), { fmt: opts.format, columns: ['id', 'kind', 'runtimeState'] });
+    });
+
+  sessionCmd
+    .command('list')
+    .description('List browser Sessions for the selected Profile')
+    .option('--limit <number>', 'Maximum Sessions to return (1-100)', parseSessionListLimit, 20)
+    .option('-f, --format <fmt>', 'Output format: table, json, yaml', 'table')
+    .action(async (opts, command) => {
+      const profileId = getSelectedProfileId(command);
+      let rows: BrowserSessionListRow[];
+      const status = await fetchDaemonStatus({ contextId: profileId });
+      if (status?.runtimeConnected && !isDaemonStale(status, PKG_VERSION)) {
+        rows = await sendCommand('session-list', { contextId: profileId, limit: opts.limit }) as BrowserSessionListRow[];
+      } else {
+        rows = new LocalBrowserSessionStore().list(profileId, opts.limit);
+      }
+      const output = rows.map((row) => ({ ...row, handoff: formatHandoff(row) }));
+      if (output.length === 0 && String(opts.format ?? 'table') === 'table') {
+        console.log(`No browser Sessions found for Profile ${profileId}.`);
+        return;
+      }
+      await renderOutput(output, { fmt: opts.format, columns: ['id', 'kind', 'runtimeState', 'handoff'] });
+    });
+
+  sessionCmd
+    .command('close')
+    .description('Close a browser Session runtime without deleting its durable record')
+    .argument('<session-id>', 'Existing opaque Session ID from `webcmd session create`')
+    .option('-f, --format <fmt>', 'Output format: table, json, yaml', 'yaml')
+    .option('--force', 'Close even while the Session is busy or paused for handoff')
+    .action(async (sessionId: string, opts: { format?: string; force?: boolean }, command) => {
+      const profileId = getSelectedProfileId(command);
+      requireSessionIdShape(sessionId);
+      const status = await fetchDaemonStatus({ contextId: profileId });
+      if (!status || (status.runtimeConnected && !isDaemonStale(status, PKG_VERSION))) {
+        try {
+          const data = await sendCommand('session-close', {
+            contextId: profileId,
+            session: sessionId,
+            force: opts.force === true,
+          });
+          await renderOutput(data, { fmt: opts.format });
+          return;
+        } catch (error) {
+          if (status || opts.force === true) throw error;
+        }
+      }
+      if (opts.force === true) {
+        const data = await sendCommand('session-close', { contextId: profileId, session: sessionId, force: true });
+        await renderOutput(data, { fmt: opts.format });
+        return;
+      }
+      new LocalBrowserSessionStore().require(profileId, sessionId);
+      await renderOutput({ closed: false, alreadyIdle: true, session: sessionId }, { fmt: opts.format });
+    });
+
   // ── Built-in: browser (browser control for Claude Code skill) ───────────────
   //
   // Make websites accessible for AI agents.
@@ -763,20 +882,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
 
   const browser = program
     .command('browser')
-    // --session is an internal hidden option used by the daemon protocol and direct
-    // program.parseAsync callers (tests). User-facing surface is the <session>
-    // positional; main.ts argv preprocessor rewrites positional -> --session.
-    .addOption(new Option('--session <name>', 'Internal — set automatically from the <session> positional').hideHelp())
-    .description('Run Playwright programs against named browser sessions')
-    .usage('<session> <command> [options]')
-    .addHelpText('after', `
-<session> is a required positional: pass the name of the browser session every subcommand should operate on. Reuse the same name across calls to keep the tab/state alive; pick a different name to isolate parallel browser work.
-
-Examples:
-  $ webcmd browser work tabs
-  $ webcmd browser work bind --page page-123
-  $ printf 'await page.goto("https://example.com")' | webcmd browser work run --stdin
-`);
+    .description('Run Playwright programs against an explicit browser Session');
   const originalBrowserDescription = browser.description();
 
   // ── Init (adapter scaffolding) ──
@@ -838,13 +944,18 @@ cli({
         fs.mkdirSync(dir, { recursive: true });
         fs.writeFileSync(filePath, template, 'utf-8');
         console.log(`Created: ${filePath}`);
-        console.log('First time on this site? Run: webcmd browser recon run --stdin');
+        console.log('First time on this site? Run: webcmd session create, then webcmd --session <session-id> browser run --stdin');
         console.log(`Edit the file to implement your adapter, then run: webcmd browser verify ${name}`);
       } catch (err) {
         console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
         process.exitCode = EXIT_CODES.GENERIC_ERROR;
       }
     });
+
+  browser.command('fork')
+    .argument('<name>', 'Command to fork in site/command format')
+    .description('Fork an installed plugin command into a private copy')
+    .action(handleAdapterOverride);
 
   // ── Verify (test adapter) ──
 
@@ -1018,11 +1129,16 @@ cli({
 
   function rawBrowserAction(fn: (session: string, routing: { contextId?: string; preferredContextId?: string }, opts: Record<string, unknown>) => Promise<unknown>) {
     return async (opts: Record<string, unknown>, command: Command) => {
+      const runId = generateRunId();
+      const commandName = `browser/${command.name()}`;
+      let releaseRun = true;
       try {
         const session = getBrowserSession(command);
         const routing = profileRouteParams(getBrowserProfileSelection(command));
-        console.log(JSON.stringify(await fn(session, routing, opts), null, 2));
+        const result = await runWithDaemonRunContext({ runId, command: commandName }, () => fn(session, routing, opts));
+        console.log(JSON.stringify(result, null, 2));
       } catch (error) {
+        if (isUnknownOutcomeError(error)) releaseRun = false;
         if (error instanceof BrowserCommandError && error.code) {
           console.log(JSON.stringify({
             error: {
@@ -1033,8 +1149,12 @@ cli({
             },
           }, null, 2));
         }
-        log.error(error instanceof Error ? error.message : String(error));
-        process.exitCode = EXIT_CODES.GENERIC_ERROR;
+        log.error(error instanceof CliError ? `${error.code}: ${error.message}` : error instanceof Error ? error.message : String(error));
+        if (error instanceof CliError && error.hint) log.error(error.hint);
+        process.exitCode = error instanceof CliError ? error.exitCode : EXIT_CODES.GENERIC_ERROR;
+      } finally {
+        clearDaemonRunContext(runId);
+        if (releaseRun) await releaseSiteSessionLease(runId);
       }
     };
   }
@@ -1126,6 +1246,25 @@ cli({
 
   // ── Plugin management ──────────────────────────────────────────────────────
 
+  /** Print the "N overrides need reconciliation" report after `plugin update`. Prints nothing when empty. */
+  function printReconcileReport(needs: import('./plugin.js').OverrideReconcileNeed[]): void {
+    if (needs.length === 0) return;
+    console.log();
+    console.log(`⚠  ${needs.length} override${needs.length === 1 ? '' : 's'} need${needs.length === 1 ? 's' : ''} reconciliation:`);
+    for (const need of needs) {
+      console.log(`     ${need.commandKey}`);
+      console.log(`       yours:    ${need.yours}`);
+      console.log(`       upstream: ${need.upstream}`);
+      if (need.base) {
+        console.log(`       base:     ${need.base}`);
+      } else {
+        console.log(`       base:     unavailable (merge base was deleted)`);
+      }
+    }
+    console.log(`     Your override still takes precedence. Merge the upstream change, or run`);
+    console.log(`     ${CLI_COMMAND} adapter reset <plugin> to drop the override.`);
+  }
+
   const pluginCmd = program.command('plugin').description(`Manage ${CLI_COMMAND} plugins`);
   // Snapshot before applyRootSubcommandSummaries() rewrites .description() to a child-name listing.
   const originalPluginDescription = pluginCmd.description();
@@ -1185,7 +1324,7 @@ cli({
         return;
       }
 
-      const { updatePlugin, updateAllPlugins } = await import('./plugin.js');
+      const { updatePlugin, updateAllPlugins, findOverridesNeedingReconcile } = await import('./plugin.js');
       const { discoverPlugins } = await import('./discovery.js');
       if (opts.all) {
         const results = updateAllPlugins({ force: opts.force === true });
@@ -1216,13 +1355,18 @@ cli({
         } else {
           console.log('✅ All plugins updated successfully.');
         }
+
+        printReconcileReport(findOverridesNeedingReconcile([
+          ...new Set(results.flatMap((result) => result.success ? result.updatedPlugins ?? [result.name] : [])),
+        ]));
         return;
       }
 
       try {
-        updatePlugin(name!, { force: opts.force === true });
+        const updatedPlugins = updatePlugin(name!, { force: opts.force === true });
         await discoverPlugins();
         console.log(`✅ Plugin "${name}" updated successfully.`);
+        printReconcileReport(findOverridesNeedingReconcile(updatedPlugins));
       } catch (err) {
         console.error(`Error: ${getErrorMessage(err)}`);
         process.exitCode = EXIT_CODES.GENERIC_ERROR;
@@ -1238,6 +1382,10 @@ cli({
       const { listPlugins } = await import('./plugin.js');
       const plugins = listPlugins();
       if (plugins.length === 0) {
+        if (opts.format === 'json') {
+          renderOutput([], { fmt: 'json' });
+          return;
+        }
         console.log('  No plugins installed.');
         console.log(`  Install one with: ${CLI_COMMAND} plugin install github:user/repo`);
         return;
@@ -1245,7 +1393,7 @@ cli({
       if (opts.format === 'json') {
         renderOutput(plugins, {
           fmt: 'json',
-          columns: ['name', 'commands', 'source'],
+          columns: ['name', 'commands', 'source', 'overrides', 'updateAvailable'],
           title: `${CLI_COMMAND}/plugins`,
           source: `${CLI_COMMAND} plugin list`,
         });
@@ -1271,6 +1419,9 @@ cli({
         const cmds = p.commands.length > 0 ? ` (${p.commands.join(', ')})` : '';
         const src = p.source ? ` ← ${p.source}` : '';
         console.log(`  ${p.name}${version}${desc}${cmds}${src}`);
+        if (p.overrides.length > 0) {
+          console.log(`    ⚠ ${p.overrides.length} override${p.overrides.length === 1 ? '' : 's'}: ${p.overrides.join(', ')}${p.updateAvailable ? ' (upstream changed since fork)' : ''}`);
+        }
       }
 
       for (const [mono, group] of monoGroups) {
@@ -1281,6 +1432,9 @@ cli({
           const desc = p.description ? ` — ${p.description}` : '';
           const cmds = p.commands.length > 0 ? ` (${p.commands.join(', ')})` : '';
           console.log(`    ${p.name}${version}${desc}${cmds}`);
+          if (p.overrides.length > 0) {
+            console.log(`      ⚠ ${p.overrides.length} override${p.overrides.length === 1 ? '' : 's'}: ${p.overrides.join(', ')}${p.updateAvailable ? ' (upstream changed since fork)' : ''}`);
+          }
         }
       }
 
@@ -1442,43 +1596,110 @@ cli({
 
   adapterCmd
     .command('status')
-    .description('List legacy local adapters in ~/.webcmd/clis/')
-    .action(async () => {
+    .description('List local adapters in ~/.webcmd/clis/')
+    .option('-f, --format <fmt>', 'Output format: table, json', 'table')
+    .action(async (opts: { format?: string }) => {
+      let userClisListed = false;
       try {
         const userEntries = await fs.promises.readdir(USER_CLIS, { withFileTypes: true });
-        const userSites = userEntries.filter(e => e.isDirectory()).map(e => e.name).sort();
+        userClisListed = true;
+        const userSites = userEntries.filter(e => e.isDirectory() && e.name !== '.base').map(e => e.name).sort();
         if (userSites.length === 0) {
-          console.log('No legacy local adapters installed.');
+          if (opts.format === 'json') {
+            renderOutput([], { fmt: 'json' });
+            return;
+          }
+          console.log('No local adapters installed.');
           return;
         }
 
-        console.log(`Legacy local adapters in ~/.webcmd/clis/ (${userSites.length} sites):\n`);
-        for (const site of userSites) console.log(`  ${site}`);
-      } catch {
-        console.log('No legacy local adapters installed.');
+        const records = readOverrideRecords();
+        const reconcile = new Set((await import('./plugin.js')).findOverridesNeedingReconcile().map(({ commandKey }) => commandKey));
+        const adapters: Array<{
+          command: string;
+          kind: 'user' | 'override';
+          plugin: string | null;
+          reconciliationNeeded: boolean;
+          orphaned: boolean;
+        }> = [];
+        for (const site of userSites) {
+          const files = await fs.promises.readdir(path.join(USER_CLIS, site));
+          for (const file of files.filter((entry) => entry.endsWith('.js')).sort()) {
+            const command = `${site}/${file.slice(0, -3)}`;
+            const record = records[command];
+            adapters.push(record
+              ? {
+                  command,
+                  kind: 'override',
+                  plugin: record.plugin,
+                  reconciliationNeeded: reconcile.has(command),
+                  orphaned: !fs.existsSync(path.join(pluginsDir, record.plugin)),
+                }
+              : { command, kind: 'user', plugin: null, reconciliationNeeded: false, orphaned: false });
+          }
+        }
+        if (opts.format === 'json') {
+          renderOutput(adapters, {
+            fmt: 'json',
+            columns: ['command', 'kind', 'plugin', 'reconciliationNeeded', 'orphaned'],
+            title: `${CLI_COMMAND}/adapter-status`,
+            source: `${CLI_COMMAND} adapter status`,
+          });
+          return;
+        }
+        console.log(`Local adapters in ~/.webcmd/clis/ (${userSites.length} sites):\n`);
+        for (const site of userSites) {
+          console.log(`  ${site}`);
+          for (const adapter of adapters.filter((item) => item.command.startsWith(`${site}/`))) {
+            if (adapter.kind === 'user') {
+              console.log(`    user adapter: ${adapter.command}`);
+            } else if (adapter.orphaned) {
+              console.log(`    orphaned override: ${adapter.command} (plugin ${adapter.plugin} is not installed)`);
+            } else {
+              console.log(`    override: ${adapter.command} (plugin ${adapter.plugin}${adapter.reconciliationNeeded ? ', upstream changed since fork' : ''})`);
+            }
+          }
+        }
+      } catch (err) {
+        if (!userClisListed && (err as NodeJS.ErrnoException).code === 'ENOENT') {
+          if (opts.format === 'json') renderOutput([], { fmt: 'json' });
+          else console.log('No local adapters installed.');
+          return;
+        }
+        console.error(`Error: ${getErrorMessage(err)}`);
+        process.exitCode = EXIT_CODES.GENERIC_ERROR;
       }
     });
 
   adapterCmd
     .command('reset')
-    .description('Remove a legacy local adapter')
+    .description('Remove a local adapter override')
     .argument('[site]', 'Site name (e.g. twitter, youtube)')
     .option('--all', 'Reset all local overrides')
     .action(async (site: string | undefined, opts: { all?: boolean }) => {
       if (opts.all) {
+        let userClisListed = false;
         try {
           const userEntries = await fs.promises.readdir(USER_CLIS, { withFileTypes: true });
-          const dirs = userEntries.filter(e => e.isDirectory());
+          userClisListed = true;
+          const dirs = userEntries.filter(e => e.isDirectory() && e.name !== '.base');
+          readOverrideRecords();
           if (dirs.length === 0) {
             console.log('No local sites to reset.');
             return;
           }
+          let removedRecords = 0;
           for (const dir of dirs) {
             fs.rmSync(path.join(USER_CLIS, dir.name), { recursive: true, force: true });
+            removedRecords += removeOverrideRecords(dir.name).length;
           }
-          console.log(`✅ Removed ${dirs.length} legacy local adapter(s).`);
-        } catch {
-          console.log('No local sites to reset.');
+          console.log(`✅ Removed ${dirs.length} local adapter override(s) and ${removedRecords} provenance record(s).`);
+        } catch (err) {
+          if (!userClisListed && (err as NodeJS.ErrnoException).code === 'ENOENT') console.log('No local sites to reset.');
+          else {
+            console.error(`Error: ${getErrorMessage(err)}`);
+            process.exitCode = EXIT_CODES.GENERIC_ERROR;
+          }
         }
         return;
       }
@@ -1498,8 +1719,15 @@ cli({
       }
 
       fs.rmSync(userSiteDir, { recursive: true, force: true });
-      console.log(`✅ Removed legacy local adapter "${site}".`);
+      const removedRecords = removeOverrideRecords(site).length;
+      console.log(`✅ Removed local adapter override "${site}" and ${removedRecords} provenance record(s).`);
     });
+
+  adapterCmd
+    .command('override')
+    .description('Fork an installed plugin command into ~/.webcmd/clis so you can modify it')
+    .argument('<command>', 'Command to override, as <site>/<command>')
+    .action(handleAdapterOverride);
 
   // ── Built-in: browser profile selection ──────────────────────────────────
   const profileCmd = program.command('profile').description('Manage webcmd browser runtime profiles');
@@ -1735,28 +1963,6 @@ cli({
   program.configureHelp({
     visibleCommands: (command) => command.commands.filter(child => command !== program || !adapterNameSet.has(child.name())),
   });
-  // When an ancestor command declares a leading positional via `.usage(...)`
-  // (e.g. `browser` -> `<session> <command> [options]`), inject the positional
-  // between that ancestor's name and the next path segment so the help Usage
-  // line is accurate: `Usage: webcmd browser <session> run [options]`
-  // instead of `webcmd browser run [options]`. Commander does NOT
-  // inherit configureHelp into subcommands, so we walk the descendant tree and
-  // apply the override on each.
-  const ancestorAwareCommandUsage = (cmd: Command): string => {
-    const ancestors: string[] = [];
-    let ancestor: Command | null = cmd.parent;
-    while (ancestor) {
-      const positional = leadingPositionalFromUsage(ancestor);
-      ancestors.unshift(positional ? `${ancestor.name()} ${positional}` : ancestor.name());
-      ancestor = ancestor.parent;
-    }
-    return [...ancestors, cmd.name(), cmd.usage()].filter(Boolean).join(' ').trim();
-  };
-  function applyAncestorAwareUsage(cmd: Command): void {
-    cmd.configureHelp({ commandUsage: ancestorAwareCommandUsage });
-    for (const sub of cmd.commands) applyAncestorAwareUsage(sub);
-  }
-  applyAncestorAwareUsage(browser);
   installRootPresentationHelp(
     program,
     () => rootHelpData(program, adapterGroups),

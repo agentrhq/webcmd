@@ -1,5 +1,55 @@
 # Changelog
 
+## [0.6.2](https://github.com/agentrhq/webcmd/compare/webcmd-v0.6.1...webcmd-v0.6.2) (2026-08-12)
+
+_webcmd v0.6.2: Browser Sessions, Plugins Everywhere, and Cloud Parity_
+
+### Highlights
+- Added explicit browser Sessions: create, carry, list, and close stable Session IDs for raw browser workflows across local and hosted mode.
+- Added `browser run` code execution for Playwright-style browser automation, including hosted routing and file transfer support.
+- Moved CLI surfaces into plugins, with marketplace search/install paths and command discovery metadata.
+- Added plugin override precedence and reconciliation: `~/.webcmd/clis` wins over installed plugins, update detection is content-based, and overrides report actionable status.
+- Expanded Webcmd Cloud parity for browser commands, hosted manifests, profiles/workspaces, auth handoff, and verify fixture evaluation.
+
+### Improvements
+- Added bundled agent guides and updated Webcmd skills for the plugin-first workflow.
+- Added hosted contract checks, plugin parity checks, and live Cloak session gates.
+- Added release tooling improvements for package, plugin, and manifest consistency.
+
+### Fixes
+- Hardened session admission/cancellation, background tab focus, Cloak process matching, and browser run timeout behavior.
+- Fixed plugin discovery/install edge cases, adapter status output, hosted output flushing, and local override reconciliation.
+- Restored and hardened adapter behavior across Amazon, Facebook, Twitter, TikTok, YouTube, and others.
+
+## [0.5.4](https://github.com/agentrhq/webcmd/compare/webcmd-v0.5.3...webcmd-v0.5.4) (2026-08-09)
+
+### Highlights
+- All site adapters are now independent plugins and are no longer bundled with the core `webcmd` package. This major architectural change allows adapters to be updated individually without requiring a new `webcmd` release. Previously bundled commands can be installed using `webcmd plugin install github:agentrhq/webcmd/plugins/<site-name>`. (#216)
+
+### Improvements
+- A new `webcmd update` command allows you to upgrade `webcmd` to the latest version and refresh bundled skill links directly from the CLI. (#224)
+- The new `webcmd adapter override <site>/<command>` command lets you create a local, editable copy of a command from an installed plugin, making it easier to customize or iterate on existing adapters. (#245)
+- The `browser run` command now uses a sandboxed Playwright environment, improving the reliability and capability of browser-based automations. (#196)
+- Documentation has been updated to:
+    - Add the `webcmd skills` subcommands to the CLI reference. (#200)
+    - Document the `-f plain` output format and aliases for `yaml` and `md`. (#202)
+    - Improve the clarity and correctness of the main README file. (#205, #207)
+
+### Fixes
+- Hosted browser commands will no longer fail when the Webcmd Cloud API includes an `expiresAt` field in its response. (#194)
+- Improved the performance of status-checking commands like `webcmd doctor` by caching the browser runtime version, reducing unnecessary file reads. (#213)
+
+### Adapters
+- Nine new adapters have been added for exporting postgraduate course data from the following universities: University of Cincinnati, Concordia University, University of Göttingen, Heidelberg University, HFT Stuttgart, Illinois Institute of Technology, Johns Hopkins University, University of Alberta, and Yale University. (#192)
+- A new `luma` adapter allows you to manage Luma events, guests, and registration questions. (#195)
+- The documentation for the `skyscanner` adapter has been updated to include required flags and provide current examples. (#209)
+
+### Reverts
+- Reverted the addition of the one-click "Copy prompt" feature for AI agent setup from the documentation homepage. (#221)
+
+### Contributors
+[@ankitranjan7](https://github.com/ankitranjan7) | [@askadityapandey](https://github.com/askadityapandey) | [@beubax](https://github.com/beubax) | [@rajarshidattapy](https://github.com/rajarshidattapy) | [@rishabhraj36](https://github.com/rishabhraj36)
+
 ## [0.5.3](https://github.com/agentrhq/webcmd/compare/webcmd-v0.5.2...webcmd-v0.5.3) (2026-08-07)
 
 ### Improvements

@@ -12,7 +12,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { type InternalCliCommand, Strategy, registerCommand } from './registry.js';
+import { type InternalCliCommand, Strategy, registerCommand, runWithDiscoverySource } from './registry.js';
 import { getErrorMessage } from './errors.js';
 import { log } from './logger.js';
 import type { ManifestEntry } from './manifest-types.js';
@@ -197,6 +197,7 @@ async function loadFromManifest(manifestPath: string, clisDir: string): Promise<
     const manifest = JSON.parse(raw) as ManifestEntry[];
     for (const entry of manifest) {
       if (!entry.modulePath) continue;
+      if ([entry.modulePath, entry.sourceFile].some(candidate => candidate && isUnderBaseDir(clisDir, candidate))) continue;
       const modulePath = path.resolve(clisDir, entry.modulePath);
       const cmd: InternalCliCommand = {
         site: entry.site,
@@ -231,6 +232,11 @@ async function loadFromManifest(manifestPath: string, clisDir: string): Promise<
   }
 }
 
+function isUnderBaseDir(clisDir: string, candidate: string): boolean {
+  const relative = path.relative(path.resolve(clisDir, '.base'), path.resolve(clisDir, candidate));
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
 /**
  * Fallback: traditional filesystem scan (used during development with tsx).
  */
@@ -239,7 +245,7 @@ async function discoverClisFromFs(dir: string): Promise<void> {
   const entries = await fs.promises.readdir(dir, { withFileTypes: true });
   
   const sitePromises = entries
-    .filter(entry => entry.isDirectory())
+    .filter(entry => entry.isDirectory() && entry.name !== '.base')
     .map(async (entry) => {
       const site = entry.name;
       const siteDir = path.join(dir, site);
@@ -255,7 +261,7 @@ async function discoverClisFromFs(dir: string): Promise<void> {
         }
         if (file.endsWith('.js') && !file.endsWith('.d.js') && !file.endsWith('.test.js')) {
           if (!(await isCliModule(filePath))) return;
-          await import(pathToFileURL(filePath).href).catch((err) => {
+          await runWithDiscoverySource(filePath, () => import(pathToFileURL(filePath).href)).catch((err) => {
             log.warn(`Failed to load module ${filePath}: ${getErrorMessage(err)}`);
           });
         }
@@ -301,7 +307,7 @@ async function discoverPluginDir(dir: string, site: string): Promise<void> {
     }
     if (file.endsWith('.js') && !file.endsWith('.d.js')) {
       if (!(await isCliModule(filePath))) return;
-      await import(pathToFileURL(filePath).href).catch((err) => {
+      await runWithDiscoverySource(filePath, () => import(pathToFileURL(filePath).href)).catch((err) => {
         log.warn(`Plugin ${site}/${file}: ${getErrorMessage(err)}`);
       });
     } else if (

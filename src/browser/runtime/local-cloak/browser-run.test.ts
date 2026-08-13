@@ -31,6 +31,7 @@ beforeEach(async () => {
     baseDir: '/tmp/webcmd-browser-run-test',
     launchPersistentContext,
   });
+  initialPage = (await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser' })).page;
 });
 
 afterEach(async () => {
@@ -219,7 +220,7 @@ describe('local Cloak browser run', () => {
     expect(unstartedLaunch).not.toHaveBeenCalled();
   });
 
-  it('binds a session to the requested page and releases every page in that session', async () => {
+  it('does not bind a page owned by another Session', async () => {
     const original = await dispatchCloakAction(manager, command('run-original', 'run', {
       source: "await page.setContent('<p>original</p>'); return 'original';",
     }));
@@ -227,19 +228,10 @@ describe('local Cloak browser run', () => {
       op: 'new',
       session: 'manual',
     }));
-    const boundPage = context.pages().find(page => page !== initialPage)!;
-    await boundPage.setContent('<p>bound</p>');
     const bound = await dispatchCloakAction(manager, command('bind', 'bind', { page: created.page }));
-    const rerun = await dispatchCloakAction(manager, command('run-bound', 'run', {
-      source: 'return await page.locator("p").innerText();',
-    }));
-    const closed = await dispatchCloakAction(manager, command('close', 'close-window'));
-    const tabs = await dispatchCloakAction(manager, command('tabs-after-close', 'tabs', { op: 'list' }));
 
     expect(original).toMatchObject({ ok: true, page: expect.any(String) });
-    expect(bound).toMatchObject({ ok: true, page: created.page });
-    expect(rerun).toMatchObject({ ok: true, page: created.page, data: { result: 'bound' } });
-    expect(closed).toMatchObject({ ok: true, data: { closed: true } });
-    expect(tabs).toMatchObject({ ok: true, data: [] });
+    expect(bound).toMatchObject({ ok: false, errorCode: 'SESSION_WINDOW_CONFLICT' });
+    expect(created).toMatchObject({ ok: true, page: expect.any(String) });
   });
 });

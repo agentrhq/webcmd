@@ -150,6 +150,57 @@ describe('validateRows', () => {
     });
 });
 
+describe('@agentrhq/webcmd/browser/verify-fixture contract', () => {
+    it('passes rows that satisfy every hosted rule', () => {
+        const fixture: Fixture = {
+            expect: {
+                rowCount: { min: 1, max: 1 },
+                columns: ['id', 'title', 'url', 'score', 'summary'],
+                types: { id: 'number|string', title: 'string', url: 'string', score: 'number', summary: 'any' },
+                patterns: { url: '^https://' },
+                notEmpty: ['title', 'url'],
+                mustNotContain: { summary: ['address:', 'category:'] },
+                mustBeTruthy: ['score'],
+            },
+        };
+
+        expect(validateRows([
+            { id: 123, title: 'Result', url: 'https://example.com/r', score: 7, summary: 'clean' },
+        ], fixture)).toEqual([]);
+    });
+
+    it('names the rule and relevant column for each hosted failure kind', () => {
+        const failures = validateRows([
+            { id: false, title: '', url: 'ftp://example.com/r', score: 0, summary: 'address: leaked' },
+        ], {
+            expect: {
+                rowCount: { min: 2 },
+                columns: ['missing'],
+                types: { id: 'number|string' },
+                patterns: { url: '^https://' },
+                notEmpty: ['title'],
+                mustNotContain: { summary: ['address:'] },
+                mustBeTruthy: ['score'],
+            },
+        });
+
+        expect(failures).toEqual([
+            expect.objectContaining({ rule: 'rowCount', detail: expect.stringContaining('at least 2') }),
+            expect.objectContaining({ rule: 'column', detail: expect.stringContaining('"missing"') }),
+            expect.objectContaining({ rule: 'type', detail: expect.stringContaining('"id"') }),
+            expect.objectContaining({ rule: 'pattern', detail: expect.stringContaining('"url"') }),
+            expect.objectContaining({ rule: 'notEmpty', detail: expect.stringContaining('"title"') }),
+            expect.objectContaining({ rule: 'mustNotContain', detail: expect.stringContaining('"summary"') }),
+            expect.objectContaining({ rule: 'mustBeTruthy', detail: expect.stringContaining('"score"') }),
+        ]);
+    });
+
+    it('expands hosted fixture args in object and argv forms', () => {
+        expect(expandFixtureArgs({ limit: 3 })).toEqual(['--limit', '3']);
+        expect(expandFixtureArgs(['1234567', '--limit', '3'])).toEqual(['1234567', '--limit', '3']);
+    });
+});
+
 describe('validateRowShape', () => {
     it('passes flat rows with a compact key set', () => {
         const failures = validateRowShape([

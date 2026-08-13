@@ -124,7 +124,7 @@ function readme(site, description, commands) {
     .slice()
     .sort((a, b) => String(a.name).localeCompare(String(b.name)))
     .map(command => `| \`webcmd ${site} ${command.name}\` | ${String(command.description ?? '').replaceAll('|', '\\|')} |`);
-  return `# webcmd-plugin-${site}\n\n${description}.\n\n## Install\n\n\`\`\`bash\nwebcmd plugin install github:agentrhq/webcmd/${site}\n\`\`\`\n\n## Commands\n\n| Command | Description |\n| --- | --- |\n${rows.join('\n')}\n`;
+  return `# webcmd-plugin-${site}\n\n${description}.\n\n## Install\n\n\`\`\`bash\nwebcmd plugin search ${site} -f json\nwebcmd plugin install <installSource-from-search>\n\`\`\`\n\n## Commands\n\n| Command | Description |\n| --- | --- |\n${rows.join('\n')}\n`;
 }
 
 function readJson(file, fallback) {

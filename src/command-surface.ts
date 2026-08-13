@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { ArgumentError } from './errors.js';
-import type { Arg } from './registry.js';
+import type { Arg, CliCommand, CommandArgs } from './registry.js';
 
 export const OUTPUT_FORMATS = ['table', 'plain', 'json', 'yaml', 'yml', 'md', 'markdown', 'csv'] as const;
 export const TRACE_MODES = ['off', 'on', 'retain-on-failure'] as const;
@@ -244,6 +244,16 @@ export function coerceCommandArguments(
   }
 
   return result;
+}
+
+/** Apply the adapter's coercion and command-specific validation. */
+export function prepareCommandArgs(
+  cmd: CliCommand,
+  rawKwargs: CommandArgs,
+): CommandArgs {
+  const kwargs = coerceCommandArguments(cmd.args, rawKwargs);
+  cmd.validateArgs?.(kwargs);
+  return kwargs;
 }
 
 export function parseOutputFormat(value: unknown): OutputFormat {

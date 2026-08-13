@@ -21,7 +21,6 @@ import {
 } from './registry.js';
 import type { IPage } from './types.js';
 import { pathToFileURL } from 'node:url';
-import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import { executePipeline } from './pipeline/index.js';
@@ -29,20 +28,34 @@ import { adapterLoadError, ArgumentError, CommandExecutionError, TimeoutError, a
 import { shouldUseBrowserSession } from './capabilityRouting.js';
 import { getBrowserFactory, browserSession, runWithTimeout, DEFAULT_BROWSER_COMMAND_TIMEOUT, type BrowserWindowMode } from './runtime.js';
 import { profileRouteParams, resolveProfileSelection } from './browser/profile.js';
-import { releaseSiteSessionLease, setDaemonCommandTimeoutSeconds } from './browser/daemon-client.js';
+import {
+  clearSessionHandoff,
+  releaseSiteSessionLease,
+  setDaemonCommandTimeoutSeconds,
+  startSessionHandoff,
+} from './browser/daemon-client.js';
 import { emitHook, type HookContext } from './hooks.js';
 import { log } from './logger.js';
 import { isElectronApp } from './electron-apps.js';
 import { probeCDP, resolveElectronEndpoint } from './launcher.js';
 import { ObservationSession, exportObservationSession, type ObservationExportResult, type ObservationExportStatus } from './observation/index.js';
 import { resolveAdapterSourcePath } from './adapter-source.js';
-import { coerceCommandArguments, TRACE_MODES, type TraceMode } from './command-surface.js';
+import { prepareCommandArgs, TRACE_MODES, type TraceMode } from './command-surface.js';
+export { prepareCommandArgs } from './command-surface.js';
 import { clearDaemonRunContext, generateRunId, isUnknownOutcomeError, runWithDaemonRunContext } from './session-lease.js';
 
 const _loadedModules = new Map<string, Promise<void>>();
 /** Track mtime of loaded user adapter files for hot-reload in daemon mode. */
 const _moduleMtimes = new Map<string, number>();
 const _userClisDir = `${os.homedir()}/.webcmd/clis/`;
+const AUTH_HANDOFF_TTL_MS = 15 * 60 * 1000;
+
+const quoteCliArg = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
+
+function firstResultRow(result: unknown): Record<string, unknown> | undefined {
+  const row = Array.isArray(result) ? result[0] : undefined;
+  return row && typeof row === 'object' ? row as Record<string, unknown> : undefined;
+}
 
 async function finalizeRun(runId: string, release: boolean): Promise<void> {
   clearDaemonRunContext(runId);
@@ -55,12 +68,7 @@ function normalizeTraceMode(raw: unknown): TraceMode {
   throw new ArgumentError(`--trace must be one of: ${TRACE_MODES.join(', ')}. Received: "${String(raw)}"`);
 }
 
-async function runCommand(
-  cmd: CliCommand,
-  page: IPage | null,
-  kwargs: CommandArgs,
-  debug: boolean,
-): Promise<unknown> {
+async function loadCommand(cmd: CliCommand): Promise<CliCommand> {
   const internal = cmd as InternalCliCommand;
   if (internal._lazy && internal._modulePath) {
     const modulePath = internal._modulePath;
@@ -95,13 +103,18 @@ async function runCommand(
     }
     await _loadedModules.get(modulePath);
 
-    const updated = getRegistry().get(fullName(cmd));
-    if (updated?.func) {
-      return runCommandFunc(updated, page, kwargs, debug);
-    }
-    if (updated?.pipeline) return executePipeline(page, updated.pipeline, { args: kwargs, debug });
+    return getRegistry().get(fullName(cmd)) ?? cmd;
   }
+  return cmd;
+}
 
+async function runCommand(
+  cmd: CliCommand,
+  page: IPage | null,
+  kwargs: CommandArgs,
+  debug: boolean,
+): Promise<unknown> {
+  cmd = await loadCommand(cmd);
   if (cmd.func) return runCommandFunc(cmd, page, kwargs, debug);
   if (cmd.pipeline) return executePipeline(page, cmd.pipeline, { args: kwargs, debug });
   throw new CommandExecutionError(
@@ -161,6 +174,7 @@ export async function executeCommand(
   opts: {
     prepared?: boolean;
     profile?: string;
+    session?: string;
     trace?: string;
     keepTab?: string;
     windowMode?: string;
@@ -189,6 +203,7 @@ export async function executeCommand(
 
   let result: unknown;
   try {
+    cmd = await loadCommand(cmd);
     if (shouldUseBrowserSession(cmd)) {
       const electron = isElectronApp(cmd.site);
       let cdpEndpoint: string | undefined;
@@ -214,17 +229,15 @@ export async function executeCommand(
       const profileSelection = resolveProfileSelection(opts.profile);
       const profileRouting = profileRouteParams(profileSelection);
       const contextId = profileSelection?.contextId;
-      const internal = cmd as InternalCliCommand;
+      const internal = cmd as InternalCliCommand & { _authVerification?: true };
       const siteSession = resolveSiteSession(cmd, opts.siteSession);
-      const session = resolveAdapterBrowserSession(cmd, siteSession);
+      const session = opts.session?.trim() || undefined;
       const keepTab = resolveKeepTab(siteSession, opts.keepTab);
       const windowMode = resolveBrowserWindowMode(opts.windowMode);
       const surface = 'adapter' as const;
       const canonicalCommand = fullName(cmd);
-      const leaseEligible = surface === 'adapter'
-        && siteSession === 'persistent'
-        && cmd.access === 'write';
-      const runId = leaseEligible ? generateRunId() : undefined;
+      const authVerification = internal._authVerification === true;
+      const runId = generateRunId();
       let releaseRun = true;
       let deferRunFinalization = false;
 
@@ -234,7 +247,7 @@ export async function executeCommand(
           : new ObservationSession({
             scope: {
               contextId,
-              session,
+              session: session ?? 'adapter-default',
               target: page.getActivePage?.(),
               site: cmd.site,
               command: fullName(cmd),
@@ -307,10 +320,29 @@ export async function executeCommand(
           const browserTimeout = userTimeoutSec !== null
             ? userTimeoutSec + RUNTIME_TIMEOUT_PADDING_SECONDS
             : DEFAULT_BROWSER_COMMAND_TIMEOUT;
-          const result = await runWithTimeout(adapterPromise, {
+          let result = await runWithTimeout(adapterPromise, {
             timeout: browserTimeout,
             label: canonicalCommand,
           });
+          const firstRow = firstResultRow(result);
+          const handoffParams = {
+            session,
+            site: cmd.site,
+            ...profileRouting,
+          };
+          if (cmd.name === 'login' && firstRow?.status === 'action_required') {
+            const handoff = await startSessionHandoff({
+              ...handoffParams,
+              expiresAt: new Date(Date.now() + AUTH_HANDOFF_TTL_MS).toISOString(),
+            });
+            const profileId = handoff.profileId ?? profileSelection?.contextId ?? 'default';
+            result = [
+              { ...firstRow, verify_command: `webcmd --profile ${quoteCliArg(profileId)} --session ${handoff.id} ${cmd.site} whoami` },
+              ...(result as unknown[]).slice(1),
+            ];
+          } else if (authVerification && firstRow?.logged_in === true) {
+            await clearSessionHandoff(handoffParams);
+          }
           observation?.record({
             stream: 'action',
             name: 'command',
@@ -368,15 +400,13 @@ export async function executeCommand(
         windowMode,
         surface,
         siteSession,
+        adapterSite: cmd.site,
         freshPage: cmd.freshPage === true && siteSession === 'persistent',
       });
 
       try {
         result = runId
-          ? await runWithDaemonRunContext(
-              { runId, command: canonicalCommand, access: 'write' },
-              executeBrowser,
-            )
+          ? await runWithDaemonRunContext({ runId, command: canonicalCommand }, executeBrowser)
           : await executeBrowser();
       } catch (err) {
         if (runId && isUnknownOutcomeError(err)) releaseRun = false;
@@ -484,15 +514,6 @@ function exportTraceArtifact(
   }
 }
 
-export function prepareCommandArgs(
-  cmd: CliCommand,
-  rawKwargs: CommandArgs,
-): CommandArgs {
-  const kwargs = coerceCommandArguments(cmd.args, rawKwargs);
-  cmd.validateArgs?.(kwargs);
-  return kwargs;
-}
-
 /**
  * Runtime ceiling padding (seconds) added on top of the user's `--timeout`.
  * The adapter's polling loop typically uses the full user value; the padding
@@ -509,11 +530,6 @@ function normalizeSiteSession(raw: unknown): SiteSessionMode | null {
 
 function resolveSiteSession(cmd: CliCommand, rawOption?: unknown): SiteSessionMode {
   return normalizeSiteSession(rawOption) ?? cmd.siteSession ?? 'ephemeral';
-}
-
-function resolveAdapterBrowserSession(cmd: CliCommand, siteSession: SiteSessionMode): string {
-  if (siteSession === 'persistent') return `site:${cmd.site}`;
-  return `site:${cmd.site}:${crypto.randomUUID()}`;
 }
 
 function normalizeBooleanOption(name: string, raw: unknown): boolean | null {

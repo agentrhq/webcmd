@@ -18,7 +18,7 @@ Change the site's sort order in the UI, or change known query params, then compa
 Example workflow:
 
 ```bash
-webcmd browser recon run --stdin <<'JS'
+webcmd --session <session-id> browser run --stdin <<'JS'
 const responses = [];
 page.on('response', async response => {
   if (!response.url().includes('<endpoint-fragment>')) return;

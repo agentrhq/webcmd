@@ -194,7 +194,7 @@ jobs:
         run: ./scripts/collect-ci-diagnostics.ps1 -SelfTest
 
       - name: Run real Cloak lifecycle smoke
-        run: npx vitest run --project e2e tests/e2e/cloak-runtime.test.ts
+        run: npx vitest run --project e2e tests/e2e/cloak-runtime.test.ts tests/e2e/cloak-session-concurrency.test.ts
 
       - name: Collect sanitized diagnostics
         if: failure()

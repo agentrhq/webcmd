@@ -13,7 +13,7 @@ plus `webcmd doctor`, `webcmd browser init`,
 and `webcmd browser verify`. Browser-run programs are discovery evidence, not
 adapter source.
 
-Browser-profile auth commands must reuse `registerSiteAuthCommands`. Keep only site-specific `verify` and `openLogin` logic in the adapter. The login row must return `action_required` and `verify_command` (normally `webcmd <site> whoami`); after the user reports done, agents run that returned command and verification must succeed before retrying the original workflow. Credentials, MFA, and CAPTCHA always use human handoff: CAPTCHA stops automation until the user reports done and verification succeeds, and adapter code must not collect or type passwords or secrets.
+Browser-profile auth commands must reuse `registerSiteAuthCommands`. Keep only site-specific `verify` and `openLogin` logic in the adapter. The login row must return `action_required` and `verify_command`; after the user reports done, agents run that returned command verbatim (it includes `--session` when applicable), and verification must succeed before retrying the original workflow. Credentials, MFA, and CAPTCHA always use human handoff: CAPTCHA stops automation until the user reports done and verification succeeds, and adapter code must not collect or type passwords or secrets.
 
 Commands whose primary operation searches or discovers matching items from a corpus must set `tags: ['search']`. Add short `keywords` only for non-obvious intent synonyms; do not infer tags from command names alone when authoring new adapters.
 
@@ -149,8 +149,8 @@ Check these off step by step:
        [ ] If memory is older than 30 days according to `verified_at`, treat it as stale and use the cold-start path through Steps 3 and 4.
 
 [ ] 3. Recon (`site-recon.md`):
-       [ ] **Preferred:** use `webcmd browser recon run --stdin` for navigation, readiness, network hints, and page evidence in one Playwright-style program.
-       [ ] Use `webcmd browser recon snapshot --snapshot-mode tree` when structural page evidence is needed.
+       [ ] **Preferred:** create a session, then use `webcmd --session <session-id> browser run --stdin` for navigation, readiness, network hints, and page evidence in one Playwright-style program.
+       [ ] Use `webcmd --session <session-id> browser snapshot --snapshot-mode tree` when structural page evidence is needed.
        [ ] Use the run result as reconnaissance evidence; do not copy Playwright code into an adapter.
        [ ] Choose Pattern A / B / C / D / E.
 
@@ -262,8 +262,9 @@ Check these off step by step:
 - **Intermediate parsing object keys must not overlap any `columns` entry.** Otherwise silent-column-drop audits can misread the adapter. Use dedicated internal names and destructure with aliases when pushing rows.
 - **The `browser:` field determines the `func` signature:** `browser:false -> (args)`, `browser:true -> (page, args)`. If this is reversed, `args` may actually be a debug flag and all external parameters can silently fall back to defaults.
 - Throw the correct typed error for known failures according to [`references/typed-errors.md`](./references/typed-errors.md). **Do not** silently `return []`, **do not** silently `return [{sentinel}]`, and **do not** silently clamp external parameters with `Math.max/min`.
-- **Persistent sessions keep stale DOM between commands.** `siteSession: 'persistent'` shares one tab per site; leftover modals/drawers from the previous command leak into the next one. State-sensitive write commands (checkout flows) should add `freshPage: true` (new tab, same lease — cookies/login/location survive). Verify session-scoped context (login, selected city/date) *before* side effects, and embed such context in URLs/IDs your command emits for sibling commands. See `references/adapter-template.md` and "Persistent Sessions and State Hygiene" in `docs/authoring.mdx`.
-- For private iteration, write `~/.webcmd/clis/<site>/<name>.js` to avoid a build. When the user says to promote a CLI, create a main-repo plugin with `webcmd plugin create <site> --dir plugins/<site>`, copy the real command files into it, delete scaffold sample commands, register it in root `webcmd-plugin.json`, remove the local `~/.webcmd/clis/<site>` shadow, install the plugin, then run `webcmd validate <site>` and smoke commands. See `references/adapter-template.md` for details.
+- **Persistent site sessions keep stale DOM between commands.** `siteSession: 'persistent'` shares one tab per site; leftover modals/drawers from the previous command leak into the next one. State-sensitive write commands (checkout flows) should add `freshPage: true` (new tab, same lease — cookies/login/location survive). Verify session-scoped context (login, selected city/date) *before* side effects, and embed such context in URLs/IDs your command emits for sibling commands. See `references/adapter-template.md` and "Persistent Site Sessions and State Hygiene" in `docs/authoring.mdx`.
+- For private iteration, write `~/.webcmd/clis/<site>/<name>.js` to avoid a build. Use `webcmd adapter override <site>/<command>` to fork an existing plugin command. When the user says to promote a CLI, keep the `webcmd plugin create <site> --dir plugins/<site>` step for packaging a new plugin, then register it in root `webcmd-plugin.json`, install the plugin, and run `webcmd validate <site>` and smoke commands. See `references/adapter-template.md` for details.
+- After `webcmd plugin update`, check the reported overrides needing reconciliation and merge `yours` with `upstream`, using `base` as the common ancestor for a three-way merge. Only overrides are reported; a user-authored adapter has no upstream.
 - Write site memory every round: no memory -> use skill -> produce memory -> next time becomes a five-minute task.
 - **After a site's first command passes verify, stop and ask the user for their use cases before recommending next set of commands.** See Runbook Step 13.
 - **Raw dumps, packet captures, and HTML samples from debugging may only be written to `~/.webcmd/sites/<site>/fixtures/` or `/tmp/`. Never leave `.dbg-*.html`, `raw-*.json`, `sample.*`, or similar temporary files in the repo root, `plugins/<site>/`, or the current working directory.**

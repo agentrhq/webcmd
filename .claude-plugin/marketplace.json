@@ -1,0 +1,17 @@
+{
+  "$schema": "https://www.schemastore.org/claude-code-marketplace.json",
+  "name": "webcmd",
+  "description": "Turn websites, browser sessions, desktop apps, and local tools into deterministic CLI surfaces for humans and AI agents.",
+  "owner": {
+    "name": "AgentRHQ",
+    "url": "https://github.com/agentrhq"
+  },
+  "plugins": [
+    {
+      "name": "webcmd",
+      "description": "Webcmd CLI, browser, search, authoring, sitemap, and repair skills. Requires the @agentrhq/webcmd npm CLI.",
+      "source": "./",
+      "category": "productivity"
+    }
+  ]
+}
