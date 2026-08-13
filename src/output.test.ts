@@ -45,11 +45,11 @@ describe('formatOutput', () => {
     );
   });
 
-  it('preserves the legacy literal Markdown table cells', () => {
+  it('escapes pipe characters in Markdown table cells', () => {
     expect(formatOutput([
       { name: 'a|b', note: 'line 1\nline 2' },
     ], { fmt: 'md', fmtExplicit: true, columns: ['name', 'note'], isTTY: false })).toBe(
-      '| name | note |\n| --- | --- |\n| a|b | line 1\nline 2 |\n',
+      '| name | note |\n| --- | --- |\n| a\\|b | line 1\nline 2 |\n',
     );
   });
 

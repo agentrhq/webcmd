@@ -102,7 +102,12 @@ describe('hosted CLI process lifecycle', () => {
     const result = await runCli(['missing-site', 'child', '--format', 'json'], fixture.env);
 
     expect(result.status).toBe(2);
-    expect(result.stderr).toBe("error: unknown command 'missing-site'\n");
+    expect(result.stderr).toBe([
+      'Site "missing-site" is not installed.',
+      'Search: webcmd plugin search missing-site',
+      'Install using the installSource returned by search.',
+      '',
+    ].join('\n'));
     expect(result.stdout).toContain('Local-only commands:');
     await expect(readFile(fixture.discoverySentinel, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
   }, 20_000);
@@ -155,6 +160,35 @@ describe('hosted CLI process lifecycle', () => {
     expect(fixture.requests).toEqual([]);
     await expect(readFile(fixture.discoverySentinel, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
   }, 20_000);
+
+  it('runs client-owned web fetch locally in hosted and local modes', async () => {
+    const fixture = await createHostedFixture('success');
+    const article = createServer((_request, response) => {
+      response.writeHead(200, { 'content-type': 'text/html' });
+      response.end('<title>Fixture article</title><article>fixture content</article>');
+    });
+    servers.push(article);
+    await new Promise<void>((resolve, reject) => {
+      article.once('error', reject);
+      article.listen(0, '127.0.0.1', resolve);
+    });
+    const address = article.address();
+    if (!address || typeof address === 'string') throw new Error('Expected TCP article fixture address');
+    const args = ['web', 'fetch', '--url', `http://127.0.0.1:${address.port}/article`, '--allow-private', 'true', '-f', 'json'];
+
+    const hosted = await runCli(args, fixture.env);
+    expect(hosted.status).toBe(0);
+    expect(JSON.parse(hosted.stdout).content).toContain('fixture content');
+    expect(fixture.requests).toEqual([]);
+    await expect(readFile(fixture.discoverySentinel, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+
+    await writeFile(path.join(fixture.root, 'config', 'config.json'), '{"mode":"local"}\n');
+    const local = await runCli(args, fixture.env);
+    expect(local.status).toBe(0);
+    expect(JSON.parse(local.stdout)).toMatchObject({ content: expect.stringContaining('fixture content') });
+    expect(fixture.requests).toEqual([]);
+    await expect(readFile(fixture.discoverySentinel, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+  }, 20_000);
 });
 
 async function createHostedFixture(outcome: 'success' | 'failure'): Promise<{
@@ -187,6 +221,7 @@ async function createHostedFixture(outcome: 'success' | 'failure'): Promise<{
           userId: 'user_lifecycle',
           metadata: {
             contractSchemaVersion: 1,
+            sessionProtocolVersion: 1,
             webcmdPackageVersion: PKG_VERSION,
             generatedAt: '2026-07-14T00:00:00.000Z',
           },

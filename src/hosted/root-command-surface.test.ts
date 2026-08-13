@@ -14,6 +14,13 @@ import {
 } from '../root-command-surface.js';
 import { runHostedCli } from './runner.js';
 
+const MISSING_SITE_GUIDANCE = [
+  'Site "missing" is not installed.',
+  'Search: webcmd plugin search missing',
+  'Install using the installSource returned by search.',
+  '',
+].join('\n');
+
 function sink(): { stream: Writable; text: () => string } {
   let data = '';
   return {
@@ -31,7 +38,8 @@ const manifest = {
   userId: 'user_demo',
   metadata: {
     contractSchemaVersion: 1,
-    webcmdPackageVersion: PKG_VERSION,
+            sessionProtocolVersion: 1,
+            webcmdPackageVersion: PKG_VERSION,
     generatedAt: '2026-07-08T00:00:00.000Z',
   },
   commands: [{
@@ -173,6 +181,25 @@ const generatedTerminalCorpus = profileForms.flatMap(profile =>
 );
 
 describe('hosted root command surface', () => {
+  it('parses the canonical root session selector', () => {
+    expect(parseHostedRootCommandSurface([
+      '--profile', 'work', '--session', 'session_a', 'github', 'issues',
+    ])).toEqual({
+      kind: 'dispatch',
+      argv: ['github', 'issues'],
+      profile: 'work',
+      session: 'session_a',
+      literal: false,
+    });
+  });
+
+  it('advertises client-owned web fetch at the hosted root', () => {
+    expect(HOSTED_ROOT_HELP.commands).toContainEqual({
+      name: 'web',
+      description: 'Fetch URLs locally without launching a browser',
+    });
+  });
+
   it('advertises hosted profile management as a root command, not a local-only namespace', () => {
     expect(HOSTED_ROOT_HELP.commands).toContainEqual({
       name: 'profile',
@@ -436,7 +463,7 @@ describe('hosted root preflight call order', () => {
     });
 
     expect(result).toEqual({ handled: true, exitCode: 2 });
-    expect(stderr.text()).toBe("error: unknown command 'missing'\n");
+    expect(stderr.text()).toBe(MISSING_SITE_GUIDANCE);
     expect(stdout.text()).toBe(formatRootHelp(HOSTED_ROOT_HELP));
   });
 
@@ -670,9 +697,9 @@ describe('hosted root preflight call order', () => {
       expect(local.stderr).toBe('');
     } else {
       expect(stdout.text()).toBe(formatRootHelp(HOSTED_ROOT_HELP));
-      expect(stderr.text()).toBe("error: unknown command 'missing'\n");
+      expect(stderr.text()).toBe(MISSING_SITE_GUIDANCE);
       expect(local.stdout).not.toBe('');
-      expect(local.stderr).toBe("error: unknown command 'missing'\n");
+      expect(local.stderr).toBe(MISSING_SITE_GUIDANCE);
     }
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(String(fetchImpl.mock.calls[0]![0])).toBe('https://api.example.com/v1/manifest');
@@ -719,7 +746,7 @@ describe('hosted root preflight call order', () => {
       fetchImpl,
     });
 
-    expect(local).toMatchObject({ exitCode: 2, stderr: "error: unknown command 'missing'\n" });
+    expect(local).toMatchObject({ exitCode: 2, stderr: MISSING_SITE_GUIDANCE });
     expect(local.stdout).not.toBe('');
     expect(hosted).toEqual({ handled: true, exitCode: local.exitCode });
     expect(stdout.text()).toBe(formatRootHelp(HOSTED_ROOT_HELP));

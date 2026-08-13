@@ -2,6 +2,9 @@
 
 Use this after recon, endpoint verification, field decoding, output design, and strategy-note writing are complete.
 
+Playwright-style browser-run code is reconnaissance, not adapter source.
+Implement the observed behavior with the existing adapter APIs.
+
 ## Create The File
 
 For private iteration:
@@ -12,7 +15,7 @@ webcmd browser init <site>/<name>
 
 This scaffolds `~/.webcmd/clis/<site>/<name>.js` with a `Strategy.PUBLIC` placeholder — `init` takes no flags, so set the real `strategy:` value (and the other `TODO` fields) by hand once the file exists.
 
-Promote a community CLI to the main repo as a plugin:
+Promote a community CLI to the main repo as a plugin — **only after the user has explicitly confirmed they want it pushed into the repo**; a general instruction to build a working adapter is not that confirmation (see `SKILL.md`'s Key Conventions):
 
 ```bash
 webcmd plugin create <site> --dir plugins/<site> --description "<site> commands for Webcmd"
@@ -130,7 +133,7 @@ Rules:
 | `args` | Include type, default, and help for every external parameter. |
 | `columns` | Must exactly match row keys, including order. |
 | `pipeline` or `func` | Use the style already established by nearby adapters. |
-| `siteSession` | `'persistent'` shares one tab per site across commands (multi-step flows); `'ephemeral'` gets a fresh isolated tab per run. Persistent tabs keep leftover DOM (modals, drawers) between commands — see "Persistent Sessions and State Hygiene" in docs/authoring.mdx. |
+| `siteSession` | `'persistent'` shares one tab per site across commands (multi-step flows); `'ephemeral'` gets a fresh isolated tab per run. Persistent site-session tabs keep leftover DOM (modals, drawers) between commands — see "Persistent Site Sessions and State Hygiene" in docs/authoring.mdx. |
 | `freshPage` | With `siteSession: 'persistent'`, set `true` to start the command on a newly created tab under the same lease: profile state (cookies, login, location) survives, stale DOM does not. Recommended for state-sensitive write commands such as checkout flows. |
 
 ## Strategy Enum Examples

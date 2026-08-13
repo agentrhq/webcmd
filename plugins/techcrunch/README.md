@@ -5,7 +5,7 @@ Search and read TechCrunch stories through WebCMD using TechCrunch's public API.
 ## Install
 
 ```bash
-webcmd plugin install github:agentrhq/webcmd/plugins/techcrunch
+webcmd plugin install github:agentrhq/webcmd/techcrunch
 ```
 
 ## Commands

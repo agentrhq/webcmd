@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { ArgumentError, CliError, EXIT_CODES } from './errors.js';
-import type { Arg } from './registry.js';
+import type { Arg, CliCommand, CommandArgs } from './registry.js';
 
 /** Canonical output format names accepted by the shared renderer. */
 export const OUTPUT_FORMATS = ['table', 'plain', 'json', 'yaml', 'md', 'csv'] as const;
@@ -251,6 +251,16 @@ export function coerceCommandArguments(
   return result;
 }
 
+/** Apply the adapter's coercion and command-specific validation. */
+export function prepareCommandArgs(
+  cmd: CliCommand,
+  rawKwargs: CommandArgs,
+): CommandArgs {
+  const kwargs = coerceCommandArguments(cmd.args, rawKwargs);
+  cmd.validateArgs?.(kwargs);
+  return kwargs;
+}
+
 export function parseOutputFormat(value: unknown): OutputFormat {
   const raw = String(value);
   const lower = raw.toLowerCase();
@@ -263,11 +273,7 @@ export function parseOutputFormat(value: unknown): OutputFormat {
   return normalized;
 }
 
-/**
- * Validate and normalize an `-f/--format` value for a CLI action. Returns the
- * canonical format, or `null` after emitting a usage error when the value is
- * unsupported.
- */
+/** Validate and normalize a local built-in command format. */
 export function resolveOutputFormat(raw: string | undefined): OutputFormat | null {
   try {
     return parseOutputFormat(raw);

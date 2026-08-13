@@ -101,6 +101,15 @@ describe('extractArticle (host-side)', () => {
     expect(await extractArticle(fakePage({ html: '<p>x</p>' }))).toBeNull();
   });
 
+  it('uses only the page evaluation pipeline when extraction misses', async () => {
+    const page = fakePage(null);
+    const pageWithSnapshot = page as typeof page & { snapshot(): never };
+    pageWithSnapshot.snapshot = () => { throw new Error('snapshot fallback must not run'); };
+
+    await expect(extractArticle(pageWithSnapshot)).resolves.toBeNull();
+    expect(page.lastJs).toContain('new Readability');
+  });
+
   it('defaults title to empty string when the page omits it', async () => {
     const page = fakePage({ source: 'pre', html: '<body><pre>x</pre></body>' });
     const res = await extractArticle(page);

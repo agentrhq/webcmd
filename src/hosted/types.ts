@@ -1,6 +1,8 @@
 import type { CommandSurfaceMetadata } from '../command-surface.js';
 import type { Arg } from '../registry.js';
 
+export const HOSTED_SESSION_PROTOCOL_VERSION = 1 as const;
+
 export type HostedCommandStrategy = 'PUBLIC' | 'COOKIE' | 'INTERCEPT' | 'UI' | 'LOCAL' | string;
 
 export interface HostedCommandArg extends Arg {}
@@ -19,6 +21,7 @@ export interface HostedFileArgument {
 }
 
 export interface HostedCommand extends CommandSurfaceMetadata {
+  clientOwned?: boolean;
   site: string;
   name: string;
   aliases?: string[];
@@ -40,6 +43,7 @@ export interface HostedManifest {
   userId: string;
   metadata: {
     contractSchemaVersion: number;
+    sessionProtocolVersion: number;
     webcmdPackageVersion: string;
     generatedAt: string;
   };
@@ -60,6 +64,35 @@ export interface HostedPublicProfile {
 export interface HostedProfilesResponse {
   ok: true;
   profiles: HostedPublicProfile[];
+}
+
+export interface HostedBrowserSession {
+  id: string;
+  kind: 'explicit' | 'adapter-default';
+  profileId: string;
+  runtimeState: 'active' | 'idle';
+  handoff: { site: string; expiresAt: string } | null;
+  createdAt: string;
+  updatedAt: string;
+  lastUsedAt: string;
+}
+
+export interface HostedBrowserSessionResponse {
+  ok: true;
+  session: HostedBrowserSession;
+}
+
+export interface HostedBrowserSessionsResponse {
+  ok: true;
+  sessions: HostedBrowserSession[];
+}
+
+export interface HostedBrowserSessionCloseResponse {
+  ok: true;
+  closed: boolean;
+  alreadyIdle: boolean;
+  session: string;
+  displaced?: { executionId?: string; handoffSite?: string };
 }
 
 export interface HostedMarketplacePlugin {
@@ -87,6 +120,15 @@ export interface HostedMarketplaceInstallation {
   name: string;
   version: string;
   installSource: string;
+}
+
+export interface HostedMarketplaceInstallationRow {
+  name: string;
+  version: string;
+  installSource: string;
+  sourceCommit: string | null;
+  installedAt: string;
+  updateAvailable: boolean;
 }
 
 export interface HostedExecution {
@@ -156,6 +198,7 @@ export interface HostedUploadArtifactResponse {
 export type HostedBrowserActionName =
   | 'analyze'
   | 'back'
+  | 'bind'
   | 'check'
   | 'click'
   | 'close-window'
@@ -169,6 +212,7 @@ export type HostedBrowserActionName =
   | 'fill'
   | 'find'
   | 'focus'
+  | 'fork'
   | 'frames'
   | 'get-attributes'
   | 'get-html'
@@ -182,6 +226,7 @@ export type HostedBrowserActionName =
   | 'navigate'
   | 'network'
   | 'press-key'
+  | 'run'
   | 'screenshot'
   | 'scroll'
   | 'select'
@@ -195,7 +240,7 @@ export type HostedBrowserActionName =
 
 export interface HostedBrowserRunRequest {
   command: string;
-  args: Record<string, unknown>;
+  args: HostedBrowserActionArgs;
   profile?: string;
   windowMode?: 'foreground' | 'background';
   trace?: string;
@@ -211,13 +256,20 @@ export interface HostedBrowserRunResponse {
       displayName: string;
     };
     liveViewUrl?: string;
+    expiresAt?: string;
   };
 }
 
 export interface HostedBrowserActionRequest {
   action: HostedBrowserActionName;
-  args: Record<string, unknown>;
+  args: HostedBrowserActionArgs;
   profile?: string;
+}
+
+export interface HostedBrowserActionArgs extends Record<string, unknown> {
+  snapshotMode?: 'act' | 'tree' | 'read';
+  ref?: string;
+  noSnapshotDiff?: boolean;
 }
 
 export interface HostedBrowserActionResponse {
@@ -255,6 +307,12 @@ export interface HostedBrowserRunActionInput extends HostedBrowserRunRequest, Ho
 export interface HostedBrowserRunActionResponse extends HostedBrowserActionResponse {
   run: HostedBrowserRunResponse['run'];
   execution: HostedBrowserFinishResponse['execution'];
+}
+
+export interface HostedBrowserSnapshotActionResponse {
+  ok: true;
+  run: HostedBrowserRunResponse['run'];
+  result: unknown;
 }
 
 export interface HostedErrorResponse {

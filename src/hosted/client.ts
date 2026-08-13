@@ -1,11 +1,16 @@
 import { attachTraceReceipt, CliError, EXIT_CODES, type ExitCode } from '../errors.js';
+import { HOSTED_SESSION_PROTOCOL_VERSION } from './types.js';
 import type {
   HostedBrowserActionRequest,
   HostedBrowserActionResponse,
   HostedBrowserFinishRequest,
   HostedBrowserFinishResponse,
+  HostedBrowserSessionCloseResponse,
+  HostedBrowserSessionResponse,
+  HostedBrowserSessionsResponse,
   HostedBrowserRunActionInput,
   HostedBrowserRunActionResponse,
+  HostedBrowserSnapshotActionResponse,
   HostedBrowserRunRequest,
   HostedBrowserRunResponse,
   HostedArtifactReceipt,
@@ -17,6 +22,7 @@ import type {
   HostedUploadArtifactResponse,
   HostedManifest,
   HostedMarketplaceInstallation,
+  HostedMarketplaceInstallationRow,
   HostedMarketplaceSearchResult,
   HostedTraceReceipt,
 } from './types.js';
@@ -80,6 +86,31 @@ export class HostedClient {
 
   async getManifest(): Promise<HostedManifest> {
     const body = await this.request('/v1/manifest');
+    const manifestMetadata = isRecord(body)
+      && isRecord(body.manifest)
+      && isRecord(body.manifest.metadata)
+      ? body.manifest.metadata
+      : undefined;
+    const sessionProtocolVersion = manifestMetadata?.sessionProtocolVersion;
+    if (
+      manifestMetadata
+      && (
+        sessionProtocolVersion === undefined
+        || (
+          typeof sessionProtocolVersion === 'number'
+          && Number.isInteger(sessionProtocolVersion)
+          && sessionProtocolVersion > 0
+          && sessionProtocolVersion !== HOSTED_SESSION_PROTOCOL_VERSION
+        )
+      )
+    ) {
+      throw new HostedClientError(
+        'HOSTED_CONTRACT_MISMATCH',
+        'Webcmd Cloud manifest does not match this installed Webcmd hosted contract.',
+        'Upgrade Webcmd or use a compatible Webcmd Cloud endpoint.',
+        EXIT_CODES.CONFIG_ERROR,
+      );
+    }
     if (!hasExactKeys(body, ['ok', 'manifest']) || !isHostedManifest(body.manifest)) {
       throw protocolError('Webcmd Cloud returned an invalid manifest.');
     }
@@ -100,6 +131,36 @@ export class HostedClient {
       throw protocolError('Webcmd Cloud returned an invalid profile deletion response.');
     }
     return { ok: true, deleted: true };
+  }
+
+  async createBrowserSession(profile?: string): Promise<HostedBrowserSessionResponse> {
+    const body = await this.request('/v1/sessions', {
+      method: 'POST',
+      body: JSON.stringify(profile !== undefined ? { profile } : {}),
+    });
+    if (!isHostedBrowserSessionResponse(body)) {
+      throw protocolError('Webcmd Cloud returned an invalid browser session response.');
+    }
+    return body;
+  }
+
+  async listBrowserSessions(profile?: string, limit?: number): Promise<HostedBrowserSessionsResponse> {
+    const body = await this.request(`/v1/sessions${sessionListQuery(profile, limit)}`);
+    if (!isHostedBrowserSessionsResponse(body)) {
+      throw protocolError('Webcmd Cloud returned an invalid browser session list.');
+    }
+    return body;
+  }
+
+  async closeBrowserSession(session: string, profile?: string, force = false): Promise<HostedBrowserSessionCloseResponse> {
+    const body = await this.request(`/v1/sessions/${encodeURIComponent(session)}/close${profileQuery(profile)}`, {
+      method: 'POST',
+      body: JSON.stringify(force ? { force: true } : {}),
+    });
+    if (!isHostedBrowserSessionCloseResponse(body)) {
+      throw protocolError('Webcmd Cloud returned an invalid browser session close response.');
+    }
+    return body;
   }
 
   async searchMarketplacePlugins(query?: string): Promise<HostedMarketplaceSearchResult> {
@@ -123,12 +184,41 @@ export class HostedClient {
     return body.result;
   }
 
+  async listMarketplaceInstallations(): Promise<HostedMarketplaceInstallationRow[]> {
+    const body = await this.request('/v1/marketplace/installations');
+    if (!hasExactKeys(body, ['ok', 'result']) || body.ok !== true
+      || !isRecord(body.result) || !Array.isArray(body.result.installations)
+      || !body.result.installations.every(isHostedMarketplaceInstallationRow)) {
+      throw protocolError('Webcmd Cloud returned an invalid marketplace installation list.');
+    }
+    return body.result.installations;
+  }
+
+  async uninstallMarketplacePlugin(name: string): Promise<{ uninstalled: true }> {
+    const body = await this.request(`/v1/marketplace/installations/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    if (!hasExactKeys(body, ['ok', 'result']) || body.ok !== true
+      || !isRecord(body.result) || body.result.uninstalled !== true) {
+      throw protocolError('Webcmd Cloud returned an invalid marketplace uninstall response.');
+    }
+    return { uninstalled: true };
+  }
+
+  async updateMarketplacePlugin(name: string): Promise<HostedMarketplaceUpdateResult> {
+    const body = await this.request(`/v1/marketplace/installations/${encodeURIComponent(name)}/update`, { method: 'POST' });
+    if (!hasExactKeys(body, ['ok', 'result']) || body.ok !== true
+      || !isHostedMarketplaceUpdateResult(body.result)) {
+      throw protocolError('Webcmd Cloud returned an invalid marketplace update response.');
+    }
+    return body.result;
+  }
+
   async execute(input: {
     command: string;
     args: Record<string, unknown>;
     format?: string;
     trace?: string;
     profile?: string;
+    session?: string;
   }): Promise<HostedExecuteResponse> {
     const traceMode = normalizeTraceMode(input.trace);
     const body = await this.request('/v1/execute', {
@@ -181,6 +271,7 @@ export class HostedClient {
     format?: string;
     trace?: string;
     profile?: string;
+    session?: string;
   }): Promise<HostedExecuteResponse> {
     const traceMode = normalizeTraceMode(input.trace);
     const body = await this.request(`/v1/executions/${encodeURIComponent(input.executionId)}/run`, {
@@ -191,6 +282,7 @@ export class HostedClient {
         ...(input.format !== undefined ? { format: input.format } : {}),
         ...(input.trace !== undefined ? { trace: input.trace } : {}),
         ...(input.profile !== undefined ? { profile: input.profile } : {}),
+        ...(input.session !== undefined ? { session: input.session } : {}),
       }),
     }, { command: input.command, traceMode });
     if (!isHostedExecuteResponse(body, input.command, traceMode)) {
@@ -273,16 +365,16 @@ export class HostedClient {
     return body;
   }
 
-  async runBrowserAction(session: string, input: HostedBrowserRunActionInput): Promise<HostedBrowserRunActionResponse> {
+  async runBrowserAction(session: string, input: HostedBrowserRunActionInput): Promise<HostedBrowserRunActionResponse | HostedBrowserSnapshotActionResponse> {
     return this.executeBrowserCommand(session, input);
   }
 
-  async executeBrowserCommand(session: string, input: HostedBrowserRunActionInput): Promise<HostedBrowserRunActionResponse> {
+  async executeBrowserCommand(session: string, input: HostedBrowserRunActionInput): Promise<HostedBrowserRunActionResponse | HostedBrowserSnapshotActionResponse> {
     const body = await this.request(`/v1/browser/${encodeURIComponent(session)}/commands`, {
       method: 'POST',
       body: JSON.stringify(input),
     });
-    if (!isHostedBrowserRunActionResponse(body, session)) {
+    if (!isHostedBrowserRunActionResponse(body, session) && !(input.action === 'snapshot' && isHostedBrowserSnapshotActionResponse(body, session))) {
       throw protocolError('Webcmd Cloud returned an invalid browser action response.');
     }
     return body;
@@ -299,6 +391,7 @@ export class HostedClient {
         accept: 'application/json',
         ...(init.body ? { 'content-type': 'application/json' } : {}),
         authorization: `Bearer ${this.apiKey}`,
+        'x-webcmd-session-protocol-version': String(HOSTED_SESSION_PROTOCOL_VERSION),
         ...(this.workspace ? { 'x-webcmd-workspace': this.workspace } : {}),
         ...(init.headers ?? {}),
       },
@@ -358,10 +451,13 @@ function isHostedError(value: unknown): value is HostedErrorResponse {
 function isHostedManifest(value: unknown): value is HostedManifest {
   return hasExactKeys(value, ['userId', 'metadata', 'commands'])
     && typeof value.userId === 'string'
-    && hasExactKeys(value.metadata, ['contractSchemaVersion', 'webcmdPackageVersion', 'generatedAt'])
+    && hasExactKeys(value.metadata, ['contractSchemaVersion', 'sessionProtocolVersion', 'webcmdPackageVersion', 'generatedAt'])
     && typeof value.metadata.contractSchemaVersion === 'number'
     && Number.isInteger(value.metadata.contractSchemaVersion)
     && value.metadata.contractSchemaVersion > 0
+    && typeof value.metadata.sessionProtocolVersion === 'number'
+    && Number.isInteger(value.metadata.sessionProtocolVersion)
+    && value.metadata.sessionProtocolVersion > 0
     && typeof value.metadata.webcmdPackageVersion === 'string'
     && typeof value.metadata.generatedAt === 'string'
     && Array.isArray(value.commands)
@@ -425,6 +521,66 @@ function isHostedProfilesResponse(value: unknown): value is HostedProfilesRespon
     && value.profiles.every(isHostedPublicProfile);
 }
 
+function isHostedBrowserSessionResponse(value: unknown): value is HostedBrowserSessionResponse {
+  return hasExactKeys(value, ['ok', 'session'])
+    && value.ok === true
+    && isHostedBrowserSession(value.session);
+}
+
+function isHostedBrowserSessionsResponse(value: unknown): value is HostedBrowserSessionsResponse {
+  return hasExactKeys(value, ['ok', 'sessions'])
+    && value.ok === true
+    && Array.isArray(value.sessions)
+    && value.sessions.every(isHostedBrowserSession);
+}
+
+function isHostedBrowserSessionCloseResponse(value: unknown): value is HostedBrowserSessionCloseResponse {
+  return hasOnlyKeys(value, ['ok', 'closed', 'alreadyIdle', 'session', 'displaced'])
+    && value.ok === true
+    && typeof value.closed === 'boolean'
+    && typeof value.alreadyIdle === 'boolean'
+    && typeof value.session === 'string'
+    && (value.displaced === undefined || isHostedSessionDisplacement(value.displaced));
+}
+
+function isHostedBrowserSession(value: unknown): boolean {
+  return hasExactKeys(value, ['id', 'kind', 'profileId', 'runtimeState', 'handoff', 'createdAt', 'updatedAt', 'lastUsedAt'])
+    && typeof value.id === 'string'
+    && (value.kind === 'explicit' || value.kind === 'adapter-default')
+    && typeof value.profileId === 'string'
+    && (value.runtimeState === 'active' || value.runtimeState === 'idle')
+    && isHostedSessionHandoff(value.handoff)
+    && typeof value.createdAt === 'string'
+    && typeof value.updatedAt === 'string'
+    && typeof value.lastUsedAt === 'string';
+}
+
+function isHostedSessionHandoff(value: unknown): boolean {
+  return value === null
+    || (hasExactKeys(value, ['site', 'expiresAt'])
+      && typeof value.site === 'string'
+      && typeof value.expiresAt === 'string');
+}
+
+function isHostedSessionDisplacement(value: unknown): boolean {
+  return hasOnlyKeys(value, ['executionId', 'handoffSite'])
+    && (value.executionId === undefined || typeof value.executionId === 'string')
+    && (value.handoffSite === undefined || typeof value.handoffSite === 'string');
+}
+
+function profileQuery(profile: string | undefined): string {
+  if (profile === undefined) return '';
+  const params = new URLSearchParams({ profile });
+  return `?${params}`;
+}
+
+function sessionListQuery(profile: string | undefined, limit: number | undefined): string {
+  const params = new URLSearchParams();
+  if (profile !== undefined) params.set('profile', profile);
+  if (limit !== undefined) params.set('limit', String(limit));
+  return params.size ? `?${params}` : '';
+}
+
 function isHostedMarketplaceSearchResult(value: unknown): value is HostedMarketplaceSearchResult {
   return hasExactKeys(value, ['plugins', 'errors'])
     && Array.isArray(value.plugins)
@@ -456,6 +612,33 @@ function isHostedMarketplaceInstallation(value: unknown): value is HostedMarketp
     && typeof value.name === 'string'
     && typeof value.version === 'string'
     && typeof value.installSource === 'string';
+}
+
+function isHostedMarketplaceInstallationRow(value: unknown): value is HostedMarketplaceInstallationRow {
+  return hasExactKeys(value, ['name', 'version', 'installSource', 'sourceCommit', 'installedAt', 'updateAvailable'])
+    && typeof value.name === 'string'
+    && typeof value.version === 'string'
+    && typeof value.installSource === 'string'
+    && (value.sourceCommit === null || typeof value.sourceCommit === 'string')
+    && typeof value.installedAt === 'string'
+    && typeof value.updateAvailable === 'boolean';
+}
+
+// `delisted` is optional and appears ONLY when true (installed plugin whose catalog
+// entry was delisted — nothing to update to, a normal outcome not an error). hasExactKeys
+// would reject either the 3-key or 4-key shape depending on which list you pass it, so
+// check the base 3 keys with hasOnlyKeys (permits the optional 4th) and validate `delisted`
+// separately when present.
+export type HostedMarketplaceUpdateResult =
+  | { updated: boolean; name: string; version: string }
+  | { updated: boolean; name: string; version: string; delisted: true };
+
+function isHostedMarketplaceUpdateResult(value: unknown): value is HostedMarketplaceUpdateResult {
+  return hasOnlyKeys(value, ['updated', 'name', 'version', 'delisted'])
+    && typeof value.updated === 'boolean'
+    && typeof value.name === 'string'
+    && typeof value.version === 'string'
+    && (value.delisted === undefined || value.delisted === true);
 }
 
 function isHostedPublicProfile(value: unknown): boolean {
@@ -569,11 +752,12 @@ function isHostedBrowserRunResponse(value: unknown, requestedSession: string): v
 
 function isHostedBrowserRunPayload(value: unknown, requestedSession: string): value is HostedBrowserRunResponse['run'] {
   const run = value;
-  if (!hasOnlyKeys(run, ['executionId', 'session', 'profile', 'liveViewUrl'])) return false;
+  if (!hasOnlyKeys(run, ['executionId', 'session', 'profile', 'liveViewUrl', 'expiresAt'])) return false;
   if (typeof run.executionId !== 'string' || run.session !== requestedSession) return false;
   if (!hasExactKeys(run.profile, ['id', 'displayName'])) return false;
   if (typeof run.profile.id !== 'string' || typeof run.profile.displayName !== 'string') return false;
-  return run.liveViewUrl === undefined || typeof run.liveViewUrl === 'string';
+  if (run.liveViewUrl !== undefined && typeof run.liveViewUrl !== 'string') return false;
+  return run.expiresAt === undefined || typeof run.expiresAt === 'string';
 }
 
 function isHostedBrowserActionResponse(value: unknown): value is HostedBrowserActionResponse {
@@ -591,6 +775,12 @@ function isHostedBrowserRunActionResponse(value: unknown, requestedSession: stri
     && typeof value.execution.id === 'string'
     && value.execution.id === value.run.executionId
     && (value.execution.status === 'succeeded' || value.execution.status === 'failed' || value.execution.status === 'timed_out');
+}
+
+function isHostedBrowserSnapshotActionResponse(value: unknown, requestedSession: string): value is HostedBrowserSnapshotActionResponse {
+  return hasExactKeys(value, ['ok', 'run', 'result'])
+    && value.ok === true
+    && isHostedBrowserRunPayload(value.run, requestedSession);
 }
 
 function isHostedBrowserActionTrace(value: unknown): boolean {

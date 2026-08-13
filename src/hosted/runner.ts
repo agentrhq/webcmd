@@ -1,15 +1,18 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Command, CommanderError } from 'commander';
-import { configureCompletionCommandSurface, configureListCommandSurface, configurePluginInstallSurface, configurePluginSearchSurface } from '../builtin-command-surface.js';
-import { BrowserSessionArgvError, rewriteBrowserArgv } from '../cli-argv-preprocess.js';
+import { Command, CommanderError, InvalidArgumentError } from 'commander';
 import {
-  CommanderStructuralError,
-  MissingRequiredPositionalError,
-  OUTPUT_FORMAT_HELP,
-  parseOutputFormat,
-} from '../command-surface.js';
+  configureCompletionCommandSurface,
+  configureListCommandSurface,
+  configurePluginInstallSurface,
+  configurePluginListSurface,
+  configurePluginSearchSurface,
+  configurePluginUninstallSurface,
+  configurePluginUpdateSurface,
+} from '../builtin-command-surface.js';
+import { BrowserSessionArgvError, rejectMisplacedSessionSelectorArgv, rejectPositionalBrowserSessionArgv } from '../cli-argv-preprocess.js';
+import { CommanderStructuralError, MissingRequiredPositionalError, OUTPUT_FORMAT_HELP, parseOutputFormat } from '../command-surface.js';
 import { filterCommandsByTag, formatRootHelp, getCommandCompletionCandidates } from '../command-presentation.js';
 import {
   HOSTED_BUILTIN_COMMANDS,
@@ -24,10 +27,14 @@ import { StreamWriteError, writeToStream } from '../stream-write.js';
 import { PKG_VERSION } from '../version.js';
 import { getCompletionScriptFast } from '../completion-fast.js';
 import { browserCommandCatalog } from '../browser/command-catalog.js';
+import { loadBrowserRunSource } from '../browser/run/input.js';
+import { BrowserRunError } from '../browser/run/types.js';
 import { CLI_COMMAND } from '../brand.js';
+import { missingPluginGuidance } from '../discovery.js';
 import { HostedClient, HostedClientError, resolveWorkspace } from './client.js';
+import { HOSTED_SESSION_PROTOCOL_VERSION } from './types.js';
 import { parseHostedInvocation } from './args.js';
-import { HostedBrowserHelp, parseHostedBrowserStructure } from './browser-args.js';
+import { HostedBrowserHelp, parseHostedBrowserStructure, validateRawBrowserSession } from './browser-args.js';
 import { materializeHostedOutputs, prepareHostedFiles, rewriteHostedOutputResultPaths } from './files.js';
 import {
   findHostedCommand,
@@ -38,6 +45,7 @@ import {
   isLocalOnlyHostedCommand,
   renderHostedCommandHelp,
   renderHostedSiteHelp,
+  withClientOwnedCommands,
 } from './manifest.js';
 import { isHostedConfig, loadWebcmdConfig, type WebcmdConfig } from './config.js';
 import { resolveHostedApiKey, type HostedCredentialStore } from './credentials.js';
@@ -45,6 +53,7 @@ import { parseHostedRootCommandSurface } from '../root-command-surface.js';
 import type {
   HostedBrowserActionName,
   HostedBrowserRunActionResponse,
+  HostedBrowserSnapshotActionResponse,
   HostedManifest,
 } from './types.js';
 import type { HostedBrowserCommandContract } from './contract.js';
@@ -77,12 +86,7 @@ class CommanderCompatibleError extends Error {
   }
 }
 
-/**
- * Validate and normalize an `-f/--format` value for the hosted surfaces that
- * build their own Commander grammar (`webcmd list`, `profile`, `plugin search`).
- * Mirrors the local CLI behavior: an unsupported format is a usage error with
- * Commander-style lowercase output and exit code 2.
- */
+/** Normalize a hosted built-in's format, preserving Commander-style usage errors. */
 function validateHostedFormat(raw: string): string {
   try {
     return parseOutputFormat(raw);
@@ -103,6 +107,7 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
   const stderr = opts.stderr ?? process.stderr;
 
   try {
+    argv = rejectMisplacedSessionSelectorArgv(rejectPositionalBrowserSessionArgv(argv));
     const credential = await resolveHostedApiKey(config, {
       credentialStore: opts.credentialStore,
       env: opts.env,
@@ -121,6 +126,10 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
     return { handled: true, exitCode: EXIT_CODES.SUCCESS };
   } catch (err) {
     if (err instanceof StreamWriteError) throw err;
+    if (err instanceof BrowserSessionArgvError) {
+      await writeToStream(stderr, `error: ${err.message}\n`);
+      return { handled: true, exitCode: EXIT_CODES.USAGE_ERROR };
+    }
     if (err instanceof CliError && err.code === 'UNSUPPORTED_SHELL') throw err;
     if (err instanceof CommanderStructuralError) {
       await writeToStream(stderr, err.output);
@@ -167,8 +176,7 @@ async function dispatchHosted(
     return;
   }
   if (normalized.kind === 'completion') {
-    const manifest = await client.getManifest();
-    validateManifestContractIdentity(manifest);
+    const manifest = await getPresentationManifest(client);
     await writeToStream(stdout, hostedCompletions(manifest, normalized.argv).join('\n') + '\n');
     return;
   }
@@ -196,8 +204,25 @@ async function dispatchHosted(
       LOCAL_ONLY_COMMAND_HELP,
     );
   }
+  if (args[0] === 'doctor') {
+    throw new ConfigError(
+      'webcmd doctor is local-only. Hosted mode has no local browser bridge.',
+      LOCAL_ONLY_COMMAND_HELP,
+    );
+  }
+  if (args[0] === 'session') {
+    const parsed = parseHostedSessionSurface(args.slice(1), normalized.literal);
+    if (parsed.kind === 'help') {
+      await writeToStream(stdout, parsed.output);
+      return;
+    }
+    const manifest = await client.getManifest();
+    validateManifestContractIdentity(manifest);
+    await dispatchHostedSession(parsed, client, stdout, normalized.profile);
+    return;
+  }
   if (args[0] === 'browser') {
-    const invocation = parseHostedBrowserInvocation(args, normalized.profile);
+    const invocation = await parseHostedBrowserInvocation(args, normalized.profile, normalized.session);
     const manifest = await client.getManifest();
     validateManifestContractIdentity(manifest);
     await dispatchHostedBrowser(invocation, client, stdout);
@@ -210,8 +235,7 @@ async function dispatchHosted(
       await writeToStream(stdout, parsed.output);
       return;
     }
-    const manifest = await client.getManifest();
-    validateManifestContractIdentity(manifest);
+    const manifest = await getPresentationManifest(client);
     await renderHostedList(manifest, parsed.format, parsed.formatExplicit, stdout, parsed.tag);
     return;
   }
@@ -234,10 +258,11 @@ async function dispatchHosted(
 
   if (args[0] === 'plugin') {
     const subcommand = args[1];
-    if (subcommand !== 'search' && subcommand !== 'install' && subcommand !== '--help' && subcommand !== '-h') {
+    const allowed = new Set(['search', 'install', 'list', 'uninstall', 'update', 'create', '--help', '-h']);
+    if (!allowed.has(subcommand ?? '')) {
       throw new ConfigError(
         `webcmd plugin ${subcommand ?? ''}`.trimEnd() + ' is not available in hosted mode.',
-        'Hosted mode supports: webcmd plugin search and webcmd plugin install.',
+        'Hosted mode supports: webcmd plugin search, install, list, uninstall, update, and create.',
       );
     }
     const parsed = parseHostedPluginSurface(args.slice(1), normalized.literal);
@@ -253,6 +278,7 @@ async function dispatchHosted(
         for (const error of result.errors) await writeToStream(stderr, `Warning: ${error.sourceId}: ${error.message}\n`);
         await renderOutput(result.plugins, {
           fmt: parsed.format,
+          fmtExplicit: parsed.formatExplicit,
           columns: ['name', 'description', 'version', 'sourceId', 'installSource', 'webcmd'],
           title: `${CLI_COMMAND}/plugin-search`,
           source: `${CLI_COMMAND} plugin search`,
@@ -261,13 +287,82 @@ async function dispatchHosted(
       }
       return;
     }
-    const installed = await client.installMarketplacePlugin(parsed.source);
-    await writeToStream(stdout, `✅ Plugin "${installed.name}" installed successfully. Commands are ready to use.\n`);
+    if (parsed.command === 'install') {
+      const installed = await client.installMarketplacePlugin(parsed.source);
+      await writeToStream(stdout, `✅ Plugin "${installed.name}" installed successfully. Commands are ready to use.\n`);
+      return;
+    }
+    if (parsed.command === 'list') {
+      const installations = await client.listMarketplaceInstallations();
+      await renderOutput(installations, {
+        fmt: parsed.format,
+        fmtExplicit: parsed.formatExplicit,
+        columns: ['name', 'version', 'installSource', 'installedAt', 'updateAvailable'],
+        title: `${CLI_COMMAND}/plugins`,
+        source: `${CLI_COMMAND} plugin list`,
+        stdout,
+      });
+      return;
+    }
+    if (parsed.command === 'uninstall') {
+      await client.uninstallMarketplacePlugin(parsed.name);
+      await writeToStream(stdout, `✅ Plugin "${parsed.name}" uninstalled.\n`);
+      return;
+    }
+    if (parsed.command === 'update') {
+      if (!parsed.name && !parsed.all) {
+        throw new ConfigError(
+          'Specify a plugin name or use --all.',
+          'Example: webcmd plugin update alpha',
+        );
+      }
+      if (parsed.name && parsed.all) {
+        throw new ConfigError('Cannot specify both a plugin name and --all.');
+      }
+      const targets = parsed.all
+        ? (await client.listMarketplaceInstallations()).map((row) => row.name)
+        : [parsed.name!];
+      let hasErrors = false;
+      for (const target of targets) {
+        try {
+          const outcome = await client.updateMarketplacePlugin(target);
+          if ('delisted' in outcome && outcome.delisted) {
+            await writeToStream(stdout, `⚠ "${target}" is installed but its catalog entry was delisted; nothing to update to.\n`);
+          } else if (outcome.updated) {
+            await writeToStream(stdout, `✅ Updated "${target}" to ${outcome.version}.\n`);
+          } else {
+            await writeToStream(stdout, `✔ "${target}" is already up to date.\n`);
+          }
+        } catch (err) {
+          hasErrors = true;
+          const message = err instanceof Error ? err.message : String(err);
+          await writeToStream(stderr, `✗ "${target}" — ${message}\n`);
+        }
+      }
+      if (hasErrors) throw new ConfigError('Some plugins failed to update.');
+      return;
+    }
+    // parsed.command === 'create'
+    const { createPluginScaffold } = await import('../plugin-scaffold.js');
+    const result = createPluginScaffold(parsed.name, {
+      ...(parsed.dir !== undefined ? { dir: parsed.dir } : {}),
+      ...(parsed.description !== undefined ? { description: parsed.description } : {}),
+      author: { name: parsed.authorName ?? '', handle: parsed.authorHandle ?? '' },
+    });
+    await writeToStream(stdout, `✅ Plugin scaffold created at ${result.dir}\n\n`);
+    await writeToStream(stdout, '  Next steps (hosted mode):\n');
+    await writeToStream(stdout, '    1. Author and verify the adapter in the cloud:\n');
+    await writeToStream(stdout, `       ${CLI_COMMAND} browser init <site>/<command>\n`);
+    await writeToStream(stdout, `       ${CLI_COMMAND} browser verify <site>/<command>\n`);
+    await writeToStream(stdout, '    2. Copy the verified command files into this scaffold.\n');
+    await writeToStream(stdout, '    3. Open a pull request against agentrhq/webcmd to publish it.\n');
+    await writeToStream(stdout, '       See docs/publish-community-plugin.mdx\n');
     return;
   }
 
-  const manifest = await client.getManifest();
-  validateManifestContractIdentity(manifest);
+  // The API manifest is tenant-scoped. Only the core client-owned presentation
+  // entry is merged; package and local plugin commands stay out.
+  const manifest = await getPresentationManifest(client);
 
   const site = args[0]!;
   const commandName = args[1];
@@ -283,7 +378,7 @@ async function dispatchHosted(
       return;
     }
     throw new CommanderCompatibleError(
-      `error: unknown command '${site}'\n`,
+      `${missingPluginGuidance(site)}\n`,
       EXIT_CODES.USAGE_ERROR,
       formatRootHelp(HOSTED_ROOT_HELP),
     );
@@ -328,6 +423,9 @@ async function dispatchHosted(
     await writeHostedHelp(stdout, args, hostedCommandHelpData(command), renderHostedCommandHelp(command));
     return;
   }
+  if (command.clientOwned) {
+    throw new Error(`Internal invariant: client-owned command ${command.command} reached hosted dispatch.`);
+  }
 
   const startTime = now();
   const response = hasPresentFileArgument(command, parsed.args)
@@ -338,6 +436,7 @@ async function dispatchHosted(
         format: parsed.format,
         trace: parsed.trace,
         profile: parsed.profile ?? normalized.profile,
+        session: normalized.session,
       })
     : await client.execute({
         command: command.command,
@@ -345,6 +444,7 @@ async function dispatchHosted(
         format: parsed.format,
         trace: parsed.trace,
         profile: parsed.profile ?? normalized.profile,
+        session: normalized.session,
       });
   let format: string = parsed.format;
   if (!parsed.formatExplicit && format === 'table' && command.defaultFormat) {
@@ -368,6 +468,88 @@ async function dispatchHosted(
   }
 }
 
+type ParsedHostedSessionSurface =
+  | { kind: 'help'; output: string }
+  | { kind: 'run'; command: 'create' | 'list' | 'close'; format: string; formatExplicit: boolean; session?: string; force?: boolean; limit?: number };
+
+function parseHostedSessionSurface(argv: readonly string[], literal: boolean): ParsedHostedSessionSurface {
+  let stdout = '';
+  let stderr = '';
+  let parsed: Exclude<ParsedHostedSessionSurface, { kind: 'help' }> | undefined;
+  const root = new Command('webcmd');
+  const session = root.command('session').description('Create, list, and close browser Sessions');
+  const output = {
+    writeOut: (value: string) => { stdout += value; },
+    writeErr: (value: string) => { stderr += value; },
+  };
+  root.exitOverride().configureOutput(output);
+  session.exitOverride().configureOutput(output);
+  const configure = (command: Command, format: string): Command => command.option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, format);
+  const setParsed = (command: 'create' | 'list' | 'close', surface: Command, format: string, extras: Omit<Exclude<ParsedHostedSessionSurface, { kind: 'help' }>, 'kind' | 'command' | 'format' | 'formatExplicit'> = {}): void => {
+    parsed = { kind: 'run', command, format: validateHostedFormat(format), formatExplicit: surface.getOptionValueSource('format') === 'cli', ...extras };
+  };
+  const create = configure(session.command('create'), 'yaml');
+  create.action((options: { format: string }) => setParsed('create', create, options.format));
+  const list = configure(session.command('list').option('--limit <number>', 'Maximum Sessions to return (1-100)', parseHostedSessionListLimit, 20), 'table');
+  list.action((options: { format: string; limit: number }) => setParsed('list', list, options.format, { limit: options.limit }));
+  const close = configure(session.command('close').argument('<session-id>').option('--force', 'Close even while the Session is busy or paused for handoff'), 'yaml');
+  close.action((sessionId: string, options: { format: string; force?: boolean }) => setParsed('close', close, options.format, { session: sessionId, force: options.force === true }));
+  try {
+    root.parse(literal ? ['--', 'session', ...argv] : ['session', ...argv], { from: 'user' });
+  } catch (error) {
+    if (!(error instanceof CommanderError)) throw error;
+    if (error.code === 'commander.helpDisplayed') return { kind: 'help', output: stdout };
+    throw new CommanderStructuralError(stderr || `${error.message}\n`, error.exitCode);
+  }
+  if (!parsed) throw new CommanderStructuralError("error: command 'session' did not run\n", 1);
+  return parsed;
+}
+
+async function dispatchHostedSession(
+  parsed: Exclude<ParsedHostedSessionSurface, { kind: 'help' }>,
+  client: HostedClient,
+  stdout: NodeJS.WritableStream,
+  profile?: string,
+): Promise<void> {
+  if (parsed.command === 'create') {
+    await renderOutput(sessionCreateOutput((await client.createBrowserSession(profile)).session), { fmt: parsed.format, fmtExplicit: parsed.formatExplicit, columns: ['id', 'kind', 'runtimeState'], stdout });
+    return;
+  }
+  if (parsed.command === 'list') {
+    const rows = (await client.listBrowserSessions(profile, parsed.limit)).sessions
+      .map((row) => ({ ...row, handoff: formatHostedSessionHandoff(row.handoff) }));
+    if (rows.length === 0 && parsed.format === 'table') {
+      await writeToStream(stdout, `No browser Sessions found${profile ? ` for Profile ${profile}` : ''}.\n`);
+      return;
+    }
+    await renderOutput(rows, { fmt: parsed.format, fmtExplicit: parsed.formatExplicit, columns: ['id', 'kind', 'runtimeState', 'handoff'], stdout });
+    return;
+  }
+  await renderOutput(await client.closeBrowserSession(parsed.session!, profile, parsed.force === true), { fmt: parsed.format, fmtExplicit: parsed.formatExplicit, stdout });
+}
+
+function parseHostedSessionListLimit(value: string): number {
+  const limit = Number(value);
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+    throw new InvalidArgumentError('Session list limit must be an integer from 1 to 100.');
+  }
+  return limit;
+}
+
+function sessionCreateOutput(data: unknown): unknown {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return data;
+  const row = data as Record<string, unknown>;
+  return { id: row.id, kind: row.kind, runtimeState: row.runtimeState };
+}
+
+function formatHostedSessionHandoff(handoff: unknown): string {
+  if (!handoff || typeof handoff !== 'object') return '';
+  const row = handoff as { site?: unknown; expiresAt?: unknown };
+  return typeof row.site === 'string' && typeof row.expiresAt === 'string'
+    ? `${row.site} until ${row.expiresAt}`
+    : '';
+}
+
 function hasPresentFileArgument(
   command: import('./types.js').HostedCommand,
   args: Record<string, unknown>,
@@ -386,6 +568,7 @@ async function executeHostedFileCommand(input: {
   format: string;
   trace: string;
   profile?: string;
+  session?: string;
 }): Promise<import('./types.js').HostedExecuteResponse> {
   const prepared = await prepareHostedFiles({
     client: input.client,
@@ -399,6 +582,7 @@ async function executeHostedFileCommand(input: {
     format: input.format,
     trace: input.trace,
     ...(input.profile !== undefined ? { profile: input.profile } : {}),
+    ...(input.session !== undefined ? { session: input.session } : {}),
   });
   const materialized = await materializeHostedOutputs({
     client: input.client,
@@ -481,47 +665,36 @@ function contentTypeForUpload(filePath: string): string {
   }
 }
 
-function parseHostedBrowserInvocation(argv: string[], profile: string | undefined): ParsedHostedBrowserInvocation {
-  let rewritten: string[];
-  try {
-    rewritten = rewriteBrowserArgv(argv);
-  } catch (error) {
-    if (error instanceof BrowserSessionArgvError) {
-      throw new ConfigError(error.message, 'Use: webcmd browser <session> <command>');
-    }
-    throw error;
-  }
+async function parseHostedBrowserInvocation(
+  argv: string[],
+  profile: string | undefined,
+  session: string | undefined,
+): Promise<ParsedHostedBrowserInvocation> {
   let structure;
   try {
-    structure = parseHostedBrowserStructure(rewritten);
+    structure = parseHostedBrowserStructure(session === undefined ? argv : ['--session', session, ...argv]);
   } catch (error) {
     if (error instanceof HostedBrowserHelp) throw new CommanderCompatibleError('', 0, error.output);
     throw error;
   }
-  if (rewritten[0] !== 'browser') {
+  if (argv[0] !== 'browser') {
     throw new ConfigError('Hosted browser invocation must start with browser.');
   }
-  if (!structure.session) {
-    throw new ConfigError(
-      '<session> is required for hosted browser commands.',
-      'Use: webcmd browser <session> <command>',
-    );
-  }
-
   if (!structure.commandName) {
     throw new ConfigError(
       'Hosted browser command is required.',
-      'Use: webcmd browser <session> open <url>, state, screenshot, tab list, or eval <js>.',
+      'Use: webcmd --session <session-id> browser tabs, bind --page <id>, or run --stdin|--file <path>.',
     );
   }
 
   const windowMode = structure.window === undefined ? undefined : parseWindowMode(structure.window);
   const parsed = parseBrowserLeaf(structure.commandName, structure.positionals, structure.options);
+  const browserArgs = await materializeBrowserRunSource(parsed.commandName, parsed.args);
   return {
-    session: structure.session,
+    session: validateRawBrowserSession(structure.session, profile),
     command: `browser/${parsed.commandName}`,
     action: parsed.action,
-    args: parsed.args,
+    args: browserArgs,
     ...(parsed.localPath !== undefined ? { localPath: parsed.localPath } : {}),
     ...(profile !== undefined ? { profile } : {}),
     ...(windowMode !== undefined ? { windowMode } : {}),
@@ -545,23 +718,41 @@ function parseBrowserLeaf(
 } {
   const contract = hostedBrowserCommandsByPath.get(leaf);
   if (!contract || !contract.action) {
-    if (leaf === 'bind' || contract?.sessionPolicy === 'local-only') {
-      throw new ConfigError(
-        'Browser bind is not supported in hosted mode.',
-        'Use browser state or browser tabs to inspect the active hosted page.',
-      );
-    }
     throw new ConfigError(`Hosted browser command is not supported yet: ${leaf}`);
   }
 
   const localPath = leaf === 'screenshot' ? positionals[0] : undefined;
   const args = browserActionArgs(contract, positionals, options);
+  if (contract.command === 'run') {
+    const hasStdin = args.stdin === true;
+    const file = typeof args.file === 'string' ? args.file.trim() : '';
+    if (hasStdin === Boolean(file)) {
+      throw new ConfigError(
+        'Browser run requires exactly one program input: --stdin or --file <path>.',
+      );
+    }
+  }
   return {
     commandName: leaf,
-    action: contract.action as HostedBrowserActionName,
+    action: contract.action,
     args,
     ...(localPath !== undefined ? { localPath } : {}),
   };
+}
+
+async function materializeBrowserRunSource(commandName: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  if (commandName !== 'run') return args;
+  try {
+    const source = await loadBrowserRunSource({
+      stdin: args.stdin === true,
+      file: typeof args.file === 'string' ? args.file : undefined,
+    });
+    const { stdin: _stdin, file: _file, ...rest } = args;
+    return { ...rest, source };
+  } catch (error) {
+    if (error instanceof BrowserRunError) throw new ConfigError(error.message, error.hint);
+    throw error;
+  }
 }
 
 function browserActionArgs(
@@ -678,11 +869,15 @@ function withoutKeys(input: Record<string, unknown>, keys: readonly string[]): R
 async function renderHostedBrowserResponse(
   stdout: NodeJS.WritableStream,
   invocation: ParsedHostedBrowserInvocation,
-  response: HostedBrowserRunActionResponse,
+  response: HostedBrowserRunActionResponse | HostedBrowserSnapshotActionResponse,
 ): Promise<void> {
   const result = response.result;
   if (invocation.action === 'snapshot' && result && typeof result === 'object') {
-    const record = result as { url?: unknown; snapshot?: unknown };
+    const record = result as { tree?: unknown; url?: unknown; snapshot?: unknown };
+    if (typeof record.tree === 'string') {
+      await writeToStream(stdout, `${record.tree}\n`);
+      return;
+    }
     await writeToStream(stdout, `URL: ${typeof record.url === 'string' ? record.url : ''}\n\n`);
     await writeToStream(stdout, `${typeof record.snapshot === 'string' ? record.snapshot : JSON.stringify(record.snapshot, null, 2)}\n`);
     return;
@@ -852,8 +1047,12 @@ async function dispatchHostedProfile(
 
 type ParsedHostedPluginSurface =
   | { kind: 'help'; output: string }
-  | { kind: 'run'; command: 'search'; query?: string; format: string }
-  | { kind: 'run'; command: 'install'; source: string };
+  | { kind: 'run'; command: 'search'; query?: string; format: string; formatExplicit: boolean }
+  | { kind: 'run'; command: 'install'; source: string }
+  | { kind: 'run'; command: 'list'; format: string; formatExplicit: boolean }
+  | { kind: 'run'; command: 'uninstall'; name: string }
+  | { kind: 'run'; command: 'update'; name?: string; all: boolean }
+  | { kind: 'run'; command: 'create'; name: string; dir?: string; description?: string; authorName?: string; authorHandle?: string };
 
 function parseHostedPluginSurface(
   argv: readonly string[],
@@ -873,11 +1072,46 @@ function parseHostedPluginSurface(
 
   const search = configurePluginSearchSurface(plugin.command('search'));
   search.exitOverride().configureOutput(output).action((query: string | undefined, options: { format: string }) => {
-    parsed = { kind: 'run', command: 'search', ...(query !== undefined ? { query } : {}), format: validateHostedFormat(options.format) };
+    parsed = { kind: 'run', command: 'search', ...(query !== undefined ? { query } : {}), format: validateHostedFormat(options.format), formatExplicit: search.getOptionValueSource('format') === 'cli' };
   });
   const install = configurePluginInstallSurface(plugin.command('install'));
   install.exitOverride().configureOutput(output).action((source: string) => {
     parsed = { kind: 'run', command: 'install', source };
+  });
+  const list = configurePluginListSurface(plugin.command('list'));
+  list.exitOverride().configureOutput(output).action((options: { format: string }) => {
+    parsed = { kind: 'run', command: 'list', format: validateHostedFormat(options.format), formatExplicit: list.getOptionValueSource('format') === 'cli' };
+  });
+  const uninstall = configurePluginUninstallSurface(plugin.command('uninstall'));
+  uninstall.exitOverride().configureOutput(output).action((name: string) => {
+    parsed = { kind: 'run', command: 'uninstall', name };
+  });
+  const update = configurePluginUpdateSurface(plugin.command('update'));
+  update.exitOverride().configureOutput(output).action((name: string | undefined, options: { all?: boolean }) => {
+    parsed = { kind: 'run', command: 'update', ...(name !== undefined ? { name } : {}), all: options.all === true };
+  });
+  const create = plugin.command('create')
+    .description('Create a new plugin scaffold')
+    .argument('<name>', 'Plugin name (lowercase, hyphens allowed)')
+    .option('-d, --dir <path>', 'Output directory (default: ./<name>)')
+    .option('--description <text>', 'Plugin description')
+    .option('--author-name <name>', 'Author display name')
+    .option('--author-handle <handle>', 'Author GitHub handle');
+  create.exitOverride().configureOutput(output).action((name: string, options: {
+    dir?: string;
+    description?: string;
+    authorName?: string;
+    authorHandle?: string;
+  }) => {
+    parsed = {
+      kind: 'run',
+      command: 'create',
+      name,
+      ...(options.dir !== undefined ? { dir: options.dir } : {}),
+      ...(options.description !== undefined ? { description: options.description } : {}),
+      ...(options.authorName !== undefined ? { authorName: options.authorName } : {}),
+      ...(options.authorHandle !== undefined ? { authorHandle: options.authorHandle } : {}),
+    };
   });
 
   try {
@@ -984,7 +1218,7 @@ function hostedCompletions(manifest: HostedManifest, argv: string[]): string[] {
     hostedCommands(manifest),
     words,
     Number.isFinite(cursor) ? cursor! : words.length,
-    HOSTED_BUILTIN_COMMANDS,
+    HOSTED_BUILTIN_COMMANDS.filter(command => command !== 'web'),
   );
 }
 
@@ -1007,15 +1241,22 @@ function validateManifestContractIdentity(manifest: HostedManifest): void {
   const manifestLine = hostedContractCompatibilityLine(manifest.metadata.webcmdPackageVersion);
   if (
     manifest.metadata.contractSchemaVersion !== installed.schemaVersion
+    || manifest.metadata.sessionProtocolVersion !== HOSTED_SESSION_PROTOCOL_VERSION
     || !installedLine
     || !manifestLine
     || manifestLine !== installedLine
   ) {
     throw new HostedClientError(
-      'HOSTED_PROTOCOL',
+      'HOSTED_CONTRACT_MISMATCH',
       'Webcmd Cloud manifest does not match this installed Webcmd hosted contract.',
     );
   }
+}
+
+async function getPresentationManifest(client: HostedClient): Promise<HostedManifest> {
+  const manifest = await client.getManifest();
+  validateManifestContractIdentity(manifest);
+  return withClientOwnedCommands(manifest);
 }
 
 function hostedContractCompatibilityLine(version: string): string | undefined {

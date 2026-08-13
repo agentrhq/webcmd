@@ -5,7 +5,7 @@
  */
 
 import { sleep } from '../utils.js';
-import { BrowserConnectError, SessionBusyError } from '../errors.js';
+import { BrowserConnectError, CliError, EXIT_CODES, SessionBusyError, type ExitCode } from '../errors.js';
 import { COMMAND_RESULT_UNKNOWN_CODE, COMMAND_RESULT_UNKNOWN_HINT } from '../daemon-utils.js';
 import { getDaemonRunContext, type SessionLeaseHolder } from '../session-lease.js';
 import { classifyBrowserError } from './errors.js';
@@ -23,6 +23,7 @@ import {
   type DaemonStatus,
 } from './daemon-transport.js';
 import type { BrowserRuntimeCommand, BrowserRuntimeResult, BrowserWindowMode } from './protocol.js';
+import type { BrowserSessionRecord } from './sessions.js';
 
 let _idCounter = 0;
 
@@ -34,6 +35,7 @@ const DEFAULT_COMMAND_TIMEOUT_SECONDS = 120;
 const RUNTIME_OP_TIMEOUT_MARGIN_MS = 15_000;
 const HTTP_TIMEOUT_MARGIN_MS = 10_000;
 const TRANSPORT_MAX_ATTEMPTS = 4;
+type DaemonCommandParams = Omit<DaemonCommand, 'id' | 'action'>;
 
 let _userCommandTimeoutSeconds: number | null = null;
 
@@ -41,7 +43,7 @@ export function setDaemonCommandTimeoutSeconds(seconds: number | null): void {
   _userCommandTimeoutSeconds = typeof seconds === 'number' && seconds > 0 ? Math.ceil(seconds) : null;
 }
 
-function effectiveCommandTimeoutSeconds(params: Omit<DaemonCommand, 'id' | 'action'>): number {
+function effectiveCommandTimeoutSeconds(params: DaemonCommandParams): number {
   const base = _userCommandTimeoutSeconds ?? DEFAULT_COMMAND_TIMEOUT_SECONDS;
   if (typeof params.timeoutMs === 'number' && params.timeoutMs > 0) {
     return Math.max(base, Math.ceil((params.timeoutMs + RUNTIME_OP_TIMEOUT_MARGIN_MS) / 1000));
@@ -81,11 +83,21 @@ function isPreConnectFetchError(err: unknown): boolean {
 export type DaemonCommand = BrowserRuntimeCommand;
 export type DaemonResult = BrowserRuntimeResult;
 
-export class BrowserCommandError extends Error {
-  constructor(message: string, readonly code?: string, readonly hint?: string) {
-    super(message);
-    this.name = 'BrowserCommandError';
+export class BrowserCommandError extends CliError {
+  constructor(
+    message: string,
+    code?: string,
+    hint?: string,
+    readonly details?: unknown,
+  ) {
+    super(code ?? 'BROWSER_COMMAND', message, hint, browserCommandExitCode(code));
   }
+}
+
+function browserCommandExitCode(code?: string): ExitCode {
+  if (code === 'SESSION_PAUSED_FOR_HUMAN_HANDOFF') return EXIT_CODES.NOPERM;
+  if (code === 'SESSION_WINDOW_CONFLICT') return EXIT_CODES.TEMPFAIL;
+  return EXIT_CODES.GENERIC_ERROR;
 }
 
 export {
@@ -110,7 +122,7 @@ export {
  */
 async function sendCommandRaw(
   action: DaemonCommand['action'],
-  params: Omit<DaemonCommand, 'id' | 'action'>,
+  params: DaemonCommandParams,
 ): Promise<DaemonResult> {
   const timeoutSeconds = effectiveCommandTimeoutSeconds(params);
   const deadlineAt = Date.now() + timeoutSeconds * 1000;
@@ -148,7 +160,7 @@ async function sendCommandRaw(
     }
 
     const remainingMs = Math.max(1000, deadlineAt - Date.now());
-    const run = action === 'lease-release' ? undefined : getDaemonRunContext();
+    const run = action === 'lease-release' || action === 'run-cancel' ? undefined : getDaemonRunContext();
     const command: DaemonCommand = {
       id,
       action,
@@ -161,7 +173,6 @@ async function sendCommandRaw(
       ...(run && {
         runId: run.runId,
         command: run.command,
-        access: run.access,
         pid: process.pid,
       }),
     };
@@ -185,7 +196,7 @@ async function sendCommandRaw(
       }
 
       if (result.errorCode && UNKNOWN_OUTCOME_CODES.has(result.errorCode)) {
-        throw new BrowserCommandError(result.error ?? 'Browser command result is unknown', result.errorCode, result.errorHint);
+        throw new BrowserCommandError(result.error ?? 'Browser command result is unknown', result.errorCode, result.errorHint, result.details);
       }
 
       const isDuplicateCommandId = res.status === 409
@@ -213,7 +224,7 @@ async function sendCommandRaw(
         continue;
       }
 
-      throw new BrowserCommandError(result.error ?? 'Daemon command failed', result.errorCode, result.errorHint);
+      throw new BrowserCommandError(result.error ?? 'Daemon command failed', result.errorCode, result.errorHint, result.details);
     } catch (err) {
       if (err instanceof BrowserCommandError || err instanceof BrowserConnectError) throw err;
 
@@ -247,7 +258,7 @@ async function sendCommandRaw(
  */
 export async function sendCommand(
   action: DaemonCommand['action'],
-  params: Omit<DaemonCommand, 'id' | 'action'> = {},
+  params: DaemonCommandParams = {},
 ): Promise<unknown> {
   const result = await sendCommandRaw(action, params);
   return result.data;
@@ -259,16 +270,49 @@ export async function sendCommand(
  */
 export async function sendCommandFull(
   action: DaemonCommand['action'],
-  params: Omit<DaemonCommand, 'id' | 'action'> = {},
+  params: DaemonCommandParams = {},
 ): Promise<{ data: unknown; page?: string }> {
   const result = await sendCommandRaw(action, params);
   return { data: result.data, page: result.page };
 }
 
 export async function releaseSiteSessionLease(runId: string): Promise<void> {
+  await postRunControl('lease-release', runId);
+}
+
+export async function cancelDaemonRun(runId: string): Promise<void> {
+  await postRunControl('run-cancel', runId);
+}
+
+type SessionHandoffParams = {
+  session?: string;
+  site: string;
+  contextId?: string;
+  preferredContextId?: string;
+};
+
+export async function startSessionHandoff(
+  params: SessionHandoffParams & { expiresAt: string },
+): Promise<BrowserSessionRecord> {
+  return sendCommand('session-handoff-start', {
+    ...params,
+    surface: 'adapter',
+    adapterSite: params.site,
+  }) as Promise<BrowserSessionRecord>;
+}
+
+export async function clearSessionHandoff(params: SessionHandoffParams): Promise<BrowserSessionRecord> {
+  return sendCommand('session-handoff-clear', {
+    ...params,
+    surface: 'adapter',
+    adapterSite: params.site,
+  }) as Promise<BrowserSessionRecord>;
+}
+
+async function postRunControl(action: 'lease-release' | 'run-cancel', runId: string): Promise<void> {
   const command: DaemonCommand = {
     id: generateId(),
-    action: 'lease-release',
+    action,
     runId,
   };
   await requestDaemon('/command', {
@@ -281,4 +325,14 @@ export async function releaseSiteSessionLease(runId: string): Promise<void> {
 
 export async function bindTab(session: string, opts: { contextId?: string; preferredContextId?: string; page?: string; index?: number; windowMode?: BrowserWindowMode } = {}): Promise<unknown> {
   return sendCommand('bind', { session, surface: 'browser', ...opts });
+}
+
+/** List existing pages without starting a daemon or browser runtime. */
+export async function listExistingBrowserTabs(
+  session: string,
+  opts: { contextId?: string; preferredContextId?: string } = {},
+): Promise<unknown> {
+  const status = await fetchDaemonStatus({ contextId: opts.contextId });
+  if (!status?.runtimeConnected) return [];
+  return sendCommand('tabs', { session, surface: 'browser', ...opts, op: 'list' });
 }

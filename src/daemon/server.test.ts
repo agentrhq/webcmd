@@ -1,16 +1,22 @@
 import { AddressInfo } from 'node:net';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { request as httpRequest } from 'node:http';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DAEMON_HEADER_NAME } from '../constants.js';
 import type { BrowserRuntimeCommand, BrowserRuntimeResult, BrowserRuntimeStatus } from '../browser/protocol.js';
+import type { BrowserSessionListRow, BrowserSessionRecord } from '../browser/sessions.js';
 import type { BrowserRuntimeProvider } from '../browser/runtime/provider.js';
 import { createDaemonServer } from './server.js';
 
 class FakeProvider implements BrowserRuntimeProvider {
   commands: BrowserRuntimeCommand[] = [];
+  sessions: BrowserSessionRecord[] = [];
+  activeSessions = new Set<string>();
+  foregroundedSessions: string[] = [];
   shutdownCalled = false;
   delayMs = 0;
-  dispatchImpl?: (command: BrowserRuntimeCommand) => Promise<BrowserRuntimeResult>;
+  dispatchImpl?: (command: BrowserRuntimeCommand, signal?: AbortSignal) => Promise<BrowserRuntimeResult>;
   resolveProfileId?: (command: BrowserRuntimeCommand) => string;
+  sessionId = 'session_11111111-1111-4111-8111-111111111111';
 
   private result(command: BrowserRuntimeCommand) {
     return { id: command.id, ok: true as const, data: { action: command.action }, page: 'page-1' };
@@ -24,12 +30,74 @@ class FakeProvider implements BrowserRuntimeProvider {
       profiles: [{ contextId: 'default', runtimeConnected: true, runtimeVersion: '1.2.3', pending: 0 }],
       pending: 0,
       commandResultUnknown: 0,
+      sessions: this.listSessionRows(),
     };
   }
 
-  async dispatch(command: BrowserRuntimeCommand) {
+  async createSession(command: BrowserRuntimeCommand): Promise<BrowserSessionRecord> {
+    const profileId = command.contextId ?? 'default';
+    const session = {
+      id: this.sessionId,
+      profileId,
+      kind: 'explicit' as const,
+      createdAt: '2026-08-11T00:00:00.000Z',
+      updatedAt: '2026-08-11T00:00:00.000Z',
+      lastUsedAt: '2026-08-11T00:00:00.000Z',
+    };
+    this.sessions.push(session);
+    return session;
+  }
+
+  async listSessions(input: { profileId?: string }): Promise<BrowserSessionListRow[]> {
+    return this.listSessionRows(input.profileId);
+  }
+
+  async closeSession(command: BrowserRuntimeCommand): Promise<{ closed: boolean; alreadyIdle: boolean; session: string }> {
+    const session = String(command.session);
+    const wasActive = this.activeSessions.delete(session);
+    return { closed: wasActive, alreadyIdle: !wasActive, session };
+  }
+
+  async requireSession(command: BrowserRuntimeCommand): Promise<BrowserSessionRecord> {
+    const profileId = command.contextId ?? 'default';
+    const existing = this.sessions.find((session) => session.profileId === profileId && session.id === command.session);
+    if (existing) return existing;
+    return {
+      id: String(command.session),
+      profileId,
+      kind: command.session === 'session_default' ? 'adapter-default' : 'explicit',
+      createdAt: '2026-08-11T00:00:00.000Z',
+      updatedAt: '2026-08-11T00:00:00.000Z',
+      lastUsedAt: '2026-08-11T00:00:00.000Z',
+    };
+  }
+
+  async resolveAdapterDefault(command: BrowserRuntimeCommand): Promise<BrowserSessionRecord> {
+    return {
+      ...await this.requireSession({ ...command, session: command.session ?? 'session_default' }),
+      kind: 'adapter-default',
+    };
+  }
+
+  async startSessionHandoff(command: BrowserRuntimeCommand): Promise<BrowserSessionRecord> {
+    const record = await this.requireSession(command);
+    record.handoff = { site: String(command.site), expiresAt: String(command.expiresAt) };
+    const index = this.sessions.findIndex((session) => session.profileId === record.profileId && session.id === record.id);
+    if (index === -1) this.sessions.push(record);
+    else this.sessions[index] = record;
+    this.foregroundedSessions.push(record.id);
+    return record;
+  }
+
+  async clearSessionHandoff(command: BrowserRuntimeCommand): Promise<BrowserSessionRecord> {
+    const record = await this.requireSession(command);
+    delete record.handoff;
+    return record;
+  }
+
+  async dispatch(command: BrowserRuntimeCommand, signal?: AbortSignal) {
     this.commands.push(command);
-    if (this.dispatchImpl) return this.dispatchImpl(command);
+    if (this.dispatchImpl) return this.dispatchImpl(command, signal);
     if (this.delayMs > 0) await new Promise((resolve) => setTimeout(resolve, this.delayMs));
     return this.result(command);
   }
@@ -37,14 +105,28 @@ class FakeProvider implements BrowserRuntimeProvider {
   async shutdown() {
     this.shutdownCalled = true;
   }
+
+  private listSessionRows(profileId?: string): BrowserSessionListRow[] {
+    return this.sessions
+      .filter((session) => profileId === undefined || session.profileId === profileId)
+      .map((session) => ({
+        ...session,
+        runtimeState: this.activeSessions.has(session.id) ? 'active' as const : 'idle' as const,
+      }));
+  }
 }
 
 describe('createDaemonServer', () => {
   const servers: Array<{ close: () => Promise<void> }> = [];
 
+  beforeEach(() => {
+    vi.spyOn(process, 'kill').mockImplementation(() => true);
+  });
+
   afterEach(async () => {
     while (servers.length) await servers.pop()!.close();
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   async function start(provider = new FakeProvider()) {
@@ -61,6 +143,13 @@ describe('createDaemonServer', () => {
       headers: { [DAEMON_HEADER_NAME]: '1', 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
+  }
+
+  async function promiseState<T>(promise: Promise<T>, waitMs = 0): Promise<'pending' | 'settled'> {
+    return Promise.race([
+      promise.then(() => 'settled' as const, () => 'settled' as const),
+      new Promise<'pending'>((resolve) => setTimeout(() => resolve('pending'), waitMs)),
+    ]);
   }
 
   function persistentWrite(
@@ -81,6 +170,19 @@ describe('createDaemonServer', () => {
       pid: 4242,
       ...overrides,
     };
+  }
+
+  function adapterCommand(
+    id: string,
+    runId: string,
+    adapterSite: string,
+    session?: string,
+  ): BrowserRuntimeCommand {
+    return persistentWrite(id, runId, {
+      adapterSite,
+      command: `${adapterSite} read`,
+      ...(session === undefined ? { session: undefined } : { session }),
+    });
   }
 
   it('returns runtime-named status fields without extension aliases', async () => {
@@ -113,6 +215,261 @@ describe('createDaemonServer', () => {
     });
     expect(provider.commands).toHaveLength(1);
     expect(provider.commands[0]).toMatchObject({ id: 'cmd-1', action: 'navigate', session: 'work' });
+  });
+
+  it('handles local Session lifecycle controls outside normal dispatch', async () => {
+    const { provider, baseUrl } = await start();
+
+    const created = await postCommand(baseUrl, { id: 'create-session', action: 'session-create' as BrowserRuntimeCommand['action'], contextId: 'profile_work' });
+    expect(created.status).toBe(200);
+    await expect(created.json()).resolves.toMatchObject({
+      ok: true,
+      data: { id: provider.sessionId, profileId: 'profile_work', kind: 'explicit' },
+    });
+
+    provider.activeSessions.add(provider.sessionId);
+    const listed = await postCommand(baseUrl, { id: 'list-sessions', action: 'session-list' as BrowserRuntimeCommand['action'], contextId: 'profile_work' });
+    expect(listed.status).toBe(200);
+    await expect(listed.json()).resolves.toMatchObject({
+      ok: true,
+      data: [{ id: provider.sessionId, runtimeState: 'active' }],
+    });
+
+    const closed = await postCommand(baseUrl, { id: 'close-session', action: 'session-close' as BrowserRuntimeCommand['action'], contextId: 'profile_work', session: provider.sessionId });
+    expect(closed.status).toBe(200);
+    await expect(closed.json()).resolves.toMatchObject({
+      ok: true,
+      data: { closed: true, alreadyIdle: false, session: provider.sessionId },
+    });
+
+    const closedAgain = await postCommand(baseUrl, { id: 'close-session-again', action: 'session-close' as BrowserRuntimeCommand['action'], contextId: 'profile_work', session: provider.sessionId });
+    expect(closedAgain.status).toBe(200);
+    await expect(closedAgain.json()).resolves.toMatchObject({
+      ok: true,
+      data: { closed: false, alreadyIdle: true, session: provider.sessionId },
+    });
+    expect(provider.commands).toEqual([]);
+  });
+
+  it('rejects Session close while its live human handoff owns the window', async () => {
+    const provider = new FakeProvider();
+    provider.sessions.push({
+      id: 'session_a',
+      profileId: 'profile_work',
+      kind: 'explicit',
+      createdAt: '2026-08-11T00:00:00.000Z',
+      updatedAt: '2026-08-11T00:00:00.000Z',
+      lastUsedAt: '2026-08-11T00:00:00.000Z',
+      handoff: {
+        site: 'github',
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      },
+    });
+    provider.activeSessions.add('session_a');
+    const { baseUrl } = await start(provider);
+
+    const close = await postCommand(baseUrl, {
+      id: 'close-handoff-session',
+      action: 'session-close',
+      contextId: 'profile_work',
+      session: 'session_a',
+    });
+
+    expect(close.status).toBe(409);
+    await expect(close.json()).resolves.toMatchObject({
+      errorCode: 'SESSION_PAUSED_FOR_HUMAN_HANDOFF',
+      details: { sessionId: 'session_a', site: 'github' },
+    });
+    expect(provider.activeSessions).toContain('session_a');
+  });
+
+  it('rejects Session close while work is active in that Session', async () => {
+    let settle!: () => void;
+    const provider = new FakeProvider();
+    provider.activeSessions.add('session_a');
+    provider.dispatchImpl = (command, signal) => new Promise((resolve) => {
+      settle = () => resolve({ id: command.id, ok: true, data: 'done' });
+      signal?.addEventListener('abort', settle, { once: true });
+    });
+    const { baseUrl } = await start(provider);
+
+    const active = postCommand(baseUrl, {
+      id: 'active-work',
+      action: 'exec',
+      surface: 'browser',
+      session: 'session_a',
+      runId: 'run_100_1_1',
+      command: 'browser/run',
+    });
+    try {
+      await vi.waitFor(() => expect(provider.commands).toHaveLength(1));
+      const close = await postCommand(baseUrl, {
+        id: 'close-active-session',
+        action: 'session-close',
+        contextId: 'default',
+        session: 'session_a',
+      });
+
+      expect(close.status).toBe(409);
+      await expect(close.json()).resolves.toMatchObject({
+        ok: false,
+        code: 'session_busy',
+        holder: { command: 'browser/run' },
+      });
+      expect(provider.activeSessions).toContain('session_a');
+    } finally {
+      settle();
+      await active.catch(() => undefined);
+    }
+  });
+
+  it('force-closes a Session while work is active', async () => {
+    let settle!: () => void;
+    let settled = false;
+    let aborted = false;
+    const events: string[] = [];
+    const provider = new FakeProvider();
+    provider.activeSessions.add('session_a');
+    provider.closeSession = vi.fn(async (command) => {
+      events.push('close');
+      const session = String(command.session);
+      const wasActive = provider.activeSessions.delete(session);
+      return { closed: wasActive, alreadyIdle: !wasActive, session };
+    });
+    provider.dispatchImpl = (command, signal) => new Promise((resolve) => {
+      settle = () => {
+        settled = true;
+        events.push('settle');
+        resolve({ id: command.id, ok: true, data: 'done' });
+      };
+      signal?.addEventListener('abort', () => { aborted = true; }, { once: true });
+    });
+    const { baseUrl } = await start(provider);
+
+    const active = postCommand(baseUrl, {
+      id: 'active-force-work',
+      action: 'exec',
+      surface: 'browser',
+      session: 'session_a',
+      runId: 'run_100_1_2',
+      command: 'browser/run',
+    });
+    try {
+      await vi.waitFor(() => expect(provider.commands).toHaveLength(1));
+      const closeRequest = postCommand(baseUrl, {
+        id: 'force-close-active-session',
+        action: 'session-close',
+        contextId: 'default',
+        session: 'session_a',
+        force: true,
+      });
+      await vi.waitFor(() => expect(aborted).toBe(true));
+      expect(provider.closeSession).not.toHaveBeenCalled();
+      settle();
+      const close = await closeRequest;
+      expect(settled).toBe(true);
+      expect(close.status).toBe(200);
+      await expect(close.json()).resolves.toMatchObject({
+        ok: true,
+        data: {
+          closed: true,
+          alreadyIdle: false,
+          session: 'session_a',
+          displaced: { command: 'browser/run' },
+          clearedHandoff: false,
+        },
+      });
+      expect(events).toEqual(['settle', 'close']);
+    } finally {
+      settle();
+      await active.catch(() => undefined);
+    }
+    provider.dispatchImpl = async (command) => ({ id: command.id, ok: true });
+    const admitted = await postCommand(baseUrl, {
+      id: 'after-force-settled', action: 'exec', surface: 'browser', session: 'session_a',
+      runId: 'run_200_2_2', command: 'browser/run',
+    });
+    expect(admitted.status).toBe(200);
+  });
+
+  it('returns SESSION_BUSY when force-close cancellation does not settle promptly', async () => {
+    const provider = new FakeProvider();
+    provider.activeSessions.add('session_a');
+    let aborted = false;
+    let settle!: () => void;
+    provider.dispatchImpl = (command, signal) => new Promise((resolve) => {
+      settle = () => resolve({ id: command.id, ok: true, data: 'done' });
+      signal?.addEventListener('abort', () => { aborted = true; }, { once: true });
+    });
+    const { baseUrl } = await start(provider);
+
+    const active = postCommand(baseUrl, {
+      id: 'active-force-timeout',
+      action: 'exec',
+      surface: 'browser',
+      session: 'session_a',
+      runId: 'run_100_1_2',
+      command: 'browser/run',
+    });
+    try {
+      await vi.waitFor(() => expect(provider.commands).toHaveLength(1));
+      const closeRequest = postCommand(baseUrl, {
+        id: 'force-close-timeout',
+        action: 'session-close',
+        contextId: 'default',
+        session: 'session_a',
+        force: true,
+      });
+      await vi.waitFor(() => expect(aborted).toBe(true));
+
+      expect(await promiseState(closeRequest, 2_500)).toBe('settled');
+      const close = await closeRequest;
+      expect(close.status).toBe(409);
+      await expect(close.json()).resolves.toMatchObject({
+        ok: false,
+        code: 'session_busy',
+        holder: { command: 'browser/run', sessionId: 'session_a' },
+      });
+      expect(provider.activeSessions).toContain('session_a');
+    } finally {
+      settle();
+      await active.catch(() => undefined);
+    }
+  });
+
+  it('force-closes every site-partitioned lease in an adapter-default Session', async () => {
+    const provider = new FakeProvider();
+    provider.activeSessions.add('session_default');
+    const { baseUrl } = await start(provider);
+    expect((await postCommand(baseUrl, adapterCommand('github-owner', 'run_100_1_1', 'github'))).status).toBe(200);
+    expect((await postCommand(baseUrl, adapterCommand('linkedin-owner', 'run_200_2_2', 'linkedin'))).status).toBe(200);
+
+    const close = await postCommand(baseUrl, {
+      id: 'force-close-default', action: 'session-close', contextId: 'default',
+      session: 'session_default', force: true,
+    });
+    const status = await fetch(`${baseUrl}/status`, { headers: { [DAEMON_HEADER_NAME]: '1' } });
+
+    expect(close.status).toBe(200);
+    await expect(status.json()).resolves.toMatchObject({ sessionLeases: [] });
+  });
+
+  it('accepts the maximum browser-run source envelope', async () => {
+    const { provider, baseUrl } = await start();
+    const source = 'x'.repeat(256 * 1024);
+    const res = await postCommand(baseUrl, {
+      id: 'run-max-source',
+      action: 'run',
+      session: 'work',
+      source,
+    });
+
+    expect(res.status).toBe(200);
+    expect(provider.commands[0]).toMatchObject({
+      id: 'run-max-source',
+      action: 'run',
+      source,
+    });
   });
 
   it('clears custom command timeout timers after successful provider dispatch', async () => {
@@ -221,6 +578,140 @@ describe('createDaemonServer', () => {
     expect(provider.commands.map((command) => command.id)).toEqual(['first']);
   });
 
+  it('partitions adapter-default admission by site', async () => {
+    const { provider, baseUrl } = await start();
+
+    expect((await postCommand(baseUrl, adapterCommand('github-owner', 'run_100_1_1', 'github'))).status).toBe(200);
+    expect((await postCommand(baseUrl, adapterCommand('linkedin-owner', 'run_200_2_2', 'linkedin'))).status).toBe(200);
+    expect((await postCommand(baseUrl, adapterCommand('github-conflict', 'run_300_3_3', 'github'))).status).toBe(409);
+    expect(provider.commands.map(({ id }) => id)).toEqual(['github-owner', 'linkedin-owner']);
+    expect(provider.commands[0]).toMatchObject({
+      sessionId: 'session_default',
+      sessionKind: 'adapter-default',
+      adapterSite: 'github',
+    });
+  });
+
+  it('conflicts an explicitly selected adapter-default Session with its implicit adapter work', async () => {
+    const { provider, baseUrl } = await start();
+
+    expect((await postCommand(baseUrl, adapterCommand('github-owner', 'run_100_1_1', 'github'))).status).toBe(200);
+    const rawConflict = await postCommand(baseUrl, {
+      id: 'raw-conflict',
+      action: 'exec',
+      code: '1',
+      surface: 'browser',
+      session: 'session_default',
+      runId: 'run_200_2_2',
+      command: 'browser/run',
+    });
+
+    expect(rawConflict.status).toBe(409);
+    expect(provider.commands.map(({ id }) => id)).toEqual(['github-owner']);
+  });
+
+  it('marks an explicitly selected adapter-default ID as explicit routing', async () => {
+    const { provider, baseUrl } = await start();
+
+    expect((await postCommand(baseUrl, adapterCommand('explicit-default', 'run_100_1_1', 'github', 'session_default'))).status).toBe(200);
+    expect(provider.commands[0]).toMatchObject({
+      sessionId: 'session_default',
+      sessionKind: 'explicit',
+    });
+  });
+
+  it('keeps explicit Session admission wide across sites and isolated across Sessions', async () => {
+    const { provider, baseUrl } = await start();
+
+    expect((await postCommand(baseUrl, adapterCommand('github-a', 'run_100_1_1', 'github', 'session_a'))).status).toBe(200);
+    expect((await postCommand(baseUrl, adapterCommand('linkedin-a', 'run_200_2_2', 'linkedin', 'session_a'))).status).toBe(409);
+    expect((await postCommand(baseUrl, adapterCommand('linkedin-b', 'run_300_3_3', 'linkedin', 'session_b'))).status).toBe(200);
+    expect(provider.commands.map(({ id }) => id)).toEqual(['github-a', 'linkedin-b']);
+  });
+
+  it('pauses only the handoff Session and admits only its internal site verification', async () => {
+    const { provider, baseUrl } = await start();
+    const expiresAt = new Date(Date.now() + 60_000).toISOString();
+
+    const started = await postCommand(baseUrl, {
+      id: 'handoff-start',
+      action: 'session-handoff-start' as BrowserRuntimeCommand['action'],
+      surface: 'adapter',
+      session: 'session_a',
+      adapterSite: 'github',
+      site: 'github',
+      expiresAt,
+      runId: 'run_100_1_1',
+      command: 'github/login',
+    });
+    expect(started.status).toBe(200);
+    expect(provider.foregroundedSessions).toEqual(['session_a']);
+
+    await postCommand(baseUrl, { id: 'release-login', action: 'lease-release', runId: 'run_100_1_1' });
+    const paused = await postCommand(baseUrl, adapterCommand('paused', 'run_200_2_2', 'github', 'session_a'));
+    expect(paused.status).toBe(409);
+    await expect(paused.json()).resolves.toMatchObject({
+      errorCode: 'SESSION_PAUSED_FOR_HUMAN_HANDOFF',
+      details: { sessionId: 'session_a', site: 'github', expiresAt },
+    });
+
+    const sibling = await postCommand(baseUrl, adapterCommand('sibling', 'run_300_3_3', 'linkedin', 'session_b'));
+    expect(sibling.status).toBe(200);
+
+    const rawWhoami = await postCommand(baseUrl, {
+      ...adapterCommand('raw-whoami', 'run_400_4_4', 'github', 'session_a'),
+      surface: 'browser',
+      command: 'github/whoami',
+    });
+    expect(rawWhoami.status).toBe(409);
+
+    const wrongSite = await postCommand(baseUrl, {
+      ...adapterCommand('wrong-site', 'run_400_4_4', 'linkedin', 'session_a'),
+      command: 'github/whoami',
+    });
+    expect(wrongSite.status).toBe(409);
+
+    const verification = await postCommand(baseUrl, {
+      ...adapterCommand('verify', 'run_500_5_5', 'github', 'session_a'),
+      command: 'github/whoami',
+    });
+    expect(verification.status).toBe(200);
+
+    const cleared = await postCommand(baseUrl, {
+      id: 'handoff-clear',
+      action: 'session-handoff-clear' as BrowserRuntimeCommand['action'],
+      surface: 'adapter',
+      session: 'session_a',
+      adapterSite: 'github',
+      site: 'github',
+      runId: 'run_500_5_5',
+      command: 'github/whoami',
+    });
+    expect(cleared.status).toBe(200);
+
+    await postCommand(baseUrl, { id: 'release-verify', action: 'lease-release', runId: 'run_500_5_5' });
+    const resumed = await postCommand(baseUrl, adapterCommand('resumed', 'run_600_6_6', 'github', 'session_a'));
+    expect(resumed.status).toBe(200);
+  });
+
+  it('ignores expired handoffs before admission', async () => {
+    const provider = new FakeProvider();
+    provider.sessions.push({
+      id: 'session_a',
+      profileId: 'default',
+      kind: 'explicit',
+      createdAt: '2026-08-11T00:00:00.000Z',
+      updatedAt: '2026-08-11T00:00:00.000Z',
+      lastUsedAt: '2026-08-11T00:00:00.000Z',
+      handoff: { site: 'github', expiresAt: '2026-08-11T00:15:00.000Z' },
+    });
+    const { baseUrl } = await start(provider);
+
+    const result = await postCommand(baseUrl, adapterCommand('after-expiry', 'run_700_7_7', 'github', 'session_a'));
+
+    expect(result.status).toBe(200);
+  });
+
   it('lets one logical run issue multiple operations and heartbeat its lease', async () => {
     let now = 1_000;
     vi.spyOn(Date, 'now').mockImplementation(() => now);
@@ -233,7 +724,7 @@ describe('createDaemonServer', () => {
     const status = await fetch(`${baseUrl}/status`, { headers: { [DAEMON_HEADER_NAME]: '1' } });
     await expect(status.json()).resolves.toMatchObject({
       sessionLeases: [{
-        key: 'default␟adapter␟site%3Aexample',
+        key: 'default␟site:example',
         command: 'example write',
         acquiredAt: 1_000,
         heartbeatAt: 20_000,
@@ -246,6 +737,17 @@ describe('createDaemonServer', () => {
     ['read access', { access: 'read' as const }],
     ['ephemeral sessions', { siteSession: 'ephemeral' as const }],
     ['raw browser surface', { surface: 'browser' as const }],
+  ])('conflicts across %s when the resolved Session is the same', async (_case, overrides) => {
+    const provider = new FakeProvider();
+    provider.resolveProfileId = (command) => command.profileId ?? 'default';
+    const { baseUrl } = await start(provider);
+
+    expect((await postCommand(baseUrl, persistentWrite('owner', 'run_100_1_1'))).status).toBe(200);
+    expect((await postCommand(baseUrl, persistentWrite('other', 'run_200_2_2', overrides))).status).toBe(409);
+    expect(provider.commands.map((command) => command.id)).toEqual(['owner']);
+  });
+
+  it.each([
     ['different sites', { session: 'site:other' }],
     ['different resolved profiles', { profileId: 'other' }],
   ])('does not conflict across %s', async (_case, overrides) => {
@@ -382,6 +884,96 @@ describe('createDaemonServer', () => {
     });
     expect(provider.commands.map((command) => command.id)).toEqual(['owner']);
 
+    expect((await postCommand(baseUrl, persistentWrite('next-owner', 'run_200_2_2'))).status).toBe(200);
+    expect(provider.commands.map((command) => command.id)).toEqual(['owner', 'next-owner']);
+  });
+
+  it('handles run-cancel locally and permits a new owner', async () => {
+    const { provider, baseUrl } = await start();
+    expect((await postCommand(baseUrl, persistentWrite('owner', 'run_100_1_1'))).status).toBe(200);
+
+    const canceled = await postCommand(baseUrl, {
+      id: 'cancel',
+      action: 'run-cancel' as BrowserRuntimeCommand['action'],
+      runId: 'run_100_1_1',
+    });
+    expect(canceled.status).toBe(200);
+    await expect(canceled.json()).resolves.toMatchObject({
+      id: 'cancel',
+      ok: true,
+      data: { released: 1 },
+    });
+    expect(provider.commands.map((command) => command.id)).toEqual(['owner']);
+
+    expect((await postCommand(baseUrl, persistentWrite('next-owner', 'run_200_2_2'))).status).toBe(200);
+    expect(provider.commands.map((command) => command.id)).toEqual(['owner', 'next-owner']);
+  });
+
+  it('returns SESSION_BUSY when run-cancel does not settle promptly', async () => {
+    const provider = new FakeProvider();
+    let aborted = false;
+    let settle!: () => void;
+    provider.dispatchImpl = (command, signal) => new Promise((resolve) => {
+      settle = () => resolve({ id: command.id, ok: true, data: 'done' });
+      signal?.addEventListener('abort', () => { aborted = true; }, { once: true });
+    });
+    const { baseUrl } = await start(provider);
+    const active = postCommand(baseUrl, persistentWrite('owner', 'run_100_1_1'));
+    try {
+      await vi.waitFor(() => expect(provider.commands).toHaveLength(1));
+      const canceled = postCommand(baseUrl, {
+        id: 'cancel',
+        action: 'run-cancel' as BrowserRuntimeCommand['action'],
+        runId: 'run_100_1_1',
+      });
+      await vi.waitFor(() => expect(aborted).toBe(true));
+
+      expect(await promiseState(canceled, 2_500)).toBe('settled');
+      const response = await canceled;
+      expect(response.status).toBe(409);
+      await expect(response.json()).resolves.toMatchObject({
+        id: 'cancel',
+        ok: false,
+        code: 'session_busy',
+        holder: { command: 'example write' },
+      });
+    } finally {
+      settle();
+      await active.catch(() => undefined);
+    }
+  });
+
+  it('aborts pending work when the command request disconnects', async () => {
+    const provider = new FakeProvider();
+    let aborted = false;
+    provider.dispatchImpl = (command, signal) => new Promise((resolve) => {
+      if (command.id !== 'owner') {
+        resolve({ id: command.id, ok: true, data: 'done' });
+        return;
+      }
+      signal?.addEventListener('abort', () => {
+        aborted = true;
+        resolve({ id: command.id, ok: false, errorCode: 'aborted', error: 'aborted' });
+      });
+    });
+    const { baseUrl } = await start(provider);
+    const url = new URL('/command', baseUrl);
+    const body = JSON.stringify(persistentWrite('owner', 'run_100_1_1'));
+    const req = httpRequest(url, {
+      method: 'POST',
+      headers: {
+        [DAEMON_HEADER_NAME]: '1',
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body),
+      },
+    });
+    req.on('error', () => undefined);
+    req.end(body);
+
+    await vi.waitFor(() => expect(provider.commands.map((command) => command.id)).toEqual(['owner']));
+    req.destroy();
+
+    await vi.waitFor(() => expect(aborted).toBe(true));
     expect((await postCommand(baseUrl, persistentWrite('next-owner', 'run_200_2_2'))).status).toBe(200);
     expect(provider.commands.map((command) => command.id)).toEqual(['owner', 'next-owner']);
   });

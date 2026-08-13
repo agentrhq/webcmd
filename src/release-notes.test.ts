@@ -261,7 +261,7 @@ describe('release notes helpers', () => {
     expect(prompt).toContain('Omit empty sections entirely');
     expect(prompt).toContain('Do not include a Contributors section');
     expect(prompt).toContain('CLI commands and adapters are the same thing');
-    expect(prompt).toContain('files under clis/** as an adapter change');
+    expect(prompt).toContain('files under clis/** or plugins/** as an adapter change');
     expect(prompt).toContain('Put new site adapters/CLIs, adapter promotions, adapter hardening');
     expect(prompt).toContain('## Reverts');
   });

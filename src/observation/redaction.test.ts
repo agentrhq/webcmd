@@ -21,6 +21,16 @@ describe('observation redaction', () => {
       .toBe('https://x.test/api?token=[REDACTED]&ok=1&password=[REDACTED]');
   });
 
+  it('redacts sensitive url query params after XML escaping', () => {
+    expect(redactUrl('<link href="https://x.test/api?ok=1&amp;key=abc&amp;auth=secret">Next</link>'))
+      .toBe('<link href="https://x.test/api?ok=1&amp;key=[REDACTED]&amp;auth=[REDACTED]">Next</link>');
+  });
+
+  it('redacts credentials embedded in url authority', () => {
+    expect(redactUrl('https://alice:secret@x.test/private?ok=1'))
+      .toBe('https://[REDACTED]@x.test/private?ok=1');
+  });
+
   it('redacts password and token fields recursively', () => {
     expect(redactValue({
       user: 'alice',

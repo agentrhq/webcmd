@@ -1,0 +1,9 @@
+{
+  "name": "webcmd-plugin-nvd",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Webcmd commands for nvd",
+  "peerDependencies": {
+    "@agentrhq/webcmd": ">=0.5.3"
+  }
+}

@@ -6,7 +6,8 @@ import { Writable, type WritableOptions } from 'node:stream';
 import type { Command } from 'commander';
 import { describe, expect, it, vi } from 'vitest';
 import { browserCommandCatalog } from '../browser/command-catalog.js';
-import { rewriteBrowserArgv } from '../cli-argv-preprocess.js';
+import { buildHostedContract } from './contract.js';
+import { rejectPositionalBrowserSessionArgv } from '../cli-argv-preprocess.js';
 import { createProgram } from '../cli.js';
 import { formatRootHelp } from '../command-presentation.js';
 import { HOSTED_ROOT_HELP } from '../completion-shared.js';
@@ -18,11 +19,21 @@ const [packageMajor, packageMinor] = PKG_VERSION.split('.');
 const compatiblePatchVersion = `${packageMajor}.${packageMinor}.99`;
 const incompatibleMinorVersion = `${packageMajor}.${Number(packageMinor) + 1}.0`;
 
+it('ships no default site commands while preserving the browser contract', () => {
+  const contract = buildHostedContract([], browserCommandCatalog, PKG_VERSION);
+
+  expect(contract.commands).toEqual([]);
+  expect(contract.browserCommands.map(command => command.command)).toEqual(
+    browserCommandCatalog.map(command => command.command).sort((a, b) => a.localeCompare(b)),
+  );
+});
+
 const manifest = {
   userId: 'user_demo',
   metadata: {
     contractSchemaVersion: 1,
-    webcmdPackageVersion: PKG_VERSION,
+            sessionProtocolVersion: 1,
+            webcmdPackageVersion: PKG_VERSION,
     generatedAt: '2026-07-08T00:00:00.000Z',
   },
   commands: [
@@ -241,7 +252,7 @@ function captureLocalBrowserStructure(argv: string[]): {
   };
   configure(program);
   try {
-    program.parse(rewriteBrowserArgv(argv), { from: 'user' });
+    program.parse(rejectPositionalBrowserSessionArgv(argv), { from: 'user' });
     return { exitCode: 0, stdout, stderr };
   } catch (error) {
     const commander = error as { exitCode?: number };
@@ -250,6 +261,24 @@ function captureLocalBrowserStructure(argv: string[]): {
 }
 
 describe('runHostedCli', () => {
+  it('presents web fetch help from local metadata without dispatching it to Cloud', async () => {
+    const stdout = sink();
+    const fetchImpl = vi.fn<typeof fetch>(async () => manifestResponse());
+
+    const result = await runHostedCli(['web', 'fetch', '--help'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      fetchImpl,
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 0 });
+    expect(stdout.text()).toContain('--url <value>');
+    expect(stdout.text()).toContain('--timeout [value]');
+    expect(stdout.text()).toContain('--max-chars [value]');
+    expect(stdout.text()).toContain('--allow-private [value]');
+    expect(fetchImpl.mock.calls.map(([url]) => String(url))).toEqual(['https://api.example.com/v1/manifest']);
+  });
+
   const publicProfile = {
     id: 'profile_work',
     name: 'Work',
@@ -325,7 +354,7 @@ describe('runHostedCli', () => {
     expect(requests).toEqual(['https://api.example.com/v1/marketplace/installations']);
   });
 
-  it.each(['catalog', 'create', 'update', 'list', 'uninstall'])('rejects unsupported hosted plugin %s without an API call', async (subcommand) => {
+  it.each(['catalog'])('rejects unsupported hosted plugin %s without an API call', async (subcommand) => {
     const stderr = sink();
     const fetchImpl = vi.fn<typeof fetch>();
     const result = await runHostedCli(['plugin', subcommand], {
@@ -337,6 +366,145 @@ describe('runHostedCli', () => {
     expect(result).toEqual({ handled: true, exitCode: 78 });
     expect(stderr.text()).toContain(`webcmd plugin ${subcommand} is not available in hosted mode.`);
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('lists hosted installations as a table', async () => {
+    const stdout = sink();
+    const stderr = sink();
+    const result = await runHostedCli(['plugin', 'list'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        result: {
+          installations: [{
+            name: 'alpha', version: '0.1.0', installSource: 'github:agentrhq/webcmd/alpha',
+            sourceCommit: 'a'.repeat(40), installedAt: '2026-08-07T00:00:00.000Z', updateAvailable: true,
+          }],
+        },
+      })),
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 0 });
+    expect(stderr.text()).toBe('');
+    expect(stdout.text()).toContain('alpha');
+    expect(stdout.text()).toContain('0.1.0');
+  });
+
+  it('uninstalls a hosted plugin', async () => {
+    const requests: Array<{ url: string; method: string }> = [];
+    const stdout = sink();
+    const stderr = sink();
+    const result = await runHostedCli(['plugin', 'uninstall', 'alpha'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      fetchImpl: async (url, init) => {
+        requests.push({ url: String(url), method: init?.method ?? 'GET' });
+        return new Response(JSON.stringify({ ok: true, result: { uninstalled: true } }));
+      },
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 0 });
+    expect(stderr.text()).toBe('');
+    expect(stdout.text()).toContain('alpha');
+    expect(requests).toEqual([{ url: 'https://api.example.com/v1/marketplace/installations/alpha', method: 'DELETE' }]);
+  });
+
+  it('reports when update finds nothing newer', async () => {
+    const stdout = sink();
+    const stderr = sink();
+    const result = await runHostedCli(['plugin', 'update', 'alpha'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        result: { updated: false, name: 'alpha', version: '0.1.0' },
+      })),
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 0 });
+    expect(stderr.text()).toBe('');
+    expect(stdout.text()).toMatch(/already|up to date/i);
+  });
+
+  it('reports a delisted plugin distinctly from an ordinary no-op update', async () => {
+    const stdout = sink();
+    const stderr = sink();
+    const result = await runHostedCli(['plugin', 'update', 'alpha'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        result: { updated: false, name: 'alpha', version: '0.1.0', delisted: true },
+      })),
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 0 });
+    expect(stderr.text()).toBe('');
+    expect(stdout.text()).toMatch(/delisted/i);
+    expect(stdout.text()).not.toMatch(/already|up to date/i);
+  });
+
+  it('updates all installed plugins with --all and keeps going after one failure', async () => {
+    const stdout = sink();
+    const stderr = sink();
+    let calls = 0;
+    const result = await runHostedCli(['plugin', 'update', '--all'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      fetchImpl: async (url) => {
+        if (String(url).endsWith('/installations')) {
+          return new Response(JSON.stringify({
+            ok: true,
+            result: {
+              installations: [
+                { name: 'alpha', version: '0.1.0', installSource: 'a', sourceCommit: null, installedAt: 'x', updateAvailable: true },
+                { name: 'beta', version: '0.1.0', installSource: 'b', sourceCommit: null, installedAt: 'x', updateAvailable: true },
+              ],
+            },
+          }));
+        }
+        calls += 1;
+        if (String(url).includes('/alpha/update')) {
+          return new Response(JSON.stringify({ ok: false, error: { code: 'NOT_FOUND', message: 'gone' } }), { status: 404 });
+        }
+        return new Response(JSON.stringify({ ok: true, result: { updated: true, name: 'beta', version: '0.2.0' } }));
+      },
+    });
+
+    expect(calls).toBe(2);
+    expect(stdout.text()).toContain('beta');
+    expect(stderr.text()).toContain('alpha');
+    expect(result.exitCode).not.toBe(0);
+  });
+
+  it('scaffolds in hosted mode and prints contribute guidance instead of a local install', async () => {
+    const stdout = sink();
+    const stderr = sink();
+    const fetchImpl = vi.fn<typeof fetch>();
+    const tempDir = await mkdtemp(path.join(tmpdir(), 'webcmd-hosted-plugin-create-'));
+    try {
+      const result = await runHostedCli(['plugin', 'create', 'acme', '--dir', tempDir,
+        '--author-name', 'A', '--author-handle', 'a'], {
+        config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+        stdout: stdout.stream,
+        stderr: stderr.stream,
+        fetchImpl,
+      });
+
+      expect(result).toEqual({ handled: true, exitCode: 0 });
+      expect(stdout.text()).toContain('Plugin scaffold created');
+      expect(stdout.text()).not.toContain('plugin install file://');
+      expect(stdout.text()).toMatch(/pull request|contribute/i);
+      expect(fetchImpl).not.toHaveBeenCalled();
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
   });
 
   it('shows hosted plugin search and install help without an API call', async () => {
@@ -393,7 +561,7 @@ describe('runHostedCli', () => {
 
     expect(result).toEqual({ handled: true, exitCode: 0 });
     expect(stderr.text()).toBe('');
-    expect(JSON.parse(stdout.text())).toEqual([expect.objectContaining({ command: 'github/whoami' })]);
+    expect(JSON.parse(stdout.text())).toEqual(expect.arrayContaining([expect.objectContaining({ command: 'github/whoami' })]));
   });
 
   it('lists and deletes hosted profiles without fetching the manifest', async () => {
@@ -433,6 +601,92 @@ describe('runHostedCli', () => {
       { url: 'https://api.example.com/v1/profiles/profile_work', method: 'DELETE' },
     ]);
     expect(requests.some(request => request.url.endsWith('/v1/manifest'))).toBe(false);
+  });
+
+  it('preflights the hosted contract before managing browser Sessions', async () => {
+    const requests: Array<{ url: string; method: string; body?: unknown }> = [];
+    const session = {
+      id: 'session_abc', kind: 'explicit', profileId: 'profile_work', runtimeState: 'idle',
+      handoff: { site: 'github', expiresAt: '2026-01-01T00:15:00.000Z' },
+      createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:01:00.000Z', lastUsedAt: '2026-01-01T00:02:00.000Z',
+    };
+    const fetchImpl = vi.fn<typeof fetch>(async (url, init) => {
+      const request = {
+        url: String(url), method: init?.method ?? 'GET',
+        ...(init?.body ? { body: JSON.parse(String(init.body)) } : {}),
+      };
+      requests.push(request);
+      if (request.url.endsWith('/v1/manifest')) return manifestResponse();
+      if (request.method === 'POST' && request.url.endsWith('/v1/sessions')) return new Response(JSON.stringify({ ok: true, session }));
+      if (request.method === 'POST' && request.url.endsWith(`/v1/sessions/${session.id}/close?profile=work`)) {
+        return new Response(JSON.stringify({ ok: true, closed: false, alreadyIdle: true, session: session.id }));
+      }
+      return new Response(JSON.stringify({ ok: true, sessions: [session] }));
+    });
+
+    const outputs: string[] = [];
+    for (const argv of [
+      ['--profile', 'work', 'session', 'create', '-f', 'json'],
+      ['--profile', 'work', 'session', 'list', '-f', 'json'],
+      ['--profile', 'work', 'session', 'close', session.id, '--force', '-f', 'json'],
+    ]) {
+      const stdout = sink();
+      const result = await runHostedCli(argv, {
+        config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+        stdout: stdout.stream,
+        fetchImpl,
+      });
+      expect(result).toEqual({ handled: true, exitCode: 0 });
+      expect(stdout.text()).toContain(session.id);
+      outputs.push(stdout.text());
+    }
+    expect(outputs[0]).toContain('"runtimeState": "idle"');
+    expect(outputs[1]).toContain('"handoff": "github until 2026-01-01T00:15:00.000Z"');
+    expect(outputs[0]).not.toContain('"profileId"');
+
+    expect(requests).toEqual([
+      { url: 'https://api.example.com/v1/manifest', method: 'GET' },
+      { url: 'https://api.example.com/v1/sessions', method: 'POST', body: { profile: 'work' } },
+      { url: 'https://api.example.com/v1/manifest', method: 'GET' },
+      { url: 'https://api.example.com/v1/sessions?profile=work&limit=20', method: 'GET' },
+      { url: 'https://api.example.com/v1/manifest', method: 'GET' },
+      { url: 'https://api.example.com/v1/sessions/session_abc/close?profile=work', method: 'POST', body: { force: true } },
+    ]);
+  });
+
+  it('rejects Session lifecycle calls when the hosted Session protocol differs', async () => {
+    const stderr = sink();
+    const result = await runHostedCli(['session', 'list', '-f', 'json'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stderr: stderr.stream,
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        manifest: { ...manifest, metadata: { ...manifest.metadata, sessionProtocolVersion: 99 } },
+      }), { status: 200 }),
+    });
+
+    expect(result.exitCode).toBe(78);
+    expect(stderr.text()).toMatch(/HOSTED_CONTRACT_MISMATCH/);
+  });
+
+  it('forwards hosted session list limit to Cloud', async () => {
+    const requests: Array<{ url: string; method: string }> = [];
+    const stdout = sink();
+    const result = await runHostedCli(['session', 'list', '--limit', '50', '-f', 'json'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      fetchImpl: async (url, init) => {
+        requests.push({ url: String(url), method: init?.method ?? 'GET' });
+        if (String(url).endsWith('/v1/manifest')) return manifestResponse();
+        return new Response(JSON.stringify({ ok: true, sessions: [] }));
+      },
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 0 });
+    expect(requests).toContainEqual({
+      url: 'https://api.example.com/v1/sessions?limit=50',
+      method: 'GET',
+    });
   });
 
   it.each(['create', 'get'])('rejects the removed profile %s subcommand', async (command) => {
@@ -491,6 +745,20 @@ describe('runHostedCli', () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it('rejects doctor in hosted mode without an API call', async () => {
+    const stderr = sink();
+    const fetchImpl = vi.fn<typeof fetch>();
+    const result = await runHostedCli(['doctor'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stderr: stderr.stream,
+      fetchImpl,
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 78 });
+    expect(stderr.text()).toContain('webcmd doctor is local-only. Hosted mode has no local browser bridge.');
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it.each(['list', 'rename', 'use'])('leaves profile %s to the existing local command surface', async (command) => {
     const result = await runHostedCli(['profile', command, 'value'], {
       config: makeLocalConfig(),
@@ -505,7 +773,7 @@ describe('runHostedCli', () => {
     ['missing-site', 'child', 'grandchild'],
     ['missing-site', '--format', 'json'],
     ['missing-site', '--trace=on'],
-  ])('matches local unknown-site bytes when argv is %j', async (...argv) => {
+  ])('guides an unknown site without searching, installing, or retrying when argv is %j', async (...argv) => {
     const stdout = sink();
     const stderr = sink();
     const fetchImpl = vi.fn<typeof fetch>(async () => manifestResponse());
@@ -518,10 +786,15 @@ describe('runHostedCli', () => {
     });
 
     expect(result).toEqual({ handled: true, exitCode: 2 });
-    expect(stderr.text()).toBe("error: unknown command 'missing-site'\n");
+    expect(stderr.text()).toContain([
+      'Site "missing-site" is not installed.',
+      'Search: webcmd plugin search missing-site',
+      'Install using the installSource returned by search.',
+    ].join('\n'));
     expect(stdout.text()).toBe(formatRootHelp(HOSTED_ROOT_HELP));
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(String(fetchImpl.mock.calls[0]![0])).toMatch(/\/v1\/manifest$/);
+    expect(fetchImpl.mock.calls.some(([url]) => /plugin|execute/.test(String(url)))).toBe(false);
   });
 
   it('matches local Commander bytes for an unknown site command', async () => {
@@ -1067,7 +1340,7 @@ describe('runHostedCli', () => {
     const requests: Array<{ url: string; body?: unknown }> = [];
     const stdout = sink();
 
-    const result = await runHostedCli(['github', 'whoami', '-f', 'json'], {
+    const result = await runHostedCli(['--session', 'session_a', 'github', 'whoami', '-f', 'json'], {
       config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
       stdout: stdout.stream,
       fetchImpl: async (url, init) => {
@@ -1090,6 +1363,7 @@ describe('runHostedCli', () => {
         args: {},
         format: 'json',
         trace: 'off',
+        session: 'session_a',
       },
     });
     expect(stdout.text()).toBe('[\n  {\n    "username": "octocat"\n  }\n]\n');
@@ -1241,10 +1515,10 @@ describe('runHostedCli', () => {
       expected: 'username\n"a,""b\nline 2"\n',
     },
     {
-      name: 'literal Markdown cells',
+      name: 'escaped Markdown cells',
       result: [{ username: 'a|b\nline 2' }],
       argv: ['-f', 'md'],
-      expected: '| username |\n| --- |\n| a|b\nline 2 |\n',
+      expected: '| username |\n| --- |\n| a\\|b\nline 2 |\n',
     },
   ])('renders hosted $name with canonical literal bytes', async ({ result, argv, expected }) => {
     const stdout = sink(true);
@@ -1411,7 +1685,7 @@ describe('runHostedCli', () => {
   });
 
   it.each(['success', 'failure'])('rejects a raw provider trace URL before $phase output or attachment', async (phase) => {
-    const rawUrl = 'https://kernel.example/session/private?token=kernel-secret-token';
+    const rawUrl = 'https://provider.example/session/private?token=provider-secret-token';
     const stdout = sink();
     const stderr = sink();
     const success = phase === 'success';
@@ -1446,7 +1720,7 @@ describe('runHostedCli', () => {
     expect(stdout.text()).toBe('');
     expect(stderr.text()).toContain('HOSTED_PROTOCOL');
     expect(`${stdout.text()}\n${stderr.text()}`).not.toContain(rawUrl);
-    expect(`${stdout.text()}\n${stderr.text()}`).not.toContain('kernel-secret-token');
+    expect(`${stdout.text()}\n${stderr.text()}`).not.toContain('provider-secret-token');
   });
 
   it('accepts a manifest patch bump on the same hosted compatibility line', async () => {
@@ -1492,8 +1766,24 @@ describe('runHostedCli', () => {
     });
 
     expect(result.exitCode).toBe(1);
-    expect(stderr.text()).toMatch(/HOSTED_PROTOCOL|hosted contract/i);
+    expect(stderr.text()).toMatch(/HOSTED_CONTRACT_MISMATCH|hosted contract/i);
     expect(requests).toEqual(['https://api.example.com/v1/manifest']);
+  });
+
+  it('rejects a manifest whose Session protocol differs before execution', async () => {
+    const stderr = sink();
+    const mismatched = {
+      ...manifest,
+      metadata: { ...manifest.metadata, sessionProtocolVersion: 99 },
+    };
+    const result = await runHostedCli(['github', 'whoami'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stderr: stderr.stream,
+      fetchImpl: async () => new Response(JSON.stringify({ ok: true, manifest: mismatched }), { status: 200 }),
+    });
+
+    expect(result.exitCode).toBe(78);
+    expect(stderr.text()).toMatch(/HOSTED_CONTRACT_MISMATCH/);
   });
 
   it('writes a result larger than 1 MiB completely through injected stdout', async () => {
@@ -1524,39 +1814,6 @@ describe('runHostedCli', () => {
     expect(stderr.text()).toMatch(/hosted mode has no local daemon/i);
   });
 
-  it.each([
-    { name: 'help before unknown leaf option', argv: ['browser', 'work', 'state', '--help', '--unknown'] },
-    { name: 'unknown leaf option before help', argv: ['browser', 'work', 'state', '--unknown', '--help'] },
-    { name: 'help followed by missing leaf option value', argv: ['browser', 'work', 'state', '--help', '--source'] },
-    { name: 'ordinary unknown leaf option', argv: ['browser', 'work', 'state', '--unknown'] },
-    { name: 'ordinary missing leaf option value', argv: ['browser', 'work', 'state', '--source'] },
-    { name: 'ordinary excess leaf positional', argv: ['browser', 'work', 'state', 'extra'] },
-    { name: 'ordinary missing required leaf positional', argv: ['browser', 'work', 'eval'] },
-    { name: 'missing namespace window value', argv: ['browser', 'work', '--window'] },
-    { name: 'unhoisted missing trailing window value', argv: ['browser', 'work', 'state', '--window'] },
-    { name: 'invalid Commander-coerced screenshot dimension', argv: ['browser', 'work', 'screenshot', '--width=-10'] },
-    { name: 'root profile after the leaf', argv: ['browser', 'work', 'state', '--profile', 'other'] },
-    { name: 'root profile between namespace and leaf', argv: ['browser', 'work', '--profile', 'other', 'state'] },
-    { name: 'adapter site-session option at browser namespace', argv: ['browser', 'work', '--site-session', 'persistent', 'state'] },
-    { name: 'adapter keep-tab option at browser leaf', argv: ['browser', 'work', 'state', '--keep-tab', 'true'] },
-    { name: 'unknown browser command', argv: ['browser', 'work', 'missing'] },
-  ])('matches local browser Commander structural bytes/status with no cloud call: $name', async ({ argv }) => {
-    const local = captureLocalBrowserStructure(argv);
-    const stdout = sink();
-    const stderr = sink();
-    const fetchImpl = vi.fn<typeof fetch>();
-
-    const result = await runHostedCli(argv, {
-      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
-      stdout: stdout.stream,
-      stderr: stderr.stream,
-      fetchImpl,
-    });
-
-    expect({ exitCode: result.exitCode, stdout: stdout.text(), stderr: stderr.text() }).toEqual(local);
-    expect(fetchImpl).not.toHaveBeenCalled();
-  });
-
   it('matches the exact local text help for every catalogued browser leaf without a cloud call', async () => {
     const program = createProgram('', '');
     const browser = program.commands.find(command => command.name() === 'browser');
@@ -1574,7 +1831,7 @@ describe('runHostedCli', () => {
       const stderr = sink();
       const fetchImpl = vi.fn<typeof fetch>();
 
-      const result = await runHostedCli(['browser', 'work', ...parts, '--help'], {
+      const result = await runHostedCli(['--session', 'session_work', 'browser', ...parts, '--help'], {
         config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
         stdout: stdout.stream,
         stderr: stderr.stream,
@@ -1591,17 +1848,22 @@ describe('runHostedCli', () => {
     }
   });
 
-  it('dispatches every catalogued hosted browser command except bind to the cloud command endpoint', async () => {
+  it('dispatches every catalogued hosted browser command to the cloud command endpoint', async () => {
     const uploadDir = await mkdtemp(path.join(tmpdir(), 'webcmd-hosted-browser-upload-'));
     const uploadFile = path.join(uploadDir, 'sample-upload.txt');
     await writeFile(uploadFile, 'hello browser upload');
     try {
-      for (const contract of browserCommandCatalog.filter(command => command.command !== 'bind')) {
+      for (const contract of browserCommandCatalog.filter(command => (
+        command.sessionPolicy !== 'local-only'
+      ))) {
         const requests: Array<{ pathname: string; body?: Record<string, unknown> }> = [];
-        const positionals = contract.command === 'upload'
-          ? ['input[type=file]', uploadFile]
-          : sampleBrowserPositionals(contract);
-        const result = await runHostedCli(['browser', 'work', ...contract.command.split('/'), ...positionals], {
+        const positionals = sampleBrowserPositionals(contract);
+        const options = contract.command === 'bind'
+          ? ['--page', 'page-123']
+          : contract.command === 'run'
+            ? ['--file', uploadFile]
+            : [];
+        const result = await runHostedCli(['--session', 'session_work', 'browser', ...contract.command.split('/'), ...positionals, ...options], {
           config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
           stdout: sink().stream,
           stderr: sink().stream,
@@ -1610,7 +1872,7 @@ describe('runHostedCli', () => {
             const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined;
             requests.push({ pathname: parsedUrl.pathname, ...(body ? { body } : {}) });
             if (parsedUrl.pathname === '/v1/manifest') return manifestResponse();
-            if (parsedUrl.pathname === '/v1/browser/work/commands') {
+            if (parsedUrl.pathname === '/v1/browser/session_work/commands') {
               return new Response(JSON.stringify({
                 ok: true,
                 result: {},
@@ -1618,7 +1880,7 @@ describe('runHostedCli', () => {
                 trace: null,
                 run: {
                   executionId: `exec_${contract.command.replaceAll('/', '_')}`,
-                  session: 'work',
+                  session: 'session_work',
                   profile: { id: 'profile_default', displayName: 'default' },
                 },
                 execution: { id: `exec_${contract.command.replaceAll('/', '_')}`, status: 'succeeded' },
@@ -1637,7 +1899,7 @@ describe('runHostedCli', () => {
         });
         expect({
           command: contract.command,
-          action: requests.find(request => request.pathname === '/v1/browser/work/commands')?.body,
+          action: requests.find(request => request.pathname === '/v1/browser/session_work/commands')?.body,
         }).toMatchObject({
           command: contract.command,
           action: { command: `browser/${contract.command}`, action: contract.action },
@@ -1648,225 +1910,13 @@ describe('runHostedCli', () => {
     }
   });
 
-  it('routes hosted browser positional commands through the atomic cloud action route', async () => {
-    const requests: Array<{ url: string; body?: unknown }> = [];
-    const stdout = sink();
-    const result = await runHostedCli(['--profile', 'default', 'browser', 'work', 'open', 'https://example.com', '--window', 'background'], {
-      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
-      stdout: stdout.stream,
-      fetchImpl: async (url, init) => {
-        requests.push({
-          url: String(url),
-          body: init?.body ? JSON.parse(String(init.body)) as unknown : undefined,
-        });
-        if (String(url).endsWith('/v1/manifest')) return manifestResponse();
-        if (String(url).endsWith('/commands')) {
-          return new Response(JSON.stringify({
-            ok: true,
-            result: { url: 'https://example.com' },
-            columns: ['url'],
-            trace: null,
-            run: {
-              executionId: 'exec_browser',
-              session: 'work',
-              profile: { id: 'profile_default', displayName: 'default' },
-            },
-            execution: { id: 'exec_browser', status: 'succeeded' },
-          }), { status: 200 });
-        }
-        return new Response(JSON.stringify({ ok: false, error: { code: 'UNEXPECTED', message: String(url), exitCode: 1 } }), { status: 500 });
-      },
-    });
-
-    expect(result).toEqual({ handled: true, exitCode: 0 });
-    expect(stdout.text()).toContain('https://example.com');
-    expect(requests).toEqual([
-      {
-        url: 'https://api.example.com/v1/manifest',
-        body: undefined,
-      },
-      {
-        url: 'https://api.example.com/v1/browser/work/commands',
-        body: {
-          command: 'browser/open',
-          action: 'navigate',
-          args: { url: 'https://example.com' },
-          profile: 'default',
-          windowMode: 'background',
-          trace: 'off',
-        },
-      },
-    ]);
-  });
-
-  it('uses the canonical Commander value for a dash-leading browser option in the Cloud request', async () => {
-    const requests: Array<{ url: string; body?: Record<string, unknown> }> = [];
-    const result = await runHostedCli(['browser', 'work', 'scroll', 'down', '--amount', '-5'], {
-      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
-      stdout: sink().stream,
-      stderr: sink().stream,
-      fetchImpl: async (url, init) => {
-        const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined;
-        requests.push({ url: String(url), ...(body ? { body } : {}) });
-        if (String(url).endsWith('/v1/manifest')) return manifestResponse();
-        if (String(url).endsWith('/commands')) {
-          return new Response(JSON.stringify({
-            ok: true,
-            result: { scrolled: 'down', amount: -5 },
-            columns: ['scrolled', 'amount'],
-            trace: null,
-            run: {
-              executionId: 'exec_browser_scroll',
-              session: 'work',
-              profile: { id: 'profile_default', displayName: 'default' },
-            },
-            execution: { id: 'exec_browser_scroll', status: 'succeeded' },
-          }), { status: 200 });
-        }
-        return new Response(JSON.stringify({ ok: false, error: { code: 'UNEXPECTED', message: String(url), exitCode: 1 } }), { status: 500 });
-      },
-    });
-
-    expect(result).toEqual({ handled: true, exitCode: 0 });
-    expect(requests[1]?.body).toEqual({
-      command: 'browser/scroll',
-      action: 'scroll',
-      args: { direction: 'down', amount: '-5' },
-      trace: 'off',
-    });
-  });
-
-  it.each([
-    {
-      name: 'repeated and equals string option',
-      argv: ['browser', 'work', 'scroll', 'down', '--amount', '10', '--amount=-5'],
-      command: 'browser/scroll',
-      action: 'scroll',
-      args: { direction: 'down', amount: '-5' },
-    },
-    {
-      name: 'equals dash-leading frame option',
-      argv: ['browser', 'work', 'eval', 'return 1', '--frame=-2'],
-      command: 'browser/eval',
-      action: 'exec',
-      args: { js: 'return 1', frame: '-2' },
-    },
-    {
-      name: 'Commander-coerced dimensions and repeated boolean flag',
-      argv: ['browser', 'work', 'screenshot', '--width=10', '--height', '20', '--full-page', '--full-page'],
-      command: 'browser/screenshot',
-      action: 'screenshot',
-      args: { fullPage: true, annotate: false, width: 10, height: 20 },
-    },
-    {
-      name: 'dash-leading timeout option',
-      argv: ['browser', 'work', 'wait', 'time', '1', '--timeout', '-5'],
-      command: 'browser/wait',
-      action: 'wait',
-      args: { type: 'time', value: '1', timeout: '-5' },
-    },
-    {
-      name: 'dash-leading observation option and boolean flag',
-      argv: ['browser', 'work', 'console', '--since', '-dash', '--follow'],
-      command: 'browser/console',
-      action: 'console',
-      args: { level: 'all', follow: true, since: '-dash' },
-    },
-    {
-      name: 'dash-leading positional behind separator',
-      argv: ['browser', 'work', 'eval', '--', '-script'],
-      command: 'browser/eval',
-      action: 'exec',
-      args: { js: '-script' },
-    },
-    {
-      name: 'repeated namespace window option',
-      argv: ['browser', 'work', '--window', 'foreground', '--window=background', 'state'],
-      command: 'browser/state',
-      action: 'snapshot',
-      args: { source: 'dom', compareSources: false },
-      windowMode: 'background',
-    },
-    {
-      name: 'retained tab and comparison options',
-      argv: ['browser', 'work', 'state', '--compare-sources', '--tab', 'page-2'],
-      command: 'browser/state',
-      action: 'snapshot',
-      args: { source: 'dom', compareSources: true, tab: 'page-2' },
-    },
-    {
-      name: 'semantic click without positional target',
-      argv: ['browser', 'work', 'click', '--role', 'button', '--name', 'Submit', '--nth', '-1', '--tab', 'page-2'],
-      command: 'browser/click',
-      action: 'click',
-      args: { role: 'button', name: 'Submit', nth: '-1', tab: 'page-2' },
-    },
-    {
-      name: 'semantic type treats first positional as text',
-      argv: ['browser', 'work', 'type', 'hello cloud', '--role', 'textbox', '--name', 'Search'],
-      command: 'browser/type',
-      action: 'type',
-      args: { role: 'textbox', name: 'Search', text: 'hello cloud' },
-    },
-    {
-      name: 'double-click retains action-specific options',
-      argv: ['browser', 'work', 'dblclick', '#ok', '--nth', '2', '--tab', 'page-2'],
-      command: 'browser/dblclick',
-      action: 'dblclick',
-      args: { target: '#ok', nth: '2', tab: 'page-2' },
-    },
-    {
-      name: 'get text reaches hosted get action',
-      argv: ['browser', 'work', 'get', 'text', '#result', '--nth', '0'],
-      command: 'browser/get/text',
-      action: 'get-text',
-      args: { target: '#result', nth: '0' },
-    },
-  ])('sends canonical browser request bodies for $name', async ({ argv, command, action, args, windowMode }) => {
-    const requests: Array<{ url: string; body?: Record<string, unknown> }> = [];
-    const result = await runHostedCli(argv, {
-      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
-      stdout: sink().stream,
-      stderr: sink().stream,
-      fetchImpl: async (url, init) => {
-        const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined;
-        requests.push({ url: String(url), ...(body ? { body } : {}) });
-        if (String(url).endsWith('/v1/manifest')) return manifestResponse();
-        if (String(url).endsWith('/commands')) {
-          return new Response(JSON.stringify({
-            ok: true,
-            result: {},
-            columns: [],
-            trace: null,
-            run: {
-              executionId: 'exec_browser_canonical',
-              session: 'work',
-              profile: { id: 'profile_default', displayName: 'default' },
-            },
-            execution: { id: 'exec_browser_canonical', status: 'succeeded' },
-          }), { status: 200 });
-        }
-        return new Response(JSON.stringify({ ok: false, error: { code: 'UNEXPECTED', message: String(url), exitCode: 1 } }), { status: 500 });
-      },
-    });
-
-    expect(result).toEqual({ handled: true, exitCode: 0 });
-    expect(requests[1]?.body).toEqual({
-      command,
-      action,
-      args,
-      ...(windowMode ? { windowMode } : {}),
-      trace: 'off',
-    });
-  });
-
-  it('stages browser upload files without sending local paths to Cloud', async () => {
-    const uploadDir = await mkdtemp(path.join(tmpdir(), 'webcmd-hosted-browser-upload-'));
-    const uploadFile = path.join(uploadDir, '-one.txt');
-    await writeFile(uploadFile, 'one file');
+  it('sends browser-run file contents and snapshot-diff options to Cloud instead of the local path', async () => {
+    const sourceDir = await mkdtemp(path.join(tmpdir(), 'webcmd-hosted-run-source-'));
+    const sourcePath = path.join(sourceDir, 'program.js');
+    await writeFile(sourcePath, 'return 42;');
     const requests: Array<{ url: string; body?: Record<string, unknown> }> = [];
     try {
-      const result = await runHostedCli(['browser', 'work', 'upload', 'input[type=file]', '--', uploadFile], {
+      const result = await runHostedCli(['--session', 'session_work', 'browser', 'run', '--file', sourcePath, '--snapshot-mode', 'tree', '--no-snapshot-diff'], {
         config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
         stdout: sink().stream,
         stderr: sink().stream,
@@ -1874,91 +1924,71 @@ describe('runHostedCli', () => {
           const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined;
           requests.push({ url: String(url), ...(body ? { body } : {}) });
           if (String(url).endsWith('/v1/manifest')) return manifestResponse();
-          if (String(url).endsWith('/commands')) {
-            return new Response(JSON.stringify({
-              ok: true,
-              result: { uploaded: true, file_names: ['-one.txt'] },
-              columns: ['uploaded', 'file_names'],
-              trace: null,
-              run: {
-                executionId: 'exec_browser_upload',
-                session: 'work',
-                profile: { id: 'profile_default', displayName: 'default' },
-              },
-              execution: { id: 'exec_browser_upload', status: 'succeeded' },
-            }), { status: 200 });
-          }
-          return new Response(JSON.stringify({ ok: false, error: { code: 'UNEXPECTED', message: String(url), exitCode: 1 } }), { status: 500 });
+          return new Response(JSON.stringify({
+            ok: true,
+            result: {},
+            columns: [],
+            trace: null,
+            run: { executionId: 'exec_browser_run', session: 'session_work', profile: { id: 'profile_default', displayName: 'default' } },
+            execution: { id: 'exec_browser_run', status: 'succeeded' },
+          }), { status: 200 });
         },
       });
 
       expect(result).toEqual({ handled: true, exitCode: 0 });
-      const files = requests[1]?.body?.args && (requests[1].body.args as Record<string, unknown>).files;
-      expect(JSON.stringify(files)).not.toContain(uploadFile);
-      expect(files).toEqual([{
-        $webcmdBrowserUpload: {
-          filename: '-one.txt',
-          contentType: 'text/plain',
-          base64: Buffer.from('one file').toString('base64'),
-        },
-      }]);
+      expect(requests[1]?.body).toMatchObject({
+        command: 'browser/run',
+        action: 'run',
+        args: { source: 'return 42;', snapshotMode: 'tree', noSnapshotDiff: true },
+      });
+      expect(JSON.stringify(requests[1]?.body)).not.toContain(sourcePath);
     } finally {
-      await rm(uploadDir, { recursive: true, force: true });
+      await rm(sourceDir, { recursive: true, force: true });
     }
   });
 
-  it('rejects a browser manifest mismatch before starting a provider run', async () => {
-    const requests: string[] = [];
-    const stdout = sink();
-    const stderr = sink();
-    const mismatched = {
-      ...manifest,
-      metadata: { ...manifest.metadata, webcmdPackageVersion: incompatibleMinorVersion },
-    };
-    const result = await runHostedCli(['browser', 'work', 'state'], {
+  it('forwards browser snapshot mode to hosted browser actions', async () => {
+    const requests: Array<{ url: string; body?: Record<string, unknown> }> = [];
+    const result = await runHostedCli(['--session', 'session_work', 'browser', 'snapshot', '--snapshot-mode', 'read', '--ref', 'l7', '--max-output', '1000'], {
       config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
-      stdout: stdout.stream,
-      stderr: stderr.stream,
-      fetchImpl: async (url) => {
-        requests.push(String(url));
-        return new Response(JSON.stringify({ ok: true, manifest: mismatched }), { status: 200 });
+      stdout: sink().stream,
+      stderr: sink().stream,
+      fetchImpl: async (url, init) => {
+        const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined;
+        requests.push({ url: String(url), ...(body ? { body } : {}) });
+        if (String(url).endsWith('/v1/manifest')) return manifestResponse();
+        return new Response(JSON.stringify({
+          ok: true,
+          run: { executionId: 'exec_browser_snapshot', session: 'session_work', profile: { id: 'profile_default', displayName: 'default' } },
+          result: { ok: true, tree: '<page />', page: { url: 'https://example.test', title: 'Example' }, warnings: [], limits: { snapshotTruncated: false } },
+        }), { status: 200 });
       },
     });
 
-    expect(result.exitCode).toBe(1);
-    expect(requests).toEqual(['https://api.example.com/v1/manifest']);
-    expect(stdout.text()).toBe('');
-    expect(stderr.text()).toMatch(/HOSTED_PROTOCOL|hosted contract/i);
+    expect(result).toEqual({ handled: true, exitCode: 0 });
+    expect(requests[1]?.body).toMatchObject({
+      action: 'snapshot',
+      args: { snapshotMode: 'read', ref: 'l7', maxOutput: 1000 },
+    });
   });
 
-  it('does not render private fields from a malformed browser action success', async () => {
-    const requests: string[] = [];
+  it('prints hosted snapshot trees', async () => {
     const stdout = sink();
-    const stderr = sink();
-    const privatePath = '/srv/private/token.json';
-    const result = await runHostedCli(['browser', 'work', 'state'], {
+    const result = await runHostedCli(['--session', 'session_work', 'browser', 'snapshot'], {
       config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
       stdout: stdout.stream,
-      stderr: stderr.stream,
-      fetchImpl: async (url) => {
-        requests.push(String(url));
-        if (String(url).endsWith('/v1/manifest')) return manifestResponse();
-        if (String(url).endsWith('/commands')) {
-          return new Response(JSON.stringify({ ok: true, internalPath: privatePath }), { status: 200 });
-        }
-        return new Response(JSON.stringify({ ok: false, error: { code: 'UNEXPECTED', message: String(url), exitCode: 1 } }), { status: 500 });
-      },
+      stderr: sink().stream,
+      fetchImpl: async (url) => String(url).endsWith('/v1/manifest')
+        ? manifestResponse()
+        : new Response(JSON.stringify({
+            ok: true,
+            run: { executionId: 'exec_browser_snapshot', session: 'session_work', profile: { id: 'profile_default', displayName: 'default' } },
+            result: { ok: true, tree: '<page />', page: { url: 'https://example.test', title: 'Example' }, warnings: [], limits: { snapshotTruncated: false } },
+          }), { status: 200 }),
     });
 
-    expect(result.exitCode).toBe(1);
-    expect(stdout.text()).toBe('');
-    expect(stdout.text()).not.toContain(privatePath);
-    expect(stderr.text()).toContain('HOSTED_PROTOCOL');
-    expect(stderr.text()).not.toContain(privatePath);
-    expect(requests).toEqual([
-      'https://api.example.com/v1/manifest',
-      'https://api.example.com/v1/browser/work/commands',
-    ]);
+    expect(result).toEqual({ handled: true, exitCode: 0 });
+    expect(stdout.text()).toBe('<page />\n');
   });
 
   it('reconstructs AutoFix commands without treating global option values as command words', async () => {
@@ -1974,29 +2004,32 @@ describe('runHostedCli', () => {
     expect(stderr.text()).not.toContain('# webcmd default github');
   });
 
-  it('rejects the retired hosted browser --session flag', async () => {
+  it('rejects retired positional hosted browser sessions', async () => {
     const stderr = sink();
-    const result = await runHostedCli(['browser', '--session', 'work', 'state'], {
+    const result = await runHostedCli(['browser', 'work', 'state'], {
       config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
       stderr: stderr.stream,
     });
 
-    expect(result.exitCode).toBe(78);
-    expect(stderr.text()).toMatch(/session.*no longer a public option/i);
+    expect(result.exitCode).toBe(2);
+    expect(stderr.text()).toMatch(/Browser sessions are root selectors/i);
   });
 
-  it('rejects browser bind before making a hosted request', async () => {
+  it.each([
+    { argv: ['browser', 'tabs'], code: 'SESSION_REQUIRED' },
+    { argv: ['--session', 'work', 'browser', 'tabs'], code: 'INVALID_SESSION_SELECTOR' },
+  ])('rejects an unusable raw selector before hosted transport: $code', async ({ argv, code }) => {
     const stderr = sink();
     const fetchImpl = vi.fn<typeof fetch>();
 
-    const result = await runHostedCli(['browser', 'work', 'bind'], {
+    const result = await runHostedCli(argv, {
       config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
       stderr: stderr.stream,
       fetchImpl,
     });
 
-    expect(result).toEqual({ handled: true, exitCode: 78 });
-    expect(stderr.text()).toMatch(/browser bind is not supported in hosted mode/i);
+    expect(result.exitCode).toBe(2);
     expect(fetchImpl).not.toHaveBeenCalled();
+    expect(stderr.text()).toContain(code);
   });
 });

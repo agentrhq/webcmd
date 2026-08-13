@@ -1,0 +1,9 @@
+{
+  "name": "webcmd-plugin-coingecko",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Webcmd commands for coingecko",
+  "peerDependencies": {
+    "@agentrhq/webcmd": ">=0.5.3"
+  }
+}

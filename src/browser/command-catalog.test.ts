@@ -1,31 +1,7 @@
 import type { Command } from 'commander';
 import { describe, expect, it } from 'vitest';
 import { createProgram } from '../cli.js';
-import { commanderNamespaceHelpData } from '../help.js';
-import {
-  buildHostedContract,
-  type HostedArgumentContract,
-} from '../hosted/contract.js';
-import { browserCommandCatalog, browserOptionFlags } from './command-catalog.js';
-
-type StructuredArgument = {
-  name: string;
-  flags?: string;
-  help?: string;
-  required?: boolean;
-  variadic?: boolean;
-  default?: unknown;
-  choices?: string[];
-  takes_value?: 'required' | 'optional';
-};
-
-type StructuredBrowserCommand = {
-  name: string;
-  aliases?: string[];
-  description: string;
-  positionals: StructuredArgument[];
-  command_options: StructuredArgument[];
-};
+import { browserCommandCatalog, browserOptionValueParser } from './command-catalog.js';
 
 function browserCommand(): Command {
   const browser = createProgram('', '').commands.find(command => command.name() === 'browser');
@@ -33,86 +9,71 @@ function browserCommand(): Command {
   return browser;
 }
 
-function localBrowserCommands(): StructuredBrowserCommand[] {
-  const help = commanderNamespaceHelpData(browserCommand());
-  return help.commands as StructuredBrowserCommand[];
-}
-
-function normalizeArgument(
-  argument: StructuredArgument,
-  positional: boolean,
-): HostedArgumentContract {
-  return {
-    name: argument.name,
-    type: positional || argument.takes_value ? 'string' : 'boolean',
-    description: argument.help ?? '',
-    positional,
-    required: positional && argument.required === true,
-    variadic: argument.variadic === true,
-    ...(argument.default !== undefined ? { default: argument.default } : {}),
-    ...(argument.choices?.length ? { choices: [...argument.choices] } : {}),
-  };
-}
-
-function normalizeLocalCommand(command: StructuredBrowserCommand) {
-  return {
-    command: command.name.replaceAll(' ', '/'),
-    aliases: [...(command.aliases ?? [])],
-    description: command.description,
-    positionals: command.positionals.map(argument => normalizeArgument(argument, true)),
-    options: command.command_options.map(argument => normalizeArgument(argument, false)),
-  };
-}
-
 describe('browserCommandCatalog', () => {
-  it('catalogues the exact local Commander browser leaf set and metadata', () => {
-    const local = localBrowserCommands().map(normalizeLocalCommand);
-    const catalogPaths = new Set(browserCommandCatalog.map(command => command.command));
-    const localPaths = new Set(local.map(command => command.command));
-
-    expect({
-      uncatalogued: [...localPaths].filter(command => !catalogPaths.has(command)).sort(),
-      stale: [...catalogPaths].filter(command => !localPaths.has(command)).sort(),
-    }).toEqual({ uncatalogued: [], stale: [] });
-
-    expect(browserCommandCatalog.map(({ sessionPolicy: _sessionPolicy, action: _action, ...command }) => command))
-      .toEqual(local);
+  it('exposes the raw browser session commands', () => {
+    expect(browserCommandCatalog.map(command => command.command)).toEqual([
+      'tabs',
+      'bind',
+      'fork',
+      'run',
+      'snapshot',
+      'close',
+    ]);
   });
 
-  it('preserves the exact local Commander flag grammar for every browser option', () => {
-    const local = new Map(localBrowserCommands().map(command => [
-      command.name.replaceAll(' ', '/'),
-      command.command_options.map(option => option.flags),
-    ]));
-
-    expect(Object.fromEntries(browserCommandCatalog.map(command => [
-      command.command,
-      command.options.map(browserOptionFlags),
-    ]))).toEqual(Object.fromEntries(local));
+  it('exposes hosted adapter fork with a required command name', () => {
+    const fork = browserCommandCatalog.find(command => command.command === 'fork');
+    expect(fork).toMatchObject({ action: 'fork', sessionPolicy: 'require-existing' });
+    expect(fork?.positionals).toEqual([
+      expect.objectContaining({ name: 'name', required: true, positional: true }),
+    ]);
   });
 
-  it('marks bind as the only local-only command and gives every hosted command an action', () => {
-    expect(browserCommandCatalog.filter(command => command.sessionPolicy === 'local-only').map(command => command.command))
-      .toEqual(['bind']);
-    expect(browserCommandCatalog.find(command => command.command === 'bind')).not.toHaveProperty('action');
-    expect(browserCommandCatalog.filter(command => command.command !== 'bind').every(command => command.action))
-      .toBe(true);
+  it('keeps adapter authoring separate from the raw session catalog', () => {
+    expect(browserCommand().commands.map(command => command.name())).toEqual([
+      'init',
+      'fork',
+      'verify',
+      'tabs',
+      'bind',
+      'run',
+      'snapshot',
+      'close',
+    ]);
   });
 
-  it('classifies lifecycle commands from their actual local behavior', () => {
-    const policies = Object.fromEntries(browserCommandCatalog.map(command => [command.command, command.sessionPolicy]));
-
-    expect(policies.open).toBe('create-or-reuse');
-    expect(policies.close).toBe('close-existing');
-    expect(policies.unbind).toBe('close-existing');
-    expect(policies.state).toBe('require-existing');
+  it('requires a stable page id for bind and limits run to program options', () => {
+    const commands = new Map(browserCommandCatalog.map(command => [command.command, command]));
+    expect(commands.get('bind')?.options).toEqual([
+      expect.objectContaining({ name: 'page', required: true }),
+    ]);
+    expect(commands.get('run')?.options.map(option => option.name)).toEqual([
+      'stdin',
+      'file',
+      'timeout',
+      'maxOutput',
+      'snapshotMode',
+      'noSnapshotDiff',
+    ]);
   });
 
-  it('is the production browser surface emitted by buildHostedContract', () => {
-    const contract = buildHostedContract([], [], '1.0.0');
+  it('includes snapshot as the read-only browser inspection command', () => {
+    const snapshot = browserCommandCatalog.find(command => command.command === 'snapshot');
+    expect(snapshot).toMatchObject({ action: 'snapshot', sessionPolicy: 'require-existing' });
+    expect(snapshot?.options.map(option => option.name)).toEqual(['snapshotMode', 'ref', 'maxOutput']);
+  });
 
-    expect(contract.browserCommands).toEqual(browserCommandCatalog);
-    expect(contract.browserCommands.filter(command => !command.action).map(command => command.command))
-      .toEqual(['bind']);
+  it('parses run snapshot mode as act or tree only', () => {
+    expect(browserOptionValueParser('run', 'snapshotMode')?.('act')).toBe('act');
+    expect(browserOptionValueParser('run', 'snapshotMode')?.('tree')).toBe('tree');
+    expect(() => browserOptionValueParser('run', 'snapshotMode')?.('read')).toThrow(/act or tree/);
+  });
+
+  it('parses snapshot mode as act, tree, or read only', () => {
+    const parse = browserOptionValueParser('snapshot', 'snapshotMode');
+    expect(parse?.('act')).toBe('act');
+    expect(parse?.('tree')).toBe('tree');
+    expect(browserOptionValueParser('snapshot', 'snapshotMode')?.('read')).toBe('read');
+    expect(() => parse?.('full')).toThrow('--snapshot-mode for snapshot must be act, tree, or read');
   });
 });

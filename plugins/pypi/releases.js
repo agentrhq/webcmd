@@ -1,6 +1,6 @@
 import { cli, Strategy } from '@agentrhq/webcmd/registry';
 
-import { fetchPackageJson, parseLimit, summarizeReleases } from './lib/api.js';
+import { fetchPackageJson, parseLimit, summarizeReleases } from './utils.js';
 
 export async function releasesPyPI(args, request = fetch) {
     const payload = await fetchPackageJson(args.name, request);

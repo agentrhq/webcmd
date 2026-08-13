@@ -18,9 +18,24 @@ Change the site's sort order in the UI, or change known query params, then compa
 Example workflow:
 
 ```bash
-webcmd browser open <url>
-webcmd browser wait xhr '<endpoint-fragment>'
-webcmd browser network --format json
+webcmd --session <session-id> browser run --stdin <<'JS'
+const responses = [];
+page.on('response', async response => {
+  if (!response.url().includes('<endpoint-fragment>')) return;
+  let body = '';
+  try { body = await response.text(); } catch {}
+  responses.push({
+    url: response.url(),
+    status: response.status(),
+    body,
+  });
+});
+
+await page.goto('<url>');
+await page.waitForLoadState('domcontentloaded');
+await page.waitForTimeout(1000);
+return responses;
+JS
 ```
 
 Look for fields that move with:

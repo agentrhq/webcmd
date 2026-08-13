@@ -12,11 +12,12 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { execSync, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { PLUGINS_DIR } from './discovery.js';
+import { getPluginsDir, PLUGINS_DIR } from './discovery.js';
 import { getErrorMessage, PluginError } from './errors.js';
 import { log } from './logger.js';
 import { isRecord } from './utils.js';
 import { PACKAGE_NAME } from './brand.js';
+import { fileSha256, readOverrideRecords } from './override-provenance.js';
 import {
   readPluginManifest,
   isMonorepo,
@@ -66,6 +67,10 @@ export interface PluginInfo {
   monorepoName?: string;
   /** Description from webcmd-plugin.json. */
   description?: string;
+  /** Commands forked into ~/.webcmd/clis with upstream provenance. */
+  overrides: string[];
+  /** An override's upstream command changed since it was forked. */
+  updateAvailable: boolean;
 }
 
 interface ParsedSource {
@@ -509,6 +514,116 @@ export function getCommitHash(dir: string): string | undefined {
   }
 }
 
+/** True only for git's "this directory has no repository at all" failure. */
+function isNotAGitRepositoryError(error: unknown): boolean {
+  const stderr = typeof (error as { stderr?: unknown })?.stderr === 'string'
+    ? (error as { stderr: string }).stderr
+    : (error as { stderr?: Buffer })?.stderr?.toString('utf-8') ?? '';
+  const message = (error as Error)?.message ?? '';
+  return /not a git repository/i.test(stderr) || /not a git repository/i.test(message);
+}
+
+function describeGitError(error: unknown): string {
+  const stderr = typeof (error as { stderr?: unknown })?.stderr === 'string'
+    ? (error as { stderr: string }).stderr
+    : (error as { stderr?: Buffer })?.stderr?.toString('utf-8') ?? '';
+  return stderr.trim() || (error as Error)?.message || String(error);
+}
+
+/**
+ * Report tracked-file modifications and untracked files within `dir` in a git checkout.
+ *
+ * Untracked files are included on purpose: anything untracked is real, unsaved
+ * user work — e.g. a new command file that hasn't been `git add`ed yet — which
+ * updating would destroy just as surely as an uncommitted edit to a tracked
+ * file. The exception is `installArtifacts`: those are ours, not the user's.
+ *
+ * The `-- .` pathspec on `git status` restricts the report to `dir` itself.
+ * Without it, git reports the *entire enclosing repository* — e.g. a plugin
+ * living inside a dotfiles repo, or any plugin directory that isn't itself a
+ * repo root, would surface unrelated dirty files from elsewhere in the repo.
+ *
+ * Returns an empty array only when `dir` is genuinely not inside a git
+ * repository: a plugin installed without git history has no baseline to
+ * compare against, so there is nothing to protect. Any other failure (git
+ * missing, "detected dubious ownership in repository", permission errors,
+ * ...) is a failure to determine dirtiness, not evidence of cleanliness, and
+ * must fail closed — this guard exists to prevent silent data loss, so an
+ * inconclusive check must refuse the update rather than proceed as if clean.
+ */
+export function getDirtyFiles(dir: string): string[] {
+  try {
+    execFileSync('git', ['rev-parse', '--git-dir'], {
+      cwd: dir,
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+  } catch (error) {
+    if (isNotAGitRepositoryError(error)) return [];
+    throw new PluginError(
+      `Could not determine whether "${dir}" has uncommitted changes: git failed with: ${describeGitError(error)}`,
+      'This can happen when git is not installed, or refuses to run here (e.g. "detected dubious ownership in repository"). Re-run with --force to update anyway — this accepts the risk of discarding uncommitted work, which is why it is not the default.',
+    );
+  }
+  try {
+    const out = execFileSync('git', ['status', '--porcelain', '--', '.'], {
+      cwd: dir,
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    return out.split('\n').filter((line) => line.trim())
+      .filter((line) => !isInstallArtifact(line))
+      .map((line) => line.trim());
+  } catch (error) {
+    throw new PluginError(
+      `Could not determine whether "${dir}" has uncommitted changes: git failed with: ${describeGitError(error)}`,
+      'This can happen when git refuses to run here (e.g. "detected dubious ownership in repository"). Re-run with --force to update anyway — this accepts the risk of discarding uncommitted work, which is why it is not the default.',
+    );
+  }
+}
+
+/**
+ * Artifacts `installDependencies` creates by running `npm install` in the
+ * checkout, at the repo root and in every sub-plugin of a monorepo. A plugin
+ * repo without a .gitignore reports them as dirty, so without this the guard
+ * fires on webcmd's own output and every such plugin is permanently
+ * un-updatable — blaming the user for work they never did.
+ */
+const installArtifacts = /(?:^|\/)(?:node_modules(?:\/|$)|package-lock\.json$)/;
+
+/**
+ * True only for an artifact npm itself created: a `??` (untracked) porcelain
+ * entry at an artifact path. The status columns are read from the raw line
+ * before any trimming, because every other status — ` M`, `M `, ` D`, `A `,
+ * `R `, `UU` — is tracked work the user could lose when `updatePlugin`
+ * replaces the directory, no matter what the path looks like.
+ */
+function isInstallArtifact(line: string): boolean {
+  if (line.slice(0, 2) !== '??') return false;
+  return installArtifacts.test(line.slice(2).trim());
+}
+
+/** Path portion of a `git status --porcelain` entry (already trimmed of its leading space). */
+function dirtyEntryPath(entry: string): string {
+  return entry.startsWith('??') ? entry.slice(2).trim() : entry.replace(/^[MADRCU!]{1,2}\s+/, '');
+}
+
+function describeDirtyEntry(entry: string): string {
+  const file = dirtyEntryPath(entry);
+  return entry.startsWith('??') ? `${file} (new, unstaged)` : `${file} (modified)`;
+}
+
+function assertPluginNotDirty(name: string, dir: string, force: boolean): void {
+  if (force) return;
+  const dirty = getDirtyFiles(dir);
+  if (dirty.length === 0) return;
+  const described = dirty.slice(0, 10).map(describeDirtyEntry);
+  throw new PluginError(
+    `Plugin "${name}" has uncommitted changes that updating would destroy:\n  ${described.join('\n  ')}`,
+    'Commit or stash them, re-run with --force to discard them, or develop against a symlinked checkout with "webcmd plugin install file:///path".',
+  );
+}
+
 /**
  * Validate that a downloaded plugin directory is a structurally valid plugin.
  * Checks for at least one command file (.ts, .js) and a valid
@@ -850,8 +965,21 @@ function installMonorepo(
   const monoreposDir = getMonoreposDir();
   const repoDir = path.join(monoreposDir, repoName);
   const repoAlreadyInstalled = fs.existsSync(repoDir);
-  const repoRoot = repoAlreadyInstalled ? repoDir : cloneDir;
-  const effectiveManifest = repoAlreadyInstalled ? readPluginManifest(repoDir) : manifest;
+  let repoRoot = repoAlreadyInstalled ? repoDir : cloneDir;
+  let effectiveManifest = repoAlreadyInstalled ? readPluginManifest(repoDir) : manifest;
+  let publishRepo = repoAlreadyInstalled ? undefined : { stagingDir: cloneDir, parentDir: monoreposDir };
+
+  if (
+    repoAlreadyInstalled
+    && subPlugin
+    && (!effectiveManifest?.plugins?.[subPlugin] || effectiveManifest.plugins[subPlugin].disabled)
+    && manifest.plugins?.[subPlugin]
+    && !manifest.plugins[subPlugin].disabled
+  ) {
+    repoRoot = cloneDir;
+    effectiveManifest = manifest;
+    publishRepo = { stagingDir: cloneDir, parentDir: monoreposDir };
+  }
 
   if (!effectiveManifest || !isMonorepo(effectiveManifest)) {
     throw new PluginError(`Monorepo manifest missing or invalid at ${repoRoot}`);
@@ -920,23 +1048,16 @@ function installMonorepo(
 
   const publishPlugins = eligiblePlugins.map(({ name, entry }) => ({ name, subPath: entry.path }));
 
-  if (repoAlreadyInstalled) {
-    postInstallMonorepoLifecycle(
-      repoDir,
-      eligiblePlugins.map((p) => resolveRepoContainedPath(repoDir, p.entry.path)),
-    );
-  } else {
-    postInstallMonorepoLifecycle(
-      cloneDir,
-      eligiblePlugins.map((p) => resolveRepoContainedPath(cloneDir, p.entry.path)),
-    );
-  }
+  postInstallMonorepoLifecycle(
+    repoRoot,
+    eligiblePlugins.map((p) => resolveRepoContainedPath(repoRoot, p.entry.path)),
+  );
 
   publishMonorepoPlugins(
     repoDir,
     PLUGINS_DIR,
     publishPlugins,
-    repoAlreadyInstalled ? undefined : { stagingDir: cloneDir, parentDir: monoreposDir },
+    publishRepo,
     (commitHash) => {
       for (const { name, entry } of eligiblePlugins) {
         if (commitHash) {
@@ -1097,26 +1218,28 @@ function isSymlinkSync(p: string): boolean {
  * For monorepo sub-plugins: pulls the monorepo root and re-runs lifecycle
  * for all sub-plugins from the same monorepo.
  */
-export function updatePlugin(name: string): void {
+export function updatePlugin(name: string, options: { force?: boolean } = {}): string[] {
   const targetDir = path.join(PLUGINS_DIR, name);
   if (!fs.existsSync(targetDir)) {
     throw new Error(`Plugin "${name}" is not installed.`);
   }
-
   const lock = readLockFile();
   const lockEntry = lock[name];
   const source = resolvePluginSource(lockEntry, targetDir);
 
   if (source?.kind === 'local') {
+    // Local installs are symlinked to the user's own checkout, not replaced
+    // wholesale, so dirty edits there are the intended workflow, not a hazard.
     updateLocalPlugin(name, targetDir, lock, lockEntry);
-    return;
+    return [name];
   }
 
   if (source?.kind === 'monorepo') {
     const monoDir = path.join(getMonoreposDir(), source.repoName);
     const monoName = source.repoName;
     const cloneUrl = source.url;
-    withTempClone(cloneUrl, (tmpCloneDir) => {
+    assertPluginNotDirty(monoName, monoDir, options.force === true);
+    return withTempClone(cloneUrl, (tmpCloneDir) => {
       const manifest = readPluginManifest(tmpCloneDir);
       if (!manifest || !isMonorepo(manifest)) {
         throw new Error(`Updated source is no longer a monorepo: ${cloneUrl}`);
@@ -1153,9 +1276,11 @@ export function updatePlugin(name: string): void {
           writeLockFile(lock);
         },
       );
+      return updatedPlugins.map((plugin) => plugin.name);
     });
-    return;
   }
+
+  assertPluginNotDirty(name, targetDir, options.force === true);
 
   const cloneUrl = resolveRemotePluginSource(lockEntry, targetDir);
   withTempClone(cloneUrl, (tmpCloneDir) => {
@@ -1178,23 +1303,24 @@ export function updatePlugin(name: string): void {
       }
     });
   });
+  return [name];
 }
 
 export interface UpdateResult {
   name: string;
   success: boolean;
   error?: string;
+  updatedPlugins?: string[];
 }
 
 /**
  * Update all installed plugins.
  * Continues even if individual plugin updates fail.
  */
-export function updateAllPlugins(): UpdateResult[] {
+export function updateAllPlugins(options: { force?: boolean } = {}): UpdateResult[] {
   return listPlugins().map((plugin): UpdateResult => {
     try {
-      updatePlugin(plugin.name);
-      return { name: plugin.name, success: true };
+      return { name: plugin.name, success: true, updatedPlugins: updatePlugin(plugin.name, options) };
     } catch (err) {
       return {
         name: plugin.name,
@@ -1205,20 +1331,64 @@ export function updateAllPlugins(): UpdateResult[] {
   });
 }
 
+export interface OverrideReconcileNeed {
+  commandKey: string;
+  plugin: string;
+  yours: string;
+  upstream: string;
+  base: string | null;
+}
+
+/**
+ * Find overrides whose upstream plugin file has changed since the fork.
+ *
+ * Content-based, not commit-based: a plugin's commitHash moves whenever
+ * *any* of its commands change, so comparing commitHash would flag every
+ * override on every unrelated update. Comparing the file's own sha256
+ * against the override record's sourceSha256 only flags overrides whose
+ * actual upstream content changed.
+ */
+export function findOverridesNeedingReconcile(pluginNames?: string[]): OverrideReconcileNeed[] {
+  const homeDir = getHomeDir();
+  const records = readOverrideRecords(homeDir);
+  const needs: OverrideReconcileNeed[] = [];
+
+  for (const [commandKey, record] of Object.entries(records)) {
+    if (pluginNames && !pluginNames.includes(record.plugin)) continue;
+    // Plugin was uninstalled: no upstream to reconcile against. Task 7's
+    // `adapter status` surfaces these separately as orphaned.
+    if (!fs.existsSync(record.sourcePath)) continue;
+    if (fileSha256(record.sourcePath) === record.sourceSha256) continue;
+
+    needs.push({
+      commandKey,
+      plugin: record.plugin,
+      yours: path.join(homeDir, '.webcmd', 'clis', `${commandKey}.js`),
+      upstream: record.sourcePath,
+      base: fs.existsSync(record.basePath) ? record.basePath : null,
+    });
+  }
+
+  return needs;
+}
+
 /**
  * List all installed plugins.
  * Reads webcmd-plugin.json for description/version when available.
  */
 export function listPlugins(): PluginInfo[] {
-  if (!fs.existsSync(PLUGINS_DIR)) return [];
+  const pluginsDir = getPluginsDir(getHomeDir());
+  if (!fs.existsSync(pluginsDir)) return [];
 
-  const entries = fs.readdirSync(PLUGINS_DIR, { withFileTypes: true });
+  const entries = fs.readdirSync(pluginsDir, { withFileTypes: true });
   const lock = readLockFile();
+  const records = readOverrideRecords(getHomeDir());
+  const updates = new Set(findOverridesNeedingReconcile().map(({ commandKey }) => commandKey));
   const plugins: PluginInfo[] = [];
 
   for (const entry of entries) {
     // Accept both real directories and symlinks (monorepo sub-plugins)
-    const pluginDir = path.join(PLUGINS_DIR, entry.name);
+    const pluginDir = path.join(pluginsDir, entry.name);
     const isDir = entry.isDirectory() || isSymlinkSync(pluginDir);
     if (!isDir) continue;
 
@@ -1241,6 +1411,9 @@ export function listPlugins(): PluginInfo[] {
     }
 
     const source = resolveStoredPluginSource(lockEntry, pluginDir);
+    const overrideKeys = Object.keys(records)
+      .filter((commandKey) => records[commandKey]!.plugin === entry.name)
+      .sort();
 
     plugins.push({
       name: entry.name,
@@ -1251,6 +1424,8 @@ export function listPlugins(): PluginInfo[] {
       installedAt: lockEntry?.installedAt,
       monorepoName: lockEntry?.source.kind === 'monorepo' ? lockEntry.source.repoName : undefined,
       description,
+      overrides: overrideKeys.map((commandKey) => commandKey.slice(commandKey.indexOf('/') + 1)),
+      updateAvailable: overrideKeys.some((commandKey) => updates.has(commandKey)),
     });
   }
 

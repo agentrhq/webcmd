@@ -1,0 +1,18 @@
+{
+  "name": "webcmd",
+  "version": "0.6.2",
+  "description": "Turn websites, browser sessions, desktop apps, and local tools into deterministic CLI surfaces for humans and AI agents.",
+  "author": {
+    "name": "AgentRHQ",
+    "url": "https://github.com/agentrhq"
+  },
+  "homepage": "https://webcmd.dev/docs",
+  "repository": "https://github.com/agentrhq/webcmd",
+  "license": "Apache-2.0",
+  "keywords": [
+    "webcmd",
+    "browser-automation",
+    "cli",
+    "agent-skills"
+  ]
+}

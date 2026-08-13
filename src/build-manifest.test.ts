@@ -6,6 +6,7 @@ import { cli, getRegistry, Strategy } from './registry.js';
 import {
   ManifestImportError,
   buildManifestArtifacts,
+  coreCommandEntries,
   diffRemovedEntries,
   findManifestMetadataIssues,
   loadManifestEntries,
@@ -23,6 +24,33 @@ describe('manifest helper rules', () => {
     for (const dir of tempDirs.splice(0)) {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it('builds an empty core manifest when clis/ is absent', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-no-clis-'));
+    tempDirs.push(root);
+
+    await expect(scanClisDir(path.join(root, 'clis'))).resolves.toEqual({
+      entries: [],
+      failures: [],
+    });
+    expect(serializeManifest([])).toBe('[]\n');
+  });
+
+  it('serializes web fetch as the single client-owned core command', async () => {
+    const entries = await coreCommandEntries();
+
+    expect(entries).toHaveLength(1);
+    expect(entries).toEqual([
+      expect.objectContaining({
+        site: 'web',
+        name: 'fetch',
+        clientOwned: true,
+        packageExport: './fetch/command',
+      }),
+    ]);
+    expect(entries[0]).not.toHaveProperty('modulePath');
+    expect(entries[0]).not.toHaveProperty('sourceFile');
   });
 
   it('skips TS files that do not register a cli', () => {
@@ -512,7 +540,7 @@ describe('manifest helper rules', () => {
 
   it('does not publish per-command browser window defaults', () => {
     const manifest = JSON.parse(
-      fs.readFileSync(path.join(process.cwd(), 'cli-manifest.json'), 'utf8'),
+      fs.readFileSync(path.join(process.cwd(), 'plugin-command-manifest.json'), 'utf8'),
     ) as ManifestEntry[];
 
     expect(
@@ -521,7 +549,7 @@ describe('manifest helper rules', () => {
   });
 
   it('keeps every browser login on the local handoff contract', () => {
-    const manifest = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'cli-manifest.json'), 'utf8')) as ManifestEntry[];
+    const manifest = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'plugin-command-manifest.json'), 'utf8')) as ManifestEntry[];
     const logins = manifest.filter((entry) => entry.browser === true && entry.name === 'login');
     const keys = new Set(manifest.map((entry) => `${entry.site}/${entry.name}`));
 

@@ -6,7 +6,7 @@ allowed-tools: Bash(webcmd:*), Read, Edit, Write, Grep
 
 # webcmd-browser-sitemap
 
-Use this skill when `webcmd browser open` or `webcmd browser analyze` reports `sitemap.available: true`, or when the user asks you to use a site's sitemap.
+Use this skill when `webcmd --session <session-id> browser run --stdin` or an adapter trace reports `sitemap.available: true`, or when the user asks you to use a site's sitemap.
 
 The sitemap is **prior knowledge**, not ground truth. It should reduce blind clicking, but it must never override the live browser state.
 
@@ -14,7 +14,7 @@ The sitemap is **prior knowledge**, not ground truth. It should reduce blind cli
 
 ## Consumption Loop
 
-1. Run or reuse `webcmd browser <session> state` to know the current page.
+1. Run or reuse `webcmd --session <session-id> browser snapshot --snapshot-mode tree` to know the current page.
 2. Read only the smallest relevant sitemap files:
    - `SITE.md` for site-level orientation.
    - One matching `pages/<page-id>.md` for current state.
@@ -47,7 +47,7 @@ Do not load an entire large sitemap into context. If the directory is large, lis
 
 If sitemap says a button, URL, route, or API should exist but the browser does not show it:
 
-- Re-run `state` or `find` with semantic anchors.
+- Re-run `snapshot --snapshot-mode tree` or a targeted `browser run` probe with semantic anchors.
 - Check whether login, locale, viewport, A/B test, or route state differs.
 - Follow the real page if a safe path is visible.
 - Mark the sitemap item stale in local overlay.

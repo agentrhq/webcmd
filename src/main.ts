@@ -23,13 +23,15 @@ import { PKG_VERSION } from './version.js';
 import { EXIT_CODES } from './errors.js';
 import { isSupportedNodeVersion, MIN_SUPPORTED_NODE_MAJOR } from './runtime-detect.js';
 import { CONFIG_DIR_NAME } from './brand.js';
+import { parseHostedRootCommandSurface } from './root-command-surface.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-// Adapters are JS-first and live at <package-root>/clis/.
-// Use findPackageRoot so the path works both in dev (src/main.ts) and prod (dist/src/main.js).
+// The empty core manifest remains next to the retired clis/ location so older
+// user-local adapter manifests keep the same lookup contract.
 const BUILTIN_CLIS = path.join(findPackageRoot(__filename), 'clis');
 const USER_CLIS = path.join(os.homedir(), CONFIG_DIR_NAME, 'clis');
+const USER_PLUGINS = path.join(os.homedir(), CONFIG_DIR_NAME, 'plugins');
 
 // ── Ultra-fast path: lightweight commands bypass full discovery ──────────
 // These are high-frequency or trivial paths that must not pay the startup tax.
@@ -73,12 +75,12 @@ if (!fastPathHandled) {
   if (argv[0] === 'setup') {
     const { runHostedSetup } = await import('./hosted/setup.js');
     process.exitCode = await runHostedSetup();
-  } else if (argv[0] === 'skills') {
+  } else if (argv[0] === 'skills' || argv[0] === 'update') {
     const { createProgram } = await import('./cli.js');
     await createProgram(BUILTIN_CLIS, USER_CLIS).parseAsync(argv, { from: 'user' });
-  } else if (argv[0] === 'web' && argv[1] === 'fetch') {
-    const { runClientOwnedWebFetch } = await import('./fetch/command.js');
-    await runClientOwnedWebFetch(argv);
+  } else if (isWebFetch(argv)) {
+    const { runWebFetchCommand } = await import('./fetch/command.js');
+    await runWebFetchCommand(argv);
   } else {
     const { shouldUseHostedMode } = await import('./hosted/config.js');
     if (shouldUseHostedMode()) {
@@ -86,8 +88,23 @@ if (!fastPathHandled) {
       const result = await runHostedCli(argv);
       process.exitCode = result.exitCode;
     } else {
-      await runLocalMain();
+      const { installDaemonRunSignalCancellation } = await import('./signal-cancel.js');
+      const uninstallSignalCancellation = installDaemonRunSignalCancellation();
+      try {
+        await runLocalMain();
+      } finally {
+        uninstallSignalCancellation();
+      }
     }
+  }
+}
+
+function isWebFetch(args: readonly string[]): boolean {
+  try {
+    const parsed = parseHostedRootCommandSurface(args);
+    return parsed.kind === 'dispatch' && parsed.argv[0] === 'web' && parsed.argv[1] === 'fetch';
+  } catch {
+    return false;
   }
 }
 
@@ -97,10 +114,13 @@ const getCompIdx = process.argv.indexOf('--get-completions');
 if (getCompIdx !== -1) {
   // Only include manifests that actually exist on disk.
   // With sparse override, the user clis dir may exist but have no manifest.
+  // Order matches runtime discovery: plugins before user clis, so an override
+  // in ~/.webcmd/clis is what completion advertises last (and thus wins).
   const manifestPaths = [getCliManifestPath(BUILTIN_CLIS)];
+  const uncoveredCommandRoots = [USER_PLUGINS];
   const userManifest = getCliManifestPath(USER_CLIS);
-  try { fs.accessSync(userManifest); manifestPaths.push(userManifest); } catch { /* no user manifest */ }
-  if (hasAllManifests(manifestPaths)) {
+  try { fs.accessSync(userManifest); manifestPaths.push(userManifest); } catch { uncoveredCommandRoots.push(USER_CLIS); }
+  if (hasAllManifests(manifestPaths, uncoveredCommandRoots)) {
     const rest = process.argv.slice(getCompIdx + 1);
     let cursor: number | undefined;
     const words: string[] = [];
@@ -122,7 +142,7 @@ if (getCompIdx !== -1) {
 
 // ── Full startup path ───────────────────────────────────────────────────
 // Dynamic imports: these are deferred so the fast path above never pays the cost.
-const { discoverClis, discoverPlugins, ensureUserCliCompatShims, ensureUserAdapters } = await import('./discovery.js');
+const { discoverClis, discoverPlugins, ensureUserCliCompatShims, ensureUserAdapters, PLUGINS_DIR } = await import('./discovery.js');
 const { getCompletions } = await import('./completion.js');
 const { runCli } = await import('./cli.js');
 const { emitHook } = await import('./hooks.js');
@@ -132,13 +152,11 @@ const { registerUpdateNoticeOnExit, checkForUpdateBackground } = await import('.
 installNodeNetwork();
 
 // Parallelise independent startup I/O:
-//  - Built-in adapter discovery has no dependency on user-dir setup.
 //  - ensureUserCliCompatShims and ensureUserAdapters operate on different paths
-//    (~/.webcmd/node_modules/ vs ~/.webcmd/clis/ + adapter-manifest.json).
-//  - registerCommand() overwrites on name collision (see registry.ts), so
-//    user-CLI discovery MUST run after built-in discovery to preserve the
-//    intended override order (user adapters override built-in ones).
-//  - discoverPlugins runs last: plugins may override both built-in and user CLIs.
+//    (~/.webcmd/node_modules/ vs ~/.webcmd/clis/).
+//  - discoverClis(USER_CLIS) runs last: ~/.webcmd/clis holds user adapters and
+//    overrides, and registerCommand is last-write-wins, so loading it after
+//    plugins is what makes an override actually take effect.
 const skipUserDiscovery = argv[0] === 'convention-audit';
 if (skipUserDiscovery) {
   await discoverClis(BUILTIN_CLIS);
@@ -148,8 +166,8 @@ if (skipUserDiscovery) {
     ensureUserAdapters(),
     discoverClis(BUILTIN_CLIS),
   ]);
+  await discoverPlugins(PLUGINS_DIR);
   await discoverClis(USER_CLIS);
-  await discoverPlugins();
 }
 
 // Register exit hook: notice appears after command output (same as npm/gh/yarn)
@@ -176,28 +194,18 @@ if (getCompIdx !== -1) {
   process.exit(EXIT_CODES.SUCCESS);
 }
 
-// Rewrite `webcmd browser <session> <subcommand> ...` so commander (which
-// can't combine a parent positional with subcommand dispatch) sees the internal
-// `--session <name>` flag form. Also refuses the retired `webcmd browser
-// --session foo ...` user form with a friendly usage error.
-const { rewriteBrowserArgv, BrowserSessionArgvError, escapeLeadingDashPositional } = await import('./cli-argv-preprocess.js');
+const { rejectMisplacedSessionSelectorArgv, rejectPositionalBrowserSessionArgv, BrowserSessionArgvError, escapeLeadingDashPositional } = await import('./cli-argv-preprocess.js');
 try {
-  let rewritten = rewriteBrowserArgv(process.argv.slice(2));
-  // Insert a `--` separator before a required positional whose value starts
-  // with `-` (e.g. opaque securityId tokens; #1160). Skipped when the
-  // manifest is unavailable so the user-cli / dev paths still work.
-  try {
-    const manifestPath = getCliManifestPath(BUILTIN_CLIS);
-    if (fs.existsSync(manifestPath)) {
-      const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
-      if (Array.isArray(manifest)) rewritten = escapeLeadingDashPositional(rewritten, manifest);
-    }
-  } catch { /* manifest unavailable; skip the dash escape */ }
+  let rewritten = rejectMisplacedSessionSelectorArgv(rejectPositionalBrowserSessionArgv(process.argv.slice(2)));
+  // Use the metadata that discovery actually registered. The core manifest is
+  // intentionally empty, while installed plugins and legacy user CLIs are not.
+  const { getRegistry } = await import('./registry.js');
+  rewritten = escapeLeadingDashPositional(rewritten, [...new Set(getRegistry().values())]);
   process.argv.splice(2, process.argv.length - 2, ...rewritten);
 } catch (err) {
   if (err instanceof BrowserSessionArgvError) {
     process.stderr.write(`error: ${err.message}\n`);
-    process.exit(EXIT_CODES.GENERIC_ERROR);
+    process.exit(EXIT_CODES.USAGE_ERROR);
   }
   throw err;
 }

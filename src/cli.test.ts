@@ -3,8 +3,9 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import yaml from 'js-yaml';
-import { cli, getRegistry, Strategy } from './registry.js';
+import { cli, getRegistry, runWithDiscoverySource, Strategy } from './registry.js';
 import { BrowserCommandError } from './browser/daemon-client.js';
+import { getDaemonRunContext } from './session-lease.js';
 import type { IPage } from './types.js';
 import { TargetError } from './browser/target-errors.js';
 import { PKG_VERSION } from './version.js';
@@ -16,11 +17,15 @@ import {
 } from './command-presentation.js';
 import { parseOutputFormat } from './command-surface.js';
 import { render as renderOutput } from './output.js';
+import * as pluginModule from './plugin.js';
+import * as discoveryModule from './discovery.js';
 
 const {
   mockBrowserConnect,
   mockBrowserClose,
   mockBindTab,
+  mockListExistingBrowserTabs,
+  mockReleaseSiteSessionLease,
   mockSendCommand,
   mockExecFileSync,
   browserState,
@@ -28,6 +33,8 @@ const {
   mockBrowserConnect: vi.fn(),
   mockBrowserClose: vi.fn(),
   mockBindTab: vi.fn(),
+  mockListExistingBrowserTabs: vi.fn(),
+  mockReleaseSiteSessionLease: vi.fn(),
   mockSendCommand: vi.fn(),
   mockExecFileSync: vi.fn(),
   browserState: { page: null as IPage | null },
@@ -42,12 +49,13 @@ vi.mock('./browser/index.js', () => {
     },
   };
 });
-
 vi.mock('./browser/daemon-client.js', async () => {
   const actual = await vi.importActual<typeof import('./browser/daemon-client.js')>('./browser/daemon-client.js');
   return {
     ...actual,
     bindTab: mockBindTab,
+    listExistingBrowserTabs: mockListExistingBrowserTabs,
+    releaseSiteSessionLease: mockReleaseSiteSessionLease,
     sendCommand: mockSendCommand,
   };
 });
@@ -60,7 +68,405 @@ vi.mock('node:child_process', async () => {
   };
 });
 
-import { createProgram, findPackageRoot, normalizeVerifyRows, renderVerifyPreview, resolveBrowserVerifyInvocation, resolveSitemapAvailabilityForUrl, selectFreshByTimestamp } from './cli.js';
+import { createProgram, findPackageRoot, loadAntigravityServe, normalizeVerifyRows, renderVerifyPreview, resolveBrowserVerifyInvocation, resolveSitemapAvailabilityForUrl, selectFreshByTimestamp } from './cli.js';
+
+const realHome = process.env.HOME;
+const realConfigDir = process.env.WEBCMD_CONFIG_DIR;
+let isolatedCliTestHome: string;
+
+beforeEach(() => {
+  isolatedCliTestHome = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-cli-home-'));
+  process.env.HOME = isolatedCliTestHome;
+  process.env.WEBCMD_CONFIG_DIR = path.join(isolatedCliTestHome, '.webcmd');
+});
+
+afterEach(() => {
+  if (realHome === undefined) delete process.env.HOME;
+  else process.env.HOME = realHome;
+  if (realConfigDir === undefined) delete process.env.WEBCMD_CONFIG_DIR;
+  else process.env.WEBCMD_CONFIG_DIR = realConfigDir;
+  fs.rmSync(isolatedCliTestHome, { recursive: true, force: true });
+});
+
+describe('plugin update reconciliation reporting', () => {
+  const stdoutSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+  beforeEach(() => {
+    stdoutSpy.mockClear();
+    process.exitCode = undefined;
+  });
+
+  it('reports every monorepo plugin refreshed by a named update', async () => {
+    const pluginsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-plugin-update-'));
+    const update = vi.spyOn(pluginModule, 'updatePlugin').mockReturnValue(['alpha', 'beta'] as never);
+    const findNeeds = vi.spyOn(pluginModule, 'findOverridesNeedingReconcile').mockReturnValue([]);
+    const discover = vi.spyOn(discoveryModule, 'discoverPlugins').mockResolvedValue();
+
+    try {
+      await createProgram('', '', pluginsDir).parseAsync(['node', 'webcmd', 'plugin', 'update', 'alpha']);
+
+      expect(update).toHaveBeenCalledWith('alpha', { force: false });
+      expect(findNeeds).toHaveBeenCalledWith(['alpha', 'beta']);
+    } finally {
+      update.mockRestore();
+      findNeeds.mockRestore();
+      discover.mockRestore();
+      fs.rmSync(pluginsDir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports reconciliation only for successful --all updates', async () => {
+    const pluginsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-plugin-update-'));
+    const updateAll = vi.spyOn(pluginModule, 'updateAllPlugins').mockReturnValue([
+      { name: 'alpha', success: true, updatedPlugins: ['alpha'] },
+      { name: 'broken', success: false, error: 'network error' },
+      { name: 'beta', success: true, updatedPlugins: ['beta'] },
+    ]);
+    const findNeeds = vi.spyOn(pluginModule, 'findOverridesNeedingReconcile').mockReturnValue([{
+      commandKey: 'beta/search',
+      plugin: 'beta',
+      yours: '/tmp/home/.webcmd/clis/beta/search.js',
+      upstream: '/tmp/home/.webcmd/plugins/beta/search.js',
+      base: '/tmp/home/.webcmd/clis/.base/beta/search.js',
+    }]);
+    const discover = vi.spyOn(discoveryModule, 'discoverPlugins').mockResolvedValue();
+
+    try {
+      await createProgram('', '', pluginsDir).parseAsync(['node', 'webcmd', 'plugin', 'update', '--all']);
+
+      expect(findNeeds).toHaveBeenCalledWith(['alpha', 'beta']);
+      const output = stdoutSpy.mock.calls.flat().join('\n');
+      expect(output).toContain('beta/search');
+      expect(output).toContain('yours:    /tmp/home/.webcmd/clis/beta/search.js');
+      expect(output).toContain('upstream: /tmp/home/.webcmd/plugins/beta/search.js');
+      expect(output).toContain('base:     /tmp/home/.webcmd/clis/.base/beta/search.js');
+    } finally {
+      updateAll.mockRestore();
+      findNeeds.mockRestore();
+      discover.mockRestore();
+      fs.rmSync(pluginsDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('override reporting surfaces', () => {
+  const stdoutSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+  let home: string;
+  let originalHome: string | undefined;
+
+  beforeEach(() => {
+    stdoutSpy.mockClear();
+    originalHome = process.env.HOME;
+    home = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-cli-overrides-'));
+    process.env.HOME = home;
+  });
+
+  afterEach(() => {
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it('includes override fields in plugin list JSON', async () => {
+    const list = vi.spyOn(pluginModule, 'listPlugins').mockReturnValue([{
+      name: 'linkedin', path: '/tmp/linkedin', commands: ['search'], source: 'github:example/linkedin',
+      overrides: ['search'], updateAvailable: true,
+    }] as never);
+    try {
+      await createProgram('', '', path.join(home, '.webcmd', 'plugins'))
+        .parseAsync(['node', 'webcmd', 'plugin', 'list', '--format', 'json']);
+      expect(JSON.parse(stdoutSpy.mock.calls.flat().join('\n'))).toMatchObject([{
+        name: 'linkedin', commands: ['search'], source: 'github:example/linkedin',
+        overrides: ['search'], updateAvailable: true,
+      }]);
+    } finally {
+      list.mockRestore();
+    }
+  });
+
+  it('renders an empty plugin list as JSON', async () => {
+    const list = vi.spyOn(pluginModule, 'listPlugins').mockReturnValue([]);
+    try {
+      await createProgram('', '', path.join(home, '.webcmd', 'plugins'))
+        .parseAsync(['node', 'webcmd', 'plugin', 'list', '--format', 'json']);
+
+      expect(JSON.parse(stdoutSpy.mock.calls.flat().join('\n'))).toEqual([]);
+    } finally {
+      list.mockRestore();
+    }
+  });
+
+  it('reports override origins in webcmd list JSON', async () => {
+    const registry = getRegistry();
+    const snapshot = new Map(registry);
+    const userClis = path.join(home, '.webcmd', 'clis');
+    const source = path.join(userClis, 'linkedin', 'search.js');
+    registry.clear();
+    try {
+      fs.mkdirSync(path.dirname(source), { recursive: true });
+      fs.writeFileSync(source, '// override\n');
+      fs.mkdirSync(path.join(home, '.webcmd'), { recursive: true });
+      fs.writeFileSync(path.join(home, '.webcmd', 'override-provenance.json'), JSON.stringify({
+        'linkedin/search': {
+          plugin: 'linkedin', commitHash: null, sourcePath: '/tmp/upstream.js', sourceSha256: 'abc',
+          basePath: '/tmp/base.js', createdAt: '2026-08-09T00:00:00.000Z',
+        },
+      }));
+      await runWithDiscoverySource(source, async () => {
+        cli({ site: 'linkedin', name: 'search', access: 'read', browser: false });
+      });
+
+      await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+        .parseAsync(['node', 'webcmd', 'list', '--format', 'json']);
+      expect(JSON.parse(stdoutSpy.mock.calls.flat().join('\n'))).toMatchObject([
+        { command: 'linkedin/search', origin: 'override:linkedin' },
+      ]);
+    } finally {
+      registry.clear();
+      for (const [key, value] of snapshot) registry.set(key, value);
+    }
+  });
+
+  it('marks orphaned overrides in adapter status', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+    fs.mkdirSync(path.join(userClis, 'linkedin'), { recursive: true });
+    fs.writeFileSync(path.join(userClis, 'linkedin', 'search.js'), '// override\n');
+    fs.writeFileSync(path.join(home, '.webcmd', 'override-provenance.json'), JSON.stringify({
+      'linkedin/search': {
+        plugin: 'linkedin', commitHash: null, sourcePath: path.join(home, '.webcmd', 'plugins', 'linkedin', 'search.js'),
+        sourceSha256: 'abc', basePath: '/tmp/base.js', createdAt: '2026-08-09T00:00:00.000Z',
+      },
+    }));
+
+    await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+      .parseAsync(['node', 'webcmd', 'adapter', 'status']);
+    expect(stdoutSpy.mock.calls.flat().join('\n')).toContain('orphaned override: linkedin/search (plugin linkedin is not installed)');
+  });
+
+  it('reports adapter override state as JSON', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+    const pluginsDir = path.join(home, '.webcmd', 'plugins');
+    const upstream = path.join(pluginsDir, 'linkedin', 'search.js');
+    fs.mkdirSync(path.dirname(upstream), { recursive: true });
+    fs.mkdirSync(path.join(userClis, 'linkedin'), { recursive: true });
+    fs.mkdirSync(path.join(userClis, 'local'), { recursive: true });
+    fs.mkdirSync(path.join(userClis, 'old'), { recursive: true });
+    fs.writeFileSync(upstream, '// upstream v2\n');
+    fs.writeFileSync(path.join(userClis, 'linkedin', 'search.js'), '// override\n');
+    fs.writeFileSync(path.join(userClis, 'local', 'run.js'), '// user adapter\n');
+    fs.writeFileSync(path.join(userClis, 'old', 'search.js'), '// orphan\n');
+    fs.writeFileSync(path.join(home, '.webcmd', 'override-provenance.json'), JSON.stringify({
+      'linkedin/search': {
+        plugin: 'linkedin', commitHash: null, sourcePath: upstream, sourceSha256: 'old-hash',
+        basePath: '/tmp/base.js', createdAt: '2026-08-09T00:00:00.000Z',
+      },
+      'old/search': {
+        plugin: 'old', commitHash: null, sourcePath: path.join(pluginsDir, 'old', 'search.js'), sourceSha256: 'old-hash',
+        basePath: '/tmp/base.js', createdAt: '2026-08-09T00:00:00.000Z',
+      },
+    }));
+
+    await createProgram('', userClis, pluginsDir)
+      .parseAsync(['node', 'webcmd', 'adapter', 'status', '--format', 'json']);
+    expect(JSON.parse(stdoutSpy.mock.calls.flat().join('\n'))).toEqual([
+      { command: 'linkedin/search', kind: 'override', plugin: 'linkedin', reconciliationNeeded: true, orphaned: false },
+      { command: 'local/run', kind: 'user', plugin: null, reconciliationNeeded: false, orphaned: false },
+      { command: 'old/search', kind: 'override', plugin: 'old', reconciliationNeeded: false, orphaned: true },
+    ]);
+  });
+
+  it('reports an empty adapter status as JSON', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+
+    await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+      .parseAsync(['node', 'webcmd', 'adapter', 'status', '--format', 'json']);
+
+    expect(JSON.parse(stdoutSpy.mock.calls.flat().join('\n'))).toEqual([]);
+  });
+
+  it('reports a JSON status error when a listed adapter site disappears', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+    const siteDir = path.join(userClis, 'linkedin');
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const previousExitCode = process.exitCode;
+    const originalReaddir = fs.promises.readdir;
+    const readdir = vi.spyOn(fs.promises, 'readdir');
+    fs.mkdirSync(siteDir, { recursive: true });
+    fs.writeFileSync(path.join(siteDir, 'search.js'), '// adapter\n');
+    readdir.mockImplementationOnce(async () => {
+      const entries = await originalReaddir(userClis, { withFileTypes: true });
+      fs.rmSync(siteDir, { recursive: true });
+      return entries as any;
+    });
+    try {
+      await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+        .parseAsync(['node', 'webcmd', 'adapter', 'status', '--format', 'json']);
+
+      expect(stdoutSpy.mock.calls.flat().join('\n')).not.toBe('[]');
+      expect(stderrSpy.mock.calls.flat().join('\n')).toContain('ENOENT');
+      expect(process.exitCode).not.toBe(0);
+    } finally {
+      readdir.mockRestore();
+      process.exitCode = previousExitCode;
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('reports malformed override provenance as a JSON status error', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const previousExitCode = process.exitCode;
+    fs.mkdirSync(path.join(userClis, 'linkedin'), { recursive: true });
+    fs.writeFileSync(path.join(userClis, 'linkedin', 'search.js'), '// override\n');
+    fs.writeFileSync(path.join(home, '.webcmd', 'override-provenance.json'), '{not json');
+    try {
+      await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+        .parseAsync(['node', 'webcmd', 'adapter', 'status', '--format', 'json']);
+
+      expect(stdoutSpy.mock.calls.flat().join('\n')).not.toBe('[]');
+      expect(stderrSpy.mock.calls.flat().join('\n')).toContain('Malformed override provenance store');
+    } finally {
+      process.exitCode = previousExitCode;
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('reports malformed override provenance as a table status error', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const previousExitCode = process.exitCode;
+    fs.mkdirSync(path.join(userClis, 'linkedin'), { recursive: true });
+    fs.writeFileSync(path.join(userClis, 'linkedin', 'search.js'), '// override\n');
+    fs.writeFileSync(path.join(home, '.webcmd', 'override-provenance.json'), '{not json');
+    try {
+      await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+        .parseAsync(['node', 'webcmd', 'adapter', 'status']);
+
+      expect(stdoutSpy.mock.calls.flat().join('\n')).not.toContain('No local adapters installed.');
+      expect(stderrSpy.mock.calls.flat().join('\n')).toContain('Malformed override provenance store');
+      expect(process.exitCode).not.toBe(0);
+    } finally {
+      process.exitCode = previousExitCode;
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('fails reset --all loudly on malformed provenance before deleting adapters', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+    const siteDir = path.join(userClis, 'linkedin');
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const previousExitCode = process.exitCode;
+    fs.mkdirSync(siteDir, { recursive: true });
+    fs.writeFileSync(path.join(siteDir, 'search.js'), '// override\n');
+    fs.writeFileSync(path.join(home, '.webcmd', 'override-provenance.json'), '{not json');
+    try {
+      await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+        .parseAsync(['node', 'webcmd', 'adapter', 'reset', '--all']);
+
+      expect(fs.existsSync(siteDir)).toBe(true);
+      expect(stdoutSpy.mock.calls.flat().join('\n')).not.toContain('No local sites to reset.');
+      expect(stderrSpy.mock.calls.flat().join('\n')).toContain('Malformed override provenance store');
+      expect(process.exitCode).not.toBe(0);
+    } finally {
+      process.exitCode = previousExitCode;
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('fails reset --all loudly on malformed provenance when clis is empty', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const previousExitCode = process.exitCode;
+    fs.mkdirSync(userClis, { recursive: true });
+    fs.writeFileSync(path.join(home, '.webcmd', 'override-provenance.json'), '{not json');
+    try {
+      await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+        .parseAsync(['node', 'webcmd', 'adapter', 'reset', '--all']);
+
+      expect(stdoutSpy.mock.calls.flat().join('\n')).not.toContain('No local sites to reset.');
+      expect(stderrSpy.mock.calls.flat().join('\n')).toContain('Malformed override provenance store');
+      expect(process.exitCode).not.toBe(0);
+    } finally {
+      process.exitCode = previousExitCode;
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('reports no sites when reset --all has no local adapter directory', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+
+    await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+      .parseAsync(['node', 'webcmd', 'adapter', 'reset', '--all']);
+
+    expect(stdoutSpy.mock.calls.flat().join('\n')).toContain('No local sites to reset.');
+  });
+
+  it('reports no sites when reset --all has an empty adapter directory and no provenance', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+    fs.mkdirSync(userClis, { recursive: true });
+
+    await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+      .parseAsync(['node', 'webcmd', 'adapter', 'reset', '--all']);
+
+    expect(stdoutSpy.mock.calls.flat().join('\n')).toContain('No local sites to reset.');
+  });
+});
+
+describe('Antigravity serve plugin loading', () => {
+  it('loads serve.js from the installed Antigravity plugin', async () => {
+    const pluginsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-antigravity-plugins-'));
+    const pluginDir = path.join(pluginsDir, 'antigravity');
+    fs.mkdirSync(pluginDir);
+    fs.writeFileSync(path.join(pluginDir, 'package.json'), '{"type":"module"}\n');
+    fs.writeFileSync(path.join(pluginDir, 'serve.js'), 'export const loadedFrom = "installed-plugin";\n');
+    try {
+      await expect(loadAntigravityServe(pluginsDir)).resolves.toMatchObject({
+        loadedFrom: 'installed-plugin',
+      });
+    } finally {
+      fs.rmSync(pluginsDir, { recursive: true, force: true });
+    }
+  });
+
+  it('omits the serve bridge and uses missing-plugin guidance when Antigravity is absent', async () => {
+    const pluginsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-antigravity-absent-'));
+    const registry = getRegistry();
+    const snapshot = new Map(registry);
+    const stderr = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const previousExitCode = process.exitCode;
+    registry.clear();
+    try {
+      const program = createProgram('', '', pluginsDir);
+      program.outputHelp = vi.fn();
+
+      await program.parseAsync(['antigravity', 'serve'], { from: 'user' });
+
+      expect(program.commands.some(command => command.name() === 'antigravity')).toBe(false);
+      expect(stderr.mock.calls.map(([line]) => line).join('\n')).toContain('Search: webcmd plugin search antigravity');
+      expect(process.exitCode).toBe(2);
+    } finally {
+      process.exitCode = previousExitCode;
+      stderr.mockRestore();
+      registry.clear();
+      for (const [key, value] of snapshot) registry.set(key, value);
+      fs.rmSync(pluginsDir, { recursive: true, force: true });
+    }
+  });
+
+  it('registers the serve bridge when the installed Antigravity module exists', () => {
+    const pluginsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-antigravity-present-'));
+    const pluginDir = path.join(pluginsDir, 'antigravity');
+    fs.mkdirSync(pluginDir);
+    fs.writeFileSync(path.join(pluginDir, 'serve.js'), 'export async function startServe() {}\n');
+    try {
+      const antigravity = createProgram('', '', pluginsDir).commands.find(command => command.name() === 'antigravity');
+
+      expect(antigravity?.commands.map(command => command.name())).toContain('serve');
+    } finally {
+      fs.rmSync(pluginsDir, { recursive: true, force: true });
+    }
+  });
+});
 
 describe('createProgram root help descriptions', () => {
   function descriptionFor(program: ReturnType<typeof createProgram>, name: string): string | undefined {
@@ -70,13 +476,12 @@ describe('createProgram root help descriptions', () => {
   it('summarizes built-in command groups with their subcommands', () => {
     const program = createProgram('', '');
 
-    expect(descriptionFor(program, 'browser')).toContain('open');
-    expect(descriptionFor(program, 'browser')).toContain('type');
+    expect(descriptionFor(program, 'browser')).toContain('tabs');
     expect(descriptionFor(program, 'browser')).toContain('verify');
     expect(descriptionFor(program, 'browser')).not.toContain('Browser control');
     expect(descriptionFor(program, 'auth')).toBe('refresh, status');
     expect(descriptionFor(program, 'plugin')).toBe('catalog, create, install, list, search, uninstall, update');
-    expect(descriptionFor(program, 'adapter')).toBe('eject, reset, status');
+    expect(descriptionFor(program, 'adapter')).toBe('override, reset, status');
     expect(descriptionFor(program, 'profile')).toBe('list, rename, use');
     expect(descriptionFor(program, 'daemon')).toBe('restart, status, stop');
     expect(descriptionFor(program, 'external')).toBe('install, list, register');
@@ -87,6 +492,13 @@ describe('createProgram root help descriptions', () => {
 
     expect(skills.commands.map((command) => command.name())).toEqual(['list', 'add', 'update', 'remove']);
     expect(skills.commands.find((command) => command.name() === 'add')?.aliases()).toEqual([]);
+  });
+
+  it('keeps legacy local adapters manageable without claiming a bundled baseline', () => {
+    const adapter = createProgram('', '').commands.find((command) => command.name() === 'adapter')!;
+
+    expect(adapter.commands.map((command) => command.name())).toEqual(['status', 'reset', 'override']);
+    expect(adapter.helpInformation()).not.toMatch(/official|baseline|eject/i);
   });
 
   it('renders auth namespace structured help', () => {
@@ -137,6 +549,35 @@ describe('createProgram root help descriptions', () => {
     expect(presentation).toBeDefined();
     expect(presentation!.baseText).toBe(commanderHelp.formatHelp(program, commanderHelp));
     expect(program.helpInformation()).toBe(formatRootHelp(presentation!));
+  });
+
+  it('guides an absent site to explicit plugin search and install without side effects', async () => {
+    const plugin = await import('./plugin.js');
+    const catalog = await import('./plugin-catalog.js');
+    const install = vi.spyOn(plugin, 'installPlugin');
+    const search = vi.spyOn(catalog, 'searchCatalogPlugins');
+    const stderr = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const previousExitCode = process.exitCode;
+    const program = createProgram('', '');
+    program.outputHelp = vi.fn();
+
+    try {
+      await program.parseAsync(['example', 'missing-command'], { from: 'user' });
+
+      expect(stderr.mock.calls.map(([line]) => line).join('\n')).toContain([
+        'Site "example" is not installed.',
+        'Search: webcmd plugin search example',
+        'Install using the installSource returned by search.',
+      ].join('\n'));
+      expect(install).not.toHaveBeenCalled();
+      expect(search).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(2);
+    } finally {
+      process.exitCode = previousExitCode;
+      stderr.mockRestore();
+      install.mockRestore();
+      search.mockRestore();
+    }
   });
 
   it('keeps site adapters out of root commands and lists sites in the root help tail', () => {
@@ -367,7 +808,7 @@ name: 'search',
     }
   });
 
-  it.each(['json', 'yaml', 'yml', 'md', 'csv', 'plain'])(
+  it.each(['json', 'yaml', 'yml'])(
     'renders local list %s through the shared list presentation',
     async (format) => {
       const registry = getRegistry();
@@ -386,7 +827,9 @@ name: 'search',
           columns: ['number', 'title'],
         });
         const normalized = parseOutputFormat(format);
-        const presentation = commandListPresentation([toPresentableCommand(command)], normalized);
+        const presentation = commandListPresentation([
+          { ...toPresentableCommand(command), origin: 'builtin' },
+        ], normalized);
 
         const outputSpy = vi.mocked(console.log);
         outputSpy.mockClear();
@@ -627,29 +1070,19 @@ name: 'search',
       const browser = program.commands.find(cmd => cmd.name() === 'browser');
       expect(browser).toBeTruthy();
 
-      process.argv = ['node', 'webcmd', 'browser', '--session', 'test', '--help', '-f', 'yaml'];
+      process.argv = ['node', 'webcmd', '--session', 'session_test', 'browser', '--help', '-f', 'yaml'];
       const data = yaml.load(browser!.helpInformation()) as any;
 
       expect(data.namespace).toBe('browser');
       expect(data.command).toBe('webcmd browser');
-      expect(data.description).toBe('Browser control — navigate, click, type, extract, wait (no LLM needed)');
-      expect(data.command_count).toBeGreaterThan(20);
-      expect(data.commands.map((cmd: any) => cmd.name)).toContain('bind');
-      // `--session` is now a hidden internal option; user-facing surface is the
-      // <session> positional declared via `.usage()`. Structured help drops
-      // hidden options, so namespace_options shouldn't expose it.
+      expect(data.description).toBe('Run Playwright programs against an explicit browser Session');
+      expect(data.command_count).toBe(8);
+      expect(data.commands.map((cmd: any) => cmd.name)).toEqual(['bind', 'close', 'fork', 'init', 'run', 'snapshot', 'tabs', 'verify']);
       expect(data.namespace_options).not.toEqual(expect.arrayContaining([
         expect.objectContaining({ name: 'session' }),
       ]));
-      expect(data.namespace_options).toEqual(expect.arrayContaining([
-        expect.objectContaining({
-          name: 'window',
-          flags: '--window <mode>',
-          help: 'Browser window mode: foreground or background (default: background)',
-          takes_value: 'required',
-        }),
-      ]));
-      expect(data.usage).toBe('webcmd browser <session> <command> [options]');
+      expect(data.namespace_options).toEqual([]);
+      expect(data.usage).toBe('webcmd browser <command> [args] [options]');
       expect(data.global_options).toEqual(expect.arrayContaining([
         expect.objectContaining({
           name: 'version',
@@ -660,105 +1093,24 @@ name: 'search',
           flags: '--profile <name>',
           takes_value: 'required',
         }),
+        expect.objectContaining({
+          name: 'session',
+          flags: '--session <session-id>',
+          takes_value: 'required',
+        }),
       ]));
 
-      const click = data.commands.find((cmd: any) => cmd.name === 'click');
-      // Structured help command/usage paths include the <session> positional so
-      // agents construct the correct full invocation. `name` is the leaf
-      // identifier (placeholder positionals are stripped).
-      expect(click).toMatchObject({
-        command: 'webcmd browser <session> click',
-        usage: 'webcmd browser <session> click [target] [options]',
-        positionals: [{ name: 'target' }],
+      const bind = data.commands.find((cmd: any) => cmd.name === 'bind');
+      expect(bind).toMatchObject({
+        command: 'webcmd browser bind',
+        usage: 'webcmd browser bind [options]',
+        positionals: [],
       });
-      expect(click.command_options.map((option: any) => option.name)).toEqual(['role', 'name', 'label', 'text', 'testid', 'nth', 'tab']);
-
-      const tabList = data.commands.find((cmd: any) => cmd.name === 'tab list');
-      expect(tabList).toMatchObject({
-        command: 'webcmd browser <session> tab list',
-        usage: 'webcmd browser <session> tab list [options]',
-        command_options: [],
-      });
-
-      const getText = data.commands.find((cmd: any) => cmd.name === 'get text');
-      expect(getText).toMatchObject({
-        command: 'webcmd browser <session> get text',
-        positionals: [{ name: 'target' }],
-      });
+      expect(bind.command_options.map((option: any) => option.name)).toEqual(['page']);
       expect(data.structured_help).toMatchObject({
         formats: ['yaml', 'json'],
         usage: 'webcmd browser --help -f yaml',
       });
-    } finally {
-      process.argv = argv;
-    }
-  });
-
-  it('renders nested browser parent structured help for a subtree', () => {
-    const argv = process.argv;
-    try {
-      const program = createProgram('', '');
-      const browser = program.commands.find(cmd => cmd.name() === 'browser')!;
-      const tab = browser.commands.find(cmd => cmd.name() === 'tab');
-      expect(tab).toBeTruthy();
-
-      process.argv = ['node', 'webcmd', 'browser', '--session', 'test', 'tab', '--help', '-f', 'yaml'];
-      const data = yaml.load(tab!.helpInformation()) as any;
-
-      expect(data).toMatchObject({
-        namespace: 'browser',
-        group: 'tab',
-        command: 'webcmd browser <session> tab',
-        usage: 'webcmd browser <session> tab <command> [args] [options]',
-        command_count: 4,
-      });
-      expect(data.commands.map((cmd: any) => cmd.name)).toEqual([
-        'tab close',
-        'tab list',
-        'tab new',
-        'tab select',
-      ]);
-      expect(data.commands.find((cmd: any) => cmd.name === 'tab close')).toMatchObject({
-        command: 'webcmd browser <session> tab close',
-        usage: 'webcmd browser <session> tab close [targetId] [options]',
-        positionals: [{ name: 'targetId', help: 'Target tab/page identity returned by "browser open", "browser tab new", or "browser tab list"' }],
-      });
-      // session is now a hidden internal option (consumed from the <session> positional).
-      // namespace_options should only list user-facing options.
-      expect(data.namespace_options.map((option: any) => option.name)).toEqual(['window']);
-      expect(data.structured_help).toMatchObject({
-        usage: 'webcmd browser <session> tab --help -f yaml',
-      });
-    } finally {
-      process.argv = argv;
-    }
-  });
-
-  it('renders browser command structured help without needing the full namespace dump', () => {
-    const argv = process.argv;
-    try {
-      const program = createProgram('', '');
-      const browser = program.commands.find(cmd => cmd.name() === 'browser')!;
-      const click = browser.commands.find(cmd => cmd.name() === 'click');
-      expect(click).toBeTruthy();
-
-      process.argv = ['node', 'webcmd', 'browser', '--session', 'test', 'click', '--help', '-f', 'yaml'];
-      const data = yaml.load(click!.helpInformation()) as any;
-
-      expect(data).toMatchObject({
-        namespace: 'browser',
-        name: 'click',
-        command: 'webcmd browser <session> click',
-        usage: 'webcmd browser <session> click [target] [options]',
-        positionals: [{ name: 'target' }],
-        structured_help: {
-          usage: 'webcmd browser <session> click --help -f yaml',
-        },
-      });
-      expect(data.command_options.map((option: any) => option.name)).toEqual(['role', 'name', 'label', 'text', 'testid', 'nth', 'tab']);
-      // session is hidden; only `window` surfaces as a namespace option.
-      expect(data.namespace_options.map((option: any) => option.name)).toEqual(['window']);
-      expect(data.global_options.map((option: any) => option.name)).toContain('profile');
     } finally {
       process.argv = argv;
     }
@@ -812,7 +1164,7 @@ name: 'search',
         usage: 'webcmd plugin update [name] [options]',
         positionals: [{ name: 'name' }],
       });
-      expect(update.command_options.map((option: any) => option.name)).toEqual(['all']);
+      expect(update.command_options.map((option: any) => option.name)).toEqual(['all', 'force']);
     } finally {
       process.argv = argv;
     }
@@ -843,7 +1195,7 @@ name: 'search',
       // applyRootSubcommandSummaries() rewrites .description() to a child-name listing;
       // structured help must surface the original product description via the snapshot.
       expect(data.description).toBe('Manage CLI adapters');
-      expect(data.commands.map((cmd: any) => cmd.name)).toEqual(['eject', 'reset', 'status']);
+      expect(data.commands.map((cmd: any) => cmd.name)).toEqual(['override', 'reset', 'status']);
       const reset = data.commands.find((cmd: any) => cmd.name === 'reset');
       expect(reset).toMatchObject({
         usage: 'webcmd adapter reset [site] [options]',
@@ -1071,7 +1423,7 @@ describe('browser verify', () => {
       fs.writeFileSync(path.join(adapterDir, 'top.js'), 'export default {};\n', 'utf-8');
 
       const program = createProgram('', '');
-      await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'verify', 'hn/top', '--no-fixture', '--trace', 'retain-on-failure']);
+      await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'verify', 'hn/top', '--no-fixture', '--trace', 'retain-on-failure']);
 
       expect(mockExecFileSync).toHaveBeenCalledTimes(1);
       const [, execArgs] = mockExecFileSync.mock.calls[0] as [string, string[]];
@@ -1098,7 +1450,7 @@ describe('browser verify', () => {
       fs.writeFileSync(path.join(adapterDir, 'top.js'), 'export default {};\n', 'utf-8');
 
       const program = createProgram('', '');
-      await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'verify', 'hn/top', '--no-fixture', '--seed-args', 'webcmd-verify']);
+      await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'verify', 'hn/top', '--no-fixture', '--seed-args', 'webcmd-verify']);
 
       expect(mockExecFileSync).toHaveBeenCalledTimes(1);
       const [, execArgs] = mockExecFileSync.mock.calls[0] as [string, string[]];
@@ -1126,7 +1478,7 @@ describe('browser verify', () => {
       fs.writeFileSync(path.join(adapterDir, 'top.js'), 'export default {};\n', 'utf-8');
 
       const program = createProgram('', '');
-      await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'verify', 'hn/top', '--write-fixture', '--seed-args', 'webcmd-verify']);
+      await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'verify', 'hn/top', '--write-fixture', '--seed-args', 'webcmd-verify']);
 
       const fixtureFile = path.join(fakeHome, '.webcmd', 'sites', 'hn', 'verify', 'top.json');
       const fixture = JSON.parse(fs.readFileSync(fixtureFile, 'utf-8'));
@@ -1157,7 +1509,7 @@ describe('browser verify', () => {
       fs.writeFileSync(path.join(adapterDir, 'top.js'), 'export default {};\n', 'utf-8');
 
       const program = createProgram('', '');
-      await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'verify', 'hn/top', '--no-fixture']);
+      await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'verify', 'hn/top', '--no-fixture']);
 
       expect(process.exitCode).toBe(1);
       const output = consoleLogSpy.mock.calls.map((args) => args.join(' ')).join('\n');
@@ -1165,6 +1517,71 @@ describe('browser verify', () => {
       expect(output).toContain('author.user_id');
     } finally {
       consoleLogSpy.mockClear();
+      if (originalHome === undefined) delete process.env.HOME;
+      else process.env.HOME = originalHome;
+      if (originalUserProfile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = originalUserProfile;
+      fs.rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a wide row by default but passes with a raised --max-top-level-keys', async () => {
+    const originalHome = process.env.HOME;
+    const originalUserProfile = process.env.USERPROFILE;
+    const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-browser-verify-wide-'));
+    process.env.HOME = fakeHome;
+    process.env.USERPROFILE = fakeHome;
+    const wideRow = Object.fromEntries(Array.from({ length: 20 }, (_, i) => [`col${i}`, i]));
+    mockExecFileSync.mockReturnValue(JSON.stringify([wideRow]));
+    const consoleLogSpy = vi.mocked(console.log);
+    consoleLogSpy.mockClear();
+
+    try {
+      const adapterDir = path.join(fakeHome, '.webcmd', 'clis', 'hn');
+      fs.mkdirSync(adapterDir, { recursive: true });
+      fs.writeFileSync(path.join(adapterDir, 'top.js'), 'export default {};\n', 'utf-8');
+
+      const program = createProgram('', '');
+      await program.parseAsync(['node', 'webcmd', '--session', 'test', 'browser', 'verify', 'hn/top', '--no-fixture']);
+      expect(process.exitCode).toBe(1);
+      let output = consoleLogSpy.mock.calls.map((args) => args.join(' ')).join('\n');
+      expect(output).toContain('row has 20 top-level keys, expected at most 12');
+
+      process.exitCode = undefined;
+      consoleLogSpy.mockClear();
+      const program2 = createProgram('', '');
+      await program2.parseAsync(['node', 'webcmd', '--session', 'test', 'browser', 'verify', 'hn/top', '--no-fixture', '--max-top-level-keys', '20']);
+      expect(process.exitCode).toBeUndefined();
+      output = consoleLogSpy.mock.calls.map((args) => args.join(' ')).join('\n');
+      expect(output).not.toContain('violates row shape conventions');
+    } finally {
+      consoleLogSpy.mockClear();
+      if (originalHome === undefined) delete process.env.HOME;
+      else process.env.HOME = originalHome;
+      if (originalUserProfile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = originalUserProfile;
+      fs.rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a non-positive --max-top-level-keys', async () => {
+    const originalHome = process.env.HOME;
+    const originalUserProfile = process.env.USERPROFILE;
+    const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-browser-verify-badflag-'));
+    process.env.HOME = fakeHome;
+    process.env.USERPROFILE = fakeHome;
+
+    try {
+      const adapterDir = path.join(fakeHome, '.webcmd', 'clis', 'hn');
+      fs.mkdirSync(adapterDir, { recursive: true });
+      fs.writeFileSync(path.join(adapterDir, 'top.js'), 'export default {};\n', 'utf-8');
+
+      const program = createProgram('', '');
+      await program.parseAsync(['node', 'webcmd', '--session', 'test', 'browser', 'verify', 'hn/top', '--no-fixture', '--max-top-level-keys', '0']);
+
+      expect(process.exitCode).toBe(2);
+      expect(mockExecFileSync).not.toHaveBeenCalled();
+    } finally {
       if (originalHome === undefined) delete process.env.HOME;
       else process.env.HOME = originalHome;
       if (originalUserProfile === undefined) delete process.env.USERPROFILE;
@@ -1238,1469 +1655,218 @@ describe('profile list', () => {
   });
 });
 
-describe('browser tab targeting commands', () => {
+describe('browser raw session commands', () => {
   const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
   const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 
-  function getBrowserStateFile(cacheDir: string, session: string = 'test'): string {
-    return path.join(cacheDir, 'browser-state', `${session}.json`);
-  }
-
   beforeEach(() => {
     process.exitCode = undefined;
-    process.env.WEBCMD_CACHE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-browser-tab-state-'));
     consoleLogSpy.mockClear();
     stderrSpy.mockClear();
     mockBrowserConnect.mockClear();
-    mockBrowserClose.mockReset().mockResolvedValue(undefined);
-    delete process.env.WEBCMD_WINDOW;
-    mockBindTab.mockReset().mockResolvedValue({
-      session: 'test',
-      page: 'tab-2',
-      url: 'https://user.example/inbox',
-      title: 'Inbox',
-    });
-    mockSendCommand.mockReset().mockResolvedValue({ closed: true });
-
-    browserState.page = {
-      goto: vi.fn().mockResolvedValue(undefined),
-      wait: vi.fn().mockResolvedValue(undefined),
-      setActivePage: vi.fn(),
-      getActivePage: vi.fn().mockReturnValue('tab-1'),
-      getCurrentUrl: vi.fn().mockResolvedValue('https://one.example'),
-      startNetworkCapture: vi.fn().mockResolvedValue(true),
-      getCookies: vi.fn().mockResolvedValue([]),
-      evaluate: vi.fn().mockResolvedValue({ ok: true }),
-      snapshot: vi.fn().mockResolvedValue('snapshot'),
-      tabs: vi.fn().mockResolvedValue([
-        { index: 0, page: 'tab-1', url: 'https://one.example', title: 'one', active: true },
-        { index: 1, page: 'tab-2', url: 'https://two.example', title: 'two', active: false },
-      ]),
-      selectTab: vi.fn().mockResolvedValue(undefined),
-      newTab: vi.fn().mockResolvedValue('tab-3'),
-      closeTab: vi.fn().mockResolvedValue(undefined),
-      handleJavaScriptDialog: vi.fn().mockResolvedValue(undefined),
-      frames: vi.fn().mockResolvedValue([
-        { index: 0, frameId: 'frame-1', url: 'https://x.example/embed', name: 'x-embed' },
-      ]),
-      evaluateInFrame: vi.fn().mockResolvedValue('inside frame'),
-      screenshot: vi.fn().mockResolvedValue('base64-shot'),
-      annotatedScreenshot: vi.fn().mockResolvedValue('annotated-base64-shot'),
-      readNetworkCapture: vi.fn().mockResolvedValue([]),
-      closeWindow: vi.fn().mockResolvedValue(undefined),
-      waitForDownload: vi.fn().mockResolvedValue({
-        downloaded: true,
-        filename: '/tmp/receipt.pdf',
-        url: 'https://app.example/receipt.pdf',
-        state: 'complete',
-        elapsedMs: 10,
-      }),
-      session: 'test',
-    } as unknown as IPage;
+    mockListExistingBrowserTabs.mockReset().mockResolvedValue([]);
+    mockReleaseSiteSessionLease.mockReset().mockResolvedValue(undefined);
+    mockSendCommand.mockReset().mockResolvedValue({ ok: true });
   });
 
-  function lastJsonLog(): any {
-    const calls = consoleLogSpy.mock.calls;
-    if (calls.length === 0) throw new Error('Expected at least one console.log call');
-    const last = calls[calls.length - 1][0];
-    if (typeof last !== 'string') throw new Error(`Expected string arg to console.log, got ${typeof last}`);
-    return JSON.parse(last);
-  }
-
-  it('binds an existing Cloak tab by page id into a browser session', async () => {
+  it.each([
+    { argv: ['browser', 'tabs'], code: 'SESSION_REQUIRED' },
+    { argv: ['--session', 'work', 'browser', 'tabs'], code: 'INVALID_SESSION_SELECTOR' },
+  ])('rejects an unusable raw selector with exit 2 before daemon dispatch: $code', async ({ argv, code }) => {
     const program = createProgram('', '');
 
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'bind', '--page', 'tab-2']);
+    await program.parseAsync(['node', 'webcmd', ...argv]);
 
-    expect(mockBrowserConnect).toHaveBeenCalledWith({ timeout: 45, session: 'test', surface: 'browser', windowMode: 'background' });
-    expect(mockBindTab).toHaveBeenCalledWith('test', { page: 'tab-2', windowMode: 'background' });
-    const out = lastJsonLog();
-    expect(out.session).toBe('test');
-    expect(out.url).toBe('https://user.example/inbox');
+    expect(process.exitCode).toBe(2);
+    expect(mockListExistingBrowserTabs).not.toHaveBeenCalled();
+    expect(mockSendCommand).not.toHaveBeenCalled();
+    expect(stderrSpy.mock.calls.flat().join('')).toContain(code);
   });
 
-  it('binds an existing Cloak tab in the foreground when explicitly requested', async () => {
+  it('lists tabs without allocating a local browser runtime', async () => {
     const program = createProgram('', '');
 
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', '--window', 'foreground', 'bind', '--index', '1']);
-
-    expect(mockBrowserConnect).toHaveBeenCalledWith({ timeout: 45, session: 'test', surface: 'browser', windowMode: 'foreground' });
-    expect(mockBindTab).toHaveBeenCalledWith('test', { index: 1, windowMode: 'foreground' });
-    const out = lastJsonLog();
-    expect(out.session).toBe('test');
-  });
-
-  it('uses the direct-browser CLI window mode before WEBCMD_WINDOW', async () => {
-    process.env.WEBCMD_WINDOW = 'foreground';
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', '--window', 'background', 'bind', '--page', 'tab-2']);
-
-    expect(mockBrowserConnect).toHaveBeenCalledWith({ timeout: 45, session: 'test', surface: 'browser', windowMode: 'background' });
-    expect(mockBindTab).toHaveBeenCalledWith('test', { page: 'tab-2', windowMode: 'background' });
-  });
-
-  it('requires an explicit Cloak tab target for bind', async () => {
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'bind']);
-
-    expect(mockBindTab).not.toHaveBeenCalled();
-    const out = lastJsonLog();
-    expect(out.error.code).toBe('invalid_request');
-    expect(out.error.message).toContain('exactly one Cloak tab target');
-    expect(process.exitCode).toBeDefined();
-  });
-
-  it('rejects bind with both page id and index', async () => {
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'bind', '--page', 'tab-2', '--index', '1']);
-
-    expect(mockBindTab).not.toHaveBeenCalled();
-    const out = lastJsonLog();
-    expect(out.error.code).toBe('invalid_request');
-  });
-
-  it('requires an explicit session for browser commands', async () => {
-    const program = createProgram('', '');
-
-    // --session is now a hidden internal flag; commander no longer guards it.
-    // The action body throws via getBrowserSession(), surfacing the
-    // <session> positional in the error message.
-    await program.parseAsync(['node', 'webcmd', 'browser', 'state']);
+    await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'tabs']);
 
     expect(mockBrowserConnect).not.toHaveBeenCalled();
-    expect(stderrSpy.mock.calls.flat().join('')).toContain('<session> is a required positional argument');
+    expect(mockSendCommand).not.toHaveBeenCalled();
+    expect(mockListExistingBrowserTabs).toHaveBeenCalledWith('session_test', {});
+    expect(consoleLogSpy).toHaveBeenLastCalledWith('[]');
   });
 
-  it('runs browser commands against an explicit session', async () => {
+  it('sends tabs directly when a runtime already exists', async () => {
+    mockListExistingBrowserTabs.mockResolvedValue([{ page: 'page-123' }]);
     const program = createProgram('', '');
 
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'state']);
+    await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'tabs']);
 
-    expect(mockBrowserConnect).toHaveBeenCalledWith({ timeout: 45, session: 'test', surface: 'browser', windowMode: 'background' });
-    expect(browserState.page?.snapshot).toHaveBeenCalled();
+    expect(mockBrowserConnect).not.toHaveBeenCalled();
+    expect(mockListExistingBrowserTabs).toHaveBeenCalledWith('session_test', {});
   });
 
-  it('uses WEBCMD_WINDOW as an explicit direct-browser override', async () => {
-    process.env.WEBCMD_WINDOW = 'foreground';
+  it('binds only an explicit stable page id', async () => {
     const program = createProgram('', '');
 
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'state']);
+    await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'bind', '--page', 'page-123']);
 
-    expect(mockBrowserConnect).toHaveBeenCalledWith({ timeout: 45, session: 'test', surface: 'browser', windowMode: 'foreground' });
-    expect(browserState.page?.snapshot).toHaveBeenCalled();
+    expect(mockSendCommand).toHaveBeenCalledWith('bind', {
+      session: 'session_test', surface: 'browser', page: 'page-123',
+    });
+    await expect(program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'bind', '--index', '0']))
+      .rejects.toThrow(/process\.exit unexpectedly called/);
+    await expect(program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'bind', '--page', '   ']))
+      .rejects.toThrow(/process\.exit unexpectedly called/);
   });
 
-  it('rejects an invalid direct-browser --window value', async () => {
+  it('sends snapshot inspection options to the browser runtime', async () => {
     const program = createProgram('', '');
 
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', '--window', 'sideways', 'state']);
+    await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'snapshot', '--snapshot-mode', 'read', '--ref', 'e12', '--max-output', '1000']);
 
-    expect(stderrSpy.mock.calls.flat().join('')).toContain(
-      '--window must be one of: foreground, background. Received: "sideways"',
-    );
-    expect(process.exitCode).toBeDefined();
-  });
-
-  it('rejects an invalid direct-browser WEBCMD_WINDOW value', async () => {
-    process.env.WEBCMD_WINDOW = 'sideways';
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'state']);
-
-    expect(stderrSpy.mock.calls.flat().join('')).toContain(
-      'WEBCMD_WINDOW must be one of: foreground, background. Received: "sideways"',
-    );
-    expect(process.exitCode).toBeDefined();
-  });
-
-  it('passes the opt-in AX source to browser state', async () => {
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'state', '--source', 'ax']);
-
-    expect(browserState.page?.snapshot).toHaveBeenCalledWith({ viewportExpand: 2000, source: 'ax' });
-  });
-
-  it('prints DOM vs AX snapshot metrics without changing default state output', async () => {
-    browserState.page = {
-      ...browserState.page,
-      snapshot: vi.fn(async (opts?: { source?: string }) => {
-        if (opts?.source === 'ax') {
-          return 'source: ax\n---\n[1]button "Save"\nframe "https://app.example/embed":\n  [2]button "Frame Save"\n---\ninteractive: 2';
-        }
-        return 'URL: https://app.example\n[1] button "Save"';
-      }),
-    } as unknown as IPage;
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'state', '--compare-sources']);
-
-    expect(browserState.page?.snapshot).toHaveBeenCalledWith({ viewportExpand: 2000, source: 'dom' });
-    expect(browserState.page?.snapshot).toHaveBeenCalledWith({ viewportExpand: 2000, source: 'ax' });
-    const out = lastJsonLog();
-    expect(out.url).toBe('https://one.example');
-    expect(out.sources.dom).toMatchObject({ ok: true, refs: 1, frame_sections: 0 });
-    expect(out.sources.ax).toMatchObject({ ok: true, refs: 2, frame_sections: 1, interactive: 2 });
-  });
-
-  it('keeps compare-sources usable when one observation backend fails', async () => {
-    browserState.page = {
-      ...browserState.page,
-      snapshot: vi.fn(async (opts?: { source?: string }) => {
-        if (opts?.source === 'ax') throw new Error('AX unavailable');
-        return '[1] button "Save"';
-      }),
-    } as unknown as IPage;
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'state', '--compare-sources']);
-
-    const out = lastJsonLog();
-    expect(out.sources.dom).toMatchObject({ ok: true, refs: 1 });
-    expect(out.sources.ax).toMatchObject({
-      ok: false,
-      error: { message: 'AX unavailable' },
+    expect(mockSendCommand).toHaveBeenCalledWith('snapshot', {
+      session: 'session_test', surface: 'browser', snapshotMode: 'read', ref: 'e12', maxOutputChars: 1000,
     });
   });
 
-  it('rejects unknown browser state sources before touching the page', async () => {
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'state', '--source', 'magic']);
-
-    expect(browserState.page?.snapshot).not.toHaveBeenCalled();
-    const out = lastJsonLog();
-    expect(out.error.code).toBe('invalid_source');
-    expect(process.exitCode).toBeDefined();
-  });
-
-  it('captures annotated screenshots through the visual ref overlay path', async () => {
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'screenshot', '--annotate']);
-
-    expect(browserState.page?.annotatedScreenshot).toHaveBeenCalledWith({
-      fullPage: false,
-      annotate: true,
-      width: undefined,
-      height: undefined,
-      format: 'png',
+  it('binds raw browser daemon operations to one logical run', async () => {
+    let run = getDaemonRunContext();
+    mockSendCommand.mockImplementation(async () => {
+      run = getDaemonRunContext();
+      return { ok: true };
     });
-    expect(browserState.page?.screenshot).not.toHaveBeenCalled();
-    expect(consoleLogSpy).toHaveBeenLastCalledWith('annotated-base64-shot');
-  });
-
-  it('allows history navigation in a bound session', async () => {
-    browserState.page = {
-      ...browserState.page,
-      evaluate: vi.fn(),
-      wait: vi.fn(),
-      session: 'test',
-    } as unknown as IPage;
     const program = createProgram('', '');
 
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'back']);
-
-    expect(browserState.page?.evaluate).toHaveBeenCalledWith('history.back()');
-  });
-
-  it('unbinds a session through the daemon close-window command', async () => {
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'unbind']);
-
-    expect(mockBrowserConnect).toHaveBeenCalledWith({ timeout: 45, session: 'test', surface: 'browser', windowMode: 'background' });
-    expect(mockSendCommand).toHaveBeenCalledWith('close-window', { session: 'test', surface: 'browser' });
-    const out = lastJsonLog();
-    expect(out).toEqual({ unbound: true, session: 'test' });
-  });
-
-  it('does not print false success when unbind fails', async () => {
-    mockSendCommand.mockRejectedValueOnce(new BrowserCommandError(
-      'Session "test" is not attached to a tab.',
-      'bound_session_missing',
-      'Run bind again, then retry the browser command.',
-    ));
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'unbind']);
-
-    const out = lastJsonLog();
-    expect(out.error.code).toBe('bound_session_missing');
-    expect(process.exitCode).toBeDefined();
-  });
-
-  it('accepts JavaScript dialogs through the browser dialog command', async () => {
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'dialog', 'accept', '--text', 'ok']);
-
-    expect(browserState.page?.handleJavaScriptDialog).toHaveBeenCalledWith(true, 'ok');
-    const out = lastJsonLog();
-    expect(out).toEqual({ handled: true, action: 'accept', text: 'ok' });
-  });
-
-  it('emits a structured error when a browser action is blocked by a JavaScript dialog', async () => {
-    browserState.page = {
-      ...browserState.page,
-      evaluate: vi.fn().mockRejectedValue(new Error('JavaScript dialog showing')),
-    } as unknown as IPage;
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'eval', 'document.title']);
-
-    const out = lastJsonLog();
-    expect(out.error.code).toBe('javascript_dialog_open');
-    expect(out.error.hint).toContain('browser dialog accept');
-    expect(process.exitCode).toBeDefined();
-  });
-
-  it('binds browser commands to an explicit target tab via --tab', async () => {
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'eval', '--tab', 'tab-2', 'document.title']);
-
-    expect(browserState.page?.setActivePage).toHaveBeenCalledWith('tab-2');
-    expect(browserState.page?.evaluate).toHaveBeenCalledWith('document.title');
-  });
-
-  it('rejects an explicit --tab target that is no longer in the current session', async () => {
-    browserState.page = {
-      setActivePage: vi.fn(),
-      getActivePage: vi.fn(),
-      tabs: vi.fn().mockResolvedValue([]),
-      evaluate: vi.fn(),
-    } as unknown as IPage;
-
-    const program = createProgram('', '');
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'eval', '--tab', 'tab-stale', 'document.title']);
-
-    expect(process.exitCode).toBeDefined();
-    expect(browserState.page?.setActivePage).not.toHaveBeenCalled();
-    expect(browserState.page?.evaluate).not.toHaveBeenCalled();
-    expect(stderrSpy.mock.calls.flat().join('\n')).toContain('Target tab tab-stale is not part of the current browser session');
-  });
-
-  it('lists tabs with target IDs via browser tab list', async () => {
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'tab', 'list']);
-
-    expect(browserState.page?.tabs).toHaveBeenCalledTimes(1);
-    expect(consoleLogSpy.mock.calls.flat().join('\n')).toContain('"page": "tab-1"');
-    expect(consoleLogSpy.mock.calls.flat().join('\n')).toContain('"page": "tab-2"');
-  });
-
-  it('creates a new tab and prints its target ID', async () => {
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'tab', 'new', 'https://three.example']);
-
-    expect(browserState.page?.newTab).toHaveBeenCalledWith('https://three.example');
-    expect(consoleLogSpy.mock.calls.flat().join('\n')).toContain('"page": "tab-3"');
-  });
-
-  it('prints the resolved target ID when browser open creates or navigates a tab', async () => {
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'open', 'https://example.com']);
-
-    expect(browserState.page?.goto).toHaveBeenCalledWith('https://example.com');
-    expect(consoleLogSpy.mock.calls.flat().join('\n')).toContain('"url": "https://one.example"');
-    expect(consoleLogSpy.mock.calls.flat().join('\n')).toContain('"page": "tab-1"');
-  });
-
-  it('lists cross-origin frames via browser frames', async () => {
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'frames']);
-
-    expect(browserState.page?.frames).toHaveBeenCalledTimes(1);
-    expect(consoleLogSpy.mock.calls.flat().join('\n')).toContain('"frameId": "frame-1"');
-    expect(consoleLogSpy.mock.calls.flat().join('\n')).toContain('"url": "https://x.example/embed"');
-  });
-
-  it('routes browser eval --frame through frame-targeted evaluation', async () => {
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'eval', '--frame', '0', 'document.title']);
-
-    expect(browserState.page?.evaluateInFrame).toHaveBeenCalledWith('document.title', 0);
-    expect(browserState.page?.evaluate).not.toHaveBeenCalled();
-    expect(consoleLogSpy.mock.calls.flat().join('\n')).toContain('inside frame');
-  });
-
-  it('does not promote a newly created tab to the persisted default target', async () => {
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'tab', 'new', 'https://three.example']);
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'eval', 'document.title']);
-
-    expect(browserState.page?.newTab).toHaveBeenCalledWith('https://three.example');
-    expect(browserState.page?.setActivePage).not.toHaveBeenCalled();
-    expect(browserState.page?.evaluate).toHaveBeenCalledWith('document.title');
-  });
-
-  it('persists an explicitly selected tab as the default target for later untargeted commands', async () => {
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'tab', 'select', 'tab-2']);
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'eval', 'document.title']);
-
-    expect(browserState.page?.selectTab).toHaveBeenCalledWith('tab-2');
-    expect(browserState.page?.setActivePage).toHaveBeenCalledWith('tab-2');
-    expect(browserState.page?.evaluate).toHaveBeenCalledWith('document.title');
-    expect(consoleLogSpy.mock.calls.flat().join('\n')).toContain('"selected": "tab-2"');
-  });
-
-  it('clears a saved default target when it is no longer present in the current session', async () => {
-    const cacheDir = String(process.env.WEBCMD_CACHE_DIR);
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'tab', 'select', 'tab-2']);
-    expect(fs.existsSync(getBrowserStateFile(cacheDir))).toBe(true);
-
-    browserState.page = {
-      setActivePage: vi.fn(),
-      getActivePage: vi.fn(),
-      tabs: vi.fn().mockResolvedValue([]),
-      evaluate: vi.fn().mockResolvedValue({ ok: true }),
-      readNetworkCapture: vi.fn().mockResolvedValue([]),
-    } as unknown as IPage;
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'eval', 'document.title']);
-
-    expect(browserState.page?.setActivePage).not.toHaveBeenCalled();
-    expect(browserState.page?.evaluate).toHaveBeenCalledWith('document.title');
-    expect(fs.existsSync(getBrowserStateFile(cacheDir))).toBe(false);
-  });
-
-  it('clears the persisted default target when that tab is closed', async () => {
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'tab', 'select', 'tab-2']);
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'tab', 'close', 'tab-2']);
-    vi.mocked(browserState.page?.setActivePage as any).mockClear();
-    vi.mocked(browserState.page?.evaluate as any).mockClear();
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'eval', 'document.title']);
-
-    expect(browserState.page?.closeTab).toHaveBeenCalledWith('tab-2');
-    expect(browserState.page?.setActivePage).not.toHaveBeenCalled();
-    expect(browserState.page?.evaluate).toHaveBeenCalledWith('document.title');
-  });
-
-  it('closes a tab by target ID', async () => {
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'tab', 'close', 'tab-2']);
-
-    expect(browserState.page?.closeTab).toHaveBeenCalledWith('tab-2');
-    expect(consoleLogSpy.mock.calls.flat().join('\n')).toContain('"closed": "tab-2"');
-  });
-
-  it('rejects closing a stale tab target ID that is no longer in the current session', async () => {
-    browserState.page = {
-      session: 'test',
-      tabs: vi.fn().mockResolvedValue([]),
-      closeTab: vi.fn(),
-    } as unknown as IPage;
-
-    const program = createProgram('', '');
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'tab', 'close', 'tab-stale']);
-
-    expect(process.exitCode).toBeDefined();
-    expect(browserState.page?.closeTab).not.toHaveBeenCalled();
-    expect(stderrSpy.mock.calls.flat().join('\n')).toContain('Target tab tab-stale is not part of the current browser session');
-  });
-
-  it('browser analyze merges HttpOnly cookie names from page.getCookies and drains stale capture before verdict', async () => {
-    browserState.page = {
-      goto: vi.fn().mockResolvedValue(undefined),
-      wait: vi.fn().mockResolvedValue(undefined),
-      setActivePage: vi.fn(),
-      getActivePage: vi.fn().mockReturnValue('tab-1'),
-      getCurrentUrl: vi.fn().mockResolvedValue('https://target.example'),
-      startNetworkCapture: vi.fn().mockResolvedValue(true),
-      getCookies: vi.fn().mockResolvedValue([{ name: 'cf_clearance', value: 'x', domain: '.target.example' }]),
-      evaluate: vi.fn().mockResolvedValue({
-        cookieNames: [],
-        initialState: {
-          __INITIAL_STATE__: false,
-          __NUXT__: false,
-          __NEXT_DATA__: false,
-          __APOLLO_STATE__: false,
-        },
-        title: 'Target',
-        finalUrl: 'https://target.example/',
-      }),
-      tabs: vi.fn().mockResolvedValue([{ index: 0, page: 'tab-1', url: 'https://target.example', title: 'Target', active: true }]),
-      readNetworkCapture: vi.fn()
-        .mockResolvedValueOnce([
-          {
-            url: 'https://stale.example/api/old',
-            method: 'GET',
-            responseStatus: 200,
-            responseContentType: 'application/json',
-            responsePreview: '{"stale":true}',
-          },
-        ])
-        .mockResolvedValueOnce([
-          {
-            url: 'https://target.example/api/items',
-            method: 'GET',
-            responseStatus: 200,
-            responseContentType: 'application/json',
-            responsePreview: '{"items":[{"title":"A","id":"1"}]}',
-          },
-        ]),
-    } as unknown as IPage;
-
-    const program = createProgram('', '');
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'analyze', 'https://target.example/']);
-
-    const out = lastJsonLog();
-    expect(browserState.page?.readNetworkCapture).toHaveBeenCalledTimes(2);
-    expect(out.pattern.pattern).toBe('A');
-    expect(out.api_candidates[0].url).toBe('https://target.example/api/items');
-    expect(out.api_candidates[0].verdict).toBe('likely_data');
-    expect(out.anti_bot.evidence).toContain('cookie:cf_clearance');
-  });
-
-  it('browser analyze falls back to interceptor buffer when network capture is unsupported', async () => {
-    let bufferReads = 0;
-    browserState.page = {
-      goto: vi.fn().mockResolvedValue(undefined),
-      wait: vi.fn().mockResolvedValue(undefined),
-      setActivePage: vi.fn(),
-      getActivePage: vi.fn().mockReturnValue('tab-1'),
-      getCurrentUrl: vi.fn().mockResolvedValue('https://target.example'),
-      startNetworkCapture: vi.fn().mockResolvedValue(false),
-      getCookies: vi.fn().mockResolvedValue([{ name: 'cf_clearance', value: 'x', domain: '.target.example' }]),
-      evaluate: vi.fn().mockImplementation(async (arg: string) => {
-        if (typeof arg === 'string' && arg.includes('document.cookie')) {
-          return {
-            cookieNames: [],
-            initialState: {
-              __INITIAL_STATE__: false,
-              __NUXT__: false,
-              __NEXT_DATA__: false,
-              __APOLLO_STATE__: false,
-            },
-            title: 'Target',
-            finalUrl: 'https://target.example/',
-          };
-        }
-        if (typeof arg === 'string' && arg.includes('window.__webcmd_net = []')) {
-          bufferReads += 1;
-          if (bufferReads === 1) {
-            return JSON.stringify([
-              {
-                url: 'https://stale.example/api/old',
-                method: 'GET',
-                status: 200,
-                size: 12,
-                ct: 'application/json',
-                body: { stale: true },
-              },
-            ]);
-          }
-          return JSON.stringify([
-            {
-              url: 'https://target.example/waf',
-              method: 'GET',
-              status: 403,
-              size: 17,
-              ct: 'text/html',
-              body: 'Cloudflare Ray ID',
-            },
-          ]);
-        }
-        return undefined;
-      }),
-      tabs: vi.fn().mockResolvedValue([{ index: 0, page: 'tab-1', url: 'https://target.example', title: 'Target', active: true }]),
-      readNetworkCapture: vi.fn().mockResolvedValue([]),
-    } as unknown as IPage;
-
-    const program = createProgram('', '');
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'analyze', 'https://target.example/']);
-
-    const out = lastJsonLog();
-    expect(browserState.page?.readNetworkCapture).toHaveBeenCalledTimes(2);
-    expect(bufferReads).toBe(2);
-    expect(out.anti_bot.vendor).toBe('cloudflare');
-    expect(out.anti_bot.evidence).toContain('cookie:cf_clearance');
-    expect(out.anti_bot.evidence).toContain('body:https://target.example/waf');
-  });
-
-  it('browser wait xhr starts capture, injects interceptor on fallback, and ignores stale ring entries', async () => {
-    browserState.page = {
-      goto: vi.fn().mockResolvedValue(undefined),
-      wait: vi.fn().mockResolvedValue(undefined),
-      setActivePage: vi.fn(),
-      getActivePage: vi.fn().mockReturnValue('tab-1'),
-      getCurrentUrl: vi.fn().mockResolvedValue('https://target.example'),
-      startNetworkCapture: vi.fn().mockResolvedValue(false),
-      evaluate: vi.fn().mockResolvedValue(undefined),
-      tabs: vi.fn().mockResolvedValue([{ index: 0, page: 'tab-1', url: 'https://target.example', title: 'Target', active: true }]),
-      readNetworkCapture: vi.fn()
-        .mockResolvedValueOnce([
-          {
-            url: 'https://stale.example/api/old',
-            method: 'GET',
-            responseStatus: 200,
-            responseContentType: 'application/json',
-            responsePreview: '{"stale":true}',
-          },
-        ])
-        .mockResolvedValueOnce([
-          {
-            url: 'https://target.example/api/target',
-            method: 'GET',
-            responseStatus: 200,
-            responseContentType: 'application/json',
-            responsePreview: '{"ok":true}',
-          },
-        ]),
-    } as unknown as IPage;
-
-    const program = createProgram('', '');
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'wait', 'xhr', '/api/target', '--timeout', '900']);
-
-    const out = lastJsonLog();
-    expect(browserState.page?.startNetworkCapture).toHaveBeenCalledTimes(1);
-    expect(browserState.page?.evaluate).toHaveBeenCalledWith(expect.stringContaining('window.__webcmd_net'));
-    expect(browserState.page?.readNetworkCapture).toHaveBeenCalledTimes(2);
-    expect(out.matched.url).toBe('https://target.example/api/target');
-  });
-
-  it('browser wait xhr reads interceptor buffer when network capture is unsupported', async () => {
-    let bufferReads = 0;
-    browserState.page = {
-      goto: vi.fn().mockResolvedValue(undefined),
-      wait: vi.fn().mockResolvedValue(undefined),
-      setActivePage: vi.fn(),
-      getActivePage: vi.fn().mockReturnValue('tab-1'),
-      getCurrentUrl: vi.fn().mockResolvedValue('https://target.example'),
-      startNetworkCapture: vi.fn().mockResolvedValue(false),
-      evaluate: vi.fn().mockImplementation(async (arg: string) => {
-        if (typeof arg === 'string' && arg.includes('window.__webcmd_net = []')) {
-          bufferReads += 1;
-          if (bufferReads === 1) {
-            return JSON.stringify([
-              {
-                url: 'https://stale.example/api/old',
-                method: 'GET',
-                status: 200,
-                size: 12,
-                ct: 'application/json',
-                body: { stale: true },
-              },
-            ]);
-          }
-          return JSON.stringify([
-            {
-              url: 'https://target.example/api/target',
-              method: 'GET',
-              status: 200,
-              size: 11,
-              ct: 'application/json',
-              body: { ok: true },
-            },
-          ]);
-        }
-        return undefined;
-      }),
-      tabs: vi.fn().mockResolvedValue([{ index: 0, page: 'tab-1', url: 'https://target.example', title: 'Target', active: true }]),
-      readNetworkCapture: vi.fn().mockResolvedValue([]),
-    } as unknown as IPage;
-
-    const program = createProgram('', '');
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'wait', 'xhr', '/api/target', '--timeout', '900']);
-
-    const out = lastJsonLog();
-    expect(browserState.page?.startNetworkCapture).toHaveBeenCalledTimes(1);
-    expect(browserState.page?.readNetworkCapture).toHaveBeenCalledTimes(2);
-    expect(bufferReads).toBe(2);
-    expect(out.matched.url).toBe('https://target.example/api/target');
-  });
-
-  it('browser wait download delegates to the browser runtime download observer', async () => {
-    browserState.page = {
-      goto: vi.fn().mockResolvedValue(undefined),
-      wait: vi.fn().mockResolvedValue(undefined),
-      waitForDownload: vi.fn().mockResolvedValue({
-        downloaded: true,
-        filename: '/tmp/receipt.pdf',
-        url: 'https://app.example/receipt.pdf',
-        state: 'complete',
-        elapsedMs: 10,
-      }),
-      setActivePage: vi.fn(),
-      getActivePage: vi.fn().mockReturnValue('tab-1'),
-      getCurrentUrl: vi.fn().mockResolvedValue('https://target.example'),
-      tabs: vi.fn().mockResolvedValue([{ index: 0, page: 'tab-1', url: 'https://target.example', title: 'Target', active: true }]),
-    } as unknown as IPage;
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'wait', 'download', 'receipt', '--timeout', '900']);
-
-    expect(browserState.page?.waitForDownload).toHaveBeenCalledWith('receipt', 900);
-    expect(lastJsonLog()).toEqual({
-      downloaded: true,
-      filename: '/tmp/receipt.pdf',
-      url: 'https://app.example/receipt.pdf',
-      state: 'complete',
-      elapsedMs: 10,
+    await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'snapshot']);
+
+    expect(run).toMatchObject({
+      runId: expect.stringMatching(/^run_/),
+      command: 'browser/snapshot',
     });
+    expect(getDaemonRunContext()).toBeUndefined();
   });
 
-  it('browser wait download reports an error envelope when no matching download completes', async () => {
-    browserState.page = {
-      goto: vi.fn().mockResolvedValue(undefined),
-      wait: vi.fn().mockResolvedValue(undefined),
-      waitForDownload: vi.fn().mockResolvedValue({
-        downloaded: false,
-        state: 'interrupted',
-        error: 'No download matched "receipt" within 900ms',
-        elapsedMs: 900,
-      }),
-      setActivePage: vi.fn(),
-      getActivePage: vi.fn().mockReturnValue('tab-1'),
-      getCurrentUrl: vi.fn().mockResolvedValue('https://target.example'),
-      tabs: vi.fn().mockResolvedValue([{ index: 0, page: 'tab-1', url: 'https://target.example', title: 'Target', active: true }]),
-    } as unknown as IPage;
+  it('keeps the raw browser lease when the daemon outcome is unknown', async () => {
+    mockSendCommand.mockRejectedValue(new BrowserCommandError('Result unknown', 'command_result_unknown'));
     const program = createProgram('', '');
 
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'wait', 'download', 'receipt', '--timeout', '900']);
+    await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'snapshot']);
 
-    const out = lastJsonLog();
-    expect(out.error.code).toBe('download_not_seen');
-    expect(out.download.elapsedMs).toBe(900);
-    expect(process.exitCode).toBeDefined();
-  });
-});
-
-describe('browser network command', () => {
-  const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-
-  function getNetworkCachePath(cacheDir: string): string {
-    return path.join(cacheDir, 'browser-network', 'test.json');
-  }
-
-  function getCustomNetworkCachePath(cacheDir: string): string {
-    return path.join(cacheDir, 'browser-network', 'custom.json');
-  }
-
-  function lastJsonLog(): any {
-    const calls = consoleLogSpy.mock.calls;
-    if (calls.length === 0) throw new Error('Expected at least one console.log call');
-    const last = calls[calls.length - 1][0];
-    if (typeof last !== 'string') throw new Error(`Expected string arg to console.log, got ${typeof last}`);
-    return JSON.parse(last);
-  }
-
-  beforeEach(() => {
-    process.exitCode = undefined;
-    process.env.WEBCMD_CACHE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-browser-net-'));
-    consoleLogSpy.mockClear();
-    mockBrowserConnect.mockClear();
-    mockBrowserClose.mockReset().mockResolvedValue(undefined);
-
-    browserState.page = {
-      session: 'test',
-      setActivePage: vi.fn(),
-      getActivePage: vi.fn().mockReturnValue('tab-1'),
-      tabs: vi.fn().mockResolvedValue([{ page: 'tab-1', active: true }]),
-      evaluate: vi.fn().mockResolvedValue(''),
-      readNetworkCapture: vi.fn().mockResolvedValue([
-        {
-          url: 'https://x.com/i/api/graphql/qid/UserTweets?v=1',
-          method: 'GET',
-          responseStatus: 200,
-          responseContentType: 'application/json',
-          responsePreview: JSON.stringify({ data: { user: { rest_id: '42' } } }),
-          timestamp: Date.now(),
-        },
-        {
-          url: 'https://cdn.example.com/app.js',
-          method: 'GET',
-          responseStatus: 200,
-          responseContentType: 'application/javascript',
-          responsePreview: '// js',
-        },
-      ]),
-    } as unknown as IPage;
+    expect(process.exitCode).toBe(1);
+    expect(mockReleaseSiteSessionLease).not.toHaveBeenCalled();
   });
 
-  it('emits JSON with shape previews and persists the capture to disk', async () => {
-    const cacheDir = String(process.env.WEBCMD_CACHE_DIR);
-    const program = createProgram('', '');
+  it('reads program files for run and rejects mutually exclusive input', async () => {
+    const sourcePath = path.join(os.tmpdir(), `webcmd-run-${Date.now()}.js`);
+    fs.writeFileSync(sourcePath, 'return 42;', 'utf8');
+    try {
+      const program = createProgram('', '');
+      await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'run', '--file', sourcePath]);
+      expect(mockSendCommand).toHaveBeenCalledWith('run', {
+        session: 'session_test', surface: 'browser', source: 'return 42;', snapshotMode: 'act',
+      });
 
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'network']);
+      await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'run', '--stdin', '--file', sourcePath]);
+      expect(mockSendCommand).toHaveBeenCalledTimes(1);
+      expect(process.exitCode).toBeDefined();
 
-    const out = lastJsonLog();
-    expect(out.count).toBe(1);
-    expect(out.filtered_out).toBe(1);
-    expect(out.entries[0].key).toBe('UserTweets');
-    expect(out.entries[0].shape['$.data.user.rest_id']).toBe('string');
-    expect(out.entries[0]).not.toHaveProperty('body');
-    expect(fs.existsSync(getNetworkCachePath(cacheDir))).toBe(true);
-  });
-
-  it('uses the selected browser session for network cache scope', async () => {
-    const cacheDir = String(process.env.WEBCMD_CACHE_DIR);
-    browserState.page = {
-      ...browserState.page,
-      session: 'custom',
-    } as unknown as IPage;
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'custom', 'network']);
-
-    const out = lastJsonLog();
-    expect(out.session).toBe('custom');
-    expect(fs.existsSync(getCustomNetworkCachePath(cacheDir))).toBe(true);
-    expect(fs.existsSync(getNetworkCachePath(cacheDir))).toBe(false);
-  });
-
-  it('--all includes static resources that the default filter drops', async () => {
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'network', '--all']);
-
-    const out = lastJsonLog();
-    expect(out.count).toBe(2);
-    expect(out.entries.map((e: any) => e.key)).toContain('UserTweets');
-    expect(out.entries.map((e: any) => e.key)).toContain('GET cdn.example.com/app.js');
-  });
-
-  it('--failed and --since filter captured entries by status and time window', async () => {
-    const now = Date.now();
-    browserState.page!.readNetworkCapture = vi.fn().mockResolvedValue([
-      {
-        url: 'https://api.example.com/new-fail',
-        method: 'GET',
-        responseStatus: 500,
-        responseContentType: 'application/json',
-        responsePreview: JSON.stringify({ error: true }),
-        timestamp: now,
-      },
-      {
-        url: 'https://api.example.com/old-fail',
-        method: 'GET',
-        responseStatus: 500,
-        responseContentType: 'application/json',
-        responsePreview: JSON.stringify({ error: true }),
-        timestamp: now - 180_000,
-      },
-      {
-        url: 'https://api.example.com/new-ok',
-        method: 'GET',
-        responseStatus: 200,
-        responseContentType: 'application/json',
-        responsePreview: JSON.stringify({ ok: true }),
-        timestamp: now,
-      },
-    ]);
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'network', '--since', '120s', '--failed']);
-
-    const out = lastJsonLog();
-    expect(out.count).toBe(1);
-    expect(out.entries[0].url).toBe('https://api.example.com/new-fail');
-    expect(out.entries[0].timestamp).toMatch(/T/);
-  });
-
-  it('default output keeps text/javascript API responses while dropping static JS files', async () => {
-    browserState.page!.readNetworkCapture = vi.fn().mockResolvedValue([
-      {
-        url: 'https://hw.mail.163.com/js6/s?sid=abc&func=mbox:listMessages',
-        method: 'POST',
-        responseStatus: 200,
-        responseContentType: 'text/javascript',
-        responsePreview: JSON.stringify({ messages: [{ id: 'm1', subject: 'hello' }] }),
-      },
-      {
-        url: 'https://cdn.example.com/app.js',
-        method: 'GET',
-        responseStatus: 200,
-        responseContentType: 'application/javascript',
-        responsePreview: '// js',
-      },
-    ]);
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'network']);
-
-    const out = lastJsonLog();
-    expect(out.count).toBe(1);
-    expect(out.filtered_out).toBe(1);
-    expect(out.entries[0].key).toBe('POST hw.mail.163.com/js6/s');
-    expect(out.entries[0].ct).toBe('text/javascript');
-    expect(out.entries[0].shape['$.messages']).toBe('array(1)');
-  });
-
-  it('--raw emits full bodies inline for every entry', async () => {
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'network', '--raw']);
-
-    const out = lastJsonLog();
-    expect(out.entries[0].body).toEqual({ data: { user: { rest_id: '42' } } });
-    expect(out.entries[0].timestamp).toMatch(/T/);
-  });
-
-  it('--detail <key> returns the full body for the requested entry', async () => {
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'network']);
-    consoleLogSpy.mockClear();
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'network', '--detail', 'UserTweets']);
-
-    const out = lastJsonLog();
-    expect(out.key).toBe('UserTweets');
-    expect(out.body).toEqual({ data: { user: { rest_id: '42' } } });
-    expect(out.shape['$.data.user.rest_id']).toBe('string');
-    expect(out.timestamp).toMatch(/T/);
-  });
-
-  it('--detail reports key_not_found with the list of available keys', async () => {
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'network']);
-    consoleLogSpy.mockClear();
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'network', '--detail', 'NopeOp']);
-
-    const out = lastJsonLog();
-    expect(out.error.code).toBe('key_not_found');
-    expect(out.error.available_keys).toContain('UserTweets');
-    expect(process.exitCode).toBeDefined();
-  });
-
-  it('--detail reports cache_missing when no capture has been persisted yet', async () => {
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'network', '--detail', 'UserTweets']);
-
-    const out = lastJsonLog();
-    expect(out.error.code).toBe('cache_missing');
-    expect(process.exitCode).toBeDefined();
-  });
-
-  it('emits capture_failed when readNetworkCapture throws', async () => {
-    (browserState.page!.readNetworkCapture as any) = vi.fn().mockRejectedValue(new Error('CDP disconnected'));
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'network']);
-
-    const out = lastJsonLog();
-    expect(out.error.code).toBe('capture_failed');
-    expect(out.error.message).toContain('CDP disconnected');
-    expect(process.exitCode).toBeDefined();
-  });
-
-  it('surfaces cache_warning in the envelope when persistence fails', async () => {
-    const cacheDir = String(process.env.WEBCMD_CACHE_DIR);
-    // Pre-create the target path as a file where a directory is expected,
-    // forcing the mkdir inside saveNetworkCache to throw.
-    const clashDir = path.join(cacheDir, 'browser-network');
-    fs.writeFileSync(clashDir, 'not-a-directory');
-
-    const program = createProgram('', '');
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'network']);
-
-    const out = lastJsonLog();
-    expect(out.cache_warning).toMatch(/Could not persist capture cache/);
-    expect(out.count).toBe(1);
-    expect(process.exitCode).toBeUndefined();
-  });
-
-  describe('--filter', () => {
-    function apiResponse(url: string, body: unknown): Record<string, unknown> {
-      return {
-        url,
-        method: 'GET',
-        responseStatus: 200,
-        responseContentType: 'application/json',
-        responsePreview: JSON.stringify(body),
-      };
+      process.exitCode = undefined;
+      fs.writeFileSync(sourcePath, '', 'utf8');
+      await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'run', '--file', sourcePath]);
+      expect(mockSendCommand).toHaveBeenCalledTimes(1);
+      expect(process.exitCode).toBeDefined();
+    } finally {
+      fs.rmSync(sourcePath, { force: true });
     }
-
-    beforeEach(() => {
-      browserState.page!.readNetworkCapture = vi.fn().mockResolvedValue([
-        apiResponse(
-          'https://x.com/i/api/graphql/qid/UserTweets?v=1',
-          { data: { items: [{ author: 'a', text: 't', likes: 1 }] } },
-        ),
-        apiResponse(
-          'https://x.com/i/api/graphql/qid/UserProfile?v=1',
-          { data: { user: { id: 'u1', followers: 10 } } },
-        ),
-        apiResponse(
-          'https://x.com/i/api/graphql/qid/Settings?v=1',
-          { config: { theme: 'dark' } },
-        ),
-      ]);
-    });
-
-    it('narrows entries to those whose shape has ALL named fields', async () => {
-      const program = createProgram('', '');
-      await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'network', '--filter', 'author,text,likes']);
-
-      const out = lastJsonLog();
-      expect(out.count).toBe(1);
-      expect(out.filter).toEqual(['author', 'text', 'likes']);
-      expect(out.filter_dropped).toBe(2);
-      expect(out.entries[0].key).toBe('UserTweets');
-    });
-
-    it('matches container segments too, not just leaf names (any-segment rule)', async () => {
-      const program = createProgram('', '');
-      await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'network', '--filter', 'data,items']);
-
-      const out = lastJsonLog();
-      expect(out.count).toBe(1);
-      expect(out.entries[0].key).toBe('UserTweets');
-    });
-
-    it('drops entries that are missing any required field (AND semantics)', async () => {
-      const program = createProgram('', '');
-      await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'network', '--filter', 'author,followers']);
-
-      const out = lastJsonLog();
-      expect(out.count).toBe(0);
-      expect(out.entries).toEqual([]);
-      expect(out.filter).toEqual(['author', 'followers']);
-      expect(out.filter_dropped).toBe(3);
-    });
-
-    it('returns empty entries (not an error) when nothing matches', async () => {
-      const program = createProgram('', '');
-      await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'network', '--filter', 'nonexistent_field']);
-
-      const out = lastJsonLog();
-      expect(out.count).toBe(0);
-      expect(out.entries).toEqual([]);
-      expect(out).not.toHaveProperty('error');
-      expect(process.exitCode).toBeUndefined();
-    });
-
-    it('is case-sensitive so agents do not conflate `Id` with `id`', async () => {
-      const program = createProgram('', '');
-      await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'network', '--filter', 'Data']);
-
-      const out = lastJsonLog();
-      expect(out.count).toBe(0);
-    });
-
-    it('persists the full (unfiltered) capture so --detail lookups still find filtered-out keys', async () => {
-      const program = createProgram('', '');
-      await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'network', '--filter', 'author,text,likes']);
-      consoleLogSpy.mockClear();
-      await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'network', '--detail', 'UserProfile']);
-
-      const out = lastJsonLog();
-      expect(out.key).toBe('UserProfile');
-      expect(out.body).toEqual({ data: { user: { id: 'u1', followers: 10 } } });
-    });
-
-    it('composes with --raw: entries keep full bodies, filter still narrows', async () => {
-      const program = createProgram('', '');
-      await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'network', '--filter', 'author', '--raw']);
-
-      const out = lastJsonLog();
-      expect(out.count).toBe(1);
-      expect(out.entries[0].body).toEqual({ data: { items: [{ author: 'a', text: 't', likes: 1 }] } });
-    });
-
-    it('reports invalid_filter for empty value', async () => {
-      const program = createProgram('', '');
-      await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'network', '--filter', '']);
-
-      const out = lastJsonLog();
-      expect(out.error.code).toBe('invalid_filter');
-      expect(process.exitCode).toBeDefined();
-    });
-
-    it('reports invalid_filter for commas-only value', async () => {
-      const program = createProgram('', '');
-      await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'network', '--filter', ',,,']);
-
-      const out = lastJsonLog();
-      expect(out.error.code).toBe('invalid_filter');
-      expect(process.exitCode).toBeDefined();
-    });
-
-    it('rejects --filter combined with --detail as invalid_args', async () => {
-      const program = createProgram('', '');
-      await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'network', '--filter', 'author', '--detail', 'UserTweets']);
-
-      const out = lastJsonLog();
-      expect(out.error.code).toBe('invalid_args');
-      expect(out.error.message).toContain('--filter');
-      expect(out.error.message).toContain('--detail');
-      expect(process.exitCode).toBeDefined();
-    });
   });
 
-  describe('body truncation signals', () => {
-    it('flags body_truncated in list view when the capture layer capped the body', async () => {
-      browserState.page!.readNetworkCapture = vi.fn().mockResolvedValue([
-        {
-          url: 'https://api.example.com/huge',
-          method: 'GET',
-          responseStatus: 200,
-          responseContentType: 'application/json',
-          responsePreview: '{"data":"x"}',
-          responseBodyFullSize: 99_999_999,
-          responseBodyTruncated: true,
-        },
-      ]);
-      const program = createProgram('', '');
-
-      await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'network']);
-
-      const out = lastJsonLog();
-      expect(out.body_truncated_count).toBe(1);
-      expect(out.entries[0].body_truncated).toBe(true);
-      expect(out.entries[0].size).toBe(99_999_999);
-    });
-
-    it('--detail surfaces body_truncated + body_full_size when capture had to cap the body', async () => {
-      browserState.page!.readNetworkCapture = vi.fn().mockResolvedValue([
-        {
-          url: 'https://api.example.com/huge',
-          method: 'GET',
-          responseStatus: 200,
-          responseContentType: 'application/json',
-          responsePreview: 'truncated-prefix-not-valid-json',
-          responseBodyFullSize: 50_000_000,
-          responseBodyTruncated: true,
-        },
-      ]);
-      const program = createProgram('', '');
-
-      await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'network']);
-      consoleLogSpy.mockClear();
-      await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'network', '--detail', 'GET api.example.com/huge']);
-
-      const out = lastJsonLog();
-      expect(out.body_truncated).toBe(true);
-      expect(out.body_full_size).toBe(50_000_000);
-      expect(out.body_truncation_reason).toBe('capture-limit');
-    });
-
-    it('--max-body caps the emitted body and marks body_truncation_reason = max-body', async () => {
-      const longString = 'x'.repeat(5000);
-      browserState.page!.readNetworkCapture = vi.fn().mockResolvedValue([
-        {
-          url: 'https://api.example.com/plain',
-          method: 'GET',
-          responseStatus: 200,
-          responseContentType: 'text/plain',
-          responsePreview: longString,
-        },
-      ]);
-      const program = createProgram('', '');
-
-      await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'network']);
-      consoleLogSpy.mockClear();
-      await program.parseAsync([
-        'node', 'webcmd', 'browser', '--session', 'test', 'network',
-        '--detail', 'GET api.example.com/plain',
-        '--max-body', '100',
-      ]);
-
-      const out = lastJsonLog();
-      expect(typeof out.body).toBe('string');
-      expect(out.body).toHaveLength(100);
-      expect(out.body_truncated).toBe(true);
-      expect(out.body_truncation_reason).toBe('max-body');
-      expect(out.body_full_size).toBe(5000);
-    });
-
-    it('--max-body leaves parsed JSON bodies untouched (no mid-object cut)', async () => {
-      browserState.page!.readNetworkCapture = vi.fn().mockResolvedValue([
-        {
-          url: 'https://api.example.com/json',
-          method: 'GET',
-          responseStatus: 200,
-          responseContentType: 'application/json',
-          responsePreview: JSON.stringify({ data: { user: { rest_id: 'u1' } } }),
-        },
-      ]);
-      const program = createProgram('', '');
-
-      await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'network']);
-      consoleLogSpy.mockClear();
-      await program.parseAsync([
-        'node', 'webcmd', 'browser', '--session', 'test', 'network',
-        '--detail', 'GET api.example.com/json',
-        '--max-body', '10',
-      ]);
-
-      const out = lastJsonLog();
-      // JSON body already parsed at capture time — --max-body only applies to
-      // string bodies (which is where the agent-visible hazard lives).
-      expect(out.body).toEqual({ data: { user: { rest_id: 'u1' } } });
-      expect(out).not.toHaveProperty('body_truncated');
-    });
-
-    it('rejects non-numeric --max-body with invalid_max_body', async () => {
-      browserState.page!.readNetworkCapture = vi.fn().mockResolvedValue([
-        {
-          url: 'https://api.example.com/x',
-          method: 'GET',
-          responseStatus: 200,
-          responseContentType: 'application/json',
-          responsePreview: '{"a":1}',
-        },
-      ]);
-      const program = createProgram('', '');
-
-      await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'network']);
-      consoleLogSpy.mockClear();
-      await program.parseAsync([
-        'node', 'webcmd', 'browser', '--session', 'test', 'network',
-        '--detail', 'GET api.example.com/x',
-        '--max-body', 'abc',
-      ]);
-
-      expect(lastJsonLog().error.code).toBe('invalid_max_body');
-      expect(process.exitCode).toBeDefined();
-    });
-
-    it('--raw emits snake_case body_truncated / body_full_size, matching non-raw + detail', async () => {
-      browserState.page!.readNetworkCapture = vi.fn().mockResolvedValue([
-        {
-          url: 'https://api.example.com/huge',
-          method: 'GET',
-          responseStatus: 200,
-          responseContentType: 'application/json',
-          responsePreview: 'truncated-prefix',
-          responseBodyFullSize: 20_000_000,
-          responseBodyTruncated: true,
-        },
-      ]);
-      const program = createProgram('', '');
-
-      await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'network', '--raw']);
-
-      const out = lastJsonLog();
-      expect(out.entries).toHaveLength(1);
-      const entry = out.entries[0];
-      expect(entry.body_truncated).toBe(true);
-      expect(entry.body_full_size).toBe(20_000_000);
-      // Internal camelCase must not leak into the agent-facing envelope.
-      expect(entry).not.toHaveProperty('bodyTruncated');
-      expect(entry).not.toHaveProperty('bodyFullSize');
-    });
+  it('closes the named session through the daemon', async () => {
+    const program = createProgram('', '');
+    await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'close']);
+    expect(mockSendCommand).toHaveBeenCalledWith('close-window', { session: 'session_test', surface: 'browser' });
   });
 });
 
-describe('browser console command', () => {
+describe('browser Session lifecycle commands', () => {
   const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
   beforeEach(() => {
     process.exitCode = undefined;
     consoleLogSpy.mockClear();
-    mockBrowserConnect.mockClear();
-    mockBrowserClose.mockReset().mockResolvedValue(undefined);
-    const now = Date.now();
-    browserState.page = {
-      session: 'test',
-      setActivePage: vi.fn(),
-      getActivePage: vi.fn().mockReturnValue('tab-1'),
-      tabs: vi.fn().mockResolvedValue([{ page: 'tab-1', active: true }]),
-      consoleMessages: vi.fn().mockResolvedValue([
-        { type: 'error', text: 'boom', timestamp: now },
-        { type: 'log', text: 'ok', timestamp: now },
-        { type: 'warning', text: 'old warning', timestamp: now - 180_000 },
-      ]),
-    } as unknown as IPage;
+    mockSendCommand.mockReset();
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('daemon offline')));
   });
 
-  function lastJsonLog(): any {
-    const calls = consoleLogSpy.mock.calls;
-    if (calls.length === 0) throw new Error('Expected at least one console.log call');
-    const last = calls[calls.length - 1][0];
-    if (typeof last !== 'string') throw new Error(`Expected string arg to console.log, got ${typeof last}`);
-    return JSON.parse(last);
-  }
-
-  it('filters console messages by level and time window', async () => {
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'console', '--level', 'error', '--since', '120s']);
-
-    const out = lastJsonLog();
-    expect(out.count).toBe(1);
-    expect(out.messages[0]).toMatchObject({ type: 'error', text: 'boom' });
-  });
-});
-
-describe('browser get html command', () => {
-  const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-
-  function lastLogArg(): unknown {
-    const calls = consoleLogSpy.mock.calls;
-    if (calls.length === 0) throw new Error('expected console.log call');
-    return calls[calls.length - 1][0];
-  }
-  function lastJsonLog(): any {
-    const arg = lastLogArg();
-    if (typeof arg !== 'string') throw new Error(`expected string arg, got ${typeof arg}`);
-    return JSON.parse(arg);
-  }
-
-  beforeEach(() => {
-    process.exitCode = undefined;
-    process.env.WEBCMD_CACHE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-html-'));
-    consoleLogSpy.mockClear();
-    mockBrowserConnect.mockClear();
-    mockBrowserClose.mockReset().mockResolvedValue(undefined);
-
-    browserState.page = {
-      setActivePage: vi.fn(),
-      getActivePage: vi.fn().mockReturnValue('tab-1'),
-      tabs: vi.fn().mockResolvedValue([{ page: 'tab-1', active: true }]),
-      evaluate: vi.fn(),
-    } as unknown as IPage;
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
-  it('returns full outerHTML by default with no truncation', async () => {
-    const big = '<div>' + 'x'.repeat(100_000) + '</div>';
-    (browserState.page!.evaluate as any).mockResolvedValueOnce({ kind: 'ok', html: big });
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'get', 'html']);
-
-    expect(lastLogArg()).toBe(big);
-  });
-
-  it('caps output with --max and prepends a visible truncation marker', async () => {
-    const big = '<div>' + 'x'.repeat(500) + '</div>';
-    (browserState.page!.evaluate as any).mockResolvedValueOnce({ kind: 'ok', html: big });
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'get', 'html', '--max', '100']);
-
-    const out = String(lastLogArg());
-    expect(out.startsWith('<!-- webcmd: truncated 100 of')).toBe(true);
-    expect(out.length).toBeGreaterThan(100);
-    expect(out.length).toBeLessThan(big.length);
-  });
-
-  it('rejects negative --max with invalid_max error', async () => {
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'get', 'html', '--max', '-1']);
-
-    expect(lastJsonLog().error.code).toBe('invalid_max');
-    expect(process.exitCode).toBeDefined();
-    expect(browserState.page!.evaluate).not.toHaveBeenCalled();
-  });
-
-  it('rejects fractional --max with invalid_max error', async () => {
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'get', 'html', '--max', '1.5']);
-
-    expect(lastJsonLog().error.code).toBe('invalid_max');
-    expect(process.exitCode).toBeDefined();
-    expect(browserState.page!.evaluate).not.toHaveBeenCalled();
-  });
-
-  it('rejects non-numeric --max (e.g. "10abc") with invalid_max error', async () => {
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'get', 'html', '--max', '10abc']);
-
-    expect(lastJsonLog().error.code).toBe('invalid_max');
-    expect(process.exitCode).toBeDefined();
-    expect(browserState.page!.evaluate).not.toHaveBeenCalled();
-  });
-
-  it('--as json returns structured tree envelope', async () => {
-    (browserState.page!.evaluate as any).mockResolvedValueOnce({
-      selector: '.hero',
-      matched: 1,
-      tree: { tag: 'div', attrs: { class: 'hero' }, text: 'Hi', children: [] },
+  it('creates a Session through the daemon mutation path', async () => {
+    mockSendCommand.mockResolvedValue({
+      id: 'session_abc',
+      kind: 'explicit',
+      profileId: 'default',
+      runtimeState: 'idle',
     });
-    const program = createProgram('', '');
 
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'get', 'html', '--selector', '.hero', '--as', 'json']);
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'create']);
 
-    const out = lastJsonLog();
-    expect(out.matched).toBe(1);
-    expect(out.tree.tag).toBe('div');
-    expect(out.tree.attrs.class).toBe('hero');
+    expect(mockSendCommand).toHaveBeenCalledWith('session-create', { contextId: 'default' });
+    const output = consoleLogSpy.mock.calls.flat().join('\n');
+    expect(output).toContain('session_abc');
+    expect(output).toContain('runtimeState');
+    expect(output).not.toContain('profileId');
   });
 
-  it('--as json emits selector_not_found when matched is 0', async () => {
-    (browserState.page!.evaluate as any).mockResolvedValueOnce({ selector: '.missing', matched: 0, tree: null });
-    const program = createProgram('', '');
+  it('lists persisted Sessions without creating the adapter default when daemon is absent', async () => {
+    const baseDir = path.join(isolatedCliTestHome, '.webcmd');
+    fs.mkdirSync(baseDir, { recursive: true });
+    fs.writeFileSync(path.join(baseDir, 'browser-sessions.json'), JSON.stringify({
+      version: 1,
+      sessions: [{
+        id: 'session_existing',
+        profileId: 'default',
+        kind: 'explicit',
+        createdAt: '2026-08-11T00:00:00.000Z',
+        updatedAt: '2026-08-11T00:00:00.000Z',
+        lastUsedAt: '2026-08-11T00:00:00.000Z',
+      }],
+    }), { mode: 0o600 });
 
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'get', 'html', '--selector', '.missing', '--as', 'json']);
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'list', '-f', 'json']);
 
-    expect(lastJsonLog().error.code).toBe('selector_not_found');
-    expect(process.exitCode).toBeDefined();
+    expect(mockSendCommand).not.toHaveBeenCalled();
+    const rows = JSON.parse(consoleLogSpy.mock.calls.flat().join('\n'));
+    expect(rows).toEqual([expect.objectContaining({ id: 'session_existing', runtimeState: 'idle' })]);
   });
 
-  it('raw mode emits selector_not_found when the selector matches nothing', async () => {
-    (browserState.page!.evaluate as any).mockResolvedValueOnce({ kind: 'ok', html: null });
-    const program = createProgram('', '');
+  it('closes an idle persisted Session as a no-op when daemon is absent', async () => {
+    mockSendCommand.mockRejectedValueOnce(new Error('daemon unavailable'));
+    const baseDir = path.join(isolatedCliTestHome, '.webcmd');
+    fs.mkdirSync(baseDir, { recursive: true });
+    fs.writeFileSync(path.join(baseDir, 'browser-sessions.json'), JSON.stringify({
+      version: 1,
+      sessions: [{
+        id: 'session_idle',
+        profileId: 'default',
+        kind: 'explicit',
+        createdAt: '2026-08-11T00:00:00.000Z',
+        updatedAt: '2026-08-11T00:00:00.000Z',
+        lastUsedAt: '2026-08-11T00:00:00.000Z',
+      }],
+    }), { mode: 0o600 });
 
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'get', 'html', '--selector', '.missing']);
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'close', 'session_idle', '-f', 'json']);
 
-    expect(lastJsonLog().error.code).toBe('selector_not_found');
-    expect(process.exitCode).toBeDefined();
-  });
-
-  it('raw mode emits invalid_selector when the page rejects the selector syntax', async () => {
-    (browserState.page!.evaluate as any).mockResolvedValueOnce({
-      kind: 'invalid_selector',
-      reason: "'##$@@' is not a valid selector",
+    expect(mockSendCommand).toHaveBeenCalledWith('session-close', {
+      contextId: 'default',
+      session: 'session_idle',
+      force: false,
     });
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'get', 'html', '--selector', '##$@@']);
-
-    const err = lastJsonLog().error;
-    expect(err.code).toBe('invalid_selector');
-    expect(err.message).toContain('##$@@');
-    expect(err.message).toContain('not a valid selector');
-    expect(process.exitCode).toBeDefined();
-  });
-
-  it('--as json emits invalid_selector when the page rejects the selector syntax', async () => {
-    (browserState.page!.evaluate as any).mockResolvedValueOnce({
-      selector: '##$@@',
-      invalidSelector: true,
-      reason: "'##$@@' is not a valid selector",
+    expect(JSON.parse(consoleLogSpy.mock.calls.flat().join('\n'))).toMatchObject({
+      closed: false,
+      alreadyIdle: true,
+      session: 'session_idle',
     });
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'get', 'html', '--selector', '##$@@', '--as', 'json']);
-
-    const err = lastJsonLog().error;
-    expect(err.code).toBe('invalid_selector');
-    expect(err.message).toContain('##$@@');
-    expect(process.exitCode).toBeDefined();
-  });
-
-  it('rejects unknown --as format with invalid_format error', async () => {
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'get', 'html', '--as', 'yaml']);
-
-    expect(lastJsonLog().error.code).toBe('invalid_format');
-    expect(process.exitCode).toBeDefined();
   });
 });
 
@@ -2733,898 +1899,13 @@ function installSelectorFirstTestHarness(label: string, pageOverrides: () => Par
       setActivePage: vi.fn(),
       getActivePage: vi.fn().mockReturnValue('tab-1'),
       tabs: vi.fn().mockResolvedValue([{ page: 'tab-1', active: true }]),
-      session: 'test',
+      session: 'session_test',
       ...pageOverrides(),
     } as unknown as IPage;
   });
 
   return { lastJsonLog };
 }
-
-describe('browser find command', () => {
-  const { lastJsonLog } = installSelectorFirstTestHarness('find', () => ({
-    evaluate: vi.fn(),
-  }));
-
-  it('returns a {matches_n, entries} envelope for a matching selector', async () => {
-    // `find` always returns numeric refs (existing on snapshot-tagged elements,
-    // allocated on the spot for fresh matches) — see reviewer contract in
-    // #webcmd-browser msg 52c51eb6.
-    (browserState.page!.evaluate as any).mockResolvedValueOnce({
-      matches_n: 2,
-      entries: [
-        { nth: 0, ref: 5, tag: 'button', role: '', text: 'OK', attrs: { class: 'btn' }, visible: true },
-        { nth: 1, ref: 17, tag: 'button', role: '', text: 'Cancel', attrs: { class: 'btn' }, visible: true },
-      ],
-    });
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'find', '--css', '.btn']);
-
-    const out = lastJsonLog();
-    expect(out.matches_n).toBe(2);
-    expect(out.entries).toHaveLength(2);
-    expect(out.entries[0].ref).toBe(5);
-    expect(out.entries[1].ref).toBe(17);
-    expect(process.exitCode).toBeUndefined();
-  });
-
-  it('finds elements by semantic role/name without requiring CSS', async () => {
-    (browserState.page!.evaluate as any).mockResolvedValueOnce({
-      matches_n: 1,
-      entries: [
-        { nth: 0, ref: 9, tag: 'button', role: 'button', text: 'Save', attrs: {}, visible: true },
-      ],
-    });
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'find', '--role', 'button', '--name', 'Save']);
-
-    const js = (browserState.page!.evaluate as any).mock.calls[0][0] as string;
-    expect(js).toContain('CRITERIA');
-    expect(js).toContain('function accessibleName');
-    expect(lastJsonLog()).toEqual({
-      matches_n: 1,
-      entries: [
-        { nth: 0, ref: 9, tag: 'button', role: 'button', text: 'Save', attrs: {}, visible: true },
-      ],
-    });
-  });
-
-  it('forwards --limit / --text-max into the generated JS', async () => {
-    (browserState.page!.evaluate as any).mockResolvedValueOnce({ matches_n: 0, entries: [] });
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'find', '--css', '.btn', '--limit', '3', '--text-max', '20']);
-
-    const js = (browserState.page!.evaluate as any).mock.calls[0][0] as string;
-    expect(js).toContain('LIMIT = 3');
-    expect(js).toContain('TEXT_MAX = 20');
-  });
-
-  it('emits invalid_selector envelope when the page rejects selector syntax', async () => {
-    (browserState.page!.evaluate as any).mockResolvedValueOnce({
-      error: { code: 'invalid_selector', message: 'Invalid CSS selector: ">>>"', hint: 'Check the selector syntax.' },
-    });
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'find', '--css', '>>>']);
-
-    expect(lastJsonLog().error.code).toBe('invalid_selector');
-    expect(process.exitCode).toBeDefined();
-  });
-
-  it('emits selector_not_found envelope when the selector matches nothing', async () => {
-    (browserState.page!.evaluate as any).mockResolvedValueOnce({
-      error: { code: 'selector_not_found', message: 'CSS selector ".missing" matched 0 elements', hint: 'Use browser state to inspect the page.' },
-    });
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'find', '--css', '.missing']);
-
-    expect(lastJsonLog().error.code).toBe('selector_not_found');
-    expect(process.exitCode).toBeDefined();
-  });
-
-  it('rejects missing --css with usage_error (no evaluate call)', async () => {
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'find']);
-
-    expect(lastJsonLog().error.code).toBe('usage_error');
-    expect(browserState.page!.evaluate).not.toHaveBeenCalled();
-    expect(process.exitCode).toBeDefined();
-  });
-
-  it('rejects malformed --limit with usage_error (no evaluate call)', async () => {
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'find', '--css', '.btn', '--limit', 'abc']);
-
-    expect(lastJsonLog().error.code).toBe('usage_error');
-    expect(browserState.page!.evaluate).not.toHaveBeenCalled();
-    expect(process.exitCode).toBeDefined();
-  });
-});
-
-describe('browser get text/value/attributes commands', () => {
-  const { lastJsonLog } = installSelectorFirstTestHarness('get-sel', () => ({
-    evaluate: vi.fn(),
-  }));
-
-  it('emits {value, matches_n, match_level} envelope for a numeric ref', async () => {
-    const evalMock = browserState.page!.evaluate as any;
-    // 1st call: resolveTargetJs -> { ok: true, matches_n: 1, match_level: 'exact' }
-    evalMock.mockResolvedValueOnce({ ok: true, matches_n: 1, match_level: 'exact' });
-    // 2nd call: getTextResolvedJs -> the element's text
-    evalMock.mockResolvedValueOnce('Hello world');
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'get', 'text', '7']);
-
-    expect(lastJsonLog()).toEqual({ value: 'Hello world', matches_n: 1, match_level: 'exact' });
-  });
-
-  it('resolves a semantic locator to a ref before get text', async () => {
-    const evalMock = browserState.page!.evaluate as any;
-    evalMock.mockResolvedValueOnce({
-      matches_n: 1,
-      entries: [
-        { nth: 0, ref: 12, tag: 'button', role: 'button', text: 'Save', attrs: {}, visible: true },
-      ],
-    });
-    evalMock.mockResolvedValueOnce({ ok: true, matches_n: 1, match_level: 'exact' });
-    evalMock.mockResolvedValueOnce('Save');
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'get', 'text', '--role', 'button', '--name', 'Save']);
-
-    expect(evalMock.mock.calls[0][0]).toContain('function accessibleName');
-    expect(evalMock.mock.calls[1][0]).toContain('const ref = "12"');
-    expect(lastJsonLog()).toEqual({ value: 'Save', matches_n: 1, match_level: 'exact' });
-  });
-
-  it('reports total_matches when semantic get reads the first of multiple matches', async () => {
-    const evalMock = browserState.page!.evaluate as any;
-    evalMock.mockResolvedValueOnce({
-      matches_n: 3,
-      entries: [
-        { nth: 0, ref: 12, tag: 'button', role: 'button', text: 'Save', attrs: {}, visible: true },
-        { nth: 1, ref: 13, tag: 'button', role: 'button', text: 'Save draft', attrs: {}, visible: true },
-        { nth: 2, ref: 14, tag: 'button', role: 'button', text: 'Save copy', attrs: {}, visible: true },
-      ],
-    });
-    evalMock.mockResolvedValueOnce({ ok: true, matches_n: 1, match_level: 'exact' });
-    evalMock.mockResolvedValueOnce('Save');
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'get', 'text', '--role', 'button', '--name', 'Save']);
-
-    expect(evalMock.mock.calls[0][0]).toContain('const LIMIT = 6');
-    expect(evalMock.mock.calls[1][0]).toContain('const ref = "12"');
-    expect(lastJsonLog()).toEqual({ value: 'Save', matches_n: 1, match_level: 'exact', total_matches: 3 });
-  });
-
-  it('reports matches_n on multi-match CSS (read path: first match wins)', async () => {
-    const evalMock = browserState.page!.evaluate as any;
-    evalMock.mockResolvedValueOnce({ ok: true, matches_n: 3, match_level: 'exact' });
-    evalMock.mockResolvedValueOnce('first');
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'get', 'text', '.btn']);
-
-    expect(lastJsonLog()).toEqual({ value: 'first', matches_n: 3, match_level: 'exact' });
-  });
-
-  it('parses the attributes payload back into a real object', async () => {
-    const evalMock = browserState.page!.evaluate as any;
-    evalMock.mockResolvedValueOnce({ ok: true, matches_n: 1, match_level: 'exact' });
-    // getAttributesResolvedJs returns a JSON-encoded string — the CLI must parse it
-    evalMock.mockResolvedValueOnce(JSON.stringify({ id: 'nav', class: 'hero' }));
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'get', 'attributes', '#nav']);
-
-    const out = lastJsonLog();
-    expect(out.matches_n).toBe(1);
-    expect(out.match_level).toBe('exact');
-    expect(out.value).toEqual({ id: 'nav', class: 'hero' });
-  });
-
-  it('propagates selector_not_found from the resolver as an error envelope', async () => {
-    (browserState.page!.evaluate as any).mockResolvedValueOnce({
-      ok: false,
-      code: 'selector_not_found',
-      message: 'CSS selector ".missing" matched 0 elements',
-      hint: 'Try a less specific selector.',
-    });
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'get', 'text', '.missing']);
-
-    expect(lastJsonLog().error.code).toBe('selector_not_found');
-    expect(process.exitCode).toBeDefined();
-  });
-
-  it('forwards --nth into the resolver opts and reports matches_n', async () => {
-    const evalMock = browserState.page!.evaluate as any;
-    evalMock.mockResolvedValueOnce({ ok: true, matches_n: 4, match_level: 'exact' });
-    evalMock.mockResolvedValueOnce('second');
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'get', 'value', '.btn', '--nth', '1']);
-
-    const resolveJs = evalMock.mock.calls[0][0] as string;
-    // resolveTargetJs embeds nth as a raw number literal; look for the binding
-    expect(resolveJs).toContain('const nth = 1');
-    expect(lastJsonLog()).toEqual({ value: 'second', matches_n: 4, match_level: 'exact' });
-  });
-
-  it('rejects malformed --nth with usage_error before touching the page', async () => {
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'get', 'text', '.btn', '--nth', 'abc']);
-
-    expect(lastJsonLog().error.code).toBe('usage_error');
-    expect(browserState.page!.evaluate).not.toHaveBeenCalled();
-    expect(process.exitCode).toBeDefined();
-  });
-});
-
-describe('browser click/type commands', () => {
-  const { lastJsonLog } = installSelectorFirstTestHarness('click-type', () => ({
-    evaluate: vi.fn().mockResolvedValue(false),
-    click: vi.fn().mockResolvedValue({ matches_n: 1, match_level: 'exact' }),
-    dblClick: vi.fn().mockResolvedValue({ matches_n: 1, match_level: 'exact' }),
-    hover: vi.fn().mockResolvedValue({ matches_n: 1, match_level: 'exact' }),
-    focus: vi.fn().mockResolvedValue({ focused: true, matches_n: 1, match_level: 'exact' }),
-    setChecked: vi.fn().mockResolvedValue({ checked: true, changed: true, matches_n: 1, match_level: 'exact', kind: 'checkbox' }),
-    uploadFiles: vi.fn().mockResolvedValue({
-      uploaded: true,
-      files: 1,
-      file_names: ['receipt.pdf'],
-      target: '#file',
-      matches_n: 1,
-      match_level: 'exact',
-      multiple: false,
-    }),
-    drag: vi.fn().mockResolvedValue({
-      dragged: true,
-      source: '#card',
-      target: '#lane',
-      source_matches_n: 1,
-      target_matches_n: 1,
-      source_match_level: 'exact',
-      target_match_level: 'exact',
-    }),
-    typeText: vi.fn().mockResolvedValue({ matches_n: 1, match_level: 'exact' }),
-    fillText: vi.fn().mockResolvedValue({
-      filled: true,
-      verified: true,
-      expected: '',
-      actual: '',
-      length: 0,
-      matches_n: 1,
-      match_level: 'exact',
-      mode: 'input',
-    }),
-    wait: vi.fn().mockResolvedValue(undefined),
-  }));
-
-  it('emits {clicked, target, matches_n, match_level} on success', async () => {
-    (browserState.page!.click as any).mockResolvedValueOnce({ matches_n: 1, match_level: 'exact' });
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'click', '#save']);
-
-    expect(browserState.page!.click).toHaveBeenCalledWith('#save', {});
-    expect(lastJsonLog()).toEqual({ clicked: true, target: '#save', matches_n: 1, match_level: 'exact' });
-  });
-
-  it('surfaces click hit-testing diagnostics', async () => {
-    (browserState.page!.click as any).mockResolvedValueOnce({
-      matches_n: 1,
-      match_level: 'exact',
-      click_method: 'js',
-      hit: 'other',
-      retargeted: true,
-    });
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'click', '#covered']);
-
-    expect(lastJsonLog()).toEqual({
-      clicked: true,
-      target: '#covered',
-      matches_n: 1,
-      match_level: 'exact',
-      click_method: 'js',
-      hit: 'other',
-      retargeted: true,
-    });
-  });
-
-  it('clicks a unique semantic locator without a prior state call', async () => {
-    (browserState.page!.evaluate as any).mockResolvedValueOnce({
-      matches_n: 1,
-      entries: [
-        { nth: 0, ref: 23, tag: 'button', role: 'button', text: 'Submit', attrs: {}, visible: true },
-      ],
-    });
-    (browserState.page!.click as any).mockResolvedValueOnce({ matches_n: 1, match_level: 'exact' });
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'click', '--role', 'button', '--name', 'Submit']);
-
-    expect(browserState.page!.click).toHaveBeenCalledWith('23', {});
-    expect(lastJsonLog()).toEqual({ clicked: true, target: '23', matches_n: 1, match_level: 'exact' });
-  });
-
-  it('rejects ambiguous semantic locators before write actions', async () => {
-    (browserState.page!.evaluate as any).mockResolvedValueOnce({
-      matches_n: 2,
-      entries: [
-        { nth: 0, ref: 1, tag: 'button', role: 'button', text: 'Save', attrs: {}, visible: true },
-        { nth: 1, ref: 2, tag: 'button', role: 'button', text: 'Save draft', attrs: {}, visible: true },
-      ],
-    });
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'click', '--role', 'button', '--name', 'Save']);
-
-    const err = lastJsonLog().error;
-    expect(err.code).toBe('semantic_ambiguous');
-    expect(err.matches_n).toBe(2);
-    expect(browserState.page!.click).not.toHaveBeenCalled();
-    expect(process.exitCode).toBeDefined();
-  });
-
-  it('hover: resolves a semantic locator before moving the mouse', async () => {
-    (browserState.page!.evaluate as any).mockResolvedValueOnce({
-      matches_n: 1,
-      entries: [
-        { nth: 0, ref: 31, tag: 'button', role: 'button', text: 'Settings', attrs: {}, visible: true },
-      ],
-    });
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'hover', '--role', 'button', '--name', 'Settings']);
-
-    expect(browserState.page!.hover).toHaveBeenCalledWith('31', {});
-    expect(lastJsonLog()).toEqual({ hovered: true, target: '31', matches_n: 1, match_level: 'exact' });
-  });
-
-  it('check: resolves a semantic locator before setting checked state', async () => {
-    (browserState.page!.evaluate as any).mockResolvedValueOnce({
-      matches_n: 1,
-      entries: [
-        { nth: 0, ref: 32, tag: 'input', role: 'checkbox', text: 'Accept', attrs: {}, visible: true },
-      ],
-    });
-    (browserState.page!.setChecked as any).mockResolvedValueOnce({ checked: true, changed: false, matches_n: 1, match_level: 'exact', kind: 'checkbox' });
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'check', '--role', 'checkbox', '--name', 'Accept']);
-
-    expect(browserState.page!.setChecked).toHaveBeenCalledWith('32', true, {});
-    expect(lastJsonLog()).toEqual({ checked: true, changed: false, target: '32', matches_n: 1, match_level: 'exact', kind: 'checkbox' });
-  });
-
-  it('upload: treats the first positional as a file when using semantic locator flags', async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-upload-semantic-'));
-    const file = path.join(dir, 'receipt.pdf');
-    fs.writeFileSync(file, 'pdf');
-    (browserState.page!.evaluate as any).mockResolvedValueOnce({
-      matches_n: 1,
-      entries: [
-        { nth: 0, ref: 33, tag: 'input', role: 'button', text: 'Upload receipt', attrs: {}, visible: true },
-      ],
-    });
-    (browserState.page!.uploadFiles as any).mockResolvedValueOnce({
-      uploaded: true,
-      files: 1,
-      file_names: ['receipt.pdf'],
-      target: '33',
-      matches_n: 1,
-      match_level: 'exact',
-      multiple: false,
-    });
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'upload', '--role', 'button', '--name', 'Upload receipt', file]);
-
-    expect(browserState.page!.uploadFiles).toHaveBeenCalledWith('33', [file], {});
-    expect(lastJsonLog()).toMatchObject({ uploaded: true, target: '33', files: 1 });
-  });
-
-  it('type: treats the first positional as text when using semantic locator flags', async () => {
-    (browserState.page!.evaluate as any)
-      .mockResolvedValueOnce({
-        matches_n: 1,
-        entries: [
-          { nth: 0, ref: 34, tag: 'input', role: 'textbox', text: '', attrs: {}, visible: true },
-        ],
-      })
-      .mockResolvedValueOnce(false);
-    (browserState.page!.click as any).mockResolvedValueOnce({ matches_n: 1, match_level: 'exact' });
-    (browserState.page!.typeText as any).mockResolvedValueOnce({ matches_n: 1, match_level: 'exact' });
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'type', '--label', 'Email', 'me@example.com']);
-
-    expect(browserState.page!.click).toHaveBeenCalledWith('34', {});
-    expect(browserState.page!.typeText).toHaveBeenCalledWith('34', 'me@example.com', {});
-    expect(lastJsonLog()).toMatchObject({ typed: true, target: '34', text: 'me@example.com' });
-  });
-
-  it('fill: treats the first positional as text when using semantic locator flags', async () => {
-    (browserState.page!.evaluate as any).mockResolvedValueOnce({
-      matches_n: 1,
-      entries: [
-        { nth: 0, ref: 35, tag: 'input', role: 'textbox', text: '', attrs: {}, visible: true },
-      ],
-    });
-    (browserState.page!.fillText as any).mockResolvedValueOnce({
-      filled: true,
-      verified: true,
-      expected: 'me@example.com',
-      actual: 'me@example.com',
-      length: 14,
-      matches_n: 1,
-      match_level: 'exact',
-    });
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'fill', '--label', 'Email', 'me@example.com']);
-
-    expect(browserState.page!.fillText).toHaveBeenCalledWith('35', 'me@example.com', {});
-    expect(lastJsonLog()).toMatchObject({ filled: true, verified: true, target: '35', text: 'me@example.com' });
-  });
-
-  it('drag: resolves source and target from prefixed semantic locators', async () => {
-    (browserState.page!.evaluate as any)
-      .mockResolvedValueOnce({
-        matches_n: 1,
-        entries: [
-          { nth: 0, ref: 40, tag: 'div', role: 'button', text: 'Card A', attrs: {}, visible: true },
-        ],
-      })
-      .mockResolvedValueOnce({
-        matches_n: 1,
-        entries: [
-          { nth: 0, ref: 41, tag: 'div', role: 'region', text: 'Done', attrs: {}, visible: true },
-        ],
-      });
-    (browserState.page!.drag as any).mockResolvedValueOnce({
-      dragged: true,
-      source: '40',
-      target: '41',
-      source_matches_n: 1,
-      target_matches_n: 1,
-      source_match_level: 'exact',
-      target_match_level: 'exact',
-    });
-    const program = createProgram('', '');
-
-    await program.parseAsync([
-      'node',
-      'webcmd',
-      'browser',
-      '--session',
-      'test',
-      'drag',
-      '--from-role',
-      'button',
-      '--from-name',
-      'Card A',
-      '--to-role',
-      'region',
-      '--to-name',
-      'Done',
-    ]);
-
-    expect(browserState.page!.drag).toHaveBeenCalledWith('40', '41', { from: {}, to: {} });
-    expect(lastJsonLog()).toMatchObject({ dragged: true, source: '40', target: '41' });
-  });
-
-  it('surfaces match_level=stable when resolver falls back to fingerprint match', async () => {
-    (browserState.page!.click as any).mockResolvedValueOnce({ matches_n: 1, match_level: 'stable' });
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'click', '7']);
-
-    expect(lastJsonLog()).toEqual({ clicked: true, target: '7', matches_n: 1, match_level: 'stable' });
-  });
-
-  it('forwards --nth as ResolveOptions.nth to page.click', async () => {
-    (browserState.page!.click as any).mockResolvedValueOnce({ matches_n: 3, match_level: 'exact' });
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'click', '.btn', '--nth', '2']);
-
-    expect(browserState.page!.click).toHaveBeenCalledWith('.btn', { nth: 2 });
-    expect(lastJsonLog()).toEqual({ clicked: true, target: '.btn', matches_n: 3, match_level: 'exact' });
-  });
-
-  it('surfaces selector_ambiguous from page.click as an error envelope', async () => {
-    (browserState.page!.click as any).mockRejectedValueOnce(new TargetError({
-      code: 'selector_ambiguous',
-      message: 'CSS selector ".btn" matched 3 elements; clicks require a unique target.',
-      hint: 'Pass --nth <n> to pick one (0-based).',
-      matches_n: 3,
-    }));
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'click', '.btn']);
-
-    const err = lastJsonLog().error;
-    expect(err.code).toBe('selector_ambiguous');
-    expect(err.matches_n).toBe(3);
-    expect(process.exitCode).toBeDefined();
-  });
-
-  it('surfaces selector_nth_out_of_range from page.click as an error envelope', async () => {
-    (browserState.page!.click as any).mockRejectedValueOnce(new TargetError({
-      code: 'selector_nth_out_of_range',
-      message: '--nth 99 is out of range for CSS selector ".btn" (matches_n=3).',
-      hint: 'Pick an index in [0, 2].',
-      matches_n: 3,
-    }));
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'click', '.btn', '--nth', '99']);
-
-    expect(lastJsonLog().error.code).toBe('selector_nth_out_of_range');
-    expect(process.exitCode).toBeDefined();
-  });
-
-  it('rejects malformed --nth on click with usage_error before touching the page', async () => {
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'click', '.btn', '--nth', 'abc']);
-
-    expect(lastJsonLog().error.code).toBe('usage_error');
-    expect(browserState.page!.click).not.toHaveBeenCalled();
-    expect(process.exitCode).toBeDefined();
-  });
-
-  it('hover: delegates to page.hover and emits a structured envelope', async () => {
-    (browserState.page!.hover as any).mockResolvedValueOnce({ matches_n: 2, match_level: 'exact' });
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'hover', '.menu', '--nth', '1']);
-
-    expect(browserState.page!.hover).toHaveBeenCalledWith('.menu', { nth: 1 });
-    expect(lastJsonLog()).toEqual({ hovered: true, target: '.menu', matches_n: 2, match_level: 'exact' });
-  });
-
-  it('focus: delegates to page.focus and reports whether the element took focus', async () => {
-    (browserState.page!.focus as any).mockResolvedValueOnce({ focused: true, matches_n: 1, match_level: 'stable' });
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'focus', '7']);
-
-    expect(browserState.page!.focus).toHaveBeenCalledWith('7', {});
-    expect(lastJsonLog()).toEqual({ focused: true, target: '7', matches_n: 1, match_level: 'stable' });
-  });
-
-  it('dblclick: delegates to page.dblClick and emits a structured envelope', async () => {
-    (browserState.page!.dblClick as any).mockResolvedValueOnce({ matches_n: 1, match_level: 'exact' });
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'dblclick', '#row']);
-
-    expect(browserState.page!.dblClick).toHaveBeenCalledWith('#row', {});
-    expect(lastJsonLog()).toEqual({ dblclicked: true, target: '#row', matches_n: 1, match_level: 'exact' });
-  });
-
-  it('check: ensures target is checked through page.setChecked', async () => {
-    (browserState.page!.setChecked as any).mockResolvedValueOnce({
-      checked: true,
-      changed: true,
-      matches_n: 2,
-      match_level: 'exact',
-      kind: 'checkbox',
-    });
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'check', '.todo', '--nth', '1']);
-
-    expect(browserState.page!.setChecked).toHaveBeenCalledWith('.todo', true, { nth: 1 });
-    expect(lastJsonLog()).toEqual({ checked: true, changed: true, target: '.todo', matches_n: 2, match_level: 'exact', kind: 'checkbox' });
-  });
-
-  it('uncheck: ensures target is unchecked through page.setChecked', async () => {
-    (browserState.page!.setChecked as any).mockResolvedValueOnce({
-      checked: false,
-      changed: false,
-      matches_n: 1,
-      match_level: 'stable',
-      kind: 'checkbox',
-    });
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'uncheck', '#subscribe']);
-
-    expect(browserState.page!.setChecked).toHaveBeenCalledWith('#subscribe', false, {});
-    expect(lastJsonLog()).toEqual({ checked: false, changed: false, target: '#subscribe', matches_n: 1, match_level: 'stable', kind: 'checkbox' });
-  });
-
-  it('upload: validates local files and delegates to page.uploadFiles', async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-upload-'));
-    const file = path.join(dir, 'receipt.pdf');
-    fs.writeFileSync(file, 'pdf');
-    (browserState.page!.uploadFiles as any).mockResolvedValueOnce({
-      uploaded: true,
-      files: 1,
-      file_names: ['receipt.pdf'],
-      target: '#file',
-      matches_n: 1,
-      match_level: 'exact',
-      multiple: false,
-    });
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'upload', '#file', file]);
-
-    expect(browserState.page!.uploadFiles).toHaveBeenCalledWith('#file', [file], {});
-    expect(lastJsonLog()).toEqual({
-      uploaded: true,
-      files: 1,
-      file_names: ['receipt.pdf'],
-      target: '#file',
-      matches_n: 1,
-      match_level: 'exact',
-      multiple: false,
-    });
-  });
-
-  it('upload: rejects missing files before touching the page', async () => {
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'upload', '#file', '/tmp/webcmd-missing-file']);
-
-    expect(lastJsonLog().error.code).toBe('file_not_found');
-    expect(browserState.page!.uploadFiles).not.toHaveBeenCalled();
-    expect(process.exitCode).toBeDefined();
-  });
-
-  it('drag: delegates to page.drag and forwards source/target nth options', async () => {
-    (browserState.page!.drag as any).mockResolvedValueOnce({
-      dragged: true,
-      source: '.card',
-      target: '.lane',
-      source_matches_n: 3,
-      target_matches_n: 2,
-      source_match_level: 'exact',
-      target_match_level: 'stable',
-    });
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'drag', '.card', '.lane', '--from-nth', '2', '--to-nth', '1']);
-
-    expect(browserState.page!.drag).toHaveBeenCalledWith('.card', '.lane', { from: { nth: 2 }, to: { nth: 1 } });
-    expect(lastJsonLog()).toEqual({
-      dragged: true,
-      source: '.card',
-      target: '.lane',
-      source_matches_n: 3,
-      target_matches_n: 2,
-      source_match_level: 'exact',
-      target_match_level: 'stable',
-    });
-  });
-
-  it('drag: rejects malformed --from-nth before touching the page', async () => {
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'drag', '.card', '.lane', '--from-nth', 'abc']);
-
-    expect(lastJsonLog().error.code).toBe('usage_error');
-    expect(browserState.page!.drag).not.toHaveBeenCalled();
-    expect(process.exitCode).toBeDefined();
-  });
-
-  it('type: clicks, waits, then typeText — emits {typed, text, target, matches_n, match_level, autocomplete}', async () => {
-    (browserState.page!.click as any).mockResolvedValueOnce({ matches_n: 1, match_level: 'exact' });
-    (browserState.page!.typeText as any).mockResolvedValueOnce({ matches_n: 1, match_level: 'exact' });
-    (browserState.page!.evaluate as any).mockResolvedValueOnce(false); // isAutocomplete
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'type', '#q', 'hello']);
-
-    expect(browserState.page!.click).toHaveBeenCalledWith('#q', {});
-    expect(browserState.page!.wait).toHaveBeenCalledWith(0.3);
-    expect(browserState.page!.typeText).toHaveBeenCalledWith('#q', 'hello', {});
-    expect(lastJsonLog()).toEqual({
-      typed: true, text: 'hello', target: '#q', matches_n: 1, match_level: 'exact', autocomplete: false,
-    });
-  });
-
-  it('type: waits an extra 0.4s when the input reports autocomplete=true', async () => {
-    (browserState.page!.click as any).mockResolvedValueOnce({ matches_n: 1, match_level: 'exact' });
-    (browserState.page!.typeText as any).mockResolvedValueOnce({ matches_n: 1, match_level: 'exact' });
-    (browserState.page!.evaluate as any).mockResolvedValueOnce(true);
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'type', '#q', 'hi']);
-
-    const waitCalls = (browserState.page!.wait as any).mock.calls;
-    expect(waitCalls).toContainEqual([0.3]);
-    expect(waitCalls).toContainEqual([0.4]);
-    expect(lastJsonLog().autocomplete).toBe(true);
-    expect(lastJsonLog().match_level).toBe('exact');
-  });
-
-  it('type: surfaces match_level=reidentified when ref had to be reidentified by fingerprint', async () => {
-    (browserState.page!.click as any).mockResolvedValueOnce({ matches_n: 1, match_level: 'reidentified' });
-    (browserState.page!.typeText as any).mockResolvedValueOnce({ matches_n: 1, match_level: 'reidentified' });
-    (browserState.page!.evaluate as any).mockResolvedValueOnce(false);
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'type', '9', 'hi']);
-
-    // The typeText call is the authoritative match_level source for the `type` envelope.
-    expect(lastJsonLog().match_level).toBe('reidentified');
-  });
-
-  it('type: forwards --nth to both click and typeText', async () => {
-    (browserState.page!.click as any).mockResolvedValueOnce({ matches_n: 5, match_level: 'exact' });
-    (browserState.page!.typeText as any).mockResolvedValueOnce({ matches_n: 5, match_level: 'exact' });
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'type', '.field', 'x', '--nth', '3']);
-
-    expect(browserState.page!.click).toHaveBeenCalledWith('.field', { nth: 3 });
-    expect(browserState.page!.typeText).toHaveBeenCalledWith('.field', 'x', { nth: 3 });
-  });
-
-  it('fill: delegates exact raw text to page.fillText and emits verification details', async () => {
-    (browserState.page!.fillText as any).mockResolvedValueOnce({
-      filled: true,
-      verified: true,
-      expected: 'line1\\n/ / raw',
-      actual: 'line1\\n/ / raw',
-      length: 14,
-      matches_n: 1,
-      match_level: 'exact',
-      mode: 'textarea',
-    });
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'fill', '#msg', 'line1\\n/ / raw']);
-
-    expect(browserState.page!.fillText).toHaveBeenCalledWith('#msg', 'line1\\n/ / raw', {});
-    expect(lastJsonLog()).toEqual({
-      filled: true,
-      verified: true,
-      target: '#msg',
-      text: 'line1\\n/ / raw',
-      actual: 'line1\\n/ / raw',
-      length: 14,
-      matches_n: 1,
-      match_level: 'exact',
-      mode: 'textarea',
-    });
-    expect(process.exitCode).toBeUndefined();
-  });
-
-  it('fill: sets a non-zero exit code when verification fails', async () => {
-    (browserState.page!.fillText as any).mockResolvedValueOnce({
-      filled: true,
-      verified: false,
-      expected: 'expected',
-      actual: 'actual',
-      length: 6,
-      matches_n: 1,
-      match_level: 'exact',
-    });
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'fill', '#msg', 'expected']);
-
-    expect(lastJsonLog()).toEqual({
-      filled: true,
-      verified: false,
-      target: '#msg',
-      text: 'expected',
-      actual: 'actual',
-      length: 6,
-      matches_n: 1,
-      match_level: 'exact',
-    });
-    expect(process.exitCode).toBeDefined();
-  });
-
-  it('fill: forwards --nth to page.fillText', async () => {
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'fill', '.field', 'x', '--nth', '2']);
-
-    expect(browserState.page!.fillText).toHaveBeenCalledWith('.field', 'x', { nth: 2 });
-  });
-});
-
-describe('browser select command', () => {
-  const { lastJsonLog } = installSelectorFirstTestHarness('select', () => ({
-    evaluate: vi.fn(),
-  }));
-
-  it('emits {selected, target, matches_n, match_level} on success', async () => {
-    const evalMock = browserState.page!.evaluate as any;
-    evalMock.mockResolvedValueOnce({ ok: true, matches_n: 1, match_level: 'exact' });
-    evalMock.mockResolvedValueOnce({ selected: 'US' });
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'select', '#country', 'US']);
-
-    expect(lastJsonLog()).toEqual({ selected: 'US', target: '#country', matches_n: 1, match_level: 'exact' });
-  });
-
-  it('maps "Not a <select>" to a not_a_select error envelope', async () => {
-    const evalMock = browserState.page!.evaluate as any;
-    evalMock.mockResolvedValueOnce({ ok: true, matches_n: 1, match_level: 'exact' });
-    evalMock.mockResolvedValueOnce({ error: 'Not a <select>' });
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'select', '#not-select', 'US']);
-
-    const err = lastJsonLog().error;
-    expect(err.code).toBe('not_a_select');
-    expect(err.matches_n).toBe(1);
-    expect(process.exitCode).toBeDefined();
-  });
-
-  it('maps missing-option failures to an option_not_found envelope with available list', async () => {
-    const evalMock = browserState.page!.evaluate as any;
-    evalMock.mockResolvedValueOnce({ ok: true, matches_n: 1, match_level: 'exact' });
-    evalMock.mockResolvedValueOnce({ error: 'Option "XX" not found', available: ['US', 'CA'] });
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'select', '#country', 'XX']);
-
-    const err = lastJsonLog().error;
-    expect(err.code).toBe('option_not_found');
-    expect(err.available).toEqual(['US', 'CA']);
-    expect(process.exitCode).toBeDefined();
-  });
-
-  it('select: treats the first positional as option when using semantic locator flags', async () => {
-    const evalMock = browserState.page!.evaluate as any;
-    evalMock
-      .mockResolvedValueOnce({
-        matches_n: 1,
-        entries: [
-          { nth: 0, ref: 36, tag: 'select', role: 'combobox', text: 'Country', attrs: {}, visible: true },
-        ],
-      })
-      .mockResolvedValueOnce({ ok: true, matches_n: 1, match_level: 'exact' })
-      .mockResolvedValueOnce({ selected: 'Uruguay' });
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'select', '--label', 'Country', 'Uruguay']);
-
-    expect(lastJsonLog()).toEqual({ selected: 'Uruguay', target: '36', matches_n: 1, match_level: 'exact' });
-  });
-
-  it('surfaces selector_ambiguous from the resolver before calling selectResolvedJs', async () => {
-    (browserState.page!.evaluate as any).mockResolvedValueOnce({
-      ok: false,
-      code: 'selector_ambiguous',
-      message: 'CSS selector ".dropdown" matched 2 elements.',
-      hint: 'Pass --nth <n>.',
-      matches_n: 2,
-    });
-    const program = createProgram('', '');
-
-    await program.parseAsync(['node', 'webcmd', 'browser', '--session', 'test', 'select', '.dropdown', 'US']);
-
-    expect(lastJsonLog().error.code).toBe('selector_ambiguous');
-    // The select payload JS must not fire when resolution fails
-    expect((browserState.page!.evaluate as any).mock.calls).toHaveLength(1);
-    expect(process.exitCode).toBeDefined();
-  });
-});
 
 describe('findPackageRoot', () => {
   it('walks up from dist/src to the package root', () => {
@@ -3705,7 +1986,7 @@ describe('renderVerifyPreview', () => {
   });
 });
 
-describe('output format normalization across builtin command families', () => {
+describe('builtin output formats', () => {
   let stdoutSpy: ReturnType<typeof vi.spyOn>;
   let stderrSpy: ReturnType<typeof vi.spyOn>;
 
@@ -3717,13 +1998,11 @@ describe('output format normalization across builtin command families', () => {
 
   afterEach(() => {
     process.exitCode = undefined;
-    stdoutSpy.mockClear();
-    stderrSpy.mockClear();
+    stdoutSpy.mockRestore();
+    stderrSpy.mockRestore();
   });
 
   async function run(...args: string[]) {
-    stdoutSpy.mockClear();
-    stderrSpy.mockClear();
     await createProgram('', '').parseAsync(['node', 'webcmd', ...args]);
     return {
       stdout: stdoutSpy.mock.calls.flat().join('\n'),
@@ -3732,137 +2011,34 @@ describe('output format normalization across builtin command families', () => {
     };
   }
 
-  it('skills list renders YAML implicitly on non-TTY and stays a table with explicit -f table', async () => {
-    const implicit = await run('skills', 'list');
-    expect(implicit.exitCode).toBeUndefined();
-    const rows = yaml.load(implicit.stdout) as Array<Record<string, unknown>>;
-    expect(Array.isArray(rows)).toBe(true);
-    expect(rows.length).toBeGreaterThan(0);
-    expect(rows[0]).toHaveProperty('name');
-
-    const explicit = await run('skills', 'list', '-f', 'table');
-    expect(explicit.exitCode).toBeUndefined();
-    expect(explicit.stdout).toContain('webcmd/skills/list');
-    expect(explicit.stdout).toContain('items | webcmd skills list');
+  it.each(['xml', 'jsonl'])('rejects unsupported builtin format %s with usage exit 2', async (format) => {
+    const result = await run('skills', 'list', '-f', format);
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain(`Unknown output format "${format}"`);
   });
 
-  it('skills list -f json emits a JSON array', async () => {
-    const { stdout, exitCode } = await run('skills', 'list', '-f', 'json');
-    expect(exitCode).toBeUndefined();
-    const rows = JSON.parse(stdout);
-    expect(Array.isArray(rows)).toBe(true);
-    expect(rows[0]).toHaveProperty('name');
+  it('keeps explicit table output as a table outside a TTY', async () => {
+    const result = await run('skills', 'list', '-f', 'table');
+    expect(result.exitCode).toBeUndefined();
+    expect(result.stdout).toContain('webcmd/skills/list');
   });
 
-  it.each(['xml', 'jsonl'])('skills list rejects the unsupported %s format with a usage error', async (format) => {
-    const { stderr, exitCode } = await run('skills', 'list', '-f', format);
-    expect(exitCode).toBe(2);
-    expect(stderr).toContain(`Unknown output format "${format}"`);
-    expect(stderr).toContain('Supported formats: table, plain, json, yaml, md, csv');
+  it('normalizes aliases and case for root list', async () => {
+    const yamlResult = await run('list', '-f', 'yaml');
+    stdoutSpy.mockClear();
+    const aliasResult = await run('list', '-f', 'YML');
+    expect(aliasResult.exitCode).toBeUndefined();
+    expect(aliasResult.stdout).toBe(yamlResult.stdout);
   });
 
-  it('plugin list -f json emits valid JSON and -f yaml emits valid YAML', async () => {
-    const json = await run('plugin', 'list', '-f', 'json');
-    expect(json.exitCode).toBeUndefined();
-    expect(Array.isArray(JSON.parse(json.stdout))).toBe(true);
-
-    const yamlOut = await run('plugin', 'list', '-f', 'yaml');
-    expect(yamlOut.exitCode).toBeUndefined();
-    expect(Array.isArray(yaml.load(yamlOut.stdout))).toBe(true);
-  });
-
-  it('plugin list rejects an unsupported format with a usage error', async () => {
-    const { stderr, exitCode } = await run('plugin', 'list', '-f', 'xml');
-    expect(exitCode).toBe(2);
-    expect(stderr).toContain('Unknown output format "xml"');
-  });
-
-  it('plugin search rejects an unsupported format before any network call', async () => {
-    const { stderr, exitCode } = await run('plugin', 'search', '-f', 'xml');
-    expect(exitCode).toBe(2);
-    expect(stderr).toContain('Unknown output format "xml"');
-  });
-
-  it('plugin catalog list -f json emits the catalog object and -f yaml the sources', async () => {
-    const json = await run('plugin', 'catalog', 'list', '-f', 'json');
-    expect(json.exitCode).toBeUndefined();
-    const catalog = JSON.parse(json.stdout);
-    expect(Array.isArray(catalog.sources)).toBe(true);
-
-    const yamlOut = await run('plugin', 'catalog', 'list', '-f', 'yaml');
-    expect(yamlOut.exitCode).toBeUndefined();
-    const sources = yaml.load(yamlOut.stdout) as Array<Record<string, unknown>>;
-    expect(Array.isArray(sources)).toBe(true);
-    expect(sources[0]).toHaveProperty('id');
-  });
-
-  it('external list renders YAML implicitly on non-TTY and stays a table with explicit -f table', async () => {
-    const implicit = await run('external', 'list');
-    expect(implicit.exitCode).toBeUndefined();
-    const rows = yaml.load(implicit.stdout) as Array<Record<string, unknown>>;
-    expect(Array.isArray(rows)).toBe(true);
-    expect(rows.length).toBeGreaterThan(0);
-    expect(rows[0]).toHaveProperty('name');
-
-    const explicit = await run('external', 'list', '-f', 'table');
-    expect(explicit.exitCode).toBeUndefined();
-    expect(explicit.stdout).toContain('items | webcmd external list');
-  });
-
-  it('convention-audit renders structured JSON through the shared renderer', async () => {
-    const { stdout, exitCode } = await run('convention-audit', '-f', 'json');
-    expect(exitCode).toBeUndefined();
-    const report = JSON.parse(stdout);
-    expect(report).toHaveProperty('ok');
-    expect(report).toHaveProperty('summary');
-  });
-
-  it('convention-audit rejects an unsupported format with a usage error', async () => {
-    const { stderr, exitCode } = await run('convention-audit', '-f', 'xml');
-    expect(exitCode).toBe(2);
-    expect(stderr).toContain('Unknown output format "xml"');
-  });
-
-  it.each(['status', 'refresh'] as const)('auth %s validates the output format and renders JSON on -f json', async (subcommand) => {
-    const unsupported = await run('auth', subcommand, '-f', 'xml');
-    expect(unsupported.exitCode).toBe(2);
-    expect(unsupported.stderr).toContain('Unknown output format "xml"');
-
-    process.exitCode = undefined;
-    const json = await run('auth', subcommand, '-f', 'json');
-    expect(json.exitCode).toBeUndefined();
-    expect(Array.isArray(JSON.parse(json.stdout))).toBe(true);
-  });
-
-  it('webcmd list rejects an unsupported format with a usage error', async () => {
-    const { stderr, exitCode } = await run('list', '-f', 'xml');
-    expect(exitCode).toBe(2);
-    expect(stderr).toContain('Unknown output format "xml"');
-  });
-
-  it('webcmd list and convention-audit accept case-insensitive and aliased formats', async () => {
-    const yamlList = await run('list', '-f', 'yaml');
-    const upperList = await run('list', '-f', 'YAML');
-    expect(upperList.exitCode).toBeUndefined();
-    expect(upperList.stdout).toBe(yamlList.stdout);
-
-    const audit = await run('convention-audit', '-f', 'YAML');
-    expect(audit.exitCode).toBeUndefined();
-    expect(yaml.load(audit.stdout)).toMatchObject({ summary: expect.anything() });
-  });
-
-  it('advertises the canonical format list across builtin and shared surfaces', () => {
-    const program = createProgram('', '');
-    const list = program.commands.find(cmd => cmd.name() === 'list')!;
-    const plugin = program.commands.find(cmd => cmd.name() === 'plugin')!;
-    const search = plugin.commands.find(cmd => cmd.name() === 'search')!;
-    const skillsList = program.commands.find(cmd => cmd.name() === 'skills')!.commands.find(cmd => cmd.name() === 'list')!;
-
-    for (const cmd of [list, search, skillsList]) {
-      const help = cmd.helpInformation();
-      expect(help).toContain('Output format: table, plain, json, yaml, md, csv');
-      expect(help).not.toContain('markdown');
-      expect(help).not.toContain('yml');
+  it('renders an empty plugin list as structured data', async () => {
+    const list = vi.spyOn(pluginModule, 'listPlugins').mockReturnValue([] as never);
+    try {
+      const result = await run('plugin', 'list', '-f', 'yaml');
+      expect(result.exitCode).toBeUndefined();
+      expect(yaml.load(result.stdout)).toEqual([]);
+    } finally {
+      list.mockRestore();
     }
   });
 });

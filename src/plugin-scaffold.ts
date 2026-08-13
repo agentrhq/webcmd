@@ -141,8 +141,9 @@ ${opts.description ?? `A webcmd plugin: ${name}`}
 # From local development directory
 webcmd plugin install file://${targetDir}
 
-# From GitHub (after publishing)
-webcmd plugin install github:<user>/webcmd-plugin-${name}
+# From the catalog (after publishing)
+webcmd plugin search ${name} -f json
+webcmd plugin install <installSource-from-search>
 \`\`\`
 
 ## Commands

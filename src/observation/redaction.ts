@@ -12,7 +12,7 @@ const SENSITIVE_HEADER_NAMES = new Set([
 ]);
 
 const SENSITIVE_FIELD_PATTERN = /(password|passwd|pwd|token|secret|authorization|cookie|set-cookie|api[_-]?key|access[_-]?token|refresh[_-]?token|session[_-]?id|csrf|xsrf)/i;
-const SENSITIVE_URL_PARAMS = /([?&])(token|key|secret|password|auth|access_token|api_key|session_id|csrf|xsrf)=[^&]*/gi;
+const SENSITIVE_URL_PARAMS = /(\?|&(?:amp;)?)(token|key|secret|password|auth|access_token|api_key|session_id|csrf|xsrf)=[^&"'\s<>]*/gi;
 
 export interface RedactionOptions {
   allowlist?: string[];
@@ -23,7 +23,9 @@ export interface RedactionOptions {
 }
 
 export function redactUrl(url: string): string {
-  return url.replace(SENSITIVE_URL_PARAMS, '$1$2=[REDACTED]');
+  return url
+    .replace(/(https?:\/\/)[^/\s@]+@/gi, '$1[REDACTED]@')
+    .replace(SENSITIVE_URL_PARAMS, '$1$2=[REDACTED]');
 }
 
 export function redactHeaders(headers: Record<string, unknown> | undefined, opts: RedactionOptions = {}): Record<string, unknown> | undefined {

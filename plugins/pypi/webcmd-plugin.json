@@ -1,7 +1,7 @@
 {
   "name": "pypi",
   "version": "0.1.0",
-  "description": "Inspect public Python package metadata and releases from PyPI",
+  "description": "Inspect public Python package metadata, downloads, and releases from PyPI",
   "webcmd": ">=0.2.0",
   "author": {
     "name": "Kemal Kaya",

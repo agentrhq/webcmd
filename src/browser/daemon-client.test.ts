@@ -2,8 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   BrowserCommandError,
+  cancelDaemonRun,
   fetchDaemonStatus,
   getDaemonHealth,
+  listExistingBrowserTabs,
   releaseSiteSessionLease,
   requestDaemonShutdown,
   sendCommand,
@@ -58,6 +60,22 @@ describe('daemon-client', () => {
     vi.mocked(fetch).mockRejectedValue(new Error('ECONNREFUSED'));
 
     await expect(fetchDaemonStatus()).resolves.toBeNull();
+  });
+
+  it('lists existing tabs directly and returns empty without a runtime', async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ runtimeConnected: false }) } as Response);
+    await expect(listExistingBrowserTabs('work')).resolves.toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    fetchMock.mockReset()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ runtimeConnected: true }) } as Response)
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: 'tabs', ok: true, data: [{ page: 'page-1' }] }) } as Response);
+    await expect(listExistingBrowserTabs('work')).resolves.toEqual([{ page: 'page-1' }]);
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+      method: 'POST',
+      body: expect.stringContaining('"action":"tabs"'),
+    });
   });
 
   it('requestDaemonShutdown POSTs to the shared shutdown endpoint', async () => {
@@ -188,7 +206,6 @@ describe('daemon-client', () => {
     setDaemonRunContext({
       runId: 'run_4242_1000_1',
       command: 'example write',
-      access: 'write',
     });
     vi.mocked(fetch).mockResolvedValue({
       status: 200,
@@ -201,7 +218,6 @@ describe('daemon-client', () => {
     expect(body).toMatchObject({
       runId: 'run_4242_1000_1',
       command: 'example write',
-      access: 'write',
       pid: process.pid,
     });
   });
@@ -288,6 +304,8 @@ describe('daemon-client', () => {
         holder: {
           command: 'other write',
           pid: 4242,
+          sessionId: 'session_a',
+          admissionSite: 'github',
           acquiredAt: 1_000,
           heartbeatAt: 2_000,
         },
@@ -298,6 +316,29 @@ describe('daemon-client', () => {
       name: 'SessionBusyError',
       code: 'SESSION_BUSY',
       message: expect.stringContaining('other write'),
+      hint: expect.stringContaining('session_a'),
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('maps local handoff pauses to an auth-required BrowserCommandError', async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      json: () => Promise.resolve({
+        id: 'cmd',
+        ok: false,
+        errorCode: 'SESSION_PAUSED_FOR_HUMAN_HANDOFF',
+        error: 'Session session_a is paused while a human completes github authentication.',
+        details: { sessionId: 'session_a', site: 'github' },
+      }),
+    } as Response);
+
+    await expect(sendCommand('exec', { code: '1' })).rejects.toMatchObject({
+      name: 'BrowserCommandError',
+      code: 'SESSION_PAUSED_FOR_HUMAN_HANDOFF',
+      exitCode: 77,
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
@@ -306,7 +347,6 @@ describe('daemon-client', () => {
     setDaemonRunContext({
       runId: 'run_9999_newer_2',
       command: 'newer write',
-      access: 'write',
     });
     const ensureSpy = vi.spyOn(daemonLifecycle, 'ensureBrowserBridgeReady');
     vi.mocked(fetch).mockRejectedValueOnce(new TypeError('fetch failed'));
@@ -347,6 +387,30 @@ describe('daemon-client', () => {
     }
   });
 
+  it('cancelDaemonRun makes one best-effort POST without inheriting active run metadata', async () => {
+    setDaemonRunContext({
+      runId: 'run_9999_newer_2',
+      command: 'newer write',
+    });
+    const ensureSpy = vi.spyOn(daemonLifecycle, 'ensureBrowserBridgeReady');
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ id: 'cancel', ok: true, data: { released: 1 } }),
+    } as Response);
+
+    await expect(cancelDaemonRun('run_4242_1000_1')).resolves.toBeUndefined();
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(ensureSpy).not.toHaveBeenCalled();
+    const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body));
+    expect(body).toMatchObject({
+      action: 'run-cancel',
+      runId: 'run_4242_1000_1',
+    });
+    expect(body.command).toBeUndefined();
+    expect(body.pid).toBeUndefined();
+  });
+
   it('sendCommand does not retry command_result_unknown even when the message looks transient', async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockResolvedValue({
@@ -367,6 +431,26 @@ describe('daemon-client', () => {
       hint: 'Inspect state before retrying.',
     } satisfies Partial<BrowserCommandError>);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves structured daemon failure details', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: false,
+      status: 408,
+      json: () => Promise.resolve({
+        id: 'server',
+        ok: false,
+        errorCode: 'BROWSER_RUN_TIMEOUT',
+        error: 'Timed out',
+        details: { logs: [{ level: 'warn', args: ['started'] }] },
+      }),
+    } as Response);
+
+    await expect(sendCommand('run', { source: 'await page.waitForEvent("popup");' }))
+      .rejects.toMatchObject({
+        code: 'BROWSER_RUN_TIMEOUT',
+        details: { logs: [{ level: 'warn', args: ['started'] }] },
+      });
   });
 
   it('sendCommand runs full bridge ensure on a pre-dispatch failure, then resends with the same id', async () => {

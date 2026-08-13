@@ -3,14 +3,16 @@ import { Strategy } from '../registry.js';
 
 export type HostedAvailability =
   | { mode: 'hosted' }
-  | { mode: 'local-only'; reason: 'desktop-app' | 'local-tool' | 'browser-bind' };
+  | { mode: 'local-only'; reason: 'client-owned' | 'desktop-app' | 'local-tool' | 'browser-bind' };
 
 export interface HostedAvailabilityMetadata {
+  clientOwned?: boolean;
   strategy?: Strategy | string;
   domain?: string;
 }
 
 export function deriveHostedAvailability(command: HostedAvailabilityMetadata): HostedAvailability {
+  if (command.clientOwned) return { mode: 'local-only', reason: 'client-owned' };
   if (String(command.strategy).toLowerCase() === Strategy.LOCAL) {
     return { mode: 'local-only', reason: 'local-tool' };
   }
@@ -21,7 +23,6 @@ export function deriveHostedAvailability(command: HostedAvailabilityMetadata): H
 }
 
 export function deriveBrowserAvailability(command: string): HostedAvailability {
-  return command === 'bind'
-    ? { mode: 'local-only', reason: 'browser-bind' }
-    : { mode: 'hosted' };
+  void command;
+  return { mode: 'hosted' };
 }

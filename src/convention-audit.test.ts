@@ -113,6 +113,23 @@ describe('convention audit', () => {
     expect(runConventionAudit({ projectRoot: root, target: 'missing' }).summary.commands).toBe(0);
   });
 
+  it('includes plugin inventory entries and resolves plugin source paths', () => {
+    const root = makeProject([], {});
+    const pluginFile = path.join(root, 'plugins', 'demo', 'search.js');
+    fs.mkdirSync(path.dirname(pluginFile), { recursive: true });
+    fs.writeFileSync(pluginFile, 'export function run() { rows.push({ id: 1, hidden: true }); }');
+    fs.writeFileSync(path.join(root, 'plugin-command-manifest.json'), JSON.stringify([{
+      site: 'demo', name: 'search', access: 'read', columns: ['id'], sourceFile: 'plugins/demo/search.js',
+    }]));
+
+    const report = runConventionAudit({ projectRoot: root });
+
+    expect(report.summary).toMatchObject({ commands: 1, files_scanned: 1 });
+    expect(report.categories.find(item => item.rule === 'silent-column-drop')!.violations[0]).toMatchObject({
+      command: 'demo/search', file: 'plugins/demo/search.js',
+    });
+  });
+
   it('renders a compact text report', () => {
     const root = makeProject([
       { site: 'demo', name: 'search', access: 'read', columns: ['id'], sourceFile: 'demo/search.js' },

@@ -7,8 +7,41 @@ import { runCli } from './helpers.js';
 
 let server: http.Server;
 let baseUrl = '';
+const sourceDirs: string[] = [];
+let sharedConfigDir = '';
+let sharedProfile = '';
+
+function isolatedOptions(options: Parameters<typeof runCli>[1] = {}): Parameters<typeof runCli>[1] {
+  return {
+    ...options,
+    env: {
+      HOME: path.join(sharedConfigDir, 'home'),
+      USERPROFILE: path.join(sharedConfigDir, 'home'),
+      WEBCMD_CONFIG_DIR: sharedConfigDir,
+      WEBCMD_PROFILE: sharedProfile,
+      ...options.env,
+    },
+  };
+}
+
+function browserRun(session: string, source: string, options: Parameters<typeof runCli>[1] = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-cloak-run-'));
+  sourceDirs.push(dir);
+  const sourcePath = path.join(dir, 'program.js');
+  fs.writeFileSync(sourcePath, source);
+  return runCli(['--session', session, 'browser', 'run', '--file', sourcePath], isolatedOptions(options));
+}
+
+async function createSession(options: Parameters<typeof runCli>[1] = {}) {
+  const result = await runCli(['session', 'create', '-f', 'json'], isolatedOptions(options));
+  expect(result.code).toBe(0);
+  return JSON.parse(result.stdout).id as string;
+}
 
 beforeAll(async () => {
+  sharedConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-cloak-suite-'));
+  sharedProfile = `cloak-suite-${Date.now()}`;
+  sourceDirs.push(sharedConfigDir);
   server = http.createServer((req, res) => {
     if (req.url === '/cookie') {
       res.setHeader('Set-Cookie', 'webcmd_smoke=ok; Path=/');
@@ -44,29 +77,31 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
+  for (const dir of sourceDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
 
 describe('Cloak runtime e2e', () => {
-  it('opens a page and evaluates JavaScript through webcmd browser', async () => {
-    const session = `cloak-smoke-${Date.now()}`;
-    const open = await runCli(['browser', session, 'open', baseUrl], { timeout: 120_000 });
-    expect(open.code).toBe(0);
-
-    const evalResult = await runCli(['browser', session, 'eval', 'document.title + ":" + window.answer'], { timeout: 120_000 });
-    expect(evalResult.code).toBe(0);
-    expect(evalResult.stdout).toContain('Cloak Smoke:42');
+  it('runs Playwright against a page through webcmd browser', async () => {
+    const session = await createSession({ timeout: 120_000 });
+    const result = await browserRun(session, `
+      await page.goto(${JSON.stringify(baseUrl)});
+      return await page.evaluate(() => document.title + ':' + window.answer);
+    `, { timeout: 120_000 });
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('Cloak Smoke:42');
   }, 180_000);
 
   it('persists cookies inside the Cloak profile', async () => {
-    const session = `cloak-cookie-${Date.now()}`;
-    expect((await runCli(['browser', session, 'open', `${baseUrl}/cookie`], { timeout: 120_000 })).code).toBe(0);
-    const cookies = await runCli(['browser', session, 'eval', 'document.cookie'], { timeout: 120_000 });
+    const session = await createSession({ timeout: 120_000 });
+    const cookies = await browserRun(session, `
+      await page.goto(${JSON.stringify(`${baseUrl}/cookie`)});
+      return await page.evaluate(() => document.cookie);
+    `, { timeout: 120_000 });
     expect(cookies.code).toBe(0);
     expect(cookies.stdout).toContain('webcmd_smoke=ok');
   }, 180_000);
 
   it('survives sequential open and evaluate cycles in one persistent profile', async () => {
-    const session = `cloak-sequential-${Date.now()}`;
     const profile = `task5-${Date.now()}`;
     const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-cloak-sequential-'));
     const run = (args: string[]) => runCli(args, {
@@ -92,18 +127,31 @@ describe('Cloak runtime e2e', () => {
       expect((await waitForStoppedDaemon()).stdout).toContain('Daemon: not running');
 
       try {
-        expect((await run(['browser', session, 'open', `${baseUrl}/cookie`])).code).toBe(0);
+        const session = await createSession({
+          timeout: 120_000,
+          env: { WEBCMD_CONFIG_DIR: configDir, WEBCMD_PROFILE: profile },
+        });
+        expect((await browserRun(session, `await page.goto(${JSON.stringify(`${baseUrl}/cookie`)}); return null;`, {
+          timeout: 120_000,
+          env: { WEBCMD_CONFIG_DIR: configDir, WEBCMD_PROFILE: profile },
+        })).code).toBe(0);
 
         for (let index = 0; index < 3; index += 1) {
-          const open = await run(['browser', session, 'open', `${baseUrl}/counter?index=${index}`]);
-          expect(open.code).toBe(0);
-
-          const evaluated = await run(['browser', session, 'eval', 'document.body.dataset.index']);
+          const evaluated = await browserRun(session, `
+            await page.goto(${JSON.stringify(`${baseUrl}/counter?index=${index}`)});
+            return await page.locator('body').getAttribute('data-index');
+          `, {
+            timeout: 120_000,
+            env: { WEBCMD_CONFIG_DIR: configDir, WEBCMD_PROFILE: profile },
+          });
           expect(evaluated.code).toBe(0);
-          expect(evaluated.stdout.trim()).toBe(String(index));
+          expect(evaluated.stdout).toContain(`"result": "${index}"`);
         }
 
-        const cookies = await run(['browser', session, 'eval', 'document.cookie']);
+        const cookies = await browserRun(session, 'return await page.evaluate(() => document.cookie);', {
+          timeout: 120_000,
+          env: { WEBCMD_CONFIG_DIR: configDir, WEBCMD_PROFILE: profile },
+        });
         expect(cookies.code).toBe(0);
         expect(cookies.stdout).toContain('webcmd_smoke=ok');
 

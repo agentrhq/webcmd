@@ -12,12 +12,12 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { type InternalCliCommand, Strategy, registerCommand } from './registry.js';
+import { type InternalCliCommand, Strategy, registerCommand, runWithDiscoverySource } from './registry.js';
 import { getErrorMessage } from './errors.js';
 import { log } from './logger.js';
 import type { ManifestEntry } from './manifest-types.js';
 import { findPackageRoot, getCliManifestPath } from './package-paths.js';
-import { CONFIG_DIR_NAME, PACKAGE_NAME, PRODUCT_NAME } from './brand.js';
+import { CLI_COMMAND, CONFIG_DIR_NAME, PACKAGE_NAME, PRODUCT_NAME } from './brand.js';
 
 /** User runtime directory: ~/.webcmd */
 export function getUserWebcmdDir(homeDir: string = os.homedir()): string {
@@ -161,9 +161,8 @@ export async function ensureUserCliCompatShims(baseDir: string = USER_WEBCMD_DIR
 /**
  * Ensure the user adapters directory exists.
  *
- * With smart sync, ~/.webcmd/clis/ only holds files that differ from the
- * package baseline (upstream-synced cache + autofix output + user overrides).
- * Built-in adapters are loaded directly from the installed package.
+ * This legacy directory remains available for private adapters and autofix
+ * output. Official adapters are installed as plugins instead.
  */
 export async function ensureUserAdapters(): Promise<void> {
   await fs.promises.mkdir(USER_CLIS_DIR, { recursive: true });
@@ -198,6 +197,7 @@ async function loadFromManifest(manifestPath: string, clisDir: string): Promise<
     const manifest = JSON.parse(raw) as ManifestEntry[];
     for (const entry of manifest) {
       if (!entry.modulePath) continue;
+      if ([entry.modulePath, entry.sourceFile].some(candidate => candidate && isUnderBaseDir(clisDir, candidate))) continue;
       const modulePath = path.resolve(clisDir, entry.modulePath);
       const cmd: InternalCliCommand = {
         site: entry.site,
@@ -232,6 +232,11 @@ async function loadFromManifest(manifestPath: string, clisDir: string): Promise<
   }
 }
 
+function isUnderBaseDir(clisDir: string, candidate: string): boolean {
+  const relative = path.relative(path.resolve(clisDir, '.base'), path.resolve(clisDir, candidate));
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
 /**
  * Fallback: traditional filesystem scan (used during development with tsx).
  */
@@ -240,7 +245,7 @@ async function discoverClisFromFs(dir: string): Promise<void> {
   const entries = await fs.promises.readdir(dir, { withFileTypes: true });
   
   const sitePromises = entries
-    .filter(entry => entry.isDirectory())
+    .filter(entry => entry.isDirectory() && entry.name !== '.base')
     .map(async (entry) => {
       const site = entry.name;
       const siteDir = path.join(dir, site);
@@ -256,7 +261,7 @@ async function discoverClisFromFs(dir: string): Promise<void> {
         }
         if (file.endsWith('.js') && !file.endsWith('.d.js') && !file.endsWith('.test.js')) {
           if (!(await isCliModule(filePath))) return;
-          await import(pathToFileURL(filePath).href).catch((err) => {
+          await runWithDiscoverySource(filePath, () => import(pathToFileURL(filePath).href)).catch((err) => {
             log.warn(`Failed to load module ${filePath}: ${getErrorMessage(err)}`);
           });
         }
@@ -270,14 +275,22 @@ async function discoverClisFromFs(dir: string): Promise<void> {
  * Each subdirectory is treated as a plugin (site = directory name).
  * Files inside are scanned flat (no nested site subdirs).
  */
-export async function discoverPlugins(): Promise<void> {
-  try { await fs.promises.access(PLUGINS_DIR); } catch { return; }
-  const entries = await fs.promises.readdir(PLUGINS_DIR, { withFileTypes: true });
+export async function discoverPlugins(pluginsDir: string = PLUGINS_DIR): Promise<void> {
+  try { await fs.promises.access(pluginsDir); } catch { return; }
+  const entries = await fs.promises.readdir(pluginsDir, { withFileTypes: true });
   await Promise.all(entries.map(async (entry) => {
-    const pluginDir = path.join(PLUGINS_DIR, entry.name);
+    const pluginDir = path.join(pluginsDir, entry.name);
     if (!(await isDiscoverablePluginDir(entry, pluginDir))) return;
     await discoverPluginDir(pluginDir, entry.name);
   }));
+}
+
+export function missingPluginGuidance(site: string): string {
+  return [
+    `Site "${site}" is not installed.`,
+    `Search: ${CLI_COMMAND} plugin search ${site}`,
+    'Install using the installSource returned by search.',
+  ].join('\n');
 }
 
 /**
@@ -294,7 +307,7 @@ async function discoverPluginDir(dir: string, site: string): Promise<void> {
     }
     if (file.endsWith('.js') && !file.endsWith('.d.js')) {
       if (!(await isCliModule(filePath))) return;
-      await import(pathToFileURL(filePath).href).catch((err) => {
+      await runWithDiscoverySource(filePath, () => import(pathToFileURL(filePath).href)).catch((err) => {
         log.warn(`Plugin ${site}/${file}: ${getErrorMessage(err)}`);
       });
     } else if (

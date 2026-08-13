@@ -5,9 +5,6 @@
   <a href="https://www.npmjs.com/package/@agentrhq/webcmd">
     <img alt="NPM version" src="https://img.shields.io/npm/v/@agentrhq/webcmd.svg?style=for-the-badge&color=1E88E5&labelColor=000000">
   </a>
-  <a href="https://www.npmjs.com/package/@agentrhq/webcmd">
-    <img alt="NPM downloads" src="https://img.shields.io/npm/dt/@agentrhq/webcmd.svg?style=for-the-badge&color=1E88E5&labelColor=000000">
-  </a>
   <a href="https://webcmd.dev/docs">
     <img alt="Documentation" src="https://img.shields.io/badge/docs-webcmd.dev-7C3AED.svg?style=for-the-badge&labelColor=000000">
   </a>
@@ -26,16 +23,32 @@
 
 **Self-learning browser infra for AI agents.**
 
-WebCMD learns the navigational context of websites as agents use them, then compiles that knowledge into deterministic commands for faster, cheaper, more reliable browser automation. The goal is simple: stop making agents rediscover the same sites on every run and cut browser-agent token spend by up to 90%.
+Webcmd learns the navigational context of websites as agents use them, then compiles that knowledge into deterministic commands for faster, cheaper, more reliable browser automation. The goal is simple: stop making agents rediscover the same sites on every run and cut browser-agent token spend by up to 90%.
 
-On top of live browser control, WebCMD adds 3 layers of learnings. Each layer collapses cost and variance for the layer above it.
+On top of live browser control, Webcmd adds 3 layers of learnings. Each layer collapses cost and variance for the layer above it.
 
 | Layer | Scenario | What Webcmd Helps With |
 | --- | --- | --- |
-| 1. Live browser control | The site is unfamiliar. | Use `webcmd browser` to inspect, click, type, extract, capture network calls, and complete the task in a real browser. |
-| 2. Sitemap memory | The site is familiar, but the action space is not fully known. | Capture an agent-facing sitemap of observed pages, states, actions, workflows, APIs, pitfalls, and fallback paths. |
-| 3. CLI authoring | The action space is known, but the path is still too variable for one fixed sequence. | Explicitly author a reusable `webcmd <site>` adapter with structured output, so future agents spend tokens on the task instead of navigation. |
-| 4. Extend existing CLIs | The workflow is deterministic enough to stop browsing. | Extend the `webcmd <site>` adapter with a tailored command so the workflow runs instantly with the least amount of tokens. |
+| 0. Live browser control | The site is unfamiliar. | Use `webcmd browser` to inspect, click, type, extract, capture network calls, and complete the task in a real browser. |
+| 1. Sitemap memory | The site is familiar, but the action space is not fully known. | Capture an agent-facing sitemap of observed pages, states, actions, workflows, APIs, pitfalls, and fallback paths. |
+| 2. CLI authoring | The action space is known, but the path is still too variable for one fixed sequence. | Explicitly author a reusable `webcmd <site>` adapter with structured output, so future agents spend tokens on the task instead of navigation. |
+| 3. Extend existing CLIs | The workflow is deterministic enough to stop browsing. | Extend the `webcmd <site>` adapter with a tailored command so the workflow runs instantly with the least amount of tokens. |
+
+For local, multi-step browser exploration, agents can send one sandboxed
+Playwright-style program to an explicit browser session:
+
+```bash
+webcmd session create -f json
+webcmd --session session_abc browser run --file explore.js
+printf 'return await page.title();' \
+  | webcmd --session session_abc browser run --stdin
+webcmd session close session_abc
+```
+
+Profiles are cookie jars; Sessions are independent browser windows within a
+profile, so parallel agents should create separate Sessions. Adapter commands
+use an adapter-default Session unless `--session` intentionally routes them to
+an explicit one.
 
 ## Demo
 
@@ -43,22 +56,27 @@ https://github.com/user-attachments/assets/04eceadc-d398-4303-984d-ae3197bfa664
 
 ## Quick Start
 
-### Codex
+### Agent prompt
 
-In Codex, open **Plugins**, choose **Add plugin marketplace**, and enter either
-`agentrhq/webcmd` or `https://github.com/agentrhq/webcmd`. Install **Webcmd**
-from that marketplace, then start a new task. On first use, the plugin installs
-the npm CLI automatically if `webcmd` is missing.
+```text
+Fetch and follow https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md to set up Webcmd end to end.
+```
 
-The plugin includes all seven bundled Webcmd skills. Do not also add those
-skills with `webcmd skills add` in Codex.
+### Manual
 
-### Other agents or plugin-free setup
-
-Webcmd requires Node.js 20+.
+Webcmd requires Node.js 20.6+.
 
 ```bash
 npm install -g @agentrhq/webcmd
+```
+
+The npm package ships the Webcmd core and browser commands, but no site
+adapters. Search the plugin catalog and explicitly install the adapter you
+need:
+
+```bash
+webcmd plugin search <site> -f json
+webcmd plugin install <installSource-from-search>
 ```
 
 ```bash
@@ -104,7 +122,8 @@ Beyond website adapters, Webcmd can work through authenticated browser sessions,
 | AI tools | ChatGPT, Claude, Gemini, NotebookLM | Retrieve conversations, research outputs, notebooks, and generated materials from the tools you already use. |
 | shopping and bookings | Amazon, Blinkit, Zepto, BigBasket, District, Practo | Compare products, availability, prices, appointments, events, and delivery options. |
 
-This list is illustrative; ask your agent to use webcmd to discover what is currently available.
+This list is illustrative; availability comes from installed plugins. Ask your
+agent to search and install the relevant plugin when a site is not installed.
 
 ## Learn More
 
@@ -124,11 +143,9 @@ Webcmd Cloud can run supported commands and browser sessions on hosted infrastru
 
 | Plugin | Description | Author |
 | --- | --- | --- |
-| [`bmwblog`](./plugins/bmwblog/) | BMWBLOG article discovery commands for Webcmd | [WebCMD Agent](https://github.com/agentrhq) |
-| [`pypi`](./plugins/pypi/) | Inspect public Python package metadata and releases from PyPI | [Kemal Kaya](https://github.com/yoldaolmak) |
+| [`omnisearch`](./plugins/omnisearch/) | No-login research across Hacker News, Stack Overflow, GitHub, arXiv, Dev.to, Lobsters, and Bluesky | [Rishet Mehra](https://github.com/Rishet11) |
+| [`pypi`](./plugins/pypi/) | Inspect public Python package metadata, downloads, and releases from PyPI | [Kemal Kaya](https://github.com/yoldaolmak) |
 | [`skyscanner`](./plugins/skyscanner/) | Skyscanner flight search commands for Webcmd | [Rishabh](https://github.com/rishabhraj36) |
-| [`techcrunch`](./plugins/techcrunch/) | Search and read TechCrunch stories from its public API | [WebCMD Agent](https://github.com/agentrhq) |
-| [`ycombinator`](./plugins/ycombinator/) | Read-only Y Combinator startup directory commands for WebCMD | [WebCMD Agent](https://github.com/agentrhq) |
 <!-- webcmd-community-plugins:end -->
 
 ## Contributing

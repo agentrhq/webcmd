@@ -56,6 +56,10 @@ jobs:
         if: ${{ steps.release.outputs.release_created || inputs.publish_tag != '' }}
         run: npm ci
 
+      - name: Install Playwright Chromium
+        if: ${{ steps.release.outputs.release_created || inputs.publish_tag != '' }}
+        run: npx playwright-core install chromium --with-deps
+
       - name: Verify existing release tag
         if: ${{ inputs.publish_tag != '' }}
         run: test "${{ inputs.publish_tag }}" = "webcmd-v$(node -p "require('./package.json').version")"
@@ -68,9 +72,25 @@ jobs:
         if: ${{ steps.release.outputs.release_created || inputs.publish_tag != '' }}
         run: npm run build
 
+      - name: Build plugin command manifest
+        if: ${{ steps.release.outputs.release_created || inputs.publish_tag != '' }}
+        run: npm run build-plugin-manifest
+
+      - name: Check plugin command parity
+        if: ${{ steps.release.outputs.release_created || inputs.publish_tag != '' }}
+        run: npm run check:plugin-parity
+
+      - name: Check community plugin metadata
+        if: ${{ steps.release.outputs.release_created || inputs.publish_tag != '' }}
+        run: npm run check-community-plugins
+
       - name: Check generated contract artifacts
         if: ${{ steps.release.outputs.release_created || inputs.publish_tag != '' }}
         run: npm run check:hosted-contract
+
+      - name: Check all generated artifacts are committed
+        if: ${{ steps.release.outputs.release_created || inputs.publish_tag != '' }}
+        run: git diff --exit-code -- cli-manifest.json hosted-contract.json webcmd-plugin.json README.md
 
       - name: Check Codex plugin metadata
         if: ${{ steps.release.outputs.release_created || inputs.publish_tag != '' }}
@@ -89,8 +109,8 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_RELEASE_NOTES_MODEL: ${{ vars.GEMINI_RELEASE_NOTES_MODEL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_RELEASE_NOTES_MODEL: ${{ vars.OPENAI_RELEASE_NOTES_MODEL }}
         run: |
           set -euo pipefail
           npm --silent run generate-release-notes -- "${{ steps.release.outputs.tag_name || inputs.publish_tag }}" > "$RUNNER_TEMP/release-notes.md"

@@ -2,12 +2,12 @@
 /**
  * Build-time CLI manifest compiler.
  *
- * Scans all JS CLI definitions in clis/ and pre-compiles them into a single
- * manifest.json for instant cold-start registration.
+ * Scans the optional legacy clis/ tree and compiles the core command manifest.
+ * Adapter-free packages intentionally serialize this manifest as `[]`.
  *
  * Usage: npx tsx src/build-manifest.ts [--allow-removals[=N]]
  *
- * Output: cli-manifest.json next to clis/
+ * Output: cli-manifest.json at the package root.
  *
  * Safety invariants:
  *   - Adapters whose source file does not call `cli(...)` are silently
@@ -27,7 +27,7 @@ import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { getErrorMessage } from './errors.js';
 import { fullName, getRegistry, type CliCommand } from './registry.js';
-import { findPackageRoot, getCliManifestPath } from './package-paths.js';
+import { findPackageRoot } from './package-paths.js';
 import type { ManifestEntry } from './manifest-types.js';
 import { isRecord } from './utils.js';
 import {
@@ -39,17 +39,13 @@ import {
 export type { ManifestEntry } from './manifest-types.js';
 
 const PACKAGE_ROOT = findPackageRoot(fileURLToPath(import.meta.url));
-const CLIS_DIR = path.join(PACKAGE_ROOT, 'clis');
-// Write manifest next to clis/ so both dev and installed runtime can find it.
-const OUTPUT = getCliManifestPath(CLIS_DIR);
+const LEGACY_CLIS_DIR = path.join(PACKAGE_ROOT, 'clis');
+const OUTPUT = path.join(PACKAGE_ROOT, 'cli-manifest.json');
 const HOSTED_CONTRACT_OUTPUT = path.join(PACKAGE_ROOT, 'hosted-contract.json');
 
 // Module is treated as a CLI command source if it either:
 //   1. Calls `cli(...)` directly (the common case), or
-//   2. Calls a factory `make<Pascal>Command(...)` from clis/_shared/ that
-//      wraps `cli(...)`. Without (2), shared-factory adapters
-//      (codex/cursor/chatwise new/status/dump/screenshot) match no `cli(`
-//      token at the top level and silently drop out of the manifest.
+//   2. Calls a `make<Pascal>Command(...)` factory that wraps `cli(...)`.
 const CLI_MODULE_PATTERN = /\bcli\s*\(|\bregisterSiteAuthCommands\s*\(|\bmake[A-Z]\w*Command\s*\(/;
 
 /**
@@ -115,7 +111,10 @@ function isCliCommandValue(value: unknown, site: string): value is CliCommand {
     && Array.isArray(value.args);
 }
 
-function toManifestEntry(cmd: CliCommand, modulePath: string, sourceFile?: string): ManifestEntry {
+function toManifestEntry(
+  cmd: CliCommand,
+  adapterPath?: Pick<ManifestEntry, 'modulePath' | 'sourceFile'>,
+): ManifestEntry {
   return {
     site: cmd.site,
     name: cmd.name,
@@ -132,8 +131,8 @@ function toManifestEntry(cmd: CliCommand, modulePath: string, sourceFile?: strin
     ...(cmd.keywords?.length ? { keywords: [...cmd.keywords] } : {}),
     defaultFormat: cmd.defaultFormat,
     type: 'js',
-    modulePath,
-    sourceFile,
+    ...adapterPath,
+    ...(cmd.clientOwned ? { clientOwned: true } : {}),
     navigateBefore: cmd.navigateBefore,
     siteSession: cmd.siteSession,
     freshPage: cmd.freshPage,
@@ -149,14 +148,13 @@ function toManifestEntry(cmd: CliCommand, modulePath: string, sourceFile?: strin
  * surface or aggregate the failure.
  *
  * The third argument `clisDir` is used to compute the POSIX-style
- * `sourceFile` relative path; it defaults to the package's `clis/` dir so
- * existing test callers stay backward-compatible.
+ * `sourceFile` relative path; it defaults to the optional legacy `clis/` dir.
  */
 export async function loadManifestEntries(
   filePath: string,
   site: string,
   importer: (moduleHref: string) => Promise<unknown> = moduleHref => import(moduleHref),
-  clisDir: string = CLIS_DIR,
+  clisDir: string = LEGACY_CLIS_DIR,
 ): Promise<ManifestEntry[]> {
   let src: string;
   try {
@@ -200,14 +198,14 @@ export async function loadManifestEntries(
         return true;
       })
       .sort((a, b) => a.name.localeCompare(b.name))
-      .map(cmd => toManifestEntry(cmd, modulePath, sourceRelative));
+      .map(cmd => toManifestEntry(cmd, { modulePath, sourceFile: sourceRelative }));
   } catch (err) {
     throw new ManifestImportError(filePath, err);
   }
 }
 
 /**
- * Scan a `clis/` directory and aggregate per-adapter results. Import
+ * Scan an adapter directory and aggregate per-adapter results. Import
  * failures are collected in `failures` instead of crashing the whole scan,
  * but the caller (e.g. `main()`) is expected to fail loud if any failure
  * is present.
@@ -252,8 +250,45 @@ export async function scanClisDir(
   return { entries, failures };
 }
 
+/**
+ * Sites the core package owns and ships in `dist/`, rather than as adapter
+ * files under `clis/`. `web` moved here so the whole fetch ladder installs by
+ * default instead of living in a plugin nobody had (#247).
+ *
+ * The value is the package subpath export whose import registers the site's
+ * commands. It must stay listed in package.json `exports`, which
+ * `package-exports.test.ts` verifies resolves to a real source file.
+ */
+const CORE_SITE_EXPORTS = new Map([['web', './fetch/command']]);
+
+/**
+ * Manifest entries for core-registered commands.
+ *
+ * These deliberately carry no `modulePath`/`sourceFile`: there is no adapter
+ * file under `clis/` to resolve, and claiming one would point every consumer at
+ * a path that does not exist in the published tarball. They carry
+ * `packageExport` instead, so a consumer that loads adapters by path can import
+ * the command from the package itself rather than guessing its layout.
+ */
+export async function coreCommandEntries(
+  importer: (moduleHref: string) => Promise<unknown> = moduleHref => import(moduleHref),
+): Promise<ManifestEntry[]> {
+  await importer(pathToFileURL(path.join(PACKAGE_ROOT, 'src/fetch/command.ts')).href);
+  return [...getRegistry().values()]
+    .filter(cmd => cmd.clientOwned && CORE_SITE_EXPORTS.has(cmd.site))
+    .sort((a, b) => a.site.localeCompare(b.site) || a.name.localeCompare(b.name))
+    .map(cmd => ({ ...toManifestEntry(cmd), packageExport: CORE_SITE_EXPORTS.get(cmd.site)! }));
+}
+
 export async function buildManifest(): Promise<BuildManifestResult> {
-  return scanClisDir(CLIS_DIR);
+  const scanned = await scanClisDir(LEGACY_CLIS_DIR);
+  const core = await coreCommandEntries();
+  const entriesByCommand = new Map(scanned.entries.map(entry => [`${entry.site}/${entry.name}`, entry]));
+  for (const entry of core) entriesByCommand.set(`${entry.site}/${entry.name}`, entry);
+  const entries = [...entriesByCommand.values()].sort(
+    (a, b) => a.site.localeCompare(b.site) || a.name.localeCompare(b.name),
+  );
+  return { entries, failures: scanned.failures };
 }
 
 export function serializeManifest(manifest: ManifestEntry[]): string {

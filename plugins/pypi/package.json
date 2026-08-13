@@ -2,7 +2,7 @@
   "name": "webcmd-plugin-pypi",
   "version": "0.1.0",
   "type": "module",
-  "description": "Inspect public Python package metadata and releases from PyPI",
+  "description": "Inspect public Python package metadata, downloads, and releases from PyPI",
   "peerDependencies": {
     "@agentrhq/webcmd": ">=0.2.0"
   }
