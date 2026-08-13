@@ -67,6 +67,8 @@ export interface BrowserRuntimeCommand {
   deadlineAt?: number;
   /** Force Session lifecycle actions such as close past active work/handoff guards. */
   force?: boolean;
+  /** Remove an explicit Session record after closing it. Internal probes only. */
+  discard?: boolean;
   /** Maximum Session rows returned by session-list. */
   limit?: number;
   cdpMethod?: string;

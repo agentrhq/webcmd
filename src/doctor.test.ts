@@ -299,6 +299,7 @@ describe('doctor report rendering', () => {
       session: 'session_doctor_11111111',
       surface: 'browser',
       force: true,
+      discard: true,
     });
     expect(mockSetDaemonCommandTimeoutSeconds).toHaveBeenNthCalledWith(1, 8);
     expect(mockSetDaemonCommandTimeoutSeconds).toHaveBeenLastCalledWith(null);

@@ -136,6 +136,14 @@ export class LocalBrowserSessionStore {
     return { ...record };
   }
 
+  remove(profileId: string, sessionId: string): BrowserSessionRecord {
+    const state = this.load();
+    const record = this.requireMutable(state, profileId, sessionId);
+    state.sessions = state.sessions.filter((row) => row !== record);
+    this.save(state);
+    return { ...record };
+  }
+
   private newRecord(
     profileId: string,
     kind: BrowserSessionRecord['kind'],

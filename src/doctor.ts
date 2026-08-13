@@ -79,7 +79,7 @@ export async function checkConnectivity(opts?: { timeout?: number }): Promise<Co
     return { ok: false, error: getErrorMessage(err), durationMs: Date.now() - start };
   } finally {
     if (sessionId) {
-      await sendCommand('session-close', { session: sessionId, surface: 'browser', force: true }).catch(() => undefined);
+      await sendCommand('session-close', { session: sessionId, surface: 'browser', force: true, discard: true }).catch(() => undefined);
     }
     setDaemonCommandTimeoutSeconds(null);
   }
