@@ -24,6 +24,18 @@ from run_controller import (
     run_controller as execute_controller,
 )
 
+WEBCMD_SESSION = "session_12345678-1234-4234-8234-123456789abc"
+WEBCMD_BROWSER = f"webcmd --profile benchmark --session {WEBCMD_SESSION} browser"
+_REAL_CREATE_WEBCMD_SESSION = run_controller._create_webcmd_session
+
+
+@pytest.fixture(autouse=True)
+def _stub_webcmd_session_creation(monkeypatch):
+    async def create_session(tool_env=None):
+        return WEBCMD_SESSION
+
+    monkeypatch.setattr(run_controller, "_create_webcmd_session", create_session)
+
 
 async def _no_close(*args):
     return None
@@ -61,10 +73,13 @@ def test_prompt_warns_against_shell_punctuation_and_unspecified_view_changes(tmp
 
 def test_webcmd_prompt_allows_one_quoted_browser_run_heredoc(tmp_path):
     prompt = _build_prompt(
-        "webcmd", "session-1", tmp_path / "shots", "Find the answer"
+        "webcmd", WEBCMD_SESSION, tmp_path / "shots", "Find the answer"
     )
 
-    assert "`webcmd browser session-1 run --stdin <<'JS' ... JS`" in prompt
+    assert (
+        f"`webcmd --profile benchmark --session {WEBCMD_SESSION} "
+        "browser run --stdin <<'JS' ... JS`" in prompt
+    )
     assert "must include one quoted heredoc" in prompt
     assert "never run it with an empty stdin body" in prompt
     assert "`page` is already available" in prompt
@@ -76,15 +91,134 @@ def test_webcmd_prompt_allows_one_quoted_browser_run_heredoc(tmp_path):
 
 def test_webcmd_prompt_uses_only_run_first_browser_lifecycle(tmp_path):
     prompt = _build_prompt(
-        "webcmd", "session-1", tmp_path / "shots", "Find the answer"
+        "webcmd", WEBCMD_SESSION, tmp_path / "shots", "Find the answer"
     )
 
-    assert "`webcmd browser session-1 tabs` → optional `webcmd browser session-1 bind --page PAGE` → optional `webcmd browser session-1 snapshot` → one or more `webcmd browser session-1 run --stdin <<'JS' ... JS` calls → `webcmd browser session-1 close`" in prompt
+    prefix = f"webcmd --profile benchmark --session {WEBCMD_SESSION} browser"
+    assert (
+        f"`{prefix} tabs` → optional `{prefix} bind --page PAGE` → optional "
+        f"`{prefix} snapshot` → one or more "
+        f"`{prefix} run --stdin <<'JS' ... JS` calls" in prompt
+    )
+    assert "session create" not in prompt
+    assert "session close" not in prompt
+    assert "The harness owns Session cleanup" in prompt
     assert "Do not use `open`, `state`, `click`, `type`, `screenshot`, `wait`, `eval`, `observe`, or `tab`" in prompt
     assert "Do not run `webcmd browser --help`" in prompt
     assert "Avoid shell-fragile JavaScript" in prompt
     assert "shots/step_001.png" in prompt
     assert "absolute paths" in prompt
+
+
+def test_create_webcmd_session_uses_dedicated_profile_and_parses_opaque_id(monkeypatch):
+    captured = {}
+
+    class Process:
+        returncode = 0
+
+        async def communicate(self):
+            return json.dumps({"id": WEBCMD_SESSION, "kind": "explicit"}).encode(), b""
+
+    async def create_process(*args, **kwargs):
+        captured["args"] = args
+        captured.update(kwargs)
+        return Process()
+
+    monkeypatch.setattr(run_controller.asyncio, "create_subprocess_exec", create_process)
+
+    session = asyncio.run(
+        _REAL_CREATE_WEBCMD_SESSION({"PATH": "/verified/bin"})
+    )
+
+    assert session == WEBCMD_SESSION
+    assert captured["args"] == (
+        "webcmd",
+        "--profile",
+        "benchmark",
+        "session",
+        "create",
+        "-f",
+        "json",
+    )
+    assert captured["env"]["PATH"] == "/verified/bin"
+    assert captured["start_new_session"] is True
+
+
+def test_webcmd_controller_uses_created_session_and_harness_closes_after_exit(
+    tmp_path, monkeypatch
+):
+    events = []
+    answer_event = json.dumps(
+        {
+            "type": "item.completed",
+            "item": {"type": "agent_message", "text": "FINAL ANSWER: 42"},
+        }
+    )
+
+    async def create_session(tool_env):
+        events.append(("create", tool_env))
+        return WEBCMD_SESSION
+
+    async def close_session(tool, session, tool_env=None):
+        events.append(("close", tool, session, tool_env))
+
+    def controller_command(controller, model, prompt, *args, **kwargs):
+        assert f"--session {WEBCMD_SESSION}" in prompt
+        events.append(("controller",))
+        return [sys.executable, "-c", f"print({answer_event!r})"], None
+
+    monkeypatch.setattr(run_controller, "_create_webcmd_session", create_session)
+    monkeypatch.setattr(run_controller, "_close_session", close_session)
+    monkeypatch.setattr(run_controller, "_controller_command", controller_command)
+
+    evidence = asyncio.run(
+        execute_controller(
+            "codex",
+            "gpt-5",
+            "webcmd",
+            "task",
+            tmp_path / "attempt",
+            5,
+            tool_env={"PATH": "/verified/bin"},
+        )
+    )
+
+    assert evidence.final_answer == "42"
+    assert events == [
+        ("create", {"PATH": "/verified/bin"}),
+        ("controller",),
+        ("close", "webcmd", WEBCMD_SESSION, {"PATH": "/verified/bin"}),
+    ]
+
+
+def test_webcmd_session_closes_when_controller_setup_fails(tmp_path, monkeypatch):
+    closed = []
+
+    async def close_session(tool, session, tool_env=None):
+        closed.append((tool, session, tool_env))
+
+    def fail_controller_setup(*args, **kwargs):
+        raise RuntimeError("controller setup failed")
+
+    monkeypatch.setattr(run_controller, "_close_session", close_session)
+    monkeypatch.setattr(run_controller, "_controller_command", fail_controller_setup)
+
+    with pytest.raises(RuntimeError, match="controller setup failed"):
+        asyncio.run(
+            execute_controller(
+                "codex",
+                "gpt-5",
+                "webcmd",
+                "task",
+                tmp_path / "attempt",
+                5,
+                tool_env={"PATH": "/verified/bin"},
+            )
+        )
+
+    assert closed == [
+        ("webcmd", WEBCMD_SESSION, {"PATH": "/verified/bin"})
+    ]
 
 
 def test_axi_prompt_uses_installed_skill_and_only_axi_commands(tmp_path):
@@ -186,6 +320,43 @@ def test_codex_events_sum_usage_and_count_only_meaningful_completed_items():
     assert parsed.tokens.output == 15
     assert parsed.tokens.reasoning_output == 3
     assert parsed.tokens.total == 165
+
+
+def test_codex_cost_separates_cache_writes_and_applies_long_context_pricing():
+    events = [
+        {
+            "type": "turn.completed",
+            "usage": {
+                "input_tokens": 100,
+                "cached_input_tokens": 60,
+                "cache_write_input_tokens": 20,
+                "output_tokens": 10,
+                "reasoning_output_tokens": 2,
+            },
+        },
+        {
+            "type": "turn.completed",
+            "usage": {
+                "input_tokens": 300_000,
+                "cached_input_tokens": 100_000,
+                "cache_write_input_tokens": 50_000,
+                "output_tokens": 1_000,
+                "reasoning_output_tokens": 100,
+            },
+        },
+    ]
+
+    parsed = _parse_events(
+        "codex", [json.dumps(event) for event in events], model="gpt-5.6-sol"
+    )
+
+    assert parsed.tokens.input == 300_100
+    assert parsed.tokens.cache_read_input == 100_060
+    assert parsed.tokens.cache_creation_input == 50_020
+    assert parsed.tokens.non_cached_input == 150_020
+    assert parsed.tokens.output == 1_010
+    assert parsed.tokens.total == 301_110
+    assert parsed.tokens.estimated_api_cost_usd == pytest.approx(2.270555)
 
 
 def _otel_log_record(*attributes):
@@ -404,7 +575,7 @@ def test_pi_events_normalize_commands_results_usage_and_final_text():
         {
             "type": "tool_execution_start",
             "toolName": "bash",
-                "args": {"command": "webcmd browser s tabs"},
+                "args": {"command": f"{WEBCMD_BROWSER} tabs"},
         },
         {
             "type": "tool_execution_end",
@@ -441,7 +612,7 @@ def test_pi_events_normalize_commands_results_usage_and_final_text():
 
     parsed = _parse_events("pi", [json.dumps(event) for event in events])
 
-    assert parsed.commands == ["webcmd browser s tabs"]
+    assert parsed.commands == [f"{WEBCMD_BROWSER} tabs"]
     assert parsed.tool_calls == 1
     assert parsed.steps_count == 3
     assert any("page" in step for step in parsed.steps)
@@ -641,10 +812,10 @@ def test_environment_excludes_evaluation_metadata_even_under_allowed_prefixes(mo
 def test_policy_scan_rejects_wrong_tool_and_direct_network():
     assert _policy_violation("webcmd", ["other-browser --session x state"], [])
     assert _policy_violation("webcmd", [], ["web_search"])
-    assert not _policy_violation("webcmd", ["webcmd browser x tabs"], [])
-    assert not _policy_violation("webcmd", ["webcmd list -f json"], [])
-    assert not _policy_violation("webcmd", ["webcmd plugin list -f json"], [])
-    assert not _policy_violation("webcmd", ["webcmd stackexchange search query"], [])
+    assert not _policy_violation("webcmd", [f"{WEBCMD_BROWSER} tabs"], [])
+    assert _policy_violation("webcmd", ["webcmd list -f json"], [])
+    assert _policy_violation("webcmd", ["webcmd plugin list -f json"], [])
+    assert _policy_violation("webcmd", ["webcmd stackexchange search query"], [])
 
 
 def test_policy_allows_only_axi_invoked_through_npx():
@@ -844,15 +1015,29 @@ def test_policy_scan_rejects_common_raw_http_commands(command):
 @pytest.mark.parametrize(
     "command",
     [
-        "webcmd browser session tabs",
-        "webcmd browser session snapshot --snapshot-mode read --max-output 20000",
-        "webcmd browser session snapshot --ref e42 --snapshot-mode act",
-        "webcmd browser session bind --page page-1",
-        "webcmd browser session close",
+        f"webcmd --profile benchmark --session {WEBCMD_SESSION} browser tabs",
+        f"webcmd --profile benchmark --session {WEBCMD_SESSION} browser snapshot --snapshot-mode read --max-output 20000",
+        f"webcmd --profile benchmark --session {WEBCMD_SESSION} browser snapshot --ref e42 --snapshot-mode act",
+        f"webcmd --profile benchmark --session {WEBCMD_SESSION} browser bind --page page-1",
     ],
 )
 def test_policy_scan_preserves_selected_browser_cli_commands(command):
     assert not _policy_violation("webcmd", [command], [])
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "webcmd browser legacy-session tabs",
+        f"webcmd --profile default --session {WEBCMD_SESSION} browser tabs",
+        f"webcmd --profile benchmark browser tabs",
+        f"webcmd --profile benchmark --session {WEBCMD_SESSION} browser close",
+        "webcmd --profile benchmark session create -f json",
+        f"webcmd --profile benchmark session close {WEBCMD_SESSION}",
+    ],
+)
+def test_policy_rejects_agent_owned_or_unpinned_webcmd_lifecycle(command):
+    assert _policy_violation("webcmd", [command], [])
 
 
 @pytest.mark.parametrize(
@@ -878,12 +1063,12 @@ def test_policy_rejects_removed_webcmd_browser_primitives(command):
 @pytest.mark.parametrize(
     "command",
     [
-        "webcmd browser work run --stdin <<'JS'\n"
+        f"webcmd --profile benchmark --session {WEBCMD_SESSION} browser run --stdin <<'JS'\n"
         "await page.goto('https://example.com');\n"
         "console.log(`${await page.title()} $5 ; && | > < $(not-shell)`);\n"
         "return page.url();\n"
         "JS",
-        "/bin/zsh -lc \"webcmd browser work run --stdin <<'JS'\n"
+        f"/bin/zsh -lc \"webcmd --profile benchmark --session {WEBCMD_SESSION} browser run --stdin <<'JS'\n"
         "return await page.title();\n"
         "JS\"",
     ],
@@ -894,7 +1079,7 @@ def test_policy_allows_exact_webcmd_browser_run_quoted_heredoc(command):
 
 def test_policy_allows_realistic_safe_webcmd_run_program():
     command = (
-        "/bin/zsh -lc \"webcmd browser work run --stdin <<'JS'\n"
+        f"/bin/zsh -lc \"{WEBCMD_BROWSER} run --stdin <<'JS'\n"
         "const title = await page.locator('h1').innerText();\n"
         "await page.screenshot({ path: 'shots/step.png' });\n"
         "console.log(title);\n"
@@ -908,13 +1093,13 @@ def test_policy_allows_realistic_safe_webcmd_run_program():
 @pytest.mark.parametrize(
     "command",
     [
-        "webcmd browser wiki run --stdin --timeout 30 --max-output 20000 <<'EOF'\n"
+        f"{WEBCMD_BROWSER} run --stdin --timeout 30 --max-output 20000 <<'EOF'\n"
         "return await page.title();\n"
         "EOF",
-        "webcmd browser work run --no-snapshot-diff --max-output 1 --timeout 1 --snapshot-mode act --stdin <<'JS'\n"
+        f"{WEBCMD_BROWSER} run --no-snapshot-diff --max-output 1 --timeout 1 --snapshot-mode act --stdin <<'JS'\n"
         "return page.url();\n"
         "JS",
-        "webcmd browser work run --snapshot-mode tree --stdin <<'JS'\n"
+        f"{WEBCMD_BROWSER} run --snapshot-mode tree --stdin <<'JS'\n"
         "return page.url();\n"
         "JS",
     ],
@@ -950,19 +1135,8 @@ def test_policy_rejects_other_webcmd_heredocs(command):
 @pytest.mark.parametrize("mode", ["act", "tree", "read"])
 def test_policy_allows_supported_webcmd_snapshot_modes(mode):
     assert not _policy_violation(
-        "webcmd", [f"webcmd browser session snapshot --snapshot-mode {mode}"], []
+        "webcmd", [f"{WEBCMD_BROWSER} snapshot --snapshot-mode {mode}"], []
     )
-
-
-@pytest.mark.parametrize(
-    ("tool", "command"),
-    [
-        ("webcmd", "webcmd stackexchange search 'other browser automation Playwright Puppeteer'"),
-        ("webcmd", "webcmd list -f json"),
-    ],
-)
-def test_policy_scan_allows_selected_cli_arguments_that_name_prohibited_tools(tool, command):
-    assert not _policy_violation(tool, [command], [])
 
 
 @pytest.mark.parametrize(
@@ -991,13 +1165,17 @@ def test_policy_scan_rejects_forbidden_executables_in_newline_and_subshell_segme
 
 
 def test_policy_scan_allows_quoted_newline_as_selected_cli_page_data():
-    command = "webcmd stackexchange search 'page line one\ncurl is documentation text'"
+    command = (
+        f"{WEBCMD_BROWSER} run --stdin <<'JS'\n"
+        "return 'page line one\\ncurl is documentation text';\n"
+        "JS"
+    )
 
     assert not _policy_violation("webcmd", [command], [])
 
 
 def test_policy_scan_ignores_raw_http_names_in_command_output():
-    event = {"type": "item.completed", "item": {"type": "command_execution", "command": "webcmd browser session tabs", "aggregated_output": "Documentation mentions curl, requests, and httpx"}}
+    event = {"type": "item.completed", "item": {"type": "command_execution", "command": f"{WEBCMD_BROWSER} tabs", "aggregated_output": "Documentation mentions curl, requests, and httpx"}}
     parsed = _parse_events("codex", [json.dumps(event)])
 
     assert not _policy_violation("webcmd", parsed.commands, parsed.event_types)
@@ -1015,7 +1193,7 @@ def test_strict_policy_rejects_webcmd_paths_that_bypass_pinned_path(command):
 
 
 def test_strict_policy_allows_bare_webcmd_from_pinned_path():
-    assert not _policy_violation("webcmd", ["webcmd browser session tabs"], [])
+    assert not _policy_violation("webcmd", [f"{WEBCMD_BROWSER} tabs"], [])
 
 
 @pytest.mark.parametrize(
@@ -1031,13 +1209,17 @@ def test_policy_rejects_invalid_webcmd_browser_sessions(command):
 
 
 def test_strict_policy_allows_quoted_selected_cli_page_data():
-    command = "webcmd stackexchange search 'other-browser webcmd Playwright Puppeteer curl wget httpx https://example.com ; && | > < ( ) $(curl x) `curl x`\nnext line'"
+    command = (
+        f"{WEBCMD_BROWSER} run --stdin <<'JS'\n"
+        "return 'other-browser webcmd Playwright Puppeteer curl wget httpx https://example.com ; && | > < ( ) $(curl x) `curl x`\\nnext line';\n"
+        "JS"
+    )
 
     assert not _policy_violation("webcmd", [command], [])
 
 
 def test_strict_policy_allows_multiple_direct_selected_cli_segments():
-    command = "webcmd browser session tabs; webcmd browser session tabs && webcmd browser session tabs | webcmd browser session tabs"
+    command = f"{WEBCMD_BROWSER} tabs; {WEBCMD_BROWSER} tabs && {WEBCMD_BROWSER} tabs | {WEBCMD_BROWSER} tabs"
 
     assert not _policy_violation("webcmd", [command], [])
 
@@ -1045,9 +1227,8 @@ def test_strict_policy_allows_multiple_direct_selected_cli_segments():
 @pytest.mark.parametrize(
     "command",
     [
-        "/bin/zsh -lc 'webcmd browser session tabs'",
-        "zsh -lc 'webcmd browser session close'",
-        "bash -lc 'webcmd browser session bind --page page-1'",
+        f"/bin/zsh -lc '{WEBCMD_BROWSER} tabs'",
+        f"bash -lc '{WEBCMD_BROWSER} bind --page page-1'",
     ],
 )
 def test_policy_allows_simple_shell_wrappers_around_selected_cli(command):
@@ -1135,17 +1316,6 @@ def test_strict_policy_fails_closed_on_shell_syntax_and_ambiguity(command):
 @pytest.mark.parametrize("value", ["$HOME", "${HOME}", '"$HOME"', "$?", "$$", "$((1 + 2))"])
 def test_strict_policy_rejects_unescaped_shell_expansion_for_webcmd(tool, prefix, value):
     assert _policy_violation(tool, [f"{prefix} {value}"], [])
-
-
-@pytest.mark.parametrize(
-    ("tool", "prefix"),
-    [
-        ("webcmd", "webcmd stackexchange search"),
-    ],
-)
-@pytest.mark.parametrize("value", ["'${HOME}'", r"\$HOME", r'"\$HOME"'])
-def test_strict_policy_allows_single_quoted_or_escaped_literal_dollars(tool, prefix, value):
-    assert not _policy_violation(tool, [f"{prefix} {value}"], [])
 
 
 def test_controller_commands_are_noninteractive():
@@ -1258,12 +1428,11 @@ def test_final_answer_must_be_nonempty_on_the_same_physical_line(text, expected)
     assert _extract_final_answer(text) == expected
 
 
-def test_every_normalized_step_is_capped_at_2000_characters():
+def test_ordinary_normalized_steps_are_capped_at_2000_characters():
     long = "x" * 3000
     codex = [
         long,
         json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": long}}),
-        json.dumps({"type": "item.completed", "item": {"type": "command_execution", "command": long, "aggregated_output": long}}),
         json.dumps({"type": "item.completed", "item": {"type": "web_search", "query": long}}),
         json.dumps({"type": long, "payload": long}),
     ]
@@ -1282,6 +1451,29 @@ def test_every_normalized_step_is_capped_at_2000_characters():
     assert steps
     assert any(len(step) == 2000 for step in steps)
     assert all(len(step) <= 2000 for step in steps)
+
+
+def test_codex_command_step_preserves_bounded_browser_output():
+    command = "c" * 3000
+    output = "o" * 7000 + "EVENT_TIME_8PM" + "z" * 2000
+    events = [
+        json.dumps(
+            {
+                "type": "item.completed",
+                "item": {
+                    "type": "command_execution",
+                    "command": command,
+                    "aggregated_output": output,
+                },
+            }
+        )
+    ]
+
+    step = _parse_events("codex", events).steps[0]
+
+    assert "EVENT_TIME_8PM" in step
+    assert step.count("[truncated]") == 2
+    assert len(step) <= 10_020
 
 
 def test_webcmd_screenshot_receipts_collect_only_current_task_artifacts(tmp_path, monkeypatch):
@@ -1312,7 +1504,7 @@ def test_webcmd_screenshot_receipts_collect_only_current_task_artifacts(tmp_path
             },
         }
     }
-    command_event = json.dumps({"type": "item.completed", "item": {"type": "command_execution", "command": "webcmd browser s run --stdin <<'JS'\nawait page.screenshot({path:'shots/first.png'});\nreturn null;\nJS", "aggregated_output": json.dumps(receipts)}})
+    command_event = json.dumps({"type": "item.completed", "item": {"type": "command_execution", "command": f"{WEBCMD_BROWSER} run --stdin <<'JS'\nawait page.screenshot({{path:'shots/first.png'}});\nreturn null;\nJS", "aggregated_output": json.dumps(receipts)}})
     answer_event = json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "FINAL ANSWER: 42"}})
     script = (
         "import os; from pathlib import Path; "
@@ -1354,7 +1546,7 @@ def test_webcmd_screenshot_receipts_collect_only_current_task_artifacts(tmp_path
     ]
     assert (attempt / "controller-path.txt").read_text() == "/verified/bin:/original/bin"
     assert (attempt / "controller.jsonl").read_text() == f"{command_event}\n{answer_event}\n"
-    assert marker.read_text() == f"webcmd:{run_controller._session_name(attempt)}"
+    assert marker.read_text() == f"webcmd:{WEBCMD_SESSION}"
 
 
 @pytest.mark.parametrize(
@@ -1373,7 +1565,7 @@ def test_webcmd_screenshot_receipts_fail_instead_of_silently_losing_evidence(
             "type": "item.completed",
             "item": {
                 "type": "command_execution",
-                "command": "webcmd browser s run --stdin <<'JS'\nawait page.screenshot({path:'shots/missing.png'});\nreturn null;\nJS",
+                "command": f"{WEBCMD_BROWSER} run --stdin <<'JS'\nawait page.screenshot({{path:'shots/missing.png'}});\nreturn null;\nJS",
                 "aggregated_output": json.dumps(
                     {"ok": True, "artifacts": [{"locator": locator}]}
                 ),
@@ -2136,6 +2328,7 @@ def test_close_session_kills_and_reaps_a_timed_out_close_process(monkeypatch):
     captured = {}
 
     async def create_process(*args, **kwargs):
+        captured["args"] = args
         captured.update(kwargs)
         return process
 
@@ -2150,12 +2343,23 @@ def test_close_session_kills_and_reaps_a_timed_out_close_process(monkeypatch):
     monkeypatch.setattr(run_controller.asyncio, "create_subprocess_exec", create_process)
     monkeypatch.setattr(run_controller.asyncio, "wait_for", timeout)
 
-    asyncio.run(run_controller._close_session("webcmd", "session"))
+    asyncio.run(run_controller._close_session("webcmd", WEBCMD_SESSION))
 
     assert process.killed
     assert process.wait_calls == 1
     assert wait_for_calls == 2
     assert captured["start_new_session"] is True
+    assert captured["args"] == (
+        "webcmd",
+        "--profile",
+        "benchmark",
+        "session",
+        "close",
+        WEBCMD_SESSION,
+        "--force",
+        "-f",
+        "json",
+    )
 
 
 def test_close_session_uses_only_selected_tool_environment(monkeypatch):
@@ -2179,7 +2383,7 @@ def test_close_session_uses_only_selected_tool_environment(monkeypatch):
 
     asyncio.run(
         run_controller._close_session(
-            "webcmd", "session", {"PATH": "/verified/bin:/original/bin"}
+            "webcmd", WEBCMD_SESSION, {"PATH": "/verified/bin:/original/bin"}
         )
     )
 

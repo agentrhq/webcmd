@@ -60,6 +60,11 @@ EVALUATION_ENV_MARKERS = (
     "JUDGE", "PROMPT", "RESULT", "VERDICT",
 )
 CLEANUP_TIMEOUT_SECONDS = 5
+WEBCMD_BENCHMARK_PROFILE = "benchmark"
+WEBCMD_SESSION_RE = re.compile(
+    r"^session_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
 PI_CONTROLLER = Path(__file__).resolve().with_name("pi_controller.mjs")
 LIBRETTO_MCP = Path(__file__).resolve().with_name("libretto_mcp.mjs")
 LIBRETTO_TOOLS = (
@@ -78,6 +83,14 @@ WEBCMD_SETUP_SKILL_FILES = frozenset(
         (WEBCMD_BROWSER_SKILL / "SKILL.md").resolve(),
     }
 )
+GPT_5_6_SOL_PRICES_PER_MILLION = {
+    "input": 5.0,
+    "cached_input": 0.5,
+    "cache_write_input": 6.25,
+    "output": 30.0,
+}
+GPT_5_6_SOL_MODELS = frozenset({"gpt-5.6", "gpt-5.6-sol"})
+LONG_CONTEXT_INPUT_THRESHOLD = 272_000
 
 
 class _CodexTurnCollector:
@@ -189,6 +202,7 @@ class TokenUsage:
     output: int
     reasoning_output: int | None
     total: int
+    estimated_api_cost_usd: float | None = None
 
 
 @dataclass(frozen=True)
@@ -250,12 +264,17 @@ def _build_prompt(tool: Tool, session: str, shots_dir: Path, task: str) -> str:
 - The Libretto provider is already pinned to this task's dedicated CloakBrowser; open it with `browser_open` and do not configure another browser.
 - Reuse the session ID returned by `browser_open` and close it with `browser_close` when the task is complete."""
     else:
+        webcmd = (
+            f"webcmd --profile {WEBCMD_BENCHMARK_PROFILE} "
+            f"--session {session} browser"
+        )
         tool_rules = f"""- Use only `webcmd`.
 - Every shell command must execute only `webcmd`.
-- Browser lifecycle: `webcmd browser {session} tabs` → optional `webcmd browser {session} bind --page PAGE` → optional `webcmd browser {session} snapshot` → one or more `webcmd browser {session} run --stdin <<'JS' ... JS` calls → `webcmd browser {session} close`.
+- The harness already created the dedicated Profile and Session. Do not run `webcmd profile`, `webcmd session`, `webcmd daemon`, or any browser close command. The harness owns Session cleanup after the controller exits.
+- Browser commands: `{webcmd} tabs` → optional `{webcmd} bind --page PAGE` → optional `{webcmd} snapshot` → one or more `{webcmd} run --stdin <<'JS' ... JS` calls.
 - Do not use `open`, `state`, `click`, `type`, `screenshot`, `wait`, `eval`, `observe`, or `tab`.
 - Do not run `webcmd browser --help`; the complete allowed surface is listed above.
-- `webcmd browser {session} run --stdin` must include one quoted heredoc containing its sandboxed JavaScript; never run it with an empty stdin body.
+- `{webcmd} run --stdin` must include one quoted heredoc containing its sandboxed JavaScript; never run it with an empty stdin body.
 - In run programs, `page` is already available.
 - The only optional run flags are `--timeout`, `--max-output`, `--snapshot-mode act|tree`, and `--no-snapshot-diff`.
 - `run` returns a snapshot diff by default. Use `snapshot` for a full page read or baseline refresh.
@@ -383,6 +402,22 @@ def _short(value: object, limit: int = 2000) -> str:
     return text.strip()[:limit]
 
 
+def _evidence_excerpt(value: object, limit: int) -> str:
+    marker = "[truncated]"
+    text = value if isinstance(value, str) else json.dumps(value, default=str, separators=(",", ":"))
+    text = text.strip()
+    if len(text) <= limit:
+        return text
+    return text[: limit - len(marker)] + marker
+
+
+def _command_step(command: str, output: object) -> str:
+    return (
+        f"command: {_evidence_excerpt(command, 2000)}\n"
+        f"output: {_evidence_excerpt(output, 8000)}"
+    )
+
+
 def _mcp_content(result: object) -> list[dict]:
     if not isinstance(result, dict):
         return []
@@ -400,6 +435,7 @@ def _parse_events(
     lines: list[str],
     *,
     tool: Tool | None = None,
+    model: str | None = None,
 ) -> ParsedEvents:
     steps: list[str] = []
     commands: list[str] = []
@@ -413,6 +449,8 @@ def _parse_events(
     output_tokens = 0
     reasoning_output = 0
     usage_seen = False
+    estimated_api_cost_usd = 0.0
+    cost_complete = controller == "codex" and model in GPT_5_6_SOL_MODELS
     provider_turns = None
     provider_duration_seconds = None
     provider_api_duration_seconds = None
@@ -442,7 +480,7 @@ def _parse_events(
                 tool_calls += 1
                 steps_count += 1
                 command_output = item.get("aggregated_output") or item.get("output") or ""
-                steps.append(_short(f"command: {_short(command)}\noutput: {_short(command_output)}"))
+                steps.append(_command_step(command, command_output))
             elif item_type in {"mcp_tool_call", "web_search"}:
                 event_types.append(str(item_type))
                 steps.append(_short(f"{item_type}: {_short(item)}"))
@@ -477,11 +515,34 @@ def _parse_events(
                 steps_count += 1
         elif controller == "codex" and event_type == "turn.completed":
             usage = event.get("usage") or {}
-            ordinary_input += int(usage.get("input_tokens") or 0) - int(usage.get("cached_input_tokens") or 0)
-            cache_read_input += int(usage.get("cached_input_tokens") or 0)
-            output_tokens += int(usage.get("output_tokens") or 0)
+            turn_input = int(usage.get("input_tokens") or 0)
+            turn_cached = int(usage.get("cached_input_tokens") or 0)
+            turn_cache_write = int(usage.get("cache_write_input_tokens") or 0)
+            turn_output = int(usage.get("output_tokens") or 0)
+            ordinary_input += turn_input - turn_cached - turn_cache_write
+            cache_read_input += turn_cached
+            cache_creation_input += turn_cache_write
+            output_tokens += turn_output
             reasoning_output += int(usage.get("reasoning_output_tokens") or 0)
             usage_seen = usage_seen or bool(usage)
+            if cost_complete:
+                if "cache_write_input_tokens" not in usage:
+                    cost_complete = False
+                else:
+                    input_multiplier = 2.0 if turn_input > LONG_CONTEXT_INPUT_THRESHOLD else 1.0
+                    output_multiplier = 1.5 if turn_input > LONG_CONTEXT_INPUT_THRESHOLD else 1.0
+                    turn_ordinary = turn_input - turn_cached - turn_cache_write
+                    estimated_api_cost_usd += (
+                        input_multiplier
+                        * (
+                            turn_ordinary * GPT_5_6_SOL_PRICES_PER_MILLION["input"]
+                            + turn_cached * GPT_5_6_SOL_PRICES_PER_MILLION["cached_input"]
+                            + turn_cache_write * GPT_5_6_SOL_PRICES_PER_MILLION["cache_write_input"]
+                        )
+                        + output_multiplier
+                        * turn_output
+                        * GPT_5_6_SOL_PRICES_PER_MILLION["output"]
+                    ) / 1_000_000
         elif controller == "pi" and event_type == "message_end":
             message = event.get("message") or {}
             if message.get("role") != "assistant":
@@ -603,6 +664,9 @@ def _parse_events(
             output=output_tokens,
             reasoning_output=reasoning_output if controller == "codex" else None,
             total=input_tokens + output_tokens,
+            estimated_api_cost_usd=(
+                estimated_api_cost_usd if cost_complete else None
+            ),
         )
     return ParsedEvents(
         steps=steps,
@@ -807,8 +871,7 @@ def _webcmd_run_heredoc_allowed(command: str) -> bool:
     if len(lines) < 3:
         return False
     match = re.fullmatch(
-        r"[ \t]*(?P<header>webcmd[ \t]+browser[ \t]+"
-        r"[A-Za-z0-9][A-Za-z0-9._:-]*[ \t]+run(?:[ \t]+[^<\r\n]+)?)[ \t]+"
+        r"[ \t]*(?P<header>webcmd[ \t]+[^<\r\n]+)[ \t]+"
         r"<<[ \t]*"
         r"(?P<quote>['\"])(?P<label>[A-Za-z_][A-Za-z0-9_]*)"
         r"(?P=quote)[ \t]*",
@@ -828,16 +891,12 @@ def _webcmd_run_heredoc_allowed(command: str) -> bool:
         segment = shlex.split(header, posix=True)
     except ValueError:
         return False
-    if (
-        len(segment) < 5
-        or segment[:2] != ["webcmd", "browser"]
-        or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]*", segment[2]) is None
-        or segment[3] != "run"
-    ):
+    browser = _webcmd_browser_tail(segment)
+    if browser is None or len(browser) < 2 or browser[:2] != ["browser", "run"]:
         return False
 
     seen: set[str] = set()
-    arguments = segment[4:]
+    arguments = browser[2:]
     index = 0
     while index < len(arguments):
         option = arguments[index]
@@ -864,12 +923,23 @@ def _webcmd_run_heredoc_allowed(command: str) -> bool:
     return "--stdin" in seen
 
 
+def _webcmd_browser_tail(segment: list[str]) -> list[str] | None:
+    if (
+        len(segment) < 7
+        or segment[:3] != ["webcmd", "--profile", WEBCMD_BENCHMARK_PROFILE]
+        or segment[3] != "--session"
+        or WEBCMD_SESSION_RE.fullmatch(segment[4]) is None
+        or segment[5] != "browser"
+    ):
+        return None
+    return segment[5:]
+
+
 def _webcmd_snapshot_segment_allowed(segment: list[str]) -> bool:
-    if len(segment) < 4 or segment[:2] != ["webcmd", "browser"] or segment[3] != "snapshot":
+    browser = _webcmd_browser_tail(segment)
+    if browser is None or len(browser) < 2 or browser[:2] != ["browser", "snapshot"]:
         return False
-    if re.fullmatch(r"[A-Za-z0-9._:-]+", segment[2]) is None:
-        return False
-    arguments = segment[4:]
+    arguments = browser[2:]
     seen: set[str] = set()
     index = 0
     while index < len(arguments):
@@ -928,18 +998,17 @@ def _segment_allowed(tool: Tool, segment: list[str]) -> bool:
     if executable == tool:
         if tool != "webcmd":
             return False
-        if len(segment) < 2 or segment[1] != "browser":
-            return True
-        if len(segment) < 3 or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]*", segment[2]) is None:
+        browser = _webcmd_browser_tail(segment)
+        if browser is None:
             return False
-        if len(segment) == 4 and segment[3] in {"tabs", "close"}:
+        if browser == ["browser", "tabs"]:
             return True
         if _webcmd_snapshot_segment_allowed(segment):
             return True
         return (
-            len(segment) == 6
-            and segment[3:5] == ["bind", "--page"]
-            and re.fullmatch(r"[A-Za-z0-9._:-]+", segment[5]) is not None
+            len(browser) == 4
+            and browser[1:3] == ["bind", "--page"]
+            and re.fullmatch(r"[A-Za-z0-9._:-]+", browser[3]) is not None
         )
     if tool == "chrome-devtools-axi" and executable == "npx":
         return len(segment) >= 3 and segment[1:3] == ["-y", "chrome-devtools-axi"]
@@ -1032,6 +1101,45 @@ async def _close_session_cancellation_resistant(tool: Tool, session: str, tool_e
                 return cancellation
 
 
+async def _create_webcmd_session(tool_env: dict[str, str] | None = None) -> str:
+    command = [
+        "webcmd",
+        "--profile",
+        WEBCMD_BENCHMARK_PROFILE,
+        "session",
+        "create",
+        "-f",
+        "json",
+    ]
+    env = {**_subprocess_env(tool="webcmd"), **(tool_env or {})}
+    process = await asyncio.create_subprocess_exec(
+        *command,
+        env=env,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        start_new_session=True,
+    )
+    try:
+        stdout, stderr = await asyncio.wait_for(
+            process.communicate(), timeout=60
+        )
+    except asyncio.TimeoutError:
+        _kill_process_group(process)
+        await process.wait()
+        raise RuntimeError("Webcmd Session creation timed out")
+    if process.returncode:
+        message = stderr.decode(errors="replace").strip()
+        raise RuntimeError(f"Webcmd Session creation failed: {message}")
+    try:
+        payload = json.loads(stdout)
+        session = payload["id"]
+    except (json.JSONDecodeError, KeyError, TypeError) as error:
+        raise RuntimeError("Webcmd Session creation returned invalid JSON") from error
+    if not isinstance(session, str) or WEBCMD_SESSION_RE.fullmatch(session) is None:
+        raise RuntimeError("Webcmd Session creation returned an invalid Session ID")
+    return session
+
+
 async def _close_runtime_cancellation_resistant(runtime) -> asyncio.CancelledError | None:
     close = asyncio.create_task(runtime.close())
     cancellation: asyncio.CancelledError | None = None
@@ -1049,7 +1157,17 @@ async def _close_runtime_cancellation_resistant(runtime) -> asyncio.CancelledErr
 async def _close_session(tool: Tool, session: str, tool_env: dict[str, str] | None = None) -> None:
     if tool != "webcmd":
         return
-    command = ["webcmd", "browser", session, "close"]
+    command = [
+        "webcmd",
+        "--profile",
+        WEBCMD_BENCHMARK_PROFILE,
+        "session",
+        "close",
+        session,
+        "--force",
+        "-f",
+        "json",
+    ]
     try:
         process = await asyncio.create_subprocess_exec(*command, env={**_subprocess_env(tool=tool), **(tool_env or {})}, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL, start_new_session=True)
         try:
@@ -1080,7 +1198,10 @@ def _webcmd_result_payloads(controller: Controller, lines: list[str]) -> list[ob
         if controller == "codex" and event_type == "item.completed":
             item = event.get("item") or {}
             command = str(item.get("command") or "")
-            if item.get("type") == "command_execution" and "webcmd browser" in command:
+            if (
+                item.get("type") == "command_execution"
+                and _webcmd_run_heredoc_allowed(command)
+            ):
                 payloads.append(item.get("aggregated_output") or item.get("output") or "")
         elif controller == "pi" and event_type == "tool_execution_end":
             payloads.append(event.get("result") or "")
@@ -1148,6 +1269,8 @@ async def run_controller(controller: Controller, model: str, tool: Tool, task: s
     elif tool == "libretto":
         browser_runtime = await start_libretto_runtime(session, work_dir, _subprocess_env(tool=tool))
     merged_tool_env = {**(browser_runtime.env if browser_runtime else {}), **(tool_env or {})}
+    if tool == "webcmd":
+        session = await _create_webcmd_session(merged_tool_env)
     prompt = _build_prompt(tool, session, shots_dir, task)
     turn_collector = _CodexTurnCollector() if controller == "codex" else None
     if turn_collector is not None:
@@ -1167,6 +1290,12 @@ async def run_controller(controller: Controller, model: str, tool: Tool, task: s
     except BaseException:
         if turn_collector is not None:
             turn_collector.__exit__()
+        if tool == "webcmd":
+            close_cancellation = await _close_session_cancellation_resistant(
+                tool, session, tool_env
+            )
+            if close_cancellation is not None:
+                raise close_cancellation
         raise
     timed_out = False
     started = time.monotonic()
@@ -1203,7 +1332,7 @@ async def run_controller(controller: Controller, model: str, tool: Tool, task: s
     (work_dir / "controller.jsonl").write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
     if stderr:
         lines.append(json.dumps({"type": "stderr", "text": stderr.decode(errors="replace")[:2000]}))
-    parsed = _parse_events(controller, lines, tool=tool)
+    parsed = _parse_events(controller, lines, tool=tool, model=model)
     if tool == "webcmd":
         _collect_webcmd_screenshots(controller, lines, shots_dir)
     for index, image in enumerate(parsed.screenshot_images, start=1):

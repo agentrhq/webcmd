@@ -279,13 +279,25 @@ def _write_json(path: Path, value: object) -> None:
 
 def _task_metrics(evidence) -> dict:
     metrics = evidence.metrics
-    return {
+    tokens = metrics.tokens if metrics is not None else None
+    result = {
         "steps": metrics.steps if metrics is not None else None,
         "tool_calls": metrics.tool_calls if metrics is not None else None,
         "total_duration": metrics.duration_seconds if metrics is not None else None,
-        "tokens": metrics.tokens.non_cached_input + metrics.tokens.output if metrics is not None and metrics.tokens is not None else None,
+        "tokens": tokens.non_cached_input + tokens.output if tokens is not None else None,
         "agent_turns": metrics.agent_turns if metrics is not None else None,
     }
+    if tokens is not None:
+        result["controller_token_usage"] = {
+            "non_cached_input_tokens": tokens.non_cached_input,
+            "cached_read_input_tokens": tokens.cache_read_input,
+            "cached_write_input_tokens": tokens.cache_creation_input,
+            "output_tokens": tokens.output,
+            "reasoning_output_tokens": tokens.reasoning_output,
+        }
+        if tokens.estimated_api_cost_usd is not None:
+            result["estimated_api_cost_usd"] = tokens.estimated_api_cost_usd
+    return result
 
 
 def _safe(value: object) -> str:
@@ -422,6 +434,8 @@ def build_summary(results: list[dict], tools: list[str]) -> dict:
     total_duration = sum(item.get("total_duration") or 0 for item in task_metrics)
     token_values = [item.get("tokens") for item in task_metrics]
     agent_turn_values = [item.get("agent_turns") for item in task_metrics]
+    controller_usages = [item.get("controller_token_usage") for item in task_metrics]
+    estimated_costs = [item.get("estimated_api_cost_usd") for item in task_metrics]
     summary = {
         "schema_version": 2,
         "complete": all(result["score"] is not None for result in results),
@@ -436,6 +450,24 @@ def build_summary(results: list[dict], tools: list[str]) -> dict:
             "total_agent_turns": sum(agent_turn_values) if all(value is not None for value in agent_turn_values) else None,
         },
     }
+    if all(usage is not None for usage in controller_usages):
+        usage_keys = (
+            "non_cached_input_tokens",
+            "cached_read_input_tokens",
+            "cached_write_input_tokens",
+            "output_tokens",
+            "reasoning_output_tokens",
+        )
+        summary["metrics"]["controller_token_usage"] = {
+            key: (
+                sum(usage[key] for usage in controller_usages)
+                if all(usage[key] is not None for usage in controller_usages)
+                else None
+            )
+            for key in usage_keys
+        }
+    if all(cost is not None for cost in estimated_costs):
+        summary["metrics"]["estimated_api_cost_usd"] = sum(estimated_costs)
     return summary
 
 

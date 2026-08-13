@@ -94,6 +94,14 @@ Run a controlled, sequential browser-tool benchmark. Keep task data and local ev
 5. Report selected task count, overall accuracy, category accuracy, terminal statuses, controller time, steps, tool calls, token usage, and the ignored local result path.
 6. Compare runs only when manifest metadata (benchmark, dataset hash, controller, model, and tools) match.
 
+The legacy `tokens` metric remains non-cached controller input plus controller
+output. Task results also record the controller's ordinary input, cached reads,
+cache writes, output, and reasoning-output detail. For `gpt-5.6-sol`,
+`estimated_api_cost_usd` applies the documented API rates to each completed
+controller turn before summing them, including the long-context multiplier.
+This is an API-equivalent estimate; ChatGPT-authenticated Codex runs are not
+necessarily billed through the API. Judge usage is excluded.
+
 ## Commands
 
 ```bash
@@ -198,11 +206,14 @@ is disabled so the agent cannot leave the task's dedicated CloakBrowser.
 
 Use `--stealth-view official` only with `Stealth_Bench_V1`. Never add a parallel flag or publish `results/`.
 
-Webcmd browser attempts use only `webcmd browser <session> tabs` → optional
-`webcmd browser <session> bind --page PAGE` → optional
-`webcmd browser <session> snapshot` → one or more
-`webcmd browser <session> run --stdin <<'JS' ... JS` calls →
-`webcmd browser <session> close`.
+Webcmd attempts use the dedicated `benchmark` Profile. The harness creates one
+opaque Session per task before starting the controller, passes that Session to
+the controller, and closes it only after the controller exits. The agent does
+not create or close Sessions. Its browser surface is only
+`webcmd --profile benchmark --session <session-id> browser tabs` → optional
+`bind --page PAGE` → optional `snapshot` → one or more
+`run --stdin <<'JS' ... JS` calls. Profile-level cookies, cache, and storage are
+shared across the Webcmd run; tabs and browser workspace are task-specific.
 Removed browser primitives (`open`, `state`,
 `click`, `type`, `screenshot`, `wait`, `eval`, `observe`, and `tab`) are not
 allowed. Do not run `webcmd browser --help`; the allowed surface is complete.
@@ -215,7 +226,9 @@ values, `--snapshot-mode act|tree`, and the boolean `--no-snapshot-diff` flag ar
 accepted:
 
 ```bash
-webcmd browser work run --stdin --snapshot-mode act <<'JS'
+webcmd --profile benchmark \
+  --session session_7d8f2c10-4a11-4f3e-9c22-1b6de0a91f45 \
+  browser run --stdin --snapshot-mode act <<'JS'
 return await page.title()
 JS
 ```

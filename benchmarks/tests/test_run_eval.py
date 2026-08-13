@@ -29,7 +29,7 @@ def controller_metrics():
         duration_seconds=12.5,
         steps=4,
         tool_calls=3,
-        tokens=TokenUsage(100, 70, 10, 20, 5, 2, 105),
+        tokens=TokenUsage(100, 70, 10, 20, 5, 2, 105, estimated_api_cost_usd=0.123),
         provider_turns=2,
         provider_duration_seconds=12.0,
         provider_api_duration_seconds=10.0,
@@ -525,8 +525,8 @@ def test_manifest_records_libretto_with_cloakbrowser():
 
 def test_summary_aggregates_available_metrics_and_marks_missing_tokens():
     results = [
-        {"task_id": "a", "tool": "webcmd", "category": "A", "status": "completed", "score": 1, "metrics": {"steps": 4, "tool_calls": 3, "total_duration": 10.0, "tokens": 25, "agent_turns": 2}},
-        {"task_id": "b", "tool": "webcmd", "category": "B", "status": "judge_error", "score": None, "metrics": {"steps": 2, "tool_calls": 1, "total_duration": 5.0, "tokens": 10, "agent_turns": 3}},
+        {"task_id": "a", "tool": "webcmd", "category": "A", "status": "completed", "score": 1, "metrics": {"steps": 4, "tool_calls": 3, "total_duration": 10.0, "tokens": 25, "agent_turns": 2, "controller_token_usage": {"non_cached_input_tokens": 15, "cached_read_input_tokens": 70, "cached_write_input_tokens": 5, "output_tokens": 10, "reasoning_output_tokens": 2}, "estimated_api_cost_usd": 0.4}},
+        {"task_id": "b", "tool": "webcmd", "category": "B", "status": "judge_error", "score": None, "metrics": {"steps": 2, "tool_calls": 1, "total_duration": 5.0, "tokens": 10, "agent_turns": 3, "controller_token_usage": {"non_cached_input_tokens": 6, "cached_read_input_tokens": 30, "cached_write_input_tokens": 1, "output_tokens": 4, "reasoning_output_tokens": 1}, "estimated_api_cost_usd": 0.2}},
     ]
     summary = run_eval.build_summary(results, ["webcmd"])
 
@@ -537,7 +537,31 @@ def test_summary_aggregates_available_metrics_and_marks_missing_tokens():
     assert summary["metrics"]["total_duration"] == 15.0
     assert summary["metrics"]["total_tokens"] == 35
     assert summary["metrics"]["total_agent_turns"] == 5
-    assert set(summary["metrics"]) == {"total_steps", "total_tool_calls", "total_duration", "total_tokens", "total_agent_turns"}
+    assert summary["metrics"]["controller_token_usage"] == {
+        "non_cached_input_tokens": 21,
+        "cached_read_input_tokens": 100,
+        "cached_write_input_tokens": 6,
+        "output_tokens": 14,
+        "reasoning_output_tokens": 3,
+    }
+    assert summary["metrics"]["estimated_api_cost_usd"] == pytest.approx(0.6)
+
+
+def test_task_metrics_add_cost_breakdown_without_changing_legacy_counts():
+    metrics = run_eval._task_metrics(type("Evidence", (), {"metrics": controller_metrics()})())
+
+    assert metrics["tokens"] == 25
+    assert metrics["steps"] == 4
+    assert metrics["tool_calls"] == 3
+    assert metrics["agent_turns"] == 2
+    assert metrics["controller_token_usage"] == {
+        "non_cached_input_tokens": 20,
+        "cached_read_input_tokens": 70,
+        "cached_write_input_tokens": 10,
+        "output_tokens": 5,
+        "reasoning_output_tokens": 2,
+    }
+    assert metrics["estimated_api_cost_usd"] == 0.123
 
 
 def test_summary_marks_agent_turns_unavailable_when_any_attempt_is_missing_them():
@@ -598,7 +622,14 @@ def test_run_attempt_checkpoints_and_finalizes_controller_metrics(tmp_path, monk
         assert checkpoint["metrics"]["tool_calls"] == 3
         assert checkpoint["metrics"]["tokens"] == 25
         assert checkpoint["metrics"]["agent_turns"] == 2
-        assert set(checkpoint["metrics"]) == {"steps", "tool_calls", "total_duration", "tokens", "agent_turns"}
+        assert checkpoint["metrics"]["controller_token_usage"] == {
+            "non_cached_input_tokens": 20,
+            "cached_read_input_tokens": 70,
+            "cached_write_input_tokens": 10,
+            "output_tokens": 5,
+            "reasoning_output_tokens": 2,
+        }
+        assert checkpoint["metrics"]["estimated_api_cost_usd"] == 0.123
         return JudgementResult(reasoning="correct", verdict=True)
 
     monkeypatch.setattr(run_eval, "run_controller", fake_controller)
@@ -608,7 +639,11 @@ def test_run_attempt_checkpoints_and_finalizes_controller_metrics(tmp_path, monk
     result = asyncio.run(run_eval.run_attempt(run_id="run", benchmark="BU_Bench_V1", task=task, effective_index=0, controller="codex", model="gpt-5", tool="webcmd", timeout=10, attempt_dir=tmp_path / "attempt", judge_provider="google", judge_model="gemini-2.5-flash"))
 
     assert result["status"] == "completed"
-    assert result["metrics"] == {"steps": 4, "tool_calls": 3, "total_duration": 12.5, "tokens": 25, "agent_turns": 2}
+    assert result["metrics"]["steps"] == 4
+    assert result["metrics"]["tool_calls"] == 3
+    assert result["metrics"]["total_duration"] == 12.5
+    assert result["metrics"]["tokens"] == 25
+    assert result["metrics"]["agent_turns"] == 2
 
 
 def test_run_attempt_keeps_agent_turns_when_judge_marks_answer_incorrect(
