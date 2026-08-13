@@ -70,6 +70,8 @@ function seekScriptHarness({
   currentTime = 0,
   readyState = 4,
   rects = [{ x: 10, y: 20, width: 640, height: 360 }],
+  scrollX = 0,
+  scrollY = 0,
   emitSeeked = true,
   clockStep = 0,
 } = {}) {
@@ -120,6 +122,8 @@ function seekScriptHarness({
   const context = {
     URL,
     location: { href: `https://www.youtube.com/watch?v=${activeVideoId}` },
+    scrollX,
+    scrollY,
     document: { querySelectorAll: () => [video] },
     Date: { now: () => { now += clockStep; return now; } },
     requestAnimationFrame: (callback) => { callback(); return 1; },
@@ -146,6 +150,7 @@ function seekScriptHarness({
     get pauseCalls() { return pauseCalls; },
     get scrollCalls() { return scrollCalls; },
     emit,
+    setReportedCurrentTime(value) { storedCurrentTime = value; },
     fireTimer(delay) {
       const timer = [...timers].find((entry) => entry.delay === delay);
       assert.ok(timer, `expected active ${delay}ms timer`);
@@ -732,6 +737,29 @@ test('seek browser script assigns currentTime and returns the ready video rectan
   assertSeekResourcesClean(harness);
 });
 
+test('seek browser script converts the viewport rectangle to page coordinates after scrolling', async () => {
+  const harness = seekScriptHarness({ scrollX: 12, scrollY: 900 });
+  assert.deepEqual(await seekVideo(harness.page, 'HQqX4rF1nDM', 42), {
+    actualTime: 42,
+    rect: { x: 22, y: 920, width: 640, height: 360, scale: 1 },
+  });
+  assertSeekResourcesClean(harness);
+});
+
+test('seek browser script ignores a stale seeked event until the requested time lands', async () => {
+  const harness = seekScriptHarness({ emitSeeked: false });
+  const pending = seekVideo(harness.page, 'HQqX4rF1nDM', 42);
+  harness.setReportedCurrentTime(706);
+  harness.emit('seeked');
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.deepEqual(harness.assignedTimes, [42, 42]);
+  harness.setReportedCurrentTime(42);
+  harness.emit('seeked');
+  assert.equal((await pending).actualTime, 42);
+  assertSeekResourcesClean(harness);
+});
+
 test('seek browser script takes the immediate path when already at target time', async () => {
   const harness = seekScriptHarness({ currentTime: 42, emitSeeked: false });
   assert.equal((await seekVideo(harness.page, 'HQqX4rF1nDM', 42)).actualTime, 42);
@@ -838,7 +866,7 @@ test('successful capture uses only a clipped CDP screenshot and an absolute PNG 
   assert.deepEqual(shot[2], {
     format: 'png',
     clip: { x: 10, y: 20, width: 640, height: 360, scale: 1 },
-    captureBeyondViewport: false,
+    captureBeyondViewport: true,
   });
   assert.equal(path.isAbsolute(rows[0].path), true);
   assert.match(rows[0].path, /frame-001-060000ms\.png$/);

@@ -155,6 +155,7 @@ export async function seekVideo(page, expectedVideoId, timestampSeconds) {
     }
     if (!video) { resolve({ error: 'Visible video element disappeared before seek' }); return; }
     let timer;
+    let correctiveSeeks = 0;
     const cleanup = () => {
       clearTimeout(timer);
       video.removeEventListener('seeked', onSeeked);
@@ -163,6 +164,13 @@ export async function seekVideo(page, expectedVideoId, timestampSeconds) {
     const finish = (value) => { cleanup(); resolve(value); };
     const onError = () => finish({ error: 'Video player reported an error while seeking' });
     const onSeeked = async () => {
+      if (Math.abs(video.currentTime - timestampSeconds) > 0.25) {
+        if (correctiveSeeks < 2) {
+          correctiveSeeks += 1;
+          video.currentTime = timestampSeconds;
+        }
+        return;
+      }
       const deadline = Date.now() + 10000;
       while (video.readyState < 2 && Date.now() < deadline) {
         await new Promise((next) => setTimeout(next, 50));
@@ -179,12 +187,18 @@ export async function seekVideo(page, expectedVideoId, timestampSeconds) {
       }
       finish({
         actualTime: video.currentTime,
-        rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height, scale: 1 },
+        rect: {
+          x: rect.x + scrollX,
+          y: rect.y + scrollY,
+          width: rect.width,
+          height: rect.height,
+          scale: 1,
+        },
       });
     };
     video.pause();
     video.muted = true;
-    video.addEventListener('seeked', onSeeked, { once: true });
+    video.addEventListener('seeked', onSeeked);
     video.addEventListener('error', onError, { once: true });
     timer = setTimeout(() => finish({ error: 'Seek timed out after 10 seconds' }), 10000);
     if (Math.abs(video.currentTime - timestampSeconds) < 0.001) onSeeked();
@@ -242,7 +256,7 @@ export async function capturePng(page, clip, outputPath) {
     const shot = await page.cdp('Page.captureScreenshot', {
       format: 'png',
       clip: { x: clip.x, y: clip.y, width: clip.width, height: clip.height, scale: 1 },
-      captureBeyondViewport: false,
+      captureBeyondViewport: true,
     });
     const base64 = typeof shot === 'string' ? shot : shot?.data;
     if (!base64) throw new Error('CDP screenshot returned no image data');
