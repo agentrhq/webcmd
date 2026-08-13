@@ -211,7 +211,7 @@ Use direct `plugin install github:...` only when you already know the source. Fo
 
 Hosted mode supports `plugin search`, `plugin install`, `plugin list`, `plugin uninstall`, `plugin update`, and `plugin create` for Webcmd-verified marketplace adapters. Plugin catalog source management remains local-only.
 
-`plugin list`, `plugin search`, and `plugin catalog` honor the universal `-f/--format` flag. `-f json` returns arrays (including `[]` when no plugins are installed), `yml` and `markdown` normalize to `yaml` and `md`, and unknown format names are usage errors.
+`plugin list`, `plugin search`, `plugin catalog list`, and `plugin catalog add` accept `-f/--format`. `plugin list -f json` returns an array (including `[]` when no plugins are installed); `plugin catalog list -f json` returns its catalog object. `yml` and `markdown` normalize to `yaml` and `md`, and unknown format names are usage errors.
 
 ## Skills
 

@@ -17,7 +17,7 @@ import { type CliCommand, getRegistry } from './registry.js';
 // so it reaches help, `list`, completions and manifests without a plugin.
 import './fetch/command.js';
 import { commandListPresentation, filterCommandsByTag, toPresentableCommand } from './command-presentation.js';
-import { configureCompletionCommandSurface, configureListCommandSurface, configurePluginInstallSurface, configurePluginSearchSurface } from './builtin-command-surface.js';
+import { configureCompletionCommandSurface, configureListCommandSurface, configurePluginInstallSurface, configurePluginListSurface, configurePluginSearchSurface } from './builtin-command-surface.js';
 import { OUTPUT_FORMAT_HELP, resolveOutputFormat } from './command-surface.js';
 import { render as renderOutput } from './output.js';
 import { PKG_VERSION } from './version.js';
@@ -1384,10 +1384,7 @@ cli({
     });
 
 
-  const pluginListCmd = pluginCmd
-    .command('list')
-    .description('List installed plugins')
-    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
+  const pluginListCmd = configurePluginListSurface(pluginCmd.command('list'));
   pluginListCmd.action(async (opts) => {
     const fmt = resolveOutputFormat(opts.format);
     if (fmt === null) return;
