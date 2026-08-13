@@ -63,6 +63,15 @@ describe('plugin-only PR scope guard', () => {
     expect(runGuard(root, base, head).status).toBe(0);
   });
 
+  it('ignores unrelated changes added to the base after the feature branch diverges', () => {
+    const { root, base, head } = fixture((repo) => addPlugin(repo, 'foo'));
+    git(root, 'checkout', '--quiet', base);
+    write(root, 'README.md', 'base advanced\n');
+    const newBase = commit(root, 'advance base');
+
+    expect(runGuard(root, newBase, head).status).toBe(0);
+  });
+
   it.each([
     ['README.md', (root: string) => write(root, 'README.md', 'after\n')],
     ['webcmd-plugin.json', (root: string) => write(root, 'webcmd-plugin.json', '{"changed":true}\n')],
