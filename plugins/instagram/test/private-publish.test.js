@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
-import { assertDirectlyUploadableMedia, buildConfigureBody, buildConfigureSidecarPayload, buildConfigureToStoryPhotoPayload, buildConfigureToStoryVideoPayload, deriveInstagramJazoest, derivePrivateApiContextFromCapture, extractInstagramRuntimeInfo, getInstagramFeedNormalizedDimensions, getInstagramStoryNormalizedDimensions, isInstagramFeedAspectRatioAllowed, isInstagramStoryAspectRatioAllowed, publishStoryViaPrivateApi, publishMediaViaPrivateApi, publishImagesViaPrivateApi, readImageAsset, resolveInstagramPrivatePublishConfig, } from '../_shared/private-publish.js';
+import { assertDirectlyUploadableMedia, buildConfigureBody, buildConfigureSidecarPayload, buildConfigureToStoryPhotoPayload, buildConfigureToStoryVideoPayload, deriveInstagramJazoest, derivePrivateApiContextFromCapture, extractInstagramRuntimeInfo, getInstagramFeedNormalizedDimensions, getInstagramStoryNormalizedDimensions, isInstagramFeedAspectRatioAllowed, isInstagramStoryAspectRatioAllowed, publishStoryViaPrivateApi, publishMediaViaPrivateApi, publishImagesViaPrivateApi, readImageAsset, readVideoAsset, resolveInstagramPrivatePublishConfig, } from '../_shared/private-publish.js';
 const tempDirs = [];
 const privatePublishSource = readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../_shared/private-publish.js'), 'utf8');
 function createTempFile(name, bytes) {
@@ -13,6 +13,29 @@ function createTempFile(name, bytes) {
     const filePath = path.join(dir, name);
     fs.writeFileSync(filePath, bytes);
     return filePath;
+}
+function mp4Box(type, body) {
+    const box = Buffer.alloc(8 + body.length);
+    box.writeUInt32BE(box.length, 0);
+    box.write(type, 4, 'ascii');
+    body.copy(box, 8);
+    return box;
+}
+function createMp4Fixture(name, rotated = false) {
+    const movieHeader = Buffer.alloc(24);
+    movieHeader.writeUInt32BE(1000, 12);
+    movieHeader.writeUInt32BE(2000, 16);
+    const trackHeader = Buffer.alloc(84);
+    const matrix = rotated
+        ? [0, 0x00010000, 0, -0x00010000, 0, 0, 0, 0, 0x40000000]
+        : [0x00010000, 0, 0, 0, 0x00010000, 0, 0, 0, 0x40000000];
+    matrix.forEach((value, index) => trackHeader.writeInt32BE(value, 40 + index * 4));
+    trackHeader.writeUInt32BE(1920 * 0x10000, 76);
+    trackHeader.writeUInt32BE(1080 * 0x10000, 80);
+    return createTempFile(name, Buffer.concat([
+        mp4Box('ftyp', Buffer.alloc(8)),
+        mp4Box('moov', Buffer.concat([mp4Box('mvhd', movieHeader), mp4Box('trak', mp4Box('tkhd', trackHeader))])),
+    ]));
 }
 afterAll(() => {
     for (const dir of tempDirs) {
@@ -38,6 +61,10 @@ describe('instagram private publish helpers', () => {
             code: 'INSTAGRAM_MEDIA_CONVERSION_REQUIRED',
             message: 'Instagram hosted publishing accepts JPEG, PNG, or MP4; convert this file before upload.',
         });
+    });
+    it('reads transformed dimensions from rotated MP4 tracks', () => {
+        expect(readVideoAsset(createMp4Fixture('landscape.mp4'))).toMatchObject({ width: 1920, height: 1080, durationMs: 2000 });
+        expect(readVideoAsset(createMp4Fixture('portrait.mp4', true))).toMatchObject({ width: 1080, height: 1920, durationMs: 2000 });
     });
     it('derives the private API context from captured instagram request headers', () => {
         const entries = [

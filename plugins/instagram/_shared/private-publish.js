@@ -359,8 +359,15 @@ function readMp4Metadata(bytes, filePath) {
                 durationMs = timescale ? Math.round(duration * 1000 / timescale) : 0;
             }
             if (type === 'tkhd' && boxEnd >= body + 8) {
-                width ||= bytes.readUInt32BE(boxEnd - 8) >>> 16;
-                height ||= bytes.readUInt32BE(boxEnd - 4) >>> 16;
+                const trackWidth = bytes.readUInt32BE(boxEnd - 8) >>> 16;
+                const trackHeight = bytes.readUInt32BE(boxEnd - 4) >>> 16;
+                if (!width && trackWidth && trackHeight) {
+                    const matrixOffset = body + 40;
+                    const rotated = matrixOffset + 16 <= boxEnd
+                        && (bytes.readInt32BE(matrixOffset + 4) !== 0 || bytes.readInt32BE(matrixOffset + 12) !== 0);
+                    width = rotated ? trackHeight : trackWidth;
+                    height = rotated ? trackWidth : trackHeight;
+                }
             }
             if (['moov', 'trak', 'mdia', 'minf', 'stbl'].includes(type))
                 scan(body, boxEnd);
