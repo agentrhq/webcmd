@@ -15,3 +15,10 @@
 
 - No runtime dependencies or version changes.
 - Pre-existing `docs/readme-hero.png` and `package-lock.json` changes were not touched or staged.
+
+## Review Follow-up
+
+- Replaced the remaining `--write-fixture` and raw adapter-path workflow in `references/adapter-template.md` with `webcmd site fixture get|put` and `webcmd adapter source/path/reset` commands.
+- Routed JSDOM temporary dumps through `/tmp/` and `webcmd site sample add`.
+- RED: the focused assertion failed because `webcmd site fixture get` was missing from the adapter template.
+- GREEN: `npm test -- src/skills.test.ts` passed: 14 tests in 1 file.

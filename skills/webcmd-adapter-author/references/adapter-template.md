@@ -13,7 +13,7 @@ For private iteration:
 webcmd browser init <site>/<name>
 ```
 
-This scaffolds `~/.webcmd/clis/<site>/<name>.js` with a `Strategy.PUBLIC` placeholder — `init` takes no flags, so set the real `strategy:` value (and the other `TODO` fields) by hand once the file exists.
+This scaffolds a `Strategy.PUBLIC` placeholder. Use `webcmd adapter path <site>/<name>` to locate it, then edit with `webcmd adapter source get|put <site>/<name>`; set the real `strategy:` value and other `TODO` fields.
 
 Promote a community CLI to the main repo as a plugin — **only after the user has explicitly confirmed they want it pushed into the repo**; a general instruction to build a working adapter is not that confirmation (see `SKILL.md`'s Key Conventions):
 
@@ -25,7 +25,8 @@ webcmd plugin create <plugin-name> \
   --description "<site> commands for Webcmd" \
   --author-name "<author-name>" \
   --author-handle "<github-handle>"
-cp ~/.webcmd/clis/<site>/*.js plugins/<plugin-name>/
+webcmd adapter source get <site>/<name> -o /tmp/<name>.js
+cp /tmp/<name>.js plugins/<plugin-name>/
 rm plugins/<plugin-name>/hello.ts plugins/<plugin-name>/greet.ts 2>/dev/null || true
 ```
 
@@ -34,7 +35,7 @@ Do not hand-edit the root `webcmd-plugin.json` or the generated community-plugin
 Before handing off, remove the private shadow and prove the plugin path works:
 
 ```bash
-rm -rf ~/.webcmd/clis/<site>
+webcmd adapter reset <site>
 webcmd plugin install file://$PWD/plugins/<plugin-name>
 webcmd validate <site>
 webcmd <site> <command> --help
@@ -282,17 +283,21 @@ Run:
 webcmd browser verify <site>/<name> --trace retain-on-failure
 ```
 
-After the first passing run, write a fixture:
+After the first passing run, read and save the fixture:
 
 ```bash
-webcmd browser verify <site>/<name> --write-fixture
+webcmd site fixture get <site>/<name> --output /tmp/<name>.json
 ```
 
-Then tighten the fixture manually:
+Then tighten the saved fixture and write it back:
 
 - Add `notEmpty` for essential columns.
 - Add `patterns` for URL, ID, date, or slug formats.
 - Set realistic `rowCount`.
 - Keep `types` narrow.
+
+```bash
+webcmd site fixture put <site>/<name> /tmp/<name>.json
+```
 
 Run verify again and confirm the fixture matches.

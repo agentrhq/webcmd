@@ -21,12 +21,7 @@ Commit intentional review fixtures under:
 plugins/<site>/__fixtures__/<command>.html
 ```
 
-Temporary debug dumps still belong only in:
-
-```text
-~/.webcmd/sites/<site>/fixtures/
-/tmp/
-```
+Keep temporary debug dumps in `/tmp/`; save sanitized response samples with `webcmd site sample add <site>/<command> <path>`.
 
 ## Five-Step Workflow
 
