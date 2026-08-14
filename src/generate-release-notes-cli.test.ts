@@ -4,7 +4,11 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import type { ReleaseContext } from './release-notes.js';
-import { loadReleaseContext, runGenerateReleaseNotes } from '../scripts/generate-release-notes.js';
+import {
+  generateOpenAIReleaseNotes,
+  loadReleaseContext,
+  runGenerateReleaseNotes,
+} from '../scripts/generate-release-notes.js';
 
 function createIo() {
   let stdout = '';
@@ -38,15 +42,15 @@ describe('runGenerateReleaseNotes', () => {
     });
   });
 
-  it('exits 0 and leaves stdout empty when OPENAI_API_KEY is missing', async () => {
+  it('fails when OPENAI_API_KEY is missing', async () => {
     const { io, read } = createIo();
 
     const exitCode = await runGenerateReleaseNotes(['node', 'script', 'v0.0.0'], {}, {}, io);
 
-    expect(exitCode).toBe(0);
+    expect(exitCode).toBe(1);
     expect(read()).toEqual({
       stdout: '',
-      stderr: 'OPENAI_API_KEY is not set; leaving release-please notes unchanged.\n',
+      stderr: 'OPENAI_API_KEY is required to generate release notes.\n',
     });
   });
 
@@ -131,14 +135,14 @@ describe('runGenerateReleaseNotes', () => {
       io,
     );
 
-    expect(exitCode).toBe(0);
+    expect(exitCode).toBe(1);
     expect(read()).toEqual({
       stdout: '',
-      stderr: '',
+      stderr: 'OpenAI release notes failed: OpenAI returned no usable release notes.\n',
     });
   });
 
-  it('swallows generator errors and keeps release-please notes intact', async () => {
+  it('fails when release-note generation fails', async () => {
     const { io, read } = createIo();
     const loadContext = vi.fn(async () => {
       throw new Error('gh timed out');
@@ -151,11 +155,25 @@ describe('runGenerateReleaseNotes', () => {
       io,
     );
 
-    expect(exitCode).toBe(0);
+    expect(exitCode).toBe(1);
     expect(read()).toEqual({
       stdout: '',
       stderr: 'OpenAI release notes failed: gh timed out\n',
     });
+  });
+
+  it('uses a reasoning-compatible OpenAI request and reports bounded API details', async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      error: { message: `unsupported parameter: temperature ${'x'.repeat(800)}` },
+    }), { status: 400, headers: { 'content-type': 'application/json' } }));
+
+    const error = await generateOpenAIReleaseNotes('prompt', 'gpt-test', 'key', fetchImpl)
+      .catch((value: unknown) => value) as Error;
+
+    const body = (fetchImpl.mock.calls[0]?.[1] as RequestInit).body as string;
+    expect(body).not.toContain('temperature');
+    expect(error.message).toContain('unsupported parameter: temperature');
+    expect(error.message.length).toBeLessThan(750);
   });
 
   it('updates the matching changelog entry from an existing notes file', async () => {
@@ -257,11 +275,11 @@ describe('runGenerateReleaseNotes', () => {
     expect(gh).toHaveBeenCalledWith(['pr', 'diff', '42', '--repo', 'acme/webcmd']);
   });
 
-  it('keeps npm publish unblocked when enhanced release-note editing fails', () => {
+  it('requires enhanced release notes before publishing', () => {
     const workflowPath = fileURLToPath(new URL('../.github/workflows/release.yml', import.meta.url));
     const workflow = readFileSync(workflowPath, 'utf8');
 
-    expect(workflow.indexOf('- name: Publish to npm')).toBeLessThan(workflow.indexOf('- name: Update changelog with enhanced release notes'));
+    expect(workflow.indexOf('- name: Generate enhanced release notes')).toBeLessThan(workflow.indexOf('- name: Publish to npm'));
     expect(workflow).toContain('npm --silent run generate-release-notes -- --update-changelog');
     expect(workflow).toContain('git push origin "HEAD:${{ github.ref_name }}"');
     expect(workflow).toContain('release_title="$(sed -n');
@@ -269,7 +287,20 @@ describe('runGenerateReleaseNotes', () => {
     expect(workflow).toContain('release_body_file="$RUNNER_TEMP/release-body.md"');
     expect(workflow).toContain('release_edit_args+=(--title "$release_title")');
     expect(workflow).toContain('release_edit_args+=(--notes-file "$release_body_file")');
-    expect(workflow).toContain('if gh release edit "${{ steps.release.outputs.tag_name || inputs.publish_tag }}" "${release_edit_args[@]}"; then');
-    expect(workflow).toMatch(/Enhanced release notes could not be applied; keeping release-please notes\./);
+    expect(workflow).toContain('gh release edit "${{ steps.release.outputs.tag_name || inputs.publish_tag }}" "${release_edit_args[@]}"');
+    expect(workflow).not.toMatch(/keeping release-please notes/i);
+  });
+
+  it('keeps changelog versions unique and contiguous', () => {
+    const changelogPath = fileURLToPath(new URL('../CHANGELOG.md', import.meta.url));
+    const packagePath = fileURLToPath(new URL('../package.json', import.meta.url));
+    const changelog = readFileSync(changelogPath, 'utf8');
+    const packageVersion = JSON.parse(readFileSync(packagePath, 'utf8')).version as string;
+    const versions = [...changelog.matchAll(/^## \[?(\d+\.\d+\.\d+)\]?/gm)].map((match) => match[1]!);
+    const links = [...changelog.matchAll(/^## \[(\d+\.\d+\.\d+)\]\([^\n]*compare\/webcmd-v(\d+\.\d+\.\d+)\.\.\.webcmd-v\1\)/gm)];
+
+    expect(versions[0]).toBe(packageVersion);
+    expect(new Set(versions).size).toBe(versions.length);
+    links.forEach((match) => expect(versions[versions.indexOf(match[1]!)+1]).toBe(match[2]));
   });
 });
