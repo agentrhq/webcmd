@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { fileURLToPath } from 'node:url';
 import type { InternalCliCommand } from './registry.js';
 import { resolveAdapterSourcePath } from './adapter-source.js';
+
+const existingPath = fileURLToPath(import.meta.url);
 
 function makeCmd(overrides: Partial<InternalCliCommand> = {}): InternalCliCommand {
   return {
@@ -14,13 +17,13 @@ function makeCmd(overrides: Partial<InternalCliCommand> = {}): InternalCliComman
 
 describe('resolveAdapterSourcePath', () => {
   it('returns source when it is a real file path (not manifest:)', () => {
-    const cmd = makeCmd({ source: '/home/user/.webcmd/clis/arxiv/search.js' });
-    expect(resolveAdapterSourcePath(cmd)).toBe('/home/user/.webcmd/clis/arxiv/search.js');
+    const cmd = makeCmd({ source: existingPath });
+    expect(resolveAdapterSourcePath(cmd)).toBe(existingPath);
   });
 
   it('skips manifest: pseudo-paths and falls back to _modulePath', () => {
-    const cmd = makeCmd({ source: 'manifest:arxiv/search', _modulePath: '/pkg/clis/arxiv/search.js' });
-    expect(resolveAdapterSourcePath(cmd)).toBe('/pkg/clis/arxiv/search.js');
+    const cmd = makeCmd({ source: 'manifest:arxiv/search', _modulePath: existingPath });
+    expect(resolveAdapterSourcePath(cmd)).toBe(existingPath);
   });
 
   it('returns undefined when only manifest: pseudo-path and no _modulePath', () => {
@@ -29,7 +32,12 @@ describe('resolveAdapterSourcePath', () => {
   });
 
   it('returns _modulePath when it is the only path available', () => {
-    const cmd = makeCmd({ _modulePath: '/project/clis/site/cmd.js' });
-    expect(resolveAdapterSourcePath(cmd)).toBe('/project/clis/site/cmd.js');
+    const cmd = makeCmd({ _modulePath: existingPath });
+    expect(resolveAdapterSourcePath(cmd)).toBe(existingPath);
+  });
+
+  it('returns undefined when every candidate is stale', () => {
+    const cmd = makeCmd({ source: '/tmp/webcmd-missing-source.js', _modulePath: '/tmp/webcmd-missing-module.js' });
+    expect(resolveAdapterSourcePath(cmd)).toBeUndefined();
   });
 });

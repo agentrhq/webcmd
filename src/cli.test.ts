@@ -163,6 +163,22 @@ describe('site-memory and local adapter authoring', () => {
     await expect(createProgram('', '').parseAsync(['node', 'webcmd', 'adapter', 'path', 'missing/search']))
       .rejects.toThrow(/Adapter source is unavailable/);
   });
+
+  it('rejects a registered adapter whose source was deleted', async () => {
+    const key = 'stale-source/search';
+    const source = path.join(isolatedCliTestHome, 'deleted-source.js');
+    fs.writeFileSync(source, 'export default {};');
+    fs.rmSync(source);
+    getRegistry().set(key, {
+      site: 'stale-source', name: 'search', access: 'read', description: 'stale', args: [], source,
+    } as never);
+    try {
+      await expect(createProgram('', '').parseAsync(['node', 'webcmd', 'adapter', 'path', key]))
+        .rejects.toThrow(/Adapter source is unavailable/);
+    } finally {
+      getRegistry().delete(key);
+    }
+  });
 });
 
 describe('override reporting surfaces', () => {
