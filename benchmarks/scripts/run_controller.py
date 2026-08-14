@@ -300,6 +300,7 @@ Hard rules:
 - Quote URLs that contain `?`, `&`, `#`, `(`, `)`, or other shell punctuation.
 - Do not change filters, sort modes, chart variants, regions, or page views unless the task explicitly asks.
 {screenshot_rules}
+- If a CAPTCHA, human-verification control, or anti-bot challenge is interactable, make a reasonable in-browser attempt to complete it and continue. If a login or authentication page blocks further progress, report that as the outcome. Otherwise, only report failure when anti-bot protection remains blocking.
 - Work autonomously and do not ask clarifying questions.
 - End with exactly one line `FINAL ANSWER: answer` and nothing after it. Use `FINAL ANSWER: done` for action-only tasks.
 

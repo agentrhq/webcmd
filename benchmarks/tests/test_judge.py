@@ -51,6 +51,7 @@ def test_stealth_benchmark_uses_blocking_only_contract(tmp_path, benchmark):
 
     assert "only whether anti-bot protection blocked" in system
     assert "Do not evaluate whether the agent completed the task steps" in system
+    assert "Login or authentication requirements are not anti-bot failures" in system
     assert "Task Satisfaction (Most Important)" not in system
     assert "GROUND TRUTH VALIDATION" in system
 

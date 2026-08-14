@@ -71,6 +71,14 @@ def test_prompt_warns_against_shell_punctuation_and_unspecified_view_changes(tmp
     assert "Do not change filters, sort modes, chart variants, regions, or page views" in prompt
 
 
+def test_prompt_handles_stealth_challenges_and_login_pages(tmp_path):
+    prompt = _build_prompt("webcmd", "session-1", tmp_path / "shots", "Find the answer")
+
+    assert "make a reasonable in-browser attempt" in prompt
+    assert "If a login or authentication page blocks further progress" in prompt
+    assert "only report failure when anti-bot protection remains blocking" in prompt
+
+
 def test_webcmd_prompt_allows_one_quoted_browser_run_heredoc(tmp_path):
     prompt = _build_prompt(
         "webcmd", WEBCMD_SESSION, tmp_path / "shots", "Find the answer"

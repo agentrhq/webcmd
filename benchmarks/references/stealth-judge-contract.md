@@ -5,6 +5,7 @@ Evaluate only whether anti-bot protection blocked the browser. The supplied task
 Return `verdict: true` when:
 - The target site loaded and the agent was not blocked by a CAPTCHA, anti-bot challenge, page-loading security check, or access refusal.
 - The agent encountered a CAPTCHA or anti-bot challenge and passed it, allowing continued access to the target site.
+- Login or authentication requirements are not anti-bot failures; return true if the remaining obstacle is ordinary login/auth rather than bot protection.
 
 Return `verdict: false` when:
 - A CAPTCHA, anti-bot challenge, page-loading security check, or access refusal remained blocking.
