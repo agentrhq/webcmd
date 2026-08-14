@@ -276,10 +276,13 @@ async function dispatchHosted(
         await renderOutput(result, { fmt: 'json', stdout });
       } else {
         for (const error of result.errors) await writeToStream(stderr, `Warning: ${error.sourceId}: ${error.message}\n`);
-        await renderOutput(result.plugins, {
+        await renderOutput(result.plugins.map(plugin => ({
+          ...plugin,
+          excludedCommands: plugin.excludedCommands.join(','),
+        })), {
           fmt: parsed.format,
           fmtExplicit: parsed.formatExplicit,
-          columns: ['name', 'description', 'version', 'sourceId', 'installSource', 'webcmd'],
+          columns: ['name', 'description', 'version', 'sourceId', 'installSource', 'webcmd', 'availability', 'excludedCommands'],
           title: `${CLI_COMMAND}/plugin-search`,
           source: `${CLI_COMMAND} plugin search`,
           stdout,

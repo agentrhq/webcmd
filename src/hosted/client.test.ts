@@ -124,12 +124,14 @@ describe('HostedClient', () => {
           ok: true,
           result: {
             plugins: [{
-              name: 'acme',
-              description: 'Search Acme',
-              version: '1.0.0',
+              name: 'mercury',
+              description: 'Search Mercury',
+              version: '0.7.1',
               sourceId: 'agentrhq/webcmd',
-              installSource: 'github:agentrhq/webcmd/acme',
+              installSource: 'github:agentrhq/webcmd/mercury',
               webcmd: '>=0.4.3',
+              availability: 'mixed',
+              excludedCommands: ['mercury/reimbursement-plan'],
             }],
             errors: [],
           },
@@ -139,12 +141,14 @@ describe('HostedClient', () => {
 
     await expect(client.searchMarketplacePlugins('Acme & Co')).resolves.toEqual({
       plugins: [{
-        name: 'acme',
-        description: 'Search Acme',
-        version: '1.0.0',
+        name: 'mercury',
+        description: 'Search Mercury',
+        version: '0.7.1',
         sourceId: 'agentrhq/webcmd',
-        installSource: 'github:agentrhq/webcmd/acme',
+        installSource: 'github:agentrhq/webcmd/mercury',
         webcmd: '>=0.4.3',
+        availability: 'mixed',
+        excludedCommands: ['mercury/reimbursement-plan'],
       }],
       errors: [],
     });
@@ -153,6 +157,26 @@ describe('HostedClient', () => {
       { url: 'https://api.example.com/v1/marketplace/plugins?query=Acme+%26+Co', method: 'GET' },
       { url: 'https://api.example.com/v1/marketplace/plugins', method: 'GET' },
     ]);
+  });
+
+  it('preserves a local-only marketplace install failure from Cloud', async () => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: false,
+        error: {
+          code: 'MARKETPLACE_PLUGIN_LOCAL_ONLY',
+          message: 'This plugin is only available in local mode.',
+          help: 'Run `webcmd setup` and choose local mode to install this plugin.',
+        },
+      }), { status: 409 }),
+    });
+
+    await expect(client.installMarketplacePlugin('github:agentrhq/webcmd/local-only')).rejects.toMatchObject({
+      code: 'MARKETPLACE_PLUGIN_LOCAL_ONLY',
+      hint: 'Run `webcmd setup` and choose local mode to install this plugin.',
+    });
   });
 
   it('installs a marketplace plugin through the authenticated API', async () => {

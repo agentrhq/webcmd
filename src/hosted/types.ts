@@ -96,6 +96,8 @@ export interface HostedBrowserSessionCloseResponse {
   displaced?: { executionId?: string; handoffSite?: string };
 }
 
+export type HostedMarketplaceAvailability = 'hosted' | 'mixed' | 'local-only';
+
 export interface HostedMarketplacePlugin {
   name: string;
   description?: string;
@@ -103,6 +105,8 @@ export interface HostedMarketplacePlugin {
   sourceId: string;
   installSource: string;
   webcmd?: string;
+  availability: HostedMarketplaceAvailability;
+  excludedCommands: string[];
 }
 
 export interface HostedMarketplaceSearchError {

@@ -295,7 +295,7 @@ describe('runHostedCli', () => {
     const requests: string[] = [];
     const stdout = sink();
     const stderr = sink();
-    const result = await runHostedCli(['plugin', 'search', 'acme', '-f', 'json'], {
+    const result = await runHostedCli(['plugin', 'search', 'mercury'], {
       config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
       stdout: stdout.stream,
       stderr: stderr.stream,
@@ -305,12 +305,14 @@ describe('runHostedCli', () => {
           ok: true,
           result: {
             plugins: [{
-              name: 'acme',
-              description: 'Search Acme',
-              version: '1.0.0',
+              name: 'mercury',
+              description: 'Search Mercury',
+              version: '0.7.1',
               sourceId: 'agentrhq/webcmd',
-              installSource: 'github:agentrhq/webcmd/acme',
+              installSource: 'github:agentrhq/webcmd/mercury',
               webcmd: '>=0.4.3',
+              availability: 'mixed',
+              excludedCommands: ['mercury/reimbursement-plan'],
             }],
             errors: [],
           },
@@ -320,11 +322,9 @@ describe('runHostedCli', () => {
 
     expect(result).toEqual({ handled: true, exitCode: 0 });
     expect(stderr.text()).toBe('');
-    expect(JSON.parse(stdout.text())).toEqual({
-      plugins: [expect.objectContaining({ name: 'acme', installSource: 'github:agentrhq/webcmd/acme' })],
-      errors: [],
-    });
-    expect(requests).toEqual(['https://api.example.com/v1/marketplace/plugins?query=acme']);
+    expect(stdout.text()).toContain('mixed');
+    expect(stdout.text()).toContain('mercury/reimbursement-plan');
+    expect(requests).toEqual(['https://api.example.com/v1/marketplace/plugins?query=mercury']);
   });
 
   it('installs hosted marketplace plugins without fetching the manifest', async () => {

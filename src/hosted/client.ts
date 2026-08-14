@@ -590,10 +590,13 @@ function isHostedMarketplaceSearchResult(value: unknown): value is HostedMarketp
 }
 
 function isHostedMarketplacePlugin(value: unknown): boolean {
-  return hasOnlyKeys(value, ['name', 'description', 'version', 'sourceId', 'installSource', 'webcmd'])
+  return hasOnlyKeys(value, ['name', 'description', 'version', 'sourceId', 'installSource', 'webcmd', 'availability', 'excludedCommands'])
     && typeof value.name === 'string'
     && typeof value.sourceId === 'string'
     && typeof value.installSource === 'string'
+    && (value.availability === 'hosted' || value.availability === 'mixed' || value.availability === 'local-only')
+    && Array.isArray(value.excludedCommands)
+    && value.excludedCommands.every(command => typeof command === 'string')
     && (value.description === undefined || typeof value.description === 'string')
     && (value.version === undefined || typeof value.version === 'string')
     && (value.webcmd === undefined || typeof value.webcmd === 'string');
