@@ -132,6 +132,18 @@ describe('HostedClient', () => {
               webcmd: '>=0.4.3',
               availability: 'mixed',
               excludedCommands: ['mercury/reimbursement-plan'],
+            }, {
+              name: 'hosted-plugin',
+              sourceId: 'agentrhq/webcmd',
+              installSource: 'github:agentrhq/webcmd/hosted-plugin',
+              availability: 'hosted',
+              excludedCommands: [],
+            }, {
+              name: 'local-plugin',
+              sourceId: 'agentrhq/webcmd',
+              installSource: 'github:agentrhq/webcmd/local-plugin',
+              availability: 'local-only',
+              excludedCommands: ['local-plugin/run'],
             }],
             errors: [],
           },
@@ -149,6 +161,18 @@ describe('HostedClient', () => {
         webcmd: '>=0.4.3',
         availability: 'mixed',
         excludedCommands: ['mercury/reimbursement-plan'],
+      }, {
+        name: 'hosted-plugin',
+        sourceId: 'agentrhq/webcmd',
+        installSource: 'github:agentrhq/webcmd/hosted-plugin',
+        availability: 'hosted',
+        excludedCommands: [],
+      }, {
+        name: 'local-plugin',
+        sourceId: 'agentrhq/webcmd',
+        installSource: 'github:agentrhq/webcmd/local-plugin',
+        availability: 'local-only',
+        excludedCommands: ['local-plugin/run'],
       }],
       errors: [],
     });
@@ -157,6 +181,30 @@ describe('HostedClient', () => {
       { url: 'https://api.example.com/v1/marketplace/plugins?query=Acme+%26+Co', method: 'GET' },
       { url: 'https://api.example.com/v1/marketplace/plugins', method: 'GET' },
     ]);
+  });
+
+  it.each([
+    { availability: 'unsupported', excludedCommands: [] },
+    { availability: 'hosted', excludedCommands: ['valid-command', 1] },
+  ])('rejects malformed marketplace availability fields', async (plugin) => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        result: {
+          plugins: [{
+            name: 'invalid',
+            sourceId: 'agentrhq/webcmd',
+            installSource: 'github:agentrhq/webcmd/invalid',
+            ...plugin,
+          }],
+          errors: [],
+        },
+      })),
+    });
+
+    await expect(client.searchMarketplacePlugins()).rejects.toMatchObject({ code: 'HOSTED_PROTOCOL' });
   });
 
   it('preserves a local-only marketplace install failure from Cloud', async () => {

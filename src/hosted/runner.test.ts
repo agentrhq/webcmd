@@ -355,6 +355,29 @@ describe('runHostedCli', () => {
     expect(requests).toEqual(['https://api.example.com/v1/marketplace/installations']);
   });
 
+  it('renders Cloud local-only marketplace install guidance', async () => {
+    const stdout = sink();
+    const stderr = sink();
+    const result = await runHostedCli(['plugin', 'install', 'github:agentrhq/webcmd/local-only'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: false,
+        error: {
+          code: 'MARKETPLACE_PLUGIN_LOCAL_ONLY',
+          message: 'This plugin is only available in local mode.',
+          help: 'Run `webcmd setup` and choose local mode to install this plugin.',
+        },
+      }), { status: 409 }),
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 1 });
+    expect(stdout.text()).toBe('');
+    expect(stderr.text()).toContain('MARKETPLACE_PLUGIN_LOCAL_ONLY');
+    expect(stderr.text()).toContain('Run `webcmd setup` and choose local mode to install this plugin.');
+  });
+
   it.each(['catalog'])('rejects unsupported hosted plugin %s without an API call', async (subcommand) => {
     const stderr = sink();
     const fetchImpl = vi.fn<typeof fetch>();
