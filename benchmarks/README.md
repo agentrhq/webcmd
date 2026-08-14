@@ -215,12 +215,17 @@ uv run python benchmarks/scripts/run_eval.py \
   --tools dev-browser
 ```
 
+Use `--controller pi --model openai/gpt-5.6-sol` to run the same lane through
+Pi. The Pi sidecar mounts the installed `dev-browser` skill and enables only
+its `bash` and `read` tools.
+
 `dev-browser install` is required because it installs the daemon's Playwright
 and QuickJS dependencies. It may also download dev-browser's Chromium, but the
 benchmark does not use that browser: the task-private shim always connects
 dev-browser to the task's dedicated CloakBrowser CDP endpoint.
 
-For Libretto Browser Tools with Codex and one dedicated CloakBrowser per task:
+For Libretto Browser Tools with Codex or Pi and one dedicated CloakBrowser per
+task:
 
 ```bash
 npm ci
@@ -234,10 +239,12 @@ uv run python benchmarks/scripts/run_eval.py \
   --tools libretto
 ```
 
-Libretto is currently Codex-only. The harness injects its pinned stdio MCP
-server per attempt and exposes `browser_open`, `browser_exec`,
-`browser_snapshot`, `browser_status`, and `browser_close`. `browser_connect`
-is disabled so the agent cannot leave the task's dedicated CloakBrowser.
+With Codex, the harness injects its pinned stdio MCP server per attempt. With
+Pi, it registers the equivalent native Pi custom tools directly; use
+`--controller pi --model openai/gpt-5.6-sol`. Both expose only `browser_open`,
+`browser_exec`, `browser_snapshot`, `browser_status`, and `browser_close`.
+`browser_connect` is disabled so the agent cannot leave the task's dedicated
+CloakBrowser.
 
 Use `--stealth-view official` only with `Stealth_Bench_V1`. Never publish `results/`.
 

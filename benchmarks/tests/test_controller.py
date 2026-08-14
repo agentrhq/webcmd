@@ -472,6 +472,49 @@ def test_codex_libretto_collects_snapshot_from_wrapped_mcp_result():
     assert parsed.screenshot_images == [png]
 
 
+def test_pi_libretto_custom_tool_counts_once_and_collects_snapshot_image():
+    png = b"\x89PNG\r\npi-libretto"
+    events = [
+        {
+            "type": "tool_execution_start",
+            "toolName": "browser_snapshot",
+            "args": {"sessionId": "ses-1", "screenshot": True},
+        },
+        {
+            "type": "tool_execution_end",
+            "toolName": "browser_snapshot",
+            "result": {
+                "content": [
+                    {
+                        "type": "image",
+                        "data": "[omitted 12000 characters]",
+                        "mimeType": "image/png",
+                    }
+                ],
+                "details": {
+                    "ok": True,
+                    "screenshot": {
+                        "base64": base64.b64encode(png).decode(),
+                        "mimeType": "image/png",
+                    },
+                },
+            },
+            "isError": False,
+        },
+    ]
+
+    parsed = _parse_events(
+        "pi", [json.dumps(event) for event in events], tool="libretto"
+    )
+
+    assert parsed.tool_calls == 1
+    assert parsed.mcp_calls == [("libretto", "browser_snapshot")]
+    assert parsed.screenshot_images == [png]
+    assert not _policy_violation(
+        "libretto", parsed.commands, parsed.event_types, parsed.mcp_calls
+    )
+
+
 @pytest.mark.parametrize(
     ("server", "tool"),
     [
@@ -548,6 +591,14 @@ def test_pi_events_normalize_commands_results_usage_and_final_text():
                     "cacheRead": 70,
                     "cacheWrite": 10,
                     "output": 5,
+                    "totalTokens": 105,
+                    "cost": {
+                        "input": 0.01,
+                        "output": 0.02,
+                        "cacheRead": 0.003,
+                        "cacheWrite": 0.004,
+                        "total": 0.037,
+                    },
                 },
                 "content": [{"type": "text", "text": "working"}],
             },
@@ -579,6 +630,14 @@ def test_pi_events_normalize_commands_results_usage_and_final_text():
                     "cacheRead": 0,
                     "cacheWrite": 0,
                     "output": 2,
+                    "totalTokens": 12,
+                    "cost": {
+                        "input": 0.005,
+                        "output": 0.006,
+                        "cacheRead": 0.0,
+                        "cacheWrite": 0.0,
+                        "total": 0.011,
+                    },
                 },
                 "content": [{"type": "text", "text": "FINAL ANSWER: 42"}],
             },
@@ -603,9 +662,56 @@ def test_pi_events_normalize_commands_results_usage_and_final_text():
     assert parsed.tokens.non_cached_input == 30
     assert parsed.tokens.output == 7
     assert parsed.tokens.total == 117
+    assert parsed.tokens.estimated_api_cost_usd == pytest.approx(0.048)
+    assert parsed.agent_turns == 2
     assert parsed.provider_duration_seconds == 1.0
     assert _extract_final_answer(parsed.final_text) == "42"
     assert not _policy_violation("webcmd", parsed.commands, parsed.event_types)
+
+
+def test_pi_cost_is_unavailable_when_any_usage_turn_lacks_cost():
+    events = [
+        {
+            "type": "message_end",
+            "message": {
+                "role": "assistant",
+                "usage": {
+                    "input": 10,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "output": 2,
+                    "totalTokens": 12,
+                    "cost": {
+                        "input": 0.005,
+                        "output": 0.006,
+                        "cacheRead": 0.0,
+                        "cacheWrite": 0.0,
+                        "total": 0.011,
+                    },
+                },
+                "content": [{"type": "text", "text": "working"}],
+            },
+        },
+        {
+            "type": "message_end",
+            "message": {
+                "role": "assistant",
+                "usage": {
+                    "input": 5,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "output": 1,
+                    "totalTokens": 6,
+                },
+                "content": [{"type": "text", "text": "done"}],
+            },
+        },
+    ]
+
+    parsed = _parse_events("pi", [json.dumps(event) for event in events])
+
+    assert parsed.agent_turns == 2
+    assert parsed.tokens.estimated_api_cost_usd is None
 
 
 def test_pi_non_bash_tool_is_a_policy_violation():
@@ -660,6 +766,26 @@ def test_pi_may_read_only_the_registered_webcmd_browser_skill():
         assert _policy_violation(
             "webcmd", parsed.commands, parsed.event_types
         )
+
+
+def test_pi_dev_browser_skill_read_is_setup_not_a_foreign_tool():
+    event = {
+        "type": "tool_execution_start",
+        "toolName": "read",
+        "args": {
+            "path": str(Path.home() / ".codex/skills/dev-browser/SKILL.md")
+        },
+    }
+
+    parsed = _parse_events(
+        "pi", [json.dumps(event)], tool="dev-browser"
+    )
+
+    assert parsed.tool_calls == 0
+    assert parsed.steps_count == 0
+    assert not _policy_violation(
+        "dev-browser", parsed.commands, parsed.event_types
+    )
 
 
 def test_claude_result_usage_is_used_when_messages_have_no_usage():
@@ -1391,6 +1517,46 @@ def test_controller_commands_are_noninteractive():
     assert pi_input == b"prompt"
 
 
+def test_pi_dev_browser_command_mounts_only_the_dev_browser_skill():
+    command, stdin = _controller_command(
+        "pi", "openai/gpt-5.6-sol", "prompt", tool="dev-browser"
+    )
+
+    assert command == [
+        "node",
+        str(run_controller.PI_CONTROLLER),
+        "--model",
+        "openai/gpt-5.6-sol",
+        "--tool",
+        "dev-browser",
+        "--skill-path",
+        str(Path.home() / ".codex/skills/dev-browser"),
+    ]
+    assert str(WEBCMD_BROWSER_SKILL) not in command
+    assert stdin == b"prompt"
+
+
+def test_pi_libretto_command_uses_direct_tools_without_a_skill_path():
+    command, stdin = _controller_command(
+        "pi",
+        "openai/gpt-5.6-sol",
+        "prompt",
+        tool="libretto",
+        runtime_env={"LIBRETTO_CDP_URL": "http://127.0.0.1:43210"},
+    )
+
+    assert command == [
+        "node",
+        str(run_controller.PI_CONTROLLER),
+        "--model",
+        "openai/gpt-5.6-sol",
+        "--tool",
+        "libretto",
+    ]
+    assert "--skill-path" not in command
+    assert stdin == b"prompt"
+
+
 def test_codex_controller_command_applies_reasoning_effort_override():
     command, stdin = _controller_command("codex", "gpt-5.6-sol", "prompt", "high")
 
@@ -1695,6 +1861,60 @@ def test_codex_execution_collects_completed_model_responses(tmp_path, monkeypatc
     )
 
     assert evidence.metrics.agent_turns == 1
+
+
+def test_pi_execution_records_agent_turns_and_controller_cost(tmp_path, monkeypatch):
+    usage_event = json.dumps(
+        {
+            "type": "message_end",
+            "message": {
+                "role": "assistant",
+                "usage": {
+                    "input": 20,
+                    "cacheRead": 5,
+                    "cacheWrite": 0,
+                    "output": 4,
+                    "totalTokens": 29,
+                    "cost": {
+                        "input": 0.02,
+                        "output": 0.04,
+                        "cacheRead": 0.001,
+                        "cacheWrite": 0.0,
+                        "total": 0.061,
+                    },
+                },
+                "content": [
+                    {"type": "text", "text": "FINAL ANSWER: 42"}
+                ],
+            },
+        }
+    )
+    result_event = json.dumps(
+        {
+            "type": "result",
+            "result": "FINAL ANSWER: 42",
+            "duration_ms": 100,
+        }
+    )
+
+    _fake_controller(
+        monkeypatch, f"print({usage_event!r}); print({result_event!r})"
+    )
+    monkeypatch.setattr(run_controller, "_close_session", _no_close)
+
+    evidence = asyncio.run(
+        execute_controller(
+            "pi",
+            "openai/gpt-5.6-sol",
+            "webcmd",
+            "task",
+            tmp_path / "attempt",
+            5,
+        )
+    )
+
+    assert evidence.metrics.agent_turns == 1
+    assert evidence.metrics.tokens.estimated_api_cost_usd == pytest.approx(0.061)
 
 
 def test_axi_execution_passes_private_runtime_env_and_closes_runtime(tmp_path, monkeypatch):

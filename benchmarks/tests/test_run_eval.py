@@ -171,12 +171,51 @@ def test_cli_accepts_libretto_for_codex():
     assert args.tools == "libretto"
 
 
-@pytest.mark.parametrize("controller", ["claude", "pi"])
-def test_cli_rejects_libretto_for_non_codex_controllers(controller):
+def test_cli_accepts_libretto_for_pi():
     args = run_eval.parse_args(
         [
             "--controller",
-            controller,
+            "pi",
+            "--model",
+            "openai/gpt-5.6-sol",
+            "--benchmark",
+            "BU_Bench_V1",
+            "--tasks",
+            "1",
+            "--tools",
+            "libretto",
+        ]
+    )
+
+    run_eval.validate_args(args)
+
+
+@pytest.mark.parametrize("tool", ["chrome-devtools-axi", "agent-browser"])
+def test_cli_rejects_pi_tools_without_pi_integration(tool):
+    args = run_eval.parse_args(
+        [
+            "--controller",
+            "pi",
+            "--model",
+            "openai/gpt-5.6-sol",
+            "--benchmark",
+            "BU_Bench_V1",
+            "--tasks",
+            "1",
+            "--tools",
+            tool,
+        ]
+    )
+
+    with pytest.raises(ValueError, match="Pi.*Webcmd, dev-browser, or Libretto"):
+        run_eval.validate_args(args)
+
+
+def test_cli_rejects_libretto_for_claude():
+    args = run_eval.parse_args(
+        [
+            "--controller",
+            "claude",
             "--model",
             "model",
             "--benchmark",
@@ -188,7 +227,7 @@ def test_cli_rejects_libretto_for_non_codex_controllers(controller):
         ]
     )
 
-    with pytest.raises(ValueError, match="Libretto.*Codex"):
+    with pytest.raises(ValueError, match="Libretto.*Codex or Pi"):
         run_eval.validate_args(args)
 
 
