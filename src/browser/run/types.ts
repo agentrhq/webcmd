@@ -85,6 +85,7 @@ export interface BrowserRunOptions {
   snapshotDiff?: boolean;
   snapshotMode?: SnapshotTreeMode;
   snapshotBaselineStore?: SnapshotBaselineStore;
+  signal?: AbortSignal;
 }
 
 export interface BrowserRunLogEntry {

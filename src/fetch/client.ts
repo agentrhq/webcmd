@@ -19,18 +19,27 @@ export interface WebFetchDependencies {
   createSafeProxy?: (options: { allowPrivate: boolean }) => Promise<SafeProxy>;
 }
 const MAX_BODY_BYTES = 10 * 1024 * 1024;
+const BROWSER_WORKFLOW = 'Create a browser Session with `webcmd --profile work session create`, then navigate with `webcmd --profile work --session <session-id> browser run --stdin`.';
 
 function headersOf(response: ResponseLike): Record<string, string> { return Object.fromEntries(response.headers.entries()); }
-async function readBody(response: ResponseLike): Promise<string> {
+function beforeDeadline<T>(promise: Promise<T>, deadline: number, timeoutSeconds: number, cancel?: () => void): Promise<T> {
+  const ms = deadline - Date.now();
+  if (ms <= 0) { cancel?.(); return Promise.reject(new TimeoutError('web fetch', timeoutSeconds)); }
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => { cancel?.(); reject(new TimeoutError('web fetch', timeoutSeconds)); }, ms);
+    promise.then(value => { clearTimeout(timer); resolve(value); }, error => { clearTimeout(timer); reject(error); });
+  });
+}
+async function readBody(response: ResponseLike, deadline: number, timeoutSeconds: number): Promise<string> {
   if (!response.body && response.bytes) {
-    const bytes = await response.bytes();
+    const bytes = await beforeDeadline(response.bytes(), deadline, timeoutSeconds);
     if (bytes.byteLength > MAX_BODY_BYTES) throw new CliError('FETCH_BODY_TOO_LARGE', 'Fetched body exceeds 10 MiB');
     return new TextDecoder().decode(bytes);
   }
   const reader = response.body?.getReader();
   if (!reader) return '';
   const chunks: Uint8Array[] = []; let size = 0;
-  while (true) { const { done, value } = await reader.read(); if (done) break; size += value.byteLength; if (size > MAX_BODY_BYTES) { await reader.cancel(); throw new CliError('FETCH_BODY_TOO_LARGE', 'Fetched body exceeds 10 MiB'); } chunks.push(value); }
+  while (true) { const { done, value } = await beforeDeadline(reader.read(), deadline, timeoutSeconds, () => { void reader.cancel(); }); if (done) break; size += value.byteLength; if (size > MAX_BODY_BYTES) { await reader.cancel(); throw new CliError('FETCH_BODY_TOO_LARGE', 'Fetched body exceeds 10 MiB'); } chunks.push(value); }
   return new TextDecoder().decode(Buffer.concat(chunks));
 }
 function truncate(content: string, limit: number): { content: string; truncated: boolean } {
@@ -46,22 +55,49 @@ export async function webFetch(options: WebFetchOptions, dependencies: WebFetchD
   const plainFetch = dependencies.plainFetch ?? ((url, init) => fetch(url, init));
   const createImpit = dependencies.createImpit ?? (impitOptions => new Impit(impitOptions));
   try {
-    let response = await plainFetch(options.url, { redirect: 'manual', dispatcher: new ProxyAgent(proxy.url), signal: AbortSignal.timeout(remaining()) });
-    let body = await readBody(response);
-    let tier: WebFetchResult['tier'] = 'plain'; let profile: WebFetchResult['profile'];
-    if (isJavaScriptShell(body)) throw new CliError('FETCH_REQUIRES_BROWSER', 'This page requires browser rendering.', 'Use webcmd web fetch-browser for this URL.');
-    if (isChallengeResponse(response.status, headersOf(response), body)) {
-      for (const browser of ['chrome', 'firefox'] as const) {
-        const impit = createImpit({ browser, proxyUrl: proxy.url, timeout: remaining() });
-        response = await impit.fetch(options.url, { redirect: 'manual', timeout: remaining() });
-        body = await readBody(response); tier = 'impit'; profile = browser;
-        if (isJavaScriptShell(body)) throw new CliError('FETCH_REQUIRES_BROWSER', 'This page requires browser rendering.', 'Use webcmd web fetch-browser for this URL.');
-        if (!isChallengeResponse(response.status, headersOf(response), body)) break;
+    const ladder = [undefined, 'chrome', 'firefox'] as const;
+    let lastTransport: unknown;
+    for (const browser of ladder) {
+      try {
+        const timeout = remaining();
+        const response = browser
+          ? await createImpit({ browser, proxyUrl: proxy.url, timeout }).fetch(options.url, { redirect: 'manual', timeout: remaining() })
+          : await plainFetch(options.url, { redirect: 'manual', dispatcher: new ProxyAgent(proxy.url), signal: AbortSignal.timeout(timeout) });
+        const policyError = proxy.policyError();
+        if (policyError) throw new CliError('FETCH_UNSAFE_ADDRESS', policyError.message);
+        const body = await readBody(response, deadline, options.timeoutSeconds);
+        if (proxy.policyError()) throw new CliError('FETCH_UNSAFE_ADDRESS', proxy.policyError()!.message);
+        if (isJavaScriptShell(body)) throw new CliError('FETCH_REQUIRES_BROWSER', 'This page requires browser rendering.', BROWSER_WORKFLOW);
+        if (isChallengeResponse(response.status, headersOf(response), body)) {
+          if (browser === 'firefox') throw new CliError('FETCH_BLOCKED', 'The site blocked non-browser fetches.', BROWSER_WORKFLOW);
+          continue;
+        }
+        const extracted = extractFetchedContent({ body, contentType: response.headers.get('content-type') ?? '', url: options.url });
+        const clipped = truncate(extracted.content, options.maxChars);
+        return { status: response.status, requestedUrl: options.url, finalUrl: response.url || options.url, contentType: response.headers.get('content-type') ?? '', tier: browser ? 'impit' : 'plain', ...(browser && { profile: browser }), title: extracted.title, extractionSource: extracted.source, truncated: clipped.truncated, content: clipped.content };
+      } catch (error) {
+        const policyError = proxy.policyError();
+        if (policyError) throw new CliError('FETCH_UNSAFE_ADDRESS', policyError.message);
+        const mapped = asFetchError(error, options.timeoutSeconds, deadline);
+        if (mapped instanceof CliError) throw mapped;
+        lastTransport = mapped;
       }
-      if (isChallengeResponse(response.status, headersOf(response), body)) throw new CliError('FETCH_BLOCKED', 'The site blocked non-browser fetches.', 'Use webcmd web fetch-browser for this URL.');
     }
-    const extracted = extractFetchedContent({ body, contentType: response.headers.get('content-type') ?? '', url: options.url });
-    const clipped = truncate(extracted.content, options.maxChars);
-    return { status: response.status, requestedUrl: options.url, finalUrl: response.url || options.url, contentType: response.headers.get('content-type') ?? '', tier, ...(profile && { profile }), title: extracted.title, extractionSource: extracted.source, truncated: clipped.truncated, content: clipped.content };
+    throw lastTransport;
+  } catch (error) {
+    throw asFetchError(error, options.timeoutSeconds, deadline);
   } finally { await proxy.close(); }
+}
+
+/** An aborted fetch surfaces as a DOMException; agents need the structured timeout instead. */
+function asFetchError(error: unknown, timeoutSeconds: number, deadline: number): unknown {
+  if (error instanceof CliError) return error;
+  const name = (error as { name?: string } | null)?.name;
+  if (name === 'TimeoutError' || name === 'AbortError') return new TimeoutError('web fetch', timeoutSeconds);
+  // Impit reports its own deadline as a plain Error with a message we do not control, so the name
+  // check misses it. Anything that fails at or past the budget is a timeout whatever it calls
+  // itself; a failure with time left is a real error and is passed through untouched, so a refused
+  // connection or DNS failure is never mislabelled.
+  if (Date.now() >= deadline) return new TimeoutError('web fetch', timeoutSeconds);
+  return error;
 }

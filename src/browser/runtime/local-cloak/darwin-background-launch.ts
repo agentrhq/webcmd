@@ -7,8 +7,17 @@ import { buildLaunchOptions, humanizeBrowser } from 'cloakbrowser';
 import type { LaunchPersistentContextOptions } from 'cloakbrowser';
 import { chromium } from 'playwright-core';
 import type { Browser, BrowserContext } from 'playwright-core';
+import { findExactCloakProfileProcesses } from './process-matcher.js';
 
 const execFileAsync = promisify(execFile);
+
+// macOS LaunchServices' registration database for `.app` bundles. A script-driven
+// unzip of a new/updated Chromium bundle (rather than a Finder/.pkg install) can
+// land outside the triggers that make LS pick it up, leaving `open` unable to
+// resolve a bundle that runs fine when executed directly (kLSNoExecutableErr).
+const LSREGISTER_PATH =
+  '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister';
+const LS_NO_EXECUTABLE_MARKER = 'kLSNoExecutableErr';
 
 type Dependencies = {
   buildLaunchOptions: typeof buildLaunchOptions;
@@ -19,10 +28,50 @@ type Dependencies = {
   connectOverCDP: (endpoint: string) => Promise<Browser>;
   terminateProfile: (userDataDir: string) => Promise<void>;
   removePortFile: (portFile: string) => Promise<void>;
+  /** Force LaunchServices to re-scan a bundle after a stale-cache `open` failure. */
+  registerBundle: (appPath: string) => Promise<void>;
 };
 
 async function openApplication(appPath: string, args: string[]): Promise<void> {
   await execFileAsync('/usr/bin/open', ['-g', '-n', appPath, '--args', ...args]);
+}
+
+async function registerBundle(appPath: string): Promise<void> {
+  await execFileAsync(LSREGISTER_PATH, ['-f', appPath]);
+}
+
+function isStaleLaunchServicesError(err: unknown): boolean {
+  return err instanceof Error && err.message.includes(LS_NO_EXECUTABLE_MARKER);
+}
+
+/**
+ * Open the app, retrying once via `lsregister -f` when macOS reports the bundle
+ * as missing due to a stale LaunchServices cache entry rather than an actually
+ * missing executable (see #220).
+ */
+async function openApplicationWithLsRegisterRetry(
+  deps: Dependencies,
+  appPath: string,
+  args: string[],
+): Promise<void> {
+  try {
+    await deps.openApplication(appPath, args);
+  } catch (err) {
+    if (!isStaleLaunchServicesError(err)) throw err;
+    try {
+      await deps.registerBundle(appPath);
+      await deps.openApplication(appPath, args);
+    } catch (retryError) {
+      const retryMessage = retryError instanceof Error ? retryError.message : String(retryError);
+      throw new Error(
+        `Cloak Chromium bundle exists but macOS LaunchServices has a stale record for it (${LS_NO_EXECUTABLE_MARKER}): ${appPath}\n` +
+        `Automatic remediation failed: ${retryMessage}\n` +
+        `Re-registering it automatically did not resolve the issue. Fix it manually with:\n` +
+        `  ${LSREGISTER_PATH} -f "${appPath}"`,
+        { cause: retryError },
+      );
+    }
+  }
 }
 
 export async function waitForDevToolsPort(portFile: string, timeoutMs = 10_000): Promise<number> {
@@ -40,13 +89,7 @@ export async function waitForDevToolsPort(portFile: string, timeoutMs = 10_000):
 }
 
 async function terminateProfile(userDataDir: string): Promise<void> {
-  const { stdout } = await execFileAsync('/bin/ps', ['-axo', 'pid=,command=']);
-  const needle = `--user-data-dir=${userDataDir}`;
-  for (const line of stdout.split('\n')) {
-    if (!line.includes(needle)) continue;
-    const pid = Number.parseInt(line.trim().split(/\s+/, 1)[0], 10);
-    if (Number.isInteger(pid) && pid !== process.pid) process.kill(pid, 'SIGTERM');
-  }
+  for (const pid of await findExactCloakProfileProcesses(userDataDir)) process.kill(pid, 'SIGTERM');
 }
 
 const defaultDependencies: Dependencies = {
@@ -60,6 +103,7 @@ const defaultDependencies: Dependencies = {
   connectOverCDP: endpoint => chromium.connectOverCDP(endpoint),
   terminateProfile,
   removePortFile: portFile => rm(portFile, { force: true }),
+  registerBundle,
 };
 
 const contextActivators = new WeakMap<BrowserContext, () => Promise<void>>();
@@ -88,10 +132,11 @@ export async function launchDarwinBackgroundPersistentContext(
   let browser: Browser | undefined;
   let launched = false;
   try {
-    await deps.openApplication(appPath, [
+    await openApplicationWithLsRegisterRetry(deps, appPath, [
       ...(launchOptions.args ?? []),
       '--password-store=basic',
       '--use-mock-keychain',
+      '--disable-popup-blocking',
       `--user-data-dir=${options.userDataDir}`,
       '--remote-debugging-address=127.0.0.1',
       '--remote-debugging-port=0',

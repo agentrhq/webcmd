@@ -35,7 +35,7 @@ Temporary debug dumps still belong only in:
 Use the browser to capture the specific DOM region, not the entire page.
 
 ```bash
-webcmd browser recon run --stdin <<'JS'
+webcmd --session <session-id> browser run --stdin <<'JS'
 return await page.evaluate(() => document.querySelector('<root-selector>')?.outerHTML ?? '');
 JS
 ```

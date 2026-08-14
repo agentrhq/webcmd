@@ -32,3 +32,4 @@ Do not also add the skills with `webcmd skills add` in Codex.
 ## Other Agents or Plugin-Free Setup
 
 Run `webcmd skills add` to install or refresh the bundled Webcmd skills for your agent. The agent can then start with `webcmd-usage` and load the specialized skill that matches the outcome.
+For raw browser work, agents should create a Session with `webcmd session create -f json` and pass it as a root selector: `webcmd --session <session-id> browser ...`.

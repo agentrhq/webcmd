@@ -2,7 +2,7 @@
  * Tests for plugin management: install, uninstall, list, and lock file support.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -10,11 +10,20 @@ import { pathToFileURL } from 'node:url';
 import { PLUGINS_DIR } from './discovery.js';
 import type { LockEntry } from './plugin.js';
 import * as pluginModule from './plugin.js';
+import { createAdapterOverride } from './adapter-override.js';
 
-const { mockExecFileSync, mockExecSync } = vi.hoisted(() => ({
-  mockExecFileSync: vi.fn(),
-  mockExecSync: vi.fn(),
-}));
+const { mockExecFileSync, mockExecSync, testConfigDir, previousConfigDir } = vi.hoisted(() => {
+  const previousConfigDir = process.env.WEBCMD_CONFIG_DIR;
+  const testConfigDir = `${process.env.TMPDIR ?? '/tmp'}/webcmd-plugin-test-${process.pid}-${Date.now()}`;
+  process.env.WEBCMD_CONFIG_DIR = testConfigDir;
+  return { mockExecFileSync: vi.fn(), mockExecSync: vi.fn(), testConfigDir, previousConfigDir };
+});
+
+afterAll(() => {
+  fs.rmSync(testConfigDir, { recursive: true, force: true });
+  if (previousConfigDir === undefined) delete process.env.WEBCMD_CONFIG_DIR;
+  else process.env.WEBCMD_CONFIG_DIR = previousConfigDir;
+});
 
 const {
   _getCommitHash,
@@ -1261,6 +1270,47 @@ describe('installPlugin with existing monorepo', () => {
     expect(npmCalls.some(([, , opts]) => opts?.cwd === repoDir)).toBe(true);
     expect(fs.realpathSync(pluginLink)).toBe(fs.realpathSync(subDir));
   });
+
+  it('refreshes an existing monorepo cache when the requested sub-plugin is missing locally', () => {
+    fs.mkdirSync(path.join(repoDir, 'packages', 'alpha'), { recursive: true });
+    fs.writeFileSync(path.join(repoDir, 'webcmd-plugin.json'), JSON.stringify({
+      plugins: {
+        alpha: { path: 'packages/alpha' },
+      },
+    }));
+
+    mockExecFileSync.mockImplementation((cmd, args) => {
+      if (cmd === 'git' && Array.isArray(args) && args[0] === 'clone') {
+        const cloneDir = String(args[4]);
+        const subDir = path.join(cloneDir, 'packages', pluginName);
+        fs.mkdirSync(subDir, { recursive: true });
+        fs.writeFileSync(path.join(cloneDir, 'package.json'), JSON.stringify({
+          name: repoName,
+          private: true,
+          workspaces: ['packages/*'],
+        }));
+        fs.writeFileSync(path.join(cloneDir, 'webcmd-plugin.json'), JSON.stringify({
+          plugins: {
+            alpha: { path: 'packages/alpha' },
+            [pluginName]: { path: `packages/${pluginName}` },
+          },
+        }));
+        fs.writeFileSync(path.join(subDir, 'hello.js'), 'cli({ site: "test", name: "hello", access: "read" })');
+        return '';
+      }
+      if (cmd === 'git' && Array.isArray(args) && args[0] === 'rev-parse' && args[1] === 'HEAD') {
+        return '1234567890abcdef1234567890abcdef12345678\n';
+      }
+      return '';
+    });
+
+    installPlugin(`github:user/${repoName}/${pluginName}`);
+
+    const refreshedSubDir = path.join(repoDir, 'packages', pluginName);
+    const refreshedManifest = JSON.parse(fs.readFileSync(path.join(repoDir, 'webcmd-plugin.json'), 'utf-8'));
+    expect(refreshedManifest.plugins[pluginName]).toEqual({ path: `packages/${pluginName}` });
+    expect(fs.realpathSync(pluginLink)).toBe(fs.realpathSync(refreshedSubDir));
+  });
 });
 
 describe('updatePlugin transactional staging', () => {
@@ -1872,6 +1922,42 @@ describe('getDirtyFiles', () => {
     expect(pluginModule.getDirtyFiles('/some/dir')).toEqual(['M foo.js', '?? untracked.js']);
   });
 
+  it('ignores the node_modules/package-lock.json that install itself created', () => {
+    mockExecFileSync.mockImplementation((cmd, args) => {
+      if (Array.isArray(args) && args[0] === 'rev-parse') return '.git\n';
+      return '?? node_modules/\n?? package-lock.json\n?? packages/alpha/node_modules/\n?? packages/alpha/package-lock.json\n';
+    });
+    expect(pluginModule.getDirtyFiles('/some/dir')).toEqual([]);
+  });
+
+  it('still reports user work that merely looks like an install artifact', () => {
+    mockExecFileSync.mockImplementation((cmd, args) => {
+      if (Array.isArray(args) && args[0] === 'rev-parse') return '.git\n';
+      return '?? node_modules_notes.md\n M src/package-lock.json.bak\n';
+    });
+    expect(pluginModule.getDirtyFiles('/some/dir')).toEqual(['?? node_modules_notes.md', 'M src/package-lock.json.bak']);
+  });
+
+  // Only `??` is npm's own output. Every tracked status at the same path is
+  // user work that updatePlugin would destroy, so it must keep blocking.
+  it.each([
+    [' M package-lock.json', 'M package-lock.json'],
+    ['M  package-lock.json', 'M  package-lock.json'],
+    [' D package-lock.json', 'D package-lock.json'],
+    ['D  package-lock.json', 'D  package-lock.json'],
+    ['A  package-lock.json', 'A  package-lock.json'],
+    [' M packages/alpha/package-lock.json', 'M packages/alpha/package-lock.json'],
+    [' M node_modules/vendored/patch.js', 'M node_modules/vendored/patch.js'],
+    ['R  old-lock.json -> package-lock.json', 'R  old-lock.json -> package-lock.json'],
+    ['UU package-lock.json', 'UU package-lock.json'],
+  ])('keeps tracked entry %j dirty', (porcelain, expected) => {
+    mockExecFileSync.mockImplementation((cmd, args) => {
+      if (Array.isArray(args) && args[0] === 'rev-parse') return '.git\n';
+      return `${porcelain}\n`;
+    });
+    expect(pluginModule.getDirtyFiles('/some/dir')).toEqual([expected]);
+  });
+
   it('does not pass --untracked-files=no, so untracked files are reported (git already omits gitignored paths)', () => {
     mockExecFileSync.mockImplementation((cmd, args) => {
       expect(args).not.toContain('--untracked-files=no');
@@ -1893,5 +1979,110 @@ describe('getDirtyFiles', () => {
       return scoped ? '?? sub/plug/new.txt\n' : '?? top.txt\n?? sub/plug/new.txt\n';
     });
     expect(pluginModule.getDirtyFiles('/repo/sub/plug')).toEqual(['?? sub/plug/new.txt']);
+  });
+});
+
+describe('findOverridesNeedingReconcile', () => {
+  let home: string;
+  let originalHome: string | undefined;
+  let pluginsDir: string;
+  let clisDir: string;
+  let pluginFile: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    home = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-reconcile-'));
+    process.env.HOME = home;
+
+    pluginsDir = path.join(home, '.webcmd', 'plugins');
+    clisDir = path.join(home, '.webcmd', 'clis');
+    fs.mkdirSync(path.join(pluginsDir, 'linkedin'), { recursive: true });
+    pluginFile = path.join(pluginsDir, 'linkedin', 'search.js');
+    fs.writeFileSync(pluginFile, '// search v1\n', 'utf-8');
+    fs.writeFileSync(path.join(pluginsDir, 'linkedin', 'inbox.js'), '// inbox v1\n', 'utf-8');
+
+    createAdapterOverride('linkedin/search');
+  });
+
+  afterEach(() => {
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it('reports an override whose upstream file changed', () => {
+    fs.writeFileSync(pluginFile, '// upstream moved\n', 'utf-8');
+    const needs = pluginModule.findOverridesNeedingReconcile(['linkedin']);
+    expect(needs).toEqual([{
+      commandKey: 'linkedin/search', plugin: 'linkedin',
+      yours: path.join(clisDir, 'linkedin', 'search.js'),
+      upstream: pluginFile,
+      base: path.join(clisDir, '.base', 'linkedin', 'search.js'),
+    }]);
+  });
+
+  it('does NOT report an override when an unrelated command in the same plugin changed', () => {
+    fs.writeFileSync(path.join(pluginsDir, 'linkedin', 'inbox.js'), '// unrelated\n', 'utf-8');
+    expect(pluginModule.findOverridesNeedingReconcile(['linkedin'])).toEqual([]);
+  });
+
+  it('does NOT report a user adapter that has no provenance', () => {
+    fs.mkdirSync(path.join(clisDir, 'mysite'), { recursive: true });
+    fs.writeFileSync(path.join(clisDir, 'mysite', 'run.js'), '// local adapter\n', 'utf-8');
+    expect(pluginModule.findOverridesNeedingReconcile()).toEqual([]);
+  });
+
+  it('reports base as null when the base copy was deleted', () => {
+    fs.rmSync(path.join(clisDir, '.base', 'linkedin', 'search.js'), { force: true });
+    fs.writeFileSync(pluginFile, '// upstream moved again\n', 'utf-8');
+    expect(pluginModule.findOverridesNeedingReconcile(['linkedin'])[0]!.base).toBeNull();
+  });
+});
+
+describe('listPlugins override reporting', () => {
+  let home: string;
+  let originalHome: string | undefined;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    home = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-list-overrides-'));
+    process.env.HOME = home;
+  });
+
+  afterEach(() => {
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
+    fs.rmSync(home, { recursive: true, force: true });
+    vi.resetModules();
+  });
+
+  it('lists only provenance-backed overrides and their upstream state per plugin', async () => {
+    vi.resetModules();
+    const { createAdapterOverride: createOverride } = await import('./adapter-override.js');
+    const { listPlugins: list } = await import('./plugin.js');
+    const pluginsDir = path.join(home, '.webcmd', 'plugins');
+    const clisDir = path.join(home, '.webcmd', 'clis');
+    const linkedinDir = path.join(pluginsDir, 'linkedin');
+
+    fs.mkdirSync(linkedinDir, { recursive: true });
+    fs.mkdirSync(path.join(pluginsDir, 'hackernews'), { recursive: true });
+    fs.writeFileSync(path.join(linkedinDir, 'search.js'), '// search v1\n');
+    fs.writeFileSync(path.join(linkedinDir, 'inbox.js'), '// inbox v1\n');
+    fs.writeFileSync(path.join(pluginsDir, 'hackernews', 'top.js'), '// top v1\n');
+    createOverride('linkedin/search', { homeDir: home });
+    fs.mkdirSync(path.join(clisDir, 'local'), { recursive: true });
+    fs.writeFileSync(path.join(clisDir, 'local', 'run.js'), '// no upstream\n');
+
+    expect(list().find((plugin) => plugin.name === 'linkedin')).toMatchObject({
+      overrides: ['search'], updateAvailable: false,
+    });
+    expect(list().find((plugin) => plugin.name === 'hackernews')).toMatchObject({
+      overrides: [], updateAvailable: false,
+    });
+
+    fs.writeFileSync(path.join(linkedinDir, 'search.js'), '// search v2\n');
+    expect(list().find((plugin) => plugin.name === 'linkedin')).toMatchObject({
+      overrides: ['search'], updateAvailable: true,
+    });
   });
 });

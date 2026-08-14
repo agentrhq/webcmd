@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { build } from 'esbuild';
 
 const output = 'src/browser/run/generated/playwright-client.js';
@@ -24,7 +24,7 @@ async function vendorDigest(directory) {
   await walk(directory);
   const hash = createHash('sha256');
   for (const file of files.sort()) {
-    const entry = file.slice(directory.length + 1);
+    const entry = file.slice(directory.length + 1).split(sep).join('/');
     hash.update(entry);
     hash.update('\0');
     hash.update(await readFile(file));

@@ -5,6 +5,8 @@ import {
   browserOptionValueParser,
 } from '../browser/command-catalog.js';
 import { CommanderStructuralError } from '../command-surface.js';
+import { CliError, EXIT_CODES } from '../errors.js';
+import { configureRootCommandSurface } from '../root-command-surface.js';
 
 export class HostedBrowserHelp extends Error {
   constructor(readonly output: string) {
@@ -22,28 +24,28 @@ export interface ParsedHostedBrowserStructure {
   profile?: string;
 }
 
+export function validateRawBrowserSession(value: unknown, profile?: string): string {
+  const session = typeof value === 'string' ? value.trim() : '';
+  const profileFlag = profile?.trim() ? ` --profile ${profile.trim()}` : '';
+  const help = `Create one: webcmd${profileFlag} session create\nList sessions: webcmd${profileFlag} session list`;
+  if (!session) throw new CliError('SESSION_REQUIRED', 'A Session selector is required for browser commands.', help, EXIT_CODES.USAGE_ERROR);
+  if (!/^session_[A-Za-z0-9_-]+$/u.test(session)) {
+    throw new CliError('INVALID_SESSION_SELECTOR', 'Session selector must be an opaque Session ID.', help, EXIT_CODES.USAGE_ERROR);
+  }
+  return session;
+}
+
 /**
  * Parse the hosted browser argv with the exact canonical Commander grammar.
  * The returned values are the values produced by Commander's action boundary;
  * callers must not reinterpret the original argv with a second parser.
  */
 export function parseHostedBrowserStructure(argv: readonly string[]): ParsedHostedBrowserStructure {
-  const root = new Command('webcmd')
-    .option('--profile <name>', 'Chrome profile/context alias for browser runtime commands')
-    .enablePositionalOptions();
+  const root = configureRootCommandSurface(new Command('webcmd'));
   const browser = root
     .command('browser')
-    .addOption(new Option('--session <name>', 'Internal — set automatically from the <session> positional').hideHelp())
-    .description('Run Playwright programs against named browser sessions')
-    .usage('<session> <command> [options]')
-    .addHelpText('after', `
-<session> is a required positional: pass the name of the browser session every subcommand should operate on. Reuse the same name across calls to keep the tab/state alive; pick a different name to isolate parallel browser work.
-
-Examples:
-  $ webcmd browser work tabs
-  $ webcmd browser work bind --page page-123
-  $ printf 'await page.goto("https://example.com")' | webcmd browser work run --stdin
-`);
+    .description('Run Playwright programs against an explicit browser Session')
+    ;
 
   let parsed: ParsedHostedBrowserStructure | undefined;
   const namespaces = new Map<string, Command>([['', browser]]);
@@ -115,21 +117,6 @@ Examples:
     for (const child of command.commands) configure(child);
   };
   configure(root);
-  const browserAwareUsage = (command: Command): string => {
-    const ancestors: string[] = [];
-    let ancestor = command.parent;
-    while (ancestor) {
-      ancestors.unshift(ancestor === browser ? `${ancestor.name()} <session>` : ancestor.name());
-      ancestor = ancestor.parent;
-    }
-    return [...ancestors, command.name(), command.usage()].filter(Boolean).join(' ').trim();
-  };
-  const configureBrowserUsage = (command: Command): void => {
-    command.configureHelp({ commandUsage: browserAwareUsage });
-    for (const child of command.commands) configureBrowserUsage(child);
-  };
-  configureBrowserUsage(browser);
-
   try {
     root.parse([...argv], { from: 'user' });
   } catch (error) {
@@ -161,7 +148,7 @@ function readBrowserGlobals(root: Command, browser: Command): Pick<
   const rootOptions = root.opts<Record<string, unknown>>();
   const browserOptions = browser.opts<Record<string, unknown>>();
   return {
-    ...(typeof browserOptions.session === 'string' ? { session: browserOptions.session } : {}),
+    ...(typeof rootOptions.session === 'string' ? { session: rootOptions.session } : {}),
     ...(typeof browserOptions.window === 'string' ? { window: browserOptions.window } : {}),
     ...(typeof rootOptions.profile === 'string' ? { profile: rootOptions.profile } : {}),
   };

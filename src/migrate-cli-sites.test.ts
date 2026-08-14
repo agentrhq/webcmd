@@ -3,7 +3,6 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { _parseSource } from './plugin.js';
 
 const script = path.resolve('scripts/migrate-cli-sites.mjs');
 const roots: string[] = [];
@@ -73,9 +72,8 @@ describe('migrate-cli-sites', () => {
     });
     const readme = fs.readFileSync(path.join(plugin, 'README.md'), 'utf8');
     expect(readme).toContain('| `webcmd example search` | Search examples |');
-    const installSource = readme.match(/webcmd plugin install (\S+)/)?.[1];
-    expect(installSource).toBe('github:agentrhq/webcmd/example');
-    expect(_parseSource(installSource!)).not.toBeNull();
+    expect(readme).toContain('webcmd plugin search example -f json');
+    expect(readme).toContain('webcmd plugin install <installSource-from-search>');
     expect(fs.readFileSync(path.join(root, 'plugins', 'sibling', 'keep.txt'), 'utf8')).toBe('unchanged\n');
     expect(fs.readFileSync(path.join(root, 'scripts', 'silent-column-drop-baseline.json'), 'utf8')).toContain('plugins/example/search.js');
     expect(fs.readFileSync(path.join(root, 'scripts', 'typed-error-lint-baseline.json'), 'utf8')).toContain('plugins/example/search.js');

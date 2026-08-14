@@ -192,6 +192,49 @@ describe('twitter article command', () => {
     }
   });
 
+  it('renders atomic media using entity keys rather than entityMap array positions', async () => {
+    const payload = validArticlePayload({
+      article: {
+        article_results: {
+          result: {
+            title: 'Article with image',
+            content_state: {
+              blocks: [
+                { type: 'unstyled', text: 'before' },
+                { type: 'atomic', text: ' ', entityRanges: [{ key: 0, offset: 0, length: 1 }] },
+                { type: 'unstyled', text: 'after' },
+              ],
+              entityMap: [
+                { key: '7', value: { type: 'LINK', data: { url: 'https://example.com' } } },
+                {
+                  key: '0',
+                  value: {
+                    type: 'MEDIA',
+                    data: {
+                      caption: 'architecture diagram',
+                      mediaItems: [{ mediaId: 'media-1' }],
+                    },
+                  },
+                },
+              ],
+            },
+            media_entities: [{
+              media_id: 'media-1',
+              media_info: { original_img_url: 'https://pbs.twimg.com/media/example.jpg' },
+            }],
+          },
+        },
+      },
+    });
+    const page = createFetchPage(async () => jsonResponse(payload));
+
+    await expect(command.func(page, { 'tweet-id': TWEET_ID })).resolves.toEqual([
+      expect.objectContaining({
+        content: 'before\n\n![architecture diagram](https://pbs.twimg.com/media/example.jpg)\n\nafter',
+      }),
+    ]);
+  });
+
   it('keeps the valid note-tweet fallback', async () => {
     const payload = validArticlePayload({
       article: undefined,

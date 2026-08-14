@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { ArgumentError, AuthRequiredError, CommandExecutionError, EmptyResultError } from './errors.js';
-import { cli, Strategy, type CommandArgs, type CliOptions } from './registry-api.js';
+import { cli, Strategy, type CliCommand, type CommandArgs, type CliOptions } from './registry-api.js';
 import type { IPage } from './types.js';
 
 export function clampInt(raw: unknown, fallback: number, min: number, max: number): number {
@@ -248,7 +248,7 @@ export function registerSiteAuthCommands(config: SiteAuthConfig): void {
   const refresh = config.refresh;
 
   if (config.registerWhoami !== false) {
-    cli({
+    const whoami = cli({
       site: config.site,
       name: 'whoami',
       access: 'read',
@@ -270,7 +270,8 @@ export function registerSiteAuthCommands(config: SiteAuthConfig): void {
           : {}),
       },
       func: async (page) => [await tryProbe(page)],
-    });
+    }) as CliCommand & { _authVerification?: true };
+    whoami._authVerification = true;
   }
 
   cli({

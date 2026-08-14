@@ -44,6 +44,18 @@ describe('plugin management E2E', () => {
     expect(stdout).toContain('No plugins installed');
   });
 
+  it('plugin list -f json emits valid JSON when none exist', async () => {
+    const { stdout, code } = await runPluginCli(['plugin', 'list', '-f', 'json']);
+    expect(code).toBe(0);
+    expect(stdout.trim()).toBe('[]');
+  });
+
+  it('plugin list -f yaml emits valid YAML when none exist', async () => {
+    const { stdout, code } = await runPluginCli(['plugin', 'list', '-f', 'yaml']);
+    expect(code).toBe(0);
+    expect(stdout.trim()).toBe('[]');
+  });
+
   // ── plugin install ──
   it('plugin install clones and sets up a real plugin', async () => {
     const { stdout, code } = await runPluginCli(['plugin', 'install', PLUGIN_SOURCE], {
@@ -136,5 +148,12 @@ describe('plugin management E2E', () => {
     const { stderr, code } = await runPluginCli(['plugin', 'update']);
     expect(code).toBe(2);
     expect(stderr).toContain('specify a plugin name');
+  });
+
+  it('plugin list rejects an unsupported format with a usage error', async () => {
+    const { stderr, code } = await runPluginCli(['plugin', 'list', '-f', 'xml']);
+    expect(code).toBe(2);
+    expect(stderr).toContain('Unknown output format "xml"');
+    expect(stderr).toContain('Supported formats: table, plain, json, yaml, md, csv');
   });
 });

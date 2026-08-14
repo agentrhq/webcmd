@@ -1,6 +1,6 @@
 {
   "name": "@agentrhq/webcmd",
-  "version": "0.5.3",
+  "version": "0.7.0",
   "description": "Turn websites, browser sessions, desktop apps, and local tools into deterministic CLI surfaces for humans and AI agents.",
   "engines": {
     "node": ">=20.6.0"
@@ -24,6 +24,7 @@
     "./browser/run": "./dist/src/browser/run/index.js",
     "./browser/snapshot": "./dist/src/browser/snapshot/index.js",
     "./browser/article-extract": "./dist/src/browser/article-extract.js",
+    "./browser/verify-fixture": "./dist/src/browser/verify-fixture.js",
     "./browser/utils": "./dist/src/browser/utils.js",
     "./download": "./dist/src/download/index.js",
     "./download/article-download": "./dist/src/download/article-download.js",
@@ -54,6 +55,7 @@
     "build-plugin-manifest": "tsx src/build-plugin-command-manifest.ts",
     "check:codex-plugin": "node scripts/check-codex-plugin.mjs",
     "check:hosted-contract": "node scripts/check-hosted-contract.mjs",
+    "check:plugin-pr-scope": "node scripts/check-plugin-pr-scope.mjs",
     "clean-dist": "node scripts/clean-dist.cjs",
     "copy-yaml": "node scripts/copy-yaml.cjs",
     "sync-community-plugins": "tsx scripts/sync-community-plugins.ts",
@@ -72,6 +74,7 @@
     "test:plugin": "vitest run --project plugin",
     "test:all": "vitest run",
     "test:e2e": "vitest run --project e2e-fixed-port --project e2e",
+    "gate:cloak-sessions": "WEBCMD_LIVE_CLOAK=1 vitest run --project e2e tests/e2e/cloak-session-concurrency.test.ts",
     "check-community-plugins": "tsx scripts/sync-community-plugins.ts --check",
     "advise:listing-id-pairing": "node scripts/check-listing-id-pairing.mjs",
     "check:package-bin": "node scripts/check-package-bin.mjs",

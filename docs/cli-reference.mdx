@@ -35,11 +35,11 @@ webcmd wikipedia summary "Command-line interface"
 webcmd pubmed search "agentic browser automation" --limit 5 -f json
 ```
 
-Agents should prefer existing adapters before raw browser exploration. For search and fetch tasks, use the bundled `smart-search` skill: it tries fetch-based search first, browser fetch second, and search adapters last.
+Agents should prefer existing adapters before raw browser exploration. For search and fetch tasks, use the bundled `smart-search` skill: it tries fetch-based search first, explicit browser Sessions after eligible fetch failures, and search adapters last.
 
 ## Search and Fetch
 
-Use `webcmd web fetch` for direct URL fetches and fetch-first web search. It runs locally and does not launch a browser, including when Webcmd is configured for hosted mode.
+Use `webcmd web fetch` for direct URL fetches and fetch-first web search. It is built into the CLI, so it works on a fresh install with no plugins.
 
 ```bash
 webcmd web fetch --url https://example.com/article
@@ -47,25 +47,60 @@ webcmd web fetch --url "https://duckduckgo.com/html/?q=agentic%20browser%20autom
 webcmd web fetch --url "https://www.bing.com/search?q=agentic%20browser%20automation"
 ```
 
-Use `webcmd web fetch-browser` only when `web fetch` reports that browser rendering is required or the page is blocked:
+`web fetch` tries plain HTTP first, then browser-impersonating TLS clients. It remains local in both modes and never opens a browser. If a page requires browser rendering or blocks non-browser fetches, it returns `FETCH_REQUIRES_BROWSER` or `FETCH_BLOCKED`; only those codes permit explicit browser fallback.
+
+For either code, create one Session, navigate with `browser run`, inspect with a read snapshot, reuse the Session for allowed browser work, and close it:
 
 ```bash
-webcmd web fetch-browser --url https://example.com/app-shell
+webcmd --profile work session create
+# Copy the returned full ID:
+# session_7d8f2c10-4a11-4f3e-9c22-1b6de0a91f45
+
+webcmd --profile work \
+  --session session_7d8f2c10-4a11-4f3e-9c22-1b6de0a91f45 \
+  browser run --stdin <<'JS'
+await page.goto('https://example.com');
+return { url: page.url(), title: await page.title() };
+JS
+
+webcmd --profile work \
+  --session session_7d8f2c10-4a11-4f3e-9c22-1b6de0a91f45 \
+  browser snapshot --snapshot-mode read
+
+webcmd --profile work session close \
+  session_7d8f2c10-4a11-4f3e-9c22-1b6de0a91f45
 ```
 
-The old `web read` command has been renamed to `web fetch-browser`.
+Local browser commands use Cloak. Hosted browser commands use Webcmd Cloud and Browser Use; `web fetch` still runs locally.
 
-## Local Browser Programs
+## Browser Programs
 
-`browser run` executes one Playwright-style JavaScript program against an
-existing local CloakBrowser session:
+Create an opaque session before raw browser work. Profiles hold cookie/auth
+state; sessions are browser workspaces within that profile. Adapter commands
+may omit `--session` and use their profile's adapter-default session; pass
+`--session <session-id>` only when intentionally routing an adapter into an
+explicit session. Raw browser commands must always pass it. The retired
+positional session form is invalid:
 
 ```bash
-webcmd browser work snapshot --snapshot-mode act
-webcmd browser work snapshot --snapshot-mode read
-webcmd browser work run --stdin --timeout 45
-webcmd browser work run --stdin --no-snapshot-diff
+webcmd session create -f json
+webcmd --session session_abc browser snapshot --snapshot-mode act
+webcmd --session session_abc browser snapshot --snapshot-mode read
+webcmd --session session_abc browser run --stdin --timeout 45
+webcmd --session session_abc browser run --stdin --no-snapshot-diff
+webcmd session list
+webcmd session close session_abc
 ```
+
+`session create`, `session list`, and `session close` accept the universal output
+formats. An explicit `-f table` stays in table format when redirected, while
+an empty structured `session list` remains machine-readable (for example, `[]`
+with `-f json`).
+
+Agents sharing a profile can work in parallel by creating separate Sessions.
+An authentication handoff is scoped to the Session that started it: run the
+returned verification command verbatim because it includes `--session` when
+needed. `session close` is blocked while that Session has a live handoff.
 
 Use `snapshot` for explicit page inspection. `act` is the default
 action-first mode, `tree` preserves fuller page structure, and `read` extracts readable article/content text. Exactly one of `--file
@@ -79,11 +114,12 @@ The program runs in a fresh QuickJS sandbox with `page`, `context`, `browser`,
 and `console` globals. `page.snapshotForAI()` is not available. It can use the
 supported Page/Frame/Locator methods and passively inspect request and response
 events. It cannot access Node.js, the filesystem, environment variables, raw
-CDP endpoints, browser launch/connect APIs, or browser-context ownership.
+CDP endpoints, browser launch/connect APIs, browser-context ownership, or
+`context.newPage()`.
 Screenshot bytes are written to a Webcmd-owned cache directory and returned as
 a receipt.
 
-The public browser surface is `tabs`, `bind`, `run`, `snapshot`, and `close`.
+The public raw-browser surface is `tabs`, `bind`, `run`, and `snapshot`.
 Reusable adapters continue to use the existing `IPage` API. Playwright-style
 programs are for reconnaissance and ad-hoc multi-step work; they are not pasted
 into adapter modules.
@@ -97,7 +133,7 @@ into adapter modules.
 | `doctor` | Diagnose browser bridge and daemon connectivity. |
 | `daemon` | Manage the local Webcmd daemon: status, stop, and restart. |
 | `browser` | Agent-facing browser runtime for exploration and verification. |
-| `web` | Local URL fetch and browser-backed page fetch helpers. |
+| `web` | Local URL fetch helpers. |
 | `profile` | List, rename, and select browser runtime profiles. |
 | `auth` | Inspect website login status, and refresh logged-in site sessions. |
 | `plugin` | Install, update, list, create, and uninstall plugins. |
@@ -151,7 +187,7 @@ webcmd profile delete profile_abc123
 
 In local mode, arbitrary `--profile <name>` values lazily create separate local state; local `list`, `rename`, and `use` are unchanged. In hosted mode, `--profile <name>` selects a persona within the ambient workspace; an omitted selector or `--profile default` lazily creates that workspace's `default` profile.
 
-Hosted `list` returns profile rows scoped to the ambient workspace; `delete` takes an immutable profile ID and returns `{ "ok": true, "deleted": true }`, permanently removing that hosted browser state. Each profile row has `id`, `name`, `workspace`, `default`, `status`, `createdAt`, `updatedAt`, and `lastUsedAt`. `status` is `pending` or `available`. Kernel identifiers are never exposed.
+Hosted `list` returns profile rows scoped to the ambient workspace; `delete` takes an immutable profile ID and returns `{ "ok": true, "deleted": true }`, permanently removing that hosted browser state. Each profile row has `id`, `name`, `workspace`, `default`, `status`, `createdAt`, `updatedAt`, and `lastUsedAt`. `status` is `pending` or `available`. Cloud provider identifiers are never exposed.
 
 Prompt example:
 
@@ -168,10 +204,14 @@ the returned `installSource`:
 
 ```bash
 webcmd plugin search ycombinator -f json
-webcmd plugin install github:agentrhq/webcmd/ycombinator
+webcmd plugin install <installSource-from-search>
 ```
 
-Hosted mode supports the same `plugin search` and `plugin install` grammar for Webcmd-verified marketplace adapters. Other plugin management commands remain local-only in hosted mode.
+Use direct `plugin install github:...` only when you already know the source. For missing or unknown sites, `plugin search` is the freshness boundary; it reads the current catalog instead of relying on package contents.
+
+Hosted mode supports `plugin search`, `plugin install`, `plugin list`, `plugin uninstall`, `plugin update`, and `plugin create` for Webcmd-verified marketplace adapters. Plugin catalog source management remains local-only.
+
+`plugin list`, `plugin search`, `plugin catalog list`, and `plugin catalog add` accept `-f/--format`. `plugin list -f json` returns an array (including `[]` when no plugins are installed); `plugin catalog list -f json` returns its catalog object. `yml` and `markdown` normalize to `yaml` and `md`, and unknown format names are usage errors.
 
 ## Skills
 

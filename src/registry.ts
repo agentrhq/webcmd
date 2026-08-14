@@ -2,8 +2,22 @@
  * Core registry: Strategy enum, Arg/CliCommand interfaces, cli() registration.
  */
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type { IPage } from './types.js';
 import type { FileArgumentContract } from './hosted/contract.js';
+
+/**
+ * Tracks the file path currently being imported by discovery, so cli()
+ * registrations that don't explicitly pass `source` (i.e. essentially all
+ * real adapters) still get attributed to their module. Discovery wraps each
+ * dynamic `import()` in `runWithDiscoverySource`; registerCommand falls back
+ * to this when the caller didn't set `source` itself.
+ */
+const discoverySourceStorage = new AsyncLocalStorage<string>();
+
+export function runWithDiscoverySource<T>(source: string, fn: () => Promise<T>): Promise<T> {
+  return discoverySourceStorage.run(source, fn);
+}
 
 export enum Strategy {
   PUBLIC = 'public',
@@ -54,6 +68,15 @@ interface BaseCliCommand {
   /** Origin of this command: 'yaml', 'ts', or plugin name. */
   source?: string;
   footerExtra?: (kwargs: CommandArgs) => string | undefined;
+  /**
+   * Render this command's result as a markdown document instead of the default
+   * key/value table. For commands whose payload *is* prose — a fetched page, an
+   * article — the table is unreadable and differs from what the command prints
+   * on any other path.
+   */
+  renderMarkdown?: (data: unknown) => string | undefined;
+  /** Execute locally before either hosted or adapter-discovery mode boundary. */
+  clientOwned?: boolean;
   validateArgs?: (kwargs: CommandArgs) => void;
   /**
    * Control pre-navigation and browser-session requirement.
@@ -158,6 +181,8 @@ export function cli(opts: CliOptions): CliCommand {
     func: opts.func,
     pipeline: opts.pipeline,
     footerExtra: opts.footerExtra,
+    renderMarkdown: opts.renderMarkdown,
+    clientOwned: opts.clientOwned,
     validateArgs: opts.validateArgs,
     navigateBefore: opts.navigateBefore,
     siteSession: opts.siteSession,
@@ -236,6 +261,10 @@ function assertSiteSession(cmd: Pick<RawCliCommand, 'site' | 'name'> & { siteSes
 }
 
 export function registerCommand(cmd: RawCliCommand): void {
+  if (!cmd.source) {
+    const discoverySource = discoverySourceStorage.getStore();
+    if (discoverySource) cmd.source = discoverySource;
+  }
   const normalized = normalizeCommand(cmd);
   const canonicalKey = fullName(normalized);
   const existing = _registry.get(canonicalKey);

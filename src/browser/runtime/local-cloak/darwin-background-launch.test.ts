@@ -30,6 +30,7 @@ function fakeDependencies(browser: Browser) {
     connectOverCDP: vi.fn().mockResolvedValue(browser),
     terminateProfile: vi.fn().mockResolvedValue(undefined),
     removePortFile: vi.fn().mockResolvedValue(undefined),
+    registerBundle: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -45,6 +46,7 @@ describe('launchDarwinBackgroundPersistentContext', () => {
       '--fingerprint=123',
       '--password-store=basic',
       '--use-mock-keychain',
+      '--disable-popup-blocking',
       '--user-data-dir=/tmp/cloak profile',
       '--remote-debugging-address=127.0.0.1',
       '--remote-debugging-port=0',
@@ -76,5 +78,52 @@ describe('launchDarwinBackgroundPersistentContext', () => {
     await expect(launchDarwinBackgroundPersistentContext(options, deps)).rejects.toThrow('connect failed');
 
     expect(deps.terminateProfile).toHaveBeenCalledWith(options.userDataDir);
+  });
+
+  it('re-registers a stale LaunchServices bundle and retries once on kLSNoExecutableErr', async () => {
+    const { browser, context } = fakeRuntime();
+    const deps = fakeDependencies(browser);
+    const lsError = new Error(
+      'Command failed: /usr/bin/open -g -n /Applications/Cloak Chromium.app --args ...\n' +
+      'The application cannot be opened for an unexpected reason, error=Error Domain=NSOSStatusErrorDomain ' +
+      'Code=-10827 "kLSNoExecutableErr: The executable is missing"',
+    );
+    deps.openApplication.mockRejectedValueOnce(lsError).mockResolvedValueOnce(undefined);
+
+    const result = await launchDarwinBackgroundPersistentContext(options, deps);
+
+    expect(deps.registerBundle).toHaveBeenCalledWith('/Applications/Cloak Chromium.app');
+    expect(deps.openApplication).toHaveBeenCalledTimes(2);
+    expect(result).toBe(context);
+  });
+
+  it('surfaces a remediation error when re-registering does not fix kLSNoExecutableErr', async () => {
+    const { browser } = fakeRuntime();
+    const deps = fakeDependencies(browser);
+    const lsError = new Error('kLSNoExecutableErr: The executable is missing');
+    deps.openApplication
+      .mockRejectedValueOnce(lsError)
+      .mockRejectedValueOnce(new Error('retry failed: bundle executable is invalid'));
+
+    await expect(launchDarwinBackgroundPersistentContext(options, deps)).rejects.toThrow(
+      /retry failed: bundle executable is invalid[\s\S]*lsregister -f "\/Applications\/Cloak Chromium\.app"/,
+    );
+
+    expect(deps.registerBundle).toHaveBeenCalledWith('/Applications/Cloak Chromium.app');
+    expect(deps.openApplication).toHaveBeenCalledTimes(2);
+    // Never "launched" (both attempts failed before the app came up), so no
+    // stray terminateProfile call for a process that never started.
+    expect(deps.terminateProfile).not.toHaveBeenCalled();
+  });
+
+  it('does not attempt lsregister remediation for unrelated open failures', async () => {
+    const { browser } = fakeRuntime();
+    const deps = fakeDependencies(browser);
+    deps.openApplication.mockRejectedValue(new Error('some other launch failure'));
+
+    await expect(launchDarwinBackgroundPersistentContext(options, deps)).rejects.toThrow('some other launch failure');
+
+    expect(deps.registerBundle).not.toHaveBeenCalled();
+    expect(deps.openApplication).toHaveBeenCalledTimes(1);
   });
 });

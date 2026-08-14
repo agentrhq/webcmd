@@ -1,7 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { GoogleGenAI } from '@google/genai';
 import {
   buildReleaseNotesPrompt,
   extractPullRequestNumber,
@@ -58,6 +57,8 @@ interface RunDependencies {
   generateText?: (prompt: string, model: string, apiKey: string) => Promise<string>;
 }
 
+type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+
 type GhRunner = (args: readonly string[]) => string;
 
 interface LoadReleaseContextOptions {
@@ -65,7 +66,7 @@ interface LoadReleaseContextOptions {
   maxDiffCharacters?: number;
 }
 
-const DEFAULT_MODEL = 'gemini-2.5-pro';
+const DEFAULT_MODEL = 'gpt-5.6-sol';
 const DEFAULT_MAX_DIFF_CHARACTERS = 24_000;
 const DEFAULT_IO: Io = {
   writeStdout: (chunk) => process.stdout.write(chunk),
@@ -179,15 +180,33 @@ export async function loadReleaseContext(tag: string, env: NodeJS.ProcessEnv, op
   };
 }
 
-async function generateText(prompt: string, model: string, apiKey: string): Promise<string> {
-  const client = new GoogleGenAI({ apiKey });
-  const response = await client.models.generateContent({
-    model,
-    contents: prompt,
+export async function generateOpenAIReleaseNotes(
+  prompt: string,
+  model: string,
+  apiKey: string,
+  fetchImpl: FetchLike = fetch,
+): Promise<string> {
+  const response = await fetchImpl('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${apiKey}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: 'user', content: prompt }],
+    }),
   });
-  const text = response.text?.trim();
+  if (!response.ok) {
+    const detail = (await response.text()).slice(0, 600);
+    throw new Error(`OpenAI request failed with HTTP ${response.status}: ${detail}`);
+  }
+  const data = await response.json() as {
+    choices?: Array<{ message?: { content?: string | null } }>;
+  };
+  const text = data.choices?.[0]?.message?.content?.trim();
   if (!text) {
-    throw new Error('Gemini returned empty content');
+    throw new Error('OpenAI returned empty content');
   }
 
   return text;
@@ -234,26 +253,25 @@ export async function runGenerateReleaseNotes(
     return 1;
   }
 
-  const apiKey = env.GEMINI_API_KEY?.trim();
+  const apiKey = env.OPENAI_API_KEY?.trim();
   if (!apiKey) {
-    io.writeStderr('GEMINI_API_KEY is not set; leaving release-please notes unchanged.\n');
-    return 0;
+    io.writeStderr('OPENAI_API_KEY is required to generate release notes.\n');
+    return 1;
   }
 
   try {
     const context = await (deps.loadContext ?? loadReleaseContext)(tag, env);
-    const model = env.GEMINI_RELEASE_NOTES_MODEL || DEFAULT_MODEL;
+    const model = env.OPENAI_RELEASE_NOTES_MODEL || DEFAULT_MODEL;
     const prompt = buildReleaseNotesPrompt(context);
-    const raw = await (deps.generateText ?? generateText)(prompt, model, apiKey);
+    const raw = await (deps.generateText ?? generateOpenAIReleaseNotes)(prompt, model, apiKey);
     const normalized = normalizeReleaseNotes(raw, { context });
-    if (normalized) {
-      io.writeStdout(`${normalized}\n`);
-    }
+    if (!normalized) throw new Error('OpenAI returned no usable release notes.');
+    io.writeStdout(`${normalized}\n`);
     return 0;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    io.writeStderr(`Gemini release notes failed: ${message}\n`);
-    return 0;
+    io.writeStderr(`OpenAI release notes failed: ${message}\n`);
+    return 1;
   }
 }
 

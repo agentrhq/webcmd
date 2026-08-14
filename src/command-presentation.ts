@@ -1,4 +1,5 @@
 import { CLI_COMMAND } from './brand.js';
+import { OUTPUT_FORMAT_HELP, OUTPUT_FORMATS } from './command-surface.js';
 import type { Arg } from './registry.js';
 
 export interface PresentableCommand {
@@ -17,6 +18,7 @@ export interface PresentableCommand {
   domain?: string;
   example?: string;
   siteSession?: string;
+  origin?: string;
 }
 
 export interface PresentableCommandSource {
@@ -88,9 +90,9 @@ const COMMON_OPTIONS = [
   {
     flags: '-f, --format <fmt>',
     name: 'format',
-    help: 'Output format: table, plain, json, yaml, md, csv',
+    help: OUTPUT_FORMAT_HELP,
     default: 'table',
-    choices: ['table', 'plain', 'json', 'yaml', 'md', 'csv'],
+    choices: [...OUTPUT_FORMATS],
   },
   {
     flags: '--trace <mode>',
@@ -224,6 +226,7 @@ export function commandListRows(
         example: formatPresentableCommandExample(command),
         defaultFormat: command.defaultFormat ?? null,
         siteSession: command.siteSession ?? null,
+        ...(command.origin ? { origin: command.origin } : {}),
       };
     }
     return {
@@ -269,6 +272,7 @@ export function commandListPresentation(
       'strategy',
       'browser',
       'args',
+      ...(unique.some((command) => command.origin) ? ['origin'] : []),
       ...(structured ? ['columns', 'domain'] : []),
     ],
     structured,
@@ -318,7 +322,8 @@ function formatGroupedCommandList(
         const aliases = command.aliases.length > 0 ? ` (aliases: ${command.aliases.join(', ')})` : '';
         lines.push(
           `    ${command.name} [${command.strategy}]${aliases}`
-          + `${command.description ? ` — ${command.description}` : ''}`,
+          + `${command.description ? ` — ${command.description}` : ''}`
+          + `${command.origin ? ` [${command.origin}]` : ''}`,
         );
       }
       lines.push('');

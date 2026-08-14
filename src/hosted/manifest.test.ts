@@ -16,6 +16,7 @@ import {
   renderHostedCommandHelp,
   renderHostedSiteHelp,
   siteNames,
+  withClientOwnedCommands,
 } from './manifest.js';
 import type { HostedManifest } from './types.js';
 import { makeHostedConfig } from './config.js';
@@ -28,7 +29,8 @@ const manifest: HostedManifest = {
   userId: 'user_demo',
   metadata: {
     contractSchemaVersion: 1,
-    webcmdPackageVersion: PKG_VERSION,
+            sessionProtocolVersion: 1,
+            webcmdPackageVersion: PKG_VERSION,
     generatedAt: '2026-07-08T00:00:00.000Z',
   },
   commands: [
@@ -86,6 +88,30 @@ function sink(): { stream: Writable; text: () => string } {
 }
 
 describe('hosted manifest helpers', () => {
+  it('merges the authoritative client-owned web fetch entry exactly once', () => {
+    const merged = withClientOwnedCommands({
+      ...manifest,
+      commands: [
+        ...manifest.commands,
+        { ...manifest.commands[0]!, site: 'web', name: 'fetch', command: 'web/fetch' },
+      ],
+    });
+
+    expect(merged.commands.filter(command => command.command === 'web/fetch')).toEqual([
+      expect.objectContaining({
+        site: 'web',
+        name: 'fetch',
+        clientOwned: true,
+        args: expect.arrayContaining([
+          expect.objectContaining({ name: 'url' }),
+          expect.objectContaining({ name: 'timeout' }),
+          expect.objectContaining({ name: 'max-chars' }),
+          expect.objectContaining({ name: 'allow-private' }),
+        ]),
+      }),
+    ]);
+  });
+
   it('filters LOCAL commands from hosted list rows', () => {
     expect(hostedListRows(manifest, true).map((row) => row.command)).toEqual(['github/whoami']);
   });
@@ -191,7 +217,7 @@ describe('hosted manifest helpers', () => {
     ));
   });
 
-  it('uses only executable hosted root capabilities as root completion candidates', async () => {
+  it('includes client-owned web fetch in hosted discovery surfaces', async () => {
     const stdout = sink();
     await runHostedCli(['--get-completions', '--cursor', '1'], {
       config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
@@ -199,6 +225,32 @@ describe('hosted manifest helpers', () => {
       fetchImpl: async () => new Response(JSON.stringify({ ok: true, manifest }), { status: 200 }),
     });
 
-    expect(stdout.text().trim().split('\n')).toEqual(['browser', 'completion', 'github', 'list', 'profile', 'setup']);
+    expect(stdout.text().trim().split('\n')).toEqual(['browser', 'completion', 'github', 'list', 'profile', 'setup', 'web']);
+
+    const siteHelp = sink();
+    await runHostedCli(['web', '--help'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: siteHelp.stream,
+      fetchImpl: async () => new Response(JSON.stringify({ ok: true, manifest }), { status: 200 }),
+    });
+    expect(siteHelp.text()).toContain('fetch');
+
+    const completion = sink();
+    await runHostedCli(['--get-completions', '--cursor', '2', 'web'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: completion.stream,
+      fetchImpl: async () => new Response(JSON.stringify({ ok: true, manifest }), { status: 200 }),
+    });
+    expect(completion.text().trim()).toBe('fetch');
+
+    const list = sink();
+    await runHostedCli(['list', '-f', 'json'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: list.stream,
+      fetchImpl: async () => new Response(JSON.stringify({ ok: true, manifest }), { status: 200 }),
+    });
+    expect(JSON.parse(list.text())).toEqual(expect.arrayContaining([
+      expect.objectContaining({ command: 'web/fetch', clientOwned: true }),
+    ]));
   });
 });

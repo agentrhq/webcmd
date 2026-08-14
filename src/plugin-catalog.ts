@@ -152,12 +152,28 @@ export async function searchCatalogPlugins(
 
   const query = options.query?.trim().toLowerCase();
   const filtered = query
-    ? plugins.filter((plugin) => `${plugin.name} ${plugin.description ?? ''}`.toLowerCase().includes(query))
+    ? plugins.filter((plugin) => matchesSearchQuery(plugin, query))
     : plugins;
 
   filtered.sort((a, b) => a.name.localeCompare(b.name));
   errors.sort((a, b) => a.sourceId.localeCompare(b.sourceId));
   return { plugins: filtered, errors };
+}
+
+/** Strip everything but letters/digits so separators (spaces, hyphens, ...) can't hide a match. */
+function normalizeForSearch(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+/**
+ * Multi-word queries must match as independent tokens, not one literal substring — "hacker
+ * news" should still find the "hackernews" plugin. Each token is matched separately so word
+ * order in the query doesn't matter either.
+ */
+function matchesSearchQuery(plugin: PluginSearchRow, query: string): boolean {
+  const haystack = normalizeForSearch(`${plugin.name} ${plugin.description ?? ''}`);
+  const tokens = query.split(/[^a-z0-9]+/).filter(Boolean);
+  return tokens.every((token) => haystack.includes(token));
 }
 
 function seedUserCatalog(packageRoot: string | undefined, homeDir: string): void {

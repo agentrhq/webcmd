@@ -4,6 +4,7 @@ import {
   BROWSER_RUN_PLAYWRIGHT_VERSION,
   BrowserRunError,
 } from './types.js';
+import type { BrowserRunSessionScope } from './runner.js';
 
 interface DispatcherConnection {
   onmessage: (message: Record<string, unknown>) => void;
@@ -78,12 +79,221 @@ function implementation<T>(object: T): unknown {
   return value;
 }
 
+function scopedContext(
+  context: object,
+  scope: {
+    pages(): object[];
+    createPage(): Promise<object>;
+    onPage(listener: (page: object) => void): () => void;
+  },
+): object {
+  const pageListeners = new Map<Function, Set<() => void>>();
+  const contextListeners = new Map<string, Map<Function, Set<() => void>>>();
+  const related = (value: unknown, property: string): unknown => {
+    if ((typeof value !== 'object' || value === null) && typeof value !== 'function') return undefined;
+    try {
+      const candidate = Reflect.get(value as object, property, value);
+      return typeof candidate === 'function' ? Reflect.apply(candidate, value, []) : candidate;
+    } catch {
+      return undefined;
+    }
+  };
+  const requestPage = (request: unknown): unknown => {
+    const frame = related(request, 'frame') ?? related(request, '_frame');
+    return related(frame, 'page') ?? related(frame, '_page');
+  };
+  const eventBelongsToScope = (event: string, args: unknown[]): boolean => {
+    let eventPage: unknown;
+    if (event === 'request' || event === 'requestfailed') {
+      eventPage = requestPage(args[0]);
+    } else if (event === 'response') {
+      eventPage = requestPage(related(args[0], 'request'));
+    } else if (event === 'requestfinished') {
+      eventPage = requestPage(related(args[0], 'request'));
+    } else if (event === 'console') {
+      eventPage = related(args[0], 'page');
+    } else if (event === 'pageerror') {
+      eventPage = args[1];
+    } else if (event === 'recorderevent') {
+      eventPage = related(args[0], 'page');
+    }
+    return eventPage !== undefined && scope.pages().includes(eventPage as object);
+  };
+  const addPageListener = (listener: Function, once = false) => {
+    let dispose: () => void = () => undefined;
+    const registered = (page: object) => {
+      if (once) {
+        dispose();
+        pageListeners.get(listener)?.delete(dispose);
+      }
+      listener(page);
+    };
+    dispose = scope.onPage(registered);
+    const disposers = pageListeners.get(listener) ?? new Set();
+    disposers.add(dispose);
+    pageListeners.set(listener, disposers);
+  };
+  const removePageListener = (listener: Function) => {
+    for (const dispose of pageListeners.get(listener) ?? []) dispose();
+    pageListeners.delete(listener);
+  };
+  const removeAllPageListeners = () => {
+    for (const listener of pageListeners.keys()) removePageListener(listener);
+  };
+  const addContextListener = (event: string, listener: Function, once = false) => {
+    let dispose: () => void = () => undefined;
+    const registered = (...args: unknown[]) => {
+      if (event !== 'close' && !eventBelongsToScope(event, args)) return;
+      if (once) {
+        dispose();
+        contextListeners.get(event)?.get(listener)?.delete(dispose);
+      }
+      listener(...args);
+    };
+    Reflect.apply(Reflect.get(context, 'on'), context, [event, registered]);
+    dispose = () => Reflect.apply(Reflect.get(context, 'off'), context, [event, registered]);
+    const byListener = contextListeners.get(event) ?? new Map();
+    const disposers = byListener.get(listener) ?? new Set();
+    disposers.add(dispose);
+    byListener.set(listener, disposers);
+    contextListeners.set(event, byListener);
+  };
+  const removeContextListener = (event: string, listener: Function) => {
+    const byListener = contextListeners.get(event);
+    for (const dispose of byListener?.get(listener) ?? []) dispose();
+    byListener?.delete(listener);
+    if (byListener?.size === 0) contextListeners.delete(event);
+  };
+  const removeAllContextListeners = (event?: string) => {
+    const events = event === undefined ? [...contextListeners.keys()] : [event];
+    for (const name of events) {
+      for (const listener of contextListeners.get(name)?.keys() ?? []) {
+        removeContextListener(name, listener);
+      }
+    }
+  };
+  const dialogManager = Reflect.get(context, 'dialogManager', context) as object;
+  const dialogHandlers = new Map<Function, Function>();
+  const scopedDialogManager = new Proxy(dialogManager, {
+    get(target, property) {
+      if (property === 'addDialogHandler') {
+        return (handler: Function) => {
+          const registered = (dialog: object) => {
+            const page = related(dialog, 'page');
+            return page !== undefined && scope.pages().includes(page as object)
+              ? handler(dialog)
+              : false;
+          };
+          dialogHandlers.set(handler, registered);
+          Reflect.apply(Reflect.get(target, property), target, [registered]);
+        };
+      }
+      if (property === 'removeDialogHandler') {
+        return (handler: Function) => {
+          const registered = dialogHandlers.get(handler) ?? handler;
+          dialogHandlers.delete(handler);
+          Reflect.apply(Reflect.get(target, property), target, [registered]);
+        };
+      }
+      const value = Reflect.get(target, property, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+  let proxy: object;
+  proxy = new Proxy(context, {
+    get(target, property) {
+      if (property === 'pages') return scope.pages;
+      if (property === 'newPage') return scope.createPage;
+      if (property === 'dialogManager') return scopedDialogManager;
+      if (property === 'backgroundPages' || property === 'serviceWorkers') return () => [];
+      if (property === 'on' || property === 'addListener') {
+        return (event: string, listener: Function) => {
+          if (event === 'page') {
+            addPageListener(listener);
+            return proxy;
+          }
+          addContextListener(event, listener);
+          return proxy;
+        };
+      }
+      if (property === 'off' || property === 'removeListener') {
+        return (event: string, listener: Function) => {
+          if (event === 'page') {
+            removePageListener(listener);
+            return proxy;
+          }
+          removeContextListener(event, listener);
+          return proxy;
+        };
+      }
+      if (property === 'once') {
+        return (event: string, listener: Function) => {
+          if (event === 'page') {
+            addPageListener(listener, true);
+            return proxy;
+          }
+          addContextListener(event, listener, true);
+          return proxy;
+        };
+      }
+      if (property === 'removeAllListeners') {
+        return (event?: string) => {
+          if (event === undefined || event === 'page') removeAllPageListeners();
+          if (event !== 'page') removeAllContextListeners(event);
+          return proxy;
+        };
+      }
+      if (property === 'waitForEvent') {
+        return (event: string, optionsOrPredicate?: object | Function) => {
+          const options = typeof optionsOrPredicate === 'object' ? optionsOrPredicate as {
+            predicate?: (page: object) => boolean | Promise<boolean>;
+            timeout?: number;
+          } : undefined;
+          const predicate = typeof optionsOrPredicate === 'function' ? optionsOrPredicate : options?.predicate;
+          return new Promise<object>((resolve, reject) => {
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            const removeListener = (listener: Function) => {
+              if (event === 'page') removePageListener(listener);
+              else removeContextListener(event, listener);
+            };
+            const listener = async (value: object) => {
+              try {
+                if (predicate && !await predicate(value)) return;
+                removeListener(listener);
+                if (timer) clearTimeout(timer);
+                resolve(value);
+              } catch (error) {
+                removeListener(listener);
+                if (timer) clearTimeout(timer);
+                reject(error);
+              }
+            };
+            if (event === 'page') addPageListener(listener);
+            else addContextListener(event, listener);
+            if (options?.timeout) {
+              timer = setTimeout(() => {
+                removeListener(listener);
+                reject(new Error(`Timeout while waiting for event "${event}"`));
+              }, options.timeout);
+            }
+          });
+        };
+      }
+      const value = Reflect.get(target, property, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+  return proxy;
+}
+
 function scopedBrowser(browser: object, context: object): object {
   const contextListeners = new WeakMap<Function, Function>();
   let proxy: object;
   proxy = new Proxy(browser, {
     get(target, property) {
-      if (property === 'contexts') return () => [context];
+      if (property === 'contexts') return () => (
+        Reflect.get(target, '_defaultContext', target) ? [] : [context]
+      );
       if (property === 'on' || property === 'addListener') {
         return (event: string, listener: Function) => {
           let registered = listener;
@@ -117,13 +327,13 @@ export class PlaywrightTransport {
   readonly #connection: DispatcherConnection;
   readonly #root: RootDispatcher;
   readonly #deliver: (message: string) => void;
-  readonly #hostPages = new Set<Page>();
+  #registerPageImpl: (page: Page) => void;
   #cancellation: Promise<void> | undefined;
   #disposed = false;
   #browserWaitMs = 0;
 
   constructor(
-    input: { browser: Browser; context: BrowserContext; page: Page },
+    input: BrowserRunSessionScope,
     deliver: (message: string) => void,
   ) {
     if (
@@ -137,10 +347,14 @@ export class PlaywrightTransport {
     }
 
     const browser = implementation(input.browser) as object;
-    const context = implementation(input.context) as object;
+    const context = scopedContext(implementation(input.context) as object, {
+      pages: () => input.pages().map(page => implementation(page) as object),
+      createPage: async () => implementation(await input.createPage()) as object,
+      onPage: listener => input.onPage(page => listener(implementation(page) as object)),
+    });
     this.pageGuid = pageGuid(input.page);
-    this.#pages = () => input.context.pages();
-    this.#hostPages.add(input.page);
+    this.#registerPageImpl = page => { implementation(page); };
+    for (const page of input.pages()) this.registerPage(page);
     this.#deliver = deliver;
     this.#connection = new server.DispatcherConnection();
     this.#connection.onmessage = message => {
@@ -195,10 +409,8 @@ export class PlaywrightTransport {
     return this.#browserWaitMs;
   }
 
-  #pages: () => Page[];
-
   registerPage(page: Page): void {
-    this.#hostPages.add(page);
+    this.#registerPageImpl(page);
   }
 
   cancel(error: Error): Promise<void> {

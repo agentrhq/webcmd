@@ -15,30 +15,27 @@ webcmd browser init <site>/<name>
 
 This scaffolds `~/.webcmd/clis/<site>/<name>.js` with a `Strategy.PUBLIC` placeholder — `init` takes no flags, so set the real `strategy:` value (and the other `TODO` fields) by hand once the file exists.
 
-Promote a community CLI to the main repo as a plugin:
+Promote a community CLI to the main repo as a plugin — **only after the user has explicitly confirmed they want it pushed into the repo**; a general instruction to build a working adapter is not that confirmation (see `SKILL.md`'s Key Conventions):
+
+Determine the plugin name (default to `<site>`) and collect the author's display name and GitHub handle if they are not already known.
 
 ```bash
-webcmd plugin create <site> --dir plugins/<site> --description "<site> commands for Webcmd"
-cp ~/.webcmd/clis/<site>/*.js plugins/<site>/
-rm plugins/<site>/hello.ts plugins/<site>/greet.ts 2>/dev/null || true
+webcmd plugin create <plugin-name> \
+  --dir plugins/<plugin-name> \
+  --description "<site> commands for Webcmd" \
+  --author-name "<author-name>" \
+  --author-handle "<github-handle>"
+cp ~/.webcmd/clis/<site>/*.js plugins/<plugin-name>/
+rm plugins/<plugin-name>/hello.ts plugins/<plugin-name>/greet.ts 2>/dev/null || true
 ```
 
-Then add `<site>` to the root `webcmd-plugin.json` `plugins` map:
-
-```json
-"<site>": {
-  "path": "plugins/<site>",
-  "version": "0.1.0",
-  "description": "<site> commands for Webcmd",
-  "webcmd": ">=0.2.0"
-}
-```
+Do not hand-edit the root `webcmd-plugin.json` or the generated community-plugin section in `README.md`. After merge, the community-plugin sync discovers `plugins/*/webcmd-plugin.json`, validates the author metadata, and updates both generated catalogs.
 
 Before handing off, remove the private shadow and prove the plugin path works:
 
 ```bash
 rm -rf ~/.webcmd/clis/<site>
-webcmd plugin install file://$PWD/plugins/<site>
+webcmd plugin install file://$PWD/plugins/<plugin-name>
 webcmd validate <site>
 webcmd <site> <command> --help
 ```
@@ -133,7 +130,7 @@ Rules:
 | `args` | Include type, default, and help for every external parameter. |
 | `columns` | Must exactly match row keys, including order. |
 | `pipeline` or `func` | Use the style already established by nearby adapters. |
-| `siteSession` | `'persistent'` shares one tab per site across commands (multi-step flows); `'ephemeral'` gets a fresh isolated tab per run. Persistent tabs keep leftover DOM (modals, drawers) between commands — see "Persistent Sessions and State Hygiene" in docs/authoring.mdx. |
+| `siteSession` | `'persistent'` shares one tab per site across commands (multi-step flows); `'ephemeral'` gets a fresh isolated tab per run. Persistent site-session tabs keep leftover DOM (modals, drawers) between commands — see "Persistent Site Sessions and State Hygiene" in docs/authoring.mdx. |
 | `freshPage` | With `siteSession: 'persistent'`, set `true` to start the command on a newly created tab under the same lease: profile state (cookies, login, location) survives, stale DOM does not. Recommended for state-sensitive write commands such as checkout flows. |
 
 ## Strategy Enum Examples
