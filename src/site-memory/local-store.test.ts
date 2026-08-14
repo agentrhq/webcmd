@@ -52,6 +52,25 @@ describe('local site memory store', () => {
     await expect(getVerifyFixture(base.site, 'search', { homeDir })).rejects.toThrow(/Invalid site memory path/);
   });
 
+  it('does not write through a symlinked fixture directory', async () => {
+    const homeDir = await tempHome();
+    await appendNote({ ...base, homeDir, text: 'hello' });
+    const root = join(homeDir, '.webcmd/sites', base.site);
+    const outside = join(homeDir, 'outside');
+    await mkdir(outside);
+    await rm(join(root, 'verify'), { recursive: true });
+    await symlink(outside, join(root, 'verify'));
+
+    await expect(putVerifyFixture({ ...base, homeDir, command: 'search', body: '{"expect":{"columns":["id"]}}' }))
+      .rejects.toThrow(/Invalid site memory path/);
+  });
+
+  it('rejects invalid verify fixture shapes before storing them', async () => {
+    const homeDir = await tempHome();
+    await expect(putVerifyFixture({ ...base, homeDir, command: 'search', body: '{"expect":{"columns":42}}' }))
+      .rejects.toThrow(/Fixture field columns is invalid/);
+  });
+
   it('prepends a dated section and preserves earlier entries', async () => {
     const homeDir = await tempHome();
     await appendNote({ ...base, text: 'first', homeDir });

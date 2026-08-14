@@ -149,6 +149,22 @@ describe('plugin update reconciliation reporting', () => {
   });
 });
 
+describe('site-memory and local adapter authoring', () => {
+  it('writes site-memory reads only when --output is requested', async () => {
+    const output = path.join(isolatedCliTestHome, 'memory.json');
+    const program = createProgram('', '');
+    await program.parseAsync(['node', 'webcmd', 'site', 'note', 'add', 'github', '--text', 'Uses GraphQL']);
+    await program.parseAsync(['node', 'webcmd', 'site', 'memory', 'show', 'github', '--output', output]);
+
+    expect(fs.readFileSync(output, 'utf8')).toContain('Uses GraphQL');
+  });
+
+  it('rejects unresolved local adapter source paths', async () => {
+    await expect(createProgram('', '').parseAsync(['node', 'webcmd', 'adapter', 'path', 'missing/search']))
+      .rejects.toThrow(/Adapter source is unavailable/);
+  });
+});
+
 describe('override reporting surfaces', () => {
   const stdoutSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
   let home: string;

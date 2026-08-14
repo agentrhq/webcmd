@@ -492,7 +492,11 @@ function parseJson(text: string): unknown {
 }
 
 function encodePath(value: string): string {
-  return value.split('/').map(encodeURIComponent).join('/');
+  const parts = value.split('/');
+  if (!value || value.includes('\\') || parts.some(part => !part || part === '.' || part === '..')) {
+    throw protocolError('Webcmd Cloud received an invalid storage path.');
+  }
+  return parts.map(encodeURIComponent).join('/');
 }
 
 function isHostedOkResponse(value: unknown): value is { ok: true } {

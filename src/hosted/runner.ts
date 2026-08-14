@@ -486,12 +486,21 @@ async function dispatchHosted(
 }
 
 async function runHostedSiteSurface(argv: readonly string[], literal: boolean, client: HostedClient, stdout: NodeJS.WritableStream): Promise<void> {
-  const root = new Command('webcmd').exitOverride().configureOutput({ writeOut: () => undefined, writeErr: () => undefined });
+  let help = '';
+  let stderr = '';
+  const root = new Command('webcmd').exitOverride().configureOutput({
+    writeOut: value => { help += value; },
+    writeErr: value => { stderr += value; },
+  });
   registerSiteCommands(root, hostedSiteMemoryBackend(client), stdout);
   try {
     await root.parseAsync(literal ? ['--', 'site', ...argv] : ['site', ...argv], { from: 'user' });
   } catch (error) {
-    if (error instanceof CommanderError) throw new CommanderStructuralError(`${error.message}\n`, error.exitCode);
+    if (error instanceof CommanderError && error.code === 'commander.helpDisplayed') {
+      await writeToStream(stdout, help);
+      return;
+    }
+    if (error instanceof CommanderError) throw new CommanderStructuralError(stderr || `${error.message}\n`, error.exitCode);
     throw error;
   }
 }
@@ -521,7 +530,12 @@ type HostedAdapterSourceCommand =
 
 async function runHostedAdapterSourceSurface(argv: readonly string[], literal: boolean, client: HostedClient, stdout: NodeJS.WritableStream, homeDir: string): Promise<void> {
   let parsed: HostedAdapterSourceCommand | undefined;
-  const root = new Command('webcmd').exitOverride().configureOutput({ writeOut: () => undefined, writeErr: () => undefined });
+  let help = '';
+  let stderr = '';
+  const root = new Command('webcmd').exitOverride().configureOutput({
+    writeOut: value => { help += value; },
+    writeErr: value => { stderr += value; },
+  });
   const adapter = root.command('adapter');
   const source = adapter.command('source');
   source.command('get').argument('<command>').option('-o, --output <path>').action((commandKey, opts: { output?: string }) => { parsed = { kind: 'get', commandKey, output: opts.output }; });
@@ -530,16 +544,21 @@ async function runHostedAdapterSourceSurface(argv: readonly string[], literal: b
   try {
     await root.parseAsync(literal ? ['--', 'adapter', ...argv] : ['adapter', ...argv], { from: 'user' });
   } catch (error) {
-    if (error instanceof CommanderError) throw new CommanderStructuralError(`${error.message}\n`, error.exitCode);
+    if (error instanceof CommanderError && error.code === 'commander.helpDisplayed') {
+      await writeToStream(stdout, help);
+      return;
+    }
+    if (error instanceof CommanderError) throw new CommanderStructuralError(stderr || `${error.message}\n`, error.exitCode);
     throw error;
   }
   if (!parsed) throw new CommanderStructuralError("error: command 'adapter' did not run\n", EXIT_CODES.USAGE_ERROR);
   const { site, command } = parseAdapterCommandKey(parsed.commandKey);
-  const destination = path.join(homeDir, '.webcmd', 'hosted', 'clis', site, `${command}.js`);
+  const destination = hostedAdapterDestination(homeDir, site, command);
   if (parsed.kind === 'path') return writeToStream(stdout, `${destination}\n`);
   const metadata = await hostedAdapterSourceMetadata(client, parsed.commandKey);
   const sourcePath = metadata.sourceFile ?? metadata.modulePath;
   if (!sourcePath) throw new ConfigError(`Hosted adapter source is unavailable for ${parsed.commandKey}.`);
+  validateHostedRelativePath(sourcePath, 'adapter source provenance');
   if (parsed.kind === 'get') {
     const body = await client.readAdapterSource(metadata.adapterPackageId!, sourcePath);
     if (parsed.output === '-') return writeToStream(stdout, body);
@@ -554,8 +573,26 @@ async function runHostedAdapterSourceSurface(argv: readonly string[], literal: b
 
 function parseAdapterCommandKey(value: string): { site: string; command: string } {
   const [site, command, extra] = value.split('/');
-  if (!site || !command || extra) throw new ConfigError('Adapter command must use site/command format.');
+  if (!isSafePathSegment(site) || !isSafePathSegment(command) || extra) throw new ConfigError('Adapter command must use site/command format.');
   return { site, command };
+}
+
+function hostedAdapterDestination(homeDir: string, site: string, command: string): string {
+  const root = path.resolve(homeDir, '.webcmd', 'hosted', 'clis');
+  const destination = path.resolve(root, site, `${command}.js`);
+  const relative = path.relative(root, destination);
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new ConfigError('Hosted adapter destination is invalid.');
+  return destination;
+}
+
+function validateHostedRelativePath(value: string, label: string): void {
+  if (!value || value.includes('\\') || path.isAbsolute(value) || value.split('/').some(part => !isSafePathSegment(part))) {
+    throw new ConfigError(`Hosted ${label} is invalid.`);
+  }
+}
+
+function isSafePathSegment(value: string | undefined): value is string {
+  return typeof value === 'string' && value !== '' && value !== '.' && value !== '..' && !value.includes('\\') && !value.includes('\0');
 }
 
 async function hostedAdapterSourceMetadata(client: HostedClient, key: string): Promise<HostedCommand> {

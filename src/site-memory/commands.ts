@@ -36,11 +36,15 @@ export interface SiteMemoryBackend {
 export function registerSiteCommands(root: Command, backend: SiteMemoryBackend, stdout?: NodeJS.WritableStream): void {
   const site = root.command('site').description('Read and write site memory');
   const memory = site.command('memory').description('Inspect site memory');
-  memory.command('show').argument('<site>').option('--kind <kind>').action(async (name, opts: { kind?: string }) => {
-    await renderOutput(await backend.show(name, parseKind(opts.kind)), { fmt: 'json', stdout });
+  memory.command('show').argument('<site>').option('--kind <kind>').option('-o, --output <path>').action(async (name, opts: { kind?: string; output?: string }) => {
+    const result = await backend.show(name, parseKind(opts.kind));
+    if (opts.output) return writeFile(opts.output, `${JSON.stringify(result, null, 2)}\n`);
+    await renderOutput(result, { fmt: 'json', stdout });
   });
-  memory.command('list').argument('<site>').action(async (name) => {
-    await renderOutput(await backend.list(name), { fmt: 'table', fmtExplicit: true, columns: ['path', 'updatedAt', 'byteSize', 'sha256'], stdout });
+  memory.command('list').argument('<site>').option('-o, --output <path>').action(async (name, opts: { output?: string }) => {
+    const result = await backend.list(name);
+    if (opts.output) return writeFile(opts.output, `${JSON.stringify(result, null, 2)}\n`);
+    await renderOutput(result, { fmt: 'table', fmtExplicit: true, columns: ['path', 'updatedAt', 'byteSize', 'sha256'], stdout });
   });
   site.command('note').command('add').argument('<site>').requiredOption('--text <markdown>').option('--author <author>')
     .action((name, opts: { text: string; author?: string }) => backend.note(name, opts.text, opts.author));

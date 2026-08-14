@@ -307,6 +307,36 @@ describe('runHostedCli', () => {
     }
   });
 
+  it('rejects unsafe hosted adapter command keys and source provenance', async () => {
+    const stdout = sink();
+    const stderr = sink();
+    const requested: string[] = [];
+    const config = makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' });
+    const unsafeManifest = { ...manifest, commands: [{ ...manifest.commands[0], adapterPackageId: 'pkg_github', sourceFile: '../escape.js' }] };
+    const result = await runHostedCli(['adapter', 'path', '../outside'], { config, stdout: stdout.stream, stderr: stderr.stream });
+    expect(result.exitCode).not.toBe(0);
+    expect(stdout.text()).not.toContain('outside');
+    const provenance = await runHostedCli(['adapter', 'source', 'get', 'github/whoami'], {
+      config,
+      stderr: stderr.stream,
+      fetchImpl: async (url) => {
+        requested.push(new URL(String(url)).pathname);
+        return new Response(JSON.stringify({ ok: true, manifest: unsafeManifest }));
+      },
+    });
+    expect(provenance.exitCode).not.toBe(0);
+    expect(requested).toEqual(['/v1/manifest']);
+  });
+
+  it('writes hosted site and adapter help to stdout', async () => {
+    const stdout = sink();
+    const config = makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' });
+    await expect(runHostedCli(['site', '--help'], { config, stdout: stdout.stream })).resolves.toMatchObject({ exitCode: 0 });
+    await expect(runHostedCli(['adapter', 'source', '--help'], { config, stdout: stdout.stream })).resolves.toMatchObject({ exitCode: 0 });
+    expect(stdout.text()).toContain('Read and write site memory');
+    expect(stdout.text()).toContain('adapter source');
+  });
+
   it('presents web fetch help from local metadata without dispatching it to Cloud', async () => {
     const stdout = sink();
     const fetchImpl = vi.fn<typeof fetch>(async () => manifestResponse());

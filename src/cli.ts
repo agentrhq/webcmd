@@ -1751,9 +1751,13 @@ cli({
 
   const localAdapterPath = (commandKey: string): string => {
     const [site, command, extra] = commandKey.split('/');
-    if (!site || !command || extra) throw new ArgumentError('Adapter command must use site/command format.');
+    if (!site || !command || extra || site === '.' || site === '..' || command === '.' || command === '..' || site.includes('\\') || command.includes('\\')) {
+      throw new ArgumentError('Adapter command must use site/command format.');
+    }
     const registered = getRegistry().get(`${site}/${command}`) as import('./registry.js').InternalCliCommand | undefined;
-    return registered ? (resolveAdapterSourcePath(registered) ?? path.join(USER_CLIS, site, `${command}.js`)) : path.join(USER_CLIS, site, `${command}.js`);
+    const source = registered && resolveAdapterSourcePath(registered);
+    if (!source) throw new ArgumentError(`Adapter source is unavailable for ${commandKey}.`);
+    return source;
   };
   const reportLocalAdapterPath = (commandKey: string): void => console.log(localAdapterPath(commandKey));
   const adapterSourceCmd = adapterCmd.command('source').description('Read or write adapter source');

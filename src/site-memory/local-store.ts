@@ -3,6 +3,7 @@ import { constants } from 'node:fs';
 import { access, lstat, mkdir, readdir, readFile, realpath, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
+import { validateFixture } from '../browser/verify-fixture.js';
 
 type JsonObject = Record<string, unknown>;
 
@@ -175,6 +176,7 @@ async function writeSiteFile(site: string, path: string, body: string, opts: Loc
   const root = await ensureSiteRoot(site, opts);
   const target = join(root, path);
   await mkdir(dirname(target), { recursive: true });
+  await assertInsideSiteRoot(root, dirname(target), path);
   await withPathLock(target, () => atomicWrite(target, body));
 }
 
@@ -294,11 +296,19 @@ function safeCommand(command: string): string {
 }
 
 function validateVerifyFixture(body: string): void {
+  let fixture: unknown;
   try {
-    const fixture = JSON.parse(body) as unknown;
-    if (!objectValue(fixture)) throw new Error('not an object');
+    fixture = JSON.parse(body);
   } catch {
-    throw new Error('Verify fixture must be valid JSON object.');
+    throw new Error('Fixture must be valid JSON.');
+  }
+  validateFixture(fixture);
+}
+
+async function assertInsideSiteRoot(root: string, parent: string, path: string): Promise<void> {
+  const [realRoot, realParent] = await Promise.all([realpath(root), realpath(parent)]);
+  if (realParent !== realRoot && !realParent.startsWith(`${realRoot}${sep}`)) {
+    throw new Error(`Invalid site memory path: ${path}`);
   }
 }
 

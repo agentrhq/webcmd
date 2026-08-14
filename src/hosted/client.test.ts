@@ -71,6 +71,22 @@ const validTraceUrlCases = [
 ] as const;
 
 describe('HostedClient', () => {
+  it('preserves a raw storage endpoint error envelope', async () => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: false,
+        error: { code: 'SITE_MEMORY_NOT_FOUND', message: 'Missing notes.', exitCode: 66 },
+      }), { status: 404 }),
+    });
+
+    await expect(client.readSiteMemory('github', 'notes.md')).rejects.toMatchObject({
+      code: 'SITE_MEMORY_NOT_FOUND',
+      exitCode: 66,
+    });
+  });
+
   it('uses raw storage endpoints for site memory and adapter source', async () => {
     const requests: Array<{ url: string; method: string; body?: string; contentType?: string | null }> = [];
     const client = new HostedClient({
