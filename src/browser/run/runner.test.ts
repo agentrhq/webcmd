@@ -453,6 +453,37 @@ afterAll(async () => {
     }
   });
 
+  it('hides sibling Session pages in a persistent context', async () => {
+    const userDataDir = fs.mkdtempSync('/tmp/webcmd-persistent-browser-run-');
+    const persistent = await chromium.launchPersistentContext(userDataDir, { headless: true });
+    try {
+      const owned = persistent.pages()[0] ?? await persistent.newPage();
+      const sibling = await persistent.newPage();
+      await owned.goto('data:text/plain,owned');
+      await sibling.goto('data:text/plain,sibling');
+      const persistentBrowser = persistent.browser();
+      if (!persistentBrowser) throw new Error('persistent browser missing');
+
+      const output = await runBrowserProgram({
+        browser: persistentBrowser,
+        context: persistent,
+        page: owned,
+        pageId: 'persistent-page',
+        pages: () => [owned],
+        createPage: () => persistent.newPage(),
+        onPage(listener) {
+          persistent.on('page', listener);
+          return () => persistent.off('page', listener);
+        },
+      }, 'return context.pages().map(page => page.url());');
+
+      expect(output.result).toEqual([owned.url()]);
+    } finally {
+      await persistent.close();
+      fs.rmSync(userDataDir, { recursive: true, force: true });
+    }
+  });
+
   it('waits for requests and responses', async () => {
     const output = await run(`
       const requestPromise = page.waitForRequest('**/data');
