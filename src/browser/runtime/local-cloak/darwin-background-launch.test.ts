@@ -101,10 +101,12 @@ describe('launchDarwinBackgroundPersistentContext', () => {
     const { browser } = fakeRuntime();
     const deps = fakeDependencies(browser);
     const lsError = new Error('kLSNoExecutableErr: The executable is missing');
-    deps.openApplication.mockRejectedValue(lsError);
+    deps.openApplication
+      .mockRejectedValueOnce(lsError)
+      .mockRejectedValueOnce(new Error('retry failed: bundle executable is invalid'));
 
     await expect(launchDarwinBackgroundPersistentContext(options, deps)).rejects.toThrow(
-      /lsregister -f "\/Applications\/Cloak Chromium\.app"/,
+      /retry failed: bundle executable is invalid[\s\S]*lsregister -f "\/Applications\/Cloak Chromium\.app"/,
     );
 
     expect(deps.registerBundle).toHaveBeenCalledWith('/Applications/Cloak Chromium.app');

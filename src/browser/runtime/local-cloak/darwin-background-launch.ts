@@ -61,11 +61,14 @@ async function openApplicationWithLsRegisterRetry(
     try {
       await deps.registerBundle(appPath);
       await deps.openApplication(appPath, args);
-    } catch {
+    } catch (retryError) {
+      const retryMessage = retryError instanceof Error ? retryError.message : String(retryError);
       throw new Error(
         `Cloak Chromium bundle exists but macOS LaunchServices has a stale record for it (${LS_NO_EXECUTABLE_MARKER}): ${appPath}\n` +
+        `Automatic remediation failed: ${retryMessage}\n` +
         `Re-registering it automatically did not resolve the issue. Fix it manually with:\n` +
         `  ${LSREGISTER_PATH} -f "${appPath}"`,
+        { cause: retryError },
       );
     }
   }
