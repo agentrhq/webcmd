@@ -77,6 +77,7 @@ LIBRETTO_TOOLS = (
 WEBCMD_USAGE_SKILL = Path.home() / ".codex/skills/webcmd-usage"
 WEBCMD_BROWSER_SKILL = Path.home() / ".codex/skills/webcmd-browser"
 WEBCMD_USAGE_SKILL_FILE = WEBCMD_USAGE_SKILL / "SKILL.md"
+WEBCMD_SKILL_ROOT = WEBCMD_USAGE_SKILL_FILE.resolve().parent.parent
 WEBCMD_SETUP_SKILL_FILES = frozenset(
     {
         WEBCMD_USAGE_SKILL_FILE.resolve(),
@@ -264,23 +265,13 @@ def _build_prompt(tool: Tool, session: str, shots_dir: Path, task: str) -> str:
 - The Libretto provider is already pinned to this task's dedicated CloakBrowser; open it with `browser_open` and do not configure another browser.
 - Reuse the session ID returned by `browser_open` and close it with `browser_close` when the task is complete."""
     else:
-        webcmd = (
-            f"webcmd --profile {WEBCMD_BENCHMARK_PROFILE} "
-            f"--session {session} browser"
-        )
-        tool_rules = f"""- Use only `webcmd`.
-- Every shell command must execute only `webcmd`.
-- The harness already created the dedicated Profile and Session. Do not run `webcmd profile`, `webcmd session`, `webcmd daemon`, or any browser close command. The harness owns Session cleanup after the controller exits.
-- Browser commands: `{webcmd} tabs` → optional `{webcmd} bind --page PAGE` → optional `{webcmd} snapshot` → one or more `{webcmd} run --stdin <<'JS' ... JS` calls.
-- Do not use `open`, `state`, `click`, `type`, `screenshot`, `wait`, `eval`, `observe`, or `tab`.
-- Do not run `webcmd browser --help`; the complete allowed surface is listed above.
-- `{webcmd} run --stdin` must include one quoted heredoc containing its sandboxed JavaScript; never run it with an empty stdin body.
-- In run programs, `page` is already available.
-- The only optional run flags are `--timeout`, `--max-output`, `--snapshot-mode act|tree`, and `--no-snapshot-diff`.
-- `run` returns a snapshot diff by default. Use `snapshot` for a full page read or baseline refresh.
-- Avoid shell-fragile JavaScript such as `$`, template literals, regex end anchors, or mixed-quote one-liners; use simple string methods and statements.
-- Use no substitutions, other redirections, or other executables.
-- Do not use Web search, browser MCPs, external Playwright, Puppeteer, curl, wget, raw HTTP, or any non-Webcmd automation tool."""
+        tool_rules = f"""- Use only `webcmd` for task execution. Do not use Web Search, browser MCPs, external Playwright, Puppeteer, curl, wget, raw HTTP, or any non-Webcmd automation tool.
+- Start with the `$webcmd-usage` skill; all globally installed Webcmd skills are available. Follow its routing and choose the applicable Webcmd route yourself, including an installed adapter, search/fetch workflow, or raw browser fallback. Do not assume browser use is required.
+- You may read installed Webcmd skill and reference files when the selected workflow requires them. Otherwise every shell command must execute only `webcmd`; do not use shell helpers, substitutions, pipes, or other executables.
+- The harness already created the dedicated Profile and Session. Use `--profile {WEBCMD_BENCHMARK_PROFILE}` and `--session {session}` only if the selected route needs browser state. The pre-created Session does not force browser use.
+- Do not create, close, or force-close Sessions, manage the daemon, or change Profiles. The harness owns Session cleanup after the controller exits.
+- You may search and inspect plugins. Do not install, update, uninstall, or create plugins; modify installed skills or adapter overrides; or register or install external CLIs. These mutate the shared benchmark installation.
+- If raw browser fallback is selected, follow the applicable Webcmd browser skill and use the harness-provided Profile and Session instead of its normal session-lifecycle steps."""
     if tool == "dev-browser":
         screenshot_rules = f"""- Save screenshots after meaningful page transitions and at the final state with `saveScreenshot`.
 - Name screenshots `{session}-step_001.png`, then `{session}-step_002.png`, `{session}-step_003.png`, and so on without overwriting. The harness collects them automatically."""
@@ -288,7 +279,7 @@ def _build_prompt(tool: Tool, session: str, shots_dir: Path, task: str) -> str:
         screenshot_rules = """- Call `browser_snapshot` with `screenshot: true` after meaningful page transitions and at the final state.
 - The harness collects those native Libretto screenshot results automatically."""
     elif tool == "webcmd":
-        screenshot_rules = """- Save screenshots after meaningful page transitions and at the final state.
+        screenshot_rules = """- If raw browser fallback is used, save screenshots after meaningful page transitions and at the final state.
 - In Webcmd run programs, screenshot paths must be relative logical filenames such as `shots/step_001.png`, then `shots/step_002.png`, without `..` or absolute paths."""
     else:
         screenshot_rules = f"""- Save screenshots after meaningful page transitions and at the final state.
@@ -831,6 +822,32 @@ def _unwrap_single_shell_command(command: str) -> str | None:
     return words[2]
 
 
+def _webcmd_skill_read_allowed(command: str) -> bool:
+    inner = _unwrap_single_shell_command(command)
+    if inner is None:
+        return False
+    segments = _shell_segments(inner)
+    if segments is None or len(segments) != 1:
+        return False
+    segment = segments[0]
+    if len(segment) == 2 and segment[0] == "cat":
+        target_value = segment[1]
+    elif (
+        len(segment) == 4
+        and segment[:2] == ["sed", "-n"]
+        and re.fullmatch(r"[1-9][0-9]*,[1-9][0-9]*p", segment[2]) is not None
+    ):
+        target_value = segment[3]
+    else:
+        return False
+    try:
+        target = Path(target_value).expanduser().resolve()
+        target.relative_to(WEBCMD_SKILL_ROOT)
+    except (OSError, ValueError):
+        return False
+    return target.is_file()
+
+
 def _dev_browser_command_allowed(command: str) -> bool:
     inner = _unwrap_single_shell_command(command)
     if inner is None:
@@ -962,6 +979,89 @@ def _webcmd_snapshot_segment_allowed(segment: list[str]) -> bool:
     return True
 
 
+def _webcmd_command_tail(segment: list[str]) -> list[str] | None:
+    if not segment or segment[0] != "webcmd":
+        return None
+    arguments = segment[1:]
+    index = 0
+    while index < len(arguments):
+        option = arguments[index]
+        if option in {"-v", "--verbose"}:
+            index += 1
+            continue
+        if option in {"--profile", "--session"}:
+            if index + 1 >= len(arguments):
+                return None
+            value = arguments[index + 1]
+            if option == "--profile" and value != WEBCMD_BENCHMARK_PROFILE:
+                return None
+            if option == "--session" and WEBCMD_SESSION_RE.fullmatch(value) is None:
+                return None
+            index += 2
+            continue
+        if option.startswith("--profile="):
+            if option.partition("=")[2] != WEBCMD_BENCHMARK_PROFILE:
+                return None
+            index += 1
+            continue
+        if option.startswith("--session="):
+            if WEBCMD_SESSION_RE.fullmatch(option.partition("=")[2]) is None:
+                return None
+            index += 1
+            continue
+        break
+    return arguments[index:]
+
+
+def _webcmd_segment_allowed(segment: list[str]) -> bool:
+    tail = _webcmd_command_tail(segment)
+    if tail is None:
+        return False
+    if not tail or tail == ["--version"]:
+        return True
+
+    browser = _webcmd_browser_tail(segment)
+    if browser is not None:
+        if browser == ["browser", "tabs"]:
+            return True
+        if _webcmd_snapshot_segment_allowed(segment):
+            return True
+        return (
+            len(browser) == 4
+            and browser[1:3] == ["bind", "--page"]
+            and re.fullmatch(r"[A-Za-z0-9._:-]+", browser[3]) is not None
+        )
+
+    command = tail[0]
+    if command == "browser":
+        return tail == ["browser", "--help"] or (
+            len(tail) >= 2 and tail[1] == "verify"
+        )
+    if command == "profile":
+        return len(tail) >= 2 and tail[1] == "list"
+    if command == "session":
+        return len(tail) >= 2 and tail[1] == "list"
+    if command == "daemon":
+        return False
+    if command == "skills":
+        return len(tail) == 1 or tail[1] == "list"
+    if command == "adapter":
+        return len(tail) == 1 or tail[1] == "status"
+    if command == "plugin":
+        if len(tail) < 2:
+            return True
+        if tail[1] in {"install", "update", "uninstall", "create"}:
+            return False
+        if tail[1:3] in (["catalog", "add"], ["catalog", "remove"]):
+            return False
+    if command == "external" and len(tail) >= 2 and tail[1] in {
+        "install",
+        "register",
+    }:
+        return False
+    return command not in {"install", "update", "upgrade"}
+
+
 def _segment_allowed(tool: Tool, segment: list[str]) -> bool:
     executable = Path(segment[0].strip("'\"")).name
     if executable in {"sh", "bash", "zsh"} and len(segment) == 3 and segment[1] in {"-c", "-lc"}:
@@ -993,23 +1093,10 @@ def _segment_allowed(tool: Tool, segment: list[str]) -> bool:
         }
     if tool == "dev-browser":
         return _dev_browser_segment_allowed(segment)
-    if tool == "webcmd" and segment[0] != "webcmd":
-        return False
+    if tool == "webcmd":
+        return _webcmd_segment_allowed(segment)
     if executable == tool:
-        if tool != "webcmd":
-            return False
-        browser = _webcmd_browser_tail(segment)
-        if browser is None:
-            return False
-        if browser == ["browser", "tabs"]:
-            return True
-        if _webcmd_snapshot_segment_allowed(segment):
-            return True
-        return (
-            len(browser) == 4
-            and browser[1:3] == ["bind", "--page"]
-            and re.fullmatch(r"[A-Za-z0-9._:-]+", browser[3]) is not None
-        )
+        return False
     if tool == "chrome-devtools-axi" and executable == "npx":
         return len(segment) >= 3 and segment[1:3] == ["-y", "chrome-devtools-axi"]
     return False
@@ -1040,6 +1127,8 @@ def _policy_violation(
                 return True
             continue
         if tool == "webcmd" and _webcmd_run_heredoc_allowed(command):
+            continue
+        if tool == "webcmd" and _webcmd_skill_read_allowed(command):
             continue
         if _has_unescaped_dollar(command):
             return True
