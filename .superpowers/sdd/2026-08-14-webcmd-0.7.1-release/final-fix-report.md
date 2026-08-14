@@ -19,3 +19,13 @@ GREEN: `npm test -- src/hosted/client.test.ts src/hosted/file-contract.test.ts s
 - `npm run build` — passed.
 - `npm pack --dry-run` — passed.
 - `git diff --check` — passed.
+
+## Follow-up: local adapter-source semantics
+
+RED: `npm test -- src/cli.test.ts src/skills.test.ts` failed because local adapter-source help still claimed it could read/write source and the authoring guidance told local users to use ignored `get|put` options.
+
+GREEN: `npm test -- src/cli.test.ts src/skills.test.ts src/docs-sync-review.test.ts` passed: 165 tests.
+
+The local CLI and authoritative authoring guidance now say to use `adapter path` and edit the returned file; `adapter source get|put` is explicitly WebCMD Cloud behavior. The mode-neutral autofix skill identifies Cloud without presenting a mode selector.
+
+Follow-up release gate: `npm test` passed (442 files; 5,627 passed, 1 skipped), and `npm run build`, `npm pack --dry-run`, and `git diff --check` passed.

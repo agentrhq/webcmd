@@ -117,8 +117,8 @@ Design columns (output-design.md)
   v
 webcmd browser init
   - scaffold <site>/<name>
-  - use webcmd adapter source get|put <site>/<name> to edit a fork
-  - use webcmd adapter path <site>/<name> to locate its local copy
+  - locally, use webcmd adapter path <site>/<name> and edit that local copy
+  - in hosted mode, use webcmd adapter source get|put <site>/<name> to edit tenant-owned source
   |
   v
 webcmd browser verify
@@ -183,7 +183,7 @@ Check these off step by step:
 
 [ ] 9. Write the adapter (`adapter-template.md`):
        [ ] `webcmd browser init <site>/<name>`, then set `strategy: Strategy.<strategy>` in the generated file
-       [ ] Fork and edit with `webcmd adapter source get <site>/<name>` and `webcmd adapter source put <site>/<name> <path>`; locate it with `webcmd adapter path <site>/<name>`.
+       [ ] Locally, run `webcmd adapter path <site>/<name>` and edit that file. In hosted mode, use `webcmd adapter source get <site>/<name>` and `webcmd adapter source put <site>/<name> <path>`.
        [ ] Find the closest same-site or same-type adapter and carry over only the proven mapping.
        [ ] Use only the adapter-compatible path proven in Step 6A; never paste Playwright locators, `waitForResponse`, or browser-run globals into `func`.
 
@@ -261,7 +261,7 @@ Check these off step by step:
 - **The `browser:` field determines the `func` signature:** `browser:false -> (args)`, `browser:true -> (page, args)`. If this is reversed, `args` may actually be a debug flag and all external parameters can silently fall back to defaults.
 - Throw the correct typed error for known failures according to [`references/typed-errors.md`](./references/typed-errors.md). **Do not** silently `return []`, **do not** silently `return [{sentinel}]`, and **do not** silently clamp external parameters with `Math.max/min`.
 - **Persistent site sessions keep stale DOM between commands.** `siteSession: 'persistent'` shares one tab per site; leftover modals/drawers from the previous command leak into the next one. State-sensitive write commands (checkout flows) should add `freshPage: true` (new tab, same lease — cookies/login/location survive). Verify session-scoped context (login, selected city/date) *before* side effects, and embed such context in URLs/IDs your command emits for sibling commands. See `references/adapter-template.md` and "Persistent Site Sessions and State Hygiene" in `docs/authoring.mdx`.
-- For private iteration, use `webcmd adapter override <site>/<command>`, then edit with `webcmd adapter source get|put <site>/<command>` and locate the local copy with `webcmd adapter path <site>/<command>`. Building, testing, and verifying the adapter under private iteration fully satisfies a request to "build a working adapter" on its own. **Do not run `webcmd plugin create` or promote the CLI until the user explicitly confirms they want it pushed into the repo (or a PR raised).** Once confirmed, create the plugin, copy the real command files into it, and delete scaffold sample commands. Do not hand-edit the root `webcmd-plugin.json` or generated README catalog; run `webcmd validate <site>` and smoke commands after installation. See `references/adapter-template.md` for details.
+- For private iteration, use `webcmd adapter override <site>/<command>`, then locally run `webcmd adapter path <site>/<command>` and edit that file. In hosted mode, `webcmd adapter source get|put <site>/<command>` reads and writes tenant-owned source. Building, testing, and verifying the adapter under private iteration fully satisfies a request to "build a working adapter" on its own. **Do not run `webcmd plugin create` or promote the CLI until the user explicitly confirms they want it pushed into the repo (or a PR raised).** Once confirmed, create the plugin, copy the real command files into it, and delete scaffold sample commands. Do not hand-edit the root `webcmd-plugin.json` or generated README catalog; run `webcmd validate <site>` and smoke commands after installation. See `references/adapter-template.md` for details.
 - After `webcmd plugin update`, check the reported overrides needing reconciliation and merge `yours` with `upstream`, using `base` as the common ancestor for a three-way merge. Only overrides are reported; a user-authored adapter has no upstream.
 - Write site memory every round: no memory -> use skill -> produce memory -> next time becomes a five-minute task.
 - **After a site's first command passes verify, stop and ask the user for their use cases before recommending next set of commands.** See Runbook Step 13.

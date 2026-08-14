@@ -20,7 +20,7 @@ Hard stops before any code change:
 
 Scope constraint:
 
-- Modify only the source identified by `adapterSourcePath` in the trace `summary.md` front matter. Use `webcmd adapter source get <site>/<command>` and `webcmd adapter source put <site>/<command> <path>`; `webcmd adapter path <site>/<command>` locates the local copy.
+- Modify only the source identified by `adapterSourcePath` in the trace `summary.md` front matter. Run `webcmd adapter path <site>/<command>` to print the source file, then patch that file. In WebCMD Cloud, use `webcmd adapter source get <site>/<command>` and `webcmd adapter source put <site>/<command> <path>` for tenant-owned source.
 - Never modify `src/`, `extension/`, `tests/`, `package.json`, or `tsconfig.json` during autofix.
 
 Retry budget: maximum **3 repair rounds** per failure. A round is diagnose -> patch -> retry. If 3 rounds do not resolve it, stop and report what was tried.

@@ -1760,7 +1760,7 @@ cli({
     return source;
   };
   const reportLocalAdapterPath = (commandKey: string): void => console.log(localAdapterPath(commandKey));
-  const adapterSourceCmd = adapterCmd.command('source').description('Read or write adapter source');
+  const adapterSourceCmd = adapterCmd.command('source').description('Print local adapter source paths; hosted mode reads or writes source');
   adapterSourceCmd.command('get').argument('<command>').option('-o, --output <path>').action((commandKey: string) => reportLocalAdapterPath(commandKey));
   adapterSourceCmd.command('put').argument('<command>').argument('<path>').action((commandKey: string) => reportLocalAdapterPath(commandKey));
   adapterCmd.command('path').argument('<command>').action((commandKey: string) => reportLocalAdapterPath(commandKey));

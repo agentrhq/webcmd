@@ -544,6 +544,13 @@ describe('createProgram root help descriptions', () => {
     expect(adapter.helpInformation()).not.toMatch(/official|baseline|eject/i);
   });
 
+  it('describes local adapter source commands as path lookup, not source mutation', () => {
+    const adapter = createProgram('', '').commands.find((command) => command.name() === 'adapter')!;
+    const source = adapter.commands.find((command) => command.name() === 'source')!;
+
+    expect(source.description()).toBe('Print local adapter source paths; hosted mode reads or writes source');
+  });
+
   it('renders auth namespace structured help', () => {
     const argv = process.argv;
     try {
