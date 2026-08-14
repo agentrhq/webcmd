@@ -14,6 +14,7 @@ import type { BrowserProfileStatus } from './browser/daemon-transport.js';
 import { aliasForContextId, loadProfileConfig } from './browser/profile.js';
 import { formatDaemonVersion, isDaemonStale, staleDaemonIssue } from './browser/daemon-version.js';
 import { findShadowedUserAdapters, formatAdapterShadowIssue, type AdapterShadow } from './adapter-shadow.js';
+import { findSkillVersionDrift, formatSkillVersionDriftIssue, type SkillVersionDrift } from './skill-version-drift.js';
 
 const DOCTOR_LIVE_TIMEOUT_SECONDS = 8;
 
@@ -42,6 +43,7 @@ export type DoctorReport = {
   connectivity?: ConnectivityResult;
   profiles?: BrowserProfileStatus[];
   adapterShadows?: AdapterShadow[];
+  skillVersionDrift?: SkillVersionDrift | null;
   issues: string[];
 };
 
@@ -107,6 +109,12 @@ export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<Doctor
   } catch (err) {
     issues.push(`Could not check adapter overrides: ${getErrorMessage(err)}`);
   }
+  let skillVersionDrift: SkillVersionDrift | null = null;
+  try {
+    skillVersionDrift = findSkillVersionDrift(opts.cliVersion);
+  } catch (err) {
+    issues.push(`Could not check skill version drift: ${getErrorMessage(err)}`);
+  }
   if (daemonFlaky) {
     issues.push(
       'Daemon connectivity is unstable. The live browser test succeeded, but the daemon was no longer running immediately afterward.\n' +
@@ -162,6 +170,9 @@ export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<Doctor
   if (adapterShadows.length > 0) {
     issues.push(formatAdapterShadowIssue(adapterShadows));
   }
+  if (skillVersionDrift) {
+    issues.push(formatSkillVersionDriftIssue(skillVersionDrift));
+  }
 
   return {
     cliVersion: opts.cliVersion,
@@ -176,6 +187,7 @@ export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<Doctor
     connectivity,
     profiles,
     adapterShadows,
+    skillVersionDrift,
     issues,
   };
 }
