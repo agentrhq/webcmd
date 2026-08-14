@@ -41,6 +41,13 @@ const INSTAGRAM_MEDIA_CONTENT_TYPES = [
 ];
 
 const EXPECTED_FILE_ARGUMENTS: Record<string, ExpectedFileArgument[]> = {
+  'confluence/create': [{ name: 'file', direction: 'input', pathKind: 'file', multiple: false, required: true }],
+  'confluence/update': [{ name: 'file', direction: 'input', pathKind: 'file', multiple: false, required: true }],
+  'gemini/image': [{ name: 'op', direction: 'output', pathKind: 'directory', multiple: false, required: false }],
+  'geogebra/triangle': [{ name: 'output', direction: 'output', pathKind: 'file', multiple: false, required: false }],
+  'geogebra/hexagon': [{ name: 'output', direction: 'output', pathKind: 'file', multiple: false, required: false }],
+  'grok/export-all': [{ name: 'manifestPath', direction: 'input', pathKind: 'file', multiple: false, required: false, contentTypes: ['application/json'] }],
+  'grok/image': [{ name: 'out', direction: 'output', pathKind: 'directory', multiple: false, required: false, defaultPath: './grok-images' }],
   'chatgpt/image': [{
     name: 'image',
     direction: 'input',

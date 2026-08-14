@@ -352,7 +352,7 @@ export const grokExportAllCommand = cli({
   args: [
     { name: 'limit', type: 'int', default: 0, help: 'Max conversations to export; 0 means all loaded history' },
     { name: 'offset', type: 'int', default: 0, help: 'Skip this many conversations before exporting' },
-    { name: 'manifestPath', type: 'string', default: '', help: 'Optional grok/export JSON manifest path; skips history dialog and visits listed /c pages directly' },
+    { name: 'manifestPath', type: 'string', default: '', help: 'Optional grok/export JSON manifest path; skips history dialog and visits listed /c pages directly', file: { direction: 'input', pathKind: 'file', multiple: false, contentTypes: ['application/json'] } },
     { name: 'maxScrolls', type: 'int', default: 80, help: 'Max history-list scroll rounds when limit is 0 (max 500)' },
     { name: 'pageScrolls', type: 'int', default: 30, help: 'Max per-conversation scroll-to-bottom rounds (max 200)' },
     { name: 'pageTimeoutMs', type: 'int', default: 30000, help: 'Max wait for each conversation page to show messages' },
