@@ -13,7 +13,7 @@ For private iteration:
 webcmd browser init <site>/<name>
 ```
 
-This scaffolds a `Strategy.PUBLIC` placeholder. Use `webcmd adapter path <site>/<name>` to locate it, then edit that local file; local `adapter source get|put` only print the same path. In hosted mode, `adapter source get|put` download and upload tenant-owned source. Set the real `strategy:` value and other `TODO` fields.
+This scaffolds a `Strategy.PUBLIC` placeholder. Use `webcmd adapter path <site>/<name>` to locate it, then edit that local file. Local `adapter source get` prints the same path only without `--output`; local `adapter source put` is unavailable. In hosted mode, `adapter source get|put` download and upload tenant-owned source. Set the real `strategy:` value and other `TODO` fields.
 
 Promote a community CLI to the main repo as a plugin — **only after the user has explicitly confirmed they want it pushed into the repo**; a general instruction to build a working adapter is not that confirmation (see `SKILL.md`'s Key Conventions):
 

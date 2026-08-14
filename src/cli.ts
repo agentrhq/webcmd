@@ -1760,9 +1760,14 @@ cli({
     return source;
   };
   const reportLocalAdapterPath = (commandKey: string): void => console.log(localAdapterPath(commandKey));
-  const adapterSourceCmd = adapterCmd.command('source').description('Print local adapter source paths; hosted mode reads or writes source');
-  adapterSourceCmd.command('get').argument('<command>').option('-o, --output <path>').action((commandKey: string) => reportLocalAdapterPath(commandKey));
-  adapterSourceCmd.command('put').argument('<command>').argument('<path>').action((commandKey: string) => reportLocalAdapterPath(commandKey));
+  const adapterSourceCmd = adapterCmd.command('source').description('Inspect local adapter source paths; hosted mode reads or writes source');
+  adapterSourceCmd.command('get').description('Print local source path; --output is hosted-only').argument('<command>').option('-o, --output <path>').action((commandKey: string, options: { output?: string }) => {
+    if (options.output) throw new ArgumentError(`Local adapter source get does not support --output. Use webcmd adapter path ${commandKey} and edit that file.`);
+    reportLocalAdapterPath(commandKey);
+  });
+  adapterSourceCmd.command('put').description('Hosted-only source write; local users edit the adapter path').argument('<command>').argument('<path>').action((commandKey: string) => {
+    throw new ArgumentError(`Local adapter source put is unavailable. Use webcmd adapter path ${commandKey} and edit that file.`);
+  });
   adapterCmd.command('path').argument('<command>').action((commandKey: string) => reportLocalAdapterPath(commandKey));
 
   // ── Built-in: browser profile selection ──────────────────────────────────

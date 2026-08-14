@@ -164,6 +164,25 @@ describe('site-memory and local adapter authoring', () => {
       .rejects.toThrow(/Adapter source is unavailable/);
   });
 
+  it('rejects local adapter source writes while directing users to the source path', async () => {
+    const key = 'local-source/search';
+    const source = path.join(isolatedCliTestHome, 'search.js');
+    const output = path.join(isolatedCliTestHome, 'copy.js');
+    fs.writeFileSync(source, 'export default {};');
+    fs.writeFileSync(output, 'export default { updated: true };');
+    getRegistry().set(key, {
+      site: 'local-source', name: 'search', access: 'read', description: 'local source', args: [], source,
+    } as never);
+    try {
+      await expect(createProgram('', '').parseAsync(['node', 'webcmd', 'adapter', 'source', 'get', key, '--output', output]))
+        .rejects.toThrow(`webcmd adapter path ${key}`);
+      await expect(createProgram('', '').parseAsync(['node', 'webcmd', 'adapter', 'source', 'put', key, output]))
+        .rejects.toThrow(`webcmd adapter path ${key}`);
+    } finally {
+      getRegistry().delete(key);
+    }
+  });
+
   it('rejects a registered adapter whose source was deleted', async () => {
     const key = 'stale-source/search';
     const source = path.join(isolatedCliTestHome, 'deleted-source.js');
@@ -548,7 +567,7 @@ describe('createProgram root help descriptions', () => {
     const adapter = createProgram('', '').commands.find((command) => command.name() === 'adapter')!;
     const source = adapter.commands.find((command) => command.name() === 'source')!;
 
-    expect(source.description()).toBe('Print local adapter source paths; hosted mode reads or writes source');
+    expect(source.description()).toBe('Inspect local adapter source paths; hosted mode reads or writes source');
   });
 
   it('renders auth namespace structured help', () => {

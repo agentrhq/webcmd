@@ -29,3 +29,13 @@ GREEN: `npm test -- src/cli.test.ts src/skills.test.ts src/docs-sync-review.test
 The local CLI and authoritative authoring guidance now say to use `adapter path` and edit the returned file; `adapter source get|put` is explicitly WebCMD Cloud behavior. The mode-neutral autofix skill identifies Cloud without presenting a mode selector.
 
 Follow-up release gate: `npm test` passed (442 files; 5,627 passed, 1 skipped), and `npm run build`, `npm pack --dry-run`, and `git diff --check` passed.
+
+## Follow-up: local adapter-source no-op rejection
+
+RED: `npm test -- src/cli.test.ts` failed because local `adapter source get --output` and `adapter source put` exited successfully without applying their requested file operations.
+
+GREEN: `npm test -- src/cli.test.ts src/skills.test.ts src/docs-sync-review.test.ts` passed: 166 tests.
+
+Local `adapter source get --output` and `adapter source put` now reject with `webcmd adapter path <site>/<command>` guidance; plain local `adapter source get` remains a path lookup and hosted source operations remain unchanged.
+
+Follow-up release gate: `npm test` passed (442 files; 5,628 passed, 1 skipped), and `npm run build`, `npm pack --dry-run`, and `git diff --check` passed.
