@@ -18,7 +18,7 @@ cli({
   navigateBefore: 'https://uiverse.io',
   args: [
     { name: 'input', type: 'str', required: true, positional: true, help: 'Uiverse URL or author/slug identifier' },
-    { name: 'output', type: 'str', required: false, help: 'Output image path (defaults to a temp file)' },
+    { name: 'output', type: 'str', required: false, help: 'Output image path (defaults to a temp file)', file: { direction: 'output', pathKind: 'file', multiple: false, defaultPath: './uiverse-preview.png' } },
     { name: 'padding', type: 'int', required: false, default: 8, help: 'Extra padding around the captured preview in pixels' },
   ],
   columns: ['username', 'slug', 'width', 'height', 'output'],

@@ -21764,7 +21764,13 @@
         "name": "out",
         "type": "str",
         "required": false,
-        "help": "Local path to write to. Defaults to ./<attachmentId>.bin"
+        "help": "Local path to write to. Defaults to ./<attachmentId>.bin",
+        "file": {
+          "direction": "output",
+          "pathKind": "file",
+          "multiple": false,
+          "defaultPath": "./attachment.bin"
+        }
       },
       {
         "name": "server",
@@ -21798,7 +21804,12 @@
         "type": "str",
         "required": true,
         "positional": true,
-        "help": "Local file path to upload (single file; max 50 MB)"
+        "help": "Local file path to upload (single file; max 50 MB)",
+        "file": {
+          "direction": "input",
+          "pathKind": "file",
+          "multiple": false
+        }
       },
       {
         "name": "channel",
@@ -24239,7 +24250,13 @@
         "name": "op",
         "type": "str",
         "required": false,
-        "help": "Output directory (default: ~/Music/suno)"
+        "help": "Output directory (default: ~/Music/suno)",
+        "file": {
+          "direction": "output",
+          "pathKind": "directory",
+          "multiple": false,
+          "defaultPath": "./suno"
+        }
       },
       {
         "name": "confirm-paid",
@@ -24338,7 +24355,13 @@
         "name": "op",
         "type": "str",
         "required": false,
-        "help": "Output directory (default: ~/Music/suno)"
+        "help": "Output directory (default: ~/Music/suno)",
+        "file": {
+          "direction": "output",
+          "pathKind": "directory",
+          "multiple": false,
+          "defaultPath": "./suno"
+        }
       },
       {
         "name": "timeout",
@@ -26767,13 +26790,26 @@
         "name": "resume-file",
         "type": "string",
         "required": false,
-        "help": "Resume file for long-running all-pages bookmark syncs."
+        "help": "Resume file for long-running all-pages bookmark syncs.",
+        "file": {
+          "direction": "input-output",
+          "pathKind": "file",
+          "multiple": false,
+          "contentTypes": [
+            "application/json"
+          ]
+        }
       },
       {
         "name": "output-file",
         "type": "string",
         "required": false,
-        "help": "Write all-page results to JSONL. Requires --all and --resume-file."
+        "help": "Write all-page results to JSONL. Requires --all and --resume-file.",
+        "file": {
+          "direction": "output",
+          "pathKind": "file",
+          "multiple": false
+        }
       },
       {
         "name": "max-pages",
@@ -27189,13 +27225,26 @@
         "name": "resume-file",
         "type": "string",
         "required": false,
-        "help": "Resume file for long-running all-pages likes syncs."
+        "help": "Resume file for long-running all-pages likes syncs.",
+        "file": {
+          "direction": "input-output",
+          "pathKind": "file",
+          "multiple": false,
+          "contentTypes": [
+            "application/json"
+          ]
+        }
       },
       {
         "name": "output-file",
         "type": "string",
         "required": false,
-        "help": "Write all-page results to JSONL. Requires --all and --resume-file."
+        "help": "Write all-page results to JSONL. Requires --all and --resume-file.",
+        "file": {
+          "direction": "output",
+          "pathKind": "file",
+          "multiple": false
+        }
       },
       {
         "name": "max-pages",
@@ -28494,7 +28543,13 @@
         "name": "output",
         "type": "str",
         "required": false,
-        "help": "Output image path (defaults to a temp file)"
+        "help": "Output image path (defaults to a temp file)",
+        "file": {
+          "direction": "output",
+          "pathKind": "file",
+          "multiple": false,
+          "defaultPath": "./uiverse-preview.png"
+        }
       },
       {
         "name": "padding",
@@ -29357,7 +29412,12 @@
         "type": "str",
         "default": "./yollomi-output",
         "required": false,
-        "help": "Output directory"
+        "help": "Output directory",
+        "file": {
+          "direction": "output",
+          "pathKind": "directory",
+          "multiple": false
+        }
       },
       {
         "name": "no-download",
@@ -29417,7 +29477,12 @@
         "type": "str",
         "default": "./yollomi-output",
         "required": false,
-        "help": "Output directory"
+        "help": "Output directory",
+        "file": {
+          "direction": "output",
+          "pathKind": "directory",
+          "multiple": false
+        }
       },
       {
         "name": "no-download",
@@ -29465,7 +29530,12 @@
         "type": "str",
         "default": "./yollomi-output",
         "required": false,
-        "help": "Output directory"
+        "help": "Output directory",
+        "file": {
+          "direction": "output",
+          "pathKind": "directory",
+          "multiple": false
+        }
       },
       {
         "name": "no-download",
@@ -29534,7 +29604,12 @@
         "type": "str",
         "default": "./yollomi-output",
         "required": false,
-        "help": "Output directory"
+        "help": "Output directory",
+        "file": {
+          "direction": "output",
+          "pathKind": "directory",
+          "multiple": false
+        }
       },
       {
         "name": "no-download",
@@ -29616,7 +29691,12 @@
         "type": "str",
         "default": "./yollomi-output",
         "required": false,
-        "help": "Output directory"
+        "help": "Output directory",
+        "file": {
+          "direction": "output",
+          "pathKind": "directory",
+          "multiple": false
+        }
       },
       {
         "name": "no-download",
@@ -29658,7 +29738,12 @@
         "type": "str",
         "default": "./yollomi-output",
         "required": false,
-        "help": "Output directory"
+        "help": "Output directory",
+        "file": {
+          "direction": "output",
+          "pathKind": "directory",
+          "multiple": false
+        }
       },
       {
         "name": "no-download",
@@ -29700,7 +29785,12 @@
         "type": "str",
         "default": "./yollomi-output",
         "required": false,
-        "help": "Output directory"
+        "help": "Output directory",
+        "file": {
+          "direction": "output",
+          "pathKind": "directory",
+          "multiple": false
+        }
       },
       {
         "name": "no-download",
@@ -29759,7 +29849,12 @@
         "type": "str",
         "default": "./yollomi-output",
         "required": false,
-        "help": "Output directory"
+        "help": "Output directory",
+        "file": {
+          "direction": "output",
+          "pathKind": "directory",
+          "multiple": false
+        }
       },
       {
         "name": "no-download",
@@ -29794,7 +29889,12 @@
         "type": "str",
         "required": true,
         "positional": true,
-        "help": "Local file path to upload"
+        "help": "Local file path to upload",
+        "file": {
+          "direction": "input",
+          "pathKind": "file",
+          "multiple": false
+        }
       }
     ],
     "columns": [
@@ -29840,7 +29940,12 @@
         "type": "str",
         "default": "./yollomi-output",
         "required": false,
-        "help": "Output directory"
+        "help": "Output directory",
+        "file": {
+          "direction": "output",
+          "pathKind": "directory",
+          "multiple": false
+        }
       },
       {
         "name": "no-download",
@@ -29910,7 +30015,12 @@
         "type": "str",
         "default": "./yollomi-output",
         "required": false,
-        "help": "Output directory"
+        "help": "Output directory",
+        "file": {
+          "direction": "output",
+          "pathKind": "directory",
+          "multiple": false
+        }
       },
       {
         "name": "no-download",
@@ -30061,6 +30171,18 @@
         "type": "int",
         "required": false,
         "help": "Automatically distribute 1-20 frames; default 5"
+      },
+      {
+        "name": "output",
+        "type": "str",
+        "required": false,
+        "help": "Output directory",
+        "file": {
+          "direction": "output",
+          "pathKind": "directory",
+          "multiple": false,
+          "defaultPath": "./youtube-frames"
+        }
       }
     ],
     "columns": [

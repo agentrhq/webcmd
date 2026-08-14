@@ -57,7 +57,7 @@ export const downloadCommand = cli({
     args: [
         { name: 'clip', positional: true, required: true, help: 'Clip UUID or https://suno.com/song/<id> URL' },
         { name: 'formats', help: 'Comma-separated formats: mp3, m4a, wav, video, cover, metadata. Default: mp3,metadata' },
-        { name: 'op', help: 'Output directory (default: ~/Music/suno)' },
+        { name: 'op', help: 'Output directory (default: ~/Music/suno)', file: { direction: 'output', pathKind: 'directory', multiple: false, defaultPath: './suno' } },
         { name: 'confirm-paid', type: 'boolean', default: false, help: 'Required to allow paid downloads (wav). Without it, paid formats are skipped with a warning.' },
     ],
     columns: ['status', 'clip', 'title', 'files', 'link'],

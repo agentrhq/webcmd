@@ -159,6 +159,31 @@ const EXPECTED_FILE_ARGUMENTS: Record<string, ExpectedFileArgument[]> = {
     contentTypes: IMAGE_CONTENT_TYPES,
     maxBytes: 25 * MiB,
   }],
+  'slock/attachment-upload': [{ name: 'file', direction: 'input', pathKind: 'file', multiple: false, required: true }],
+  'slock/attachment-download': [{ name: 'out', direction: 'output', pathKind: 'file', multiple: false, required: false, defaultPath: './attachment.bin' }],
+  'suno/generate': [{ name: 'op', direction: 'output', pathKind: 'directory', multiple: false, required: false, defaultPath: './suno' }],
+  'suno/download': [{ name: 'op', direction: 'output', pathKind: 'directory', multiple: false, required: false, defaultPath: './suno' }],
+  'twitter/bookmarks': [
+    { name: 'resume-file', direction: 'input-output', pathKind: 'file', multiple: false, required: false, contentTypes: ['application/json'] },
+    { name: 'output-file', direction: 'output', pathKind: 'file', multiple: false, required: false },
+  ],
+  'twitter/likes': [
+    { name: 'resume-file', direction: 'input-output', pathKind: 'file', multiple: false, required: false, contentTypes: ['application/json'] },
+    { name: 'output-file', direction: 'output', pathKind: 'file', multiple: false, required: false },
+  ],
+  'uiverse/preview': [{ name: 'output', direction: 'output', pathKind: 'file', multiple: false, required: false, defaultPath: './uiverse-preview.png' }],
+  'yollomi/upload': [{ name: 'file', direction: 'input', pathKind: 'file', multiple: false, required: true }],
+  'yollomi/background': [{ name: 'output', direction: 'output', pathKind: 'directory', multiple: false, required: false }],
+  'yollomi/edit': [{ name: 'output', direction: 'output', pathKind: 'directory', multiple: false, required: false }],
+  'yollomi/face-swap': [{ name: 'output', direction: 'output', pathKind: 'directory', multiple: false, required: false }],
+  'yollomi/generate': [{ name: 'output', direction: 'output', pathKind: 'directory', multiple: false, required: false }],
+  'yollomi/object-remover': [{ name: 'output', direction: 'output', pathKind: 'directory', multiple: false, required: false }],
+  'yollomi/remove-bg': [{ name: 'output', direction: 'output', pathKind: 'directory', multiple: false, required: false }],
+  'yollomi/restore': [{ name: 'output', direction: 'output', pathKind: 'directory', multiple: false, required: false }],
+  'yollomi/try-on': [{ name: 'output', direction: 'output', pathKind: 'directory', multiple: false, required: false }],
+  'yollomi/upscale': [{ name: 'output', direction: 'output', pathKind: 'directory', multiple: false, required: false }],
+  'yollomi/video': [{ name: 'output', direction: 'output', pathKind: 'directory', multiple: false, required: false }],
+  'youtube/frames': [{ name: 'output', direction: 'output', pathKind: 'directory', multiple: false, required: false, defaultPath: './youtube-frames' }],
 };
 
 function readJson<T>(name: string): T {

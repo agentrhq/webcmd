@@ -17,7 +17,7 @@ cli({
         { name: 'person', required: true, help: 'Person photo URL (upload via "webcmd yollomi upload" first)' },
         { name: 'cloth', required: true, help: 'Clothing image URL' },
         { name: 'cloth-type', default: 'upper', choices: ['upper', 'lower', 'overall'], help: 'Clothing type' },
-        { name: 'output', default: './yollomi-output', help: 'Output directory' },
+        { name: 'output', default: './yollomi-output', help: 'Output directory', file: { direction: 'output', pathKind: 'directory', multiple: false } },
         { name: 'no-download', type: 'boolean', default: false, help: 'Only show URL' },
     ],
     columns: ['status', 'file', 'size', 'url'],

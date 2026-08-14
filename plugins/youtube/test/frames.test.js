@@ -346,7 +346,7 @@ test('youtube frames registers the exact read-only command contract', () => {
   assert.equal(command.access, 'read');
   assert.equal(command.browser, true);
   assert.equal(command.siteSession, 'ephemeral');
-  assert.deepEqual(command.args.map((arg) => arg.name), ['url', 'timestamps', 'count']);
+  assert.deepEqual(command.args.map((arg) => arg.name), ['url', 'timestamps', 'count', 'output']);
   assert.deepEqual(command.columns, [
     'video_id', 'duration_seconds', 'timestamp_seconds', 'actual_timestamp_seconds',
     'path', 'status', 'error', 'requested_count', 'selected_count',

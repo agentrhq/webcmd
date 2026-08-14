@@ -33,7 +33,7 @@ cli({
   siteSession: 'persistent',
   args: [
     { name: 'attachmentId', positional: true, required: true, help: 'Attachment UUID' },
-    { name: 'out', help: 'Local path to write to. Defaults to ./<attachmentId>.bin' },
+    { name: 'out', help: 'Local path to write to. Defaults to ./<attachmentId>.bin', file: { direction: 'output', pathKind: 'file', multiple: false, defaultPath: './attachment.bin' } },
     { name: 'server', help: 'Override active server slug' },
   ],
   columns: ['attachmentId', 'out', 'sizeBytes'],

@@ -66,7 +66,7 @@ export const generateCommand = cli({
         { name: 'weirdness', help: 'Creative weirdness slider (0..1). Default: 0.5' },
         { name: 'style-weight', help: 'Style adherence slider (0..1). Default: 0.5' },
         { name: 'formats', help: 'Comma-separated download formats: mp3, m4a, wav, video, cover, metadata. Default: mp3,metadata' },
-        { name: 'op', help: 'Output directory (default: ~/Music/suno)' },
+        { name: 'op', help: 'Output directory (default: ~/Music/suno)', file: { direction: 'output', pathKind: 'directory', multiple: false, defaultPath: './suno' } },
         { name: 'timeout', type: 'int', default: 300, help: 'Max seconds to wait for clips to finish (default: 300)' },
         { name: 'sd', type: 'boolean', default: false, help: 'Skip download; only print clip ids and Suno URLs' },
         { name: 'confirm-paid', type: 'boolean', default: false, help: 'Required to allow paid downloads (wav). Without it, paid formats are skipped with a warning.' },
