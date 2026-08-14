@@ -46,22 +46,12 @@ def test_cli_requires_exactly_one_explicit_task_selection():
     assert args.judge_provider == "google"
     assert args.task_timeout == 1800
     assert args.reasoning_effort is None
-    assert args.parallel == 1
+    assert not hasattr(args, "parallel")
 
 
-def test_cli_accepts_parallel_limit():
-    args = run_eval.parse_args(BASE + ["--tasks", "1", "--parallel", "5"])
-
-    run_eval.validate_args(args)
-
-    assert args.parallel == 5
-
-
-def test_cli_rejects_non_positive_parallel_limit():
-    args = run_eval.parse_args(BASE + ["--tasks", "1", "--parallel", "0"])
-
-    with pytest.raises(ValueError, match="--parallel must be positive"):
-        run_eval.validate_args(args)
+def test_cli_rejects_parallel_option():
+    with pytest.raises(SystemExit):
+        run_eval.parse_args(BASE + ["--tasks", "1", "--parallel", "5"])
 
 
 def test_cli_accepts_openai_judge_provider():
@@ -557,12 +547,11 @@ def test_manifest_records_only_reproducibility_fields(tmp_path):
         timeout=1800,
         created_at="2026-07-17T12:00:00Z",
         reasoning_effort="high",
-        parallel=5,
     )
     assert manifest["task_selection"]["raw_indices"] == [0, 20]
     assert manifest["dataset_sha256"] == run_eval.dataset_sha256("Stealth_Bench_V1")
     assert manifest["controller"]["reasoning_effort"] == "high"
-    assert manifest["parallel"] == 5
+    assert "parallel" not in manifest
     assert "duration" not in json.dumps(manifest)
     assert "cost" not in json.dumps(manifest)
 
@@ -925,7 +914,7 @@ def test_run_benchmark_writes_manifest_before_sequential_attempts(tmp_path, monk
     assert all(value not in durable for value in (prompt_a, truth_a, prompt_b, truth_b))
 
 
-def test_run_benchmark_limits_parallel_attempts(tmp_path, monkeypatch):
+def test_run_benchmark_runs_attempts_sequentially(tmp_path, monkeypatch):
     tasks = [
         {"task_id": str(index), "confirmed_task": "prompt", "category": "A", "_raw_index": index}
         for index in range(5)
@@ -955,7 +944,7 @@ def test_run_benchmark_limits_parallel_attempts(tmp_path, monkeypatch):
 
     asyncio.run(run_eval.run_benchmark(args))
 
-    assert max_active == 2
+    assert max_active == 1
 
 
 def test_run_benchmark_passes_axi_selection_and_records_cloakbrowser(tmp_path, monkeypatch):
