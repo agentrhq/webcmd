@@ -778,6 +778,10 @@ function browserActionArgs(
   }
 
   switch (contract.command) {
+    case 'verify': {
+      const { fixture, ...rest } = args;
+      return fixture === false ? { ...rest, noFixture: true } : rest;
+    }
     case 'screenshot':
       delete args.path;
       return args;

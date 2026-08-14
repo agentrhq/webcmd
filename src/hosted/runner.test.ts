@@ -1938,12 +1938,12 @@ describe('runHostedCli', () => {
     expect(stderr.text()).toMatch(/hosted mode has no local daemon/i);
   });
 
-  it('matches the exact local text help for every catalogued browser leaf without a cloud call', async () => {
+  it('matches the exact local text help for every raw-session browser leaf without a cloud call', async () => {
     const program = createProgram('', '');
     const browser = program.commands.find(command => command.name() === 'browser');
     if (!browser) throw new Error('Local browser namespace is missing');
 
-    for (const contract of browserCommandCatalog) {
+    for (const contract of browserCommandCatalog.filter(command => command.command !== 'init' && command.command !== 'verify')) {
       const parts = contract.command.split('/');
       let local = browser;
       for (const part of parts) {
@@ -2032,6 +2032,48 @@ describe('runHostedCli', () => {
     } finally {
       await rm(uploadDir, { recursive: true, force: true });
     }
+  });
+
+  it('dispatches hosted browser verify with its local verification options', async () => {
+    const requests: Array<{ url: string; body?: Record<string, unknown> }> = [];
+    const result = await runHostedCli([
+      '--session', 'session_work', 'browser', 'verify', 'hn/top',
+      '--no-fixture', '--write-fixture', '--update-fixture', '--strict-memory',
+      '--seed-args', '{"limit":3}', '--trace', 'retain-on-failure', '--max-top-level-keys', '20',
+    ], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: sink().stream,
+      stderr: sink().stream,
+      fetchImpl: async (url, init) => {
+        const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined;
+        requests.push({ url: String(url), ...(body ? { body } : {}) });
+        if (String(url).endsWith('/v1/manifest')) return manifestResponse();
+        return new Response(JSON.stringify({
+          ok: true,
+          result: {},
+          columns: [],
+          trace: null,
+          run: { executionId: 'exec_browser_verify', session: 'session_work', profile: { id: 'profile_default', displayName: 'default' } },
+          execution: { id: 'exec_browser_verify', status: 'succeeded' },
+        }), { status: 200 });
+      },
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 0 });
+    expect(requests[1]?.body).toMatchObject({
+      command: 'browser/verify',
+      action: 'verify',
+      args: {
+        name: 'hn/top',
+        noFixture: true,
+        writeFixture: true,
+        updateFixture: true,
+        strictMemory: true,
+        seedArgs: '{"limit":3}',
+        trace: 'retain-on-failure',
+        maxTopLevelKeys: 20,
+      },
+    });
   });
 
   it('sends browser-run file contents and snapshot-diff options to Cloud instead of the local path', async () => {
