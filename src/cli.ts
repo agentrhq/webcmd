@@ -59,6 +59,8 @@ import { BrowserRunError } from './browser/run/types.js';
 import { classifyCommandOrigin, formatCommandOrigin } from './command-origin.js';
 import { readOverrideRecords, removeOverrideRecords } from './override-provenance.js';
 import { clearDaemonRunContext, generateRunId, isUnknownOutcomeError, runWithDaemonRunContext } from './session-lease.js';
+import { createLocalSiteMemoryBackend, registerSiteCommands } from './site-memory/commands.js';
+import { resolveAdapterSourcePath } from './adapter-source.js';
 
 const CLI_FILE = fileURLToPath(import.meta.url);
 const FOLLOW_POLL_MS = 1_000;
@@ -619,6 +621,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
     .name('webcmd')
     .description('Make any website your CLI. Zero setup. AI-powered.');
   configureRootCommandSurface(program);
+  registerSiteCommands(program, createLocalSiteMemoryBackend());
 
   // ── Built-in: list ────────────────────────────────────────────────────────
 
@@ -1745,6 +1748,18 @@ cli({
     .description('Fork an installed plugin command into ~/.webcmd/clis so you can modify it')
     .argument('<command>', 'Command to override, as <site>/<command>')
     .action(handleAdapterOverride);
+
+  const localAdapterPath = (commandKey: string): string => {
+    const [site, command, extra] = commandKey.split('/');
+    if (!site || !command || extra) throw new ArgumentError('Adapter command must use site/command format.');
+    const registered = getRegistry().get(`${site}/${command}`) as import('./registry.js').InternalCliCommand | undefined;
+    return registered ? (resolveAdapterSourcePath(registered) ?? path.join(USER_CLIS, site, `${command}.js`)) : path.join(USER_CLIS, site, `${command}.js`);
+  };
+  const reportLocalAdapterPath = (commandKey: string): void => console.log(localAdapterPath(commandKey));
+  const adapterSourceCmd = adapterCmd.command('source').description('Read or write adapter source');
+  adapterSourceCmd.command('get').argument('<command>').option('-o, --output <path>').action((commandKey: string) => reportLocalAdapterPath(commandKey));
+  adapterSourceCmd.command('put').argument('<command>').argument('<path>').action((commandKey: string) => reportLocalAdapterPath(commandKey));
+  adapterCmd.command('path').argument('<command>').action((commandKey: string) => reportLocalAdapterPath(commandKey));
 
   // ── Built-in: browser profile selection ──────────────────────────────────
   const profileCmd = program.command('profile').description('Manage webcmd browser runtime profiles');

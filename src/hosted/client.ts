@@ -24,6 +24,8 @@ import type {
   HostedMarketplaceInstallation,
   HostedMarketplaceInstallationRow,
   HostedMarketplaceSearchResult,
+  HostedSiteMemoryArtifact,
+  HostedAdapterSourceWriteResponse,
   HostedTraceReceipt,
 } from './types.js';
 
@@ -212,6 +214,42 @@ export class HostedClient {
     return body.result;
   }
 
+  async listSiteMemory(site: string): Promise<HostedSiteMemoryArtifact[]> {
+    const body = await this.request(`/v1/sites/${encodeURIComponent(site)}/memory`);
+    if (!isHostedSiteMemoryListResponse(body)) throw protocolError('Webcmd Cloud returned an invalid site memory list.');
+    return body.artifacts;
+  }
+
+  async readSiteMemory(site: string, path: string): Promise<string> {
+    return this.requestText(`/v1/sites/${encodeURIComponent(site)}/memory/${encodePath(path)}`);
+  }
+
+  async writeSiteMemory(site: string, path: string, body: string, contentType = 'application/json'): Promise<void> {
+    const result = await this.request(`/v1/sites/${encodeURIComponent(site)}/memory/${encodePath(path)}`, {
+      method: 'PUT', headers: { 'content-type': contentType }, body,
+    });
+    if (!isHostedOkResponse(result)) throw protocolError('Webcmd Cloud returned an invalid site memory write response.');
+  }
+
+  async deleteSiteMemory(site: string, path: string, body?: string): Promise<void> {
+    const result = await this.request(`/v1/sites/${encodeURIComponent(site)}/memory/${encodePath(path)}`, {
+      method: 'DELETE', ...(body === undefined ? {} : { headers: { 'content-type': 'application/json' }, body }),
+    });
+    if (!isHostedOkResponse(result)) throw protocolError('Webcmd Cloud returned an invalid site memory deletion response.');
+  }
+
+  async readAdapterSource(packageId: string, sourcePath: string): Promise<string> {
+    return this.requestText(`/v1/adapters/${encodeURIComponent(packageId)}/source/${encodePath(sourcePath)}`);
+  }
+
+  async writeAdapterSource(packageId: string, sourcePath: string, body: string): Promise<HostedAdapterSourceWriteResponse> {
+    const result = await this.request(`/v1/adapters/${encodeURIComponent(packageId)}/source/${encodePath(sourcePath)}`, {
+      method: 'PUT', headers: { 'content-type': 'text/javascript; charset=utf-8' }, body,
+    });
+    if (!isHostedAdapterSourceWriteResponse(result)) throw protocolError('Webcmd Cloud returned an invalid adapter source write response.');
+    return { packageId: result.package.id, storagePath: result.package.storagePath, commands: result.commands };
+  }
+
   async execute(input: {
     command: string;
     args: Record<string, unknown>;
@@ -385,17 +423,7 @@ export class HostedClient {
     init: RequestInit = {},
     executionExpectation?: ExecutionExpectation,
   ): Promise<unknown> {
-    const response = await this.fetchImpl(`${this.apiBaseUrl}${path}`, {
-      ...init,
-      headers: {
-        accept: 'application/json',
-        ...(init.body ? { 'content-type': 'application/json' } : {}),
-        authorization: `Bearer ${this.apiKey}`,
-        'x-webcmd-session-protocol-version': String(HOSTED_SESSION_PROTOCOL_VERSION),
-        ...(this.workspace ? { 'x-webcmd-workspace': this.workspace } : {}),
-        ...(init.headers ?? {}),
-      },
-    });
+    const response = await this.authenticatedFetch(path, init);
     const text = await response.text();
     const body = text ? parseJson(text) : {};
     if (!isRecord(body) || (body.ok !== true && body.ok !== false)) {
@@ -424,6 +452,35 @@ export class HostedClient {
     if (!response.ok) throw protocolError('Webcmd Cloud returned a success envelope with an HTTP error status.');
     return body;
   }
+
+  private authenticatedFetch(path: string, init: RequestInit = {}): Promise<Response> {
+    return this.fetchImpl(`${this.apiBaseUrl}${path}`, {
+      ...init,
+      headers: {
+        accept: 'application/json',
+        authorization: `Bearer ${this.apiKey}`,
+        'x-webcmd-session-protocol-version': String(HOSTED_SESSION_PROTOCOL_VERSION),
+        ...(init.body ? { 'content-type': 'application/json' } : {}),
+        ...(this.workspace ? { 'x-webcmd-workspace': this.workspace } : {}),
+        ...(init.headers ?? {}),
+      },
+    });
+  }
+
+  private async requestText(path: string): Promise<string> {
+    const response = await this.authenticatedFetch(path, { headers: { accept: 'text/plain, application/json' } });
+    const text = await response.text();
+    if (response.ok) return text;
+    const body = text ? parseJson(text) : {};
+    if (!isHostedError(body)) throw protocolError('Webcmd Cloud returned an invalid raw response failure.');
+    throw new HostedClientError(
+      body.error.code,
+      body.error.message,
+      body.error.help,
+      normalizeExitCode(body.error.exitCode, response.status === 401 ? EXIT_CODES.NOPERM : EXIT_CODES.GENERIC_ERROR),
+      { ...(body.execution ? { execution: body.execution } : {}), ...(body.trace ? { trace: body.trace } : {}) },
+    );
+  }
 }
 
 function parseJson(text: string): unknown {
@@ -432,6 +489,35 @@ function parseJson(text: string): unknown {
   } catch {
     throw protocolError('Webcmd Cloud returned non-JSON response.');
   }
+}
+
+function encodePath(value: string): string {
+  return value.split('/').map(encodeURIComponent).join('/');
+}
+
+function isHostedOkResponse(value: unknown): value is { ok: true } {
+  return hasExactKeys(value, ['ok']) && value.ok === true;
+}
+
+function isHostedSiteMemoryListResponse(value: unknown): value is { ok: true; artifacts: HostedSiteMemoryArtifact[] } {
+  return hasExactKeys(value, ['ok', 'artifacts'])
+    && value.ok === true
+    && Array.isArray(value.artifacts)
+    && value.artifacts.every(artifact => isRecord(artifact)
+      && hasExactKeys(artifact, ['path', 'kind', 'contentType', 'sha256', 'byteSize', 'updatedAt'])
+      && typeof artifact.path === 'string' && typeof artifact.kind === 'string' && typeof artifact.contentType === 'string'
+      && typeof artifact.sha256 === 'string' && typeof artifact.byteSize === 'number' && typeof artifact.updatedAt === 'string');
+}
+
+function isHostedAdapterSourceWriteResponse(value: unknown): value is { ok: true; package: { id: string; storagePath: string }; commands: string[] } {
+  return hasExactKeys(value, ['ok', 'package', 'commands'])
+    && value.ok === true
+    && isRecord(value.package)
+    && hasExactKeys(value.package, ['id', 'storagePath'])
+    && typeof value.package.id === 'string'
+    && typeof value.package.storagePath === 'string'
+    && Array.isArray(value.commands)
+    && value.commands.every(command => typeof command === 'string');
 }
 
 function isHostedError(value: unknown): value is HostedErrorResponse {

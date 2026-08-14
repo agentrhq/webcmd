@@ -38,6 +38,9 @@ export interface HostedCommand extends CommandSurfaceMetadata {
   domain?: string | null;
   defaultFormat?: string | null;
   freshPage?: boolean;
+  adapterPackageId?: string;
+  sourceFile?: string;
+  modulePath?: string;
 }
 
 export interface HostedManifest {
@@ -134,6 +137,21 @@ export interface HostedMarketplaceInstallationRow {
   sourceCommit: string | null;
   installedAt: string;
   updateAvailable: boolean;
+}
+
+export interface HostedSiteMemoryArtifact {
+  path: string;
+  kind: string;
+  contentType: string;
+  sha256: string;
+  byteSize: number;
+  updatedAt: string;
+}
+
+export interface HostedAdapterSourceWriteResponse {
+  packageId: string;
+  storagePath: string;
+  commands: string[];
 }
 
 export interface HostedExecution {

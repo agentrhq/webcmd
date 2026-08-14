@@ -5,9 +5,12 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   addFieldMapping,
+  addResponseSample,
   appendNote,
+  getVerifyFixture,
   listSiteMemory,
   markEndpointStale,
+  putVerifyFixture,
   setEndpoint,
   showSiteMemory,
 } from './local-store.js';
@@ -27,6 +30,28 @@ afterEach(async () => {
 });
 
 describe('local site memory store', () => {
+  it('atomically stores valid verify fixtures and response samples', async () => {
+    const homeDir = await tempHome();
+    await putVerifyFixture({ ...base, homeDir, command: 'search', body: '{"expect":{"columns":["id"]}}\n' });
+    await addResponseSample({ ...base, homeDir, command: 'search', body: '{"items":[{"id":1}]}\n' });
+
+    await expect(getVerifyFixture(base.site, 'search', { homeDir })).resolves.toBe('{"expect":{"columns":["id"]}}\n');
+    await expect(listSiteMemory(base.site, { homeDir })).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: 'verify/search.json' }),
+      expect.objectContaining({ path: expect.stringMatching(/^fixtures\/search-/) }),
+    ]));
+  });
+
+  it('does not follow a fixture symlink outside site memory', async () => {
+    const homeDir = await tempHome();
+    await appendNote({ ...base, homeDir, text: 'hello' });
+    const outside = join(homeDir, 'outside.json');
+    await writeFile(outside, '{"secret":true}\n');
+    await symlink(outside, join(homeDir, '.webcmd/sites', base.site, 'verify', 'search.json'));
+
+    await expect(getVerifyFixture(base.site, 'search', { homeDir })).rejects.toThrow(/Invalid site memory path/);
+  });
+
   it('prepends a dated section and preserves earlier entries', async () => {
     const homeDir = await tempHome();
     await appendNote({ ...base, text: 'first', homeDir });

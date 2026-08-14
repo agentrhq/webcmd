@@ -262,6 +262,51 @@ function captureLocalBrowserStructure(argv: string[]): {
 }
 
 describe('runHostedCli', () => {
+  it('registers the hosted site-memory and adapter-source grammar', async () => {
+    const grammar = [
+      ['site', 'memory', 'show'], ['site', 'memory', 'list'], ['site', 'note', 'add'],
+      ['site', 'endpoint', 'set'], ['site', 'endpoint', 'stale'], ['site', 'field-map', 'add'],
+      ['site', 'fixture', 'get'], ['site', 'fixture', 'put'], ['site', 'sample', 'add'],
+      ['adapter', 'source', 'get'], ['adapter', 'source', 'put'], ['adapter', 'path'],
+    ];
+    const program = createProgram('', '');
+    for (const path of grammar) {
+      let command: Command | undefined = program;
+      for (const segment of path) command = command?.commands.find(candidate => candidate.name() === segment);
+      expect(command).toBeDefined();
+    }
+  });
+
+  it('uses hosted manifest provenance for adapter source and keeps memory reads on stdout', async () => {
+    const homeDir = await mkdtemp(path.join(tmpdir(), 'webcmd-hosted-authoring-'));
+    const stdout = sink();
+    const source = 'export const search = true;\n';
+    const sourceManifest = {
+      ...manifest,
+      commands: [{ ...manifest.commands[0], adapterPackageId: 'pkg_github', sourceFile: 'clis/github/search.js' }],
+    };
+    try {
+      const run = (argv: string[]) => runHostedCli(argv, {
+        config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+        homeDir,
+        stdout: stdout.stream,
+        fetchImpl: async (url) => {
+          const pathname = new URL(String(url)).pathname;
+          if (pathname === '/v1/manifest') return new Response(JSON.stringify({ ok: true, manifest: sourceManifest }));
+          if (pathname === '/v1/sites/github/memory') return new Response(JSON.stringify({ ok: true, artifacts: [{ path: 'notes.md', kind: 'notes', contentType: 'application/json', sha256: 'abc', byteSize: 1, updatedAt: '2026-08-14T00:00:00.000Z' }] }));
+          return new Response(pathname.includes('/memory/') ? 'Uses GraphQL\n' : source);
+        },
+      });
+
+      await expect(run(['adapter', 'source', 'get', 'github/whoami'])).resolves.toMatchObject({ exitCode: 0 });
+      await expect(readFile(path.join(homeDir, '.webcmd', 'hosted', 'clis', 'github', 'whoami.js'), 'utf8')).resolves.toBe(source);
+      await expect(run(['site', 'memory', 'show', 'github'])).resolves.toMatchObject({ exitCode: 0 });
+      expect(stdout.text()).toContain('Uses GraphQL');
+    } finally {
+      await rm(homeDir, { recursive: true, force: true });
+    }
+  });
+
   it('presents web fetch help from local metadata without dispatching it to Cloud', async () => {
     const stdout = sink();
     const fetchImpl = vi.fn<typeof fetch>(async () => manifestResponse());

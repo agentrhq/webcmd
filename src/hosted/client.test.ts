@@ -71,6 +71,38 @@ const validTraceUrlCases = [
 ] as const;
 
 describe('HostedClient', () => {
+  it('uses raw storage endpoints for site memory and adapter source', async () => {
+    const requests: Array<{ url: string; method: string; body?: string; contentType?: string | null }> = [];
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async (url, init) => {
+        requests.push({
+          url: String(url), method: init?.method ?? 'GET',
+          ...(init?.body ? { body: String(init.body) } : {}),
+          contentType: new Headers(init?.headers).get('content-type'),
+        });
+        if ((init?.method ?? 'GET') === 'GET') return new Response('export const search = true;');
+        if (new URL(String(url)).pathname.startsWith('/v1/sites/')) return new Response(JSON.stringify({ ok: true }));
+        return new Response(JSON.stringify({ ok: true, package: { id: 'pkg_github', storagePath: 'clis/github' }, commands: ['github/search'] }));
+      },
+    });
+
+    await client.writeSiteMemory('github', 'notes.md', JSON.stringify({ text: 'Uses GraphQL' }), 'application/json');
+    await client.readSiteMemory('github', 'notes.md');
+    await client.deleteSiteMemory('github', 'notes.md');
+    await client.writeAdapterSource('pkg_github', 'clis/github/search.js', 'export const search = true;');
+    await client.readAdapterSource('pkg_github', 'clis/github/search.js');
+
+    expect(requests.map(({ url, method, contentType }) => ({ url, method, contentType }))).toEqual([
+      { url: 'https://api.example.com/v1/sites/github/memory/notes.md', method: 'PUT', contentType: 'application/json' },
+      { url: 'https://api.example.com/v1/sites/github/memory/notes.md', method: 'GET', contentType: null },
+      { url: 'https://api.example.com/v1/sites/github/memory/notes.md', method: 'DELETE', contentType: null },
+      { url: 'https://api.example.com/v1/adapters/pkg_github/source/clis/github/search.js', method: 'PUT', contentType: 'text/javascript; charset=utf-8' },
+      { url: 'https://api.example.com/v1/adapters/pkg_github/source/clis/github/search.js', method: 'GET', contentType: null },
+    ]);
+  });
+
   it('accepts the hosted Session API wire contract', async () => {
     const requests: Array<{ url: string; method: string; body?: string }> = [];
     const session = {
