@@ -1,4 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   mockGetDaemonHealth,
@@ -51,6 +54,12 @@ vi.mock('./adapter-shadow.js', async () => {
 
 import { checkBrowserBinary, checkConnectivity, renderBrowserDoctorReport, runBrowserDoctor } from './doctor.js';
 
+const managedBinaryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-managed-binary-'));
+const managedBinaryPath = path.join(managedBinaryDir, process.platform === 'win32' ? 'chrome.exe' : 'chrome');
+fs.writeFileSync(managedBinaryPath, '#!/bin/sh\n');
+if (process.platform !== 'win32') fs.chmodSync(managedBinaryPath, 0o755);
+afterAll(() => fs.rmSync(managedBinaryDir, { recursive: true, force: true }));
+
 describe('doctor report rendering', () => {
   const strip = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '');
 
@@ -66,7 +75,7 @@ describe('doctor report rendering', () => {
       bundledVersion: '146.0.7680.177.5',
       tier: 'free',
       platform: 'linux-x64',
-      binaryPath: '/home/test/.cloakbrowser/chromium-146.0.7680.177.5/chrome',
+      binaryPath: managedBinaryPath,
       installed: true,
       cacheDir: '/home/test/.cloakbrowser/chromium-146.0.7680.177.5',
       downloadUrl: 'https://cloakbrowser.dev/chromium-v146.0.7680.177.5/cloakbrowser-linux-x64.tar.gz',
@@ -500,9 +509,14 @@ describe('doctor report rendering', () => {
       expect(report.issues).toEqual(expect.arrayContaining([
         expect.stringContaining('Browser connectivity test failed: page.goto: Target page, context or browser has been closed'),
       ]));
+      const issueText = report.issues.join('\n');
+      expect(issueText).not.toContain('CloakBrowser Chromium is not installed');
+      expect(issueText).not.toContain('not launchable');
+      expect(issueText).not.toContain('Download URL:');
+      expect(issueText).not.toContain('CLOAKBROWSER_BINARY_PATH');
     });
 
-    it('distinguishes a missing/undownloaded binary from a generic connectivity failure', async () => {
+    it('reports a missing binary without claiming a download was attempted', async () => {
       mockBinaryInfo.mockReturnValue({
         version: '146.0.7680.177.5',
         bundledVersion: '146.0.7680.177.5',
@@ -520,21 +534,119 @@ describe('doctor report rendering', () => {
 
       expect(report.binary?.installed).toBe(false);
       const issueText = report.issues.join('\n');
-      expect(issueText).toContain('CloakBrowser Chromium is not installed and could not be downloaded');
+      expect(issueText).toContain('CloakBrowser Chromium is not installed');
       expect(issueText).toContain('/home/test/.cloakbrowser/chromium-146.0.7680.177.5/chrome');
       expect(issueText).toContain('https://cloakbrowser.dev/chromium-v146.0.7680.177.5/cloakbrowser-linux-x64.tar.gz');
-      expect(issueText).toContain('Underlying error: fetch failed');
+      expect(issueText).toContain('Browser connectivity test failed: fetch failed');
       expect(issueText).toContain('CLOAKBROWSER_BINARY_PATH');
-      // The old generic message must not also appear — one clear diagnostic, not two.
-      expect(issueText).not.toContain('Browser connectivity test failed: fetch failed');
+      expect(issueText).not.toContain('could not be downloaded');
+      expect(issueText).not.toContain('download failed');
+    });
+
+    it('preserves a session-create connectivity failure alongside missing-binary facts', async () => {
+      mockBinaryInfo.mockReturnValue({
+        version: '146.0.7680.177.5',
+        bundledVersion: '146.0.7680.177.5',
+        tier: 'free',
+        platform: 'linux-x64',
+        binaryPath: '/home/test/.cloakbrowser/chromium-146.0.7680.177.5/chrome',
+        installed: false,
+        cacheDir: '/home/test/.cloakbrowser/chromium-146.0.7680.177.5',
+        downloadUrl: 'https://cloakbrowser.dev/chromium-v146.0.7680.177.5/cloakbrowser-linux-x64.tar.gz',
+      });
+      mockSendCommand.mockRejectedValueOnce(new Error('session-create refused'));
+      mockGetDaemonHealth.mockResolvedValueOnce({ state: 'ready', status: { runtimeConnected: true, runtimeName: 'Cloak' } });
+
+      const report = await runBrowserDoctor();
+      const issueText = report.issues.join('\n');
+
+      expect(report.connectivity).toMatchObject({ ok: false, error: 'session-create refused' });
+      expect(issueText).toContain('Browser connectivity test failed: session-create refused');
+      expect(issueText).toContain('/home/test/.cloakbrowser/chromium-146.0.7680.177.5/chrome');
+      expect(issueText).toContain('https://cloakbrowser.dev/chromium-v146.0.7680.177.5/cloakbrowser-linux-x64.tar.gz');
+      expect(issueText).not.toContain('could not be downloaded');
+      expect(issueText).not.toContain('download failed');
+      expect(mockConnect).not.toHaveBeenCalled();
+    });
+
+    it('reports the binary state after connectivity auto-installs Chromium', async () => {
+      let installed = false;
+      mockBinaryInfo.mockImplementation(() => ({
+        version: '146.0.7680.177.5',
+        bundledVersion: '146.0.7680.177.5',
+        tier: 'free',
+        platform: 'linux-x64',
+        binaryPath: managedBinaryPath,
+        installed,
+        cacheDir: '/home/test/.cloakbrowser/chromium-146.0.7680.177.5',
+        downloadUrl: 'https://cloakbrowser.dev/chromium-v146.0.7680.177.5/cloakbrowser-linux-x64.tar.gz',
+      }));
+      mockConnect.mockImplementationOnce(async () => {
+        installed = true;
+        return {
+          evaluate: vi.fn().mockResolvedValue(2),
+          closeWindow: vi.fn().mockResolvedValue(undefined),
+        };
+      });
+      mockGetDaemonHealth.mockResolvedValueOnce({ state: 'ready', status: { runtimeConnected: true, runtimeName: 'Cloak' } });
+
+      const report = await runBrowserDoctor();
+      const text = strip(renderBrowserDoctorReport(report));
+
+      expect(report.binary?.installed).toBe(true);
+      expect(report.issues).toEqual([]);
+      expect(text).toContain('[OK] Browser binary: installed at');
+      expect(text).not.toContain('[MISSING] Browser binary');
+      expect(text).toContain('Everything looks good!');
+      expect(mockBinaryInfo).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports a final missing binary even when connectivity succeeds', async () => {
+      mockBinaryInfo.mockReturnValue({
+        version: '146.0.7680.177.5',
+        bundledVersion: '146.0.7680.177.5',
+        tier: 'free',
+        platform: 'linux-x64',
+        binaryPath: '/home/test/.cloakbrowser/chromium-146.0.7680.177.5/chrome',
+        installed: false,
+        cacheDir: '/home/test/.cloakbrowser/chromium-146.0.7680.177.5',
+        downloadUrl: 'https://cloakbrowser.dev/chromium-v146.0.7680.177.5/cloakbrowser-linux-x64.tar.gz',
+      });
+      mockGetDaemonHealth.mockResolvedValueOnce({ state: 'ready', status: { runtimeConnected: true, runtimeName: 'Cloak' } });
+
+      const report = await runBrowserDoctor();
+      const text = strip(renderBrowserDoctorReport(report));
+
+      expect(report.connectivity?.ok).toBe(true);
+      expect(report.binary?.installed).toBe(false);
+      expect(report.issues.join('\n')).toContain('CloakBrowser Chromium is not installed');
+      expect(text).toContain('[MISSING] Browser binary');
+      expect(text).not.toContain('Everything looks good!');
+    });
+
+    it('reports binary probe failures as unknown warnings', async () => {
+      mockBinaryInfo.mockImplementation(() => {
+        throw new Error('corrupt CloakBrowser metadata');
+      });
+      mockGetDaemonHealth.mockResolvedValueOnce({ state: 'ready', status: { runtimeConnected: true, runtimeName: 'Cloak' } });
+
+      const report = await runBrowserDoctor();
+      const text = strip(renderBrowserDoctorReport(report));
+
+      expect(report.binary?.installed).toBeUndefined();
+      expect(report.issues.join('\n')).toContain('Could not check CloakBrowser Chromium binary: corrupt CloakBrowser metadata');
+      expect(text).toContain('[WARN] Browser binary: status unknown');
+      expect(text).not.toContain('[OK] Browser binary');
+      expect(text).not.toContain('Everything looks good!');
     });
 
     it('treats CLOAKBROWSER_BINARY_PATH as the effective binary check, not the managed cache', async () => {
-      const fs = await import('node:fs');
-      const os = await import('node:os');
-      const path = await import('node:path');
-      const overridePath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-binary-override-')), 'chrome');
+      const overridePath = path.join(
+        fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-binary-override-')),
+        process.platform === 'win32' ? 'chrome.exe' : 'chrome',
+      );
       fs.writeFileSync(overridePath, '#!/bin/sh\n');
+      if (process.platform !== 'win32') fs.chmodSync(overridePath, 0o755);
       vi.stubEnv('CLOAKBROWSER_BINARY_PATH', overridePath);
       try {
         // Managed cache would report "not installed" — the override should win.
@@ -555,6 +667,62 @@ describe('doctor report rendering', () => {
       }
     });
 
+    it('rejects a CLOAKBROWSER_BINARY_PATH directory', async () => {
+      const overridePath = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-binary-directory-'));
+      vi.stubEnv('CLOAKBROWSER_BINARY_PATH', overridePath);
+      try {
+        expect(checkBrowserBinary().installed).toBe(false);
+      } finally {
+        vi.unstubAllEnvs();
+        fs.rmSync(overridePath, { recursive: true, force: true });
+      }
+    });
+
+    it('rejects a non-executable CLOAKBROWSER_BINARY_PATH file on POSIX', async () => {
+      if (process.platform === 'win32') return;
+      const overridePath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-binary-non-executable-')), 'chrome');
+      fs.writeFileSync(overridePath, '#!/bin/sh\n', { mode: 0o644 });
+      vi.stubEnv('CLOAKBROWSER_BINARY_PATH', overridePath);
+      try {
+        expect(checkBrowserBinary().installed).toBe(false);
+      } finally {
+        vi.unstubAllEnvs();
+        fs.rmSync(path.dirname(overridePath), { recursive: true, force: true });
+      }
+    });
+
+    it('rejects a managed non-executable binary on POSIX', () => {
+      if (process.platform === 'win32') return;
+      const binaryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-managed-non-executable-'));
+      const binaryPath = path.join(binaryDir, 'chrome');
+      fs.writeFileSync(binaryPath, '#!/bin/sh\n', { mode: 0o644 });
+      mockBinaryInfo.mockReturnValue({
+        version: '1.0.0', bundledVersion: '1.0.0', tier: 'free', platform: 'linux-x64',
+        binaryPath, installed: true, cacheDir: binaryDir, downloadUrl: 'https://example.test/download',
+      });
+      try {
+        expect(checkBrowserBinary().installed).toBe(false);
+      } finally {
+        fs.rmSync(binaryDir, { recursive: true, force: true });
+      }
+    });
+
+    it('rejects a non-exe binary file on Windows', () => {
+      const platformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform');
+      const binaryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-windows-binary-'));
+      const binaryPath = path.join(binaryDir, 'chrome.txt');
+      fs.writeFileSync(binaryPath, 'not an executable');
+      vi.stubEnv('CLOAKBROWSER_BINARY_PATH', binaryPath);
+      try {
+        Object.defineProperty(process, 'platform', { ...platformDescriptor, value: 'win32' });
+        expect(checkBrowserBinary().installed).toBe(false);
+      } finally {
+        if (platformDescriptor) Object.defineProperty(process, 'platform', platformDescriptor);
+        vi.unstubAllEnvs();
+        fs.rmSync(binaryDir, { recursive: true, force: true });
+      }
+    });
+
     it('reports override-specific guidance when CLOAKBROWSER_BINARY_PATH points nowhere', async () => {
       vi.stubEnv('CLOAKBROWSER_BINARY_PATH', '/does/not/exist/chrome');
       try {
@@ -566,8 +734,10 @@ describe('doctor report rendering', () => {
         expect(report.binary?.installed).toBe(false);
         expect(report.binary?.override).toBe(true);
         const issueText = report.issues.join('\n');
+        const text = strip(renderBrowserDoctorReport(report));
         expect(issueText).toContain('CLOAKBROWSER_BINARY_PATH (/does/not/exist/chrome)');
         expect(issueText).toContain('compatible local Chromium executable');
+        expect(text).toContain('[MISSING] Browser binary: not launchable (/does/not/exist/chrome)');
       } finally {
         vi.unstubAllEnvs();
       }

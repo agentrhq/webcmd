@@ -5,6 +5,7 @@
  */
 
 import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { binaryInfo } from 'cloakbrowser';
 import { DEFAULT_DAEMON_PORT } from './constants.js';
 import { BrowserBridge } from './browser/index.js';
@@ -31,9 +32,10 @@ export type ConnectivityResult = {
 };
 
 export type BrowserBinaryStatus = {
-  installed: boolean;
+  installed: boolean | undefined;
   path: string;
   downloadUrl?: string;
+  error?: string;
   /** True when CLOAKBROWSER_BINARY_PATH is set — a different check than the managed cache. */
   override: boolean;
 };
@@ -55,9 +57,20 @@ export type DoctorReport = {
   issues: string[];
 };
 
+function isLaunchableFile(binaryPath: string): boolean {
+  try {
+    if (!fs.statSync(binaryPath).isFile()) return false;
+    if (process.platform === 'win32') return path.extname(binaryPath).toLowerCase() === '.exe';
+    fs.accessSync(binaryPath, fs.constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
- * Check whether the CloakBrowser Chromium binary is actually installed, ahead
- * of the live connectivity probe. `runtimeConnected: true` only means the
+ * Check whether the CloakBrowser Chromium binary is actually installed.
+ * `runtimeConnected: true` only means the
  * daemon/Cloak runtime process is healthy — it says nothing about whether the
  * browser binary CloakBrowser needs to launch is present on disk, which is
  * exactly the gap that made a missing-binary failure look like a generic
@@ -66,16 +79,18 @@ export type DoctorReport = {
 export function checkBrowserBinary(): BrowserBinaryStatus {
   const override = process.env.CLOAKBROWSER_BINARY_PATH;
   if (override) {
-    return { installed: fs.existsSync(override), path: override, override: true };
+    return { installed: isLaunchableFile(override), path: override, override: true };
   }
   try {
     const info = binaryInfo();
-    return { installed: info.installed, path: info.binaryPath, downloadUrl: info.downloadUrl, override: false };
+    return {
+      installed: info.installed && isLaunchableFile(info.binaryPath),
+      path: info.binaryPath,
+      downloadUrl: info.downloadUrl,
+      override: false,
+    };
   } catch (err) {
-    // binaryInfo() is a local/synchronous check and shouldn't throw, but a
-    // diagnostic probe must never crash `doctor` — treat "couldn't tell" as
-    // "assume installed" so we don't misreport a binary we failed to check.
-    return { installed: true, path: `unknown (binary check failed: ${getErrorMessage(err)})`, override: false };
+    return { installed: undefined, path: 'unknown', error: getErrorMessage(err), override: false };
   }
 }
 
@@ -120,14 +135,11 @@ export async function checkConnectivity(opts?: { timeout?: number }): Promise<Co
 }
 
 export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<DoctorReport> {
-  // Checked before the live probe so a missing/undownloadable binary can be
-  // distinguished from a real connectivity failure below, instead of both
-  // collapsing into the same generic "fetch failed".
-  const binary = checkBrowserBinary();
-
   // Live connectivity check is the core of doctor — it doubles as auto-start
-  // (bridge.connect spawns daemon) and validates end-to-end browser bridge health.
+  // (bridge.connect spawns daemon and can install Chromium) and validates
+  // end-to-end browser bridge health.
   const connectivity = await checkConnectivity();
+  const binary = checkBrowserBinary();
 
   // Single status read *after* connectivity side-effects settle.
   const health = await getDaemonHealth();
@@ -145,6 +157,18 @@ export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<Doctor
     adapterShadows = findShadowedUserAdapters();
   } catch (err) {
     issues.push(`Could not check adapter overrides: ${getErrorMessage(err)}`);
+  }
+  if (binary.error) {
+    issues.push(`Could not check CloakBrowser Chromium binary: ${binary.error}`);
+  } else if (binary.installed === false) {
+    const source = binary.override ? `CLOAKBROWSER_BINARY_PATH (${binary.path})` : binary.path;
+    issues.push(
+      `CloakBrowser Chromium is ${binary.override ? 'not launchable at' : 'not installed at'} ${source}.\n` +
+      (binary.downloadUrl ? `  Download URL: ${binary.downloadUrl}\n` : '') +
+      (binary.override
+        ? '  Check that CLOAKBROWSER_BINARY_PATH points at a compatible local Chromium executable.'
+        : '  Check network access to the download URL above, or set CLOAKBROWSER_BINARY_PATH to a compatible local Chromium executable.'),
+    );
   }
   if (daemonFlaky) {
     issues.push(
@@ -182,19 +206,7 @@ export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<Doctor
     }
   }
   if (!connectivity.ok) {
-    if (!binary.installed) {
-      const source = binary.override ? `CLOAKBROWSER_BINARY_PATH (${binary.path})` : binary.path;
-      issues.push(
-        `CloakBrowser Chromium is not installed${binary.override ? '' : ' and could not be downloaded'} at ${source}.\n` +
-        (binary.downloadUrl ? `  Download URL: ${binary.downloadUrl}\n` : '') +
-        `  Underlying error: ${connectivity.error ?? 'unknown'}\n` +
-        (binary.override
-          ? '  Check that CLOAKBROWSER_BINARY_PATH points at a compatible local Chromium executable.'
-          : '  Check network access to the download URL above, or set CLOAKBROWSER_BINARY_PATH to a compatible local Chromium executable.'),
-      );
-    } else {
-      issues.push(`Browser connectivity test failed: ${connectivity.error ?? 'unknown'}`);
-    }
+    issues.push(`Browser connectivity test failed: ${connectivity.error ?? 'unknown'}`);
   }
   const profileConfig = loadProfileConfig();
   const staleDefault = profileConfig.defaultContextId;
@@ -269,10 +281,14 @@ export function renderBrowserDoctorReport(report: DoctorReport): string {
   // reflects the daemon/Cloak process and says nothing about whether the
   // Chromium binary Cloak needs to launch is actually installed.
   if (report.binary) {
-    const binaryIcon = report.binary.installed ? '[OK]' : '[MISSING]';
-    const binaryLabel = report.binary.installed
+    const binaryIcon = report.binary.installed === undefined
+      ? '[WARN]'
+      : report.binary.installed ? '[OK]' : '[MISSING]';
+    const binaryLabel = report.binary.installed === undefined
+      ? 'status unknown'
+      : report.binary.installed
       ? `installed at ${report.binary.path}`
-      : `not installed (${report.binary.path})`;
+      : `${report.binary.override ? 'not launchable' : 'not installed'} (${report.binary.path})`;
     lines.push(`${binaryIcon} Browser binary: ${binaryLabel}`);
   }
 
