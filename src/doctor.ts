@@ -6,7 +6,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { binaryInfo } from 'cloakbrowser';
+import { binaryInfo, ensureBinary } from 'cloakbrowser';
 import { DEFAULT_DAEMON_PORT } from './constants.js';
 import { BrowserBridge } from './browser/index.js';
 import { sendCommand, setDaemonCommandTimeoutSeconds } from './browser/daemon-client.js';
@@ -100,9 +100,11 @@ export function checkBrowserBinary(): BrowserBinaryStatus {
 export async function checkConnectivity(opts?: { timeout?: number }): Promise<ConnectivityResult> {
   const start = Date.now();
   const timeoutSeconds = opts?.timeout ?? DOCTOR_LIVE_TIMEOUT_SECONDS;
-  setDaemonCommandTimeoutSeconds(timeoutSeconds);
   let sessionId: string | undefined;
   try {
+    // A first-use download can exceed doctor's deliberately short live-probe deadline.
+    await ensureBinary();
+    setDaemonCommandTimeoutSeconds(timeoutSeconds);
     const session = await sendCommand('session-create', {}) as { id?: unknown };
     if (typeof session.id !== 'string') throw new Error('Doctor could not create a browser Session.');
     sessionId = session.id;
@@ -136,7 +138,7 @@ export async function checkConnectivity(opts?: { timeout?: number }): Promise<Co
 
 export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<DoctorReport> {
   // Live connectivity check is the core of doctor — it doubles as auto-start
-  // (bridge.connect spawns daemon and can install Chromium) and validates
+  // (bridge.connect spawns daemon) and validates
   // end-to-end browser bridge health.
   const connectivity = await checkConnectivity();
   const binary = checkBrowserBinary();

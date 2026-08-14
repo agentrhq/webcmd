@@ -11,6 +11,7 @@ const {
   mockSendCommand,
   mockSetDaemonCommandTimeoutSeconds,
   mockBinaryInfo,
+  mockEnsureBinary,
 } = vi.hoisted(() => ({
   mockGetDaemonHealth: vi.fn(),
   mockConnect: vi.fn(),
@@ -19,6 +20,7 @@ const {
   mockSendCommand: vi.fn(),
   mockSetDaemonCommandTimeoutSeconds: vi.fn(),
   mockBinaryInfo: vi.fn(),
+  mockEnsureBinary: vi.fn(),
 }));
 
 vi.mock('./browser/daemon-transport.js', () => ({
@@ -30,6 +32,7 @@ vi.mock('./browser/daemon-transport.js', () => ({
 // #239 binary-missing path can be exercised deterministically.
 vi.mock('cloakbrowser', () => ({
   binaryInfo: mockBinaryInfo,
+  ensureBinary: mockEnsureBinary,
 }));
 
 vi.mock('./browser/index.js', () => ({
@@ -68,6 +71,7 @@ describe('doctor report rendering', () => {
     vi.unstubAllEnvs();
     mockFindShadowedUserAdapters.mockReturnValue([]);
     mockSetDaemonCommandTimeoutSeconds.mockClear();
+    mockEnsureBinary.mockResolvedValue(managedBinaryPath);
     // Installed by default so pre-existing tests exercise the generic
     // connectivity-failure path, not the #239 binary-missing path.
     mockBinaryInfo.mockReturnValue({
@@ -358,6 +362,43 @@ describe('doctor report rendering', () => {
     });
     expect(mockSetDaemonCommandTimeoutSeconds).toHaveBeenNthCalledWith(1, 8);
     expect(mockSetDaemonCommandTimeoutSeconds).toHaveBeenLastCalledWith(null);
+  });
+
+  it('installs the browser binary before starting the timed live probe', async () => {
+    let finishInstall!: () => void;
+    mockEnsureBinary.mockReturnValueOnce(new Promise<string>((resolve) => {
+      finishInstall = () => resolve(managedBinaryPath);
+    }));
+
+    const connectivity = checkConnectivity();
+    await vi.waitFor(() => expect(mockEnsureBinary).toHaveBeenCalledTimes(1));
+
+    expect(mockSetDaemonCommandTimeoutSeconds).not.toHaveBeenCalled();
+    expect(mockSendCommand).not.toHaveBeenCalled();
+
+    finishInstall();
+    await expect(connectivity).resolves.toMatchObject({ ok: true });
+    expect(mockSetDaemonCommandTimeoutSeconds).toHaveBeenNthCalledWith(1, 8);
+    expect(mockSendCommand).toHaveBeenNthCalledWith(1, 'session-create', {});
+    expect(mockSendCommand).toHaveBeenLastCalledWith('session-close', {
+      session: 'session_doctor_11111111',
+      surface: 'browser',
+      force: true,
+      discard: true,
+    });
+  });
+
+  it('reports binary installation failures without creating a Session', async () => {
+    mockEnsureBinary.mockRejectedValueOnce(new Error('binary download failed'));
+
+    await expect(checkConnectivity()).resolves.toMatchObject({
+      ok: false,
+      error: 'binary download failed',
+    });
+    expect(mockSendCommand).not.toHaveBeenCalled();
+    expect(mockConnect).not.toHaveBeenCalled();
+    expect(mockSetDaemonCommandTimeoutSeconds).toHaveBeenCalledTimes(1);
+    expect(mockSetDaemonCommandTimeoutSeconds).toHaveBeenCalledWith(null);
   });
 
   it('does not report an issue when the connected Cloak runtime does not report a version', async () => {
