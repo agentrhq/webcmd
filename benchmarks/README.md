@@ -87,7 +87,7 @@ Run a controlled, sequential browser-tool benchmark. Keep task data and local ev
 
 ## Workflow
 
-1. Confirm `uv`, the selected controller CLI, selected browser tool, and a judge API key are available (`GOOGLE_API_KEY` for `--judge-provider google`, or `OPENAI_API_KEY` for `--judge-provider openai`). AXI, agent-browser, and dev-browser runs also require CloakBrowser.
+1. Confirm `uv`, the selected controller CLI, selected browser tool, and judge authentication are available (`GOOGLE_API_KEY` for `google`, `OPENAI_API_KEY` for `openai`, or a ChatGPT-authenticated `codex login` for `codex`). AXI, agent-browser, and dev-browser runs also require CloakBrowser.
 2. Ask the user to choose a controller, model, benchmark, and task selection if any is missing.
 3. Start with one task unless the user explicitly requests a larger or full run.
 4. Run `scripts/run_eval.py` with the explicit choices.
@@ -126,20 +126,45 @@ uv run python benchmarks/scripts/run_eval.py \
   --judge-model gpt-4o-mini
 ```
 
+Use the signed-in Codex subscription for judging:
+
+```bash
+uv run python benchmarks/scripts/run_eval.py \
+  --controller pi \
+  --model openai-codex/gpt-5.6-sol \
+  --reasoning-effort low \
+  --benchmark BU_Bench_V1 \
+  --tasks 1 \
+  --tools webcmd \
+  --judge-provider codex \
+  --judge-model gpt-5.4
+```
+
+Codex judging runs ephemerally in an isolated, read-only temporary directory.
+Its token usage and cost are excluded, like the other judge providers.
+
 Pi uses the pinned SDK sidecar from the repository's Node lockfile:
 
 ```bash
-npm ci --ignore-scripts
+npm --prefix benchmarks ci --ignore-scripts
 webcmd skills add --provider codex --scope user
+./benchmarks/node_modules/.bin/pi
+# In Pi, run /login and select OpenAI Codex, then exit.
 
 uv run python benchmarks/scripts/run_eval.py \
   --controller pi \
-  --model openai/gpt-5.6-sol \
+  --model openai-codex/gpt-5.6-sol \
   --reasoning-effort low \
   --benchmark BU_Bench_V1 \
   --tasks 1 \
   --tools webcmd
 ```
+
+The Pi sidecar reads the resulting OAuth credentials from
+`~/.pi/agent/auth.json`, and preflight verifies them before creating a task.
+Its `estimated_api_cost_usd` is an API-equivalent comparison metric, not a
+subscription charge; the manifest records `billing_mode` as
+`chatgpt_subscription`.
 
 For AXI with one dedicated CloakBrowser process and profile per task:
 
@@ -180,7 +205,7 @@ uv run python benchmarks/scripts/run_eval.py \
   --tools dev-browser
 ```
 
-Use `--controller pi --model openai/gpt-5.6-sol` to run the same lane through
+Use `--controller pi --model openai-codex/gpt-5.6-sol` to run the same lane through
 Pi. The Pi sidecar mounts the installed `dev-browser` skill and enables only
 its `bash` and `read` tools.
 
@@ -206,7 +231,7 @@ uv run python benchmarks/scripts/run_eval.py \
 
 With Codex, the harness injects its pinned stdio MCP server per attempt. With
 Pi, it registers the equivalent native Pi custom tools directly; use
-`--controller pi --model openai/gpt-5.6-sol`. Both expose only `browser_open`,
+`--controller pi --model openai-codex/gpt-5.6-sol`. Both expose only `browser_open`,
 `browser_exec`, `browser_snapshot`, `browser_status`, and `browser_close`.
 `browser_connect` is disabled so the agent cannot leave the task's dedicated
 CloakBrowser.

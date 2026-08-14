@@ -68,14 +68,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
         default="webcmd",
     )
-    parser.add_argument("--judge-provider", choices=("google", "openai"), default="google")
+    parser.add_argument("--judge-provider", choices=("google", "openai", "codex"), default="google")
     parser.add_argument("--judge-model")
     parser.add_argument("--task-timeout", type=int, default=1800)
     parser.add_argument("--stealth-view", choices=("raw", "official"), default="raw")
     parser.add_argument("--output-dir", type=Path, default=PROJECT_DIR / "results")
     args = parser.parse_args(argv)
     if args.judge_model is None:
-        args.judge_model = "gpt-4o-mini" if args.judge_provider == "openai" else "gemini-2.5-flash"
+        args.judge_model = {
+            "google": "gemini-2.5-flash",
+            "openai": "gpt-4o-mini",
+            "codex": "gpt-5.4",
+        }[args.judge_provider]
     return args
 
 
@@ -141,13 +145,25 @@ def _webcmd_mode(env: dict[str, str]) -> str:
     return "local"
 
 
-def preflight(controller: str, tools: list[str], judge_provider: str = "google") -> dict[str, str]:
+def preflight(controller: str, tools: list[str], judge_provider: str = "google", model: str | None = None) -> dict[str, str]:
     if judge_provider == "google" and not os.environ.get("GOOGLE_API_KEY"):
         raise RuntimeError("GOOGLE_API_KEY is required when --judge-provider google")
     if judge_provider == "openai" and not os.environ.get("OPENAI_API_KEY"):
         raise RuntimeError("OPENAI_API_KEY is required when --judge-provider openai")
+    if judge_provider == "codex":
+        judge_env = _subprocess_env(controller="codex")
+        judge_env.pop("OPENAI_API_KEY", None)
+        login = _check(["codex", "login", "status"], judge_env)
+        if "ChatGPT" not in login:
+            raise RuntimeError("--judge-provider codex requires `codex login` with ChatGPT")
     controller_command = ["node", str(PI_CONTROLLER), "--version"] if controller == "pi" else [controller, "--version"]
-    versions = {controller: _check(controller_command, _subprocess_env(controller=controller))}
+    controller_env = _subprocess_env(controller=controller)
+    versions = {controller: _check(controller_command, controller_env)}
+    if controller == "pi" and model is not None:
+        _check(
+            ["node", str(PI_CONTROLLER), "--check-auth", "--model", model],
+            controller_env,
+        )
     for tool in tools:
         tool_env = _subprocess_env(tool=tool)
         if tool == "chrome-devtools-axi":
@@ -202,7 +218,17 @@ def build_manifest(*, run_id: str, benchmark: str, tasks: list[dict], controller
             "effective_indices": [task["_effective_index"] for task in tasks],
             "raw_indices": [task["_raw_index"] for task in tasks],
         },
-        "controller": {"name": controller, "model": model, "version": versions[controller], "reasoning_effort": reasoning_effort},
+        "controller": {
+            "name": controller,
+            "model": model,
+            "version": versions[controller],
+            "reasoning_effort": reasoning_effort,
+            **(
+                {"billing_mode": "chatgpt_subscription"}
+                if controller == "pi" and model.startswith("openai-codex/")
+                else {}
+            ),
+        },
         "judge": {"provider": judge_provider, "model": judge_model, "prompt_version": "upstream-dff86d1"},
         "tools": tool_manifest,
         "task_timeout_seconds": timeout,
@@ -492,7 +518,7 @@ async def run_benchmark(args: argparse.Namespace) -> Path:
     validate_args(args)
     output_dir = _validate_output_dir(args.output_dir)
     tools = selected_tools(args.tools)
-    versions = preflight(args.controller, tools, args.judge_provider)
+    versions = preflight(args.controller, tools, args.judge_provider, args.model)
     tasks = effective_tasks(args.benchmark, load_tasks(args.benchmark), args.stealth_view)
     tasks = select_tasks(tasks, args.tasks, args.task_indices)
     now = datetime.now(timezone.utc)

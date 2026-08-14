@@ -24,6 +24,43 @@ test("Pi sidecar reports its pinned SDK version without starting a session", () 
   );
 });
 
+test("Pi sidecar loads stored Codex subscription credentials", () => {
+  const agentDir = mkdtempSync(join(tmpdir(), "pi-auth-"));
+  writeFileSync(
+    join(agentDir, "auth.json"),
+    JSON.stringify({
+      "openai-codex": {
+        type: "oauth",
+        access: "test-access",
+        refresh: "test-refresh",
+        expires: Date.now() + 60_000,
+      },
+    }),
+  );
+  const env = { ...process.env, PI_CODING_AGENT_DIR: agentDir };
+  delete env.OPENAI_API_KEY;
+
+  try {
+    const result = spawnSync(
+      process.execPath,
+      [
+        controller,
+        "--check-auth",
+        "--model",
+        "openai-codex/gpt-5.6-sol",
+        "--tool",
+        "libretto",
+      ],
+      { encoding: "utf8", env },
+    );
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.trim(), "ok");
+  } finally {
+    rmSync(agentDir, { recursive: true, force: true });
+  }
+});
+
 test("Pi sidecar rejects unsupported thinking levels before starting a session", () => {
   const result = spawnSync(
     process.execPath,

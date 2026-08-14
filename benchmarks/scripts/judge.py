@@ -2,7 +2,9 @@
 import asyncio
 import base64
 import hashlib
+import json
 import os
+import tempfile
 from pathlib import Path
 from typing import Literal
 
@@ -11,10 +13,10 @@ from google.genai import types
 from openai import AsyncOpenAI
 from pydantic import BaseModel, StrictBool
 
-from run_controller import ExecutionEvidence
+from run_controller import ExecutionEvidence, _subprocess_env
 
 
-JudgeProvider = Literal["google", "openai"]
+JudgeProvider = Literal["google", "openai", "codex"]
 
 GENERAL_CONTRACT_PATH = Path(__file__).resolve().parent.parent / "references" / "judge-contract.md"
 STEALTH_CONTRACT_PATH = Path(__file__).resolve().parent.parent / "references" / "stealth-judge-contract.md"
@@ -117,9 +119,45 @@ async def _generate_openai(model: str, system: str, user: str, images: list[Path
     return parsed
 
 
+async def _generate_codex(model: str, system: str, user: str, images: list[Path]) -> JudgementResult:
+    with tempfile.TemporaryDirectory(prefix="bbe-judge-") as temporary:
+        work_dir = Path(temporary)
+        schema = JudgementResult.model_json_schema()
+        schema["required"] = list(schema["properties"])
+        schema["additionalProperties"] = False
+        schema_path = work_dir / "schema.json"
+        output_path = work_dir / "judgement.json"
+        schema_path.write_text(json.dumps(schema), encoding="utf-8")
+        command = [
+            "codex", "exec", "--ephemeral", "--ignore-user-config", "--ignore-rules",
+            "--skip-git-repo-check", "--sandbox", "read-only", "--model", model,
+            "--output-schema", str(schema_path), "--output-last-message", str(output_path),
+        ]
+        if images:
+            command.extend(["--image", *(str(path) for path in images)])
+        command.append("-")
+        env = _subprocess_env(controller="codex")
+        env.pop("OPENAI_API_KEY", None)
+        process = await asyncio.create_subprocess_exec(
+            *command,
+            cwd=work_dir,
+            env=env,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        prompt = f"<judge_instructions>\n{system}\n</judge_instructions>\n\n{user}"
+        _, stderr = await process.communicate(prompt.encode())
+        if process.returncode:
+            raise RuntimeError(f"Codex judge failed: {stderr.decode(errors='replace').strip()}")
+        return JudgementResult.model_validate_json(output_path.read_text(encoding="utf-8"))
+
+
 async def _generate(provider: JudgeProvider, model: str, system: str, user: str, images: list[Path]) -> JudgementResult:
     if provider == "openai":
         return await _generate_openai(model, system, user, images)
+    if provider == "codex":
+        return await _generate_codex(model, system, user, images)
     return await _generate_google(model, system, user, images)
 
 

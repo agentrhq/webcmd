@@ -60,6 +60,12 @@ def test_cli_accepts_openai_judge_provider():
     assert args.judge_model == "gpt-4o-mini"
 
 
+def test_cli_accepts_codex_subscription_judge_provider():
+    args = run_eval.parse_args(BASE + ["--tasks", "1", "--judge-provider", "codex"])
+    assert args.judge_provider == "codex"
+    assert args.judge_model == "gpt-5.4"
+
+
 def test_preflight_requires_openai_key_for_openai_judge(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
@@ -77,6 +83,41 @@ def test_preflight_accepts_openai_judge_without_google_key(monkeypatch):
     monkeypatch.setattr(run_eval.subprocess, "run", fake_run)
     versions = run_eval.preflight("codex", ["webcmd"], "openai")
     assert versions["codex"] == "1"
+
+
+def test_preflight_checks_codex_subscription_login_without_api_keys(monkeypatch):
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    commands = []
+
+    def fake_run(command, **kwargs):
+        commands.append(command)
+        if command == ["webcmd", "--version"]:
+            stdout = f"{run_eval.WEBCMD_EVAL_VERSION}\n"
+        elif command == ["codex", "login", "status"]:
+            stdout = "Logged in using ChatGPT\n"
+        else:
+            stdout = "ok\n"
+        return type("Result", (), {"returncode": 0, "stdout": stdout, "stderr": ""})()
+
+    monkeypatch.setattr(run_eval.subprocess, "run", fake_run)
+
+    run_eval.preflight("pi", ["webcmd"], "codex")
+
+    assert ["codex", "login", "status"] in commands
+
+
+def test_preflight_rejects_api_key_login_for_codex_subscription_judge(monkeypatch):
+    def fake_run(command, **kwargs):
+        if command == ["codex", "login", "status"]:
+            return type("Result", (), {"returncode": 0, "stdout": "Logged in using an API key\n", "stderr": ""})()
+        stdout = f"{run_eval.WEBCMD_EVAL_VERSION}\n" if command == ["webcmd", "--version"] else "ok\n"
+        return type("Result", (), {"returncode": 0, "stdout": stdout, "stderr": ""})()
+
+    monkeypatch.setattr(run_eval.subprocess, "run", fake_run)
+
+    with pytest.raises(RuntimeError, match="ChatGPT"):
+        run_eval.preflight("pi", ["webcmd"], "codex")
 
 
 def test_cli_accepts_stealth_webcmd():
@@ -373,13 +414,22 @@ def test_preflight_checks_pi_through_the_pinned_sidecar(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "controller-secret")
     monkeypatch.setattr(run_eval.subprocess, "run", fake_run)
 
-    versions = run_eval.preflight("pi", ["webcmd"])
+    versions = run_eval.preflight(
+        "pi", ["webcmd"], model="openai-codex/gpt-5.6-sol"
+    )
 
     assert versions == {"pi": "1.2.3", "webcmd": run_eval.WEBCMD_EVAL_VERSION, "webcmd_mode": "local"}
     assert calls[0] == [
         "node",
         str(run_eval.PI_CONTROLLER),
         "--version",
+    ]
+    assert calls[1] == [
+        "node",
+        str(run_eval.PI_CONTROLLER),
+        "--check-auth",
+        "--model",
+        "openai-codex/gpt-5.6-sol",
     ]
     assert ["webcmd", "doctor"] in calls
 
@@ -575,6 +625,24 @@ def test_manifest_records_webcmd_cloud_mode():
     )
 
     assert manifest["tools"]["webcmd"] == {"version": "2", "mode": "hosted"}
+
+
+def test_manifest_records_pi_subscription_billing_mode():
+    manifest = run_eval.build_manifest(
+        run_id="run",
+        benchmark="Stealth_Bench_V1",
+        tasks=[{"_effective_index": 0, "_raw_index": 0}],
+        controller="pi",
+        model="openai-codex/gpt-5.6-sol",
+        judge_provider="google",
+        judge_model="gemini-2.5-flash",
+        versions={"pi": "1", "webcmd": "2"},
+        tools=["webcmd"],
+        timeout=1800,
+        created_at="2026-08-14T00:00:00Z",
+    )
+
+    assert manifest["controller"]["billing_mode"] == "chatgpt_subscription"
 
 
 def test_manifest_records_libretto_with_cloakbrowser():

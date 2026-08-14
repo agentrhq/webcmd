@@ -107,13 +107,20 @@ async function main() {
   const { provider, modelId, selector } = selectedModel(args);
   const thinkingLevel = selectedThinkingLevel(args);
   const tool = selectedTool(args);
-  const skillPaths = selectedSkillPaths(args, tool !== "libretto");
-  const authStorage = AuthStorage.inMemory();
+  const checkingAuth = args.includes("--check-auth");
+  const skillPaths = checkingAuth
+    ? []
+    : selectedSkillPaths(args, tool !== "libretto");
+  const authStorage = AuthStorage.create();
   const modelRegistry = ModelRegistry.inMemory(authStorage);
   const model = modelRegistry.find(provider, modelId);
   if (!model) throw new Error(`Model ${selector} not found`);
   if (!modelRegistry.hasConfiguredAuth(model)) {
     throw new Error(`No credentials configured for ${provider}`);
+  }
+  if (checkingAuth) {
+    console.log("ok");
+    return;
   }
 
   const cwd = process.cwd();

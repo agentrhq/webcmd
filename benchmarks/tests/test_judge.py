@@ -1,4 +1,5 @@
 import asyncio
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -305,3 +306,61 @@ def test_generate_openai_sends_multimodal_structured_request_and_validates_resul
     assert user_content[0]["text"] == "evidence"
     assert user_content[1]["image_url"]["url"].startswith("data:image/png;base64,")
     assert captured["response_format"] is JudgementResult
+
+
+def test_generate_codex_uses_isolated_ephemeral_structured_run(tmp_path, monkeypatch):
+    image = tmp_path / "state.png"
+    image.write_bytes(b"png bytes")
+    captured = {}
+
+    class FakeProcess:
+        returncode = 0
+
+        async def communicate(self, prompt):
+            captured["prompt"] = prompt.decode()
+            output_path = Path(captured["command"][captured["command"].index("--output-last-message") + 1])
+            output_path.write_text(json.dumps({"verdict": True}), encoding="utf-8")
+            return b"", b""
+
+    async def fake_create_subprocess_exec(*command, **kwargs):
+        captured["command"] = list(command)
+        captured["kwargs"] = kwargs
+        schema_path = Path(command[command.index("--output-schema") + 1])
+        captured["schema"] = json.loads(schema_path.read_text(encoding="utf-8"))
+        return FakeProcess()
+
+    monkeypatch.setattr(judge.asyncio, "create_subprocess_exec", fake_create_subprocess_exec)
+
+    result = asyncio.run(judge._generate("codex", "gpt-5.4", "policy", "evidence", [image]))
+
+    assert result.verdict is True
+    command = captured["command"]
+    assert command[:2] == ["codex", "exec"]
+    assert "--ephemeral" in command
+    assert "--ignore-user-config" in command
+    assert "--ignore-rules" in command
+    assert command[command.index("--sandbox") + 1] == "read-only"
+    assert command[command.index("--model") + 1] == "gpt-5.4"
+    assert command[command.index("--image") + 1] == str(image)
+    assert command[-1] == "-"
+    assert captured["kwargs"]["stdin"] is asyncio.subprocess.PIPE
+    assert "<judge_instructions>\npolicy\n</judge_instructions>" in captured["prompt"]
+    assert captured["prompt"].endswith("evidence")
+    assert set(captured["schema"]["required"]) == set(captured["schema"]["properties"])
+    assert captured["schema"]["additionalProperties"] is False
+
+
+def test_generate_codex_reports_cli_failure(monkeypatch):
+    class FakeProcess:
+        returncode = 1
+
+        async def communicate(self, prompt):
+            return b"", b"subscription exhausted"
+
+    async def fake_create_subprocess_exec(*command, **kwargs):
+        return FakeProcess()
+
+    monkeypatch.setattr(judge.asyncio, "create_subprocess_exec", fake_create_subprocess_exec)
+
+    with pytest.raises(RuntimeError, match="subscription exhausted"):
+        asyncio.run(judge._generate("codex", "gpt-5.4", "policy", "evidence", []))
