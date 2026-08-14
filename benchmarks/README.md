@@ -132,15 +132,15 @@ provider, and target sites can sustain without throttling. Webcmd Sessions
 isolate task tabs, while the `benchmark` Profile's cookies and cache remain
 shared across tasks.
 
-Before enabling parallel runs for a competitor, run its live concurrency gate.
-The gate starts two real task-private browser runtimes, creates marker tabs
-concurrently, checks that neither runtime can see the other's tab, and verifies
-that both Cloak process trees are removed. It does not invoke a controller or
-judge:
+Before enabling parallel runs, run each tool's live concurrency gate. The
+Webcmd gate creates two Sessions and drives them through concurrent login-shell
+subprocesses. Competitor gates start two task-private browser runtimes. Every
+gate checks that neither task can see the other's marker tab and cleans up its
+runtime; none invokes a controller or judge:
 
 ```bash
 cd benchmarks
-BROWSER_BENCH_LIVE_COMPETITORS=chrome-devtools-axi,agent-browser,dev-browser,libretto \
+BROWSER_BENCH_LIVE_COMPETITORS=webcmd,chrome-devtools-axi,agent-browser,dev-browser,libretto \
   uv run pytest tests/test_competitor_concurrency_integration.py -q
 ```
 

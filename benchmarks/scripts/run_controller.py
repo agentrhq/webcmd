@@ -8,6 +8,7 @@ import re
 import shlex
 import shutil
 import signal
+import subprocess
 import threading
 import time
 from dataclasses import dataclass
@@ -370,6 +371,49 @@ def _subprocess_env(controller: Controller | None = None, tool: Tool | None = No
 
 def _child_env(controller: Controller, tool: Tool, overrides: dict[str, str] | None = None) -> dict[str, str]:
     return {**_subprocess_env(controller, tool), **(overrides or {})}
+
+
+def _verify_pinned_webcmd(env: dict[str, str], expected: Path) -> None:
+    shell = env.get("SHELL") or ("/bin/zsh" if Path("/bin/zsh").is_file() else "/bin/sh")
+    result = subprocess.run(
+        [shell, "-lc", "command -v webcmd"],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    actual = result.stdout.strip()
+    if result.returncode or not actual or Path(actual).resolve() != expected.resolve():
+        raise RuntimeError(
+            f"Webcmd login shell resolved {actual or 'nothing'}, expected {expected}"
+        )
+
+
+def _pin_webcmd_env(base_env: dict[str, str], work_dir: Path) -> dict[str, str]:
+    executable = shutil.which("webcmd", path=base_env.get("PATH"))
+    if not executable:
+        raise RuntimeError("webcmd was not found in PATH")
+    bin_dir = work_dir / "webcmd-bin"
+    bin_dir.mkdir()
+    shim = bin_dir / "webcmd"
+    shim.write_text(
+        f"#!/bin/sh\nexec {shlex.quote(str(Path(executable).resolve()))} \"$@\"\n",
+        encoding="utf-8",
+    )
+    shim.chmod(0o700)
+    zsh_config = work_dir / "zsh-config"
+    zsh_config.mkdir()
+    pinned_path = f"{bin_dir}{os.pathsep}{base_env.get('PATH', '')}"
+    (zsh_config / ".zprofile").write_text(
+        f"export PATH={shlex.quote(pinned_path)}\n", encoding="utf-8"
+    )
+    env = {
+        **base_env,
+        "PATH": pinned_path,
+        "ZDOTDIR": str(zsh_config),
+    }
+    _verify_pinned_webcmd(env, shim)
+    return env
 
 
 def _session_name(work_dir: Path) -> str:
@@ -1113,6 +1157,11 @@ async def _close_session_cancellation_resistant(tool: Tool, session: str, tool_e
                 cancellation = error
             if close.cancelled():
                 return cancellation
+        except Exception as cleanup_error:
+            if cancellation is None:
+                raise
+            cancellation.add_note(f"Webcmd cleanup also failed: {cleanup_error}")
+            return cancellation
 
 
 async def _create_webcmd_session(tool_env: dict[str, str] | None = None) -> str:
@@ -1184,16 +1233,19 @@ async def _close_session(tool: Tool, session: str, tool_env: dict[str, str] | No
     ]
     try:
         process = await asyncio.create_subprocess_exec(*command, env={**_subprocess_env(tool=tool), **(tool_env or {})}, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL, start_new_session=True)
+    except Exception as error:
+        raise RuntimeError("Webcmd Session cleanup failed to start") from error
+    try:
+        await asyncio.wait_for(process.wait(), timeout=15)
+    except asyncio.TimeoutError:
+        _kill_process_group(process)
         try:
-            await asyncio.wait_for(process.wait(), timeout=15)
+            await asyncio.wait_for(process.wait(), timeout=CLEANUP_TIMEOUT_SECONDS)
         except asyncio.TimeoutError:
-            _kill_process_group(process)
-            try:
-                await asyncio.wait_for(process.wait(), timeout=CLEANUP_TIMEOUT_SECONDS)
-            except asyncio.TimeoutError:
-                return
-    except Exception:
-        return
+            raise RuntimeError("Webcmd Session cleanup timed out and could not be reaped")
+        raise RuntimeError("Webcmd Session cleanup timed out")
+    if process.returncode:
+        raise RuntimeError(f"Webcmd Session cleanup failed with exit code {process.returncode}")
 
 
 WEBCMD_ARTIFACT_LOCATOR_RE = re.compile(
@@ -1284,6 +1336,11 @@ async def run_controller(controller: Controller, model: str, tool: Tool, task: s
         browser_runtime = await start_libretto_runtime(session, work_dir, _subprocess_env(tool=tool))
     merged_tool_env = {**(browser_runtime.env if browser_runtime else {}), **(tool_env or {})}
     if tool == "webcmd":
+        merged_tool_env = await asyncio.to_thread(
+            _pin_webcmd_env,
+            {**_subprocess_env(tool=tool), **merged_tool_env},
+            work_dir,
+        )
         session = await _create_webcmd_session(merged_tool_env)
     prompt = _build_prompt(tool, session, shots_dir, task)
     turn_collector = _CodexTurnCollector() if controller == "codex" else None
@@ -1301,13 +1358,17 @@ async def run_controller(controller: Controller, model: str, tool: Tool, task: s
                 turn_collector.endpoint if turn_collector is not None else None
             ),
         )
-    except BaseException:
+    except BaseException as setup_error:
         if turn_collector is not None:
             turn_collector.__exit__()
         if tool == "webcmd":
-            close_cancellation = await _close_session_cancellation_resistant(
-                tool, session, tool_env
-            )
+            try:
+                close_cancellation = await _close_session_cancellation_resistant(
+                    tool, session, merged_tool_env
+                )
+            except Exception as cleanup_error:
+                setup_error.add_note(f"Webcmd cleanup also failed: {cleanup_error}")
+                close_cancellation = None
             if close_cancellation is not None:
                 raise close_cancellation
         raise
@@ -1316,6 +1377,7 @@ async def run_controller(controller: Controller, model: str, tool: Tool, task: s
     process = None
     pending_error: BaseException | None = None
     pending_traceback = None
+    cleanup_error: Exception | None = None
     close_cancellation: asyncio.CancelledError | None = None
     try:
         process = await asyncio.create_subprocess_exec(*command, cwd=work_dir, env=_child_env(controller, tool, merged_tool_env), stdin=asyncio.subprocess.PIPE if stdin is not None else None, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, start_new_session=True)
@@ -1324,21 +1386,29 @@ async def run_controller(controller: Controller, model: str, tool: Tool, task: s
         except asyncio.TimeoutError:
             timed_out = True
             stdout, stderr = await _terminate_controller(process)
-        except BaseException as error:
-            pending_error = error
-            pending_traceback = error.__traceback__
+    except BaseException as error:
+        pending_error = error
+        pending_traceback = error.__traceback__
+        if process is not None:
             await _terminate_controller(process)
     finally:
         controller_duration = time.monotonic() - started
-        if browser_runtime is None:
-            close_cancellation = await _close_session_cancellation_resistant(tool, session, tool_env)
-        else:
-            close_cancellation = await _close_runtime_cancellation_resistant(browser_runtime)
+        try:
+            if browser_runtime is None:
+                close_cancellation = await _close_session_cancellation_resistant(tool, session, merged_tool_env)
+            else:
+                close_cancellation = await _close_runtime_cancellation_resistant(browser_runtime)
+        except Exception as error:
+            cleanup_error = error
         if turn_collector is not None:
             turn_collector.__exit__()
 
     if pending_error is not None:
+        if cleanup_error is not None:
+            pending_error.add_note(f"Browser cleanup also failed: {cleanup_error}")
         raise pending_error.with_traceback(pending_traceback)
+    if cleanup_error is not None:
+        raise cleanup_error
     if close_cancellation is not None:
         raise close_cancellation
 
