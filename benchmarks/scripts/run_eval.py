@@ -70,6 +70,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--judge-provider", choices=("google", "openai"), default="google")
     parser.add_argument("--judge-model")
     parser.add_argument("--task-timeout", type=int, default=1800)
+    parser.add_argument("--parallel", type=int, default=1)
     parser.add_argument("--stealth-view", choices=("raw", "official"), default="raw")
     parser.add_argument("--output-dir", type=Path, default=PROJECT_DIR / "results")
     args = parser.parse_args(argv)
@@ -81,6 +82,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def validate_args(args: argparse.Namespace) -> None:
     if args.task_timeout < 1:
         raise ValueError("--task-timeout must be positive")
+    if getattr(args, "parallel", 1) < 1:
+        raise ValueError("--parallel must be positive")
     if args.benchmark != "Stealth_Bench_V1" and args.stealth_view != "raw":
         raise ValueError("--stealth-view official is valid only for Stealth_Bench_V1")
     if args.reasoning_effort is not None and args.controller not in {"codex", "pi"}:
@@ -164,7 +167,7 @@ def preflight(controller: str, tools: list[str], judge_provider: str = "google")
     return versions
 
 
-def build_manifest(*, run_id: str, benchmark: str, tasks: list[dict], controller: str, model: str, judge_provider: str, judge_model: str, versions: dict[str, str], tools: list[str], timeout: int, created_at: str, reasoning_effort: str | None = None) -> dict:
+def build_manifest(*, run_id: str, benchmark: str, tasks: list[dict], controller: str, model: str, judge_provider: str, judge_model: str, versions: dict[str, str], tools: list[str], timeout: int, created_at: str, reasoning_effort: str | None = None, parallel: int = 1) -> dict:
     tool_manifest = {}
     for tool in tools:
         tool_manifest[tool] = {"version": versions[tool]}
@@ -190,6 +193,7 @@ def build_manifest(*, run_id: str, benchmark: str, tasks: list[dict], controller
         "judge": {"provider": judge_provider, "model": judge_model, "prompt_version": "upstream-dff86d1"},
         "tools": tool_manifest,
         "task_timeout_seconds": timeout,
+        "parallel": parallel,
         "tool_order": "single",
         "created_at": created_at,
     }
@@ -474,6 +478,7 @@ def build_summary(results: list[dict], tools: list[str]) -> dict:
 
 async def run_benchmark(args: argparse.Namespace) -> Path:
     validate_args(args)
+    parallel = getattr(args, "parallel", 1)
     output_dir = _validate_output_dir(args.output_dir)
     tools = selected_tools(args.tools)
     versions = preflight(args.controller, tools, args.judge_provider)
@@ -484,15 +489,18 @@ async def run_benchmark(args: argparse.Namespace) -> Path:
     run_id = f"{now.strftime('%Y%m%dT%H%M%SZ')}-{args.controller}-{args.benchmark.lower().replace('_', '-')}"
     run_dir = output_dir / run_id
     run_dir.mkdir(parents=True, exist_ok=False)
-    manifest = build_manifest(run_id=run_id, benchmark=args.benchmark, tasks=tasks, controller=args.controller, model=args.model, judge_provider=args.judge_provider, judge_model=args.judge_model, versions=versions, tools=tools, timeout=args.task_timeout, created_at=created_at, reasoning_effort=args.reasoning_effort)
+    manifest = build_manifest(run_id=run_id, benchmark=args.benchmark, tasks=tasks, controller=args.controller, model=args.model, judge_provider=args.judge_provider, judge_model=args.judge_model, versions=versions, tools=tools, timeout=args.task_timeout, created_at=created_at, reasoning_effort=args.reasoning_effort, parallel=parallel)
     _write_json(run_dir / "manifest.json", manifest)
 
-    results = []
-    for task in tasks:
-        tool = args.tools
-        attempt_dir = run_dir / "tasks" / _safe(task["task_id"]) / tool
-        result = await run_attempt(run_id=run_id, benchmark=args.benchmark, task=task, effective_index=task["_effective_index"], controller=args.controller, model=args.model, tool=tool, timeout=args.task_timeout, attempt_dir=attempt_dir, judge_provider=args.judge_provider, judge_model=args.judge_model, reasoning_effort=args.reasoning_effort)
-        results.append(result)
+    semaphore = asyncio.Semaphore(parallel)
+
+    async def run_task(task: dict) -> dict:
+        async with semaphore:
+            tool = args.tools
+            attempt_dir = run_dir / "tasks" / _safe(task["task_id"]) / tool
+            return await run_attempt(run_id=run_id, benchmark=args.benchmark, task=task, effective_index=task["_effective_index"], controller=args.controller, model=args.model, tool=tool, timeout=args.task_timeout, attempt_dir=attempt_dir, judge_provider=args.judge_provider, judge_model=args.judge_model, reasoning_effort=args.reasoning_effort)
+
+    results = await asyncio.gather(*(run_task(task) for task in tasks))
     summary = build_summary(results, tools)
     _write_json(run_dir / "summary.json", summary)
     print(json.dumps(summary, indent=2))

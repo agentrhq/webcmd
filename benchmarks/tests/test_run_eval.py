@@ -46,7 +46,22 @@ def test_cli_requires_exactly_one_explicit_task_selection():
     assert args.judge_provider == "google"
     assert args.task_timeout == 1800
     assert args.reasoning_effort is None
-    assert not hasattr(args, "parallel")
+    assert args.parallel == 1
+
+
+def test_cli_accepts_parallel_limit():
+    args = run_eval.parse_args(BASE + ["--tasks", "1", "--parallel", "5"])
+
+    run_eval.validate_args(args)
+
+    assert args.parallel == 5
+
+
+def test_cli_rejects_non_positive_parallel_limit():
+    args = run_eval.parse_args(BASE + ["--tasks", "1", "--parallel", "0"])
+
+    with pytest.raises(ValueError, match="--parallel must be positive"):
+        run_eval.validate_args(args)
 
 
 def test_cli_accepts_openai_judge_provider():
@@ -450,10 +465,13 @@ def test_preflight_uses_controller_only_and_selected_tool_only_environments(monk
 
 
 def test_manifest_records_only_reproducibility_fields(tmp_path):
-    tasks = run_eval.effective_tasks("BU_Bench_V1", run_eval.load_tasks("BU_Bench_V1"), "raw")[:2]
+    tasks = [
+        {"_effective_index": 0, "_raw_index": 0},
+        {"_effective_index": 1, "_raw_index": 20},
+    ]
     manifest = run_eval.build_manifest(
-        run_id="20260717T120000Z-codex-bu-bench-v1",
-        benchmark="BU_Bench_V1",
+        run_id="20260717T120000Z-codex-stealth-bench-v1",
+        benchmark="Stealth_Bench_V1",
         tasks=tasks,
         controller="codex",
         model="gpt-5",
@@ -463,10 +481,12 @@ def test_manifest_records_only_reproducibility_fields(tmp_path):
         timeout=1800,
         created_at="2026-07-17T12:00:00Z",
         reasoning_effort="high",
+        parallel=5,
     )
     assert manifest["task_selection"]["raw_indices"] == [0, 20]
-    assert manifest["dataset_sha256"] == run_eval.dataset_sha256("BU_Bench_V1")
+    assert manifest["dataset_sha256"] == run_eval.dataset_sha256("Stealth_Bench_V1")
     assert manifest["controller"]["reasoning_effort"] == "high"
+    assert manifest["parallel"] == 5
     assert "duration" not in json.dumps(manifest)
     assert "cost" not in json.dumps(manifest)
 
@@ -827,6 +847,39 @@ def test_run_benchmark_writes_manifest_before_sequential_attempts(tmp_path, monk
     assert (run_dir / "summary.json").exists()
     durable = (run_dir / "manifest.json").read_text() + (run_dir / "summary.json").read_text()
     assert all(value not in durable for value in (prompt_a, truth_a, prompt_b, truth_b))
+
+
+def test_run_benchmark_limits_parallel_attempts(tmp_path, monkeypatch):
+    tasks = [
+        {"task_id": str(index), "confirmed_task": "prompt", "category": "A", "_raw_index": index}
+        for index in range(5)
+    ]
+    active = 0
+    max_active = 0
+
+    async def fake_attempt(**kwargs):
+        nonlocal active, max_active
+        active += 1
+        max_active = max(max_active, active)
+        await asyncio.sleep(0.01)
+        active -= 1
+        return {
+            "task_id": kwargs["task"]["task_id"],
+            "tool": kwargs["tool"],
+            "category": "A",
+            "status": "completed",
+            "score": 1,
+            "metrics": {},
+        }
+
+    monkeypatch.setattr(run_eval, "preflight", lambda *args: {"codex": "1", "webcmd": "2"})
+    monkeypatch.setattr(run_eval, "load_tasks", lambda benchmark: tasks)
+    monkeypatch.setattr(run_eval, "run_attempt", fake_attempt)
+    args = argparse.Namespace(controller="codex", model="gpt-5", benchmark="Stealth_Bench_V1", tasks="all", task_indices=None, tools="webcmd", judge_provider="google", judge_model="gemini-2.5-flash", task_timeout=10, stealth_view="raw", output_dir=tmp_path, reasoning_effort=None, parallel=2)
+
+    asyncio.run(run_eval.run_benchmark(args))
+
+    assert max_active == 2
 
 
 def test_run_benchmark_passes_axi_selection_and_records_cloakbrowser(tmp_path, monkeypatch):

@@ -83,7 +83,7 @@ webcmd               ███████████████████�
 
 # Browser Bench Eval
 
-Run a controlled, sequential browser-tool benchmark. Keep task data and local evidence private.
+Run a controlled browser-tool benchmark. Keep task data and local evidence private.
 
 ## Workflow
 
@@ -92,7 +92,7 @@ Run a controlled, sequential browser-tool benchmark. Keep task data and local ev
 3. Start with one task unless the user explicitly requests a larger or full run.
 4. Run `scripts/run_eval.py` with the explicit choices.
 5. Report selected task count, overall accuracy, category accuracy, terminal statuses, controller time, steps, tool calls, token usage, and the ignored local result path.
-6. Compare runs only when manifest metadata (benchmark, dataset hash, controller, model, and tools) match.
+6. Compare runs only when manifest metadata (benchmark, dataset hash, controller, model, tools, and parallelism) match.
 
 The legacy `tokens` metric remains non-cached controller input plus controller
 output. Task results also record the controller's ordinary input, cached reads,
@@ -112,6 +112,41 @@ uv run python benchmarks/scripts/run_eval.py \
   --tasks 1 \
   --tools webcmd
 ```
+
+Run up to five complete attempts concurrently. Each slot covers the controller
+subprocess and its judge call, and the next task starts as soon as a slot is
+free:
+
+```bash
+uv run python benchmarks/scripts/run_eval.py \
+  --controller codex \
+  --model gpt-5 \
+  --benchmark BU_Bench_V1 \
+  --tasks all \
+  --tools webcmd \
+  --parallel 5
+```
+
+`--parallel` defaults to `1`. Increase it only as far as the machine, model
+provider, and target sites can sustain without throttling. Webcmd Sessions
+isolate task tabs, while the `benchmark` Profile's cookies and cache remain
+shared across tasks.
+
+Before enabling parallel runs for a competitor, run its live concurrency gate.
+The gate starts two real task-private browser runtimes, creates marker tabs
+concurrently, checks that neither runtime can see the other's tab, and verifies
+that both Cloak process trees are removed. It does not invoke a controller or
+judge:
+
+```bash
+cd benchmarks
+BROWSER_BENCH_LIVE_COMPETITORS=chrome-devtools-axi,agent-browser,dev-browser,libretto \
+  uv run pytest tests/test_competitor_concurrency_integration.py -q
+```
+
+Use `BROWSER_BENCH_LIVE_COMPETITORS=all` to require every gate. AXI uses its
+`npx` package; agent-browser and dev-browser must already be installed. Without
+the environment variable, these expensive live gates are skipped.
 
 Use OpenAI instead of Gemini for judging:
 
@@ -204,7 +239,7 @@ server per attempt and exposes `browser_open`, `browser_exec`,
 `browser_snapshot`, `browser_status`, and `browser_close`. `browser_connect`
 is disabled so the agent cannot leave the task's dedicated CloakBrowser.
 
-Use `--stealth-view official` only with `Stealth_Bench_V1`. Never add a parallel flag or publish `results/`.
+Use `--stealth-view official` only with `Stealth_Bench_V1`. Never publish `results/`.
 
 Webcmd attempts use the dedicated `benchmark` Profile. The harness creates one
 opaque Session per task before starting the controller, passes that Session to
