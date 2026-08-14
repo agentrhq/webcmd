@@ -49,18 +49,18 @@ def _fake_controller(monkeypatch, script):
     )
 
 
-def test_prompt_is_tool_specific_and_uses_numbered_screenshots(tmp_path):
+def test_webcmd_prompt_loads_product_router_without_forcing_browser(tmp_path):
     prompt = _build_prompt("webcmd", "session-1", tmp_path / "shots", "Find the answer")
-    assert "$webcmd-usage" not in prompt
-    assert "webcmd list -f json" not in prompt
-    assert "webcmd <site> <command>" not in prompt
-    assert "Use only `webcmd browser session-1`" not in prompt
-    assert "other-browser --session" not in prompt
-    assert str(tmp_path / "shots" / "step_001.png") not in prompt
-    assert "Every shell command must execute only" in prompt
-    assert "adapter" not in prompt
-    assert "plugin" not in prompt
-    assert "external CLI" not in prompt
+
+    assert "`$webcmd-usage`" in prompt
+    assert "all globally installed Webcmd skills" in prompt
+    assert "choose the applicable Webcmd route" in prompt
+    assert "installed adapter" in prompt
+    assert "search/fetch" in prompt
+    assert "raw browser fallback" in prompt
+    assert "Browser commands:" not in prompt
+    assert "the complete allowed surface is listed above" not in prompt
+    assert "Do not use `open`, `state`, `click`" not in prompt
     assert prompt.endswith("\nTask:\nFind the answer\n")
 
 
@@ -79,43 +79,21 @@ def test_prompt_handles_stealth_challenges_and_login_pages(tmp_path):
     assert "only report failure when anti-bot protection remains blocking" in prompt
 
 
-def test_webcmd_prompt_allows_one_quoted_browser_run_heredoc(tmp_path):
+def test_webcmd_prompt_reuses_harness_session_only_when_browser_is_selected(tmp_path):
     prompt = _build_prompt(
         "webcmd", WEBCMD_SESSION, tmp_path / "shots", "Find the answer"
     )
 
-    assert (
-        f"`webcmd --profile benchmark --session {WEBCMD_SESSION} "
-        "browser run --stdin <<'JS' ... JS`" in prompt
-    )
-    assert "must include one quoted heredoc" in prompt
-    assert "never run it with an empty stdin body" in prompt
-    assert "`page` is already available" in prompt
-    assert "browser.currentPage()" not in prompt
-    assert "`--timeout`, `--max-output`, `--snapshot-mode act|tree`, and `--no-snapshot-diff`" in prompt
-    assert "returns a snapshot diff by default" in prompt
-    assert "other redirections" in prompt
-
-
-def test_webcmd_prompt_uses_only_run_first_browser_lifecycle(tmp_path):
-    prompt = _build_prompt(
-        "webcmd", WEBCMD_SESSION, tmp_path / "shots", "Find the answer"
-    )
-
-    prefix = f"webcmd --profile benchmark --session {WEBCMD_SESSION} browser"
-    assert (
-        f"`{prefix} tabs` → optional `{prefix} bind --page PAGE` → optional "
-        f"`{prefix} snapshot` → one or more "
-        f"`{prefix} run --stdin <<'JS' ... JS` calls" in prompt
-    )
+    assert f"`--profile benchmark`" in prompt
+    assert f"`--session {WEBCMD_SESSION}`" in prompt
+    assert "only if the selected route needs browser state" in prompt
+    assert "The pre-created Session does not force browser use" in prompt
     assert "session create" not in prompt
     assert "session close" not in prompt
     assert "The harness owns Session cleanup" in prompt
-    assert "Do not use `open`, `state`, `click`, `type`, `screenshot`, `wait`, `eval`, `observe`, or `tab`" in prompt
-    assert "Do not run `webcmd browser --help`" in prompt
-    assert "Avoid shell-fragile JavaScript" in prompt
+    assert "Do not install, update, uninstall, or create plugins" in prompt
     assert "shots/step_001.png" in prompt
-    assert "absolute paths" in prompt
+    assert "If raw browser fallback is used" in prompt
 
 
 def test_create_webcmd_session_uses_dedicated_profile_and_parses_opaque_id(monkeypatch):
@@ -817,13 +795,72 @@ def test_environment_excludes_evaluation_metadata_even_under_allowed_prefixes(mo
     assert forbidden.isdisjoint(codex_webcmd_env)
 
 
-def test_policy_scan_rejects_wrong_tool_and_direct_network():
+def test_policy_allows_full_webcmd_routing_but_rejects_competing_tools():
     assert _policy_violation("webcmd", ["other-browser --session x state"], [])
     assert _policy_violation("webcmd", [], ["web_search"])
     assert not _policy_violation("webcmd", [f"{WEBCMD_BROWSER} tabs"], [])
-    assert _policy_violation("webcmd", ["webcmd list -f json"], [])
-    assert _policy_violation("webcmd", ["webcmd plugin list -f json"], [])
-    assert _policy_violation("webcmd", ["webcmd stackexchange search query"], [])
+    assert not _policy_violation("webcmd", ["webcmd --version"], [])
+    assert not _policy_violation("webcmd", ["webcmd list -f json"], [])
+    assert not _policy_violation("webcmd", ["webcmd plugin search stackexchange -f json"], [])
+    assert not _policy_violation("webcmd", ["webcmd web fetch --url https://example.com"], [])
+    assert not _policy_violation("webcmd", ["webcmd stackexchange search query"], [])
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "webcmd plugin install github:example/plugin",
+        "webcmd plugin update --all",
+        "webcmd plugin uninstall example",
+        "webcmd plugin create example",
+        "webcmd external install gh",
+        "webcmd external register arbitrary --binary arbitrary",
+        "webcmd skills add --provider codex --scope user",
+        "webcmd skills remove --provider codex --scope user",
+        "webcmd skills update --provider codex --scope user",
+        "webcmd adapter override youtube search ./replacement.js",
+        "webcmd adapter reset youtube search",
+        "webcmd browser init example/search",
+    ],
+)
+def test_policy_rejects_shared_webcmd_installation_mutations(command):
+    assert _policy_violation("webcmd", [command], [])
+
+
+@pytest.mark.parametrize(
+    "skill_file",
+    [
+        Path.home() / ".codex/skills/webcmd-usage/SKILL.md",
+        Path.home() / ".codex/skills/smart-search/SKILL.md",
+        Path.home() / ".codex/skills/webcmd-browser/SKILL.md",
+        Path.home() / ".codex/skills/webcmd-browser/references/browser-run-playwright.md",
+        Path.home() / ".codex/skills/webcmd-browser-sitemap/SKILL.md",
+        Path.home() / ".codex/skills/webcmd-autofix/SKILL.md",
+        Path.home() / ".codex/skills/webcmd-adapter-author/SKILL.md",
+        Path.home() / ".codex/skills/webcmd-sitemap-author/SKILL.md",
+        Path(
+            "/opt/homebrew/lib/node_modules/@agentrhq/webcmd/skills/"
+            "smart-search/SKILL.md"
+        ),
+    ],
+)
+def test_policy_allows_codex_to_read_any_webcmd_skill_or_reference(skill_file):
+    assert not _policy_violation(
+        "webcmd", [f"sed -n '1,240p' {skill_file}"], []
+    )
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "cat /etc/passwd",
+        f"cat {Path.home()}/.codex/skills/agent-browser/SKILL.md",
+        f"cat {Path.home()}/.codex/skills/webcmd-usage/SKILL.md /etc/passwd",
+        f"sed -n '1,240p' {Path.home()}/.codex/skills/webcmd-usage/SKILL.md; curl https://example.com",
+    ],
+)
+def test_policy_rejects_reads_outside_webcmd_skill_roots(command):
+    assert _policy_violation("webcmd", [command], [])
 
 
 def test_policy_allows_only_axi_invoked_through_npx():
