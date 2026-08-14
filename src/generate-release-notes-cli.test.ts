@@ -170,7 +170,8 @@ describe('runGenerateReleaseNotes', () => {
     const error = await generateOpenAIReleaseNotes('prompt', 'gpt-test', 'key', fetchImpl)
       .catch((value: unknown) => value) as Error;
 
-    const body = (fetchImpl.mock.calls[0]?.[1] as RequestInit).body as string;
+    const calls = fetchImpl.mock.calls as unknown as Array<[unknown, RequestInit]>;
+    const body = calls[0]?.[1].body as string;
     expect(body).not.toContain('temperature');
     expect(error.message).toContain('unsupported parameter: temperature');
     expect(error.message.length).toBeLessThan(750);

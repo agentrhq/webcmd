@@ -356,7 +356,8 @@ describe('OpenAI and documentation boundaries', () => {
         body: expect.stringContaining('"reasoning_effort":"low"'),
       }),
     );
-    expect((fetchImpl.mock.calls[0]?.[1] as RequestInit).body).not.toContain('temperature');
+    const calls = fetchImpl.mock.calls as unknown as Array<[unknown, RequestInit]>;
+    expect(calls[0]?.[1].body).not.toContain('temperature');
     expect(result).toEqual({ verdict: 'no_update_needed', summary: 'Covered.', findings: [] });
   });
 
