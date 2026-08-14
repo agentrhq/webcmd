@@ -556,7 +556,7 @@ function hasPresentFileArgument(
 ): boolean {
   return command.args.some((arg) => {
     if (!arg.file) return false;
-    const value = args[arg.name] ?? arg.default;
+    const value = args[arg.name] ?? arg.default ?? arg.file.defaultPath;
     return value !== undefined && value !== null && value !== '';
   });
 }

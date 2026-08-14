@@ -46,6 +46,13 @@ export async function prepareHostedFiles(input: {
     filename: string;
     contentType: string;
     body: Uint8Array;
+    localPath: string;
+  }> = [];
+  const mutable: Array<{
+    argument: string;
+    multiple: boolean;
+    localPath: string;
+    contentType: string;
   }> = [];
   const outputs: HostedOutputTarget[] = [];
 
@@ -72,6 +79,7 @@ export async function prepareHostedFiles(input: {
           filename: path.basename(localPath),
           contentType,
           body,
+          localPath,
         });
       }
       continue;
@@ -84,6 +92,24 @@ export async function prepareHostedFiles(input: {
     for (const value of values) {
       const localPath = resolveOutputPath(cwd, value, arg.name);
       outputs.push({ argument: arg.name, pathKind: arg.file.pathKind, localPath });
+      if (arg.file.direction === 'input-output') {
+        const contentType = contentTypeForPath(localPath);
+        mutable.push({ argument: arg.name, multiple: arg.file.multiple === true, localPath, contentType });
+        if (await localFileExists(localPath)) {
+          const body = await readLocalFileNoSymlink(localPath, arg.name);
+          assertLocalInputWithinLimit(arg, body);
+          assertContentTypeAllowed(arg, contentType);
+          inputs.push({
+            argument: arg.name,
+            multiple: arg.file.multiple === true,
+            filename: path.basename(localPath),
+            contentType,
+            body,
+            localPath,
+          });
+        }
+        continue;
+      }
       references.push({
         $webcmdArtifact: {
           direction: 'output',
@@ -99,6 +125,7 @@ export async function prepareHostedFiles(input: {
 
   const prepared = await input.client.prepareExecution({ command: input.command.command });
   const referencesByArgument = new Map<string, HostedArtifactReference[]>();
+  const inputIdByPath = new Map<string, string>();
   for (const upload of inputs) {
     const uploaded = await input.client.uploadExecutionArtifact({
       executionId: prepared.execution.id,
@@ -110,10 +137,27 @@ export async function prepareHostedFiles(input: {
     const references = referencesByArgument.get(upload.argument) ?? [];
     references.push(uploaded.reference);
     referencesByArgument.set(upload.argument, references);
+    if (uploaded.reference.$webcmdArtifact.id) inputIdByPath.set(`${upload.argument}\0${upload.localPath}`, uploaded.reference.$webcmdArtifact.id);
   }
   for (const [argument, references] of referencesByArgument) {
     const original = inputs.find(upload => upload.argument === argument);
     remoteArgs[argument] = original?.multiple ? references : references[0];
+  }
+  const mutableByArgument = new Map<string, HostedArtifactReference[]>();
+  for (const output of mutable) {
+    const inputId = inputIdByPath.get(`${output.argument}\0${output.localPath}`);
+    const references = mutableByArgument.get(output.argument) ?? [];
+    references.push({ $webcmdArtifact: {
+      direction: 'input-output',
+      filename: path.basename(output.localPath) || output.argument,
+      contentType: output.contentType,
+      ...(inputId ? { inputId } : {}),
+    } });
+    mutableByArgument.set(output.argument, references);
+  }
+  for (const [argument, references] of mutableByArgument) {
+    const output = mutable.find(item => item.argument === argument);
+    remoteArgs[argument] = output?.multiple ? references : references[0];
   }
 
   return {
@@ -247,6 +291,15 @@ async function readLocalFileNoSymlink(localPath: string, argName: string): Promi
     return new Uint8Array(await handle.readFile());
   } finally {
     await handle.close().catch(() => undefined);
+  }
+}
+
+async function localFileExists(localPath: string): Promise<boolean> {
+  try {
+    await lstat(localPath);
+    return true;
+  } catch {
+    return false;
   }
 }
 

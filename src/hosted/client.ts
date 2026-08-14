@@ -695,7 +695,7 @@ function isHostedManifestArg(value: unknown): boolean {
 
 function isHostedArgFileMetadata(value: unknown): boolean {
   return hasOnlyKeys(value, ['direction', 'pathKind', 'multiple', 'separator', 'contentTypes', 'contentType', 'maxBytes', 'defaultPath'])
-    && (value.direction === 'input' || value.direction === 'output')
+    && (value.direction === 'input' || value.direction === 'output' || value.direction === 'input-output')
     && (value.pathKind === 'file' || value.pathKind === 'directory')
     && typeof value.multiple === 'boolean'
     && (value.separator === undefined || value.separator === ',')
@@ -708,7 +708,7 @@ function isHostedArgFileMetadata(value: unknown): boolean {
 function isHostedFileArgument(value: unknown): boolean {
   return hasOnlyKeys(value, ['name', 'direction', 'pathKind', 'multiple', 'required', 'separator', 'contentTypes', 'contentType', 'maxBytes', 'defaultPath'])
     && typeof value.name === 'string'
-    && (value.direction === 'input' || value.direction === 'output')
+    && (value.direction === 'input' || value.direction === 'output' || value.direction === 'input-output')
     && (value.pathKind === 'file' || value.pathKind === 'directory')
     && typeof value.multiple === 'boolean'
     && typeof value.required === 'boolean'

@@ -585,7 +585,7 @@ describe('HostedClient', () => {
             execution: { id: 'exec_files', command: 'twitter/post', status: 'queued' },
             fileArguments: [{
               name: 'images',
-              direction: 'input',
+              direction: 'input-output',
               pathKind: 'file',
               multiple: true,
               required: false,
@@ -634,7 +634,7 @@ describe('HostedClient', () => {
 
     await expect(client.prepareExecution({ command: 'twitter/post' })).resolves.toMatchObject({
       execution: { id: 'exec_files', status: 'queued' },
-      fileArguments: [{ name: 'images' }],
+      fileArguments: [{ name: 'images', direction: 'input-output' }],
     });
     await expect(client.uploadExecutionArtifact({
       executionId: 'exec_files',

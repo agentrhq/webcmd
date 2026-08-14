@@ -49,6 +49,64 @@ const fileCommand: HostedCommand = {
 };
 
 describe('hosted file transfer helpers', () => {
+  it('prepares a mutable file reference and uploads its seed when present', async () => {
+    tempDir = await mkdtemp(path.join(tmpdir(), 'webcmd-hosted-files-'));
+    await writeFile(path.join(tempDir, 'likes.resume.json'), '{}');
+    const client = fakeClient();
+    const command: HostedCommand = {
+      ...fileCommand,
+      command: 'likes/list',
+      args: [{
+        name: 'resume',
+        file: {
+          direction: 'input-output',
+          pathKind: 'file',
+          multiple: false,
+          defaultPath: 'likes.resume.json',
+        },
+      }],
+    };
+
+    const prepared = await prepareHostedFiles({ client, command, cwd: tempDir, args: {} });
+
+    expect(prepared.args.resume).toEqual({ $webcmdArtifact: {
+      direction: 'input-output', filename: 'likes.resume.json',
+      contentType: 'application/json', inputId: 'artifact_1',
+    } });
+    expect(prepared.outputs).toEqual([
+      { argument: 'resume', pathKind: 'file', localPath: path.resolve(tempDir, 'likes.resume.json') },
+    ]);
+    expect(client.uploadExecutionArtifact).toHaveBeenCalledWith(expect.objectContaining({
+      argument: 'resume', filename: 'likes.resume.json', contentType: 'application/json',
+    }));
+  });
+
+  it('prepares a mutable file output when its first-run seed is absent', async () => {
+    tempDir = await mkdtemp(path.join(tmpdir(), 'webcmd-hosted-files-'));
+    const client = fakeClient();
+    const command: HostedCommand = {
+      ...fileCommand,
+      command: 'likes/list',
+      args: [{
+        name: 'resume',
+        file: {
+          direction: 'input-output',
+          pathKind: 'file',
+          multiple: false,
+          defaultPath: 'likes.resume.json',
+        },
+      }],
+    };
+
+    const prepared = await prepareHostedFiles({ client, command, cwd: tempDir, args: {} });
+
+    expect(prepared.args.resume).toEqual({ $webcmdArtifact: {
+      direction: 'input-output', filename: 'likes.resume.json', contentType: 'application/json',
+    } });
+    expect(client.uploadExecutionArtifact).not.toHaveBeenCalled();
+    expect(client.prepareExecution).toHaveBeenCalledWith({ command: 'likes/list' });
+  });
+
   it('uploads declared input files and reserves declared outputs without leaking local paths', async () => {
     tempDir = await mkdtemp(path.join(tmpdir(), 'webcmd-hosted-files-'));
     const one = path.join(tempDir, 'one.png');
@@ -131,6 +189,24 @@ describe('hosted file transfer helpers', () => {
       executionId: 'exec_success',
       artifactId: 'artifact_out',
     });
+  });
+
+  it('replaces a mutable file seed with its downloaded output', async () => {
+    tempDir = await mkdtemp(path.join(tmpdir(), 'webcmd-hosted-files-'));
+    const resume = path.join(tempDir, 'likes.resume.json');
+    await writeFile(resume, '{"old":true}');
+    const body = new Uint8Array(Buffer.from('{"next":true}'));
+    const client = { downloadExecutionArtifact: vi.fn(async () => body) } as unknown as HostedClient;
+
+    await materializeHostedOutputs({
+      client,
+      response: responseWithArtifact({
+        argument: 'resume', artifactId: 'artifact_resume', relativePath: 'likes.resume.json', byteSize: body.byteLength,
+      }),
+      outputs: [{ argument: 'resume', pathKind: 'file', localPath: resume }],
+    });
+
+    await expect(readFile(resume, 'utf8')).resolves.toBe('{"next":true}');
   });
 
   it('validates local inputs before creating a prepared cloud execution', async () => {
@@ -231,6 +307,7 @@ function fakeClient() {
 }
 
 function responseWithArtifact(input: {
+  argument?: string;
   artifactId: string;
   relativePath: string;
   byteSize: number;
@@ -242,7 +319,7 @@ function responseWithArtifact(input: {
     execution: { id: 'exec_success', command: 'twitter/post', status: 'succeeded' },
     artifacts: [{
       artifactId: input.artifactId,
-      argument: 'output',
+      argument: input.argument ?? 'output',
       direction: 'output',
       pathKind: 'file',
       filename: path.basename(input.relativePath),

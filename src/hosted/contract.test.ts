@@ -75,6 +75,12 @@ describe('buildHostedContract', () => {
           file: { direction: 'output', pathKind: 'directory', multiple: true },
         },
         {
+          name: 'resume',
+          type: 'string',
+          help: 'Resume state',
+          file: { direction: 'input-output', pathKind: 'file', defaultPath: 'likes.resume.json' },
+        },
+        {
           name: 'retries',
           type: 'int',
           default: 2,
@@ -222,6 +228,14 @@ describe('buildHostedContract', () => {
               variadic: false,
             },
             {
+              name: 'resume',
+              type: 'string',
+              description: 'Resume state',
+              positional: false,
+              required: false,
+              variadic: false,
+            },
+            {
               name: 'retries',
               type: 'int',
               description: 'Retry count',
@@ -250,6 +264,14 @@ describe('buildHostedContract', () => {
               pathKind: 'directory',
               multiple: true,
               required: false,
+            },
+            {
+              name: 'resume',
+              direction: 'input-output',
+              pathKind: 'file',
+              multiple: false,
+              required: false,
+              defaultPath: 'likes.resume.json',
             },
           ],
           sessionPolicy: 'create-or-reuse',

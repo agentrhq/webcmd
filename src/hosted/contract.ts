@@ -14,8 +14,10 @@ export const HOSTED_CONTRACT_SCHEMA_VERSION = 1 as const;
 
 export type { HostedAvailability } from './availability.js';
 
+export type FileArgumentDirection = 'input' | 'output' | 'input-output';
+
 export interface FileArgumentContract {
-  direction: 'input' | 'output';
+  direction: FileArgumentDirection;
   pathKind: 'file' | 'directory';
   multiple?: boolean;
   separator?: ',';
@@ -27,7 +29,7 @@ export interface FileArgumentContract {
 
 export interface HostedFileArgumentContract {
   name: string;
-  direction: 'input' | 'output';
+  direction: FileArgumentDirection;
   pathKind: 'file' | 'directory';
   multiple: boolean;
   required: boolean;
@@ -226,7 +228,7 @@ function normalizeDefaultFormat(format: CliCommand['defaultFormat']): string {
 function normalizeFileArguments(command: HostedContractCommandInput): HostedFileArgumentContract[] {
   return command.args.flatMap((arg) => {
     if (!arg.file) return [];
-    if (arg.file.direction !== 'input' && arg.file.direction !== 'output') {
+    if (arg.file.direction !== 'input' && arg.file.direction !== 'output' && arg.file.direction !== 'input-output') {
       throw new Error(`File argument ${command.site}/${command.name} ${arg.name} must declare direction`);
     }
     if (arg.file.pathKind !== 'file' && arg.file.pathKind !== 'directory') {

@@ -1568,6 +1568,39 @@ describe('runHostedCli', () => {
     }
   });
 
+  it('prepares execution for an implicit mutable file default', async () => {
+    const requests: Array<{ pathname: string; body?: unknown }> = [];
+    const commandWithOnlyFileDefault = {
+      ...manifest,
+      commands: [{
+        site: 'likes', name: 'list', command: 'likes/list', description: 'List likes',
+        access: 'read', strategy: 'PUBLIC', browser: false, columns: [], args: [{
+          name: 'resume', file: {
+            direction: 'input-output', pathKind: 'file', multiple: false, defaultPath: 'likes.resume.json',
+          },
+        }],
+      }],
+    };
+    const result = await runHostedCli(['likes', 'list'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      fetchImpl: async (url, init) => {
+        const pathname = new URL(String(url)).pathname;
+        requests.push({ pathname, ...(init?.body ? { body: JSON.parse(String(init.body)) } : {}) });
+        if (pathname === '/v1/manifest') return new Response(JSON.stringify({ ok: true, manifest: commandWithOnlyFileDefault }));
+        if (pathname === '/v1/executions') return new Response(JSON.stringify({
+          ok: true, execution: { id: 'exec_likes', command: 'likes/list', status: 'queued' }, fileArguments: [],
+        }));
+        return new Response(JSON.stringify({
+          ok: true, result: [], execution: { id: 'exec_likes', command: 'likes/list', status: 'succeeded' },
+        }));
+      },
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 0 });
+    expect(requests.map(request => request.pathname)).toEqual(['/v1/manifest', '/v1/executions', '/v1/executions/exec_likes/run']);
+    expect(requests[1]?.body).toEqual({ command: 'likes/list' });
+  });
+
   it.each([
     { name: 'scalar field', result: { value: 'hello' }, argv: ['-f', 'plain'], expected: 'hello\n' },
     {

@@ -1,5 +1,6 @@
 import type { CommandSurfaceMetadata } from '../command-surface.js';
 import type { Arg } from '../registry.js';
+import type { FileArgumentDirection } from './contract.js';
 
 export const HOSTED_SESSION_PROTOCOL_VERSION = 1 as const;
 
@@ -9,7 +10,7 @@ export interface HostedCommandArg extends Arg {}
 
 export interface HostedFileArgument {
   name: string;
-  direction: 'input' | 'output';
+  direction: FileArgumentDirection;
   pathKind: 'file' | 'directory';
   multiple: boolean;
   required: boolean;
@@ -183,7 +184,8 @@ export interface HostedArtifactReceipt {
 export interface HostedArtifactReference {
   $webcmdArtifact: {
     id?: string;
-    direction?: 'input' | 'output';
+    inputId?: string;
+    direction?: FileArgumentDirection;
     filename?: string;
     contentType?: string;
   };
