@@ -1,9 +1,12 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
-import { buildConfigureBody, buildConfigureSidecarPayload, buildConfigureToStoryPhotoPayload, buildConfigureToStoryVideoPayload, deriveInstagramJazoest, derivePrivateApiContextFromCapture, extractInstagramRuntimeInfo, getInstagramFeedNormalizedDimensions, getInstagramStoryNormalizedDimensions, isInstagramFeedAspectRatioAllowed, isInstagramStoryAspectRatioAllowed, publishStoryViaPrivateApi, publishMediaViaPrivateApi, publishImagesViaPrivateApi, readImageAsset, resolveInstagramPrivatePublishConfig, } from '../_shared/private-publish.js';
+import { assertDirectlyUploadableMedia, buildConfigureBody, buildConfigureSidecarPayload, buildConfigureToStoryPhotoPayload, buildConfigureToStoryVideoPayload, deriveInstagramJazoest, derivePrivateApiContextFromCapture, extractInstagramRuntimeInfo, getInstagramFeedNormalizedDimensions, getInstagramStoryNormalizedDimensions, isInstagramFeedAspectRatioAllowed, isInstagramStoryAspectRatioAllowed, publishStoryViaPrivateApi, publishMediaViaPrivateApi, publishImagesViaPrivateApi, readImageAsset, resolveInstagramPrivatePublishConfig, } from '../_shared/private-publish.js';
 const tempDirs = [];
+const privatePublishSource = readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../_shared/private-publish.js'), 'utf8');
 function createTempFile(name, bytes) {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-instagram-private-'));
     tempDirs.push(dir);
@@ -17,6 +20,25 @@ afterAll(() => {
     }
 });
 describe('instagram private publish helpers', () => {
+    it('does not require macOS conversion tools', () => {
+        expect(privatePublishSource).not.toMatch(/spawnSync|\bsips\b|\bswift\b/);
+    });
+    it('requires conversion for unsupported media formats', () => {
+        expect(assertDirectlyUploadableMedia('/tmp/media.jpg')).toBe('/tmp/media.jpg');
+        expect(assertDirectlyUploadableMedia('/tmp/media.png')).toBe('/tmp/media.png');
+        expect(assertDirectlyUploadableMedia('/tmp/media.mp4')).toBe('/tmp/media.mp4');
+        let error;
+        try {
+            assertDirectlyUploadableMedia('/tmp/media.webp');
+        }
+        catch (caught) {
+            error = caught;
+        }
+        expect(error).toMatchObject({
+            code: 'INSTAGRAM_MEDIA_CONVERSION_REQUIRED',
+            message: 'Instagram hosted publishing accepts JPEG, PNG, or MP4; convert this file before upload.',
+        });
+    });
     it('derives the private API context from captured instagram request headers', () => {
         const entries = [
             {

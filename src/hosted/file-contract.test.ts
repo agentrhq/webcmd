@@ -109,6 +109,12 @@ const EXPECTED_FILE_ARGUMENTS: Record<string, ExpectedFileArgument[]> = {
     contentTypes: ['video/mp4'],
     maxBytes: 250 * MiB,
   }],
+  'instagram/story': [{ name: 'media', direction: 'input', pathKind: 'file', multiple: false, required: false, contentTypes: ['image/jpeg', 'image/png', 'video/mp4'], maxBytes: 262_144_000 }],
+  'instagram/download': [{ name: 'path', direction: 'output', pathKind: 'directory', multiple: false, required: false }],
+  'luma/set-registration-questions': [{ name: 'questions-file', direction: 'input', pathKind: 'file', multiple: false, required: true, contentTypes: ['application/json'] }],
+  'notebooklm/add-source': [{ name: 'file', direction: 'input', pathKind: 'file', multiple: false, required: false }],
+  'paperreview/submit': [{ name: 'pdf', direction: 'input', pathKind: 'file', multiple: false, required: true, contentTypes: ['application/pdf'] }],
+  'pixiv/download': [{ name: 'output', direction: 'output', pathKind: 'directory', multiple: false, required: false }],
   'mercury/reimbursement-draft': [{
     name: 'receipt',
     direction: 'input',

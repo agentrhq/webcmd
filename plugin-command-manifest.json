@@ -12477,7 +12477,12 @@
         "type": "str",
         "default": "~/Downloads/Instagram",
         "required": false,
-        "help": "Download directory"
+        "help": "Download directory",
+        "file": {
+          "direction": "output",
+          "pathKind": "directory",
+          "multiple": false
+        }
       }
     ],
     "type": "js",
@@ -12968,7 +12973,18 @@
         "type": "str",
         "required": false,
         "valueRequired": true,
-        "help": "Path to a single story image or video file"
+        "help": "Path to a single story image or video file",
+        "file": {
+          "direction": "input",
+          "pathKind": "file",
+          "multiple": false,
+          "contentTypes": [
+            "image/jpeg",
+            "image/png",
+            "video/mp4"
+          ],
+          "maxBytes": 262144000
+        }
       },
       {
         "name": "timeout",
@@ -15637,7 +15653,15 @@
         "name": "questions-file",
         "type": "str",
         "required": true,
-        "help": ""
+        "help": "",
+        "file": {
+          "direction": "input",
+          "pathKind": "file",
+          "multiple": false,
+          "contentTypes": [
+            "application/json"
+          ]
+        }
       },
       {
         "name": "mode",
@@ -16471,7 +16495,12 @@
         "name": "file",
         "type": "str",
         "required": false,
-        "help": "Local file path to upload as a source (max 52428800 bytes; pdf / txt / md / html / docx / etc.). Uses Google Drive's 3-step resumable upload protocol."
+        "help": "Local file path to upload as a source (max 52428800 bytes; pdf / txt / md / html / docx / etc.). Uses Google Drive's 3-step resumable upload protocol.",
+        "file": {
+          "direction": "input",
+          "pathKind": "file",
+          "multiple": false
+        }
       },
       {
         "name": "title",
@@ -18357,7 +18386,15 @@
         "type": "str",
         "required": true,
         "positional": true,
-        "help": "Path to the paper PDF"
+        "help": "Path to the paper PDF",
+        "file": {
+          "direction": "input",
+          "pathKind": "file",
+          "multiple": false,
+          "contentTypes": [
+            "application/pdf"
+          ]
+        }
       },
       {
         "name": "email",
@@ -18462,7 +18499,12 @@
         "type": "str",
         "default": "./pixiv-downloads",
         "required": false,
-        "help": "Output directory"
+        "help": "Output directory",
+        "file": {
+          "direction": "output",
+          "pathKind": "directory",
+          "multiple": false
+        }
       }
     ],
     "columns": [

@@ -10,7 +10,7 @@ cli({
     strategy: Strategy.PUBLIC,
     browser: false,
     args: [
-        { name: 'pdf', positional: true, required: true, help: 'Path to the paper PDF' },
+        { name: 'pdf', positional: true, required: true, help: 'Path to the paper PDF', file: { direction: 'input', pathKind: 'file', multiple: false, contentTypes: ['application/pdf'] } },
         { name: 'email', required: true, help: 'Email address for the submission' },
         { name: 'venue', help: 'Optional target venue such as ICLR or NeurIPS' },
         { name: 'dry-run', type: 'bool', default: false, help: 'Validate the input and stop before remote submission' },
