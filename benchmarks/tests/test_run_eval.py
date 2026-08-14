@@ -80,10 +80,11 @@ def test_preflight_accepts_openai_judge_without_google_key(monkeypatch):
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
     monkeypatch.setenv("OPENAI_API_KEY", "judge-secret")
 
-    def fake_check(command, env):
-        return "1"
+    def fake_run(command, **kwargs):
+        stdout = f"{run_eval.WEBCMD_EVAL_VERSION}\n" if command == ["webcmd", "--version"] else "1\n"
+        return type("Result", (), {"returncode": 0, "stdout": stdout, "stderr": ""})()
 
-    monkeypatch.setattr(run_eval.subprocess, "run", lambda *args, **kwargs: type("Result", (), {"returncode": 0, "stdout": "1\n", "stderr": ""})())
+    monkeypatch.setattr(run_eval.subprocess, "run", fake_run)
     versions = run_eval.preflight("codex", ["webcmd"], "openai")
     assert versions["codex"] == "1"
 
@@ -283,28 +284,57 @@ def test_output_destination_rejects_unignored_repository_path_before_preflight(m
 def test_preflight_captures_selected_versions(monkeypatch):
     class Completed:
         returncode = 0
-        stdout = "1.2.3\n"
         stderr = ""
+
+        def __init__(self, stdout):
+            self.stdout = stdout
 
     calls = []
 
     def fake_run(command, **kwargs):
         calls.append(command)
-        return Completed()
+        stdout = f"{run_eval.WEBCMD_EVAL_VERSION}\n" if command == ["webcmd", "--version"] else "1.2.3\n"
+        return Completed(stdout)
 
     monkeypatch.setenv("GOOGLE_API_KEY", "secret")
     monkeypatch.setattr(run_eval.subprocess, "run", fake_run)
     versions = run_eval.preflight("codex", ["webcmd"])
 
-    assert versions == {"codex": "1.2.3", "webcmd": "1.2.3", "webcmd_mode": "local"}
+    assert versions == {"codex": "1.2.3", "webcmd": run_eval.WEBCMD_EVAL_VERSION, "webcmd_mode": "local"}
     assert ["webcmd", "doctor"] in calls
+
+
+def test_preflight_rejects_unpinned_webcmd_version(monkeypatch):
+    class Completed:
+        returncode = 0
+        stderr = ""
+
+        def __init__(self, stdout):
+            self.stdout = stdout
+
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        version = "0.7.0\n" if command == ["webcmd", "--version"] else "1.2.3\n"
+        return Completed(version)
+
+    monkeypatch.setenv("GOOGLE_API_KEY", "secret")
+    monkeypatch.setattr(run_eval.subprocess, "run", fake_run)
+
+    with pytest.raises(RuntimeError, match="Webcmd 0.7.1 is required, found 0.7.0"):
+        run_eval.preflight("codex", ["webcmd"])
+
+    assert ["webcmd", "doctor"] not in calls
 
 
 def test_preflight_checks_cloud_connection_without_local_doctor(tmp_path, monkeypatch):
     class Completed:
         returncode = 0
-        stdout = "1.2.3\n"
         stderr = ""
+
+        def __init__(self, stdout):
+            self.stdout = stdout
 
     config_dir = tmp_path / "hosted-webcmd-config"
     config_dir.mkdir()
@@ -320,7 +350,8 @@ def test_preflight_checks_cloud_connection_without_local_doctor(tmp_path, monkey
 
     def fake_run(command, **kwargs):
         calls.append(command)
-        return Completed()
+        stdout = f"{run_eval.WEBCMD_EVAL_VERSION}\n" if command == ["webcmd", "--version"] else "1.2.3\n"
+        return Completed(stdout)
 
     monkeypatch.setenv("GOOGLE_API_KEY", "secret")
     monkeypatch.setenv("WEBCMD_CONFIG_DIR", str(config_dir))
@@ -328,7 +359,7 @@ def test_preflight_checks_cloud_connection_without_local_doctor(tmp_path, monkey
 
     versions = run_eval.preflight("codex", ["webcmd"])
 
-    assert versions == {"codex": "1.2.3", "webcmd": "1.2.3", "webcmd_mode": "hosted"}
+    assert versions == {"codex": "1.2.3", "webcmd": run_eval.WEBCMD_EVAL_VERSION, "webcmd_mode": "hosted"}
     assert ["webcmd", "profile", "list", "-f", "json"] in calls
     assert ["webcmd", "doctor"] not in calls
 
@@ -336,14 +367,17 @@ def test_preflight_checks_cloud_connection_without_local_doctor(tmp_path, monkey
 def test_preflight_checks_pi_through_the_pinned_sidecar(monkeypatch):
     class Completed:
         returncode = 0
-        stdout = "1.2.3\n"
         stderr = ""
+
+        def __init__(self, stdout):
+            self.stdout = stdout
 
     calls = []
 
     def fake_run(command, **kwargs):
         calls.append(command)
-        return Completed()
+        stdout = f"{run_eval.WEBCMD_EVAL_VERSION}\n" if command == ["webcmd", "--version"] else "1.2.3\n"
+        return Completed(stdout)
 
     monkeypatch.setenv("GOOGLE_API_KEY", "judge-secret")
     monkeypatch.setenv("OPENAI_API_KEY", "controller-secret")
@@ -351,7 +385,7 @@ def test_preflight_checks_pi_through_the_pinned_sidecar(monkeypatch):
 
     versions = run_eval.preflight("pi", ["webcmd"])
 
-    assert versions == {"pi": "1.2.3", "webcmd": "1.2.3", "webcmd_mode": "local"}
+    assert versions == {"pi": "1.2.3", "webcmd": run_eval.WEBCMD_EVAL_VERSION, "webcmd_mode": "local"}
     assert calls[0] == [
         "node",
         str(run_eval.PI_CONTROLLER),
@@ -472,14 +506,17 @@ def test_preflight_checks_pinned_libretto_sidecar_and_cloak(monkeypatch):
 def test_preflight_uses_controller_only_and_selected_tool_only_environments(monkeypatch):
     class Completed:
         returncode = 0
-        stdout = "1.2.3\n"
         stderr = ""
+
+        def __init__(self, stdout):
+            self.stdout = stdout
 
     environments = {}
 
     def fake_run(command, **kwargs):
         environments.setdefault(command[0], []).append(kwargs["env"])
-        return Completed()
+        stdout = f"{run_eval.WEBCMD_EVAL_VERSION}\n" if command == ["webcmd", "--version"] else "1.2.3\n"
+        return Completed(stdout)
 
     monkeypatch.setenv("PATH", "/bin")
     monkeypatch.setenv("GOOGLE_API_KEY", "judge-secret")

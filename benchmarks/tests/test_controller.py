@@ -50,6 +50,15 @@ def _fake_controller(monkeypatch, script):
     )
 
 
+def test_webcmd_tool_env_prefers_benchmark_pinned_binary(monkeypatch):
+    monkeypatch.setenv("PATH", "/usr/bin")
+
+    env = run_controller._subprocess_env(tool="webcmd")
+
+    expected = Path(run_controller.__file__).resolve().parent.parent / "node_modules" / ".bin"
+    assert env["PATH"].split(os.pathsep)[0] == str(expected)
+
+
 def test_webcmd_prompt_loads_only_raw_browser_skill(tmp_path):
     prompt = _build_prompt("webcmd", "session-1", tmp_path / "shots", "Find the answer")
 
@@ -974,7 +983,10 @@ def test_environment_is_minimal_and_preserves_selected_controller_and_tool(monke
 
     codex_webcmd_env = _child_env("codex", "webcmd")
 
-    assert codex_webcmd_env["PATH"] == "/bin"
+    assert codex_webcmd_env["PATH"].split(os.pathsep) == [
+        str(Path(run_controller.__file__).resolve().parent.parent / "node_modules" / ".bin"),
+        "/bin",
+    ]
     assert codex_webcmd_env["CODEX_API_KEY"] == "codex-secret"
     assert codex_webcmd_env["OPENAI_API_KEY"] == "openai-secret"
     assert codex_webcmd_env["WEBCMD_CDP_ENDPOINT"] == "ws://selected"
@@ -1097,10 +1109,6 @@ def test_policy_rejects_shared_webcmd_installation_mutations(command):
     [
         Path.home() / ".codex/skills/webcmd-browser/SKILL.md",
         Path.home() / ".codex/skills/webcmd-browser/references/browser-run-playwright.md",
-        Path(
-            "/opt/homebrew/lib/node_modules/@agentrhq/webcmd/skills/"
-            "webcmd-browser/SKILL.md"
-        ),
     ],
 )
 def test_policy_allows_codex_to_read_webcmd_browser_skill_and_references(skill_file):

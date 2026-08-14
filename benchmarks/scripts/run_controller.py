@@ -377,13 +377,17 @@ def _controller_command(
 def _subprocess_env(controller: Controller | None = None, tool: Tool | None = None) -> dict[str, str]:
     allowed_keys = ESSENTIAL_ENV_KEYS | (CONTROLLER_ENV_KEYS[controller] if controller else set())
     allowed_prefixes = (CONTROLLER_ENV_PREFIXES[controller] if controller else ()) + (TOOL_ENV_PREFIXES[tool] if tool else ())
-    return {
+    env = {
         key: value
         for key, value in os.environ.items()
         if key not in EVALUATION_ENV_KEYS
         and not any(marker in key.upper() for marker in EVALUATION_ENV_MARKERS)
         and (key in allowed_keys or key.startswith(allowed_prefixes))
     }
+    if tool == "webcmd":
+        node_bin = Path(__file__).resolve().parent.parent / "node_modules" / ".bin"
+        env["PATH"] = f"{node_bin}{os.pathsep}{env.get('PATH', '')}"
+    return env
 
 
 def _child_env(controller: Controller, tool: Tool, overrides: dict[str, str] | None = None) -> dict[str, str]:

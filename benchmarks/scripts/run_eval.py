@@ -39,6 +39,7 @@ BENCHMARKS = (*DATASET_HASHES, "Stealth_Webcmd")
 STEALTH_EXCLUDED_CATEGORIES = {"hCaptcha", "GeeTest", "Temu Slider"}
 REASONING_EFFORTS = ("low", "medium", "high", "xhigh", "max", "ultra")
 PI_THINKING_LEVELS = frozenset(REASONING_EFFORTS) - {"ultra"}
+WEBCMD_EVAL_VERSION = "0.7.1"
 STEALTH_CATEGORY_BY_TASK_ID = {
     "76": "Akamai",
     "77": "Cloudflare",
@@ -167,7 +168,12 @@ def preflight(controller: str, tools: list[str], judge_provider: str = "google")
             )
             versions["cloakbrowser"] = cloakbrowser_version()
         elif tool == "webcmd":
-            versions[tool] = _check([tool, "--version"], tool_env)
+            version = _check([tool, "--version"], tool_env)
+            if version != WEBCMD_EVAL_VERSION:
+                raise RuntimeError(
+                    f"Webcmd {WEBCMD_EVAL_VERSION} is required, found {version}"
+                )
+            versions[tool] = version
             mode = _webcmd_mode(tool_env)
             versions["webcmd_mode"] = mode
             if mode == "hosted":
