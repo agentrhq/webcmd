@@ -51,20 +51,3 @@ jobs:
             git commit -m "docs: sync community plugins [skip ci]"
             git push origin "HEAD:${{ github.ref_name }}"
           fi
-
-      - name: Reconcile hosted marketplace
-        shell: bash
-        env:
-          WEBCMD_CLOUD_API_BASE_URL: ${{ secrets.WEBCMD_CLOUD_API_BASE_URL }}
-          WEBCMD_ADMIN_PROMOTION_TOKEN: ${{ secrets.WEBCMD_ADMIN_PROMOTION_TOKEN }}
-        run: |
-          if [ -z "$WEBCMD_CLOUD_API_BASE_URL" ] || [ -z "$WEBCMD_ADMIN_PROMOTION_TOKEN" ]; then
-            echo "Hosted marketplace reconciliation skipped; cloud URL or admin token is not configured."
-            exit 0
-          fi
-
-          curl -fsS \
-            -X POST "$WEBCMD_CLOUD_API_BASE_URL/v1/admin/marketplace/reconciliations" \
-            -H "authorization: Bearer $WEBCMD_ADMIN_PROMOTION_TOKEN" \
-            -H "content-type: application/json" \
-            --data "{\"repository\":\"agentrhq/webcmd\",\"commit\":\"$(git rev-parse HEAD)\"}"

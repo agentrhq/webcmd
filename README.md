@@ -143,6 +143,7 @@ Webcmd Cloud can run supported commands and browser sessions on hosted infrastru
 
 | Plugin | Description | Author |
 | --- | --- | --- |
+| [`omnisearch`](./plugins/omnisearch/) | No-login research across Hacker News, Stack Overflow, GitHub, arXiv, Dev.to, Lobsters, and Bluesky | [Rishet Mehra](https://github.com/Rishet11) |
 | [`pypi`](./plugins/pypi/) | Inspect public Python package metadata, downloads, and releases from PyPI | [Kemal Kaya](https://github.com/yoldaolmak) |
 | [`skyscanner`](./plugins/skyscanner/) | Skyscanner flight search commands for Webcmd | [Rishabh](https://github.com/rishabhraj36) |
 <!-- webcmd-community-plugins:end -->

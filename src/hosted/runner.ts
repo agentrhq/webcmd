@@ -12,7 +12,7 @@ import {
   configurePluginUpdateSurface,
 } from '../builtin-command-surface.js';
 import { BrowserSessionArgvError, rejectMisplacedSessionSelectorArgv, rejectPositionalBrowserSessionArgv } from '../cli-argv-preprocess.js';
-import { CommanderStructuralError, MissingRequiredPositionalError } from '../command-surface.js';
+import { CommanderStructuralError, MissingRequiredPositionalError, OUTPUT_FORMAT_HELP, parseOutputFormat } from '../command-surface.js';
 import { filterCommandsByTag, formatRootHelp, getCommandCompletionCandidates } from '../command-presentation.js';
 import {
   HOSTED_BUILTIN_COMMANDS,
@@ -83,6 +83,18 @@ class CommanderCompatibleError extends Error {
     readonly stdoutOutput?: string,
   ) {
     super(output.trimEnd());
+  }
+}
+
+/** Normalize a hosted built-in's format, preserving Commander-style usage errors. */
+function validateHostedFormat(raw: string): string {
+  try {
+    return parseOutputFormat(raw);
+  } catch (err) {
+    if (err instanceof CliError) {
+      throw new CommanderStructuralError(`error: ${err.message}\n`, EXIT_CODES.USAGE_ERROR);
+    }
+    throw err;
   }
 }
 
@@ -192,6 +204,12 @@ async function dispatchHosted(
       LOCAL_ONLY_COMMAND_HELP,
     );
   }
+  if (args[0] === 'doctor') {
+    throw new ConfigError(
+      'webcmd doctor is local-only. Hosted mode has no local browser bridge.',
+      LOCAL_ONLY_COMMAND_HELP,
+    );
+  }
   if (args[0] === 'session') {
     const parsed = parseHostedSessionSurface(args.slice(1), normalized.literal);
     if (parsed.kind === 'help') {
@@ -260,6 +278,7 @@ async function dispatchHosted(
         for (const error of result.errors) await writeToStream(stderr, `Warning: ${error.sourceId}: ${error.message}\n`);
         await renderOutput(result.plugins, {
           fmt: parsed.format,
+          fmtExplicit: parsed.formatExplicit,
           columns: ['name', 'description', 'version', 'sourceId', 'installSource', 'webcmd'],
           title: `${CLI_COMMAND}/plugin-search`,
           source: `${CLI_COMMAND} plugin search`,
@@ -277,6 +296,7 @@ async function dispatchHosted(
       const installations = await client.listMarketplaceInstallations();
       await renderOutput(installations, {
         fmt: parsed.format,
+        fmtExplicit: parsed.formatExplicit,
         columns: ['name', 'version', 'installSource', 'installedAt', 'updateAvailable'],
         title: `${CLI_COMMAND}/plugins`,
         source: `${CLI_COMMAND} plugin list`,
@@ -450,7 +470,7 @@ async function dispatchHosted(
 
 type ParsedHostedSessionSurface =
   | { kind: 'help'; output: string }
-  | { kind: 'run'; command: 'create' | 'list' | 'close'; format: string; session?: string; force?: boolean; limit?: number };
+  | { kind: 'run'; command: 'create' | 'list' | 'close'; format: string; formatExplicit: boolean; session?: string; force?: boolean; limit?: number };
 
 function parseHostedSessionSurface(argv: readonly string[], literal: boolean): ParsedHostedSessionSurface {
   let stdout = '';
@@ -464,14 +484,16 @@ function parseHostedSessionSurface(argv: readonly string[], literal: boolean): P
   };
   root.exitOverride().configureOutput(output);
   session.exitOverride().configureOutput(output);
-  const configure = (command: Command, format: string): Command => command.option('-f, --format <fmt>', 'Output format: table, json, yaml', format);
-  configure(session.command('create'), 'yaml').action((options: { format: string }) => { parsed = { kind: 'run', command: 'create', format: options.format }; });
-  configure(session.command('list').option('--limit <number>', 'Maximum Sessions to return (1-100)', parseHostedSessionListLimit, 20), 'table').action((options: { format: string; limit: number }) => {
-    parsed = { kind: 'run', command: 'list', format: options.format, limit: options.limit };
-  });
-  configure(session.command('close').argument('<session-id>').option('--force', 'Close even while the Session is busy or paused for handoff'), 'yaml').action((sessionId: string, options: { format: string; force?: boolean }) => {
-    parsed = { kind: 'run', command: 'close', format: options.format, session: sessionId, force: options.force === true };
-  });
+  const configure = (command: Command, format: string): Command => command.option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, format);
+  const setParsed = (command: 'create' | 'list' | 'close', surface: Command, format: string, extras: Omit<Exclude<ParsedHostedSessionSurface, { kind: 'help' }>, 'kind' | 'command' | 'format' | 'formatExplicit'> = {}): void => {
+    parsed = { kind: 'run', command, format: validateHostedFormat(format), formatExplicit: surface.getOptionValueSource('format') === 'cli', ...extras };
+  };
+  const create = configure(session.command('create'), 'yaml');
+  create.action((options: { format: string }) => setParsed('create', create, options.format));
+  const list = configure(session.command('list').option('--limit <number>', 'Maximum Sessions to return (1-100)', parseHostedSessionListLimit, 20), 'table');
+  list.action((options: { format: string; limit: number }) => setParsed('list', list, options.format, { limit: options.limit }));
+  const close = configure(session.command('close').argument('<session-id>').option('--force', 'Close even while the Session is busy or paused for handoff'), 'yaml');
+  close.action((sessionId: string, options: { format: string; force?: boolean }) => setParsed('close', close, options.format, { session: sessionId, force: options.force === true }));
   try {
     root.parse(literal ? ['--', 'session', ...argv] : ['session', ...argv], { from: 'user' });
   } catch (error) {
@@ -490,20 +512,20 @@ async function dispatchHostedSession(
   profile?: string,
 ): Promise<void> {
   if (parsed.command === 'create') {
-    await renderOutput(sessionCreateOutput((await client.createBrowserSession(profile)).session), { fmt: parsed.format, columns: ['id', 'kind', 'runtimeState'], stdout });
+    await renderOutput(sessionCreateOutput((await client.createBrowserSession(profile)).session), { fmt: parsed.format, fmtExplicit: parsed.formatExplicit, columns: ['id', 'kind', 'runtimeState'], stdout });
     return;
   }
   if (parsed.command === 'list') {
     const rows = (await client.listBrowserSessions(profile, parsed.limit)).sessions
       .map((row) => ({ ...row, handoff: formatHostedSessionHandoff(row.handoff) }));
-    if (rows.length === 0 && parsed.format === 'table') {
+    if (rows.length === 0 && parsed.format === 'table' && !parsed.formatExplicit) {
       await writeToStream(stdout, `No browser Sessions found${profile ? ` for Profile ${profile}` : ''}.\n`);
       return;
     }
-    await renderOutput(rows, { fmt: parsed.format, columns: ['id', 'kind', 'runtimeState', 'handoff'], stdout });
+    await renderOutput(rows, { fmt: parsed.format, fmtExplicit: parsed.formatExplicit, columns: ['id', 'kind', 'runtimeState', 'handoff'], stdout });
     return;
   }
-  await renderOutput(await client.closeBrowserSession(parsed.session!, profile, parsed.force === true), { fmt: parsed.format, stdout });
+  await renderOutput(await client.closeBrowserSession(parsed.session!, profile, parsed.force === true), { fmt: parsed.format, fmtExplicit: parsed.formatExplicit, stdout });
 }
 
 function parseHostedSessionListLimit(value: string): number {
@@ -929,7 +951,7 @@ function parseHostedListSurface(argv: readonly string[], literal: boolean): Pars
   root.exitOverride().configureOutput(output);
   list.exitOverride().configureOutput(output).action((options: { format: string; tag?: string }) => {
     actionRan = true;
-    parsedFormat = options.format;
+    parsedFormat = validateHostedFormat(options.format);
     parsedTag = options.tag;
     formatExplicit = list.getOptionValueSource('format') === 'cli';
   });
@@ -974,7 +996,7 @@ function parseHostedProfileSurface(
   profile.exitOverride().configureOutput(output);
 
   const configureFormat = (command: Command): Command =>
-    command.option('-f, --format <fmt>', 'Output format: table, json, yaml, md, csv', 'table');
+    command.option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
   const setParsed = (
     command: HostedProfileCommand,
     surface: Command,
@@ -984,7 +1006,7 @@ function parseHostedProfileSurface(
     parsed = {
       kind: 'run',
       command,
-      format: options.format,
+      format: validateHostedFormat(options.format),
       formatExplicit: surface.getOptionValueSource('format') === 'cli',
       ...(value !== undefined ? { value } : {}),
     };
@@ -1025,9 +1047,9 @@ async function dispatchHostedProfile(
 
 type ParsedHostedPluginSurface =
   | { kind: 'help'; output: string }
-  | { kind: 'run'; command: 'search'; query?: string; format: string }
+  | { kind: 'run'; command: 'search'; query?: string; format: string; formatExplicit: boolean }
   | { kind: 'run'; command: 'install'; source: string }
-  | { kind: 'run'; command: 'list'; format: string }
+  | { kind: 'run'; command: 'list'; format: string; formatExplicit: boolean }
   | { kind: 'run'; command: 'uninstall'; name: string }
   | { kind: 'run'; command: 'update'; name?: string; all: boolean }
   | { kind: 'run'; command: 'create'; name: string; dir?: string; description?: string; authorName?: string; authorHandle?: string };
@@ -1050,7 +1072,7 @@ function parseHostedPluginSurface(
 
   const search = configurePluginSearchSurface(plugin.command('search'));
   search.exitOverride().configureOutput(output).action((query: string | undefined, options: { format: string }) => {
-    parsed = { kind: 'run', command: 'search', ...(query !== undefined ? { query } : {}), format: options.format };
+    parsed = { kind: 'run', command: 'search', ...(query !== undefined ? { query } : {}), format: validateHostedFormat(options.format), formatExplicit: search.getOptionValueSource('format') === 'cli' };
   });
   const install = configurePluginInstallSurface(plugin.command('install'));
   install.exitOverride().configureOutput(output).action((source: string) => {
@@ -1058,7 +1080,7 @@ function parseHostedPluginSurface(
   });
   const list = configurePluginListSurface(plugin.command('list'));
   list.exitOverride().configureOutput(output).action((options: { format: string }) => {
-    parsed = { kind: 'run', command: 'list', format: options.format };
+    parsed = { kind: 'run', command: 'list', format: validateHostedFormat(options.format), formatExplicit: list.getOptionValueSource('format') === 'cli' };
   });
   const uninstall = configurePluginUninstallSurface(plugin.command('uninstall'));
   uninstall.exitOverride().configureOutput(output).action((name: string) => {

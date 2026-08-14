@@ -33,7 +33,7 @@ Do not install Node.js or silently fall back to `npx`.
 
 ## The Three Pillars
 
-- **Adapter commands:** `webcmd <site> <command> [...]`. Core ships no site adapters; every site — official and community — lives as an independently installable plugin under `plugins/<site>/` in the main repo, or `~/.webcmd/plugins/<site>/` once installed. Private iteration adapters live in `~/.webcmd/clis/`. A command in `~/.webcmd/clis/<site>/<command>.js` takes precedence over the same command from an installed plugin. Each command has a strategy such as `PUBLIC`, `COOKIE`, `INTERCEPT`, `UI`, or `LOCAL`.
+- **Adapter commands:** `webcmd <site> <command> [...]`. Core ships no site adapters; every site — official and community — lives in an independently installable plugin under `plugins/<plugin-name>/` in the main repo, or `~/.webcmd/plugins/<plugin-name>/` once installed. Private iteration adapters live in `~/.webcmd/clis/`. A command in `~/.webcmd/clis/<site>/<command>.js` takes precedence over the same command from an installed plugin. Each command has a strategy such as `PUBLIC`, `COOKIE`, `INTERCEPT`, `UI`, or `LOCAL`.
 - **Browser driving:** use an existing adapter command first; otherwise load `webcmd-browser`, create a session, and run Playwright with root `--session <session-id>`.
 - **External CLI passthrough:** `webcmd gh`, `webcmd docker`, `webcmd vercel`, and similar wrappers. Manage them with `webcmd external install <name>` or `webcmd external register <name>`.
 
@@ -189,9 +189,9 @@ argument, transient, or unreproduced failures.
 Storage paths:
 
 - Private: `~/.webcmd/clis/<site>/<command>.js`. This path takes precedence over the same command from an installed plugin; `webcmd list`'s `origin` column shows which space each command resolves from.
-- Public (main repo, official or community): `plugins/<site>/` plus root `webcmd-plugin.json` registration
+- Public (main repo, official or community): `plugins/<plugin-name>/` with its own `webcmd-plugin.json`
 
-The main Webcmd repo is itself a plugin monorepo: there is no separate "official bundle" location. Every site belongs under `plugins/<site>/` and must be registered in the root `webcmd-plugin.json`.
+The main Webcmd repo is itself a plugin monorepo: there is no separate "official bundle" location. Every public adapter belongs under `plugins/<plugin-name>/`. Do not hand-edit the root `webcmd-plugin.json` or generated README catalog; after merge, the community-plugin sync discovers each plugin manifest and updates both automatically.
 
 Scaffolding and checks:
 
@@ -218,7 +218,7 @@ webcmd plugin catalog add <source>
 webcmd plugin catalog remove <id>
 ```
 
-Plugins are installable extensions pulled from git or local paths. Use `plugin search` for marketplace discovery and `plugin list` for already-installed plugins. Direct `plugin install github:...` is only for a source you already know; for a missing or unknown site, search first and install the returned `installSource`. Main-repo sites (official and community alike) are exposed through the root plugin catalog manifest; none of them are bundled into the npm package.
+Plugins are installable extensions pulled from git or local paths. Use `plugin search` for marketplace discovery and `plugin list` for already-installed plugins. `webcmd plugin list -f json` returns `[]` when no plugins are installed; use `-f json` or `-f yaml` for machine-readable output. Direct `plugin install github:...` is only for a source you already know; for a missing or unknown site, search first and install the returned `installSource`. Main-repo sites (official and community alike) are exposed through the root plugin catalog manifest; none of them are bundled into the npm package.
 
 > **Note:** The repository's `plugins/` directory is not shipped in the npm package. Find the required plugin with `webcmd plugin search`, then install its `installSource` with `webcmd plugin install <installSource>`.
 

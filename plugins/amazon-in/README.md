@@ -14,6 +14,8 @@ webcmd plugin install github:agentrhq/webcmd/amazon-in
 | --- | --- |
 | `webcmd amazon-in checkout` | Prepare a guarded Amazon.in checkout with browser-only payment handoff |
 | `webcmd amazon-in checkout-status` | Read the current Amazon.in checkout or payment state without clicking |
+| `webcmd amazon-in cart-add` | Add one confirmed product variant to the authenticated cart |
+| `webcmd amazon-in cart` | Read the authenticated cart |
 | `webcmd amazon-in login` | Open amazon-in login |
 | `webcmd amazon-in product` | Fetch the current Amazon.in price and selected product variant |
 | `webcmd amazon-in search` | Search Amazon.in products with inclusive INR price bounds and images |

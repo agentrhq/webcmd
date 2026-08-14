@@ -57,6 +57,8 @@ interface RunDependencies {
   generateText?: (prompt: string, model: string, apiKey: string) => Promise<string>;
 }
 
+type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+
 type GhRunner = (args: readonly string[]) => string;
 
 interface LoadReleaseContextOptions {
@@ -178,8 +180,13 @@ export async function loadReleaseContext(tag: string, env: NodeJS.ProcessEnv, op
   };
 }
 
-async function generateText(prompt: string, model: string, apiKey: string): Promise<string> {
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+export async function generateOpenAIReleaseNotes(
+  prompt: string,
+  model: string,
+  apiKey: string,
+  fetchImpl: FetchLike = fetch,
+): Promise<string> {
+  const response = await fetchImpl('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
       authorization: `Bearer ${apiKey}`,
@@ -188,11 +195,11 @@ async function generateText(prompt: string, model: string, apiKey: string): Prom
     body: JSON.stringify({
       model,
       messages: [{ role: 'user', content: prompt }],
-      temperature: 0.1,
     }),
   });
   if (!response.ok) {
-    throw new Error(`OpenAI request failed with HTTP ${response.status}`);
+    const detail = (await response.text()).slice(0, 600);
+    throw new Error(`OpenAI request failed with HTTP ${response.status}: ${detail}`);
   }
   const data = await response.json() as {
     choices?: Array<{ message?: { content?: string | null } }>;
@@ -248,24 +255,23 @@ export async function runGenerateReleaseNotes(
 
   const apiKey = env.OPENAI_API_KEY?.trim();
   if (!apiKey) {
-    io.writeStderr('OPENAI_API_KEY is not set; leaving release-please notes unchanged.\n');
-    return 0;
+    io.writeStderr('OPENAI_API_KEY is required to generate release notes.\n');
+    return 1;
   }
 
   try {
     const context = await (deps.loadContext ?? loadReleaseContext)(tag, env);
     const model = env.OPENAI_RELEASE_NOTES_MODEL || DEFAULT_MODEL;
     const prompt = buildReleaseNotesPrompt(context);
-    const raw = await (deps.generateText ?? generateText)(prompt, model, apiKey);
+    const raw = await (deps.generateText ?? generateOpenAIReleaseNotes)(prompt, model, apiKey);
     const normalized = normalizeReleaseNotes(raw, { context });
-    if (normalized) {
-      io.writeStdout(`${normalized}\n`);
-    }
+    if (!normalized) throw new Error('OpenAI returned no usable release notes.');
+    io.writeStdout(`${normalized}\n`);
     return 0;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     io.writeStderr(`OpenAI release notes failed: ${message}\n`);
-    return 0;
+    return 1;
   }
 }
 

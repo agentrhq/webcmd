@@ -943,7 +943,7 @@ export class CloakSessionManager {
     windowMode?: BrowserWindowMode,
   ): Promise<PlaywrightPage> {
     const openerEntry = this.openEntries(session)[0]?.[1];
-    if (!openerEntry) return this.createWindowPage(runtime, windowMode);
+    if (!openerEntry) return await this.findReusableLaunchPage(runtime, session.id) ?? this.createWindowPage(runtime, windowMode);
     await this.assertOwnedWindow(runtime, session.id, openerEntry);
     const opener = openerEntry.page;
     const openerWindowId = await this.windowIdForTarget(runtime, openerEntry.targetId, opener);
@@ -958,6 +958,19 @@ export class CloakSessionManager {
     const page = await openedPage;
     if (page) return page;
     return this.createWindowPage(runtime, windowMode);
+  }
+
+  private async findReusableLaunchPage(runtime: ProfileRuntime, sessionId: string): Promise<PlaywrightPage | undefined> {
+    for (const page of runtime.context.pages()) {
+      if (pageIsClosed(page) || page === runtime.parkingPage || page.url() !== 'about:blank') continue;
+      const targetId = await this.targetIdForPage(runtime, page).catch(() => undefined);
+      if (!targetId || targetId === runtime.anchorTargetId || runtime.targetPages.has(targetId)) continue;
+      const windowId = await this.windowIdForTarget(runtime, targetId, page).catch(() => undefined);
+      if (windowId === undefined) continue;
+      const owner = runtime.windowOwners.get(windowId);
+      if (owner === undefined || owner === sessionId) return page;
+    }
+    return undefined;
   }
 
   private async waitForContextPageForSession(

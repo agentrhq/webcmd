@@ -88,15 +88,33 @@ describe('parseCommandSurface', () => {
     });
   });
 
-  it.each<OutputFormat>(['table', 'plain', 'json', 'yaml', 'yml', 'md', 'markdown', 'csv'])(
-    'accepts the %s output format',
-    (format) => {
-      expect(parseCommandSurface(metadata, ['needle', `--format=${format}`])).toMatchObject({
-        format,
-        formatExplicit: true,
-      });
-    },
-  );
+  it.each<{ input: string; normalized: OutputFormat }>([
+    { input: 'table', normalized: 'table' },
+    { input: 'plain', normalized: 'plain' },
+    { input: 'json', normalized: 'json' },
+    { input: 'yaml', normalized: 'yaml' },
+    { input: 'yml', normalized: 'yaml' },
+    { input: 'md', normalized: 'md' },
+    { input: 'markdown', normalized: 'md' },
+    { input: 'csv', normalized: 'csv' },
+  ])('accepts and normalizes the %s output format', ({ input, normalized }) => {
+    expect(parseCommandSurface(metadata, ['needle', `--format=${input}`])).toMatchObject({
+      format: normalized,
+      formatExplicit: true,
+    });
+  });
+
+  it.each(['xml', 'html', 'jsonl', 'yamlml'])('rejects the unsupported %s output format', (format) => {
+    expect(() => parseCommandSurface(metadata, ['needle', '--format', format]))
+      .toThrow(/Unknown output format ".*". Supported formats: table, plain, json, yaml, md, csv/);
+  });
+
+  it.each(['JSON', 'YAML', 'Yml', 'Markdown', 'Md'])('accepts the %s output format case-insensitively', (format) => {
+    expect(() => parseCommandSurface(metadata, ['needle', '--format', format])).not.toThrow();
+    expect(parseOutputFormat(format).toLowerCase()).toBe(
+      parseOutputFormat(format.toLowerCase()),
+    );
+  });
 
   it.each<TraceMode>(['off', 'on', 'retain-on-failure'])('accepts the %s trace mode', (trace) => {
     expect(parseCommandSurface(metadata, ['needle', '--trace', trace])).toMatchObject({ trace });
@@ -143,15 +161,11 @@ describe('coerceCommandArguments', () => {
     ], {})).toEqual({ limit: '10', mode: 'open' });
   });
 
-  it('preserves legacy numeric and unknown-format coercion', () => {
+  it('preserves legacy numeric coercion', () => {
     expect(coerceCommandArguments([
       { name: 'count', type: 'int' },
       { name: 'ratio', type: 'number' },
     ], { count: '1.5', ratio: 'Infinity' })).toEqual({ count: 1.5, ratio: Infinity });
-    expect(parseCommandSurface(metadata, ['needle', '--format', 'xml'])).toMatchObject({
-      format: 'xml',
-      formatExplicit: true,
-    });
   });
 });
 

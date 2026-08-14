@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LocalCloakRuntimeProvider } from './provider.js';
 import { BrowserRunError } from '../../run/types.js';
@@ -156,6 +159,59 @@ describe('LocalCloakRuntimeProvider', () => {
       profiles: [],
       pending: 0,
     });
+  });
+
+  it('discards a temporary Session record after closing it', async () => {
+    const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-provider-session-'));
+    try {
+      const provider = new LocalCloakRuntimeProvider({ baseDir });
+      const session = await provider.createSession({
+        id: 'create-doctor-session',
+        action: 'session-create',
+        contextId: 'default',
+      });
+
+      await provider.closeSession({
+        id: 'close-doctor-session',
+        action: 'session-close',
+        contextId: 'default',
+        session: session.id,
+        surface: 'browser',
+        force: true,
+        discard: true,
+      });
+
+      await expect(provider.listSessions({ profileId: 'default' })).resolves.toEqual([]);
+    } finally {
+      fs.rmSync(baseDir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not discard a Session record unless close is forced', async () => {
+    const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-provider-session-'));
+    try {
+      const provider = new LocalCloakRuntimeProvider({ baseDir });
+      const session = await provider.createSession({
+        id: 'create-user-session',
+        action: 'session-create',
+        contextId: 'default',
+      });
+
+      await provider.closeSession({
+        id: 'close-user-session',
+        action: 'session-close',
+        contextId: 'default',
+        session: session.id,
+        surface: 'browser',
+        discard: true,
+      });
+
+      await expect(provider.listSessions({ profileId: 'default' })).resolves.toMatchObject([
+        { id: session.id, kind: 'explicit' },
+      ]);
+    } finally {
+      fs.rmSync(baseDir, { recursive: true, force: true });
+    }
   });
 
   it('navigates and returns page identity', async () => {

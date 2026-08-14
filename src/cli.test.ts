@@ -15,6 +15,7 @@ import {
   formatRootHelp,
   toPresentableCommand,
 } from './command-presentation.js';
+import { parseOutputFormat } from './command-surface.js';
 import { render as renderOutput } from './output.js';
 import * as pluginModule from './plugin.js';
 import * as discoveryModule from './discovery.js';
@@ -493,6 +494,17 @@ describe('createProgram root help descriptions', () => {
     expect(skills.commands.find((command) => command.name() === 'add')?.aliases()).toEqual([]);
   });
 
+  it('binds update and convention-audit actions to their own commands', () => {
+    const program = createProgram('', '');
+    const update = program.commands.find((command) => command.name() === 'update')!;
+    const audit = program.commands.find((command) => command.name() === 'convention-audit')!;
+
+    expect((update as unknown as { _actionHandler?: unknown })._actionHandler).toEqual(expect.any(Function));
+    expect((audit as unknown as { _actionHandler?: unknown })._actionHandler).toEqual(expect.any(Function));
+    expect((update as unknown as { _actionHandler?: unknown })._actionHandler)
+      .not.toBe((audit as unknown as { _actionHandler?: unknown })._actionHandler);
+  });
+
   it('keeps legacy local adapters manageable without claiming a bundled baseline', () => {
     const adapter = createProgram('', '').commands.find((command) => command.name() === 'adapter')!;
 
@@ -825,9 +837,10 @@ name: 'search',
           args: [{ name: 'limit', type: 'int', default: 20, help: 'Maximum issues' }],
           columns: ['number', 'title'],
         });
+        const normalized = parseOutputFormat(format);
         const presentation = commandListPresentation([
           { ...toPresentableCommand(command), origin: 'builtin' },
-        ], format);
+        ], normalized);
 
         const outputSpy = vi.mocked(console.log);
         outputSpy.mockClear();
@@ -837,7 +850,7 @@ name: 'search',
 
         outputSpy.mockClear();
         renderOutput(presentation.rows, {
-          fmt: format,
+          fmt: normalized,
           columns: presentation.columns,
           title: 'webcmd/list',
           source: 'webcmd list',
@@ -1522,6 +1535,71 @@ describe('browser verify', () => {
       fs.rmSync(fakeHome, { recursive: true, force: true });
     }
   });
+
+  it('rejects a wide row by default but passes with a raised --max-top-level-keys', async () => {
+    const originalHome = process.env.HOME;
+    const originalUserProfile = process.env.USERPROFILE;
+    const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-browser-verify-wide-'));
+    process.env.HOME = fakeHome;
+    process.env.USERPROFILE = fakeHome;
+    const wideRow = Object.fromEntries(Array.from({ length: 20 }, (_, i) => [`col${i}`, i]));
+    mockExecFileSync.mockReturnValue(JSON.stringify([wideRow]));
+    const consoleLogSpy = vi.mocked(console.log);
+    consoleLogSpy.mockClear();
+
+    try {
+      const adapterDir = path.join(fakeHome, '.webcmd', 'clis', 'hn');
+      fs.mkdirSync(adapterDir, { recursive: true });
+      fs.writeFileSync(path.join(adapterDir, 'top.js'), 'export default {};\n', 'utf-8');
+
+      const program = createProgram('', '');
+      await program.parseAsync(['node', 'webcmd', '--session', 'test', 'browser', 'verify', 'hn/top', '--no-fixture']);
+      expect(process.exitCode).toBe(1);
+      let output = consoleLogSpy.mock.calls.map((args) => args.join(' ')).join('\n');
+      expect(output).toContain('row has 20 top-level keys, expected at most 12');
+
+      process.exitCode = undefined;
+      consoleLogSpy.mockClear();
+      const program2 = createProgram('', '');
+      await program2.parseAsync(['node', 'webcmd', '--session', 'test', 'browser', 'verify', 'hn/top', '--no-fixture', '--max-top-level-keys', '20']);
+      expect(process.exitCode).toBeUndefined();
+      output = consoleLogSpy.mock.calls.map((args) => args.join(' ')).join('\n');
+      expect(output).not.toContain('violates row shape conventions');
+    } finally {
+      consoleLogSpy.mockClear();
+      if (originalHome === undefined) delete process.env.HOME;
+      else process.env.HOME = originalHome;
+      if (originalUserProfile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = originalUserProfile;
+      fs.rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a non-positive --max-top-level-keys', async () => {
+    const originalHome = process.env.HOME;
+    const originalUserProfile = process.env.USERPROFILE;
+    const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-browser-verify-badflag-'));
+    process.env.HOME = fakeHome;
+    process.env.USERPROFILE = fakeHome;
+
+    try {
+      const adapterDir = path.join(fakeHome, '.webcmd', 'clis', 'hn');
+      fs.mkdirSync(adapterDir, { recursive: true });
+      fs.writeFileSync(path.join(adapterDir, 'top.js'), 'export default {};\n', 'utf-8');
+
+      const program = createProgram('', '');
+      await program.parseAsync(['node', 'webcmd', '--session', 'test', 'browser', 'verify', 'hn/top', '--no-fixture', '--max-top-level-keys', '0']);
+
+      expect(process.exitCode).toBe(2);
+      expect(mockExecFileSync).not.toHaveBeenCalled();
+    } finally {
+      if (originalHome === undefined) delete process.env.HOME;
+      else process.env.HOME = originalHome;
+      if (originalUserProfile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = originalUserProfile;
+      fs.rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('profile list', () => {
@@ -1801,6 +1879,55 @@ describe('browser Session lifecycle commands', () => {
       session: 'session_idle',
     });
   });
+
+  it.each([
+    ['create'],
+    ['list'],
+    ['close', 'session_abc'],
+  ])('rejects an unsupported format before local Session %s side effects', async (...subcommand) => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await createProgram('', '').parseAsync(['node', 'webcmd', 'session', ...subcommand, '-f', 'xml']);
+
+      expect(process.exitCode).toBe(2);
+      expect(consoleErrorSpy.mock.calls.flat().join('\n')).toContain('Unknown output format "xml"');
+      expect(mockSendCommand).not.toHaveBeenCalled();
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
+  });
+
+  it('normalizes aliases and case across local Session create/list/close', async () => {
+    mockSendCommand.mockImplementation(async (command) => command === 'session-create'
+      ? { id: 'session_abc', kind: 'explicit', runtimeState: 'idle' }
+      : { closed: true, session: 'session_abc' });
+
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'create', '-f', 'JSON']);
+    expect(JSON.parse(consoleLogSpy.mock.calls.flat().join('\n'))).toMatchObject({ id: 'session_abc' });
+
+    consoleLogSpy.mockClear();
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'list', '-f', 'YML']);
+    expect(yaml.load(consoleLogSpy.mock.calls.flat().join('\n'))).toEqual([]);
+
+    consoleLogSpy.mockClear();
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'close', 'session_abc', '-f', 'Markdown']);
+    expect(consoleLogSpy.mock.calls.flat().join('\n')).toContain('| closed | session |');
+  });
+
+  it.each(['JSON', 'YML'])('keeps an empty local Session list machine-readable with explicit %s', async (format) => {
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'list', '-f', format]);
+
+    const output = consoleLogSpy.mock.calls.flat().join('\n');
+    expect(format === 'JSON' ? JSON.parse(output) : yaml.load(output)).toEqual([]);
+  });
+
+  it('keeps an explicit empty local Session table outside a TTY', async () => {
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'list', '-f', 'table']);
+
+    const output = consoleLogSpy.mock.calls.flat().join('\n');
+    expect(output).toContain('(no data)');
+    expect(output).not.toContain('No browser Sessions found');
+  });
 });
 
 // Shared helper for the selector-first describe blocks below.
@@ -1916,5 +2043,62 @@ describe('renderVerifyPreview', () => {
     // cell gets truncated
     expect(out).toContain('xxxxxxxxxx');
     expect(out).not.toContain('xxxxxxxxxxx'); // never 11 consecutive
+  });
+});
+
+describe('builtin output formats', () => {
+  let stdoutSpy: ReturnType<typeof vi.spyOn>;
+  let stderrSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    process.exitCode = undefined;
+    stdoutSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    process.exitCode = undefined;
+    stdoutSpy.mockRestore();
+    stderrSpy.mockRestore();
+  });
+
+  async function run(...args: string[]) {
+    await createProgram('', '').parseAsync(['node', 'webcmd', ...args]);
+    return {
+      stdout: stdoutSpy.mock.calls.flat().join('\n'),
+      stderr: stderrSpy.mock.calls.flat().join('\n'),
+      exitCode: process.exitCode,
+    };
+  }
+
+  it.each(['xml', 'jsonl'])('rejects unsupported builtin format %s with usage exit 2', async (format) => {
+    const result = await run('skills', 'list', '-f', format);
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain(`Unknown output format "${format}"`);
+  });
+
+  it('keeps explicit table output as a table outside a TTY', async () => {
+    const result = await run('skills', 'list', '-f', 'table');
+    expect(result.exitCode).toBeUndefined();
+    expect(result.stdout).toContain('webcmd/skills/list');
+  });
+
+  it('normalizes aliases and case for root list', async () => {
+    const yamlResult = await run('list', '-f', 'yaml');
+    stdoutSpy.mockClear();
+    const aliasResult = await run('list', '-f', 'YML');
+    expect(aliasResult.exitCode).toBeUndefined();
+    expect(aliasResult.stdout).toBe(yamlResult.stdout);
+  });
+
+  it('renders an empty plugin list as structured data', async () => {
+    const list = vi.spyOn(pluginModule, 'listPlugins').mockReturnValue([] as never);
+    try {
+      const result = await run('plugin', 'list', '-f', 'yaml');
+      expect(result.exitCode).toBeUndefined();
+      expect(yaml.load(result.stdout)).toEqual([]);
+    } finally {
+      list.mockRestore();
+    }
   });
 });

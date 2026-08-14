@@ -22,19 +22,8 @@ export default defineConfig({
       {
         test: {
           name: 'unit',
-          include: [
-            'src/*.test.ts',
-            'src/!(browser)/**/*.test.ts',
-            'src/browser/verify-fixture.test.ts',
-            'src/browser/command-catalog.test.ts',
-            'src/browser/sessions.test.ts',
-            'src/browser/daemon-client.test.ts',
-            'src/browser/run/runner.test.ts',
-            'src/browser/runtime/local-cloak/provider.test.ts',
-            'src/browser/runtime/local-cloak/process-matcher.test.ts',
-            'src/browser/runtime/local-cloak/session-manager.test.ts',
-            'src/browser/runtime/local-cloak/darwin-background-launch.test.ts',
-          ],
+          include: ['src/**/*.test.ts'],
+          exclude: ['src/browser/runtime/local-cloak/browser-run.test.ts'],
           sequence: { groupOrder: 0 },
         },
       },

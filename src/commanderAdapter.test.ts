@@ -326,17 +326,15 @@ describe('commanderAdapter default formats', () => {
     );
   });
 
-  it('preserves the legacy fallback for an unknown explicit format', async () => {
+  it('rejects an unknown explicit format with a usage error before execution', async () => {
     const program = new Command();
     const siteCmd = program.command('gemini');
     registerCommandToProgram(siteCmd, cmd);
     await program.parseAsync(['node', 'webcmd', 'gemini', 'ask', '--format', 'xml']);
 
-    expect(mockExecuteCommand).toHaveBeenCalled();
-    expect(mockRenderOutput).toHaveBeenCalledWith(
-      [{ response: 'hello' }],
-      expect.objectContaining({ fmt: 'xml', fmtExplicit: true }),
-    );
+    expect(mockExecuteCommand).not.toHaveBeenCalled();
+    expect(mockRenderOutput).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(2);
   });
 });
 
