@@ -86,7 +86,7 @@ export function parseHostedBrowserStructure(argv: readonly string[]): ParsedHost
       const commanderOption = new Option(flags, option.description);
       if (option.required) commanderOption.makeOptionMandatory();
       if (option.choices?.length) commanderOption.choices(option.choices);
-      if (option.default !== undefined) commanderOption.default(String(option.default));
+      if (option.default !== undefined) commanderOption.default(option.default);
       const valueParser = browserOptionValueParser(contract.command, option.name);
       if (valueParser) commanderOption.argParser(valueParser);
       leaf.addOption(commanderOption);

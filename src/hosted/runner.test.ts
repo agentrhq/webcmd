@@ -2076,6 +2076,31 @@ describe('runHostedCli', () => {
     });
   });
 
+  it('dispatches hosted browser verify with a numeric default maxTopLevelKeys', async () => {
+    const requests: Array<{ body?: Record<string, unknown> }> = [];
+    const result = await runHostedCli(['--session', 'session_work', 'browser', 'verify', 'hn/top'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: sink().stream,
+      stderr: sink().stream,
+      fetchImpl: async (url, init) => {
+        const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined;
+        if (!String(url).endsWith('/v1/manifest')) requests.push({ ...(body ? { body } : {}) });
+        if (String(url).endsWith('/v1/manifest')) return manifestResponse();
+        return new Response(JSON.stringify({
+          ok: true,
+          result: {},
+          columns: [],
+          trace: null,
+          run: { executionId: 'exec_browser_verify', session: 'session_work', profile: { id: 'profile_default', displayName: 'default' } },
+          execution: { id: 'exec_browser_verify', status: 'succeeded' },
+        }), { status: 200 });
+      },
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 0 });
+    expect(requests[0]?.body).toMatchObject({ args: { name: 'hn/top', maxTopLevelKeys: 12 } });
+  });
+
   it('sends browser-run file contents and snapshot-diff options to Cloud instead of the local path', async () => {
     const sourceDir = await mkdtemp(path.join(tmpdir(), 'webcmd-hosted-run-source-'));
     const sourcePath = path.join(sourceDir, 'program.js');
