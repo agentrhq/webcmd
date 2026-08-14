@@ -3,22 +3,9 @@
 Site memory prevents every adapter run from starting cold. It has two layers:
 
 1. In-repo public seeds under `references/site-memory/<site>.md`, when a seed exists.
-2. Local working memory under `~/.webcmd/sites/<site>/`.
+2. CLI-managed working memory.
 
-Local memory is the main write target. Do not write private cookies, tokens, or user data into the repo.
-
-## Directory Layout
-
-```text
-~/.webcmd/sites/<site>/
-  endpoints.json
-  field-map.json
-  notes.md
-  verify/
-    <cmd>.json
-  fixtures/
-    <cmd>-<YYYYMMDDHHMM>.json
-```
+Use `webcmd site memory show <site>` to read contents and `webcmd site memory list <site>` to inspect staleness. Do not write private cookies, tokens, or user data into the repo.
 
 ## `endpoints.json`
 
@@ -47,7 +34,7 @@ Rules:
 
 - Re-verify memory hits before using them.
 - Treat entries older than 30 days as stale.
-- Mark changed endpoints stale instead of deleting evidence silently.
+- Record verified endpoints with `webcmd site endpoint set <site> <name> --url <url> --method <method>`; mark changes with `webcmd site endpoint stale <site> <name>` instead of deleting evidence silently.
 - Never store cookies, bearer tokens, CSRF tokens, or private user data.
 
 ## `field-map.json`
@@ -66,13 +53,13 @@ Map source codes or unclear keys to meanings:
 
 Rules:
 
-- Append new mappings.
+- Append new mappings with `webcmd site field-map add <site> <key> --meaning <meaning> --source <source>`.
 - Do not overwrite existing keys without visible-page proof.
-- If a conflict appears, compare against the visible page and record the decision in `notes.md`.
+- If a conflict appears, compare against the visible page and record the decision with `webcmd site note add`.
 
 ## `notes.md`
 
-Prepend a dated note for each run:
+Add a dated note for each run with `webcmd site note add <site> --text <markdown>`:
 
 ```md
 ## YYYY-MM-DD by <agent/user>
@@ -101,7 +88,7 @@ It should include:
 - mustNotContain
 - mustBeTruthy
 
-Write it after the first passing run, then tighten it manually and verify again.
+Read it with `webcmd site fixture get <site>/<cmd>` and write the tightened file with `webcmd site fixture put <site>/<cmd> <path>` after the first passing run.
 
 Example:
 
@@ -143,15 +130,14 @@ Field rules:
 
 Fixture workflow:
 
-- `--write-fixture` is only a seed. It usually writes `rowCount.min=1`, `columns`, and `types`; it does not know the business-specific `patterns`, `notEmpty`, `mustNotContain`, or `mustBeTruthy` checks.
-- After generating the seed, tighten it manually with URL/date/ID patterns, core-field `notEmpty`, contamination guards in `mustNotContain`, truthiness guards in `mustBeTruthy`, and a realistic `rowCount`.
+- Tighten the saved fixture with URL/date/ID patterns, core-field `notEmpty`, contamination guards in `mustNotContain`, truthiness guards in `mustBeTruthy`, and a realistic `rowCount`, then write it back with `webcmd site fixture put`.
 - For positional-subject adapters, handwrite or correct `args` as an array because the seed cannot infer the subject shape.
 - If a site change makes the fixture stale, compare at least one visible page value before running `--update-fixture`.
 - Do not loosen fixtures just to make verify pass. A failed pattern or guard is evidence to check the adapter output first; accepting wrong data by weakening the fixture defeats the fixture.
 
 ## `fixtures/<cmd>-<YYYYMMDDHHMM>.json`
 
-Store a sanitized response sample for field decoding and offline replay.
+Store a sanitized response sample for field decoding and offline replay with `webcmd site sample add <site>/<cmd> <path>`.
 
 Rules:
 

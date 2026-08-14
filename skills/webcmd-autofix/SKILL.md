@@ -20,7 +20,7 @@ Hard stops before any code change:
 
 Scope constraint:
 
-- Modify only the file at `adapterSourcePath` in the trace `summary.md` front matter. That path is authoritative and may be `plugins/<site>/...` in the main repo or a plugin repo, or `~/.webcmd/clis/<site>/...` for user-local installs.
+- Modify only the source identified by `adapterSourcePath` in the trace `summary.md` front matter. Use `webcmd adapter source get <site>/<command>` and `webcmd adapter source put <site>/<command> <path>`; `webcmd adapter path <site>/<command>` locates the local copy.
 - Never modify `src/`, `extension/`, `tests/`, `package.json`, or `tsconfig.json` during autofix.
 
 Retry budget: maximum **3 repair rounds** per failure. A round is diagnose -> patch -> retry. If 3 rounds do not resolve it, stop and report what was tried.
@@ -210,8 +210,8 @@ Rules:
 2. Keep output structure compatible: `columns` and row keys must remain aligned.
 3. Prefer stable API evidence over brittle DOM scraping when discovered.
 4. Use only `@agentrhq/webcmd/*` imports; do not add third-party packages.
-5. Test after patching.
-6. Never relax `verify/<cmd>.json` fixtures to silence a failure. A failing `patterns`, `notEmpty`, `mustNotContain`, or `mustBeTruthy` rule usually means adapter output is wrong. Edit a fixture only when the site itself legitimately changed shape, such as a URL format migration, and note the change in `~/.webcmd/sites/<site>/notes.md`.
+5. Test after patching with `webcmd browser verify <site>/<command>`.
+6. Never relax fixtures to silence a failure. A failing `patterns`, `notEmpty`, `mustNotContain`, or `mustBeTruthy` rule usually means adapter output is wrong. Edit a fixture only when the site itself legitimately changed shape, using `webcmd site fixture get|put <site>/<command>`, and record the change with `webcmd site note add`.
 
 ## Step 5: Verify The Fix
 

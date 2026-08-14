@@ -4,9 +4,9 @@ Use this when a response contains unclear field names or numeric codes.
 
 ## First Pass
 
-1. Save a response sample in `~/.webcmd/sites/<site>/fixtures/` after removing cookies, tokens, and private user data.
+1. Save a sanitized response sample with `webcmd site sample add <site>/<cmd> <path>`.
 2. Identify which fields are self-explanatory.
-3. Check `field-conventions.md` and `~/.webcmd/sites/<site>/field-map.json`.
+3. Check `field-conventions.md` and `webcmd site memory show <site> --kind field-map`.
 4. Compare at least one row against the visible page.
 
 Do not guess a field meaning and ship it as a polished column.
@@ -104,7 +104,7 @@ If a field remains unclear:
 
 - Expose it as a clearly named raw field only if users need it.
 - Otherwise omit it from final columns.
-- Add a note to `~/.webcmd/sites/<site>/notes.md`.
+- Add a note with `webcmd site note add <site> --text <markdown>`.
 - Keep the fixture so the next decoding pass starts from evidence.
 
 Never silently map an unknown field to a confident business name.

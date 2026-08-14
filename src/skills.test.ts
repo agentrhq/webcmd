@@ -237,6 +237,15 @@ describe('webcmd skills content', () => {
     expect(siteReconReference).not.toMatch(/webcmd browser \S+ (?:open|state|click|type|select|find|extract|network|wait|eval)/i);
   });
 
+  it('teaches CLI-based hosted adapter authoring', () => {
+    const author = bundledSkill('webcmd-adapter-author');
+
+    expect(author).toContain('webcmd site memory');
+    expect(author).toContain('webcmd adapter source');
+    expect(author).toContain('webcmd browser init');
+    expect(author).toContain('webcmd browser verify');
+  });
+
   it('keeps raw browser and handoff work scoped to explicit Sessions', () => {
     const usage = bundledSkill('webcmd-usage');
     const browser = bundledSkill('webcmd-browser');

@@ -77,8 +77,8 @@ webcmd doctor passes?
   | no -> fix the bridge using doctor output
   v yes
 Read site memory:
-  - ~/.webcmd/sites/<site>/endpoints.json
-  - ~/.webcmd/sites/<site>/field-map.json
+  - webcmd site memory show <site>
+  - webcmd site memory list <site>
   - references/site-memory/<site>.md, if present
   |
   | hit endpoint + fields -> jump to endpoint verification
@@ -116,9 +116,9 @@ Design columns (output-design.md)
   |
   v
 webcmd browser init
-  - generate ~/.webcmd/clis/<site>/<name>.js skeleton
-  - copy the closest neighboring adapter
-  - edit name, URL, and field mapping
+  - scaffold <site>/<name>
+  - use webcmd adapter source get|put <site>/<name> to edit a fork
+  - use webcmd adapter path <site>/<name> to locate its local copy
   |
   v
 webcmd browser verify
@@ -127,11 +127,10 @@ webcmd browser verify
 Compare field values against the visible page
   | mismatch -> return to field decoding
   v match
-Write back ~/.webcmd/sites/
-  - endpoints
-  - field-map
-  - notes
-  - fixtures
+Write site memory with CLI commands
+  - site endpoint set|stale
+  - site field-map add and site note add
+  - site fixture put and site sample add
 ```
 
 ---
@@ -143,7 +142,7 @@ Check these off step by step:
 [ ] 1. `webcmd doctor` returns "Everything looks good"
 
 [ ] 2. Read site memory:
-       [ ] Does `~/.webcmd/sites/<site>/endpoints.json` exist, and does it contain the desired endpoint?
+       [ ] Run `webcmd site memory show <site>` for endpoint and field-map contents, and `webcmd site memory list <site>` for staleness.
        [ ] Does `references/site-memory/<site>.md` exist? If yes, read its "Known endpoints" section.
        [ ] On a hit: **jump to Step 5 endpoint verification + Step 7 field check**, not directly to Step 9 adapter code.
        [ ] If memory is older than 30 days according to `verified_at`, treat it as stale and use the cold-start path through Steps 3 and 4.
@@ -184,24 +183,23 @@ Check these off step by step:
 
 [ ] 9. Write the adapter (`adapter-template.md`):
        [ ] `webcmd browser init <site>/<name>`, then set `strategy: Strategy.<strategy>` in the generated file
-       [ ] Find the closest same-site or same-type adapter and copy it.
-       [ ] Edit name, URL, and field mapping.
+       [ ] Fork and edit with `webcmd adapter source get <site>/<name>` and `webcmd adapter source put <site>/<name> <path>`; locate it with `webcmd adapter path <site>/<name>`.
+       [ ] Find the closest same-site or same-type adapter and carry over only the proven mapping.
        [ ] Use only the adapter-compatible path proven in Step 6A; never paste Playwright locators, `waitForResponse`, or browser-run globals into `func`.
 
 [ ] 10. Verification fixtures:
-        [ ] After the first passing run, immediately use `--write-fixture` to seed `~/.webcmd/sites/<site>/verify/<cmd>.json`.
+        [ ] After the first passing run, read and save the fixture with `webcmd site fixture get <site>/<name>` and `webcmd site fixture put <site>/<name> <path>`.
         [ ] Tighten the seed by adding `patterns` (URL/date/ID formats), `notEmpty` (core fields), and stricter `rowCount`.
         [ ] Run `webcmd browser verify <site>/<name>` again and confirm it matches the fixture.
 
 [ ] 11. Compare field values against the visible page. Do not stop at "Adapter works!"
 
 [ ] 12. Write site memory after **verify passes and visible-page comparison matches**. See `references/site-memory.md` for schema:
-        [ ] `endpoints.json`: short endpoint name as key; value = `{url, method, params.{required,optional}, response, verified_at: YYYY-MM-DD, notes}`.
-        [ ] `field-map.json`: append only new codes. key = field code; value = `{meaning, verified_at: YYYY-MM-DD, source}`. **Do not overwrite existing keys.** If there is a conflict, align with the visible page before writing.
-        [ ] `notes.md`: prepend `## YYYY-MM-DD by <agent/user>` with new pitfalls or conclusions from this adapter work.
-        [ ] `verify/<cmd>.json`: **required.** Expected values for `webcmd browser verify`: args, rowCount, columns, types, patterns, notEmpty. Step 10 generated this; this item is the checklist gate. Rows wider than 12 top-level keys by design (e.g. a spreadsheet-style export) fail shape validation by default — rerun with `webcmd browser verify <site>/<name> --max-top-level-keys <n>` instead of skipping the fixture.
-        [ ] `fixtures/<cmd>-<YYYYMMDDHHMM>.json`: save one complete endpoint response sample after removing cookies, tokens, and private user fields. Use it for later field comparison and offline replay.
-        [ ] If debugging dumped temporary files in the repo or adapter directory, such as `.dbg-*.html`, `raw-*.json`, or similar, **delete them before commit**. Those belong in `~/.webcmd/sites/<site>/fixtures/` or `/tmp/`.
+        [ ] Record verified endpoints with `webcmd site endpoint set <site> <name> --url <url> --method <method>`; mark changes with `webcmd site endpoint stale <site> <name>`.
+        [ ] Append mappings with `webcmd site field-map add <site> <key> --meaning <meaning> --source <source>` and conclusions with `webcmd site note add <site> --text <markdown>`.
+        [ ] Keep the required verify fixture current with `webcmd site fixture get|put <site>/<name>`; it must cover args, rowCount, columns, types, patterns, and notEmpty.
+        [ ] Save a sanitized endpoint response with `webcmd site sample add <site>/<name> <path>`.
+        [ ] If debugging dumped temporary files in the repo or adapter directory, such as `.dbg-*.html`, `raw-*.json`, or similar, **delete them before commit**. Keep temporary evidence in `/tmp/` and save sanitized samples with `webcmd site sample add`.
 
 [ ] 13. **First command for this site? Stop and ask before building more.**
         [ ] If this was the site's first command, do not silently keep scaffolding more commands. Ask the user what use cases they have in mind for this site — who the persona is, what they're trying to accomplish end to end.
@@ -246,7 +244,7 @@ Check these off step by step:
 | `references/field-decode-playbook.md` | Step 7: field not in dictionary |
 | `references/output-design.md` | Step 8: naming, types, order |
 | `references/adapter-template.md` | Step 9: file structure and live example `convertible.js` |
-| `references/site-memory.md` | Overview: in-repo seeds plus local `~/.webcmd/sites/` two-layer structure |
+| `references/site-memory.md` | Overview: in-repo seeds plus CLI-managed site memory |
 | `references/site-memory/<site>.md` | Step 2: public site knowledge when a seed file exists |
 | `references/success-rate-pitfalls.md` | Step 7 / 11: eleven silent failure modes where verify can pass with wrong data, including aria-label locale dependence |
 | `references/jsdom-fixture-pattern.md` | When adapter uses DOM extraction inside `page.evaluate` and mocked-evaluate unit tests miss silent bugs; freeze HTML into `plugins/<plugin-name>/__fixtures__/` and run JSDOM with the mandatory `awk 'NF>0'` tightening plus reverse-validation discipline |
@@ -263,18 +261,18 @@ Check these off step by step:
 - **The `browser:` field determines the `func` signature:** `browser:false -> (args)`, `browser:true -> (page, args)`. If this is reversed, `args` may actually be a debug flag and all external parameters can silently fall back to defaults.
 - Throw the correct typed error for known failures according to [`references/typed-errors.md`](./references/typed-errors.md). **Do not** silently `return []`, **do not** silently `return [{sentinel}]`, and **do not** silently clamp external parameters with `Math.max/min`.
 - **Persistent site sessions keep stale DOM between commands.** `siteSession: 'persistent'` shares one tab per site; leftover modals/drawers from the previous command leak into the next one. State-sensitive write commands (checkout flows) should add `freshPage: true` (new tab, same lease — cookies/login/location survive). Verify session-scoped context (login, selected city/date) *before* side effects, and embed such context in URLs/IDs your command emits for sibling commands. See `references/adapter-template.md` and "Persistent Site Sessions and State Hygiene" in `docs/authoring.mdx`.
-- For private iteration, write `~/.webcmd/clis/<site>/<name>.js` to avoid a build. Use `webcmd adapter override <site>/<command>` to fork an existing plugin command. Building, testing, and verifying the adapter under private iteration fully satisfies a request to "build a working adapter" on its own. **Do not run `webcmd plugin create` or otherwise promote a CLI out of `~/.webcmd/clis/<site>/` until the user has explicitly confirmed they want it pushed into the repo (or a PR raised).** A general instruction to build or ship an adapter is not that confirmation — state the checkpoint out loud ("The adapter works under private iteration — want me to promote it into a repository plugin now?") and wait for a yes before promoting. Once confirmed, determine the plugin name (default to `<site>`) and collect any missing author display name and GitHub handle. Create the main-repo plugin with `webcmd plugin create <plugin-name> --dir plugins/<plugin-name> --author-name "<author-name>" --author-handle "<github-handle>"`, copy the real command files into it, and delete scaffold sample commands. Do not hand-edit the root `webcmd-plugin.json` or generated README catalog: the community-plugin sync discovers `plugins/*/webcmd-plugin.json` and updates both after merge. Remove the local `~/.webcmd/clis/<site>` shadow, install the plugin, then run `webcmd validate <site>` and smoke commands. See `references/adapter-template.md` for details.
+- For private iteration, use `webcmd adapter override <site>/<command>`, then edit with `webcmd adapter source get|put <site>/<command>` and locate the local copy with `webcmd adapter path <site>/<command>`. Building, testing, and verifying the adapter under private iteration fully satisfies a request to "build a working adapter" on its own. **Do not run `webcmd plugin create` or promote the CLI until the user explicitly confirms they want it pushed into the repo (or a PR raised).** Once confirmed, create the plugin, copy the real command files into it, and delete scaffold sample commands. Do not hand-edit the root `webcmd-plugin.json` or generated README catalog; run `webcmd validate <site>` and smoke commands after installation. See `references/adapter-template.md` for details.
 - After `webcmd plugin update`, check the reported overrides needing reconciliation and merge `yours` with `upstream`, using `base` as the common ancestor for a three-way merge. Only overrides are reported; a user-authored adapter has no upstream.
 - Write site memory every round: no memory -> use skill -> produce memory -> next time becomes a five-minute task.
 - **After a site's first command passes verify, stop and ask the user for their use cases before recommending next set of commands.** See Runbook Step 13.
-- **Raw dumps, packet captures, and HTML samples from debugging may only be written to `~/.webcmd/sites/<site>/fixtures/` or `/tmp/`. Never leave `.dbg-*.html`, `raw-*.json`, `sample.*`, or similar temporary files in the repo root, `plugins/<plugin-name>/`, or the current working directory.**
+- **Keep raw debugging dumps in `/tmp/`; save sanitized endpoint samples through `webcmd site sample add <site>/<command> <path>`. Never leave `.dbg-*.html`, `raw-*.json`, `sample.*`, or similar temporary files in the repo root, `plugins/<plugin-name>/`, or the current working directory.**
 - **JSDOM unit-test fixtures (`plugins/<plugin-name>/__fixtures__/<command>.html`) are the exception.** They are intentional review artifacts committed to the repo, not temporary dumps. Because of that, the quality bar is higher: complete the five steps in `references/jsdom-fixture-pattern.md`, including the mandatory `awk 'NF>0'` blank-line tightening, and reverse-validate once to prove the regression guard can fail.
 
 ---
 
 ## If You Are Stuck
 
-- Diagnostic path: `webcmd doctor` -> inspect `notes.md` -> rerun with `--trace retain-on-failure`.
+- Diagnostic path: `webcmd doctor` -> `webcmd site memory show <site> --kind notes` -> rerun with `--trace retain-on-failure`.
 - Endpoint path: return to `site-recon` and reclassify Pattern. Do not stay attached to the first API guess.
 - Field path: compare one visible page value, then use sort-key comparison, structural diff, and constants.
 - Verification path: if `webcmd browser verify` fails, switch to the autofix skill instead of improvising.
