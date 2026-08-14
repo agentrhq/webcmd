@@ -187,7 +187,14 @@ export async function materializeHostedOutputs(input: {
   try {
     for (const output of input.outputs) {
       if (output.pathKind === 'directory') await mkdir(output.localPath, { recursive: true, mode: 0o700 });
-      const outputReceipts = receiptsByArgument.get(output.argument) ?? [];
+      const receipts = receiptsByArgument.get(output.argument) ?? [];
+      const targets = input.outputs.filter(target => target.argument === output.argument && target.pathKind === 'file');
+      const outputReceipts = output.pathKind === 'file' && targets.length > 1
+        ? receipts.filter(receipt => receipt.filename === path.basename(output.localPath))
+        : receipts;
+      if (outputReceipts.length > 1 && targets.length > 1) {
+        throw new CliError('HOSTED_FILE_OUTPUT_INVALID', 'Webcmd Cloud returned ambiguous mutable file output artifacts.');
+      }
       const seenRelativePaths = new Set<string>();
       for (const receipt of outputReceipts) {
         const target = targetPathForReceipt(output, receipt, seenRelativePaths);

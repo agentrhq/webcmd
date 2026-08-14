@@ -209,6 +209,47 @@ describe('hosted file transfer helpers', () => {
     await expect(readFile(resume, 'utf8')).resolves.toBe('{"next":true}');
   });
 
+  it('writes each mutable file output receipt to its matching target', async () => {
+    tempDir = await mkdtemp(path.join(tmpdir(), 'webcmd-hosted-files-'));
+    const first = path.join(tempDir, 'first.resume.json');
+    const second = path.join(tempDir, 'second.resume.json');
+    const client = Object.assign(fakeClient(), {
+      downloadExecutionArtifact: vi.fn(async ({ artifactId }: { artifactId: string }) => new Uint8Array(Buffer.from(artifactId))),
+    });
+    const command: HostedCommand = {
+      ...fileCommand,
+      command: 'likes/list',
+      args: [{
+        name: 'resume',
+        file: { direction: 'input-output', pathKind: 'file', multiple: true, separator: ',' },
+      }],
+    };
+    const prepared = await prepareHostedFiles({
+      client,
+      command,
+      cwd: tempDir,
+      args: { resume: 'first.resume.json,second.resume.json' },
+    });
+    const response: HostedExecuteResponse = {
+      ok: true,
+      result: [],
+      execution: { id: 'exec_success', command: 'likes/list', status: 'succeeded' },
+      artifacts: [
+        { artifactId: 'first', argument: 'resume', direction: 'output', pathKind: 'file', filename: 'first.resume.json', contentType: 'application/json', byteSize: 5, expiresAt: '2026-07-15T00:00:00.000Z' },
+        { artifactId: 'second', argument: 'resume', direction: 'output', pathKind: 'file', filename: 'second.resume.json', contentType: 'application/json', byteSize: 6, expiresAt: '2026-07-15T00:00:00.000Z' },
+      ],
+    };
+
+    await materializeHostedOutputs({
+      client,
+      response,
+      outputs: prepared.outputs,
+    });
+
+    await expect(readFile(first, 'utf8')).resolves.toBe('first');
+    await expect(readFile(second, 'utf8')).resolves.toBe('second');
+  });
+
   it('validates local inputs before creating a prepared cloud execution', async () => {
     tempDir = await mkdtemp(path.join(tmpdir(), 'webcmd-hosted-files-'));
     const client = fakeClient();
