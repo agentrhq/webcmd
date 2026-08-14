@@ -119,6 +119,19 @@ describe('HostedClient', () => {
     ]);
   });
 
+  it.each([
+    { stale: true },
+    { deleted: true },
+  ])('accepts Cloud site-memory deletion response %j', async (result) => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({ ok: true, ...result })),
+    });
+
+    await expect(client.deleteSiteMemory('github', 'endpoints.json', JSON.stringify({ name: 'search' }))).resolves.toBeUndefined();
+  });
+
   it('accepts the hosted Session API wire contract', async () => {
     const requests: Array<{ url: string; method: string; body?: string }> = [];
     const session = {

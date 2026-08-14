@@ -238,7 +238,7 @@ async function dispatchHosted(
     return;
   }
 
-  if (args[0] === 'adapter' && (args[1] === 'source' || args[1] === 'path')) {
+  if (args[0] === 'adapter' && (args[1] === 'source' || args[1] === 'path' || args[1] === '--help' || args[1] === '-h')) {
     await runHostedAdapterSourceSurface(args.slice(1), normalized.literal, client, stdout, homeDir);
     return;
   }

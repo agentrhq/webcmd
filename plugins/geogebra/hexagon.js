@@ -20,7 +20,7 @@ cli({
   example: 'webcmd geogebra hexagon --size 3',
   args: [
     { name: 'size', required: false, default: '2', help: 'Radius of the hexagon (default: 2)' },
-    { name: 'output', type: 'string', required: false, file: { direction: 'output', pathKind: 'file', multiple: false } },
+    { name: 'output', type: 'string', required: false, file: { direction: 'output', pathKind: 'file', multiple: false, defaultPath: './geogebra-hexagon.png' } },
   ],
   columns: ['step', 'result'],
   func: async (page, kwargs) => {

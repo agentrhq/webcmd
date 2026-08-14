@@ -21,10 +21,10 @@ function mp4Box(type, body) {
     body.copy(box, 8);
     return box;
 }
-function createMp4Fixture(name, rotated = false) {
+function createMp4Fixture(name, rotated = false, durationMs = 2000) {
     const movieHeader = Buffer.alloc(24);
     movieHeader.writeUInt32BE(1000, 12);
-    movieHeader.writeUInt32BE(2000, 16);
+    movieHeader.writeUInt32BE(durationMs, 16);
     const trackHeader = Buffer.alloc(84);
     const matrix = rotated
         ? [0, 0x00010000, 0, -0x00010000, 0, 0, 0, 0, 0x40000000]
@@ -262,6 +262,26 @@ describe('instagram private publish helpers', () => {
             width: 1080,
             height: 1440,
         });
+    });
+    it('requires conversion through default preparation for unsupported feed and story image aspect ratios', async () => {
+        const feedImage = createTempFile('feed-needs-padding.png', Buffer.from('89504E470D0A1A0A0000000D49484452000000030000000508060000008D6F26E50000000049454E44AE426082', 'hex'));
+        const storyImage = createTempFile('story-needs-padding.png', Buffer.from('89504E470D0A1A0A0000000D49484452000000030000000308060000008D6F26E50000000049454E44AE426082', 'hex'));
+        const common = {
+            page: {},
+            apiContext: { asbdId: '359341', csrfToken: 'csrf-token', igAppId: '936619743392459', igWwwClaim: 'hmac.claim', instagramAjax: '1036517563', webSessionId: 'abc:def:ghi' },
+            jazoest: '22047',
+        };
+        await expect(publishImagesViaPrivateApi({ ...common, imagePaths: [feedImage], caption: '' })).rejects.toMatchObject({ code: 'INSTAGRAM_MEDIA_CONVERSION_REQUIRED' });
+        await expect(publishStoryViaPrivateApi({ ...common, mediaItem: { type: 'image', filePath: storyImage } })).rejects.toMatchObject({ code: 'INSTAGRAM_MEDIA_CONVERSION_REQUIRED' });
+    });
+    it('requires conversion through default preparation for stories longer than 15 seconds', async () => {
+        const video = createMp4Fixture('story-needs-trimming.mp4', false, 15_001);
+        await expect(publishStoryViaPrivateApi({
+            page: {},
+            mediaItem: { type: 'video', filePath: video },
+            apiContext: { asbdId: '359341', csrfToken: 'csrf-token', igAppId: '936619743392459', igWwwClaim: 'hmac.claim', instagramAjax: '1036517563', webSessionId: 'abc:def:ghi' },
+            jazoest: '22047',
+        })).rejects.toMatchObject({ code: 'INSTAGRAM_MEDIA_CONVERSION_REQUIRED' });
     });
     it('builds the single-photo configure_to_story payload', () => {
         expect(buildConfigureToStoryPhotoPayload({

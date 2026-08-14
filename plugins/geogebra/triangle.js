@@ -16,7 +16,7 @@ cli({
   example: 'webcmd geogebra triangle --size 4',
   args: [
     { name: 'size', required: false, default: '2', help: 'Side length of the triangle (default: 2)' },
-    { name: 'output', type: 'string', required: false, file: { direction: 'output', pathKind: 'file', multiple: false } },
+    { name: 'output', type: 'string', required: false, file: { direction: 'output', pathKind: 'file', multiple: false, defaultPath: './geogebra-triangle.png' } },
   ],
   columns: ['step', 'result'],
   func: async (page, kwargs) => {

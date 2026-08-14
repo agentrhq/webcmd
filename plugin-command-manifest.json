@@ -9911,7 +9911,8 @@
         "file": {
           "direction": "output",
           "pathKind": "file",
-          "multiple": false
+          "multiple": false,
+          "defaultPath": "./geogebra-hexagon.png"
         }
       }
     ],
@@ -10002,7 +10003,8 @@
         "file": {
           "direction": "output",
           "pathKind": "file",
-          "multiple": false
+          "multiple": false,
+          "defaultPath": "./geogebra-triangle.png"
         }
       }
     ],

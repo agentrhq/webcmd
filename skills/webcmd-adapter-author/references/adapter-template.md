@@ -13,7 +13,7 @@ For private iteration:
 webcmd browser init <site>/<name>
 ```
 
-This scaffolds a `Strategy.PUBLIC` placeholder. Use `webcmd adapter path <site>/<name>` to locate it, then edit with `webcmd adapter source get|put <site>/<name>`; set the real `strategy:` value and other `TODO` fields.
+This scaffolds a `Strategy.PUBLIC` placeholder. Use `webcmd adapter path <site>/<name>` to locate it, then edit that local file; local `adapter source get|put` only print the same path. In hosted mode, `adapter source get|put` download and upload tenant-owned source. Set the real `strategy:` value and other `TODO` fields.
 
 Promote a community CLI to the main repo as a plugin — **only after the user has explicitly confirmed they want it pushed into the repo**; a general instruction to build a working adapter is not that confirmation (see `SKILL.md`'s Key Conventions):
 
@@ -25,8 +25,7 @@ webcmd plugin create <plugin-name> \
   --description "<site> commands for Webcmd" \
   --author-name "<author-name>" \
   --author-handle "<github-handle>"
-webcmd adapter source get <site>/<name> -o /tmp/<name>.js
-cp /tmp/<name>.js plugins/<plugin-name>/
+cp "$(webcmd adapter path <site>/<name>)" plugins/<plugin-name>/
 rm plugins/<plugin-name>/hello.ts plugins/<plugin-name>/greet.ts 2>/dev/null || true
 ```
 

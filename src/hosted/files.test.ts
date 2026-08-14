@@ -49,6 +49,28 @@ const fileCommand: HostedCommand = {
 };
 
 describe('hosted file transfer helpers', () => {
+  it('reserves a default output when no file argument is provided', async () => {
+    tempDir = await mkdtemp(path.join(tmpdir(), 'webcmd-hosted-files-'));
+    const client = fakeClient();
+    const command: HostedCommand = {
+      ...fileCommand,
+      command: 'geogebra/triangle',
+      args: [{
+        name: 'output',
+        file: { direction: 'output', pathKind: 'file', multiple: false, defaultPath: './geogebra-triangle.png' },
+      }],
+    };
+
+    const prepared = await prepareHostedFiles({ client, command, cwd: tempDir, args: {} });
+
+    expect(prepared.args.output).toEqual({ $webcmdArtifact: {
+      direction: 'output', filename: 'geogebra-triangle.png', contentType: 'application/octet-stream',
+    } });
+    expect(prepared.outputs).toEqual([{
+      argument: 'output', pathKind: 'file', localPath: path.join(tempDir, 'geogebra-triangle.png'),
+    }]);
+  });
+
   it('prepares a mutable file reference and uploads its seed when present', async () => {
     tempDir = await mkdtemp(path.join(tmpdir(), 'webcmd-hosted-files-'));
     await writeFile(path.join(tempDir, 'likes.resume.json'), '{}');

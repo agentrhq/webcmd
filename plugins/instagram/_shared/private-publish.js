@@ -194,6 +194,9 @@ export function assertDirectlyUploadableMedia(file) {
     }
     return file;
 }
+function conversionRequired(message) {
+    return Object.assign(new Error(message), { code: 'INSTAGRAM_MEDIA_CONVERSION_REQUIRED' });
+}
 function readPngDimensions(bytes) {
     if (bytes.length < 24)
         return null;
@@ -331,10 +334,18 @@ export function getInstagramStoryNormalizedDimensions(width, height) {
     return null;
 }
 export function prepareImageAssetForPrivateUpload(filePath) {
-    return readImageAsset(assertDirectlyUploadableMedia(filePath));
+    const asset = readImageAsset(assertDirectlyUploadableMedia(filePath));
+    if (!isInstagramFeedAspectRatioAllowed(asset.width, asset.height)) {
+        throw conversionRequired(`Instagram private publish cannot pad ${asset.fileName}; convert it to a ${INSTAGRAM_MIN_FEED_ASPECT_RATIO.toFixed(2)}-${INSTAGRAM_MAX_FEED_ASPECT_RATIO.toFixed(2)} aspect ratio before upload.`);
+    }
+    return asset;
 }
 export function prepareImageAssetForPrivateStoryUpload(filePath) {
-    return readImageAsset(assertDirectlyUploadableMedia(filePath));
+    const asset = readImageAsset(assertDirectlyUploadableMedia(filePath));
+    if (!isInstagramStoryAspectRatioAllowed(asset.width, asset.height)) {
+        throw conversionRequired(`Instagram private story publish cannot pad ${asset.fileName}; convert it to a ${INSTAGRAM_MIN_STORY_ASPECT_RATIO.toFixed(2)}-${INSTAGRAM_MAX_STORY_ASPECT_RATIO.toFixed(2)} aspect ratio before upload.`);
+    }
+    return asset;
 }
 function readMp4Metadata(bytes, filePath) {
     let width = 0;
@@ -391,6 +402,13 @@ export function readVideoAsset(filePath) {
         bytes,
         cleanupPaths: [],
     };
+}
+function prepareVideoAssetForPrivateStoryUpload(filePath) {
+    const asset = readVideoAsset(filePath);
+    if (asset.durationMs > 15_000) {
+        throw conversionRequired(`Instagram private story publish cannot trim ${asset.fileName}; trim it to 15 seconds or less before upload.`);
+    }
+    return asset;
 }
 function toUnixSeconds(now) {
     const value = now();
@@ -772,7 +790,7 @@ export async function publishStoryViaPrivateApi(input) {
     const uploadId = String(now());
     const fetcher = input.fetcher ?? ((url, init) => instagramPrivateApiFetch(input.page, url, init));
     const prepareMediaAsset = input.prepareMediaAsset ?? (async (item) => item.type === 'video'
-        ? { type: 'video', asset: readVideoAsset(item.filePath) }
+        ? { type: 'video', asset: prepareVideoAssetForPrivateStoryUpload(item.filePath) }
         : { type: 'image', asset: prepareImageAssetForPrivateStoryUpload(item.filePath) });
     const prepared = await prepareMediaAsset(input.mediaItem);
     const currentUserId = input.currentUserId

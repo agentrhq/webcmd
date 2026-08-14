@@ -337,6 +337,20 @@ describe('runHostedCli', () => {
     expect(stdout.text()).toContain('adapter source');
   });
 
+  it('writes hosted adapter group help to stdout', async () => {
+    const stdout = sink();
+    const fetchImpl = vi.fn<typeof fetch>(async () => manifestResponse());
+    const result = await runHostedCli(['adapter', '--help'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      fetchImpl,
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 0 });
+    expect(stdout.text()).toContain('Commands:\n  source');
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it('presents web fetch help from local metadata without dispatching it to Cloud', async () => {
     const stdout = sink();
     const fetchImpl = vi.fn<typeof fetch>(async () => manifestResponse());

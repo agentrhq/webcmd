@@ -235,7 +235,7 @@ export class HostedClient {
     const result = await this.request(`/v1/sites/${encodeURIComponent(site)}/memory/${encodePath(path)}`, {
       method: 'DELETE', ...(body === undefined ? {} : { headers: { 'content-type': 'application/json' }, body }),
     });
-    if (!isHostedOkResponse(result)) throw protocolError('Webcmd Cloud returned an invalid site memory deletion response.');
+    if (!isHostedSiteMemoryDeletionResponse(result)) throw protocolError('Webcmd Cloud returned an invalid site memory deletion response.');
   }
 
   async readAdapterSource(packageId: string, sourcePath: string): Promise<string> {
@@ -501,6 +501,12 @@ function encodePath(value: string): string {
 
 function isHostedOkResponse(value: unknown): value is { ok: true } {
   return hasExactKeys(value, ['ok']) && value.ok === true;
+}
+
+function isHostedSiteMemoryDeletionResponse(value: unknown): value is { ok: true } {
+  return isHostedOkResponse(value)
+    || (hasExactKeys(value, ['ok', 'stale']) && value.ok === true && value.stale === true)
+    || (hasExactKeys(value, ['ok', 'deleted']) && value.ok === true && value.deleted === true);
 }
 
 function isHostedSiteMemoryListResponse(value: unknown): value is { ok: true; artifacts: HostedSiteMemoryArtifact[] } {
