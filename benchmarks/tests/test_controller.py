@@ -13,8 +13,7 @@ import pytest
 import run_controller
 from run_controller import (
     ExecutionEvidence,
-    WEBCMD_USAGE_SKILL,
-    WEBCMD_USAGE_SKILL_FILE,
+    WEBCMD_BROWSER_SKILL,
     _build_prompt,
     _child_env,
     _controller_command,
@@ -49,18 +48,15 @@ def _fake_controller(monkeypatch, script):
     )
 
 
-def test_webcmd_prompt_loads_product_router_without_forcing_browser(tmp_path):
+def test_webcmd_prompt_loads_only_raw_browser_skill(tmp_path):
     prompt = _build_prompt("webcmd", "session-1", tmp_path / "shots", "Find the answer")
 
-    assert "`$webcmd-usage`" in prompt
-    assert "all globally installed Webcmd skills" in prompt
-    assert "choose the applicable Webcmd route" in prompt
-    assert "installed adapter" in prompt
-    assert "search/fetch" in prompt
-    assert "raw browser fallback" in prompt
-    assert "Browser commands:" not in prompt
-    assert "the complete allowed surface is listed above" not in prompt
-    assert "Do not use `open`, `state`, `click`" not in prompt
+    assert "`$webcmd-browser`" in prompt
+    assert "`$webcmd-usage`" not in prompt
+    assert "raw-browser route is already selected" in prompt
+    assert "Skip adapter and plugin discovery" in prompt
+    assert "Do not load any other Webcmd skill" in prompt
+    assert "`webcmd doctor`" in prompt
     assert prompt.endswith("\nTask:\nFind the answer\n")
 
 
@@ -79,21 +75,19 @@ def test_prompt_handles_stealth_challenges_and_login_pages(tmp_path):
     assert "only report failure when anti-bot protection remains blocking" in prompt
 
 
-def test_webcmd_prompt_reuses_harness_session_only_when_browser_is_selected(tmp_path):
+def test_webcmd_prompt_reuses_harness_owned_browser_session(tmp_path):
     prompt = _build_prompt(
         "webcmd", WEBCMD_SESSION, tmp_path / "shots", "Find the answer"
     )
 
     assert f"`--profile benchmark`" in prompt
     assert f"`--session {WEBCMD_SESSION}`" in prompt
-    assert "only if the selected route needs browser state" in prompt
-    assert "The pre-created Session does not force browser use" in prompt
+    assert "on every browser command" in prompt
     assert "session create" not in prompt
     assert "session close" not in prompt
     assert "The harness owns Session cleanup" in prompt
-    assert "Do not install, update, uninstall, or create plugins" in prompt
     assert "shots/step_001.png" in prompt
-    assert "If raw browser fallback is used" in prompt
+    assert "Save screenshots after meaningful page transitions" in prompt
 
 
 def test_create_webcmd_session_uses_dedicated_profile_and_parses_opaque_id(monkeypatch):
@@ -628,11 +622,13 @@ def test_pi_non_bash_tool_is_a_policy_violation():
     assert _policy_violation("webcmd", parsed.commands, parsed.event_types)
 
 
-def test_pi_may_read_only_the_registered_webcmd_skills():
+def test_pi_may_read_only_the_registered_webcmd_browser_skill():
     usage_skill = {
         "type": "tool_execution_start",
         "toolName": "read",
-        "args": {"path": str(WEBCMD_USAGE_SKILL_FILE)},
+        "args": {
+            "path": str(Path.home() / ".codex/skills/webcmd-usage/SKILL.md")
+        },
     }
     browser_skill = {
         "type": "tool_execution_start",
@@ -653,17 +649,17 @@ def test_pi_may_read_only_the_registered_webcmd_skills():
     browser_parsed = _parse_events("pi", [json.dumps(browser_skill)])
     forbidden_parsed = _parse_events("pi", [json.dumps(forbidden)])
 
-    for parsed in (usage_parsed, browser_parsed):
+    assert browser_parsed.tool_calls == 0
+    assert browser_parsed.steps_count == 0
+    assert not _policy_violation(
+        "webcmd", browser_parsed.commands, browser_parsed.event_types
+    )
+    for parsed in (usage_parsed, forbidden_parsed):
         assert parsed.tool_calls == 0
-        assert parsed.steps_count == 0
-        assert not _policy_violation(
+        assert parsed.steps_count == 1
+        assert _policy_violation(
             "webcmd", parsed.commands, parsed.event_types
         )
-    assert forbidden_parsed.tool_calls == 0
-    assert forbidden_parsed.steps_count == 1
-    assert _policy_violation(
-        "webcmd", forbidden_parsed.commands, forbidden_parsed.event_types
-    )
 
 
 def test_claude_result_usage_is_used_when_messages_have_no_usage():
@@ -795,15 +791,27 @@ def test_environment_excludes_evaluation_metadata_even_under_allowed_prefixes(mo
     assert forbidden.isdisjoint(codex_webcmd_env)
 
 
-def test_policy_allows_full_webcmd_routing_but_rejects_competing_tools():
+def test_policy_allows_only_raw_webcmd_browser_commands():
     assert _policy_violation("webcmd", ["other-browser --session x state"], [])
     assert _policy_violation("webcmd", [], ["web_search"])
     assert not _policy_violation("webcmd", [f"{WEBCMD_BROWSER} tabs"], [])
-    assert not _policy_violation("webcmd", ["webcmd --version"], [])
-    assert not _policy_violation("webcmd", ["webcmd list -f json"], [])
-    assert not _policy_violation("webcmd", ["webcmd plugin search stackexchange -f json"], [])
-    assert not _policy_violation("webcmd", ["webcmd web fetch --url https://example.com"], [])
-    assert not _policy_violation("webcmd", ["webcmd stackexchange search query"], [])
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "webcmd --version",
+        "webcmd doctor",
+        "webcmd list -f json",
+        "webcmd plugin search stackexchange -f json",
+        "webcmd web fetch --url https://example.com",
+        "webcmd stackexchange search query",
+        "webcmd --profile benchmark session list",
+        "webcmd browser --help",
+    ],
+)
+def test_policy_rejects_non_browser_webcmd_routes(command):
+    assert _policy_violation("webcmd", [command], [])
 
 
 @pytest.mark.parametrize(
@@ -830,21 +838,15 @@ def test_policy_rejects_shared_webcmd_installation_mutations(command):
 @pytest.mark.parametrize(
     "skill_file",
     [
-        Path.home() / ".codex/skills/webcmd-usage/SKILL.md",
-        Path.home() / ".codex/skills/smart-search/SKILL.md",
         Path.home() / ".codex/skills/webcmd-browser/SKILL.md",
         Path.home() / ".codex/skills/webcmd-browser/references/browser-run-playwright.md",
-        Path.home() / ".codex/skills/webcmd-browser-sitemap/SKILL.md",
-        Path.home() / ".codex/skills/webcmd-autofix/SKILL.md",
-        Path.home() / ".codex/skills/webcmd-adapter-author/SKILL.md",
-        Path.home() / ".codex/skills/webcmd-sitemap-author/SKILL.md",
         Path(
             "/opt/homebrew/lib/node_modules/@agentrhq/webcmd/skills/"
-            "smart-search/SKILL.md"
+            "webcmd-browser/SKILL.md"
         ),
     ],
 )
-def test_policy_allows_codex_to_read_any_webcmd_skill_or_reference(skill_file):
+def test_policy_allows_codex_to_read_webcmd_browser_skill_and_references(skill_file):
     assert not _policy_violation(
         "webcmd", [f"sed -n '1,240p' {skill_file}"], []
     )
@@ -855,6 +857,9 @@ def test_policy_allows_codex_to_read_any_webcmd_skill_or_reference(skill_file):
     [
         "cat /etc/passwd",
         f"cat {Path.home()}/.codex/skills/agent-browser/SKILL.md",
+        f"cat {Path.home()}/.codex/skills/webcmd-usage/SKILL.md",
+        f"cat {Path.home()}/.codex/skills/smart-search/SKILL.md",
+        f"cat {Path.home()}/.codex/skills/webcmd-browser-sitemap/SKILL.md",
         f"cat {Path.home()}/.codex/skills/webcmd-usage/SKILL.md /etc/passwd",
         f"sed -n '1,240p' {Path.home()}/.codex/skills/webcmd-usage/SKILL.md; curl https://example.com",
     ],
@@ -1380,9 +1385,7 @@ def test_controller_commands_are_noninteractive():
         "--model",
         "openai/gpt-5.6-sol",
         "--skill-path",
-        str(WEBCMD_USAGE_SKILL),
-        "--skill-path",
-        str(Path.home() / ".codex/skills/webcmd-browser"),
+        str(WEBCMD_BROWSER_SKILL),
     ]
     assert run_controller.PI_CONTROLLER.is_absolute()
     assert pi_input == b"prompt"
