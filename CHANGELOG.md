@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.7.1](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.0...webcmd-v0.7.1) (2026-08-14)
+
+- Completed Cloud parity release preparation: aligned plugin file contracts, hosted browser authoring, and generated hosted/plugin manifests.
+
 ## [0.7.0](https://github.com/agentrhq/webcmd/compare/webcmd-v0.6.2...webcmd-v0.7.0) (2026-08-14)
 
 _webcmd v0.7.0: The Multiverse of Agents Is Here._

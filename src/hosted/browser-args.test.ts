@@ -31,7 +31,7 @@ describe('hosted browser argument surface', () => {
   });
 
   it('uses the same command catalog as local mode', () => {
-    expect(browserCommandCatalog.map(command => command.command)).toEqual(['tabs', 'bind', 'fork', 'run', 'snapshot', 'close']);
+    expect(browserCommandCatalog.map(command => command.command)).toEqual(['tabs', 'init', 'bind', 'fork', 'verify', 'run', 'snapshot', 'close']);
   });
 
   it('parses a hosted adapter fork command', () => {
