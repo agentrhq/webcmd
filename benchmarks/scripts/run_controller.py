@@ -3,6 +3,7 @@ import asyncio
 import base64
 import hashlib
 import json
+import math
 import os
 import re
 import shlex
@@ -78,9 +79,11 @@ LIBRETTO_TOOLS = (
 WEBCMD_BROWSER_SKILL = Path.home() / ".codex/skills/webcmd-browser"
 WEBCMD_BROWSER_SKILL_FILE = WEBCMD_BROWSER_SKILL / "SKILL.md"
 WEBCMD_BROWSER_SKILL_ROOT = WEBCMD_BROWSER_SKILL.resolve()
-WEBCMD_SETUP_SKILL_FILES = frozenset(
-    {WEBCMD_BROWSER_SKILL_FILE.resolve()}
-)
+DEV_BROWSER_SKILL = Path.home() / ".codex/skills/dev-browser"
+PI_SETUP_SKILL_FILES = {
+    "webcmd": frozenset({WEBCMD_BROWSER_SKILL_FILE.resolve()}),
+    "dev-browser": frozenset({(DEV_BROWSER_SKILL / "SKILL.md").resolve()}),
+}
 GPT_5_6_SOL_PRICES_PER_MILLION = {
     "input": 5.0,
     "cached_input": 0.5,
@@ -227,6 +230,7 @@ class ParsedEvents:
     provider_turns: int | None
     provider_duration_seconds: float | None
     provider_api_duration_seconds: float | None
+    agent_turns: int | None
     mcp_calls: list[tuple[str, str]]
     screenshot_images: list[bytes]
 
@@ -348,9 +352,22 @@ def _controller_command(
             str(PI_CONTROLLER),
             "--model",
             model,
-            "--skill-path",
-            str(WEBCMD_BROWSER_SKILL),
         ]
+        pi_tool = tool or "webcmd"
+        if pi_tool == "webcmd":
+            command.extend(["--skill-path", str(WEBCMD_BROWSER_SKILL)])
+        elif pi_tool == "dev-browser":
+            command.extend(
+                ["--tool", pi_tool, "--skill-path", str(DEV_BROWSER_SKILL)]
+            )
+        elif pi_tool == "libretto":
+            if not (runtime_env or {}).get("LIBRETTO_CDP_URL"):
+                raise ValueError(
+                    "Pi Libretto requires a task-private LIBRETTO_CDP_URL"
+                )
+            command.extend(["--tool", pi_tool])
+        else:
+            raise ValueError(f"Pi support is not configured for {pi_tool}")
         if reasoning_effort is not None:
             command.extend(["--thinking", reasoning_effort])
         return command, prompt.encode()
@@ -478,10 +495,13 @@ def _parse_events(
     reasoning_output = 0
     usage_seen = False
     estimated_api_cost_usd = 0.0
-    cost_complete = controller == "codex" and model in GPT_5_6_SOL_MODELS
+    cost_complete = controller == "pi" or (
+        controller == "codex" and model in GPT_5_6_SOL_MODELS
+    )
     provider_turns = None
     provider_duration_seconds = None
     provider_api_duration_seconds = None
+    agent_turns = 0 if controller == "pi" else None
     mcp_calls: list[tuple[str, str]] = []
     screenshot_images: list[bytes] = []
     for line in lines:
@@ -575,6 +595,7 @@ def _parse_events(
             message = event.get("message") or {}
             if message.get("role") != "assistant":
                 continue
+            agent_turns += 1
             usage = message.get("usage") or {}
             if usage:
                 ordinary_input += int(usage.get("input") or 0)
@@ -582,6 +603,17 @@ def _parse_events(
                 cache_creation_input += int(usage.get("cacheWrite") or 0)
                 output_tokens += int(usage.get("output") or 0)
                 usage_seen = True
+                turn_cost = (usage.get("cost") or {}).get("total")
+                if (
+                    isinstance(turn_cost, (int, float))
+                    and not isinstance(turn_cost, bool)
+                    and math.isfinite(turn_cost)
+                ):
+                    estimated_api_cost_usd += float(turn_cost)
+                else:
+                    cost_complete = False
+            else:
+                cost_complete = False
             for block in message.get("content", []) or []:
                 block_type = block.get("type")
                 if block_type == "text":
@@ -608,9 +640,15 @@ def _parse_events(
             elif (
                 name == "read"
                 and Path(str(arguments.get("path") or "")).expanduser().resolve()
-                in WEBCMD_SETUP_SKILL_FILES
+                in PI_SETUP_SKILL_FILES.get(tool or "webcmd", frozenset())
             ):
                 steps.append(_short(f"setup_tool: {name} {_short(arguments)}"))
+            elif tool == "libretto":
+                event_types.append("mcp_tool_call")
+                mcp_calls.append(("libretto", name))
+                tool_calls += 1
+                steps_count += 1
+                steps.append(_short(f"tool: {name} {_short(arguments)}"))
             else:
                 event_types.append("mcp_tool_call")
                 steps_count += 1
@@ -619,6 +657,30 @@ def _parse_events(
             result = event.get("result") or {}
             content = result.get("content") if isinstance(result, dict) else result
             steps.append(_short(f"tool_result: {_short(content or '')}"))
+            if tool == "libretto" and event.get("toolName") == "browser_snapshot":
+                encoded = None
+                for item in content if isinstance(content, list) else []:
+                    if (
+                        isinstance(item, dict)
+                        and item.get("type") == "image"
+                        and item.get("mimeType") == "image/png"
+                        and isinstance(item.get("data"), str)
+                        and not item["data"].startswith("[omitted ")
+                    ):
+                        encoded = item["data"]
+                        break
+                details = result.get("details") if isinstance(result, dict) else None
+                screenshot = details.get("screenshot") if isinstance(details, dict) else None
+                if encoded is None and isinstance(screenshot, dict):
+                    if screenshot.get("mimeType") == "image/png":
+                        encoded = screenshot.get("base64")
+                if isinstance(encoded, str):
+                    try:
+                        screenshot_images.append(
+                            base64.b64decode(encoded, validate=True)
+                        )
+                    except ValueError:
+                        pass
         elif controller == "pi" and event_type == "result":
             text = str(event.get("result") or "")
             if text:
@@ -707,6 +769,7 @@ def _parse_events(
         provider_turns=provider_turns,
         provider_duration_seconds=provider_duration_seconds,
         provider_api_duration_seconds=provider_api_duration_seconds,
+        agent_turns=agent_turns,
         mcp_calls=mcp_calls,
         screenshot_images=screenshot_images,
     )
@@ -1443,7 +1506,9 @@ async def run_controller(controller: Controller, model: str, tool: Tool, task: s
         provider_duration_seconds=parsed.provider_duration_seconds,
         provider_api_duration_seconds=parsed.provider_api_duration_seconds,
         agent_turns=(
-            turn_collector.agent_turns if turn_collector is not None else None
+            turn_collector.agent_turns
+            if turn_collector is not None
+            else parsed.agent_turns
         ),
     )
     return ExecutionEvidence(final_answer=final_answer, steps=parsed.steps, screenshot_paths=sorted(shots_dir.glob("*.png")), controller_exit_code=process.returncode if process.returncode is not None else -9, termination=termination, metrics=metrics)

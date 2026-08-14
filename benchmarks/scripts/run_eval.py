@@ -90,8 +90,18 @@ def validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--reasoning-effort is supported only for Codex or Pi")
     if args.controller == "pi" and args.reasoning_effort not in PI_THINKING_LEVELS | {None}:
         raise ValueError(f"Pi does not support --reasoning-effort {args.reasoning_effort}")
-    if args.tools == "libretto" and args.controller != "codex":
-        raise ValueError("Libretto is currently supported only with the Codex controller")
+    if args.controller == "pi" and args.tools not in {
+        "webcmd",
+        "dev-browser",
+        "libretto",
+    }:
+        raise ValueError(
+            "Pi currently supports only Webcmd, dev-browser, or Libretto"
+        )
+    if args.tools == "libretto" and args.controller not in {"codex", "pi"}:
+        raise ValueError(
+            "Libretto is currently supported only with the Codex or Pi controller"
+        )
 
 
 def _validate_output_dir(output_dir: Path) -> Path:

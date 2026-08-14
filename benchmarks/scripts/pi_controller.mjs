@@ -9,6 +9,8 @@ import {
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { createPiToolConfiguration } from "./pi_toolkit.mjs";
+
 const SDK_PACKAGE = JSON.parse(
   readFileSync(
     new URL("../package.json", import.meta.resolve("@earendil-works/pi-coding-agent")),
@@ -62,7 +64,18 @@ function selectedThinkingLevel(args) {
   return level;
 }
 
-function selectedSkillPaths(args) {
+function selectedTool(args) {
+  const index = args.indexOf("--tool");
+  if (index < 0) return "webcmd";
+  const tool = args[index + 1];
+  if (!tool || tool.startsWith("--")) throw new Error("--tool requires a value");
+  if (!new Set(["webcmd", "dev-browser", "libretto"]).has(tool)) {
+    throw new Error(`Unsupported Pi benchmark tool: ${tool}`);
+  }
+  return tool;
+}
+
+function selectedSkillPaths(args, required) {
   const paths = [];
   for (let index = 0; index < args.length; index += 1) {
     if (args[index] !== "--skill-path") continue;
@@ -78,7 +91,7 @@ function selectedSkillPaths(args) {
     paths.push(path);
     index += 1;
   }
-  if (paths.length === 0) {
+  if (required && paths.length === 0) {
     throw new Error("--skill-path requires a value");
   }
   return paths;
@@ -93,7 +106,8 @@ async function main() {
 
   const { provider, modelId, selector } = selectedModel(args);
   const thinkingLevel = selectedThinkingLevel(args);
-  const skillPaths = selectedSkillPaths(args);
+  const tool = selectedTool(args);
+  const skillPaths = selectedSkillPaths(args, tool !== "libretto");
   const authStorage = AuthStorage.inMemory();
   const modelRegistry = ModelRegistry.inMemory(authStorage);
   const model = modelRegistry.find(provider, modelId);
@@ -123,30 +137,34 @@ async function main() {
   });
   await resourceLoader.reload();
 
-  const { session } = await createAgentSession({
-    cwd,
-    agentDir,
-    model,
-    thinkingLevel,
-    authStorage,
-    modelRegistry,
-    resourceLoader,
-    settingsManager,
-    sessionManager: SessionManager.inMemory(cwd),
-    tools: ["bash", "read"],
-  });
-  const unsubscribe = session.subscribe((event) => {
-    if (
-      event.type === "message_end" ||
-      event.type === "tool_execution_start" ||
-      event.type === "tool_execution_end"
-    ) {
-      emit(event);
-    }
-  });
-  const startedAt = Date.now();
-
+  const toolConfiguration = await createPiToolConfiguration(tool);
+  let session;
+  let unsubscribe = () => {};
   try {
+    ({ session } = await createAgentSession({
+      cwd,
+      agentDir,
+      model,
+      thinkingLevel,
+      authStorage,
+      modelRegistry,
+      resourceLoader,
+      settingsManager,
+      sessionManager: SessionManager.inMemory(cwd),
+      tools: toolConfiguration.tools,
+      noTools: toolConfiguration.noTools,
+      customTools: toolConfiguration.customTools,
+    }));
+    unsubscribe = session.subscribe((event) => {
+      if (
+        event.type === "message_end" ||
+        event.type === "tool_execution_start" ||
+        event.type === "tool_execution_end"
+      ) {
+        emit(event);
+      }
+    });
+    const startedAt = Date.now();
     await session.prompt(readFileSync(0, "utf8"));
     emit({
       type: "result",
@@ -155,7 +173,8 @@ async function main() {
     });
   } finally {
     unsubscribe();
-    session.dispose();
+    session?.dispose();
+    await toolConfiguration.dispose();
   }
 }
 

@@ -6,6 +6,8 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { createPiToolConfiguration } from "../scripts/pi_toolkit.mjs";
+
 const controller = fileURLToPath(
   new URL("../scripts/pi_controller.mjs", import.meta.url),
 );
@@ -76,5 +78,27 @@ test("Pi sidecar validates every explicitly selected skill", () => {
     assert.match(result.stderr, new RegExp(missing));
   } finally {
     rmSync(first, { recursive: true, force: true });
+  }
+});
+
+test("Pi Libretto configuration exposes only the benchmark browser tools", async () => {
+  const configuration = await createPiToolConfiguration("libretto", {
+    LIBRETTO_CDP_URL: "http://127.0.0.1:43210",
+  });
+
+  try {
+    assert.equal(configuration.noTools, "builtin");
+    assert.deepEqual(
+      configuration.customTools.map((tool) => tool.name),
+      [
+        "browser_open",
+        "browser_exec",
+        "browser_snapshot",
+        "browser_status",
+        "browser_close",
+      ],
+    );
+  } finally {
+    await configuration.dispose();
   }
 });
