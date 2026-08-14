@@ -2,7 +2,18 @@
 
 ## [0.7.1](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.0...webcmd-v0.7.1) (2026-08-14)
 
-- Completed Cloud parity release preparation: aligned plugin file contracts, hosted browser authoring, and generated hosted/plugin manifests.
+### Fixes
+
+- **browser:** retry background Chromium launch through Launch Services ([#302](https://github.com/agentrhq/webcmd/pull/302))
+- **doctor:** distinguish a missing browser binary from connectivity failures ([#303](https://github.com/agentrhq/webcmd/pull/303))
+- **doctor:** install the browser before applying the live-check timeout ([#237](https://github.com/agentrhq/webcmd/pull/237))
+- **browser:** keep background Chromium profiles alive ([#308](https://github.com/agentrhq/webcmd/pull/308))
+- **browser:** isolate pages created by persistent sessions ([#312](https://github.com/agentrhq/webcmd/pull/312))
+
+### Release preparation
+
+- Require OpenAI-generated release notes ([#307](https://github.com/agentrhq/webcmd/pull/307))
+- Complete Cloud and plugin parity for 0.7.1 ([#309](https://github.com/agentrhq/webcmd/pull/309))
 
 ## [0.7.0](https://github.com/agentrhq/webcmd/compare/webcmd-v0.6.2...webcmd-v0.7.0) (2026-08-14)
 
