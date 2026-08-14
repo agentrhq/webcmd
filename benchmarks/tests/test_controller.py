@@ -3,7 +3,9 @@ import base64
 import json
 import os
 import signal
+import subprocess
 import sys
+import threading
 import time
 import urllib.request
 from pathlib import Path
@@ -124,6 +126,88 @@ def test_create_webcmd_session_uses_dedicated_profile_and_parses_opaque_id(monke
     assert captured["start_new_session"] is True
 
 
+def test_webcmd_login_shell_uses_harness_resolved_executable(tmp_path):
+    selected_dir = tmp_path / "selected"
+    selected_dir.mkdir()
+    selected = selected_dir / "webcmd"
+    selected.write_text("#!/bin/sh\nprintf 'selected\\n'\n", encoding="utf-8")
+    selected.chmod(0o700)
+
+    wrong_dir = tmp_path / "wrong"
+    wrong_dir.mkdir()
+    wrong = wrong_dir / "webcmd"
+    wrong.write_text("#!/bin/sh\nprintf 'wrong\\n'\n", encoding="utf-8")
+    wrong.chmod(0o700)
+    user_zdotdir = tmp_path / "user-zdotdir"
+    user_zdotdir.mkdir()
+    (user_zdotdir / ".zprofile").write_text(
+        f"export PATH={wrong_dir}:$PATH\n", encoding="utf-8"
+    )
+
+    attempt = tmp_path / "attempt"
+    attempt.mkdir()
+    env = run_controller._pin_webcmd_env(
+        {"PATH": str(selected_dir), "ZDOTDIR": str(user_zdotdir)}, attempt
+    )
+    result = subprocess.run(
+        ["/bin/zsh", "-lc", "command -v webcmd; webcmd --version"],
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.stdout.splitlines() == [
+        str(attempt / "webcmd-bin" / "webcmd"),
+        "selected",
+    ]
+
+
+def test_webcmd_pin_rejects_login_shell_path_drift(tmp_path):
+    expected = tmp_path / "expected-webcmd"
+    expected.write_text("#!/bin/sh\n", encoding="utf-8")
+    expected.chmod(0o700)
+    empty_zdotdir = tmp_path / "empty-zdotdir"
+    empty_zdotdir.mkdir()
+
+    with pytest.raises(RuntimeError, match="login shell resolved"):
+        run_controller._verify_pinned_webcmd(
+            {"PATH": "/usr/bin:/bin", "ZDOTDIR": str(empty_zdotdir)}, expected
+        )
+
+
+def test_webcmd_executable_pinning_does_not_block_the_event_loop(
+    tmp_path, monkeypatch
+):
+    event_loop_thread = threading.get_ident()
+    pin_threads = []
+
+    def pin(base_env, work_dir):
+        pin_threads.append(threading.get_ident())
+        return base_env
+
+    monkeypatch.setattr(run_controller, "_pin_webcmd_env", pin)
+    monkeypatch.setattr(run_controller, "_close_session", _no_close)
+    event = json.dumps(
+        {
+            "type": "item.completed",
+            "item": {
+                "type": "agent_message",
+                "text": "FINAL ANSWER: 42",
+            },
+        }
+    )
+    _fake_controller(monkeypatch, f"print({event!r})")
+
+    asyncio.run(
+        execute_controller(
+            "codex", "gpt-5", "webcmd", "task", tmp_path / "attempt", 5
+        )
+    )
+
+    assert pin_threads and pin_threads[0] != event_loop_thread
+
+
 def test_webcmd_controller_uses_created_session_and_harness_closes_after_exit(
     tmp_path, monkeypatch
 ):
@@ -151,24 +235,32 @@ def test_webcmd_controller_uses_created_session_and_harness_closes_after_exit(
     monkeypatch.setattr(run_controller, "_close_session", close_session)
     monkeypatch.setattr(run_controller, "_controller_command", controller_command)
 
+    selected_dir = tmp_path / "selected"
+    selected_dir.mkdir()
+    selected = selected_dir / "webcmd"
+    selected.write_text("#!/bin/sh\nprintf 'selected\\n'\n", encoding="utf-8")
+    selected.chmod(0o700)
+    attempt = tmp_path / "attempt"
+
     evidence = asyncio.run(
         execute_controller(
             "codex",
             "gpt-5",
             "webcmd",
             "task",
-            tmp_path / "attempt",
+            attempt,
             5,
-            tool_env={"PATH": "/verified/bin"},
+            tool_env={"PATH": str(selected_dir)},
         )
     )
 
     assert evidence.final_answer == "42"
-    assert events == [
-        ("create", {"PATH": "/verified/bin"}),
-        ("controller",),
-        ("close", "webcmd", WEBCMD_SESSION, {"PATH": "/verified/bin"}),
-    ]
+    assert events[0][0] == "create"
+    assert events[1] == ("controller",)
+    assert events[2][0:3] == ("close", "webcmd", WEBCMD_SESSION)
+    assert events[0][1] == events[2][3]
+    assert events[0][1]["PATH"].split(os.pathsep)[0] == str(attempt / "webcmd-bin")
+    assert events[0][1]["ZDOTDIR"] == str(attempt / "zsh-config")
 
 
 def test_webcmd_session_closes_when_controller_setup_fails(tmp_path, monkeypatch):
@@ -182,6 +274,12 @@ def test_webcmd_session_closes_when_controller_setup_fails(tmp_path, monkeypatch
 
     monkeypatch.setattr(run_controller, "_close_session", close_session)
     monkeypatch.setattr(run_controller, "_controller_command", fail_controller_setup)
+    selected_dir = tmp_path / "selected"
+    selected_dir.mkdir()
+    selected = selected_dir / "webcmd"
+    selected.write_text("#!/bin/sh\n", encoding="utf-8")
+    selected.chmod(0o700)
+    attempt = tmp_path / "attempt"
 
     with pytest.raises(RuntimeError, match="controller setup failed"):
         asyncio.run(
@@ -190,15 +288,48 @@ def test_webcmd_session_closes_when_controller_setup_fails(tmp_path, monkeypatch
                 "gpt-5",
                 "webcmd",
                 "task",
-                tmp_path / "attempt",
+                attempt,
                 5,
-                tool_env={"PATH": "/verified/bin"},
+                tool_env={"PATH": str(selected_dir)},
             )
         )
 
-    assert closed == [
-        ("webcmd", WEBCMD_SESSION, {"PATH": "/verified/bin"})
-    ]
+    assert closed[0][0:2] == ("webcmd", WEBCMD_SESSION)
+    assert closed[0][2]["PATH"].split(os.pathsep)[0] == str(attempt / "webcmd-bin")
+    assert closed[0][2]["ZDOTDIR"] == str(attempt / "zsh-config")
+
+
+def test_controller_setup_error_is_not_masked_by_webcmd_cleanup(
+    tmp_path, monkeypatch
+):
+    def fail_controller_setup(*args, **kwargs):
+        raise RuntimeError("controller setup failed")
+
+    async def fail_cleanup(*args, **kwargs):
+        raise RuntimeError("cleanup failed")
+
+    selected_dir = tmp_path / "selected"
+    selected_dir.mkdir()
+    selected = selected_dir / "webcmd"
+    selected.write_text("#!/bin/sh\n", encoding="utf-8")
+    selected.chmod(0o700)
+    monkeypatch.setattr(run_controller, "_controller_command", fail_controller_setup)
+    monkeypatch.setattr(run_controller, "_close_session", fail_cleanup)
+
+    with pytest.raises(RuntimeError, match="controller setup failed") as raised:
+        asyncio.run(
+            execute_controller(
+                "codex",
+                "gpt-5",
+                "webcmd",
+                "task",
+                tmp_path / "attempt",
+                5,
+                tool_env={"PATH": str(selected_dir)},
+            )
+        )
+
+    assert any("cleanup failed" in note for note in raised.value.__notes__)
 
 
 def test_axi_prompt_uses_installed_skill_and_only_axi_commands(tmp_path):
@@ -1563,9 +1694,16 @@ def test_webcmd_screenshot_receipts_collect_only_current_task_artifacts(tmp_path
     )
     marker = tmp_path / "cleanup.txt"
     attempt = tmp_path / "attempt"
+    selected_dir = tmp_path / "selected"
+    selected_dir.mkdir()
+    selected = selected_dir / "webcmd"
+    selected.write_text("#!/bin/sh\n", encoding="utf-8")
+    selected.chmod(0o700)
+    cleanup_env = None
 
     async def record_cleanup(tool, session, tool_env=None):
-        assert tool_env == {"PATH": "/verified/bin:/original/bin"}
+        nonlocal cleanup_env
+        cleanup_env = tool_env
         marker.write_text(f"{tool}:{session}")
 
     _fake_controller(monkeypatch, script)
@@ -1574,7 +1712,7 @@ def test_webcmd_screenshot_receipts_collect_only_current_task_artifacts(tmp_path
     evidence = asyncio.run(
         execute_controller(
             "codex", "gpt-5", "webcmd", "task", attempt, 5,
-            tool_env={"PATH": "/verified/bin:/original/bin"},
+            tool_env={"PATH": str(selected_dir)},
         )
     )
 
@@ -1592,7 +1730,11 @@ def test_webcmd_screenshot_receipts_collect_only_current_task_artifacts(tmp_path
         b"first",
         b"10",
     ]
-    assert (attempt / "controller-path.txt").read_text() == "/verified/bin:/original/bin"
+    assert (attempt / "controller-path.txt").read_text().split(os.pathsep)[0] == str(
+        attempt / "webcmd-bin"
+    )
+    assert cleanup_env["PATH"].split(os.pathsep)[0] == str(attempt / "webcmd-bin")
+    assert cleanup_env["ZDOTDIR"] == str(attempt / "zsh-config")
     assert (attempt / "controller.jsonl").read_text() == f"{command_event}\n{answer_event}\n"
     assert marker.read_text() == f"webcmd:{WEBCMD_SESSION}"
 
@@ -2315,6 +2457,33 @@ def test_cancellation_first_arriving_during_normal_close_finishes_close_then_pro
     assert close_finishes == 1
 
 
+def test_cancellation_remains_primary_when_webcmd_close_fails(tmp_path, monkeypatch):
+    event = json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "FINAL ANSWER: 42"}})
+    close_started = asyncio.Event()
+    allow_close = asyncio.Event()
+
+    async def failing_close(*args):
+        close_started.set()
+        await allow_close.wait()
+        raise RuntimeError("cleanup failed")
+
+    async def scenario():
+        task = asyncio.create_task(execute_controller("codex", "gpt-5", "webcmd", "task", tmp_path / "attempt", 5))
+        await asyncio.wait_for(close_started.wait(), timeout=2)
+        task.cancel("close cancellation")
+        await asyncio.sleep(0)
+        allow_close.set()
+        with pytest.raises(asyncio.CancelledError) as cancelled:
+            await task
+        assert cancelled.value.args == ("close cancellation",)
+        assert any("cleanup failed" in note for note in cancelled.value.__notes__)
+
+    _fake_controller(monkeypatch, f"print({event!r})")
+    monkeypatch.setattr(run_controller, "_close_session", failing_close)
+
+    asyncio.run(scenario())
+
+
 def test_nonzero_exit_precedes_valid_final_answer(tmp_path, monkeypatch):
     event = json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "FINAL ANSWER: 42"}})
     _fake_controller(monkeypatch, f"print({event!r}); raise SystemExit(7)")
@@ -2391,7 +2560,8 @@ def test_close_session_kills_and_reaps_a_timed_out_close_process(monkeypatch):
     monkeypatch.setattr(run_controller.asyncio, "create_subprocess_exec", create_process)
     monkeypatch.setattr(run_controller.asyncio, "wait_for", timeout)
 
-    asyncio.run(run_controller._close_session("webcmd", WEBCMD_SESSION))
+    with pytest.raises(RuntimeError, match="timed out"):
+        asyncio.run(run_controller._close_session("webcmd", WEBCMD_SESSION))
 
     assert process.killed
     assert process.wait_calls == 1
@@ -2410,8 +2580,26 @@ def test_close_session_kills_and_reaps_a_timed_out_close_process(monkeypatch):
     )
 
 
+def test_close_session_reports_nonzero_exit(monkeypatch):
+    class Process:
+        returncode = 7
+
+        async def wait(self):
+            return 7
+
+    async def create_process(*args, **kwargs):
+        return Process()
+
+    monkeypatch.setattr(run_controller.asyncio, "create_subprocess_exec", create_process)
+
+    with pytest.raises(RuntimeError, match="exit code 7"):
+        asyncio.run(run_controller._close_session("webcmd", WEBCMD_SESSION))
+
+
 def test_close_session_uses_only_selected_tool_environment(monkeypatch):
     class Process:
+        returncode = 0
+
         async def wait(self):
             return 0
 

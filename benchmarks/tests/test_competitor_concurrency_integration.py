@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import shlex
 import subprocess
 from urllib.parse import quote
 from urllib.request import Request, urlopen
@@ -11,7 +12,12 @@ from agent_browser_runtime import start_agent_browser_runtime
 from axi_runtime import _profile_pids, start_axi_runtime
 from dev_browser_runtime import start_dev_browser_runtime
 from libretto_runtime import start_libretto_runtime
-from run_controller import _subprocess_env
+from run_controller import (
+    _close_session,
+    _create_webcmd_session,
+    _pin_webcmd_env,
+    _subprocess_env,
+)
 
 
 ENABLED = {
@@ -73,6 +79,107 @@ def _tool_processes(tool: str) -> dict[int, str]:
         if any(marker in line for marker in markers)
         and not (tool == "dev-browser" and ".dev-browser/daemon.mjs" in line)
     }
+
+
+async def _run_webcmd_login_shell(
+    env: dict[str, str], session: str, marker: str
+) -> dict:
+    command = (
+        "webcmd --profile benchmark --session "
+        f"{shlex.quote(session)} browser run --stdin"
+    )
+    shell = env.get("SHELL") or (
+        "/bin/zsh" if os.path.isfile("/bin/zsh") else "/bin/sh"
+    )
+    process = await asyncio.create_subprocess_exec(
+        shell,
+        "-lc",
+        command,
+        env=env,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        start_new_session=True,
+    )
+    url = f"data:text/html,<title>{marker}</title>"
+    program = (
+        f"await page.goto({json.dumps(url)});"
+        " return {urls: context.pages().map(page => page.url())};"
+    )
+    stdout, stderr = await process.communicate(program.encode())
+    if process.returncode:
+        raise AssertionError(
+            f"webcmd failed ({process.returncode}): "
+            f"{stderr.decode(errors='replace') or stdout.decode(errors='replace')}"
+        )
+    return json.loads(stdout)
+
+
+def test_two_live_webcmd_login_shells_are_isolated_and_cleaned_up(tmp_path):
+    if "all" not in ENABLED and "webcmd" not in ENABLED:
+        pytest.skip(
+            "set BROWSER_BENCH_LIVE_COMPETITORS=webcmd to run this live gate"
+        )
+
+    async def exercise():
+        work_dirs = [tmp_path / "first", tmp_path / "second"]
+        for work_dir in work_dirs:
+            work_dir.mkdir()
+        envs = await asyncio.gather(
+            *(
+                asyncio.to_thread(
+                    _pin_webcmd_env, _subprocess_env(tool="webcmd"), work_dir
+                )
+                for work_dir in work_dirs
+            )
+        )
+        outcomes = await asyncio.gather(
+            *(_create_webcmd_session(env) for env in envs), return_exceptions=True
+        )
+        successes = [
+            (outcome, envs[index])
+            for index, outcome in enumerate(outcomes)
+            if not isinstance(outcome, BaseException)
+        ]
+        failures = [
+            outcome for outcome in outcomes if isinstance(outcome, BaseException)
+        ]
+        if failures:
+            await asyncio.gather(
+                *(
+                    _close_session("webcmd", session, env)
+                    for session, env in successes
+                )
+            )
+            raise failures[0]
+
+        sessions = [session for session, _ in successes]
+        markers = ["webcmd-one", "webcmd-two"]
+        try:
+            assert sessions[0] != sessions[1]
+            results = await asyncio.gather(
+                *(
+                    _run_webcmd_login_shell(env, session, marker)
+                    for env, session, marker in zip(
+                        envs, sessions, markers, strict=True
+                    )
+                )
+            )
+        finally:
+            await asyncio.gather(
+                *(
+                    _close_session("webcmd", session, env)
+                    for session, env in zip(sessions, envs, strict=True)
+                )
+            )
+
+        urls = [result["result"]["urls"] for result in results]
+        assert any(markers[0] in url for url in urls[0])
+        assert not any(markers[1] in url for url in urls[0])
+        assert any(markers[1] in url for url in urls[1])
+        assert not any(markers[0] in url for url in urls[1])
+
+    asyncio.run(exercise())
 
 
 @pytest.mark.parametrize("tool", RUNTIMES)
