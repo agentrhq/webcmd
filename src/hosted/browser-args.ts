@@ -1,11 +1,13 @@
 import { Command, Option } from 'commander';
 import {
   browserCommandCatalog,
+  browserHelpGroup,
   browserOptionFlags,
   browserOptionValueParser,
 } from '../browser/command-catalog.js';
 import { CommanderStructuralError } from '../command-surface.js';
 import { CliError, EXIT_CODES } from '../errors.js';
+import { hideAutoHelpCommands } from '../help.js';
 import { configureRootCommandSurface } from '../root-command-surface.js';
 
 export class HostedBrowserHelp extends Error {
@@ -71,7 +73,10 @@ export function parseHostedBrowserStructure(argv: readonly string[]): ParsedHost
     }
 
     const leafName = parts.at(-1)!;
-    const leaf = parent.command(leafName).description(contract.description);
+    const leaf = parent
+      .command(leafName)
+      .description(contract.description)
+      .helpGroup(browserHelpGroup(contract.command));
     for (const alias of contract.aliases) leaf.alias(alias);
     for (const positional of contract.positionals) {
       const suffix = positional.variadic ? '...' : '';
@@ -105,6 +110,8 @@ export function parseHostedBrowserStructure(argv: readonly string[]): ParsedHost
       };
     });
   }
+
+  hideAutoHelpCommands(browser);
 
   let stderr = '';
   let stdout = '';
