@@ -33,6 +33,7 @@ import {
   type BrowserRunResult,
   type BrowserRunTimings,
   type BrowserRunWarning,
+  isClosedContextError,
 } from './types.js';
 
 export interface BrowserRunSessionScope {
@@ -569,6 +570,10 @@ export async function runBrowserProgram(
           code: 'BROWSER_RUN_SNAPSHOT_FAILED',
           message: normalizeExecutionError(snapshotError).message,
         });
+        // The run itself already succeeded, so keep ok: true — but a closed-context
+        // signature here means the connection is dying underneath it. Signal the
+        // caller out-of-band so the dead Profile runtime doesn't get reused (#314).
+        if (isClosedContextError(snapshotError)) options.onStaleContext?.();
       } finally {
         timings.snapshot_ms = (timings.snapshot_ms ?? 0) + Math.max(0, Date.now() - snapshotStartedAt);
       }

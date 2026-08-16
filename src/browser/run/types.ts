@@ -86,6 +86,21 @@ export interface BrowserRunOptions {
   snapshotMode?: SnapshotTreeMode;
   snapshotBaselineStore?: SnapshotBaselineStore;
   signal?: AbortSignal;
+  /**
+   * Called when a closed-context signature ("Target page, context or browser
+   * has been closed") surfaces somewhere that doesn't itself fail the run —
+   * currently, the post-run snapshot capture (webcmd#314). The run still
+   * completes with `ok: true` (the program itself may have genuinely
+   * succeeded), but the caller should treat the underlying Profile runtime as
+   * dead so the next command on this Session isn't handed the same lease.
+   */
+  onStaleContext?: () => void;
+}
+
+/** Matches Playwright's "Target page, context or browser has been closed" error family. */
+export function isClosedContextError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /Target page, context or browser has been closed/i.test(message);
 }
 
 export interface BrowserRunLogEntry {

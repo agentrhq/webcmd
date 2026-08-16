@@ -828,6 +828,39 @@ describe('CloakSessionManager', () => {
     expect(launchPersistentContext).toHaveBeenCalledTimes(2);
   });
 
+  it('invalidates a reused getPage() lease when the CDP liveness probe finds a dead context (webcmd#314)', async () => {
+    const first = fakeContext();
+    const replacement = fakeContext();
+    replacement.context.pages.mockReturnValue([]);
+    const launchPersistentContext = vi.fn()
+      .mockResolvedValueOnce(first.context)
+      .mockResolvedValueOnce(replacement.context);
+    const manager = new CloakSessionManager({ baseDir: '/tmp/webcmd-test', launchPersistentContext });
+
+    const firstLease = await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser' });
+    expect(firstLease.context).toBe(first.context);
+
+    // Simulate the issue's repro: isClosed() still reports false, but the
+    // underlying CDP connection is dead, so the liveness probe used on reuse
+    // (Browser.getWindowForTarget, via assertOwnedWindow) fails.
+    first.cdp.send.mockImplementation(async (command: string) => {
+      if (command === 'Browser.getWindowForTarget') {
+        throw new Error('Target page, context or browser has been closed');
+      }
+      return {};
+    });
+
+    // isClosed() still reports false right up to the reuse attempt — the fast
+    // path's precondition holds; only the liveness probe catches the dead lease.
+    expect(firstLease.page.isClosed()).toBe(false);
+    const secondLease = await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser' });
+
+    expect(secondLease.context).toBe(replacement.context);
+    expect(secondLease.page).not.toBe(firstLease.page);
+    expect((firstLease.page as unknown as { close: ReturnType<typeof vi.fn> }).close).toHaveBeenCalled();
+    expect(launchPersistentContext).toHaveBeenCalledTimes(2);
+  });
+
   it('retries explicit newPage page creation once after a closed-context failure', async () => {
     const closed = new Error('browserContext.newPage: Target page, context or browser has been closed');
     const first = fakeContext();

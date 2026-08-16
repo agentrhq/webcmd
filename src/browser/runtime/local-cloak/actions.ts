@@ -268,6 +268,7 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
           snapshotDiff: command.noSnapshotDiff ? false : command.snapshotDiff,
           snapshotMode: command.snapshotMode === 'tree' ? 'tree' : 'act',
           snapshotBaselineStore: snapshotBaselineStore(manager),
+          onStaleContext: () => manager.invalidateIfClosedContext(lease.profileId, scope.context),
           ...(signal ? { signal } : {}),
         });
         return {

@@ -196,6 +196,40 @@ afterAll(async () => {
     }));
   });
 
+  it('signals a stale context when the post-snapshot fails with a closed-context error (webcmd#314)', async () => {
+    const newCDPSession = context.newCDPSession.bind(context);
+    let calls = 0;
+    context.newCDPSession = ((...args: Parameters<BrowserContext['newCDPSession']>) => {
+      calls += 1;
+      if (calls === 2) return Promise.reject(new Error('Target page, context or browser has been closed'));
+      return newCDPSession(...args);
+    }) as BrowserContext['newCDPSession'];
+    const onStaleContext = vi.fn();
+
+    const output = await run('return 7;', { snapshotDiff: true, onStaleContext });
+
+    expect(output.result).toBe(7);
+    expect(output.warnings).toContainEqual(expect.objectContaining({
+      code: 'BROWSER_RUN_SNAPSHOT_FAILED',
+    }));
+    expect(onStaleContext).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not signal a stale context for an unrelated post-snapshot failure', async () => {
+    const newCDPSession = context.newCDPSession.bind(context);
+    let calls = 0;
+    context.newCDPSession = ((...args: Parameters<BrowserContext['newCDPSession']>) => {
+      calls += 1;
+      if (calls === 2) return Promise.reject(new Error('post snapshot failed'));
+      return newCDPSession(...args);
+    }) as BrowserContext['newCDPSession'];
+    const onStaleContext = vi.fn();
+
+    await run('return 7;', { snapshotDiff: true, onStaleContext });
+
+    expect(onStaleContext).not.toHaveBeenCalled();
+  });
+
   it('does not expose page.snapshotForAI inside browser-run code', async () => {
     const output = await run('return typeof page.snapshotForAI;');
 
