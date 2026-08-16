@@ -1775,54 +1775,90 @@ cli({
   // Snapshot before applyRootSubcommandSummaries() rewrites .description() to a child-name listing.
   const originalProfileDescription = profileCmd.description();
 
-  profileCmd
+  const profileListCmd = profileCmd
     .command('list')
     .description('List Chrome and Chromium profiles available through the Cloak runtime')
-    .action(async () => {
-      const status = await fetchDaemonStatus();
-      const config = loadProfileConfig();
-      const profiles = status?.profiles ?? [];
-      if (!status) {
-        console.log('Daemon is not running. Run webcmd doctor after opening Chrome.');
-        return;
-      }
-      if (isDaemonStale(status, PKG_VERSION) || !Array.isArray(status.profiles)) {
-        console.log(`Daemon ${formatDaemonVersion(status)} is stale for CLI v${PKG_VERSION}.`);
-        console.log('Run: webcmd daemon restart');
-        return;
-      }
-      if (profiles.length === 0) {
-        console.log('No Cloak runtime profiles are active.');
-        console.log('Run a browser-backed command or webcmd <site> login to create one.');
-        return;
-      }
+    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
+  profileListCmd.action(async (opts) => {
+    const fmt = resolveOutputFormat(opts.format);
+    if (fmt === null) return;
+    const status = await fetchDaemonStatus();
+    const config = loadProfileConfig();
+    const profiles = status?.profiles ?? [];
+    if (!status) {
+      if (fmt !== 'table') { renderOutput([], { fmt }); return; }
+      console.log('Daemon is not running. Run webcmd doctor after opening Chrome.');
+      return;
+    }
+    if (isDaemonStale(status, PKG_VERSION) || !Array.isArray(status.profiles)) {
+      if (fmt !== 'table') { renderOutput([], { fmt }); return; }
+      console.log(`Daemon ${formatDaemonVersion(status)} is stale for CLI v${PKG_VERSION}.`);
+      console.log('Run: webcmd daemon restart');
+      return;
+    }
+    if (profiles.length === 0) {
+      if (fmt !== 'table') { renderOutput([], { fmt }); return; }
+      console.log('No Cloak runtime profiles are active.');
+      console.log('Run a browser-backed command or webcmd <site> login to create one.');
+      return;
+    }
 
-      const knownContextIds = new Set(profiles.map((profile) => profile.contextId));
-      console.log('Available Cloak profiles');
+    const knownContextIds = new Set(profiles.map((profile) => profile.contextId));
+    const disconnectedAliases = Object.entries(config.aliases)
+      .filter(([, contextId]) => !knownContextIds.has(contextId));
+
+    if (fmt !== 'table') {
+      // Aligns with the hosted `profile list` row shape (`default`); local rows also
+      // carry `connected`/`runtimeVersion` since Cloak profiles are live runtime
+      // connections, not persisted Cloud records.
+      const rows = profiles.map((profile) => ({
+        contextId: profile.contextId,
+        alias: aliasForContextId(config, profile.contextId) ?? null,
+        default: config.defaultContextId === profile.contextId,
+        connected: true,
+        runtimeVersion: profile.runtimeVersion ?? null,
+      }));
+      const shown = new Set<string>();
+      for (const [alias, contextId] of disconnectedAliases) {
+        shown.add(contextId);
+        rows.push({
+          contextId,
+          alias,
+          default: config.defaultContextId === contextId,
+          connected: false,
+          runtimeVersion: null,
+        });
+      }
+      if (config.defaultContextId && !shown.has(config.defaultContextId) && !knownContextIds.has(config.defaultContextId)) {
+        rows.push({ contextId: config.defaultContextId, alias: null, default: true, connected: false, runtimeVersion: null });
+      }
+      renderOutput(rows, { fmt });
+      return;
+    }
+
+    console.log('Available Cloak profiles');
+    console.log();
+    for (const profile of profiles) {
+      const alias = aliasForContextId(config, profile.contextId);
+      const defaultMark = config.defaultContextId === profile.contextId ? ' default' : '';
+      const aliasText = alias ? ` ${alias}` : '';
+      const version = profile.runtimeVersion ? ` v${profile.runtimeVersion}` : ' version unknown';
+      console.log(`  ${profile.contextId}${aliasText}${defaultMark} — connected${version}`);
+    }
+
+    if (disconnectedAliases.length > 0 || (config.defaultContextId && !knownContextIds.has(config.defaultContextId))) {
       console.log();
-      for (const profile of profiles) {
-        const alias = aliasForContextId(config, profile.contextId);
-        const defaultMark = config.defaultContextId === profile.contextId ? ' default' : '';
-        const aliasText = alias ? ` ${alias}` : '';
-        const version = profile.runtimeVersion ? ` v${profile.runtimeVersion}` : ' version unknown';
-        console.log(`  ${profile.contextId}${aliasText}${defaultMark} — connected${version}`);
+      console.log('Disconnected saved profiles:');
+      const shown = new Set<string>();
+      for (const [alias, contextId] of disconnectedAliases) {
+        shown.add(contextId);
+        console.log(`  ${contextId} ${alias} — not connected`);
       }
-
-      const disconnectedAliases = Object.entries(config.aliases)
-        .filter(([, contextId]) => !knownContextIds.has(contextId));
-      if (disconnectedAliases.length > 0 || (config.defaultContextId && !knownContextIds.has(config.defaultContextId))) {
-        console.log();
-        console.log('Disconnected saved profiles:');
-        const shown = new Set<string>();
-        for (const [alias, contextId] of disconnectedAliases) {
-          shown.add(contextId);
-          console.log(`  ${contextId} ${alias} — not connected`);
-        }
-        if (config.defaultContextId && !shown.has(config.defaultContextId) && !knownContextIds.has(config.defaultContextId)) {
-          console.log(`  ${config.defaultContextId} — default, not connected`);
-        }
+      if (config.defaultContextId && !shown.has(config.defaultContextId) && !knownContextIds.has(config.defaultContextId)) {
+        console.log(`  ${config.defaultContextId} — default, not connected`);
       }
-    });
+    }
+  });
 
   profileCmd
     .command('rename')

@@ -17,6 +17,7 @@ import {
 } from './command-presentation.js';
 import { parseOutputFormat } from './command-surface.js';
 import { render as renderOutput } from './output.js';
+import { saveProfileConfig } from './browser/profile.js';
 import * as pluginModule from './plugin.js';
 import * as discoveryModule from './discovery.js';
 
@@ -1721,6 +1722,62 @@ describe('profile list', () => {
     expect(output).not.toContain(`Browser ${'Bridge'}`);
     expect(output).not.toContain(`Webcmd ${'extension'}`);
     expect(output).not.toContain('webcmd daemon restart');
+  });
+
+  it('-f json renders an empty array instead of prose when no profiles are active (#175)', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ok: true,
+        pid: 123,
+        uptime: 1,
+        daemonVersion: PKG_VERSION,
+        runtimeConnected: false,
+        runtimeName: 'Cloak',
+        profiles: [],
+        pending: 0,
+        memoryMB: 20,
+        port: 9777,
+      }),
+    } as Response);
+    const program = createProgram('', '');
+
+    await program.parseAsync(['node', 'webcmd', 'profile', 'list', '-f', 'json']);
+
+    const output = stdoutSpy.mock.calls.flat().join('\n');
+    expect(JSON.parse(output)).toEqual([]);
+  });
+
+  it('-f json renders connected and disconnected-saved profiles as structured rows (#175)', async () => {
+    saveProfileConfig({
+      version: 1,
+      defaultContextId: 'work',
+      aliases: { work: 'work', archived: 'gone' },
+    });
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ok: true,
+        pid: 123,
+        uptime: 1,
+        daemonVersion: PKG_VERSION,
+        runtimeConnected: true,
+        runtimeName: 'Cloak',
+        profiles: [{ contextId: 'work', runtimeConnected: true, runtimeVersion: '1.2.3', pending: 0 }],
+        pending: 0,
+        memoryMB: 20,
+        port: 9777,
+      }),
+    } as Response);
+    const program = createProgram('', '');
+
+    await program.parseAsync(['node', 'webcmd', 'profile', 'list', '-f', 'json']);
+
+    const output = stdoutSpy.mock.calls.flat().join('\n');
+    expect(JSON.parse(output)).toEqual([
+      { contextId: 'work', alias: 'work', default: true, connected: true, runtimeVersion: '1.2.3' },
+      { contextId: 'gone', alias: 'archived', default: false, connected: false, runtimeVersion: null },
+    ]);
   });
 });
 
