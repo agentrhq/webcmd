@@ -1857,10 +1857,15 @@ cli({
   const daemonCmd = program.command('daemon').description('Manage the webcmd daemon');
   // Snapshot before applyRootSubcommandSummaries() rewrites .description() to a child-name listing.
   const originalDaemonDescription = daemonCmd.description();
-  daemonCmd
+  const daemonStatusCmd = daemonCmd
     .command('status')
     .description('Show daemon status')
-    .action(async () => { await daemonStatus(); });
+    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
+  daemonStatusCmd.action(async (opts) => {
+    const fmt = resolveOutputFormat(opts.format);
+    if (fmt === null) return;
+    await daemonStatus(fmt);
+  });
   daemonCmd
     .command('stop')
     .description('Stop the daemon')

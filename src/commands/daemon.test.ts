@@ -105,6 +105,35 @@ describe('daemonStatus', () => {
 
     expect(stdoutSpy).toHaveBeenCalledWith(expect.stringContaining('fake connected'));
   });
+
+  it('renders a structured envelope for -f json when running (#175)', async () => {
+    fetchDaemonStatusMock.mockResolvedValue({
+      ok: true,
+      pid: 12345,
+      uptime: 60,
+      daemonVersion: PKG_VERSION,
+      runtimeConnected: true,
+      runtimeName: 'fake',
+      pending: 0,
+      memoryMB: 64,
+      port: 9777,
+    });
+
+    await daemonStatus('json');
+
+    const printed = stdoutSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
+    const data = JSON.parse(printed);
+    expect(data).toMatchObject({ running: true, pid: 12345, port: 9777 });
+  });
+
+  it('renders a structured envelope for -f json when not running (#175)', async () => {
+    fetchDaemonStatusMock.mockResolvedValue(null);
+
+    await daemonStatus('json');
+
+    const printed = stdoutSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
+    expect(JSON.parse(printed)).toEqual({ running: false });
+  });
 });
 
 // ────────────────────────────────────────────────────────────────────

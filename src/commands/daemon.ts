@@ -11,9 +11,14 @@ import { formatDuration } from '../download/progress.js';
 import { log } from '../logger.js';
 import { PKG_VERSION } from '../version.js';
 import { formatDaemonVersion, isDaemonStale } from '../browser/daemon-version.js';
+import { render } from '../output.js';
 
-export async function daemonStatus(): Promise<void> {
+export async function daemonStatus(fmt: string = 'table'): Promise<void> {
   const status = await fetchDaemonStatus();
+  if (fmt !== 'table') {
+    await render(status ? { running: true, ...status } : { running: false }, { fmt });
+    return;
+  }
   if (!status) {
     console.log('Daemon: not running');
     return;
