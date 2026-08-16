@@ -46,7 +46,6 @@ function fakeContext() {
     send: vi.fn(async (command: string, params?: { targetId?: string }) => {
       if (command === 'Target.createTarget') {
         const created = await context.newPage();
-        allPages.push(created);
         queueMicrotask(() => emit('page', created));
         return { targetId: targetIds.get(created) };
       }
@@ -150,5 +149,22 @@ describe('browser run recovery from a dead context (#314)', () => {
     await dispatchCloakAction(manager, command('run-2'));
 
     expect(launchPersistentContext).toHaveBeenCalledTimes(1);
+  });
+
+  it('normalizes the profileId before evicting, so an un-normalized id still finds the runtime', async () => {
+    const dead = fakeContext();
+    const launchPersistentContext = vi.fn().mockResolvedValue(dead.context);
+    const manager = new CloakSessionManager({ baseDir: '/tmp/webcmd-run-recovery-test-3', launchPersistentContext });
+    const lease = await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser' });
+
+    // The manager keys its runtime map by normalizeProfileId('default') === 'default';
+    // callers may reasonably pass an equivalent but un-normalized id.
+    manager.evictDeadRuntime('  default  ', lease.context);
+
+    const replacement = fakeContext();
+    launchPersistentContext.mockResolvedValueOnce(replacement.context);
+    await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser' });
+
+    expect(launchPersistentContext).toHaveBeenCalledTimes(2);
   });
 });

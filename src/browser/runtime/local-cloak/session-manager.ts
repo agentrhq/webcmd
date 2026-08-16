@@ -429,8 +429,9 @@ export class CloakSessionManager {
    * raced ahead of the failed lease (see #314).
    */
   evictDeadRuntime(profileId: string, context: BrowserContext): void {
-    const runtime = this.profiles.get(profileId);
-    if (runtime && runtime.context === context) this.invalidateProfileRuntime(profileId, runtime);
+    const normalized = normalizeProfileId(profileId);
+    const runtime = this.profiles.get(normalized);
+    if (runtime && runtime.context === context) this.invalidateProfileRuntime(normalized, runtime);
   }
 
   private async newPageAttempt(input: SessionKeyInput & { url?: string }, attempt: number): Promise<CloakPageLease> {
