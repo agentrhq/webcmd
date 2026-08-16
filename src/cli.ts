@@ -667,14 +667,19 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
 
   // ── Built-in: validate / verify ───────────────────────────────────────────
 
-  program
+  const validateCmd = program
     .command('validate')
     .description('Validate CLI definitions')
     .argument('[target]', 'site or site/name')
-    .action(async (target) => {
-      const { validateClisWithTarget, renderValidationReport } = await import('./validate.js');
-      console.log(renderValidationReport(validateClisWithTarget([BUILTIN_CLIS, USER_CLIS], target)));
-    });
+    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
+  validateCmd.action(async (target, opts) => {
+    const fmt = resolveOutputFormat(opts.format);
+    if (fmt === null) return;
+    const { validateClisWithTarget, renderValidationReport } = await import('./validate.js');
+    const report = validateClisWithTarget([BUILTIN_CLIS, USER_CLIS], target);
+    if (fmt === 'table') console.log(renderValidationReport(report));
+    else renderOutput(report, { fmt });
+  });
 
   program
     .command('verify')

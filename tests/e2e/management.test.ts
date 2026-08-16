@@ -96,6 +96,29 @@ describe('management commands E2E', () => {
     expect(stdout).toContain('PASS');
   });
 
+  it('validate -f json produces a structured report', async () => {
+    const { stdout, code } = await runManagementCli(['validate', '-f', 'json']);
+    expect(code).toBe(0);
+    const data = parseJsonOutput(stdout);
+    expect(data).toMatchObject({ ok: true, errors: 0 });
+    expect(Array.isArray(data.results)).toBe(true);
+    expect(typeof data.commands).toBe('number');
+  });
+
+  it('validate -f yaml produces a structured report', async () => {
+    const { stdout, code } = await runManagementCli(['validate', '-f', 'yaml']);
+    expect(code).toBe(0);
+    expect(stdout).toContain('ok: true');
+    expect(stdout).toContain('results:');
+  });
+
+  it('validate without -f still prints the human-readable report', async () => {
+    const { stdout, code } = await runManagementCli(['validate']);
+    expect(code).toBe(0);
+    expect(stdout).toContain(`validate: PASS`);
+    expect(stdout).toContain('Checked');
+  });
+
   // ── verify ──
   it('verify runs validation without smoke tests', async () => {
     const { stdout, code } = await runManagementCli(['verify']);
