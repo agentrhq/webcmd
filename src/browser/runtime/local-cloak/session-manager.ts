@@ -170,7 +170,7 @@ function pageIsClosed(page: PlaywrightPage): boolean {
   return page.isClosed?.() === true;
 }
 
-function isClosedContextError(error: unknown): boolean {
+export function isClosedContextError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return /Target page, context or browser has been closed/i.test(message);
 }
@@ -420,6 +420,17 @@ export class CloakSessionManager {
 
   async navigatePage(input: SessionKeyInput, url: string, waitUntil: 'load' | 'commit'): Promise<CloakPageLease> {
     return this.navigatePageAttempt(input, url, waitUntil, 0);
+  }
+
+  /**
+   * Drop a Profile runtime that a caller has independently proven dead (e.g. a
+   * `browser run` program observed the closed-target signature). No-ops if the
+   * Profile has already been replaced, so it never evicts a healthy runtime that
+   * raced ahead of the failed lease (see #314).
+   */
+  evictDeadRuntime(profileId: string, context: BrowserContext): void {
+    const runtime = this.profiles.get(profileId);
+    if (runtime && runtime.context === context) this.invalidateProfileRuntime(profileId, runtime);
   }
 
   private async newPageAttempt(input: SessionKeyInput & { url?: string }, attempt: number): Promise<CloakPageLease> {

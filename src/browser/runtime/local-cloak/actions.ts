@@ -10,7 +10,7 @@ import {
 import { redactText, redactUrl } from '../../../observation/redaction.js';
 import { articleHtmlToMarkdown } from '../../../download/article-download.js';
 import { waitForDownload } from './downloads.js';
-import type { CloakSessionManager } from './session-manager.js';
+import { isClosedContextError, type CloakSessionManager } from './session-manager.js';
 import type { BrowserContext, Frame, Page as PlaywrightPage } from 'playwright-core';
 import { runBrowserProgram } from '../../run/runner.js';
 import { BROWSER_RUN_MAX_SOURCE_BYTES } from '../../run/types.js';
@@ -258,18 +258,29 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
           idleTimeout: command.idleTimeout,
           windowMode: command.windowMode,
         }, lease.page);
-        const data = await runBrowserProgram({
-          ...scope,
-          pageId: lease.pageId,
-        }, command.source, {
-          timeoutMs: command.timeoutMs,
-          maxOutputChars: command.maxOutputChars,
-          memoryLimitBytes: command.memoryLimitBytes,
-          snapshotDiff: command.noSnapshotDiff ? false : command.snapshotDiff,
-          snapshotMode: command.snapshotMode === 'tree' ? 'tree' : 'act',
-          snapshotBaselineStore: snapshotBaselineStore(manager),
-          ...(signal ? { signal } : {}),
-        });
+        let data: Awaited<ReturnType<typeof runBrowserProgram>>;
+        try {
+          data = await runBrowserProgram({
+            ...scope,
+            pageId: lease.pageId,
+          }, command.source, {
+            timeoutMs: command.timeoutMs,
+            maxOutputChars: command.maxOutputChars,
+            memoryLimitBytes: command.memoryLimitBytes,
+            snapshotDiff: command.noSnapshotDiff ? false : command.snapshotDiff,
+            snapshotMode: command.snapshotMode === 'tree' ? 'tree' : 'act',
+            snapshotBaselineStore: snapshotBaselineStore(manager),
+            ...(signal ? { signal } : {}),
+          });
+        } catch (error) {
+          // A dead context can still report `page.isClosed() === false`, so a lease
+          // can look healthy right up until the program tries to use it. Evict the
+          // Profile runtime so the next command gets a fresh page instead of
+          // repeatedly leasing the same invalid one (#314). We don't retry here:
+          // the program may already have caused side effects, so replay isn't safe.
+          if (isClosedContextError(error)) manager.evictDeadRuntime(lease.profileId, lease.context);
+          throw error;
+        }
         return {
           id: command.id,
           ok: true,
