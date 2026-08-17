@@ -675,7 +675,12 @@ function parseHostedSessionListLimit(value: string): number {
 function sessionCreateOutput(data: unknown): unknown {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return data;
   const row = data as Record<string, unknown>;
-  return { id: row.id, kind: row.kind, runtimeState: row.runtimeState, liveViewUrl: row.liveViewUrl };
+  return {
+    id: row.id,
+    kind: row.kind,
+    runtimeState: row.runtimeState,
+    ...(typeof row.liveViewUrl === 'string' ? { liveViewUrl: row.liveViewUrl } : {}),
+  };
 }
 
 function formatHostedSessionHandoff(handoff: unknown): string {
