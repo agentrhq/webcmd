@@ -445,8 +445,8 @@ async function dispatchHosted(
   }
 
   const startTime = now();
-  const response = hasPresentFileArgument(command, parsed.args)
-    ? await executeHostedFileCommand({
+  const response = command.browser || hasPresentFileArgument(command, parsed.args)
+    ? await executeHostedPreparedCommand({
         client,
         command,
         args: parsed.args,
@@ -454,6 +454,7 @@ async function dispatchHosted(
         trace: parsed.trace,
         profile: parsed.profile ?? normalized.profile,
         session: normalized.session,
+        stderr,
       })
     : await client.execute({
         command: command.command,
@@ -674,7 +675,7 @@ function parseHostedSessionListLimit(value: string): number {
 function sessionCreateOutput(data: unknown): unknown {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return data;
   const row = data as Record<string, unknown>;
-  return { id: row.id, kind: row.kind, runtimeState: row.runtimeState };
+  return { id: row.id, kind: row.kind, runtimeState: row.runtimeState, liveViewUrl: row.liveViewUrl };
 }
 
 function formatHostedSessionHandoff(handoff: unknown): string {
@@ -696,7 +697,7 @@ function hasPresentFileArgument(
   });
 }
 
-async function executeHostedFileCommand(input: {
+async function executeHostedPreparedCommand(input: {
   client: HostedClient;
   command: import('./types.js').HostedCommand;
   args: Record<string, unknown>;
@@ -704,11 +705,17 @@ async function executeHostedFileCommand(input: {
   trace: string;
   profile?: string;
   session?: string;
+  stderr: NodeJS.WritableStream;
 }): Promise<import('./types.js').HostedExecuteResponse> {
   const prepared = await prepareHostedFiles({
     client: input.client,
     command: input.command,
     args: input.args,
+    ...(input.profile !== undefined ? { profile: input.profile } : {}),
+    ...(input.session !== undefined ? { session: input.session } : {}),
+    onPrepared: async (prepared) => {
+      if (prepared.liveViewUrl) await writeToStream(input.stderr, `Webcmd live view: ${prepared.liveViewUrl}\n`);
+    },
   });
   const response = await input.client.runPreparedExecution({
     executionId: prepared.executionId,

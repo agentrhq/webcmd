@@ -269,7 +269,12 @@ export class HostedClient {
     return body;
   }
 
-  async prepareExecution(input: { command: string }): Promise<HostedPrepareExecutionResponse> {
+  async prepareExecution(input: {
+    command: string;
+    profile?: string;
+    session?: string;
+    executionScope?: 'profile' | 'stateless';
+  }): Promise<HostedPrepareExecutionResponse> {
     const body = await this.request('/v1/executions', {
       method: 'POST',
       body: JSON.stringify(input),
@@ -460,6 +465,7 @@ export class HostedClient {
         accept: 'application/json',
         authorization: `Bearer ${this.apiKey}`,
         'x-webcmd-session-protocol-version': String(HOSTED_SESSION_PROTOCOL_VERSION),
+        'x-webcmd-client-capabilities': 'hosted-live-view-v1',
         ...(init.body ? { 'content-type': 'application/json' } : {}),
         ...(this.workspace ? { 'x-webcmd-workspace': this.workspace } : {}),
         ...(init.headers ?? {}),
@@ -585,14 +591,15 @@ function isHostedPrepareExecutionResponse(
   value: unknown,
   requestedCommand: string,
 ): value is HostedPrepareExecutionResponse {
-  return hasExactKeys(value, ['ok', 'execution', 'fileArguments'])
+  return hasOnlyKeys(value, ['ok', 'execution', 'fileArguments', 'liveViewUrl'])
     && value.ok === true
     && hasExactKeys(value.execution, ['id', 'command', 'status'])
     && typeof value.execution.id === 'string'
     && value.execution.command === requestedCommand
     && value.execution.status === 'queued'
     && Array.isArray(value.fileArguments)
-    && value.fileArguments.every(isHostedFileArgument);
+    && value.fileArguments.every(isHostedFileArgument)
+    && (value.liveViewUrl === undefined || typeof value.liveViewUrl === 'string');
 }
 
 function isHostedUploadArtifactResponse(
@@ -620,7 +627,7 @@ function isHostedProfilesResponse(value: unknown): value is HostedProfilesRespon
 function isHostedBrowserSessionResponse(value: unknown): value is HostedBrowserSessionResponse {
   return hasExactKeys(value, ['ok', 'session'])
     && value.ok === true
-    && isHostedBrowserSession(value.session);
+    && isHostedCreatedBrowserSession(value.session);
 }
 
 function isHostedBrowserSessionsResponse(value: unknown): value is HostedBrowserSessionsResponse {
@@ -649,6 +656,12 @@ function isHostedBrowserSession(value: unknown): boolean {
     && typeof value.createdAt === 'string'
     && typeof value.updatedAt === 'string'
     && typeof value.lastUsedAt === 'string';
+}
+
+function isHostedCreatedBrowserSession(value: unknown): boolean {
+  if (!isRecord(value) || typeof value.liveViewUrl !== 'string') return false;
+  const { liveViewUrl: _liveViewUrl, ...session } = value;
+  return isHostedBrowserSession(session);
 }
 
 function isHostedSessionHandoff(value: unknown): boolean {

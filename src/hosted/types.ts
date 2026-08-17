@@ -81,9 +81,13 @@ export interface HostedBrowserSession {
   lastUsedAt: string;
 }
 
+export interface HostedCreatedBrowserSession extends HostedBrowserSession {
+  liveViewUrl: string;
+}
+
 export interface HostedBrowserSessionResponse {
   ok: true;
-  session: HostedBrowserSession;
+  session: HostedCreatedBrowserSession;
 }
 
 export interface HostedBrowserSessionsResponse {
@@ -188,6 +192,7 @@ export interface HostedPrepareExecutionResponse {
   ok: true;
   execution: HostedPreparedExecution;
   fileArguments: HostedFileArgument[];
+  liveViewUrl?: string;
 }
 
 export interface HostedArtifactReceipt {

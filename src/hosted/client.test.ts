@@ -133,7 +133,7 @@ describe('HostedClient', () => {
   });
 
   it('accepts the hosted Session API wire contract', async () => {
-    const requests: Array<{ url: string; method: string; body?: string }> = [];
+    const requests: Array<{ url: string; method: string; body?: string; liveViewCapability: string | null }> = [];
     const session = {
       id: 'session_wire',
       kind: 'explicit',
@@ -144,6 +144,7 @@ describe('HostedClient', () => {
       updatedAt: '2026-08-12T00:01:00.000Z',
       lastUsedAt: '2026-08-12T00:02:00.000Z',
     };
+    const createdSession = { ...session, liveViewUrl: 'https://api.example.com/account/live/session_wire' };
     const client = new HostedClient({
       apiBaseUrl: 'https://api.example.com',
       apiKey: 'key',
@@ -152,14 +153,15 @@ describe('HostedClient', () => {
           url: String(url),
           method: init?.method ?? 'GET',
           ...(init?.body ? { body: String(init.body) } : {}),
+          liveViewCapability: new Headers(init?.headers).get('x-webcmd-client-capabilities'),
         });
-        if (String(url).endsWith('/v1/sessions')) return new Response(JSON.stringify({ ok: true, session }));
+        if (String(url).endsWith('/v1/sessions')) return new Response(JSON.stringify({ ok: true, session: createdSession }));
         if (String(url).endsWith('/v1/sessions?profile=default&limit=20')) return new Response(JSON.stringify({ ok: true, sessions: [session] }));
         return new Response(JSON.stringify({ ok: true, closed: true, alreadyIdle: false, session: 'session_wire' }));
       },
     });
 
-    await expect(client.createBrowserSession()).resolves.toEqual({ ok: true, session });
+    await expect(client.createBrowserSession()).resolves.toEqual({ ok: true, session: createdSession });
     await expect(client.listBrowserSessions('default', 20)).resolves.toEqual({ ok: true, sessions: [session] });
     await expect(client.closeBrowserSession('session_wire')).resolves.toEqual({
       ok: true,
@@ -167,11 +169,54 @@ describe('HostedClient', () => {
       alreadyIdle: false,
       session: 'session_wire',
     });
-    expect(requests.map(({ url, method }) => ({ url, method }))).toEqual([
-      { url: 'https://api.example.com/v1/sessions', method: 'POST' },
-      { url: 'https://api.example.com/v1/sessions?profile=default&limit=20', method: 'GET' },
-      { url: 'https://api.example.com/v1/sessions/session_wire/close', method: 'POST' },
+    expect(requests.map(({ url, method, liveViewCapability }) => ({ url, method, liveViewCapability }))).toEqual([
+      { url: 'https://api.example.com/v1/sessions', method: 'POST', liveViewCapability: 'hosted-live-view-v1' },
+      { url: 'https://api.example.com/v1/sessions?profile=default&limit=20', method: 'GET', liveViewCapability: 'hosted-live-view-v1' },
+      { url: 'https://api.example.com/v1/sessions/session_wire/close', method: 'POST', liveViewCapability: 'hosted-live-view-v1' },
     ]);
+  });
+
+  it('requires a creation live view, keeps session rows exact, and accepts only the prepared live view field', async () => {
+    const session = {
+      id: 'session_wire', kind: 'explicit', profileId: 'profile_default', runtimeState: 'active', handoff: null,
+      createdAt: '2026-08-12T00:00:00.000Z', updatedAt: '2026-08-12T00:01:00.000Z', lastUsedAt: '2026-08-12T00:02:00.000Z',
+    };
+    let prepareBody: unknown;
+    let prepareCapability: string | null = null;
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com', apiKey: 'key',
+      fetchImpl: async (url, init) => {
+        const pathname = new URL(String(url)).pathname;
+        if (pathname === '/v1/sessions') return new Response(JSON.stringify({ ok: true, session }));
+        if (pathname === '/v1/sessions-list') return new Response(JSON.stringify({ ok: true, sessions: [{ ...session, liveViewUrl: 'https://api.example.com/account/live/session_wire' }] }));
+        if (pathname === '/v1/executions') {
+          prepareBody = JSON.parse(String(init?.body));
+          prepareCapability = new Headers(init?.headers).get('x-webcmd-client-capabilities');
+          const command = (prepareBody as { command: string }).command;
+          return new Response(JSON.stringify({
+            ok: true,
+            execution: { id: 'exec_1', command, status: 'queued' },
+            fileArguments: [],
+            liveViewUrl: 'https://api.example.com/account/live/exec_1',
+            ...(command === 'github/unknown' ? { unexpected: true } : {}),
+          }));
+        }
+        return new Response(JSON.stringify({ ok: true, sessions: [{ ...session, liveViewUrl: 'https://api.example.com/account/live/session_wire' }] }));
+      },
+    });
+
+    await expect(client.createBrowserSession()).rejects.toMatchObject({ code: 'HOSTED_PROTOCOL' });
+    await expect(client.listBrowserSessions()).rejects.toMatchObject({ code: 'HOSTED_PROTOCOL' });
+    await expect(client.prepareExecution({
+      command: 'github/whoami', profile: 'work', session: 'session_work', executionScope: 'profile',
+    })).resolves.toMatchObject({
+      liveViewUrl: 'https://api.example.com/account/live/exec_1',
+    });
+    expect(prepareBody).toEqual({
+      command: 'github/whoami', profile: 'work', session: 'session_work', executionScope: 'profile',
+    });
+    expect(prepareCapability).toBe('hosted-live-view-v1');
+    await expect(client.prepareExecution({ command: 'github/unknown' })).rejects.toMatchObject({ code: 'HOSTED_PROTOCOL' });
   });
 
   it('searches the authenticated marketplace and validates every public plugin field', async () => {

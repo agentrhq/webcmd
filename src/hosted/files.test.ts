@@ -145,9 +145,14 @@ describe('hosted file transfer helpers', () => {
         text: 'hello',
         images: './one.png,./two.png',
       },
+      profile: 'work',
+      session: 'session_work',
+      executionScope: 'profile',
     });
 
-    expect(client.prepareExecution).toHaveBeenCalledWith({ command: 'twitter/post' });
+    expect(client.prepareExecution).toHaveBeenCalledWith({
+      command: 'twitter/post', profile: 'work', session: 'session_work', executionScope: 'profile',
+    });
     expect(client.uploadExecutionArtifact).toHaveBeenCalledTimes(2);
     expect(client.uploadExecutionArtifact).toHaveBeenNthCalledWith(1, expect.objectContaining({
       executionId: 'exec_prepared',
