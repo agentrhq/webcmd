@@ -140,6 +140,18 @@ describe('stepSort', () => {
     expect((result as typeof data).map((r) => r.name)).toEqual(['HUNDRED', 'TEN', 'NINE']);
   });
 
+  it('uses one comparison mode for a mixed column', async () => {
+    const expected = ['0x10', '1a', '2'];
+    for (const values of [
+      ['2', '0x10', '1a'],
+      ['2', '1a', '0x10'],
+      ['0x10', '2', '1a'],
+    ]) {
+      const result = await stepSort(null, 'value', values.map((value) => ({ value })), {});
+      expect((result as Array<{ value: string }>).map(({ value }) => value)).toEqual(expected);
+    }
+  });
+
   it('handles missing fields gracefully', async () => {
     const data = [
       { name: 'A', value: '10' },

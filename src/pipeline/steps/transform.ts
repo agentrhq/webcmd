@@ -64,16 +64,19 @@ function sortableNumber(value: unknown): number | null {
 /**
  * Compare two sort keys.
  *
- * Numbers are compared numerically rather than through the collator. ICU's
- * `numeric` collation only understands runs of digits, so it splits a decimal
+ * Columns whose non-empty values are all numbers are compared numerically.
+ * ICU's `numeric` collation only understands runs of digits, so it splits a decimal
  * at the separator and its ordering of values like "9.5" against "10" varies by
  * platform and locale — Windows CI disagreed with macOS/Linux on exactly that
  * pair. Everything else falls back to a locale-pinned natural compare.
  */
-function compareSortKeys(left: unknown, right: unknown): number {
-  const leftNumber = sortableNumber(left);
-  const rightNumber = sortableNumber(right);
-  if (leftNumber !== null && rightNumber !== null) {
+function compareSortKeys(left: unknown, right: unknown, numericColumn: boolean): number {
+  if (numericColumn) {
+    const leftNumber = sortableNumber(left);
+    const rightNumber = sortableNumber(right);
+    if (leftNumber === null || rightNumber === null) {
+      return leftNumber === rightNumber ? 0 : leftNumber === null ? -1 : 1;
+    }
     return leftNumber === rightNumber ? 0 : leftNumber < rightNumber ? -1 : 1;
   }
   return String(left ?? '').localeCompare(String(right ?? ''), 'en', { numeric: true });
@@ -83,8 +86,11 @@ export async function stepSort(_page: IPage | null, params: unknown, data: unkno
   if (!Array.isArray(data)) return data;
   const key = isRecord(params) ? String(params.by ?? '') : String(params);
   const reverse = isRecord(params) ? params.order === 'desc' : false;
+  const keys = data.map((item) => isRecord(item) ? item[key] : undefined);
+  const numericColumn = keys.some((value) => sortableNumber(value) !== null)
+    && keys.every((value) => value == null || (typeof value === 'string' && value.trim() === '') || sortableNumber(value) !== null);
   return [...data].sort((a, b) => {
-    const cmp = compareSortKeys(isRecord(a) ? a[key] : undefined, isRecord(b) ? b[key] : undefined);
+    const cmp = compareSortKeys(isRecord(a) ? a[key] : undefined, isRecord(b) ? b[key] : undefined, numericColumn);
     return reverse ? -cmp : cmp;
   });
 }
