@@ -187,8 +187,13 @@ describe('HostedClient', () => {
       apiBaseUrl: 'https://api.example.com', apiKey: 'key',
       fetchImpl: async (url, init) => {
         const pathname = new URL(String(url)).pathname;
-        if (pathname === '/v1/sessions') return new Response(JSON.stringify({ ok: true, session }));
-        if (pathname === '/v1/sessions-list') return new Response(JSON.stringify({ ok: true, sessions: [{ ...session, liveViewUrl: 'https://api.example.com/account/live/session_wire' }] }));
+        if (pathname === '/v1/sessions' && init?.method === 'POST') return new Response(JSON.stringify({ ok: true, session }));
+        if (pathname === '/v1/sessions' && (init?.method ?? 'GET') === 'GET') {
+          return new Response(JSON.stringify({
+            ok: true,
+            sessions: [{ ...session, liveViewUrl: 'https://api.example.com/account/live/session_wire' }],
+          }));
+        }
         if (pathname === '/v1/executions') {
           prepareBody = JSON.parse(String(init?.body));
           prepareCapability = new Headers(init?.headers).get('x-webcmd-client-capabilities');
@@ -201,7 +206,7 @@ describe('HostedClient', () => {
             ...(command === 'github/unknown' ? { unexpected: true } : {}),
           }));
         }
-        return new Response(JSON.stringify({ ok: true, sessions: [{ ...session, liveViewUrl: 'https://api.example.com/account/live/session_wire' }] }));
+        return new Response(JSON.stringify({ ok: false, error: { code: 'UNEXPECTED', message: pathname, exitCode: 1 } }));
       },
     });
 
