@@ -75,10 +75,7 @@ export function rejectPositionalBrowserSessionArgv(argv: readonly string[]): str
   const commandIndex = findRootCommandIndex(result);
   if (result[commandIndex] !== 'browser') return result;
   const candidate = result[commandIndex + 1];
-  if (!candidate || candidate.startsWith('-') || BROWSER_SUBCOMMAND_NAMES.has(candidate)) {
-    hoistBrowserWindowOption(result, commandIndex + 1);
-    return result;
-  }
+  if (!candidate || candidate.startsWith('-') || BROWSER_SUBCOMMAND_NAMES.has(candidate)) return result;
   const replacement = [
     ...result.slice(0, commandIndex),
     '--session', candidate,
@@ -120,33 +117,6 @@ function findRootCommandIndex(argv: readonly string[]): number {
     index += token.includes('=') || !ROOT_VALUE_FLAGS.has(token) ? 1 : 2;
   }
   return index;
-}
-
-/**
- * Move one trailing `--window <mode>` / `--window=<mode>` from after the browser
- * subcommand to just before it. Stops at `--` so literal browser arguments are
- * untouched. Mutates `argv` in place.
- */
-function hoistBrowserWindowOption(argv: string[], fromIndex: number): void {
-  const subcommandIdx = argv.findIndex((tok, idx) => idx >= fromIndex && BROWSER_SUBCOMMAND_NAMES.has(tok));
-  if (subcommandIdx === -1) return;
-
-  for (let i = subcommandIdx + 1; i < argv.length; i += 1) {
-    const tok = argv[i];
-    if (tok === '--') return;
-    if (tok.startsWith('--window=')) {
-      const removed = argv.splice(i, 1);
-      argv.splice(subcommandIdx, 0, ...removed);
-      return;
-    }
-    if (tok === '--window') {
-      const value = argv[i + 1];
-      if (value === undefined || value === '--') return;
-      const removed = argv.splice(i, 2);
-      argv.splice(subcommandIdx, 0, ...removed);
-      return;
-    }
-  }
 }
 
 /**

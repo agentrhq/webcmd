@@ -14,9 +14,9 @@ describe('rejectPositionalBrowserSessionArgv', () => {
 });
 
 describe('rejectPositionalBrowserSessionArgv details', () => {
-  it('keeps browser subcommands and hoists trailing --window', () => {
-    expect(rejectPositionalBrowserSessionArgv(['--session', 'session_a', 'browser', 'state', '--window', 'background'])).toEqual([
-      '--session', 'session_a', 'browser', '--window', 'background', 'state',
+  it('leaves a recognised browser subcommand and its options in place', () => {
+    expect(rejectPositionalBrowserSessionArgv(['--session', 'session_a', 'browser', 'snapshot', '--snapshot-mode', 'act'])).toEqual([
+      '--session', 'session_a', 'browser', 'snapshot', '--snapshot-mode', 'act',
     ]);
   });
 
