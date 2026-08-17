@@ -128,6 +128,18 @@ describe('stepSort', () => {
     expect((result as typeof data).map((r) => r.name)).toEqual(['B', 'C', 'A']);
   });
 
+  it('orders decimals by value, not by collation', async () => {
+    // ICU numeric collation splits "9.5" at the separator, so the ordering of
+    // this trio against "10" used to differ between Windows and macOS/Linux.
+    const data = [
+      { name: 'TEN', change: '10.0' },
+      { name: 'NINE', change: '9.5' },
+      { name: 'HUNDRED', change: '100.0' },
+    ];
+    const result = await stepSort(null, { by: 'change', order: 'desc' }, data, {});
+    expect((result as typeof data).map((r) => r.name)).toEqual(['HUNDRED', 'TEN', 'NINE']);
+  });
+
   it('handles missing fields gracefully', async () => {
     const data = [
       { name: 'A', value: '10' },

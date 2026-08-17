@@ -53,14 +53,38 @@ export async function stepFilter(_page: IPage | null, params: unknown, data: unk
   return data.filter((item, i) => evalExpr(String(params), { args, item, index: i }));
 }
 
+/** Parse a sort key as a number, or null when it is not one. */
+function sortableNumber(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value !== 'string' || value.trim() === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * Compare two sort keys.
+ *
+ * Numbers are compared numerically rather than through the collator. ICU's
+ * `numeric` collation only understands runs of digits, so it splits a decimal
+ * at the separator and its ordering of values like "9.5" against "10" varies by
+ * platform and locale — Windows CI disagreed with macOS/Linux on exactly that
+ * pair. Everything else falls back to a locale-pinned natural compare.
+ */
+function compareSortKeys(left: unknown, right: unknown): number {
+  const leftNumber = sortableNumber(left);
+  const rightNumber = sortableNumber(right);
+  if (leftNumber !== null && rightNumber !== null) {
+    return leftNumber === rightNumber ? 0 : leftNumber < rightNumber ? -1 : 1;
+  }
+  return String(left ?? '').localeCompare(String(right ?? ''), 'en', { numeric: true });
+}
+
 export async function stepSort(_page: IPage | null, params: unknown, data: unknown, _args: Record<string, unknown>): Promise<unknown> {
   if (!Array.isArray(data)) return data;
   const key = isRecord(params) ? String(params.by ?? '') : String(params);
   const reverse = isRecord(params) ? params.order === 'desc' : false;
   return [...data].sort((a, b) => {
-    const left = isRecord(a) ? a[key] : undefined;
-    const right = isRecord(b) ? b[key] : undefined;
-    const cmp = String(left ?? '').localeCompare(String(right ?? ''), undefined, { numeric: true });
+    const cmp = compareSortKeys(isRecord(a) ? a[key] : undefined, isRecord(b) ? b[key] : undefined);
     return reverse ? -cmp : cmp;
   });
 }
