@@ -1760,15 +1760,33 @@ cli({
     return source;
   };
   const reportLocalAdapterPath = (commandKey: string): void => console.log(localAdapterPath(commandKey));
+  // Commander swallows a thrown error from a sync action as a raw stack trace
+  // and always exits 1, discarding a CliError's intended exit code (e.g.
+  // ArgumentError → 2). Route these through the same reporting the rest of
+  // the CLI uses so adapter source errors are clean and actionable.
+  const runAdapterSourceAction = (fn: () => void): void => {
+    try {
+      fn();
+    } catch (err) {
+      console.error(`Error: ${getErrorMessage(err)}`);
+      process.exitCode = err instanceof CliError ? err.exitCode : EXIT_CODES.GENERIC_ERROR;
+    }
+  };
   const adapterSourceCmd = adapterCmd.command('source').description('Inspect local adapter source paths; hosted mode reads or writes source');
   adapterSourceCmd.command('get').description('Print local source path; --output is hosted-only').argument('<command>').option('-o, --output <path>').action((commandKey: string, options: { output?: string }) => {
-    if (options.output) throw new ArgumentError(`Local adapter source get does not support --output. Use webcmd adapter path ${commandKey} and edit that file.`);
-    reportLocalAdapterPath(commandKey);
+    runAdapterSourceAction(() => {
+      if (options.output) throw new ArgumentError(`Local adapter source get does not support --output. Use webcmd adapter path ${commandKey} and edit that file.`);
+      reportLocalAdapterPath(commandKey);
+    });
   });
   adapterSourceCmd.command('put').description('Hosted-only source write; local users edit the adapter path').argument('<command>').argument('<path>').action((commandKey: string) => {
-    throw new ArgumentError(`Local adapter source put is unavailable. Use webcmd adapter path ${commandKey} and edit that file.`);
+    runAdapterSourceAction(() => {
+      throw new ArgumentError(`Local adapter source put is unavailable. Use webcmd adapter path ${commandKey} and edit that file.`);
+    });
   });
-  adapterCmd.command('path').argument('<command>').action((commandKey: string) => reportLocalAdapterPath(commandKey));
+  adapterCmd.command('path').argument('<command>').action((commandKey: string) => {
+    runAdapterSourceAction(() => reportLocalAdapterPath(commandKey));
+  });
 
   // ── Built-in: browser profile selection ──────────────────────────────────
   const profileCmd = program.command('profile').description('Manage webcmd browser runtime profiles');

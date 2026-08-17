@@ -160,8 +160,16 @@ describe('site-memory and local adapter authoring', () => {
   });
 
   it('rejects unresolved local adapter source paths', async () => {
-    await expect(createProgram('', '').parseAsync(['node', 'webcmd', 'adapter', 'path', 'missing/search']))
-      .rejects.toThrow(/Adapter source is unavailable/);
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const previousExitCode = process.exitCode;
+    try {
+      await createProgram('', '').parseAsync(['node', 'webcmd', 'adapter', 'path', 'missing/search']);
+      expect(stderrSpy.mock.calls.flat().join('\n')).toContain('Adapter source is unavailable');
+      expect(process.exitCode).toBe(2);
+    } finally {
+      process.exitCode = previousExitCode;
+      stderrSpy.mockRestore();
+    }
   });
 
   it('rejects local adapter source writes while directing users to the source path', async () => {
@@ -173,13 +181,22 @@ describe('site-memory and local adapter authoring', () => {
     getRegistry().set(key, {
       site: 'local-source', name: 'search', access: 'read', description: 'local source', args: [], source,
     } as never);
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const previousExitCode = process.exitCode;
     try {
-      await expect(createProgram('', '').parseAsync(['node', 'webcmd', 'adapter', 'source', 'get', key, '--output', output]))
-        .rejects.toThrow(`webcmd adapter path ${key}`);
-      await expect(createProgram('', '').parseAsync(['node', 'webcmd', 'adapter', 'source', 'put', key, output]))
-        .rejects.toThrow(`webcmd adapter path ${key}`);
+      await createProgram('', '').parseAsync(['node', 'webcmd', 'adapter', 'source', 'get', key, '--output', output]);
+      expect(stderrSpy.mock.calls.flat().join('\n')).toContain(`webcmd adapter path ${key}`);
+      expect(process.exitCode).toBe(2);
+
+      stderrSpy.mockClear();
+      process.exitCode = previousExitCode;
+      await createProgram('', '').parseAsync(['node', 'webcmd', 'adapter', 'source', 'put', key, output]);
+      expect(stderrSpy.mock.calls.flat().join('\n')).toContain(`webcmd adapter path ${key}`);
+      expect(process.exitCode).toBe(2);
     } finally {
       getRegistry().delete(key);
+      process.exitCode = previousExitCode;
+      stderrSpy.mockRestore();
     }
   });
 
@@ -191,11 +208,16 @@ describe('site-memory and local adapter authoring', () => {
     getRegistry().set(key, {
       site: 'stale-source', name: 'search', access: 'read', description: 'stale', args: [], source,
     } as never);
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const previousExitCode = process.exitCode;
     try {
-      await expect(createProgram('', '').parseAsync(['node', 'webcmd', 'adapter', 'path', key]))
-        .rejects.toThrow(/Adapter source is unavailable/);
+      await createProgram('', '').parseAsync(['node', 'webcmd', 'adapter', 'path', key]);
+      expect(stderrSpy.mock.calls.flat().join('\n')).toContain('Adapter source is unavailable');
+      expect(process.exitCode).toBe(2);
     } finally {
       getRegistry().delete(key);
+      process.exitCode = previousExitCode;
+      stderrSpy.mockRestore();
     }
   });
 });

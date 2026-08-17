@@ -1,6 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import type { Command } from 'commander';
-import { ArgumentError, CliError, EXIT_CODES } from '../errors.js';
+import { ArgumentError, CliError, EXIT_CODES, getErrorMessage } from '../errors.js';
 import { render as renderOutput } from '../output.js';
 import { writeToStream } from '../stream-write.js';
 import {
@@ -33,51 +33,69 @@ export interface SiteMemoryBackend {
   sample(site: string, command: string, body: string): Promise<void>;
 }
 
+/**
+ * Commander doesn't format or set an exit code for a rejected async action —
+ * it surfaces as a raw unhandled-rejection stack trace and exit code 1,
+ * discarding CliError's intended exit code (e.g. SITE_MEMORY_NOT_FOUND → 66).
+ * Every action below goes through this so `site` errors look and behave like
+ * the rest of the CLI's error output.
+ */
+function wrapAction<A extends unknown[]>(fn: (...args: A) => Promise<void> | void): (...args: A) => Promise<void> {
+  return async (...args: A) => {
+    try {
+      await fn(...args);
+    } catch (err) {
+      console.error(`Error: ${getErrorMessage(err)}`);
+      process.exitCode = err instanceof CliError ? err.exitCode : EXIT_CODES.GENERIC_ERROR;
+    }
+  };
+}
+
 export function registerSiteCommands(root: Command, backend: SiteMemoryBackend, stdout?: NodeJS.WritableStream): void {
   const site = root.command('site').description('Read and write site memory');
   const memory = site.command('memory').description('Inspect site memory');
-  memory.command('show').argument('<site>').option('--kind <kind>').option('-o, --output <path>').action(async (name, opts: { kind?: string; output?: string }) => {
+  memory.command('show').argument('<site>').option('--kind <kind>').option('-o, --output <path>').action(wrapAction(async (name, opts: { kind?: string; output?: string }) => {
     const result = await backend.show(name, parseKind(opts.kind));
     if (opts.output) return writeFile(opts.output, `${JSON.stringify(result, null, 2)}\n`);
     await renderOutput(result, { fmt: 'json', stdout });
-  });
-  memory.command('list').argument('<site>').option('-o, --output <path>').action(async (name, opts: { output?: string }) => {
+  }));
+  memory.command('list').argument('<site>').option('-o, --output <path>').action(wrapAction(async (name, opts: { output?: string }) => {
     const result = await backend.list(name);
     if (opts.output) return writeFile(opts.output, `${JSON.stringify(result, null, 2)}\n`);
     await renderOutput(result, { fmt: 'table', fmtExplicit: true, columns: ['path', 'updatedAt', 'byteSize', 'sha256'], stdout });
-  });
+  }));
   site.command('note').command('add').argument('<site>').requiredOption('--text <markdown>').option('--author <author>')
-    .action((name, opts: { text: string; author?: string }) => backend.note(name, opts.text, opts.author));
+    .action(wrapAction((name, opts: { text: string; author?: string }) => backend.note(name, opts.text, opts.author)));
   const endpoint = site.command('endpoint').description('Maintain verified endpoints');
   endpoint.command('set').argument('<site>').argument('<name>').requiredOption('--url <url>').requiredOption('--method <method>')
     .option('--params <json>').option('--rows-path <path>').option('--fields <fields>').option('--notes <text>')
-    .action((siteName, name, opts: { url: string; method: string; params?: string; rowsPath?: string; fields?: string; notes?: string }) => backend.endpoint(siteName, name, {
+    .action(wrapAction((siteName, name, opts: { url: string; method: string; params?: string; rowsPath?: string; fields?: string; notes?: string }) => backend.endpoint(siteName, name, {
       url: opts.url, method: opts.method,
       ...(opts.params ? { params: parseJsonObject(opts.params) } : {}),
       ...(opts.rowsPath ? { rowsPath: opts.rowsPath } : {}),
       ...(opts.fields ? { sampleFields: opts.fields.split(',').map(value => value.trim()).filter(Boolean) } : {}),
       ...(opts.notes ? { notes: opts.notes } : {}),
-    }));
-  endpoint.command('stale').argument('<site>').argument('<name>').action((siteName, name) => backend.stale(siteName, name));
+    })));
+  endpoint.command('stale').argument('<site>').argument('<name>').action(wrapAction((siteName, name) => backend.stale(siteName, name)));
   site.command('field-map').command('add').argument('<site>').argument('<key>').requiredOption('--meaning <meaning>').requiredOption('--source <source>').option('--force')
-    .action((siteName, key, opts: { meaning: string; source: string; force?: boolean }) => backend.fieldMap(siteName, key, opts.meaning, opts.source, opts.force === true));
+    .action(wrapAction((siteName, key, opts: { meaning: string; source: string; force?: boolean }) => backend.fieldMap(siteName, key, opts.meaning, opts.source, opts.force === true)));
   const fixture = site.command('fixture').description('Read and write verify fixtures');
-  fixture.command('get').argument('<site-command>').option('--output <path>').action(async (key, opts: { output?: string }) => {
+  fixture.command('get').argument('<site-command>').option('--output <path>').action(wrapAction(async (key, opts: { output?: string }) => {
     const { site: siteName, command } = parseSiteCommand(key);
     const body = await backend.fixture(siteName, command);
     if (body === null) throw new CliError('SITE_MEMORY_NOT_FOUND', `Verify fixture ${key} was not found.`, undefined, EXIT_CODES.EMPTY_RESULT);
     if (opts.output) await writeFile(opts.output, body);
     else if (stdout) await writeToStream(stdout, body);
     else process.stdout.write(body);
-  });
-  fixture.command('put').argument('<site-command>').argument('<path>').action(async (key, file) => {
+  }));
+  fixture.command('put').argument('<site-command>').argument('<path>').action(wrapAction(async (key, file) => {
     const { site: siteName, command } = parseSiteCommand(key);
     await backend.putFixture(siteName, command, await readFile(file, 'utf8'));
-  });
-  site.command('sample').command('add').argument('<site-command>').argument('<path>').action(async (key, file) => {
+  }));
+  site.command('sample').command('add').argument('<site-command>').argument('<path>').action(wrapAction(async (key, file) => {
     const { site: siteName, command } = parseSiteCommand(key);
     await backend.sample(siteName, command, await readFile(file, 'utf8'));
-  });
+  }));
 }
 
 export function createLocalSiteMemoryBackend(options: LocalStoreOptions = {}): SiteMemoryBackend {
