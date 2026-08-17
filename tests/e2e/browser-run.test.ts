@@ -93,7 +93,7 @@ describe('browser run local lifecycle', () => {
     servers.push(fixture.server);
     const cacheDir = await fs.mkdtemp(path.join(os.tmpdir(), 'webcmd-browser-run-'));
     tempDirs.push(cacheDir);
-    const env = { WEBCMD_CACHE_DIR: cacheDir };
+    const env = { WEBCMD_CACHE_DIR: cacheDir, WEBCMD_CONFIG_DIR: cacheDir };
 
     const created = await runCliWithStdin(['session', 'create', '-f', 'json'], '', env);
     expect(created.code).toBe(0);
