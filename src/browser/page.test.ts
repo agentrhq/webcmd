@@ -55,21 +55,23 @@ describe('Page.getCurrentUrl', () => {
     sendCommandFullMock.mockResolvedValueOnce({ page: 'page-1', data: { url: 'https://chatgpt.com/' } });
     sendCommandMock.mockResolvedValueOnce(null);
 
-    const page = new Page('site:chatgpt', undefined, undefined, undefined, 'adapter', 'persistent');
+    const page = new Page('session_a', undefined, undefined, undefined, 'adapter', 'persistent', undefined, false, 'chatgpt');
 
     await page.goto('https://chatgpt.com/', { waitUntil: 'none' });
     await page.evaluate('document.title');
 
     expect(sendCommandFullMock).toHaveBeenCalledWith('navigate', expect.objectContaining({
-      session: 'site:chatgpt',
+      session: 'session_a',
       surface: 'adapter',
       siteSession: 'persistent',
+      adapterSite: 'chatgpt',
       waitUntil: 'none',
     }));
     expect(sendCommandMock).toHaveBeenCalledWith('exec', expect.objectContaining({
-      session: 'site:chatgpt',
+      session: 'session_a',
       surface: 'adapter',
       siteSession: 'persistent',
+      adapterSite: 'chatgpt',
       page: 'page-1',
     }));
   });

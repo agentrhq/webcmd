@@ -40,7 +40,7 @@ cli({
   browser: true,
   siteSession: 'persistent',
   args: [
-    { name: 'file', positional: true, required: true, help: 'Local file path to upload (single file; max 50 MB)' },
+    { name: 'file', positional: true, required: true, help: 'Local file path to upload (single file; max 50 MB)', file: { direction: 'input', pathKind: 'file', multiple: false } },
     { name: 'channel', positional: true, required: true, help: 'channelId UUID or #name — server requires the attachment be scoped to a channel' },
     { name: 'server', help: 'Override active server slug' },
   ],

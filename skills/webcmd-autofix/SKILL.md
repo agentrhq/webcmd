@@ -12,15 +12,15 @@ When a `webcmd` command fails because a website changed its DOM, API, or respons
 
 Hard stops before any code change:
 
-- **Human-action handoff:** if a failure returns `handoff.status === action_required`, stop before trace collection or AutoFix. Give the user `handoff.action` and any `Webcmd browser:` or `handoff.viewUrl` link, then wait. Never request or enter credentials, passwords, or CAPTCHA answers. After the user reports done, run `handoff.verifyCommand` when present; verification must succeed before retrying. Without a verifier, inspect fresh browser state and verify the intended post-action state before any retry, especially for write commands.
-- **`AUTH_REQUIRED`** (exit code 77): if a site login command exists, run `webcmd <site> login`, give its `action_required` instructions and any returned `action_url` or `view_url` to the user, and wait. Run the returned `verify_command` (normally `webcmd <site> whoami`); verification must succeed before retrying the original command. If no site login command exists, stop browser writes, hand the visible browser to the user, and wait. After they report done, take fresh browser state and use an available identity check or verify the intended post-action state before retrying. Their report alone is not verification. Never request, type, echo, store, or automate passwords, OTPs, recovery codes, cookies, or session secrets.
+- **Human-action handoff:** if a failure returns `handoff.status === action_required`, stop before trace collection or AutoFix. The handoff is scoped to its Session, which cannot be closed while the handoff is live. Give the user `handoff.action` and any `Webcmd browser:` or `handoff.viewUrl` link, then wait. Never request or enter credentials, passwords, or CAPTCHA answers. After the user reports done, run the returned `handoff.verifyCommand` verbatim; it includes `--session` when applicable, and verification must succeed before retrying. Without a verifier, inspect fresh browser state and verify the intended post-action state before any retry, especially for write commands.
+- **`AUTH_REQUIRED`** (exit code 77): if a site login command exists, run `webcmd <site> login`, give its `action_required` instructions and any returned `action_url` or `view_url` to the user, and wait. Run the returned `verify_command` verbatim; it includes `--session` when applicable, and verification must succeed before retrying the original command. If no site login command exists, stop browser writes, hand the visible browser to the user, and wait. After they report done, take fresh browser state and use an available identity check or verify the intended post-action state before retrying. Their report alone is not verification. Never request, type, echo, store, or automate passwords, OTPs, recovery codes, cookies, or session secrets.
 - **`BROWSER_CONNECT`** (exit code 69): stop. Tell the user to run `webcmd doctor`.
 - **CAPTCHA / raw-browser user takeover:** stop automation. Follow the human-action handoff above when one is returned; otherwise let the user act in the visible browser. Verification must succeed before retrying. With no verifier, take fresh browser state and verify the intended post-action state before any retry. The user's report alone is not verification. CAPTCHA is not an adapter issue.
 - **Rate limiting / IP block:** stop. This is not an adapter issue.
 
 Scope constraint:
 
-- Modify only the file at `adapterSourcePath` in the trace `summary.md` front matter. That path is authoritative and may be `plugins/<site>/...` in the main repo or a plugin repo, or `~/.webcmd/clis/<site>/...` for user-local installs.
+- Modify only the source identified by `adapterSourcePath` in the trace `summary.md` front matter. Run `webcmd adapter path <site>/<command>` to print the source file, then patch that file. In WebCMD Cloud, use `webcmd adapter source get <site>/<command>` and `webcmd adapter source put <site>/<command> <path>` for tenant-owned source.
 - Never modify `src/`, `extension/`, `tests/`, `package.json`, or `tsconfig.json` during autofix.
 
 Retry budget: maximum **3 repair rounds** per failure. A round is diagnose -> patch -> retry. If 3 rounds do not resolve it, stop and report what was tried.
@@ -61,7 +61,7 @@ Persistent-session adapters (`siteSession: 'persistent'`) share one tab per site
 
 - Check the trace screenshot and `location.href`: a modal over a blank page or the wrong URL means the tab carried stale DOM from a previous command, not that the site rejected this request.
 - Check session-scoped context: sites often scope results to a selected city, date, or account. A "closed" / "unavailable" verdict can simply mean the browser's selected context does not match the request (for example, a seat layout opened while the site's location cookie points at another city).
-- Reproduce in a separate browser session with `webcmd browser repair-clean run --stdin` before trusting the verdict. If it only fails in the adapter's persistent tab, fix state handling (`freshPage: true`, dismiss-and-renavigate, context preconditions) instead of selectors.
+- Reproduce in a separate browser session with `webcmd --session <session-id> browser run --stdin` before trusting the verdict. If it only fails in the adapter's persistent tab, fix state handling (`freshPage: true`, dismiss-and-renavigate, context preconditions) instead of selectors.
 
 ## Step 1: Collect Trace Context
 
@@ -144,18 +144,18 @@ Use `webcmd browser` to inspect the live site. Do not use the broken adapter for
 For DOM changes:
 
 ```bash
-webcmd browser repair run --stdin --snapshot-mode tree <<'JS'
+webcmd --session <session-id> browser run --stdin --snapshot-mode tree <<'JS'
 await page.goto('https://example.com/target-page');
 await page.waitForLoadState('domcontentloaded');
 return { url: page.url(), title: await page.title() };
 JS
-webcmd browser repair snapshot --snapshot-mode tree
+webcmd --session <session-id> browser snapshot --snapshot-mode tree
 ```
 
 For API changes:
 
 ```bash
-webcmd browser repair run --stdin <<'JS'
+webcmd --session <session-id> browser run --stdin <<'JS'
 const responses = [];
 page.on('response', async response => {
   if (!response.url().includes('<target-fragment>')) return;
@@ -210,8 +210,8 @@ Rules:
 2. Keep output structure compatible: `columns` and row keys must remain aligned.
 3. Prefer stable API evidence over brittle DOM scraping when discovered.
 4. Use only `@agentrhq/webcmd/*` imports; do not add third-party packages.
-5. Test after patching.
-6. Never relax `verify/<cmd>.json` fixtures to silence a failure. A failing `patterns`, `notEmpty`, `mustNotContain`, or `mustBeTruthy` rule usually means adapter output is wrong. Edit a fixture only when the site itself legitimately changed shape, such as a URL format migration, and note the change in `~/.webcmd/sites/<site>/notes.md`.
+5. Test after patching with `webcmd browser verify <site>/<command>`.
+6. Never relax fixtures to silence a failure. A failing `patterns`, `notEmpty`, `mustNotContain`, or `mustBeTruthy` rule usually means adapter output is wrong. Edit a fixture only when the site itself legitimately changed shape, using `webcmd site fixture get|put <site>/<command>`, and record the change with `webcmd site note add`.
 
 ## Step 5: Verify The Fix
 
@@ -290,8 +290,8 @@ In all stop cases, clearly report the situation instead of making speculative pa
    -> Page loaded, but post cards now use "[data-testid=post-container]"
 
 4. Agent explores:
-   -> webcmd browser repair run --stdin --snapshot-mode tree
-   -> webcmd browser repair snapshot --snapshot-mode tree
+   -> webcmd --session <session-id> browser run --stdin --snapshot-mode tree
+   -> webcmd --session <session-id> browser snapshot --snapshot-mode tree
 
 5. Agent patches adapterSourcePath:
    -> Replace old selector with stable scoped selector

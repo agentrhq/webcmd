@@ -31,7 +31,7 @@ cli({
         { name: 'model', default: 'z-image-turbo', help: 'Model ID (z-image-turbo, flux-schnell, nano-banana, flux-2-pro, ...)' },
         { name: 'ratio', default: '1:1', choices: ['1:1', '16:9', '9:16', '4:3', '3:4'], help: 'Aspect ratio' },
         { name: 'image', help: 'Input image URL for image-to-image (upload via "webcmd yollomi upload" first)' },
-        { name: 'output', default: './yollomi-output', help: 'Output directory' },
+        { name: 'output', default: './yollomi-output', help: 'Output directory', file: { direction: 'output', pathKind: 'directory', multiple: false } },
         { name: 'no-download', type: 'boolean', default: false, help: 'Only show URLs, skip download' },
     ],
     columns: ['index', 'status', 'file', 'size', 'url'],

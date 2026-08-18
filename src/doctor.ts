@@ -4,9 +4,12 @@
  * Simplified for the daemon-based architecture.
  */
 
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { binaryInfo, ensureBinary } from 'cloakbrowser';
 import { DEFAULT_DAEMON_PORT } from './constants.js';
 import { BrowserBridge } from './browser/index.js';
-import { setDaemonCommandTimeoutSeconds } from './browser/daemon-client.js';
+import { sendCommand, setDaemonCommandTimeoutSeconds } from './browser/daemon-client.js';
 import { getDaemonHealth } from './browser/daemon-transport.js';
 import { getErrorMessage } from './errors.js';
 import { getRuntimeLabel } from './runtime-detect.js';
@@ -16,7 +19,6 @@ import { formatDaemonVersion, isDaemonStale, staleDaemonIssue } from './browser/
 import { findShadowedUserAdapters, formatAdapterShadowIssue, type AdapterShadow } from './adapter-shadow.js';
 
 const DOCTOR_LIVE_TIMEOUT_SECONDS = 8;
-const DOCTOR_SESSION = '__doctor__';
 
 export type DoctorOptions = {
   yes?: boolean;
@@ -29,6 +31,14 @@ export type ConnectivityResult = {
   durationMs: number;
 };
 
+export type BrowserBinaryStatus = {
+  installed: boolean | undefined;
+  path: string;
+  downloadUrl?: string;
+  error?: string;
+  /** True when CLOAKBROWSER_BINARY_PATH is set — a different check than the managed cache. */
+  override: boolean;
+};
 
 export type DoctorReport = {
   cliVersion?: string;
@@ -40,11 +50,49 @@ export type DoctorReport = {
   runtimeFlaky?: boolean;
   runtimeName?: string;
   runtimeVersion?: string;
+  binary?: BrowserBinaryStatus;
   connectivity?: ConnectivityResult;
   profiles?: BrowserProfileStatus[];
   adapterShadows?: AdapterShadow[];
   issues: string[];
 };
+
+function isLaunchableFile(binaryPath: string): boolean {
+  try {
+    if (!fs.statSync(binaryPath).isFile()) return false;
+    if (process.platform === 'win32') return path.extname(binaryPath).toLowerCase() === '.exe';
+    fs.accessSync(binaryPath, fs.constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Check whether the CloakBrowser Chromium binary is actually installed.
+ * `runtimeConnected: true` only means the
+ * daemon/Cloak runtime process is healthy — it says nothing about whether the
+ * browser binary CloakBrowser needs to launch is present on disk, which is
+ * exactly the gap that made a missing-binary failure look like a generic
+ * connectivity problem (#239).
+ */
+export function checkBrowserBinary(): BrowserBinaryStatus {
+  const override = process.env.CLOAKBROWSER_BINARY_PATH;
+  if (override) {
+    return { installed: isLaunchableFile(override), path: override, override: true };
+  }
+  try {
+    const info = binaryInfo();
+    return {
+      installed: info.installed && isLaunchableFile(info.binaryPath),
+      path: info.binaryPath,
+      downloadUrl: info.downloadUrl,
+      override: false,
+    };
+  } catch (err) {
+    return { installed: undefined, path: 'unknown', error: getErrorMessage(err), override: false };
+  }
+}
 
 /**
  * Test connectivity by attempting a real browser command.
@@ -52,12 +100,18 @@ export type DoctorReport = {
 export async function checkConnectivity(opts?: { timeout?: number }): Promise<ConnectivityResult> {
   const start = Date.now();
   const timeoutSeconds = opts?.timeout ?? DOCTOR_LIVE_TIMEOUT_SECONDS;
-  setDaemonCommandTimeoutSeconds(timeoutSeconds);
+  let sessionId: string | undefined;
   try {
+    // A first-use download can exceed doctor's deliberately short live-probe deadline.
+    await ensureBinary();
+    setDaemonCommandTimeoutSeconds(timeoutSeconds);
+    const session = await sendCommand('session-create', {}) as { id?: unknown };
+    if (typeof session.id !== 'string') throw new Error('Doctor could not create a browser Session.');
+    sessionId = session.id;
     const bridge = new BrowserBridge();
     const page = await bridge.connect({
       timeout: timeoutSeconds,
-      session: DOCTOR_SESSION,
+      session: sessionId,
       surface: 'browser',
       // Without this, windowMode is undefined, which skips the darwin `open -g`
       // launcher AND trips the explicit bringToFront() in the session manager —
@@ -75,14 +129,19 @@ export async function checkConnectivity(opts?: { timeout?: number }): Promise<Co
   } catch (err) {
     return { ok: false, error: getErrorMessage(err), durationMs: Date.now() - start };
   } finally {
+    if (sessionId) {
+      await sendCommand('session-close', { session: sessionId, surface: 'browser', force: true, discard: true }).catch(() => undefined);
+    }
     setDaemonCommandTimeoutSeconds(null);
   }
 }
 
 export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<DoctorReport> {
   // Live connectivity check is the core of doctor — it doubles as auto-start
-  // (bridge.connect spawns daemon) and validates end-to-end browser bridge health.
+  // (bridge.connect spawns daemon) and validates
+  // end-to-end browser bridge health.
   const connectivity = await checkConnectivity();
+  const binary = checkBrowserBinary();
 
   // Single status read *after* connectivity side-effects settle.
   const health = await getDaemonHealth();
@@ -100,6 +159,18 @@ export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<Doctor
     adapterShadows = findShadowedUserAdapters();
   } catch (err) {
     issues.push(`Could not check adapter overrides: ${getErrorMessage(err)}`);
+  }
+  if (binary.error) {
+    issues.push(`Could not check CloakBrowser Chromium binary: ${binary.error}`);
+  } else if (binary.installed === false) {
+    const source = binary.override ? `CLOAKBROWSER_BINARY_PATH (${binary.path})` : binary.path;
+    issues.push(
+      `CloakBrowser Chromium is ${binary.override ? 'not launchable at' : 'not installed at'} ${source}.\n` +
+      (binary.downloadUrl ? `  Download URL: ${binary.downloadUrl}\n` : '') +
+      (binary.override
+        ? '  Check that CLOAKBROWSER_BINARY_PATH points at a compatible local Chromium executable.'
+        : '  Check network access to the download URL above, or set CLOAKBROWSER_BINARY_PATH to a compatible local Chromium executable.'),
+    );
   }
   if (daemonFlaky) {
     issues.push(
@@ -167,6 +238,7 @@ export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<Doctor
     runtimeFlaky,
     runtimeName,
     runtimeVersion,
+    binary,
     connectivity,
     profiles,
     adapterShadows,
@@ -206,6 +278,21 @@ export function renderBrowserDoctorReport(report: DoctorReport): string {
     ? 'unstable (connected during live check, then disconnected)'
     : report.runtimeConnected ? 'connected' : 'not connected';
   lines.push(`${runtimeIcon} Runtime: ${runtimeName} ${runtimeLabel}${runtimeVersion}`);
+
+  // Browser binary status — distinct from "Runtime connected", which only
+  // reflects the daemon/Cloak process and says nothing about whether the
+  // Chromium binary Cloak needs to launch is actually installed.
+  if (report.binary) {
+    const binaryIcon = report.binary.installed === undefined
+      ? '[WARN]'
+      : report.binary.installed ? '[OK]' : '[MISSING]';
+    const binaryLabel = report.binary.installed === undefined
+      ? 'status unknown'
+      : report.binary.installed
+      ? `installed at ${report.binary.path}`
+      : `${report.binary.override ? 'not launchable' : 'not installed'} (${report.binary.path})`;
+    lines.push(`${binaryIcon} Browser binary: ${binaryLabel}`);
+  }
 
   if (report.profiles && report.profiles.length > 0) {
     const config = loadProfileConfig();

@@ -197,7 +197,7 @@ cli({
         { name: 'notebook', positional: true, required: true, help: 'Notebook id from `notebooklm list` or full notebook URL' },
         { name: 'url', help: 'Source URL to add (http/https). Pass exactly one of --url, --content, --file.' },
         { name: 'content', help: 'Raw text content to add as a Text source (max 10 MB).' },
-        { name: 'file', help: `Local file path to upload as a source (max ${MAX_FILE_SOURCE_BYTES} bytes; pdf / txt / md / html / docx / etc.). Uses Google Drive's 3-step resumable upload protocol.` },
+        { name: 'file', help: `Local file path to upload as a source (max ${MAX_FILE_SOURCE_BYTES} bytes; pdf / txt / md / html / docx / etc.). Uses Google Drive's 3-step resumable upload protocol.`, file: { direction: 'input', pathKind: 'file', multiple: false } },
         { name: 'title', help: 'Title for the text source (default "Text Source"). Ignored for --url and --file.' },
         { name: 'mime-type', help: 'Override the auto-detected MIME type when --file is given.' },
         { name: 'execute', type: 'boolean', help: 'Actually add the remote source to the NotebookLM notebook' },

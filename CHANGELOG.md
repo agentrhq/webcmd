@@ -1,18 +1,159 @@
 # Changelog
 
+## [0.7.1](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.0...webcmd-v0.7.1) (2026-08-14)
+
+### Improvements
+- Expanded Webcmd Cloud parity with mutable `input-output` file arguments and corrected filename mapping for commands that produce multiple files.
+- Added hosted support for `browser init`, `browser verify`, adapter source management, and site-memory workflows, enabling adapter authoring and validation in hosted environments.
+- Added marketplace availability metadata to distinguish `hosted`, `mixed`, and `local-only` plugins.
+
+### Fixes
+- Improved `webcmd doctor` browser diagnostics:
+  - Browser installation now completes before the timed connectivity probe begins, preventing first-use downloads from being reported as 8-second browser command timeouts.
+  - A dedicated **Browser binary** status identifies missing, invalid, or non-executable Chromium binaries separately from daemon/runtime connectivity.
+  - Missing binaries now report their expected path, download URL, and actionable `CLOAKBROWSER_BINARY_PATH` guidance.
+- On macOS, Webcmd now repairs stale LaunchServices registrations for managed Chromium bundles and retries background launch once. If remediation fails, `doctor` displays the exact manual `lsregister` command.
+- Prevented background Chromium profiles on macOS from crashing after `webcmd doctor` closes its probe window.
+- Fixed persistent browser Sessions so `browser run` cannot access pages owned by sibling Sessions.
+
+### Adapters
+- Added hosted file contracts across the official plugin catalog, including support for mutable files and commands with multiple outputs.
+- Removed local-only filesystem and binary assumptions from affected plugin commands to improve hosted execution compatibility.
+
+### Contributors
+[@ankitranjan7](https://github.com/ankitranjan7) | [@ayushsingh82](https://github.com/ayushsingh82) | [@beubax](https://github.com/beubax) | [@Sarfraz-droid](https://github.com/Sarfraz-droid)
+
+## [0.7.0](https://github.com/agentrhq/webcmd/compare/webcmd-v0.6.2...webcmd-v0.7.0) (2026-08-14)
+
+_webcmd v0.7.0: The Multiverse of Agents Is Here._
+
+### Highlights
+
+Webcmd 0.7.0 is the multi-agent browser runtime release.
+
+Browser work is no longer organized around one shared window. Agents can create explicit, persistent Sessions inside a profile, work concurrently in isolated Cloak windows, carry authentication state safely, recover stale leases, and close their workspaces deterministically. Authentication handoffs are scoped to the Session that started them, so humans can complete login, MFA, or CAPTCHA challenges without one agent disrupting another.
+
+```bash
+webcmd --profile work session create
+webcmd --session session_abc browser run --stdin
+webcmd --session session_abc browser snapshot --snapshot-mode read
+webcmd session list
+webcmd session close session_abc
+```
+
+The agent multiverse now extends across development environments. Webcmd adds a native Claude Code plugin marketplace alongside Codex, carrying the same seven bundled authoring and browser skills. Onboarding was rewritten across Claude Code, Codex, Cursor, Hermes, OpenCode, OpenClaw, and Pi so agents can install Webcmd, understand which existing tools to keep, and route compatible browser work through one deterministic command surface.
+
+Research workflows also become agent-native. The new OmniSearch plugin searches seven public communities without login, while Smart Search now recognizes site-specific requests and goes directly to an installed adapter instead of wasting time on generic search engines.
+
+### Improvements
+
+- Added explicit browser Sessions with `session create`, `session list`, and `session close`, plus the root-level `--session` selector. Agents sharing one profile can now work concurrently in separate browser workspaces. [#291](https://github.com/agentrhq/webcmd/pull/291)
+- Added session isolation across Cloak windows, browser actions, dialogs, adapter execution, authentication handoffs, leases, cancellation, and daemon disconnects.
+- Brought the Session model to hosted browser execution with local/hosted contract and command parity.
+- Made `web fetch` a client-owned core command. It now follows a deterministic HTTP-only ladder before any explicit browser fallback: plain HTTP, Chrome TLS impersonation, then Firefox TLS impersonation.
+- Added a site-named fast path to Smart Search. Requests naming Hacker News, Reddit, or another supported site now try that site's adapter before a generic search engine. [#269](https://github.com/agentrhq/webcmd/pull/269)
+- Improved plugin search so spaced, hyphenated, punctuated, concatenated, and reordered multi-word queries can find the intended plugin while still requiring every search term. [#285](https://github.com/agentrhq/webcmd/pull/285)
+- Added a native Claude Code marketplace and synchronized Claude Code, Codex, and npm package version metadata. [#273](https://github.com/agentrhq/webcmd/pull/273)
+- Streamlined copyable onboarding prompts and restored the manual quick start for users who prefer direct CLI installation. [#272](https://github.com/agentrhq/webcmd/pull/272) [#275](https://github.com/agentrhq/webcmd/pull/275)
+- Reworked tool-routing guidance across seven agent harnesses. Webcmd now distinguishes tools that should be replaced from native search or development tools that should remain available.
+- Made plugin updates ignore only untracked npm-generated artifacts such as `node_modules` and `package-lock.json`, while continuing to protect genuine user changes. [#267](https://github.com/agentrhq/webcmd/pull/267)
+- Added an explicit confirmation boundary before promoting private adapters into the public repository, plus CI protection against unrelated changes in new-plugin pull requests. [#234](https://github.com/agentrhq/webcmd/pull/234) [#304](https://github.com/agentrhq/webcmd/pull/304)
+- **Breaking:** invalid `-f` or `--format` values now fail consistently with exit code 2 instead of silently falling back to a table. Supported formats are `table`, `plain`, `json`, `yaml`, `md`, and `csv`. [#190](https://github.com/agentrhq/webcmd/pull/190)
+
+### Fixes
+
+- Enforced `web fetch --timeout` across the complete request lifecycle, including proxy teardown, DNS resolution, keep-alive tunnels, and late socket errors. A timed-out request now exits at its declared deadline with a structured `TIMEOUT` error. [#265](https://github.com/agentrhq/webcmd/pull/265)
+- Fixed browser-run commands returning JavaScript `undefined`; deterministic output now serializes it as `null`. [#278](https://github.com/agentrhq/webcmd/pull/278)
+- Repaired `webcmd doctor` session cleanup and first-window selection so diagnostic probes do not leak into normal browser work. [#298](https://github.com/agentrhq/webcmd/pull/298)
+- Made the verify row-shape top-level key limit configurable for commands with legitimately wide structured output. [#230](https://github.com/agentrhq/webcmd/pull/230)
+- Restored 44 browser test files containing 596 tests to CI coverage, and made the Playwright vendor digest stable across Windows and POSIX paths. [#238](https://github.com/agentrhq/webcmd/pull/238)
+- Replaced a real 31 MB test write with a sparse file, preserving coverage while avoiding Windows CI timeouts. [#268](https://github.com/agentrhq/webcmd/pull/268)
+- Corrected plugin promotion documentation, repository paths, community-sync guidance, and Hermes formatting.
+
+### Adapters
+
+- Added **OmniSearch**, a no-login research plugin spanning Hacker News, Stack Overflow, GitHub, arXiv, Dev.to, Lobsters, and Bluesky. Its `research` command aggregates evidence, while `verdict` distills community reception for agent workflows. [#270](https://github.com/agentrhq/webcmd/pull/270)
+
+```bash
+webcmd omnisearch research "browser agents" -f json
+webcmd omnisearch verdict "browser agents" -f json
+```
+
+- Added `youtube frames` for capturing timestamped PNG frames at exact timestamps or evenly across a video. [#297](https://github.com/agentrhq/webcmd/pull/297)
+
+```bash
+webcmd youtube frames "<video-url>" --timestamps 30,90,150
+webcmd youtube frames "<video-url>" --count 5
+```
+
+- Added authenticated Amazon India cart inspection and guarded cart additions, including explicit product-variant verification. [#241](https://github.com/agentrhq/webcmd/pull/241)
+
+```bash
+webcmd amazon-in cart
+webcmd amazon-in cart-add
+```
+
+### Contributors
+
+[@adot-7](https://github.com/adot-7) | [@Agnik47](https://github.com/Agnik47) | [@ankitranjan7](https://github.com/ankitranjan7) | [@anshula-100](https://github.com/anshula-100) | [@ayushsingh82](https://github.com/ayushsingh82) | [@beubax](https://github.com/beubax) | [@ngaurav](https://github.com/ngaurav) | [@Rishet11](https://github.com/Rishet11) | [@rishabhraj36](https://github.com/rishabhraj36) | [@Sneh30](https://github.com/Sneh30) | [@yashkhatri012](https://github.com/yashkhatri012)
+
+## [0.6.2](https://github.com/agentrhq/webcmd/compare/webcmd-v0.6.1...webcmd-v0.6.2) (2026-08-12)
+
+### Highlights
+- Added explicit browser Sessions for local and hosted browser workflows.
+- Added the `browser run` code executor path, including hosted routing and file transfer support.
+- Moved CLI surfaces into plugins, with marketplace search/install and command discovery metadata.
+- Added plugin override precedence and reconciliation: local `~/.webcmd/clis` overrides installed plugins, update detection is content-based, and override status is actionable.
+- Expanded Webcmd Cloud parity for browser commands, hosted manifests, profiles/workspaces, auth handoff, and verify fixture evaluation.
+
+### Fixes
+- Hardened session admission/cancellation, background tab focus, Cloak process matching, and browser run timeout behavior.
+- Fixed plugin discovery/install edge cases, adapter status output, hosted output flushing, and local override reconciliation.
+- Restored and hardened adapter behavior across Amazon, Facebook, Twitter, TikTok, YouTube, and others.
+
+## [0.6.1](https://github.com/agentrhq/webcmd/compare/webcmd-v0.6.0...webcmd-v0.6.1) (2026-08-12)
+
+### Highlights
+- Added explicit raw browser Sessions for parallel agents.
+- Kept adapter commands on an adapter-default Session unless `--session` is supplied.
+- Isolated local Cloak Session windows and pages, and fixed page/admission partitioning by adapter site.
+- Scoped auth handoff and Session close behavior so active work is not interrupted.
+- Updated bundled documentation and skills for Session usage.
+
 ## [0.6.0](https://github.com/agentrhq/webcmd/compare/webcmd-v0.5.4...webcmd-v0.6.0) (2026-08-10)
 
+_webcmd v0.6.0: Code Is All You Need._
 
-### Features
+### Highlights
+Webcmd 0.6.0 is the plugin architecture release. Site CLIs now live as independently installable plugins instead of being bundled into the core package, so the CLI runtime can stay small while adapters evolve on their own cadence. Agents should search the catalog first with `webcmd plugin search <site> -f json`, then install the returned `installSource`.
 
-* migrate release tooling to openai ([#256](https://github.com/agentrhq/webcmd/issues/256)) ([dca5bbb](https://github.com/agentrhq/webcmd/commit/dca5bbb3184218853502e0af3d24726d9c505296))
+The new browser-run executor turns browser automation into code. `webcmd browser <session> run` executes sandboxed Playwright-style JavaScript against a real Webcmd browser session, letting agents inspect pages, reuse state, collect artifacts, and verify UI behavior without hand-assembling brittle one-off commands.
 
+Plugin overrides are safer and more deterministic. Local command overrides in `~/.webcmd/clis` take precedence over installed plugin commands, override update detection is content-based, and installing a newly added monorepo sub-plugin refreshes stale local catalog state instead of incorrectly reporting that the plugin does not exist.
 
-### Bug Fixes
+### Improvements
+- Added `webcmd update` to upgrade the CLI and refresh linked skills from one command.
+- Added `webcmd adapter override <site>/<command>` for forking an installed plugin command into an editable local override.
+- Moved the core `web` adapter into the new command layout and kept fetch/read workflows available through the same runtime surface.
+- Reworked agent onboarding docs around the new plugin-first flow, including Codex, Claude Code, Cursor, Hermes, OpenCode, Pi, OpenClaw, and custom SDK setup.
+- Migrated enhanced release-note generation to OpenAI-backed tooling and hardened the structured docs-review flow.
 
-* **adapters,output:** repair site drift and markdown/console output bugs ([4d2d45b](https://github.com/agentrhq/webcmd/commit/4d2d45b27199c800108a40fe5d6e64782d0c6ea1))
-* harden docs review structured output ([#259](https://github.com/agentrhq/webcmd/issues/259)) ([a1a426a](https://github.com/agentrhq/webcmd/commit/a1a426af82ab9b3d8c973a5b627c5f76723de710))
-* use a lighter review model ([#257](https://github.com/agentrhq/webcmd/issues/257)) ([5fc7e49](https://github.com/agentrhq/webcmd/commit/5fc7e490bb6085d12273ad766675da4148b0ef22))
+### Fixes
+- Fixed stale monorepo plugin installs so a new sub-plugin added to `agentrhq/webcmd` can be found and installed without manually refreshing local cache state.
+- Repaired adapter drift and markdown/console output escaping issues across affected site commands.
+- Hardened docs-review parsing for fenced JSON and switched it to a lighter review model.
+- Hosted browser responses now tolerate additional cloud fields such as `expiresAt`.
+- Cached browser runtime version checks to make status and doctor-style commands faster.
+
+### Adapters
+- All site adapters now install through the plugin catalog instead of shipping inside the npm package.
+- Added postgraduate course export plugins for University of Cincinnati, Concordia University, University of Gottingen, Heidelberg University, HFT Stuttgart, Illinois Institute of Technology, Johns Hopkins University, University of Alberta, and Yale University.
+- Added a `luma` plugin for events, guests, and registration-question workflows.
+- Updated Skyscanner docs with required flags and current examples.
+- Moved and repaired web/social adapter coverage touched by the plugin migration, including Amazon, Facebook, TikTok, Twitter/X, and the built-in web fetch commands.
+
+### Contributors
+[@ankitranjan7](https://github.com/ankitranjan7) | [@anshula-100](https://github.com/anshula-100) | [@askadityapandey](https://github.com/askadityapandey) | [@beubax](https://github.com/beubax) | [@ngaurav](https://github.com/ngaurav) | [@rajarshidattapy](https://github.com/rajarshidattapy) | [@rishabhraj36](https://github.com/rishabhraj36)
 
 ## [0.5.4](https://github.com/agentrhq/webcmd/compare/webcmd-v0.5.3...webcmd-v0.5.4) (2026-08-09)
 
@@ -42,18 +183,6 @@
 
 ### Contributors
 [@ankitranjan7](https://github.com/ankitranjan7) | [@askadityapandey](https://github.com/askadityapandey) | [@beubax](https://github.com/beubax) | [@rajarshidattapy](https://github.com/rajarshidattapy) | [@rishabhraj36](https://github.com/rishabhraj36)
-
-## [0.5.3](https://github.com/agentrhq/webcmd/compare/webcmd-v0.5.2...webcmd-v0.5.3) (2026-08-07)
-
-### Improvements
-- Adds a new `system-info` command to display version information for webcmd, Node.js, and the operating system. This is useful for debugging and reporting issues.
-
-### Fixes
-- The `whoami` command now handles cases where no user is logged in more gracefully, preventing unexpected errors.
-
-### Adapters
-- **AWS**: Added support for the `eu-south-2` (Spain) region.
-- **GCP**: Added a new `gcp run list` command to list Cloud Run services.
 
 ## [0.5.3](https://github.com/agentrhq/webcmd/compare/webcmd-v0.5.2...webcmd-v0.5.3) (2026-08-03)
 

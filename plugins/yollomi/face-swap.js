@@ -17,7 +17,7 @@ cli({
     args: [
         { name: 'source', required: true, help: 'Source face image URL' },
         { name: 'target', required: true, help: 'Target photo URL' },
-        { name: 'output', default: './yollomi-output', help: 'Output directory' },
+        { name: 'output', default: './yollomi-output', help: 'Output directory', file: { direction: 'output', pathKind: 'directory', multiple: false } },
         { name: 'no-download', type: 'boolean', default: false, help: 'Only show URL' },
     ],
     columns: ['status', 'file', 'size', 'url'],

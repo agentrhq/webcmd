@@ -3,6 +3,7 @@ import { constants } from 'node:fs';
 import { access, lstat, mkdir, readdir, readFile, realpath, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
+import { validateFixture } from '../browser/verify-fixture.js';
 
 type JsonObject = Record<string, unknown>;
 
@@ -48,6 +49,14 @@ export interface SiteMemoryListing {
   sha256: string;
 }
 
+export interface VerifyFixtureInput extends LocalStoreOptions {
+  site: string;
+  command: string;
+  body: string;
+}
+
+export interface ResponseSampleInput extends VerifyFixtureInput {}
+
 const writeChains = new Map<string, Promise<void>>();
 const tempWritePattern = /^\..+\.\d+\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.tmp$/i;
 
@@ -92,6 +101,27 @@ export function addFieldMapping(input: FieldMappingInput): Promise<void> {
     mappings[input.key] = { meaning: input.meaning, source: input.source };
     return mappings;
   });
+}
+
+export async function getVerifyFixture(site: string, command: string, opts: LocalStoreOptions = {}): Promise<string | null> {
+  const path = `verify/${safeCommand(command)}.json`;
+  try {
+    return (await showSiteMemory(site, { ...opts, paths: [path] }))[0]?.body ?? null;
+  } catch (err) {
+    if (isNodeError(err) && err.code === 'ENOENT') return null;
+    throw err;
+  }
+}
+
+export async function putVerifyFixture(input: VerifyFixtureInput): Promise<void> {
+  validateVerifyFixture(input.body);
+  await writeSiteFile(input.site, `verify/${safeCommand(input.command)}.json`, input.body, input);
+}
+
+export async function addResponseSample(input: ResponseSampleInput): Promise<{ path: string }> {
+  const path = `fixtures/${safeCommand(input.command)}-${Date.now()}-${randomUUID()}.json`;
+  await writeSiteFile(input.site, path, input.body, input);
+  return { path };
 }
 
 export async function showSiteMemory(site: string, opts: LocalStoreOptions = {}): Promise<SiteMemoryBody[]> {
@@ -140,6 +170,14 @@ async function updateJson(
     const existing = objectValue(JSON.parse(await readText(target) || '{}')) ?? {};
     await atomicWrite(target, `${JSON.stringify(update(existing), null, 2)}\n`);
   });
+}
+
+async function writeSiteFile(site: string, path: string, body: string, opts: LocalStoreOptions): Promise<void> {
+  const root = await ensureSiteRoot(site, opts);
+  const target = join(root, path);
+  await mkdir(dirname(target), { recursive: true });
+  await assertInsideSiteRoot(root, dirname(target), path);
+  await withPathLock(target, () => atomicWrite(target, body));
 }
 
 async function withPathLock<T>(target: string, fn: () => Promise<T>): Promise<T> {
@@ -248,6 +286,30 @@ function objectValue(value: unknown): JsonObject | undefined {
 
 function statusError(statusCode: number, message: string): Error & { statusCode: number } {
   return Object.assign(new Error(message), { statusCode });
+}
+
+function safeCommand(command: string): string {
+  if (!command || command.includes('/') || command.includes('\\') || command === '.' || command === '..') {
+    throw new Error(`Invalid site memory command: ${command}`);
+  }
+  return command;
+}
+
+function validateVerifyFixture(body: string): void {
+  let fixture: unknown;
+  try {
+    fixture = JSON.parse(body);
+  } catch {
+    throw new Error('Fixture must be valid JSON.');
+  }
+  validateFixture(fixture);
+}
+
+async function assertInsideSiteRoot(root: string, parent: string, path: string): Promise<void> {
+  const [realRoot, realParent] = await Promise.all([realpath(root), realpath(parent)]);
+  if (realParent !== realRoot && !realParent.startsWith(`${realRoot}${sep}`)) {
+    throw new Error(`Invalid site memory path: ${path}`);
+  }
 }
 
 function isNodeError(err: unknown): err is NodeJS.ErrnoException {

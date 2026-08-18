@@ -82,7 +82,7 @@ Or remove it entirely — CLI, `browser.request` gateway method, and agent tool 
 | OpenClaw uses `browser` for external sites | Remind it that Webcmd handles the open web; for a hard block, set `browser.enabled: false`. |
 | Search stopped working | Check whether `web_search` was denied. Webcmd does not replace search — remove it from `tools.deny`. |
 | `webcmd` not found in OpenClaw exec | Confirm `webcmd` is on the PATH the Gateway's `exec` tool uses; restart after installing the CLI. |
-| Browser sessions stop working after idle | Ask the agent to open a fresh session or re-bind with `tabs` and `bind --page`. |
+| Browser Session idles or loses its window | Keep the same Session ID; the next `webcmd --session <session-id> browser ...` command reopens it. Use `webcmd session create -f json`, `webcmd session list`, and `webcmd session close <session-id>` for lifecycle. |
 
 ## See also
 

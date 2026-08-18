@@ -218,7 +218,6 @@ async function requestOpenAIReview(
         },
         { role: 'user', content: prompt },
       ],
-      temperature: 0.1,
       ...(useLowReasoning ? { reasoning_effort: 'low' } : {}),
     }),
     signal: AbortSignal.timeout(180_000),
@@ -226,7 +225,10 @@ async function requestOpenAIReview(
   if (response.status === 400 && useLowReasoning) {
     return requestOpenAIReview(prompt, model, apiKey, fetchImpl, false);
   }
-  if (!response.ok) throw new Error(`OpenAI request failed with HTTP ${response.status}.`);
+  if (!response.ok) {
+    const detail = (await response.text()).slice(0, 600);
+    throw new Error(`OpenAI request failed with HTTP ${response.status}: ${detail}`);
+  }
   return response;
 }
 

@@ -356,6 +356,8 @@ describe('OpenAI and documentation boundaries', () => {
         body: expect.stringContaining('"reasoning_effort":"low"'),
       }),
     );
+    const calls = fetchImpl.mock.calls as unknown as Array<[unknown, RequestInit]>;
+    expect(calls[0]?.[1].body).not.toContain('temperature');
     expect(result).toEqual({ verdict: 'no_update_needed', summary: 'Covered.', findings: [] });
   });
 
@@ -381,6 +383,18 @@ describe('OpenAI and documentation boundaries', () => {
       .toContain('"reasoning_effort":"low"');
     expect((fetchImpl.mock.calls as unknown as Array<[unknown, { body?: string }]>)[1]?.[1]?.body)
       .not.toContain('reasoning_effort');
+  });
+
+  it('reports bounded OpenAI API details', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({
+      error: { message: `unsupported parameter: temperature ${'x'.repeat(800)}` },
+    }, 400));
+
+    const error = await generateOpenAIReview('prompt', 'model', 'key', fetchImpl)
+      .catch((value: unknown) => value) as Error;
+
+    expect(error.message).toContain('unsupported parameter: temperature');
+    expect(error.message.length).toBeLessThan(750);
   });
 
   it('defaults the docs review model to gpt-5.4-mini', async () => {

@@ -86,6 +86,30 @@ export type RowShapeOptions = {
   maxNestedDepth?: number;
 };
 
+/** Reject fixture shapes that browser verification cannot safely consume. */
+export function validateFixture(value: unknown): asserts value is Fixture {
+  if (!isRecord(value)) throw fixtureError('fixture');
+  if ('args' in value && !isRecord(value.args) && !Array.isArray(value.args)) throw fixtureError('args');
+  if (!('expect' in value)) return;
+  if (!isRecord(value.expect)) throw fixtureError('expect');
+  const expect = value.expect;
+  if ('columns' in expect && !stringArray(expect.columns)) throw fixtureError('columns');
+  if ('notEmpty' in expect && !stringArray(expect.notEmpty)) throw fixtureError('notEmpty');
+  if ('mustBeTruthy' in expect && !stringArray(expect.mustBeTruthy)) throw fixtureError('mustBeTruthy');
+  if ('rowCount' in expect) {
+    if (!isRecord(expect.rowCount)) throw fixtureError('rowCount');
+    const { min, max } = expect.rowCount;
+    if ((min !== undefined && typeof min !== 'number') || (max !== undefined && typeof max !== 'number') || (typeof min === 'number' && typeof max === 'number' && min > max)) throw fixtureError('rowCount');
+  }
+  validateStringRecord(expect.types, 'types', value => value === 'any' || value.split('|').every(part => /^[A-Za-z][A-Za-z0-9_-]*$/u.test(part.trim())));
+  validateStringRecord(expect.patterns, 'patterns', value => {
+    try { new RegExp(value); return true; } catch { return false; }
+  });
+  if ('mustNotContain' in expect && (!isRecord(expect.mustNotContain) || !Object.values(expect.mustNotContain).every(stringArray))) {
+    throw fixtureError('mustNotContain');
+  }
+}
+
 const DEFAULT_MAX_TOP_LEVEL_KEYS = 12;
 const DEFAULT_MAX_NESTED_DEPTH = 1;
 const ID_SHAPED_KEY_PATTERNS = [
@@ -332,6 +356,24 @@ function jsType(v: unknown): string {
   if (v === null) return 'null';
   if (Array.isArray(v)) return 'array';
   return typeof v;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function stringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(item => typeof item === 'string');
+}
+
+function validateStringRecord(value: unknown, name: string, valid: (value: string) => boolean): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) throw fixtureError(name);
+  for (const [key, item] of Object.entries(value)) if (typeof item !== 'string' || !valid(item)) throw fixtureError(`${name}.${key}`);
+}
+
+function fixtureError(field: string): Error {
+  return new Error(`Fixture field ${field} is invalid.`);
 }
 
 function nestedDepth(value: unknown): number {

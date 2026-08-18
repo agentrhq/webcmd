@@ -638,7 +638,7 @@
       "path": "plugins/linkedin",
       "version": "0.1.0",
       "description": "LinkedIn profile, network, messaging, job, and Sales Navigator commands for WebCMD",
-      "webcmd": ">=0.6.0",
+      "webcmd": ">=0.7.1",
       "author": {
         "name": "WebCMD Agent",
         "handle": "agentrhq"
@@ -772,6 +772,16 @@
       "author": {
         "name": "WebCMD Agent",
         "handle": "agentrhq"
+      }
+    },
+    "omnisearch": {
+      "path": "plugins/omnisearch",
+      "version": "0.1.0",
+      "description": "No-login research across Hacker News, Stack Overflow, GitHub, arXiv, Dev.to, Lobsters, and Bluesky",
+      "webcmd": ">=0.5.3",
+      "author": {
+        "name": "Rishet Mehra",
+        "handle": "Rishet11"
       }
     },
     "openalex": {

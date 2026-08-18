@@ -63,32 +63,54 @@ function invalidRequest(command: BrowserRuntimeCommand, error: string): BrowserR
 }
 
 async function resolveLease(manager: CloakSessionManager, command: BrowserRuntimeCommand) {
+  const profileId = resolveCloakCommandProfileId(manager, command);
   if (command.page) {
-    const existing = manager.findPageById(command.page, { idleTimeout: command.idleTimeout });
+    const existing = await manager.findPageById(command.page, {
+      profileId,
+      session: command.session,
+      sessionId: command.sessionId,
+      surface: command.surface,
+      idleTimeout: command.idleTimeout,
+    });
     if (existing) return existing;
     throw new CloakActionError('stale_page_identity', `Page not found: ${command.page} — stale page identity`);
   }
   return manager.getPage({
-    profileId: resolveCloakCommandProfileId(manager, command),
+    profileId,
     session: command.session,
     surface: command.surface,
     siteSession: command.siteSession,
+    sessionKind: command.sessionKind,
+    sessionId: command.sessionId,
+    adapterSite: command.adapterSite,
+    runId: command.runId,
     idleTimeout: command.idleTimeout,
     freshPage: command.freshPage,
     windowMode: command.windowMode,
   });
 }
 
-function resolveExistingLease(manager: CloakSessionManager, command: BrowserRuntimeCommand) {
+async function resolveExistingLease(manager: CloakSessionManager, command: BrowserRuntimeCommand) {
+  const profileId = resolveCloakCommandProfileId(manager, command);
   if (command.page) {
-    const existing = manager.findPageById(command.page, { idleTimeout: command.idleTimeout });
+    const existing = await manager.findPageById(command.page, {
+      profileId,
+      session: command.session,
+      sessionId: command.sessionId,
+      surface: command.surface,
+      idleTimeout: command.idleTimeout,
+    });
     if (existing) return existing;
     throw new CloakActionError('stale_page_identity', `Page not found: ${command.page} — stale page identity`);
   }
-  const existing = manager.findPage({
-    profileId: resolveCloakCommandProfileId(manager, command),
+  const existing = await manager.findPage({
+    profileId,
     session: command.session,
     surface: command.surface,
+    siteSession: command.siteSession,
+    sessionId: command.sessionId,
+    adapterSite: command.adapterSite,
+    runId: command.runId,
     idleTimeout: command.idleTimeout,
   });
   if (existing) return existing;
@@ -176,13 +198,29 @@ async function captureScreenshot(page: PlaywrightPage, context: BrowserContext, 
   }
 }
 
-export async function dispatchCloakAction(manager: CloakSessionManager, command: BrowserRuntimeCommand): Promise<BrowserRuntimeResult> {
+export async function dispatchCloakAction(manager: CloakSessionManager, command: BrowserRuntimeCommand, signal?: AbortSignal): Promise<BrowserRuntimeResult> {
   try {
     switch (command.action) {
       case 'navigate': {
         if (!command.url) return invalidRequest(command, 'Missing url');
-        const lease = await resolveLease(manager, command);
-        await lease.page.goto(command.url, { waitUntil: toGotoWaitUntil(command.waitUntil) });
+        const profileId = resolveCloakCommandProfileId(manager, command);
+        const lease = await manager.navigatePage(
+          {
+            profileId,
+            session: command.session,
+            surface: command.surface,
+            siteSession: command.siteSession,
+            sessionKind: command.sessionKind,
+            sessionId: command.sessionId,
+            adapterSite: command.adapterSite,
+            runId: command.runId,
+            idleTimeout: command.idleTimeout,
+            freshPage: command.freshPage,
+            windowMode: command.windowMode,
+          },
+          command.url,
+          toGotoWaitUntil(command.waitUntil),
+        );
         return { id: command.id, ok: true, data: { title: await lease.page.title(), url: lease.page.url(), timedOut: false }, page: lease.pageId };
       }
       case 'exec': {
@@ -205,25 +243,21 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
           };
         }
         const lease = await resolveLease(manager, command);
-        const browser = lease.context.browser();
-        if (!browser) throw new CloakActionError(
-          'BROWSER_RUN_API_UNSUPPORTED',
-          'The selected browser context is not attached to a browser.',
-          lease.pageId,
-        );
+        const scope = await manager.browserRunScope({
+          profileId: lease.profileId,
+          session: command.session,
+          sessionId: command.sessionId,
+          surface: command.surface,
+          siteSession: command.siteSession,
+          sessionKind: command.sessionKind,
+          adapterSite: command.adapterSite,
+          runId: command.runId,
+          idleTimeout: command.idleTimeout,
+          windowMode: command.windowMode,
+        }, lease.page);
         const data = await runBrowserProgram({
-          browser,
-          context: lease.context,
-          page: lease.page,
+          ...scope,
           pageId: lease.pageId,
-          registerPage: (page) => manager.registerPage({
-            profileId: lease.profileId,
-            session: command.session,
-            surface: command.surface,
-            siteSession: command.siteSession,
-            idleTimeout: command.idleTimeout,
-            windowMode: command.windowMode,
-          }, page),
         }, command.source, {
           timeoutMs: command.timeoutMs,
           maxOutputChars: command.maxOutputChars,
@@ -231,6 +265,7 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
           snapshotDiff: command.noSnapshotDiff ? false : command.snapshotDiff,
           snapshotMode: command.snapshotMode === 'tree' ? 'tree' : 'act',
           snapshotBaselineStore: snapshotBaselineStore(manager),
+          ...(signal ? { signal } : {}),
         });
         return {
           id: command.id,
@@ -240,7 +275,7 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
         };
       }
       case 'snapshot': {
-        const lease = resolveExistingLease(manager, command);
+        const lease = await resolveExistingLease(manager, command);
         if (command.snapshotMode === 'read') {
           const readable = readableSnapshotText(await extractArticle(lease.page, { force: true }));
           const redacted = redactUrl(redactText(readable.text, { maxStringLength: Number.MAX_SAFE_INTEGER }));
@@ -308,13 +343,23 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
       }
       case 'close-window': {
         if (command.page) {
-          const closed = await manager.closePage({ profileId: resolveCloakCommandProfileId(manager, command), pageId: command.page });
+          const closed = await manager.closePage({
+            profileId: resolveCloakCommandProfileId(manager, command),
+            session: command.session,
+            surface: command.surface,
+            pageId: command.page,
+          });
           return { id: command.id, ok: true, data: { closed: Boolean(closed), page: closed ?? command.page, session: command.session } };
         } else {
           await manager.release({
             profileId: resolveCloakCommandProfileId(manager, command),
             session: command.session,
             surface: command.surface,
+            siteSession: command.siteSession,
+            sessionKind: command.sessionKind,
+            sessionId: command.sessionId,
+            adapterSite: command.adapterSite,
+            runId: command.runId,
           });
           return { id: command.id, ok: true, data: { closed: true, session: command.session } };
         }
@@ -322,7 +367,11 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
       case 'tabs': {
         switch (command.op ?? 'list') {
           case 'list': {
-            const tabs = await manager.listPages({ profileId: resolveCloakCommandProfileId(manager, command) });
+            const tabs = await manager.listPages({
+              profileId: resolveCloakCommandProfileId(manager, command),
+              session: command.session,
+              surface: command.surface,
+            });
             return { id: command.id, ok: true, data: tabs };
           }
           case 'new': {
@@ -331,6 +380,10 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
               session: command.session,
               surface: command.surface,
               siteSession: command.siteSession,
+              sessionKind: command.sessionKind,
+              sessionId: command.sessionId,
+              adapterSite: command.adapterSite,
+              runId: command.runId,
               idleTimeout: command.idleTimeout,
               url: command.url,
               waitUntil: command.waitUntil,
@@ -339,12 +392,25 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
             return { id: command.id, ok: true, data: { title: await lease.page.title(), url: lease.page.url() }, page: lease.pageId };
           }
           case 'select': {
-            const lease = await manager.selectPage({ profileId: resolveCloakCommandProfileId(manager, command), pageId: command.page, index: command.index, windowMode: command.windowMode });
+            const lease = await manager.selectPage({
+              profileId: resolveCloakCommandProfileId(manager, command),
+              session: command.session,
+              surface: command.surface,
+              pageId: command.page,
+              index: command.index,
+              windowMode: command.windowMode,
+            });
             if (!lease) return { id: command.id, ok: false, errorCode: 'runtime_command_failed', error: 'Tab not found' };
             return { id: command.id, ok: true, data: { selected: true, url: lease.page.url() }, page: lease.pageId };
           }
           case 'close': {
-            const closed = await manager.closePage({ profileId: resolveCloakCommandProfileId(manager, command), pageId: command.page, index: command.index });
+            const closed = await manager.closePage({
+              profileId: resolveCloakCommandProfileId(manager, command),
+              session: command.session,
+              surface: command.surface,
+              pageId: command.page,
+              index: command.index,
+            });
             if (!closed) return { id: command.id, ok: false, errorCode: 'runtime_command_failed', error: 'Tab not found' };
             return { id: command.id, ok: true, data: { closed } };
           }
@@ -403,7 +469,7 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
             ok: false,
             errorCode: 'invalid_request',
             error: 'Bind requires --page or --index for a Cloak runtime tab',
-            errorHint: 'Run `webcmd browser <session> tab list`, then retry with `webcmd browser <session> bind --page <page-id>`.',
+            errorHint: 'Run `webcmd --session <session-id> browser tab list`, then retry with `webcmd --session <session-id> browser bind --page <page-id>`.',
           };
         }
         {
@@ -412,6 +478,10 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
             session: command.session,
             surface: command.surface,
             siteSession: command.siteSession,
+            sessionKind: command.sessionKind,
+            sessionId: command.sessionId,
+            adapterSite: command.adapterSite,
+            runId: command.runId,
             idleTimeout: command.idleTimeout,
             windowMode: command.windowMode,
             pageId: command.page,
@@ -423,7 +493,7 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
               ok: false,
               errorCode: 'bound_tab_not_found',
               error: 'Cloak tab not found for bind target',
-              errorHint: 'Run `webcmd browser <session> tab list` and choose a current Cloak tab id or index.',
+              errorHint: 'Run `webcmd --session <session-id> browser tab list` and choose a current Cloak tab id or index.',
             };
           }
           return {
@@ -450,7 +520,7 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
       err instanceof Error
       && 'code' in err
       && typeof err.code === 'string'
-      && err.code.startsWith('BROWSER_RUN_')
+      && (err.code.startsWith('BROWSER_RUN_') || err.code === 'SESSION_WINDOW_CONFLICT')
     ) {
       const hint = 'hint' in err && typeof err.hint === 'string'
         ? err.hint

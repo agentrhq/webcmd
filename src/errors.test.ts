@@ -123,6 +123,13 @@ describe('toEnvelope', () => {
     expect(envelope.error).not.toHaveProperty('help');
   });
 
+  it('keeps Session window conflicts on the structured temporary-failure contract', async () => {
+    const { SessionWindowConflictError } = await import('./browser/runtime/local-cloak/session-manager.js');
+
+    expect(toEnvelope(new SessionWindowConflictError('page_1', 'session_a', 'session_b')).error)
+      .toMatchObject({ code: 'SESSION_WINDOW_CONFLICT', exitCode: 75 });
+  });
+
   it('converts unknown Error to UNKNOWN envelope', () => {
     const envelope = toEnvelope(new Error('random failure'));
     expect(envelope).toEqual({
@@ -180,7 +187,7 @@ describe('SessionBusyError platform hints', () => {
   };
 
   it('uses PowerShell process guidance on Windows when the holder pid is known', () => {
-    const err = new SessionBusyError(holder, 'win32');
+    const err = new SessionBusyError(holder, 'win32', () => true);
     expect(err.hint).toContain('Stop-Process -Id 4242');
     expect(err.hint).not.toContain('kill 4242');
   });
@@ -193,9 +200,23 @@ describe('SessionBusyError platform hints', () => {
   });
 
   it('uses kill guidance on POSIX when the holder pid is known', () => {
-    const err = new SessionBusyError(holder, 'linux');
+    const err = new SessionBusyError(holder, 'linux', () => true);
     expect(err.hint).toContain('kill 4242');
     expect(err.hint).not.toContain('Stop-Process');
+  });
+
+  it('includes local Session and site details when daemon admission reports them', () => {
+    const err = new SessionBusyError({ ...holder, sessionId: 'session_a', admissionSite: 'github' }, 'linux', () => true);
+    expect(err.hint).toContain('Session session_a');
+    expect(err.hint).toContain('site github');
+  });
+
+  it('does not suggest killing a holder pid that is no longer alive', () => {
+    const err = new SessionBusyError({ ...holder, sessionId: 'session_a' }, 'linux', () => false);
+    expect(err.message).toContain('chatgpt ask');
+    expect(err.hint).toMatch(/wait/i);
+    expect(err.hint).not.toContain('kill 4242');
+    expect(err.hint).toContain('webcmd session close --force session_a');
   });
 
   it.each([

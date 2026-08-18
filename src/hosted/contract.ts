@@ -7,13 +7,17 @@ import {
   deriveHostedAvailability,
   type HostedAvailability,
 } from './availability.js';
+import { ROOT_SESSION_SELECTOR_POSITION } from '../root-command-surface.js';
+import { HOSTED_SESSION_PROTOCOL_VERSION } from './types.js';
 
 export const HOSTED_CONTRACT_SCHEMA_VERSION = 1 as const;
 
 export type { HostedAvailability } from './availability.js';
 
+export type FileArgumentDirection = 'input' | 'output' | 'input-output';
+
 export interface FileArgumentContract {
-  direction: 'input' | 'output';
+  direction: FileArgumentDirection;
   pathKind: 'file' | 'directory';
   multiple?: boolean;
   separator?: ',';
@@ -25,7 +29,7 @@ export interface FileArgumentContract {
 
 export interface HostedFileArgumentContract {
   name: string;
-  direction: 'input' | 'output';
+  direction: FileArgumentDirection;
   pathKind: 'file' | 'directory';
   multiple: boolean;
   required: boolean;
@@ -92,6 +96,8 @@ export interface HostedContractCommand {
 
 export interface HostedContract {
   schemaVersion: typeof HOSTED_CONTRACT_SCHEMA_VERSION;
+  sessionProtocolVersion: typeof HOSTED_SESSION_PROTOCOL_VERSION;
+  sessionSelectorPosition: typeof ROOT_SESSION_SELECTOR_POSITION;
   webcmdVersion: string;
   outputFormats: Array<'table' | 'plain' | 'json' | 'yaml' | 'md' | 'csv'>;
   traceModes: Array<'off' | 'on' | 'retain-on-failure'>;
@@ -101,6 +107,7 @@ export interface HostedContract {
 }
 
 export interface HostedContractCommandInput {
+  clientOwned?: boolean;
   site: string;
   name: string;
   aliases?: string[];
@@ -221,7 +228,7 @@ function normalizeDefaultFormat(format: CliCommand['defaultFormat']): string {
 function normalizeFileArguments(command: HostedContractCommandInput): HostedFileArgumentContract[] {
   return command.args.flatMap((arg) => {
     if (!arg.file) return [];
-    if (arg.file.direction !== 'input' && arg.file.direction !== 'output') {
+    if (arg.file.direction !== 'input' && arg.file.direction !== 'output' && arg.file.direction !== 'input-output') {
       throw new Error(`File argument ${command.site}/${command.name} ${arg.name} must declare direction`);
     }
     if (arg.file.pathKind !== 'file' && arg.file.pathKind !== 'directory') {
@@ -338,6 +345,8 @@ export function buildHostedContract(
 
   return {
     schemaVersion: HOSTED_CONTRACT_SCHEMA_VERSION,
+    sessionProtocolVersion: HOSTED_SESSION_PROTOCOL_VERSION,
+    sessionSelectorPosition: ROOT_SESSION_SELECTOR_POSITION,
     webcmdVersion: packageVersion,
     outputFormats: shared.outputFormats,
     traceModes: shared.traceModes,

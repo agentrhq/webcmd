@@ -15,6 +15,23 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  plugin-pr-scope:
+    name: Plugin PR scope
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Check plugin PR scope
+        run: npm run check:plugin-pr-scope -- "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}"
+
   build:
     name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -194,7 +211,7 @@ jobs:
         run: ./scripts/collect-ci-diagnostics.ps1 -SelfTest
 
       - name: Run real Cloak lifecycle smoke
-        run: npx vitest run --project e2e tests/e2e/cloak-runtime.test.ts
+        run: npx vitest run --project e2e tests/e2e/cloak-runtime.test.ts tests/e2e/cloak-session-concurrency.test.ts
 
       - name: Collect sanitized diagnostics
         if: failure()

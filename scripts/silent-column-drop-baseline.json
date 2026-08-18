@@ -395,27 +395,6 @@
     ]
   },
   {
-    "command": "web/fetch-browser",
-    "file": "clis/web/fetch-browser.js",
-    "missing": [
-      "accessible",
-      "index",
-      "sameOrigin",
-      "src",
-      "textLength"
-    ]
-  },
-  {
-    "command": "web/fetch-browser",
-    "file": "clis/web/fetch-browser.js",
-    "missing": [
-      "bodyTruncated",
-      "contentType",
-      "method",
-      "url"
-    ]
-  },
-  {
     "command": "yahoo-finance/quote",
     "file": "plugins/yahoo-finance/quote.js",
     "missing": [

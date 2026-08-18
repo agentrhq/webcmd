@@ -68,6 +68,15 @@ interface BaseCliCommand {
   /** Origin of this command: 'yaml', 'ts', or plugin name. */
   source?: string;
   footerExtra?: (kwargs: CommandArgs) => string | undefined;
+  /**
+   * Render this command's result as a markdown document instead of the default
+   * key/value table. For commands whose payload *is* prose — a fetched page, an
+   * article — the table is unreadable and differs from what the command prints
+   * on any other path.
+   */
+  renderMarkdown?: (data: unknown) => string | undefined;
+  /** Execute locally before either hosted or adapter-discovery mode boundary. */
+  clientOwned?: boolean;
   validateArgs?: (kwargs: CommandArgs) => void;
   /**
    * Control pre-navigation and browser-session requirement.
@@ -172,6 +181,8 @@ export function cli(opts: CliOptions): CliCommand {
     func: opts.func,
     pipeline: opts.pipeline,
     footerExtra: opts.footerExtra,
+    renderMarkdown: opts.renderMarkdown,
+    clientOwned: opts.clientOwned,
     validateArgs: opts.validateArgs,
     navigateBefore: opts.navigateBefore,
     siteSession: opts.siteSession,

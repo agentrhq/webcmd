@@ -259,7 +259,7 @@ export const imageCommand = cli({
     { name: 'timeout', type: 'int', default: 240, help: 'Max seconds to wait for the image (default: 240)' },
     { name: 'new', type: 'boolean', default: false, help: 'Start a new chat before sending (default: false)' },
     { name: 'count', type: 'int', default: 1, help: 'Minimum images to wait for before returning (default: 1)' },
-    { name: 'out', type: 'string', default: '', help: 'Directory to save downloaded images (uses browser session to bypass auth)' },
+    { name: 'out', type: 'string', default: '', help: 'Directory to save downloaded images (uses browser session to bypass auth)', file: { direction: 'output', pathKind: 'directory', multiple: false, defaultPath: './grok-images' } },
   ],
   columns: ['url', 'width', 'height', 'path'],
   func: async (page, kwargs) => {

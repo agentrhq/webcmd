@@ -21,12 +21,7 @@ Commit intentional review fixtures under:
 plugins/<site>/__fixtures__/<command>.html
 ```
 
-Temporary debug dumps still belong only in:
-
-```text
-~/.webcmd/sites/<site>/fixtures/
-/tmp/
-```
+Keep temporary debug dumps in `/tmp/`; save sanitized response samples with `webcmd site sample add <site>/<command> <path>`.
 
 ## Five-Step Workflow
 
@@ -35,7 +30,7 @@ Temporary debug dumps still belong only in:
 Use the browser to capture the specific DOM region, not the entire page.
 
 ```bash
-webcmd browser recon run --stdin <<'JS'
+webcmd --session <session-id> browser run --stdin <<'JS'
 return await page.evaluate(() => document.querySelector('<root-selector>')?.outerHTML ?? '');
 JS
 ```

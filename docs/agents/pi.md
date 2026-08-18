@@ -66,7 +66,7 @@ To remove one outright, delete its folder — for example `~/.pi/agent/skills/pi
 | Pi still uses `browser-tools` or a web-fetch extension | Remove the skill folder or prompt Pi to prefer Webcmd, then restart Pi. |
 | Search stopped working after removing an extension | Some extensions bundle search with extraction. Reinstall it and steer Pi with instructions instead — Webcmd does not replace search. |
 | `webcmd` not found in Pi's shell | Confirm `webcmd` is on the PATH Pi's `bash` tool uses; restart Pi after installing the CLI. |
-| Browser sessions stop working after idle | Ask the agent to open a fresh session or re-bind with `tabs` and `bind --page`. |
+| Browser Session idles or loses its window | Keep the same Session ID; the next `webcmd --session <session-id> browser ...` command reopens it. Use `webcmd session create -f json`, `webcmd session list`, and `webcmd session close <session-id>` for lifecycle. |
 
 ## See also
 

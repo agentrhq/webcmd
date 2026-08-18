@@ -75,6 +75,12 @@ describe('buildHostedContract', () => {
           file: { direction: 'output', pathKind: 'directory', multiple: true },
         },
         {
+          name: 'resume',
+          type: 'string',
+          help: 'Resume state',
+          file: { direction: 'input-output', pathKind: 'file', defaultPath: 'likes.resume.json' },
+        },
+        {
           name: 'retries',
           type: 'int',
           default: 2,
@@ -127,6 +133,8 @@ describe('buildHostedContract', () => {
 
     expect(contract).toEqual({
       schemaVersion: HOSTED_CONTRACT_SCHEMA_VERSION,
+      sessionProtocolVersion: 1,
+      sessionSelectorPosition: 'root',
       webcmdVersion: '9.8.7',
       outputFormats: ['table', 'plain', 'json', 'yaml', 'md', 'csv'],
       traceModes: ['off', 'on', 'retain-on-failure'],
@@ -220,6 +228,14 @@ describe('buildHostedContract', () => {
               variadic: false,
             },
             {
+              name: 'resume',
+              type: 'string',
+              description: 'Resume state',
+              positional: false,
+              required: false,
+              variadic: false,
+            },
+            {
               name: 'retries',
               type: 'int',
               description: 'Retry count',
@@ -248,6 +264,14 @@ describe('buildHostedContract', () => {
               pathKind: 'directory',
               multiple: true,
               required: false,
+            },
+            {
+              name: 'resume',
+              direction: 'input-output',
+              pathKind: 'file',
+              multiple: false,
+              required: false,
+              defaultPath: 'likes.resume.json',
             },
           ],
           sessionPolicy: 'create-or-reuse',
@@ -345,6 +369,22 @@ describe('buildHostedContract', () => {
     expect(command.keywords).toEqual(['lookup', 'discovery']);
     expect(command.tags).not.toBe(tags);
     expect(command.keywords).not.toBe(keywords);
+  });
+
+  it('marks client-owned commands local-only while public commands remain hosted', () => {
+    const contract = buildHostedContract([
+      { ...commands[0], name: 'fetch', clientOwned: true },
+      { ...commands[0], aliases: undefined },
+    ], [], '1.0.0');
+
+    expect(contract.commands.find(command => command.command === 'web/fetch')).toMatchObject({
+      sessionPolicy: 'local-only',
+      availability: { mode: 'local-only', reason: 'client-owned' },
+    });
+    expect(contract.commands.find(command => command.command === 'web/profile')).toMatchObject({
+      sessionPolicy: 'create-or-reuse',
+      availability: { mode: 'hosted' },
+    });
   });
 
   it('rejects incomplete file and browser session metadata', () => {

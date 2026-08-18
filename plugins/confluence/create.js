@@ -14,7 +14,7 @@ cli({
     args: [
         { name: 'space', type: 'string', required: true, help: 'Cloud space id, or Data Center space key' },
         { name: 'title', type: 'string', required: true, help: 'Page title' },
-        { name: 'file', type: 'string', required: true, help: 'Markdown file path' },
+        { name: 'file', type: 'string', required: true, help: 'Markdown file path', file: { direction: 'input', pathKind: 'file', multiple: false } },
         { name: 'parent', type: 'string', help: 'Optional parent page id' },
         { name: 'representation', type: 'string', default: 'markdown', choices: ['markdown', 'storage'], help: 'Input file format' },
         { name: 'execute', type: 'boolean', help: 'Actually create the remote page' },

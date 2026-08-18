@@ -22,6 +22,13 @@ assert.equal(manifest.version, packageJson.version);
 assert.equal(manifest.skills, './skills/');
 assert.equal(manifest.author?.name, 'AgentRHQ');
 assert.equal(manifest.interface?.developerName, 'AgentRHQ');
+const expectedDefaultPrompts = [
+  'Create a Zillow rental-search plugin for WebCMD with city, max rent, and bedroom filters. Test it and show me the command.',
+  'Compare MacBook Air M5 prices and availability on Amazon, Walmart, and Best Buy.',
+  'Find and rank today\u2019s most-discussed AI agent launches across Hacker News, Reddit, Product Hunt, and arXiv.',
+];
+assert.deepEqual(manifest.interface?.defaultPrompt, expectedDefaultPrompts);
+assert.ok(expectedDefaultPrompts.every((prompt) => prompt.length <= 128));
 assert.equal(marketplace.name, 'webcmd');
 assert.equal(marketplace.plugins?.length, 1);
 assert.equal(marketplacePlugin?.name, 'webcmd');

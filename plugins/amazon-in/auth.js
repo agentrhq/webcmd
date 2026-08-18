@@ -37,8 +37,17 @@ async function verifyAmazonInIdentity(page) {
 registerSiteAuthCommands({
   site: SITE,
   domain: DOMAIN,
-  loginUrl: 'https://www.amazon.in/ap/signin',
+  loginUrl: HOME_URL,
   columns: ['user_name'],
   quickCheck: hasAmazonInSessionCookies,
   verify: verifyAmazonInIdentity,
+  openLogin: async (page) => {
+    await page.goto(HOME_URL, { waitUntil: 'load' });
+    await page.wait(1);
+    const loginUrl = await page.evaluate(`
+      (() => document.querySelector('a[href*="/ap/signin"]')?.href || '')()
+    `);
+    if (!loginUrl) throw new CommandExecutionError('Amazon.in login link could not be found');
+    await page.goto(loginUrl, { waitUntil: 'load' });
+  },
 });

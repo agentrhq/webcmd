@@ -20,6 +20,7 @@ cli({
   example: 'webcmd geogebra hexagon --size 3',
   args: [
     { name: 'size', required: false, default: '2', help: 'Radius of the hexagon (default: 2)' },
+    { name: 'output', type: 'string', required: false, file: { direction: 'output', pathKind: 'file', multiple: false, defaultPath: './geogebra-hexagon.png' } },
   ],
   columns: ['step', 'result'],
   func: async (page, kwargs) => {
@@ -45,7 +46,7 @@ cli({
 
     const objectCount = await ggbWaitForObjectCount(page, 7);
     const objects = await ggbListObjects(page);
-    const screenshotPath = path.join(os.tmpdir(), 'webcmd-geogebra-hexagon.png');
+    const screenshotPath = kwargs.output || path.join(os.tmpdir(), 'webcmd-geogebra-hexagon.png');
     try {
       await page.screenshot({ path: screenshotPath });
     } catch (err) {

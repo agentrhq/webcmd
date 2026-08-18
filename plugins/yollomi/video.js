@@ -19,7 +19,7 @@ cli({
         { name: 'model', default: 'kling-2-1', help: 'Model (kling-2-1, openai-sora-2, google-veo-3-1, wan-2-5-t2v, ...)' },
         { name: 'image', help: 'Input image URL for image-to-video' },
         { name: 'ratio', default: '16:9', choices: ['1:1', '16:9', '9:16', '4:3', '3:4'], help: 'Aspect ratio' },
-        { name: 'output', default: './yollomi-output', help: 'Output directory' },
+        { name: 'output', default: './yollomi-output', help: 'Output directory', file: { direction: 'output', pathKind: 'directory', multiple: false } },
         { name: 'no-download', type: 'boolean', default: false, help: 'Only show URL, skip download' },
     ],
     columns: ['status', 'file', 'size', 'credits', 'url'],

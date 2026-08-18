@@ -88,7 +88,7 @@ cli({
     strategy: Strategy.UI,
     browser: true,
     args: [
-        { name: 'media', required: false, valueRequired: true, help: 'Path to a single story image or video file' },
+        { name: 'media', required: false, valueRequired: true, help: 'Path to a single story image or video file', file: { direction: 'input', pathKind: 'file', multiple: false, contentTypes: ['image/jpeg', 'image/png', 'video/mp4'], maxBytes: 262_144_000 } },
         { name: 'timeout', type: 'int', required: false, default: 300, help: 'Max seconds for the overall command (default: 300)' },
     ],
     columns: ['status', 'detail', 'url'],

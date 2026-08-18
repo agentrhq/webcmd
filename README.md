@@ -35,13 +35,20 @@ On top of live browser control, Webcmd adds 3 layers of learnings. Each layer co
 | 3. Extend existing CLIs | The workflow is deterministic enough to stop browsing. | Extend the `webcmd <site>` adapter with a tailored command so the workflow runs instantly with the least amount of tokens. |
 
 For local, multi-step browser exploration, agents can send one sandboxed
-Playwright-style program to an existing CloakBrowser session:
+Playwright-style program to an explicit browser session:
 
 ```bash
-webcmd browser work run --file explore.js
-printf 'const page = await browser.currentPage(); return await page.title();' \
-  | webcmd browser work run --stdin
+webcmd session create -f json
+webcmd --session session_abc browser run --file explore.js
+printf 'return await page.title();' \
+  | webcmd --session session_abc browser run --stdin
+webcmd session close session_abc
 ```
+
+Profiles are cookie jars; Sessions are independent browser windows within a
+profile, so parallel agents should create separate Sessions. Adapter commands
+use an adapter-default Session unless `--session` intentionally routes them to
+an explicit one.
 
 ## Demo
 
@@ -136,6 +143,7 @@ Webcmd Cloud can run supported commands and browser sessions on hosted infrastru
 
 | Plugin | Description | Author |
 | --- | --- | --- |
+| [`omnisearch`](./plugins/omnisearch/) | No-login research across Hacker News, Stack Overflow, GitHub, arXiv, Dev.to, Lobsters, and Bluesky | [Rishet Mehra](https://github.com/Rishet11) |
 | [`pypi`](./plugins/pypi/) | Inspect public Python package metadata, downloads, and releases from PyPI | [Kemal Kaya](https://github.com/yoldaolmak) |
 | [`skyscanner`](./plugins/skyscanner/) | Skyscanner flight search commands for Webcmd | [Rishabh](https://github.com/rishabhraj36) |
 <!-- webcmd-community-plugins:end -->

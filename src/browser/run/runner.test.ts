@@ -8,6 +8,7 @@ import {
   describe,
   expect,
   it,
+  vi,
 } from 'vitest';
 import {
   chromium,
@@ -25,16 +26,30 @@ const playwrightServer = createRequire(import.meta.url)(
 let browser: Browser;
 let context: BrowserContext;
 let page: Page;
+const describeWithChromium = fs.existsSync(chromium.executablePath()) ? describe : describe.skip;
 
-function run(source: string, options = {}) {
-  return runBrowserProgram({
+function sessionScope(pages: () => readonly Page[] = () => context.pages()) {
+  return {
     browser,
     context,
     page,
+    pages,
+    createPage: () => context.newPage(),
+    onPage(listener: (page: Page) => void) {
+      context.on('page', listener);
+      return () => context.off('page', listener);
+    },
+  };
+}
+
+function run(source: string, options = {}) {
+  return runBrowserProgram({
+    ...sessionScope(),
     pageId: 'page-1',
   }, source, options);
 }
 
+describeWithChromium('runBrowserProgram', () => {
 beforeAll(async () => {
   browser = await chromium.launch({ headless: true });
 });
@@ -65,7 +80,6 @@ afterAll(async () => {
   await browser.close();
 });
 
-describe('runBrowserProgram', () => {
   it('returns snapshotDiff by default after successful runs', async () => {
     const output = await run(`
       await page.setContent('<main><button>Saved</button></main>');
@@ -240,13 +254,15 @@ describe('runBrowserProgram', () => {
   it('waits for popups and exposes context pages', async () => {
     const registered: Page[] = [];
     const output = await runBrowserProgram({
-      browser,
-      context,
-      page,
+      ...sessionScope(),
       pageId: 'page-1',
-      registerPage: popup => {
-        registered.push(popup);
-        return 'popup-1';
+      onPage(listener) {
+        const registeredListener = (popup: Page) => {
+          if (!registered.includes(popup)) registered.push(popup);
+          listener(popup);
+        };
+        context.on('page', registeredListener);
+        return () => context.off('page', registeredListener);
       },
     }, `
       const popupPromise = page.waitForEvent('popup');
@@ -261,6 +277,211 @@ describe('runBrowserProgram', () => {
 
     expect(output.result).toEqual({ popupUrl: 'about:blank', pages: 2, contexts: 1 });
     expect(registered).toEqual([context.pages()[1]]);
+  });
+
+  it('hides pages outside the supplied session page set', async () => {
+    const other = await context.newPage();
+    await other.setContent('<button>Other</button>');
+
+    const output = await runBrowserProgram({
+      ...sessionScope(() => [page]),
+      pageId: 'page-1',
+    }, `
+      return {
+        pages: context.pages().length,
+        urls: context.pages().map(page => page.url()),
+      };
+    `);
+
+    expect(output.result).toEqual({
+      pages: 1,
+      urls: [page.url()],
+    });
+  });
+
+  it.each([
+    ['once', `
+      const seen = new Promise(resolve => context.once('page', page => resolve(page.url())));
+      await context.newPage();
+      return await seen;
+    `],
+    ['waitForEvent', `
+      const seen = context.waitForEvent('page');
+      await context.newPage();
+      return (await seen).url();
+    `],
+  ])('scopes context.%s page events to Session-owned creation', async (_api, source) => {
+    const sibling = await context.newPage();
+    const owned = await context.newPage();
+    await owned.goto('data:text/plain,owned');
+    let pageListener: ((page: Page) => void) | undefined;
+    const createPage = vi.fn(async () => {
+      queueMicrotask(() => pageListener?.(owned));
+      return owned;
+    });
+
+    const output = await runBrowserProgram({
+      ...sessionScope(() => [page, owned]),
+      pageId: 'page-1',
+      createPage,
+      onPage(listener) {
+        pageListener = listener;
+        return () => {
+          if (pageListener === listener) pageListener = undefined;
+        };
+      },
+    }, source);
+
+    expect(output.result).toBe(owned.url());
+    expect(output.result).not.toBe(sibling.url());
+    expect(createPage).toHaveBeenCalledOnce();
+  });
+
+  it('does not let removeAllListeners remove the Session ownership listener', async () => {
+    const seen: Page[] = [];
+    const owned = await context.newPage();
+    let pageListener: ((page: Page) => void) | undefined;
+    const output = await runBrowserProgram({
+      ...sessionScope(() => [page, owned]),
+      pageId: 'page-1',
+      createPage: async () => {
+        queueMicrotask(() => pageListener?.(owned));
+        return owned;
+      },
+      onPage(listener) {
+        pageListener = (candidate: Page) => {
+          seen.push(candidate);
+          listener(candidate);
+        };
+        return () => {
+          pageListener = undefined;
+        };
+      },
+    }, `
+      context.removeAllListeners('page');
+      await context.newPage();
+      return context.pages().length;
+    `);
+
+    expect(output.result).toBe(2);
+    expect(seen).toEqual([owned]);
+  });
+
+  it('filters context request events from sibling Session pages', async () => {
+    const sibling = await context.newPage();
+    await sibling.goto('data:text/html,sibling');
+    const output = runBrowserProgram({
+      ...sessionScope(() => [page]),
+      pageId: 'page-1',
+    }, `
+      const request = context.waitForEvent('request');
+      await page.evaluate(() => document.body.dataset.contextListener = 'ready');
+      return (await request).frame().page().url();
+    `, { timeoutMs: 2_000 });
+
+    await page.waitForFunction(() => document.body.dataset.contextListener === 'ready');
+    await sibling.evaluate(() => fetch('https://example.test/data').catch(() => undefined));
+    await page.evaluate(() => fetch('https://example.test/data').catch(() => undefined));
+
+    await expect(output).resolves.toMatchObject({ result: page.url() });
+  });
+
+  it('filters context dialog events from sibling Session pages', async () => {
+    const sibling = await context.newPage();
+    await sibling.goto('data:text/html,sibling');
+    const output = runBrowserProgram({
+      ...sessionScope(() => [page]),
+      pageId: 'page-1',
+    }, `
+      const pendingDialog = context.waitForEvent('dialog');
+      await page.evaluate(() => document.body.dataset.dialogListener = 'ready');
+      const dialog = await pendingDialog;
+      const url = dialog.page().url();
+      await dialog.dismiss();
+      return url;
+    `, { timeoutMs: 2_000 });
+
+    await page.waitForFunction(() => document.body.dataset.dialogListener === 'ready');
+    await sibling.evaluate(() => alert('sibling'));
+    await page.evaluate(() => alert('owned'));
+
+    await expect(output).resolves.toMatchObject({ result: page.url() });
+  });
+
+  it('delegates context.newPage to the Session-owned page creator', async () => {
+    const createPage = vi.fn(() => context.newPage());
+    const output = await runBrowserProgram({
+      browser,
+      context,
+      page,
+      pageId: 'page-1',
+      pages: () => [page],
+      createPage,
+      onPage: () => () => undefined,
+    }, `
+      await context.newPage();
+      return context.pages().length;
+    `);
+
+    expect(output.result).toBe(1);
+    expect(createPage).toHaveBeenCalledOnce();
+  });
+
+  it('initializes against a pre-launched persistent context without registering it twice', async () => {
+    const userDataDir = fs.mkdtempSync('/tmp/webcmd-persistent-browser-run-');
+    const persistent = await chromium.launchPersistentContext(userDataDir, { headless: true });
+    try {
+      const persistentPage = persistent.pages()[0] ?? await persistent.newPage();
+      const persistentBrowser = persistent.browser();
+      if (!persistentBrowser) throw new Error('persistent browser missing');
+
+      await expect(runBrowserProgram({
+        browser: persistentBrowser,
+        context: persistent,
+        page: persistentPage,
+        pageId: 'persistent-page',
+        pages: () => persistent.pages(),
+        createPage: () => persistent.newPage(),
+        onPage(listener) {
+          persistent.on('page', listener);
+          return () => persistent.off('page', listener);
+        },
+      }, 'return 1;')).resolves.toMatchObject({ result: 1 });
+    } finally {
+      await persistent.close();
+      fs.rmSync(userDataDir, { recursive: true, force: true });
+    }
+  });
+
+  it('hides sibling Session pages in a persistent context', async () => {
+    const userDataDir = fs.mkdtempSync('/tmp/webcmd-persistent-browser-run-');
+    const persistent = await chromium.launchPersistentContext(userDataDir, { headless: true });
+    try {
+      const owned = persistent.pages()[0] ?? await persistent.newPage();
+      const sibling = await persistent.newPage();
+      await owned.goto('data:text/plain,owned');
+      await sibling.goto('data:text/plain,sibling');
+      const persistentBrowser = persistent.browser();
+      if (!persistentBrowser) throw new Error('persistent browser missing');
+
+      const output = await runBrowserProgram({
+        browser: persistentBrowser,
+        context: persistent,
+        page: owned,
+        pageId: 'persistent-page',
+        pages: () => [owned],
+        createPage: () => persistent.newPage(),
+        onPage(listener) {
+          persistent.on('page', listener);
+          return () => persistent.off('page', listener);
+        },
+      }, 'return context.pages().map(page => page.url());');
+
+      expect(output.result).toEqual([owned.url()]);
+    } finally {
+      await persistent.close();
+      fs.rmSync(userDataDir, { recursive: true, force: true });
+    }
   });
 
   it('waits for requests and responses', async () => {
@@ -372,6 +593,18 @@ describe('runBrowserProgram', () => {
     expect(page.isClosed()).toBe(false);
   });
 
+  it('cancels an in-flight run through its abort signal', async () => {
+    const controller = new AbortController();
+    const pending = run(`await page.waitForEvent('popup');`, {
+      timeoutMs: 2_000,
+      signal: controller.signal,
+    });
+
+    setTimeout(() => controller.abort(), 10);
+
+    await expect(pending).rejects.toMatchObject({ code: 'BROWSER_RUN_CANCELLED' });
+  });
+
   it('cancels an in-flight popup operation without closing the popup', async () => {
     const popupPromise = page.waitForEvent('popup');
     await page.getByRole('link', { name: 'Popup' }).click();
@@ -403,6 +636,14 @@ describe('runBrowserProgram', () => {
     const output = await run('return typeof fromPreviousRun;');
 
     expect(output.result).toBe('undefined');
+  });
+
+  it('serializes a program with no explicit return as null', async () => {
+    const output = await run(`
+      await page.getByRole('button', { name: 'Save' }).click();
+    `);
+
+    expect(output.result).toBeNull();
   });
 
   it('keeps time, memory, output, redaction, and serialization limits', async () => {

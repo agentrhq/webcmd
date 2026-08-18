@@ -71,6 +71,109 @@ const validTraceUrlCases = [
 ] as const;
 
 describe('HostedClient', () => {
+  it('preserves a raw storage endpoint error envelope', async () => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: false,
+        error: { code: 'SITE_MEMORY_NOT_FOUND', message: 'Missing notes.', exitCode: 66 },
+      }), { status: 404 }),
+    });
+
+    await expect(client.readSiteMemory('github', 'notes.md')).rejects.toMatchObject({
+      code: 'SITE_MEMORY_NOT_FOUND',
+      exitCode: 66,
+    });
+  });
+
+  it('uses raw storage endpoints for site memory and adapter source', async () => {
+    const requests: Array<{ url: string; method: string; body?: string; contentType?: string | null }> = [];
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async (url, init) => {
+        requests.push({
+          url: String(url), method: init?.method ?? 'GET',
+          ...(init?.body ? { body: String(init.body) } : {}),
+          contentType: new Headers(init?.headers).get('content-type'),
+        });
+        if ((init?.method ?? 'GET') === 'GET') return new Response('export const search = true;');
+        if (new URL(String(url)).pathname.startsWith('/v1/sites/')) return new Response(JSON.stringify({ ok: true }));
+        return new Response(JSON.stringify({ ok: true, package: { id: 'pkg_github', storagePath: 'clis/github' }, commands: ['github/search'] }));
+      },
+    });
+
+    await client.writeSiteMemory('github', 'notes.md', JSON.stringify({ text: 'Uses GraphQL' }), 'application/json');
+    await client.readSiteMemory('github', 'notes.md');
+    await client.deleteSiteMemory('github', 'notes.md');
+    await client.writeAdapterSource('pkg_github', 'clis/github/search.js', 'export const search = true;');
+    await client.readAdapterSource('pkg_github', 'clis/github/search.js');
+
+    expect(requests.map(({ url, method, contentType }) => ({ url, method, contentType }))).toEqual([
+      { url: 'https://api.example.com/v1/sites/github/memory/notes.md', method: 'PUT', contentType: 'application/json' },
+      { url: 'https://api.example.com/v1/sites/github/memory/notes.md', method: 'GET', contentType: null },
+      { url: 'https://api.example.com/v1/sites/github/memory/notes.md', method: 'DELETE', contentType: null },
+      { url: 'https://api.example.com/v1/adapters/pkg_github/source/clis/github/search.js', method: 'PUT', contentType: 'text/javascript; charset=utf-8' },
+      { url: 'https://api.example.com/v1/adapters/pkg_github/source/clis/github/search.js', method: 'GET', contentType: null },
+    ]);
+  });
+
+  it.each([
+    { stale: true },
+    { deleted: true },
+  ])('accepts Cloud site-memory deletion response %j', async (result) => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({ ok: true, ...result })),
+    });
+
+    await expect(client.deleteSiteMemory('github', 'endpoints.json', JSON.stringify({ name: 'search' }))).resolves.toBeUndefined();
+  });
+
+  it('accepts the hosted Session API wire contract', async () => {
+    const requests: Array<{ url: string; method: string; body?: string }> = [];
+    const session = {
+      id: 'session_wire',
+      kind: 'explicit',
+      profileId: 'profile_default',
+      runtimeState: 'active',
+      handoff: { site: 'github', expiresAt: '2026-08-12T00:15:00.000Z' },
+      createdAt: '2026-08-12T00:00:00.000Z',
+      updatedAt: '2026-08-12T00:01:00.000Z',
+      lastUsedAt: '2026-08-12T00:02:00.000Z',
+    };
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async (url, init) => {
+        requests.push({
+          url: String(url),
+          method: init?.method ?? 'GET',
+          ...(init?.body ? { body: String(init.body) } : {}),
+        });
+        if (String(url).endsWith('/v1/sessions')) return new Response(JSON.stringify({ ok: true, session }));
+        if (String(url).endsWith('/v1/sessions?profile=default&limit=20')) return new Response(JSON.stringify({ ok: true, sessions: [session] }));
+        return new Response(JSON.stringify({ ok: true, closed: true, alreadyIdle: false, session: 'session_wire' }));
+      },
+    });
+
+    await expect(client.createBrowserSession()).resolves.toEqual({ ok: true, session });
+    await expect(client.listBrowserSessions('default', 20)).resolves.toEqual({ ok: true, sessions: [session] });
+    await expect(client.closeBrowserSession('session_wire')).resolves.toEqual({
+      ok: true,
+      closed: true,
+      alreadyIdle: false,
+      session: 'session_wire',
+    });
+    expect(requests.map(({ url, method }) => ({ url, method }))).toEqual([
+      { url: 'https://api.example.com/v1/sessions', method: 'POST' },
+      { url: 'https://api.example.com/v1/sessions?profile=default&limit=20', method: 'GET' },
+      { url: 'https://api.example.com/v1/sessions/session_wire/close', method: 'POST' },
+    ]);
+  });
+
   it('searches the authenticated marketplace and validates every public plugin field', async () => {
     const requests: Array<{ url: string; method: string }> = [];
     const client = new HostedClient({
@@ -82,12 +185,26 @@ describe('HostedClient', () => {
           ok: true,
           result: {
             plugins: [{
-              name: 'acme',
-              description: 'Search Acme',
-              version: '1.0.0',
+              name: 'mercury',
+              description: 'Search Mercury',
+              version: '0.7.1',
               sourceId: 'agentrhq/webcmd',
-              installSource: 'github:agentrhq/webcmd/acme',
+              installSource: 'github:agentrhq/webcmd/mercury',
               webcmd: '>=0.4.3',
+              availability: 'mixed',
+              excludedCommands: ['mercury/reimbursement-plan'],
+            }, {
+              name: 'hosted-plugin',
+              sourceId: 'agentrhq/webcmd',
+              installSource: 'github:agentrhq/webcmd/hosted-plugin',
+              availability: 'hosted',
+              excludedCommands: [],
+            }, {
+              name: 'local-plugin',
+              sourceId: 'agentrhq/webcmd',
+              installSource: 'github:agentrhq/webcmd/local-plugin',
+              availability: 'local-only',
+              excludedCommands: ['local-plugin/run'],
             }],
             errors: [],
           },
@@ -97,12 +214,26 @@ describe('HostedClient', () => {
 
     await expect(client.searchMarketplacePlugins('Acme & Co')).resolves.toEqual({
       plugins: [{
-        name: 'acme',
-        description: 'Search Acme',
-        version: '1.0.0',
+        name: 'mercury',
+        description: 'Search Mercury',
+        version: '0.7.1',
         sourceId: 'agentrhq/webcmd',
-        installSource: 'github:agentrhq/webcmd/acme',
+        installSource: 'github:agentrhq/webcmd/mercury',
         webcmd: '>=0.4.3',
+        availability: 'mixed',
+        excludedCommands: ['mercury/reimbursement-plan'],
+      }, {
+        name: 'hosted-plugin',
+        sourceId: 'agentrhq/webcmd',
+        installSource: 'github:agentrhq/webcmd/hosted-plugin',
+        availability: 'hosted',
+        excludedCommands: [],
+      }, {
+        name: 'local-plugin',
+        sourceId: 'agentrhq/webcmd',
+        installSource: 'github:agentrhq/webcmd/local-plugin',
+        availability: 'local-only',
+        excludedCommands: ['local-plugin/run'],
       }],
       errors: [],
     });
@@ -111,6 +242,50 @@ describe('HostedClient', () => {
       { url: 'https://api.example.com/v1/marketplace/plugins?query=Acme+%26+Co', method: 'GET' },
       { url: 'https://api.example.com/v1/marketplace/plugins', method: 'GET' },
     ]);
+  });
+
+  it.each([
+    { availability: 'unsupported', excludedCommands: [] },
+    { availability: 'hosted', excludedCommands: ['valid-command', 1] },
+  ])('rejects malformed marketplace availability fields', async (plugin) => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        result: {
+          plugins: [{
+            name: 'invalid',
+            sourceId: 'agentrhq/webcmd',
+            installSource: 'github:agentrhq/webcmd/invalid',
+            ...plugin,
+          }],
+          errors: [],
+        },
+      })),
+    });
+
+    await expect(client.searchMarketplacePlugins()).rejects.toMatchObject({ code: 'HOSTED_PROTOCOL' });
+  });
+
+  it('preserves a local-only marketplace install failure from Cloud', async () => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: false,
+        error: {
+          code: 'MARKETPLACE_PLUGIN_LOCAL_ONLY',
+          message: 'This plugin is only available in local mode.',
+          help: 'Run `webcmd setup` and choose local mode to install this plugin.',
+        },
+      }), { status: 409 }),
+    });
+
+    await expect(client.installMarketplacePlugin('github:agentrhq/webcmd/local-only')).rejects.toMatchObject({
+      code: 'MARKETPLACE_PLUGIN_LOCAL_ONLY',
+      hint: 'Run `webcmd setup` and choose local mode to install this plugin.',
+    });
   });
 
   it('installs a marketplace plugin through the authenticated API', async () => {
@@ -224,7 +399,7 @@ describe('HostedClient', () => {
   });
 
   it('sends bearer auth and parses hosted manifest', async () => {
-    const requests: Array<{ url: string; authorization: string | null }> = [];
+    const requests: Array<{ url: string; authorization: string | null; sessionProtocol: string | null }> = [];
     const client = new HostedClient({
       apiBaseUrl: 'https://api.example.com/',
       apiKey: 'wcmd_live_test',
@@ -232,6 +407,7 @@ describe('HostedClient', () => {
         requests.push({
           url: String(url),
           authorization: new Headers(init?.headers).get('authorization'),
+          sessionProtocol: new Headers(init?.headers).get('x-webcmd-session-protocol-version'),
         });
         return new Response(JSON.stringify({
           ok: true,
@@ -239,6 +415,7 @@ describe('HostedClient', () => {
             userId: 'user_demo',
             metadata: {
               contractSchemaVersion: 1,
+              sessionProtocolVersion: 1,
               webcmdPackageVersion: '0.3.0',
               generatedAt: 'now',
             },
@@ -252,12 +429,17 @@ describe('HostedClient', () => {
       userId: 'user_demo',
       metadata: {
         contractSchemaVersion: 1,
+        sessionProtocolVersion: 1,
         webcmdPackageVersion: '0.3.0',
         generatedAt: 'now',
       },
       commands: [],
     });
-    expect(requests).toEqual([{ url: 'https://api.example.com/v1/manifest', authorization: 'Bearer wcmd_live_test' }]);
+    expect(requests).toEqual([{
+      url: 'https://api.example.com/v1/manifest',
+      authorization: 'Bearer wcmd_live_test',
+      sessionProtocol: '1',
+    }]);
   });
 
   it('accepts boolean freshPage command metadata', async () => {
@@ -270,6 +452,7 @@ describe('HostedClient', () => {
           userId: 'user_demo',
           metadata: {
             contractSchemaVersion: 1,
+            sessionProtocolVersion: 1,
             webcmdPackageVersion: '0.3.0',
             generatedAt: 'now',
           },
@@ -294,6 +477,22 @@ describe('HostedClient', () => {
     });
   });
 
+  it('reports a missing Session protocol capability as a contract mismatch', async () => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com', apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        manifest: {
+          userId: 'user_demo',
+          metadata: { contractSchemaVersion: 1, webcmdPackageVersion: '0.6.1', generatedAt: 'now' },
+          commands: [],
+        },
+      }), { status: 200 }),
+    });
+
+    await expect(client.getManifest()).rejects.toMatchObject({ code: 'HOSTED_CONTRACT_MISMATCH' });
+  });
+
   it('accepts string-array search metadata in hosted manifest commands', async () => {
     const client = new HostedClient({
       apiBaseUrl: 'https://api.example.com',
@@ -304,6 +503,7 @@ describe('HostedClient', () => {
           userId: 'user_demo',
           metadata: {
             contractSchemaVersion: 1,
+            sessionProtocolVersion: 1,
             webcmdPackageVersion: '0.3.0',
             generatedAt: 'now',
           },
@@ -342,6 +542,7 @@ describe('HostedClient', () => {
           userId: 'user_demo',
           metadata: {
             contractSchemaVersion: 1,
+            sessionProtocolVersion: 1,
             webcmdPackageVersion: '0.3.0',
             generatedAt: 'now',
           },
@@ -366,6 +567,7 @@ describe('HostedClient', () => {
           userId: 'user_demo',
           metadata: {
             contractSchemaVersion: 1,
+            sessionProtocolVersion: 1,
             webcmdPackageVersion: '0.3.0',
             generatedAt: 'now',
           },
@@ -476,6 +678,26 @@ describe('HostedClient', () => {
     } satisfies Partial<HostedClientError>);
   });
 
+  it('carries the root session selector in execute requests', async () => {
+    let requestBody: unknown;
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async (_url, init) => {
+        requestBody = JSON.parse(String(init?.body));
+        return new Response(JSON.stringify({
+          ok: true,
+          result: [],
+          execution: { id: 'exec_1', command: 'github/whoami', status: 'succeeded' },
+        }));
+      },
+    });
+
+    await client.execute({ command: 'github/whoami', args: {}, session: 'session_a' });
+
+    expect(requestBody).toMatchObject({ command: 'github/whoami', session: 'session_a' });
+  });
+
   it('prepares, uploads, runs, and downloads execution artifacts with raw byte bodies', async () => {
     const requests: Array<{ url: string; method: string; body?: unknown; filename?: string | null }> = [];
     const bytes = new Uint8Array(Buffer.from('hello cloud'));
@@ -496,7 +718,7 @@ describe('HostedClient', () => {
             execution: { id: 'exec_files', command: 'twitter/post', status: 'queued' },
             fileArguments: [{
               name: 'images',
-              direction: 'input',
+              direction: 'input-output',
               pathKind: 'file',
               multiple: true,
               required: false,
@@ -545,7 +767,7 @@ describe('HostedClient', () => {
 
     await expect(client.prepareExecution({ command: 'twitter/post' })).resolves.toMatchObject({
       execution: { id: 'exec_files', status: 'queued' },
-      fileArguments: [{ name: 'images' }],
+      fileArguments: [{ name: 'images', direction: 'input-output' }],
     });
     await expect(client.uploadExecutionArtifact({
       executionId: 'exec_files',
@@ -558,6 +780,7 @@ describe('HostedClient', () => {
       executionId: 'exec_files',
       command: 'twitter/post',
       args: {},
+      session: 'session_a',
     })).resolves.toMatchObject({ artifacts: [{ artifactId: 'artifact_out' }] });
     await expect(client.downloadExecutionArtifact({
       executionId: 'exec_files',
@@ -574,6 +797,7 @@ describe('HostedClient', () => {
       filename: 'one.png',
       body: new Uint8Array(Buffer.from('png')),
     });
+    expect(JSON.parse(String(requests[2]?.body))).toMatchObject({ session: 'session_a' });
   });
 
   it('preserves execution and trace metadata from hosted failure envelopes', async () => {
@@ -920,7 +1144,7 @@ describe('HostedClient', () => {
       name: 'metadata with wrong field type',
       manifest: {
         userId: 'user_demo',
-        metadata: { contractSchemaVersion: '1', webcmdPackageVersion: '0.3.0', generatedAt: 'now' },
+        metadata: { contractSchemaVersion: '1', sessionProtocolVersion: 1, webcmdPackageVersion: '0.3.0', generatedAt: 'now' },
         commands: [],
       },
     },
@@ -928,7 +1152,7 @@ describe('HostedClient', () => {
       name: 'command without an args array',
       manifest: {
         userId: 'user_demo',
-        metadata: { contractSchemaVersion: 1, webcmdPackageVersion: '0.3.0', generatedAt: 'now' },
+        metadata: { contractSchemaVersion: 1, sessionProtocolVersion: 1, webcmdPackageVersion: '0.3.0', generatedAt: 'now' },
         commands: [{ site: 'github', name: 'whoami', command: 'github/whoami' }],
       },
     },
@@ -936,7 +1160,7 @@ describe('HostedClient', () => {
       name: 'command with malformed argument metadata',
       manifest: {
         userId: 'user_demo',
-        metadata: { contractSchemaVersion: 1, webcmdPackageVersion: '0.3.0', generatedAt: 'now' },
+        metadata: { contractSchemaVersion: 1, sessionProtocolVersion: 1, webcmdPackageVersion: '0.3.0', generatedAt: 'now' },
         commands: [{
           site: 'github', name: 'whoami', command: 'github/whoami', description: 'x', access: 'read',
           strategy: 'PUBLIC', browser: false, args: [{ name: 42 }],
@@ -947,7 +1171,7 @@ describe('HostedClient', () => {
       name: 'command with a private field',
       manifest: {
         userId: 'user_demo',
-        metadata: { contractSchemaVersion: 1, webcmdPackageVersion: '0.3.0', generatedAt: 'now' },
+        metadata: { contractSchemaVersion: 1, sessionProtocolVersion: 1, webcmdPackageVersion: '0.3.0', generatedAt: 'now' },
         commands: [{
           site: 'github', name: 'whoami', command: 'github/whoami', description: 'x', access: 'read',
           strategy: 'PUBLIC', browser: false, args: [], columns: [], internalPath: '/srv/private/token.json',
@@ -958,7 +1182,7 @@ describe('HostedClient', () => {
       name: 'private wrapper field',
       manifest: {
         userId: 'user_demo',
-        metadata: { contractSchemaVersion: 1, webcmdPackageVersion: '0.3.0', generatedAt: 'now' },
+        metadata: { contractSchemaVersion: 1, sessionProtocolVersion: 1, webcmdPackageVersion: '0.3.0', generatedAt: 'now' },
         commands: [],
       },
       wrapperExtra: { internalPath: '/srv/private/token.json' },

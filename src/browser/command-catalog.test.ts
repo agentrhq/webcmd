@@ -13,8 +13,10 @@ describe('browserCommandCatalog', () => {
   it('exposes the raw browser session commands', () => {
     expect(browserCommandCatalog.map(command => command.command)).toEqual([
       'tabs',
+      'init',
       'bind',
       'fork',
+      'verify',
       'run',
       'snapshot',
       'close',
@@ -40,6 +42,24 @@ describe('browserCommandCatalog', () => {
       'snapshot',
       'close',
     ]);
+  });
+
+  it('exposes hosted adapter init and verify with the local verification flags', () => {
+    const commands = new Map(browserCommandCatalog.map(command => [command.command, command]));
+    expect(commands.get('init')).toMatchObject({ action: 'init', sessionPolicy: 'create-or-reuse' });
+    expect(commands.get('verify')).toMatchObject({ action: 'verify', sessionPolicy: 'create-or-reuse' });
+    expect(commands.get('verify')?.options).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'noFixture' }),
+      expect.objectContaining({ name: 'writeFixture' }),
+      expect.objectContaining({ name: 'updateFixture' }),
+      expect.objectContaining({ name: 'strictMemory' }),
+      expect.objectContaining({ name: 'seedArgs' }),
+      expect.objectContaining({ name: 'trace', default: 'off' }),
+      expect.objectContaining({ name: 'maxTopLevelKeys', default: 12 }),
+    ]));
+    expect(browserOptionValueParser('verify', 'maxTopLevelKeys')?.('20')).toBe(20);
+    expect(() => browserOptionValueParser('verify', 'maxTopLevelKeys')?.('0')).toThrow(/positive integer/);
+    expect(() => browserOptionValueParser('verify', 'trace')?.('invalid')).toThrow(/off, on, retain-on-failure/);
   });
 
   it('requires a stable page id for bind and limits run to program options', () => {

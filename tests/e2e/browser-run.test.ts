@@ -93,10 +93,13 @@ describe('browser run local lifecycle', () => {
     servers.push(fixture.server);
     const cacheDir = await fs.mkdtemp(path.join(os.tmpdir(), 'webcmd-browser-run-'));
     tempDirs.push(cacheDir);
-    const env = { WEBCMD_CACHE_DIR: cacheDir };
-    const session = 'browser-run-lifecycle';
+    const env = { WEBCMD_CACHE_DIR: cacheDir, WEBCMD_CONFIG_DIR: cacheDir };
 
-    const first = await runCliWithStdin(['browser', session, 'run', '--stdin'], `
+    const created = await runCliWithStdin(['session', 'create', '-f', 'json'], '', env);
+    expect(created.code).toBe(0);
+    const session = parseJsonOutput(created.stdout).id as string;
+
+    const first = await runCliWithStdin(['--session', session, 'browser', 'run', '--stdin'], `
       globalThis.onlyThisRun = 'gone';
       await page.goto(${JSON.stringify(fixture.url)});
       await page.locator('#name').fill('Ada');
@@ -128,11 +131,11 @@ describe('browser run local lifecycle', () => {
     });
     expect(firstData.snapshotDiff).toContain('Ada');
 
-    const snapshot = await runCliWithStdin(['browser', session, 'snapshot', '--snapshot-mode', 'act'], '', env);
+    const snapshot = await runCliWithStdin(['--session', session, 'browser', 'snapshot', '--snapshot-mode', 'act'], '', env);
     expect(snapshot.code).toBe(0);
     expect(snapshot.stdout).toContain('Ada');
 
-    const second = await runCliWithStdin(['browser', session, 'run', '--stdin', '--no-snapshot-diff'], `
+    const second = await runCliWithStdin(['--session', session, 'browser', 'run', '--stdin', '--no-snapshot-diff'], `
       return {
         saved: await page.locator('#status').innerText(),
         variable: typeof globalThis.onlyThisRun,
@@ -145,20 +148,20 @@ describe('browser run local lifecycle', () => {
     });
     expect(secondData).not.toHaveProperty('snapshotDiff');
 
-    const tabs = await runCliWithStdin(['browser', session, 'tabs'], '', env);
+    const tabs = await runCliWithStdin(['--session', session, 'browser', 'tabs'], '', env);
     expect(tabs.code).toBe(0);
     const popup = parseJsonOutput(tabs.stdout).find((tab: { title: string }) => tab.title === 'Popup receipt');
     expect(popup).toMatchObject({ id: expect.any(String) });
 
-    const bound = await runCliWithStdin(['browser', session, 'bind', '--page', popup.id], '', env);
+    const bound = await runCliWithStdin(['--session', session, 'browser', 'bind', '--page', popup.id], '', env);
     expect(bound.code).toBe(0);
     expect(parseJsonOutput(bound.stdout)).toMatchObject({ page: popup.id, title: 'Popup receipt' });
 
-    const closed = await runCliWithStdin(['browser', session, 'close'], '', env);
+    const closed = await runCliWithStdin(['--session', session, 'browser', 'close'], '', env);
     expect(closed.code).toBe(0);
     expect(parseJsonOutput(closed.stdout)).toMatchObject({ closed: true });
 
-    const tabsAfterClose = await runCliWithStdin(['browser', session, 'tabs'], '', env);
+    const tabsAfterClose = await runCliWithStdin(['--session', session, 'browser', 'tabs'], '', env);
     expect(tabsAfterClose.code).toBe(0);
     expect(parseJsonOutput(tabsAfterClose.stdout)).toEqual([]);
   }, 120_000);

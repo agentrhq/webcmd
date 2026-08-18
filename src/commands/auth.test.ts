@@ -1,6 +1,7 @@
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Command } from 'commander';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BrowserCliCommand } from '../registry.js';
 
@@ -10,7 +11,7 @@ vi.mock('../execution.js', () => ({
   executeCommand: executeCommandMock,
 }));
 
-import { collectAuthRefresh, collectAuthStatus } from './auth.js';
+import { collectAuthRefresh, collectAuthStatus, registerAuthCommands } from './auth.js';
 import { AuthRequiredError } from '../errors.js';
 import { cli, getRegistry, Strategy } from '../registry.js';
 
@@ -290,6 +291,19 @@ describe('auth refresh collection', () => {
         error: 'refresh probe is not available for this site',
       },
     ]);
+    expect(executeCommandMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('auth command format validation', () => {
+  it.each(['status', 'refresh'] as const)('does not run %s probes for an unsupported format', async (subcommand) => {
+    registerWhoami('alpha', { quick: true, quickLoggedIn: true });
+    const program = new Command('webcmd');
+    registerAuthCommands(program);
+
+    await program.parseAsync(['node', 'webcmd', 'auth', subcommand, '--site', 'alpha', '-f', 'xml']);
+
+    expect(process.exitCode).toBe(2);
     expect(executeCommandMock).not.toHaveBeenCalled();
   });
 });
