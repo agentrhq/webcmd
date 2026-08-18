@@ -1,7 +1,7 @@
 import type { BrowserRuntimeCommand, BrowserRuntimeResult, BrowserRuntimeStatus } from '../../protocol.js';
 import type { BrowserRuntimeProvider, RuntimeStatusOptions } from '../provider.js';
 import { LocalBrowserSessionStore, type BrowserSessionListRow, type BrowserSessionRecord } from '../../sessions.js';
-import { dispatchSlabAction, resolveCloakCommandProfileId } from './actions.js';
+import { dispatchSlabAction, resolveSlabCommandProfileId } from './actions.js';
 import type { LaunchPersistentContext } from './session-manager.js';
 import {
   SlabSessionManager,
@@ -46,7 +46,7 @@ export class LocalSlabRuntimeProvider implements BrowserRuntimeProvider {
   }
 
   resolveProfileId(command: BrowserRuntimeCommand): string {
-    return resolveCloakCommandProfileId(this.manager, command);
+    return resolveSlabCommandProfileId(this.manager, command);
   }
 
   async createSession(command: BrowserRuntimeCommand): Promise<BrowserSessionRecord> {

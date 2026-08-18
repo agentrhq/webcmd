@@ -72,7 +72,7 @@ type PageEntry = {
   idleTimer?: ReturnType<typeof setTimeout>;
 };
 
-export interface CloakPageLease {
+export interface SlabPageLease {
   profileId: string;
   leaseKey: string;
   context: BrowserContext;
@@ -80,7 +80,7 @@ export interface CloakPageLease {
   pageId: string;
 }
 
-export interface CloakTabInfo {
+export interface SlabTabInfo {
   id: string;
   page: string;
   index: number;
@@ -260,7 +260,7 @@ export class SlabSessionManager {
     }
   }
 
-  async getPage(input: SessionKeyInput): Promise<CloakPageLease> {
+  async getPage(input: SessionKeyInput): Promise<SlabPageLease> {
     const profileId = normalizeProfileId(input.profileId);
     const session = requireSession(input.session);
     const sessionId = requireSessionId(input);
@@ -295,7 +295,7 @@ export class SlabSessionManager {
     });
   }
 
-  async findPage(input: SessionKeyInput): Promise<CloakPageLease | null> {
+  async findPage(input: SessionKeyInput): Promise<SlabPageLease | null> {
     const profileId = normalizeProfileId(input.profileId);
     const sessionId = requireSessionId(input);
     const leaseKey = resolveLeaseKey(input);
@@ -310,7 +310,7 @@ export class SlabSessionManager {
     return { profileId, leaseKey, context: runtime.context, page: entry.page, pageId: entry.pageId };
   }
 
-  async findPageById(pageId: string, opts: Pick<SessionKeyInput, 'profileId' | 'session' | 'sessionId' | 'surface' | 'idleTimeout'>): Promise<CloakPageLease | null> {
+  async findPageById(pageId: string, opts: Pick<SessionKeyInput, 'profileId' | 'session' | 'sessionId' | 'surface' | 'idleTimeout'>): Promise<SlabPageLease | null> {
     const expectedProfileId = normalizeProfileId(opts.profileId);
     const sessionId = requireSessionId(opts);
     const expectedSurface = opts.surface ? normalizeSurface(opts.surface) : undefined;
@@ -389,7 +389,7 @@ export class SlabSessionManager {
     };
   }
 
-  async listPages(input: Pick<SessionKeyInput, 'profileId' | 'session' | 'sessionId' | 'surface'>): Promise<CloakTabInfo[]> {
+  async listPages(input: Pick<SessionKeyInput, 'profileId' | 'session' | 'sessionId' | 'surface'>): Promise<SlabTabInfo[]> {
     const profileId = normalizeProfileId(input.profileId);
     const sessionId = requireSessionId(input);
     const surface = input.surface ? normalizeSurface(input.surface) : undefined;
@@ -414,15 +414,15 @@ export class SlabSessionManager {
     })));
   }
 
-  async newPage(input: SessionKeyInput & { url?: string }): Promise<CloakPageLease> {
+  async newPage(input: SessionKeyInput & { url?: string }): Promise<SlabPageLease> {
     return this.newPageAttempt(input, 0);
   }
 
-  async navigatePage(input: SessionKeyInput, url: string, waitUntil: 'load' | 'commit'): Promise<CloakPageLease> {
+  async navigatePage(input: SessionKeyInput, url: string, waitUntil: 'load' | 'commit'): Promise<SlabPageLease> {
     return this.navigatePageAttempt(input, url, waitUntil, 0);
   }
 
-  private async newPageAttempt(input: SessionKeyInput & { url?: string }, attempt: number): Promise<CloakPageLease> {
+  private async newPageAttempt(input: SessionKeyInput & { url?: string }, attempt: number): Promise<SlabPageLease> {
     const profileId = normalizeProfileId(input.profileId);
     const session = requireSession(input.session);
     const sessionId = requireSessionId(input);
@@ -463,7 +463,7 @@ export class SlabSessionManager {
     return { profileId, leaseKey, context: acquired.runtime.context, page: acquired.page, pageId: entry.pageId };
   }
 
-  private async navigatePageAttempt(input: SessionKeyInput, url: string, waitUntil: 'load' | 'commit', attempt: number): Promise<CloakPageLease> {
+  private async navigatePageAttempt(input: SessionKeyInput, url: string, waitUntil: 'load' | 'commit', attempt: number): Promise<SlabPageLease> {
     const profileId = normalizeProfileId(input.profileId);
     const lease = await this.getPage(input);
     const runtime = this.profiles.get(profileId);
@@ -478,7 +478,7 @@ export class SlabSessionManager {
     }
   }
 
-  async selectPage(input: Pick<SessionKeyInput, 'profileId' | 'session' | 'sessionId' | 'surface' | 'windowMode'> & { pageId?: string; index?: number }): Promise<CloakPageLease | null> {
+  async selectPage(input: Pick<SessionKeyInput, 'profileId' | 'session' | 'sessionId' | 'surface' | 'windowMode'> & { pageId?: string; index?: number }): Promise<SlabPageLease | null> {
     const profileId = normalizeProfileId(input.profileId);
     const sessionId = requireSessionId(input);
     const runtime = this.profiles.get(profileId);
@@ -516,7 +516,7 @@ export class SlabSessionManager {
     return true;
   }
 
-  async bindPage(input: SessionKeyInput & { pageId?: string; index?: number }): Promise<CloakPageLease | null> {
+  async bindPage(input: SessionKeyInput & { pageId?: string; index?: number }): Promise<SlabPageLease | null> {
     const profileId = normalizeProfileId(input.profileId);
     const session = requireSession(input.session);
     const sessionId = requireSessionId(input);
