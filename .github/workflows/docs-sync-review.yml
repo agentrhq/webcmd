@@ -37,6 +37,6 @@ jobs:
       - name: Review documentation sync
         env:
           GH_TOKEN: ${{ github.token }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_DOCS_REVIEW_MODEL: ${{ vars.GEMINI_DOCS_REVIEW_MODEL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_DOCS_REVIEW_MODEL: ${{ vars.OPENAI_DOCS_REVIEW_MODEL }}
         run: npm --silent run docs-sync-review -- "${{ github.event.pull_request.number }}"

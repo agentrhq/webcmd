@@ -70,6 +70,14 @@ try {
   }
 
   const packedPaths = new Set(packData.files.map((file) => file.path));
+  for (const prefix of ['clis/', 'plugins/']) {
+    if ([...packedPaths].some((packedPath) => packedPath.startsWith(prefix))) {
+      fail(`packed tarball contains adapter source: ${prefix}`);
+    }
+  }
+  if (packedPaths.has('scripts/fetch-adapters.js')) {
+    fail('packed tarball contains the retired adapter fetch lifecycle');
+  }
   for (const [name, target] of binEntries) {
     if (!packedPaths.has(String(target))) {
       fail(`packed tarball is missing bin "${name}" target: ${target}`);

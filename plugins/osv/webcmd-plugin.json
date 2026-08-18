@@ -1,0 +1,10 @@
+{
+  "name": "osv",
+  "version": "0.1.0",
+  "description": "Webcmd commands for osv",
+  "webcmd": ">=0.5.3",
+  "author": {
+    "name": "WebCMD Agent",
+    "handle": "agentrhq"
+  }
+}

@@ -1,9 +1,9 @@
 {
   "name": "@agentrhq/webcmd",
-  "version": "0.5.3",
+  "version": "0.6.0",
   "description": "Turn websites, browser sessions, desktop apps, and local tools into deterministic CLI surfaces for humans and AI agents.",
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=20.6.0"
   },
   "type": "module",
   "main": "dist/src/main.js",
@@ -24,17 +24,19 @@
     "./browser/run": "./dist/src/browser/run/index.js",
     "./browser/snapshot": "./dist/src/browser/snapshot/index.js",
     "./browser/article-extract": "./dist/src/browser/article-extract.js",
+    "./browser/verify-fixture": "./dist/src/browser/verify-fixture.js",
     "./browser/utils": "./dist/src/browser/utils.js",
     "./download": "./dist/src/download/index.js",
     "./download/article-download": "./dist/src/download/article-download.js",
     "./download/media-download": "./dist/src/download/media-download.js",
     "./download/progress": "./dist/src/download/progress.js",
     "./fetch/command": "./dist/src/fetch/command.js",
-    "./pipeline": "./dist/src/pipeline/index.js"
+    "./pipeline": "./dist/src/pipeline/index.js",
+    "./plugin-runtime": "./dist/src/plugin-runtime.js",
+    "./hosted/availability": "./dist/src/hosted/availability.js"
   },
   "files": [
     "dist/src/",
-    "clis/",
     "skills/**",
     "cli-manifest.json",
     "hosted-contract.json",
@@ -47,9 +49,10 @@
   "scripts": {
     "dev": "tsx src/main.ts",
     "dev:bun": "bun src/main.ts",
-    "build": "npm run clean-dist && npm run copy-yaml && npm run compile && npm run build-manifest",
+    "build": "npm run clean-dist && npm run copy-yaml && npm run compile && npm run build-manifest && npm run build-plugin-manifest",
     "compile": "tsc --build && node -e \"require('fs').chmodSync('dist/src/main.js', 0o755)\"",
     "build-manifest": "tsx src/build-manifest.ts",
+    "build-plugin-manifest": "tsx src/build-plugin-command-manifest.ts",
     "check:codex-plugin": "node scripts/check-codex-plugin.mjs",
     "check:hosted-contract": "node scripts/check-hosted-contract.mjs",
     "clean-dist": "node scripts/clean-dist.cjs",
@@ -61,20 +64,21 @@
     "start": "node dist/src/main.js",
     "start:bun": "bun dist/src/main.js",
     "preuninstall": "node -e \"fetch('http://127.0.0.1:9777/shutdown',{method:'POST',headers:{'X-Webcmd':'1'},signal:AbortSignal.timeout(3000)}).catch(()=>{})\" || true",
-    "postinstall": "node scripts/postinstall.js || true; node scripts/fetch-adapters.js || true",
+    "postinstall": "node scripts/postinstall.js || true",
     "typecheck": "tsc --noEmit",
     "prepare": "[ -d src ] && npm run build || true",
     "prepublishOnly": "npm run build",
-    "test": "vitest run --project unit --project adapter",
-    "test:bun": "bun vitest run --project unit --project adapter",
-    "test:adapter": "vitest run --project adapter",
+    "test": "vitest run --project unit --project plugin",
+    "test:bun": "bun vitest run --project unit --project plugin",
+    "test:plugin": "vitest run --project plugin",
     "test:all": "vitest run",
     "test:e2e": "vitest run --project e2e-fixed-port --project e2e",
     "check-community-plugins": "tsx scripts/sync-community-plugins.ts --check",
     "advise:listing-id-pairing": "node scripts/check-listing-id-pairing.mjs",
     "check:package-bin": "node scripts/check-package-bin.mjs",
     "check:silent-column-drop": "node scripts/check-silent-column-drop.mjs",
-    "check:typed-error-lint": "node scripts/check-typed-error-lint.mjs"
+    "check:typed-error-lint": "node scripts/check-typed-error-lint.mjs",
+    "check:plugin-parity": "node scripts/check-plugin-command-parity.mjs"
   },
   "keywords": [
     "cli",

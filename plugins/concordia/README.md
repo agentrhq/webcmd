@@ -5,7 +5,7 @@ Concordia University Montréal postgraduate course export adapter.
 ## Install
 
 ```bash
-webcmd plugin install github:agentrhq/webcmd/plugins/concordia
+webcmd plugin install github:agentrhq/webcmd/concordia
 ```
 
 ## Command

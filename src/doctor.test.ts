@@ -363,7 +363,9 @@ describe('doctor report rendering', () => {
       {
         name: 'instagram/saved',
         userPath: '/home/me/.webcmd/clis/instagram/saved.js',
-        builtinPath: '/pkg/clis/instagram/saved.js',
+        pluginPath: '/home/me/.webcmd/plugins/instagram/saved.js',
+        plugin: 'instagram',
+        hasProvenance: false,
       },
     ]);
 
@@ -371,7 +373,32 @@ describe('doctor report rendering', () => {
 
     expect(report.adapterShadows).toHaveLength(1);
     expect(report.issues).toEqual(expect.arrayContaining([
-      expect.stringContaining('Local adapter overrides shadow packaged adapters'),
+      expect.stringContaining('Local adapter overrides shadow installed plugin adapters'),
+    ]));
+  });
+
+  it('reports a diagnostic issue instead of throwing when adapter shadow detection fails', async () => {
+    const status = {
+      state: 'ready' as const,
+      status: {
+        daemonVersion: '1.7.9',
+        runtimeConnected: true,
+        runtimeName: 'Cloak',
+        runtimeVersion: '1.0.3',
+      },
+    };
+    mockGetDaemonHealth.mockResolvedValue(status);
+    mockFindShadowedUserAdapters.mockImplementationOnce(() => {
+      throw new Error('Malformed override provenance store at /home/me/.webcmd/override-provenance.json: invalid JSON');
+    });
+
+    const report = await runBrowserDoctor({ cliVersion: '1.7.9' });
+
+    expect(report.adapterShadows).toEqual([]);
+    expect(report.daemonRunning).toBe(true);
+    expect(report.runtimeConnected).toBe(true);
+    expect(report.issues).toEqual(expect.arrayContaining([
+      expect.stringContaining('Could not check adapter overrides: Malformed override provenance store'),
     ]));
   });
 

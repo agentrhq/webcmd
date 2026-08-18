@@ -9,7 +9,7 @@ Describe the workflow you want. The agent can turn it into a command, keep its o
 
 ## Start With a Workflow
 
-Use a command when a workflow is useful enough to repeat. Private adapters are the default for personal workflows.
+Use a command when a workflow is useful enough to repeat. A private plugin is the default for personal workflows; Webcmd core does not bundle site adapters.
 
 ```text
 Create a private Webcmd adapter for the Acme supplier portal.
@@ -58,4 +58,4 @@ Only add a new command when the workflow itself has changed.
 
 ## Private, Plugin, or Upstream
 
-Keep personal or company workflows as private adapters. Package related adapters as a plugin when they should travel together or be shared. Prepare an adapter for upstream only when it is broadly useful and ready for repository review.
+Keep personal or company workflows in private plugins. The legacy `~/.webcmd/clis/` path remains supported, but new portable work should use plugins. Prepare a plugin for upstream only when it is broadly useful and ready for repository review.

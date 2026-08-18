@@ -5,7 +5,7 @@ University of Cincinnati postgraduate course export adapter.
 ## Install
 
 ```bash
-webcmd plugin install github:agentrhq/webcmd/plugins/cincinnati
+webcmd plugin install github:agentrhq/webcmd/cincinnati
 ```
 
 ## Command

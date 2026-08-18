@@ -1,9 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import yaml from 'js-yaml';
-import { cli, getRegistry, Strategy } from './registry.js';
+import { cli, getRegistry, runWithDiscoverySource, Strategy } from './registry.js';
 import { BrowserCommandError } from './browser/daemon-client.js';
 import type { IPage } from './types.js';
 import { TargetError } from './browser/target-errors.js';
@@ -15,6 +15,8 @@ import {
   toPresentableCommand,
 } from './command-presentation.js';
 import { render as renderOutput } from './output.js';
+import * as pluginModule from './plugin.js';
+import * as discoveryModule from './discovery.js';
 
 const {
   mockBrowserConnect,
@@ -61,7 +63,401 @@ vi.mock('node:child_process', async () => {
   };
 });
 
-import { createProgram, findPackageRoot, normalizeVerifyRows, renderVerifyPreview, resolveBrowserVerifyInvocation, resolveSitemapAvailabilityForUrl, selectFreshByTimestamp } from './cli.js';
+import { createProgram, findPackageRoot, loadAntigravityServe, normalizeVerifyRows, renderVerifyPreview, resolveBrowserVerifyInvocation, resolveSitemapAvailabilityForUrl, selectFreshByTimestamp } from './cli.js';
+
+const realHome = process.env.HOME;
+let isolatedCliTestHome: string;
+
+beforeEach(() => {
+  isolatedCliTestHome = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-cli-home-'));
+  process.env.HOME = isolatedCliTestHome;
+});
+
+afterEach(() => {
+  if (realHome === undefined) delete process.env.HOME;
+  else process.env.HOME = realHome;
+  fs.rmSync(isolatedCliTestHome, { recursive: true, force: true });
+});
+
+describe('plugin update reconciliation reporting', () => {
+  const stdoutSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+  beforeEach(() => {
+    stdoutSpy.mockClear();
+    process.exitCode = undefined;
+  });
+
+  it('reports every monorepo plugin refreshed by a named update', async () => {
+    const pluginsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-plugin-update-'));
+    const update = vi.spyOn(pluginModule, 'updatePlugin').mockReturnValue(['alpha', 'beta'] as never);
+    const findNeeds = vi.spyOn(pluginModule, 'findOverridesNeedingReconcile').mockReturnValue([]);
+    const discover = vi.spyOn(discoveryModule, 'discoverPlugins').mockResolvedValue();
+
+    try {
+      await createProgram('', '', pluginsDir).parseAsync(['node', 'webcmd', 'plugin', 'update', 'alpha']);
+
+      expect(update).toHaveBeenCalledWith('alpha', { force: false });
+      expect(findNeeds).toHaveBeenCalledWith(['alpha', 'beta']);
+    } finally {
+      update.mockRestore();
+      findNeeds.mockRestore();
+      discover.mockRestore();
+      fs.rmSync(pluginsDir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports reconciliation only for successful --all updates', async () => {
+    const pluginsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-plugin-update-'));
+    const updateAll = vi.spyOn(pluginModule, 'updateAllPlugins').mockReturnValue([
+      { name: 'alpha', success: true, updatedPlugins: ['alpha'] },
+      { name: 'broken', success: false, error: 'network error' },
+      { name: 'beta', success: true, updatedPlugins: ['beta'] },
+    ]);
+    const findNeeds = vi.spyOn(pluginModule, 'findOverridesNeedingReconcile').mockReturnValue([{
+      commandKey: 'beta/search',
+      plugin: 'beta',
+      yours: '/tmp/home/.webcmd/clis/beta/search.js',
+      upstream: '/tmp/home/.webcmd/plugins/beta/search.js',
+      base: '/tmp/home/.webcmd/clis/.base/beta/search.js',
+    }]);
+    const discover = vi.spyOn(discoveryModule, 'discoverPlugins').mockResolvedValue();
+
+    try {
+      await createProgram('', '', pluginsDir).parseAsync(['node', 'webcmd', 'plugin', 'update', '--all']);
+
+      expect(findNeeds).toHaveBeenCalledWith(['alpha', 'beta']);
+      const output = stdoutSpy.mock.calls.flat().join('\n');
+      expect(output).toContain('beta/search');
+      expect(output).toContain('yours:    /tmp/home/.webcmd/clis/beta/search.js');
+      expect(output).toContain('upstream: /tmp/home/.webcmd/plugins/beta/search.js');
+      expect(output).toContain('base:     /tmp/home/.webcmd/clis/.base/beta/search.js');
+    } finally {
+      updateAll.mockRestore();
+      findNeeds.mockRestore();
+      discover.mockRestore();
+      fs.rmSync(pluginsDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('override reporting surfaces', () => {
+  const stdoutSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+  let home: string;
+  let originalHome: string | undefined;
+
+  beforeEach(() => {
+    stdoutSpy.mockClear();
+    originalHome = process.env.HOME;
+    home = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-cli-overrides-'));
+    process.env.HOME = home;
+  });
+
+  afterEach(() => {
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it('includes override fields in plugin list JSON', async () => {
+    const list = vi.spyOn(pluginModule, 'listPlugins').mockReturnValue([{
+      name: 'linkedin', path: '/tmp/linkedin', commands: ['search'], source: 'github:example/linkedin',
+      overrides: ['search'], updateAvailable: true,
+    }] as never);
+    try {
+      await createProgram('', '', path.join(home, '.webcmd', 'plugins'))
+        .parseAsync(['node', 'webcmd', 'plugin', 'list', '--format', 'json']);
+      expect(JSON.parse(stdoutSpy.mock.calls.flat().join('\n'))).toMatchObject([{
+        name: 'linkedin', commands: ['search'], source: 'github:example/linkedin',
+        overrides: ['search'], updateAvailable: true,
+      }]);
+    } finally {
+      list.mockRestore();
+    }
+  });
+
+  it('renders an empty plugin list as JSON', async () => {
+    const list = vi.spyOn(pluginModule, 'listPlugins').mockReturnValue([]);
+    try {
+      await createProgram('', '', path.join(home, '.webcmd', 'plugins'))
+        .parseAsync(['node', 'webcmd', 'plugin', 'list', '--format', 'json']);
+
+      expect(JSON.parse(stdoutSpy.mock.calls.flat().join('\n'))).toEqual([]);
+    } finally {
+      list.mockRestore();
+    }
+  });
+
+  it('reports override origins in webcmd list JSON', async () => {
+    const registry = getRegistry();
+    const snapshot = new Map(registry);
+    const userClis = path.join(home, '.webcmd', 'clis');
+    const source = path.join(userClis, 'linkedin', 'search.js');
+    registry.clear();
+    try {
+      fs.mkdirSync(path.dirname(source), { recursive: true });
+      fs.writeFileSync(source, '// override\n');
+      fs.mkdirSync(path.join(home, '.webcmd'), { recursive: true });
+      fs.writeFileSync(path.join(home, '.webcmd', 'override-provenance.json'), JSON.stringify({
+        'linkedin/search': {
+          plugin: 'linkedin', commitHash: null, sourcePath: '/tmp/upstream.js', sourceSha256: 'abc',
+          basePath: '/tmp/base.js', createdAt: '2026-08-09T00:00:00.000Z',
+        },
+      }));
+      await runWithDiscoverySource(source, async () => {
+        cli({ site: 'linkedin', name: 'search', access: 'read', browser: false });
+      });
+
+      await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+        .parseAsync(['node', 'webcmd', 'list', '--format', 'json']);
+      expect(JSON.parse(stdoutSpy.mock.calls.flat().join('\n'))).toMatchObject([
+        { command: 'linkedin/search', origin: 'override:linkedin' },
+      ]);
+    } finally {
+      registry.clear();
+      for (const [key, value] of snapshot) registry.set(key, value);
+    }
+  });
+
+  it('marks orphaned overrides in adapter status', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+    fs.mkdirSync(path.join(userClis, 'linkedin'), { recursive: true });
+    fs.writeFileSync(path.join(userClis, 'linkedin', 'search.js'), '// override\n');
+    fs.writeFileSync(path.join(home, '.webcmd', 'override-provenance.json'), JSON.stringify({
+      'linkedin/search': {
+        plugin: 'linkedin', commitHash: null, sourcePath: path.join(home, '.webcmd', 'plugins', 'linkedin', 'search.js'),
+        sourceSha256: 'abc', basePath: '/tmp/base.js', createdAt: '2026-08-09T00:00:00.000Z',
+      },
+    }));
+
+    await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+      .parseAsync(['node', 'webcmd', 'adapter', 'status']);
+    expect(stdoutSpy.mock.calls.flat().join('\n')).toContain('orphaned override: linkedin/search (plugin linkedin is not installed)');
+  });
+
+  it('reports adapter override state as JSON', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+    const pluginsDir = path.join(home, '.webcmd', 'plugins');
+    const upstream = path.join(pluginsDir, 'linkedin', 'search.js');
+    fs.mkdirSync(path.dirname(upstream), { recursive: true });
+    fs.mkdirSync(path.join(userClis, 'linkedin'), { recursive: true });
+    fs.mkdirSync(path.join(userClis, 'local'), { recursive: true });
+    fs.mkdirSync(path.join(userClis, 'old'), { recursive: true });
+    fs.writeFileSync(upstream, '// upstream v2\n');
+    fs.writeFileSync(path.join(userClis, 'linkedin', 'search.js'), '// override\n');
+    fs.writeFileSync(path.join(userClis, 'local', 'run.js'), '// user adapter\n');
+    fs.writeFileSync(path.join(userClis, 'old', 'search.js'), '// orphan\n');
+    fs.writeFileSync(path.join(home, '.webcmd', 'override-provenance.json'), JSON.stringify({
+      'linkedin/search': {
+        plugin: 'linkedin', commitHash: null, sourcePath: upstream, sourceSha256: 'old-hash',
+        basePath: '/tmp/base.js', createdAt: '2026-08-09T00:00:00.000Z',
+      },
+      'old/search': {
+        plugin: 'old', commitHash: null, sourcePath: path.join(pluginsDir, 'old', 'search.js'), sourceSha256: 'old-hash',
+        basePath: '/tmp/base.js', createdAt: '2026-08-09T00:00:00.000Z',
+      },
+    }));
+
+    await createProgram('', userClis, pluginsDir)
+      .parseAsync(['node', 'webcmd', 'adapter', 'status', '--format', 'json']);
+    expect(JSON.parse(stdoutSpy.mock.calls.flat().join('\n'))).toEqual([
+      { command: 'linkedin/search', kind: 'override', plugin: 'linkedin', reconciliationNeeded: true, orphaned: false },
+      { command: 'local/run', kind: 'user', plugin: null, reconciliationNeeded: false, orphaned: false },
+      { command: 'old/search', kind: 'override', plugin: 'old', reconciliationNeeded: false, orphaned: true },
+    ]);
+  });
+
+  it('reports an empty adapter status as JSON', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+
+    await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+      .parseAsync(['node', 'webcmd', 'adapter', 'status', '--format', 'json']);
+
+    expect(JSON.parse(stdoutSpy.mock.calls.flat().join('\n'))).toEqual([]);
+  });
+
+  it('reports a JSON status error when a listed adapter site disappears', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+    const siteDir = path.join(userClis, 'linkedin');
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const previousExitCode = process.exitCode;
+    const originalReaddir = fs.promises.readdir;
+    const readdir = vi.spyOn(fs.promises, 'readdir');
+    fs.mkdirSync(siteDir, { recursive: true });
+    fs.writeFileSync(path.join(siteDir, 'search.js'), '// adapter\n');
+    readdir.mockImplementationOnce(async () => {
+      const entries = await originalReaddir(userClis, { withFileTypes: true });
+      fs.rmSync(siteDir, { recursive: true });
+      return entries as any;
+    });
+    try {
+      await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+        .parseAsync(['node', 'webcmd', 'adapter', 'status', '--format', 'json']);
+
+      expect(stdoutSpy.mock.calls.flat().join('\n')).not.toBe('[]');
+      expect(stderrSpy.mock.calls.flat().join('\n')).toContain('ENOENT');
+      expect(process.exitCode).not.toBe(0);
+    } finally {
+      readdir.mockRestore();
+      process.exitCode = previousExitCode;
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('reports malformed override provenance as a JSON status error', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const previousExitCode = process.exitCode;
+    fs.mkdirSync(path.join(userClis, 'linkedin'), { recursive: true });
+    fs.writeFileSync(path.join(userClis, 'linkedin', 'search.js'), '// override\n');
+    fs.writeFileSync(path.join(home, '.webcmd', 'override-provenance.json'), '{not json');
+    try {
+      await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+        .parseAsync(['node', 'webcmd', 'adapter', 'status', '--format', 'json']);
+
+      expect(stdoutSpy.mock.calls.flat().join('\n')).not.toBe('[]');
+      expect(stderrSpy.mock.calls.flat().join('\n')).toContain('Malformed override provenance store');
+    } finally {
+      process.exitCode = previousExitCode;
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('reports malformed override provenance as a table status error', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const previousExitCode = process.exitCode;
+    fs.mkdirSync(path.join(userClis, 'linkedin'), { recursive: true });
+    fs.writeFileSync(path.join(userClis, 'linkedin', 'search.js'), '// override\n');
+    fs.writeFileSync(path.join(home, '.webcmd', 'override-provenance.json'), '{not json');
+    try {
+      await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+        .parseAsync(['node', 'webcmd', 'adapter', 'status']);
+
+      expect(stdoutSpy.mock.calls.flat().join('\n')).not.toContain('No local adapters installed.');
+      expect(stderrSpy.mock.calls.flat().join('\n')).toContain('Malformed override provenance store');
+      expect(process.exitCode).not.toBe(0);
+    } finally {
+      process.exitCode = previousExitCode;
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('fails reset --all loudly on malformed provenance before deleting adapters', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+    const siteDir = path.join(userClis, 'linkedin');
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const previousExitCode = process.exitCode;
+    fs.mkdirSync(siteDir, { recursive: true });
+    fs.writeFileSync(path.join(siteDir, 'search.js'), '// override\n');
+    fs.writeFileSync(path.join(home, '.webcmd', 'override-provenance.json'), '{not json');
+    try {
+      await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+        .parseAsync(['node', 'webcmd', 'adapter', 'reset', '--all']);
+
+      expect(fs.existsSync(siteDir)).toBe(true);
+      expect(stdoutSpy.mock.calls.flat().join('\n')).not.toContain('No local sites to reset.');
+      expect(stderrSpy.mock.calls.flat().join('\n')).toContain('Malformed override provenance store');
+      expect(process.exitCode).not.toBe(0);
+    } finally {
+      process.exitCode = previousExitCode;
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('fails reset --all loudly on malformed provenance when clis is empty', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const previousExitCode = process.exitCode;
+    fs.mkdirSync(userClis, { recursive: true });
+    fs.writeFileSync(path.join(home, '.webcmd', 'override-provenance.json'), '{not json');
+    try {
+      await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+        .parseAsync(['node', 'webcmd', 'adapter', 'reset', '--all']);
+
+      expect(stdoutSpy.mock.calls.flat().join('\n')).not.toContain('No local sites to reset.');
+      expect(stderrSpy.mock.calls.flat().join('\n')).toContain('Malformed override provenance store');
+      expect(process.exitCode).not.toBe(0);
+    } finally {
+      process.exitCode = previousExitCode;
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('reports no sites when reset --all has no local adapter directory', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+
+    await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+      .parseAsync(['node', 'webcmd', 'adapter', 'reset', '--all']);
+
+    expect(stdoutSpy.mock.calls.flat().join('\n')).toContain('No local sites to reset.');
+  });
+
+  it('reports no sites when reset --all has an empty adapter directory and no provenance', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+    fs.mkdirSync(userClis, { recursive: true });
+
+    await createProgram('', userClis, path.join(home, '.webcmd', 'plugins'))
+      .parseAsync(['node', 'webcmd', 'adapter', 'reset', '--all']);
+
+    expect(stdoutSpy.mock.calls.flat().join('\n')).toContain('No local sites to reset.');
+  });
+});
+
+describe('Antigravity serve plugin loading', () => {
+  it('loads serve.js from the installed Antigravity plugin', async () => {
+    const pluginsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-antigravity-plugins-'));
+    const pluginDir = path.join(pluginsDir, 'antigravity');
+    fs.mkdirSync(pluginDir);
+    fs.writeFileSync(path.join(pluginDir, 'package.json'), '{"type":"module"}\n');
+    fs.writeFileSync(path.join(pluginDir, 'serve.js'), 'export const loadedFrom = "installed-plugin";\n');
+    try {
+      await expect(loadAntigravityServe(pluginsDir)).resolves.toMatchObject({
+        loadedFrom: 'installed-plugin',
+      });
+    } finally {
+      fs.rmSync(pluginsDir, { recursive: true, force: true });
+    }
+  });
+
+  it('omits the serve bridge and uses missing-plugin guidance when Antigravity is absent', async () => {
+    const pluginsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-antigravity-absent-'));
+    const registry = getRegistry();
+    const snapshot = new Map(registry);
+    const stderr = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const previousExitCode = process.exitCode;
+    registry.clear();
+    try {
+      const program = createProgram('', '', pluginsDir);
+      program.outputHelp = vi.fn();
+
+      await program.parseAsync(['antigravity', 'serve'], { from: 'user' });
+
+      expect(program.commands.some(command => command.name() === 'antigravity')).toBe(false);
+      expect(stderr.mock.calls.map(([line]) => line).join('\n')).toContain('Search: webcmd plugin search antigravity');
+      expect(process.exitCode).toBe(2);
+    } finally {
+      process.exitCode = previousExitCode;
+      stderr.mockRestore();
+      registry.clear();
+      for (const [key, value] of snapshot) registry.set(key, value);
+      fs.rmSync(pluginsDir, { recursive: true, force: true });
+    }
+  });
+
+  it('registers the serve bridge when the installed Antigravity module exists', () => {
+    const pluginsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-antigravity-present-'));
+    const pluginDir = path.join(pluginsDir, 'antigravity');
+    fs.mkdirSync(pluginDir);
+    fs.writeFileSync(path.join(pluginDir, 'serve.js'), 'export async function startServe() {}\n');
+    try {
+      const antigravity = createProgram('', '', pluginsDir).commands.find(command => command.name() === 'antigravity');
+
+      expect(antigravity?.commands.map(command => command.name())).toContain('serve');
+    } finally {
+      fs.rmSync(pluginsDir, { recursive: true, force: true });
+    }
+  });
+});
 
 describe('createProgram root help descriptions', () => {
   function descriptionFor(program: ReturnType<typeof createProgram>, name: string): string | undefined {
@@ -76,7 +472,7 @@ describe('createProgram root help descriptions', () => {
     expect(descriptionFor(program, 'browser')).not.toContain('Browser control');
     expect(descriptionFor(program, 'auth')).toBe('refresh, status');
     expect(descriptionFor(program, 'plugin')).toBe('catalog, create, install, list, search, uninstall, update');
-    expect(descriptionFor(program, 'adapter')).toBe('eject, reset, status');
+    expect(descriptionFor(program, 'adapter')).toBe('override, reset, status');
     expect(descriptionFor(program, 'profile')).toBe('list, rename, use');
     expect(descriptionFor(program, 'daemon')).toBe('restart, status, stop');
     expect(descriptionFor(program, 'external')).toBe('install, list, register');
@@ -87,6 +483,13 @@ describe('createProgram root help descriptions', () => {
 
     expect(skills.commands.map((command) => command.name())).toEqual(['list', 'add', 'update', 'remove']);
     expect(skills.commands.find((command) => command.name() === 'add')?.aliases()).toEqual([]);
+  });
+
+  it('keeps legacy local adapters manageable without claiming a bundled baseline', () => {
+    const adapter = createProgram('', '').commands.find((command) => command.name() === 'adapter')!;
+
+    expect(adapter.commands.map((command) => command.name())).toEqual(['status', 'reset', 'override']);
+    expect(adapter.helpInformation()).not.toMatch(/official|baseline|eject/i);
   });
 
   it('renders auth namespace structured help', () => {
@@ -137,6 +540,35 @@ describe('createProgram root help descriptions', () => {
     expect(presentation).toBeDefined();
     expect(presentation!.baseText).toBe(commanderHelp.formatHelp(program, commanderHelp));
     expect(program.helpInformation()).toBe(formatRootHelp(presentation!));
+  });
+
+  it('guides an absent site to explicit plugin search and install without side effects', async () => {
+    const plugin = await import('./plugin.js');
+    const catalog = await import('./plugin-catalog.js');
+    const install = vi.spyOn(plugin, 'installPlugin');
+    const search = vi.spyOn(catalog, 'searchCatalogPlugins');
+    const stderr = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const previousExitCode = process.exitCode;
+    const program = createProgram('', '');
+    program.outputHelp = vi.fn();
+
+    try {
+      await program.parseAsync(['example', 'missing-command'], { from: 'user' });
+
+      expect(stderr.mock.calls.map(([line]) => line).join('\n')).toContain([
+        'Site "example" is not installed.',
+        'Search: webcmd plugin search example',
+        'Install using the installSource returned by search.',
+      ].join('\n'));
+      expect(install).not.toHaveBeenCalled();
+      expect(search).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(2);
+    } finally {
+      process.exitCode = previousExitCode;
+      stderr.mockRestore();
+      install.mockRestore();
+      search.mockRestore();
+    }
   });
 
   it('keeps site adapters out of root commands and lists sites in the root help tail', () => {
@@ -385,7 +817,9 @@ name: 'search',
           args: [{ name: 'limit', type: 'int', default: 20, help: 'Maximum issues' }],
           columns: ['number', 'title'],
         });
-        const presentation = commandListPresentation([toPresentableCommand(command)], format);
+        const presentation = commandListPresentation([
+          { ...toPresentableCommand(command), origin: 'builtin' },
+        ], format);
 
         const outputSpy = vi.mocked(console.log);
         outputSpy.mockClear();
@@ -632,8 +1066,8 @@ name: 'search',
       expect(data.namespace).toBe('browser');
       expect(data.command).toBe('webcmd browser');
       expect(data.description).toBe('Run Playwright programs against named browser sessions');
-      expect(data.command_count).toBe(7);
-      expect(data.commands.map((cmd: any) => cmd.name)).toEqual(['bind', 'close', 'init', 'run', 'snapshot', 'tabs', 'verify']);
+      expect(data.command_count).toBe(8);
+      expect(data.commands.map((cmd: any) => cmd.name)).toEqual(['bind', 'close', 'fork', 'init', 'run', 'snapshot', 'tabs', 'verify']);
       // `--session` is now a hidden internal option; user-facing surface is the
       // <session> positional declared via `.usage()`. Structured help drops
       // hidden options, so namespace_options shouldn't expose it.
@@ -721,7 +1155,7 @@ name: 'search',
         usage: 'webcmd plugin update [name] [options]',
         positionals: [{ name: 'name' }],
       });
-      expect(update.command_options.map((option: any) => option.name)).toEqual(['all']);
+      expect(update.command_options.map((option: any) => option.name)).toEqual(['all', 'force']);
     } finally {
       process.argv = argv;
     }
@@ -752,7 +1186,7 @@ name: 'search',
       // applyRootSubcommandSummaries() rewrites .description() to a child-name listing;
       // structured help must surface the original product description via the snapshot.
       expect(data.description).toBe('Manage CLI adapters');
-      expect(data.commands.map((cmd: any) => cmd.name)).toEqual(['eject', 'reset', 'status']);
+      expect(data.commands.map((cmd: any) => cmd.name)).toEqual(['override', 'reset', 'status']);
       const reset = data.commands.find((cmd: any) => cmd.name === 'reset');
       expect(reset).toMatchObject({
         usage: 'webcmd adapter reset [site] [options]',

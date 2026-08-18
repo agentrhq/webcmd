@@ -1,0 +1,9 @@
+{
+  "name": "webcmd-plugin-yahoo",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Webcmd commands for yahoo",
+  "peerDependencies": {
+    "@agentrhq/webcmd": ">=0.5.3"
+  }
+}

@@ -5,5 +5,8 @@
   "description": "HFT Stuttgart postgraduate course export adapter",
   "peerDependencies": {
     "@agentrhq/webcmd": ">=0.5.2"
+  },
+  "dependencies": {
+    "undici": "^6.27.0"
   }
 }

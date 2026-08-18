@@ -5,7 +5,7 @@ HFT Stuttgart postgraduate course export adapter.
 ## Install
 
 ```bash
-webcmd plugin install github:agentrhq/webcmd/plugins/hft
+webcmd plugin install github:agentrhq/webcmd/hft
 ```
 
 ## Command

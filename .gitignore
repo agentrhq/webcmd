@@ -3,6 +3,7 @@ dist/
 !extension/dist/
 *.tsbuildinfo
 hosted-contract.json
+plugin-command-manifest.json
 .webcmd/
 .superpowers/
 .worktrees/

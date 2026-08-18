@@ -126,8 +126,14 @@ const WRITE_PAIR_RULES: Array<{
 ];
 
 export function runConventionAudit(opts: ConventionAuditOptions): ConventionAuditReport {
-  const manifestPath = opts.manifestPath ?? path.join(opts.projectRoot, 'cli-manifest.json');
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8')) as ManifestCommand[];
+  const manifestPaths = opts.manifestPath
+    ? [opts.manifestPath]
+    : ['cli-manifest.json', 'plugin-command-manifest.json']
+      .map(file => path.join(opts.projectRoot, file))
+      .filter(fs.existsSync);
+  const manifest = manifestPaths.flatMap(manifestPath => (
+    JSON.parse(fs.readFileSync(manifestPath, 'utf-8')) as ManifestCommand[]
+  ));
   const filtered = manifest.filter((entry) => matchesTarget(entry, opts));
   const violations: ConventionViolation[] = [];
   const sourceCache = new Map<string, string | null>();
@@ -234,7 +240,9 @@ function matchesTarget(entry: ManifestCommand, opts: Pick<ConventionAuditOptions
 function resolveSourcePath(projectRoot: string, entry: ManifestCommand): string | null {
   const relative = entry.sourceFile ?? entry.modulePath;
   if (!relative) return null;
-  const sourcePath = path.join(projectRoot, 'clis', relative);
+  const sourcePath = relative.startsWith('plugins/') || relative.startsWith('clis/')
+    ? path.join(projectRoot, relative)
+    : path.join(projectRoot, 'clis', relative);
   return fs.existsSync(sourcePath) ? sourcePath : null;
 }
 

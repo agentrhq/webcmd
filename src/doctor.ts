@@ -94,9 +94,13 @@ export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<Doctor
   const profiles = health.status?.profiles;
   const runtimeName = health.status?.runtimeName;
   const runtimeVersion = health.status?.runtimeVersion;
-  const adapterShadows = findShadowedUserAdapters();
-
   const issues: string[] = [];
+  let adapterShadows: AdapterShadow[] = [];
+  try {
+    adapterShadows = findShadowedUserAdapters();
+  } catch (err) {
+    issues.push(`Could not check adapter overrides: ${getErrorMessage(err)}`);
+  }
   if (daemonFlaky) {
     issues.push(
       'Daemon connectivity is unstable. The live browser test succeeded, but the daemon was no longer running immediately afterward.\n' +

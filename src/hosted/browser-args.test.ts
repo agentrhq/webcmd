@@ -10,7 +10,15 @@ function parse(argv: string[]) {
 
 describe('hosted browser argument surface', () => {
   it('uses the same command catalog as local mode', () => {
-    expect(browserCommandCatalog.map(command => command.command)).toEqual(['tabs', 'bind', 'run', 'snapshot', 'close']);
+    expect(browserCommandCatalog.map(command => command.command)).toEqual(['tabs', 'bind', 'fork', 'run', 'snapshot', 'close']);
+  });
+
+  it('parses a hosted adapter fork command', () => {
+    expect(parse(['browser', 'work', 'fork', 'linkedin/search'])).toMatchObject({
+      commandName: 'fork',
+      session: 'work',
+      positionals: ['linkedin/search'],
+    });
   });
 
   it('requires a stable page id for bind', () => {

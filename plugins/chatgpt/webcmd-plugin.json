@@ -1,0 +1,10 @@
+{
+  "name": "chatgpt",
+  "version": "0.1.0",
+  "description": "Webcmd commands for chatgpt",
+  "webcmd": ">=0.5.3",
+  "author": {
+    "name": "WebCMD Agent",
+    "handle": "agentrhq"
+  }
+}

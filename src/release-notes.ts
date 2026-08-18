@@ -425,7 +425,7 @@ export function buildReleaseNotesPrompt(context: ReleaseContext): string {
     ...majorReleaseInstructions,
     'Include only sections that have user-visible changes. Omit empty sections entirely; do not write "None", "N/A", or similar placeholder text.',
     'Do not include a Contributors section.',
-    'In this project, CLI commands and adapters are the same thing. Treat any PR that adds, removes, or changes files under clis/** as an adapter change, even if the PR title says "CLI" instead of "adapter".',
+    'In this project, CLI commands and adapters are the same thing. Treat any PR that adds, removes, or changes files under clis/** or plugins/** as an adapter change, even if the PR title says "CLI" instead of "adapter".',
     'Put new site adapters/CLIs, adapter promotions, adapter hardening, adapter output changes, selector/API updates, and site-specific workflow improvements in ## Adapters.',
     'Use ## Improvements for non-adapter product, runtime, CLI, docs, or workflow improvements.',
     'Use ## Reverts only when the release includes actual reverted changes.',

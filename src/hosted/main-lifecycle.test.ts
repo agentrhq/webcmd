@@ -102,7 +102,12 @@ describe('hosted CLI process lifecycle', () => {
     const result = await runCli(['missing-site', 'child', '--format', 'json'], fixture.env);
 
     expect(result.status).toBe(2);
-    expect(result.stderr).toBe("error: unknown command 'missing-site'\n");
+    expect(result.stderr).toBe([
+      'Site "missing-site" is not installed.',
+      'Search: webcmd plugin search missing-site',
+      'Install using the installSource returned by search.',
+      '',
+    ].join('\n'));
     expect(result.stdout).toContain('Local-only commands:');
     await expect(readFile(fixture.discoverySentinel, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
   }, 20_000);

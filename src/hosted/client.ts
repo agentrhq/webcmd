@@ -18,6 +18,7 @@ import type {
   HostedUploadArtifactResponse,
   HostedManifest,
   HostedMarketplaceInstallation,
+  HostedMarketplaceInstallationRow,
   HostedMarketplaceSearchResult,
   HostedTraceReceipt,
 } from './types.js';
@@ -120,6 +121,34 @@ export class HostedClient {
     });
     if (!hasExactKeys(body, ['ok', 'result']) || body.ok !== true || !isHostedMarketplaceInstallation(body.result)) {
       throw protocolError('Webcmd Cloud returned an invalid marketplace installation response.');
+    }
+    return body.result;
+  }
+
+  async listMarketplaceInstallations(): Promise<HostedMarketplaceInstallationRow[]> {
+    const body = await this.request('/v1/marketplace/installations');
+    if (!hasExactKeys(body, ['ok', 'result']) || body.ok !== true
+      || !isRecord(body.result) || !Array.isArray(body.result.installations)
+      || !body.result.installations.every(isHostedMarketplaceInstallationRow)) {
+      throw protocolError('Webcmd Cloud returned an invalid marketplace installation list.');
+    }
+    return body.result.installations;
+  }
+
+  async uninstallMarketplacePlugin(name: string): Promise<{ uninstalled: true }> {
+    const body = await this.request(`/v1/marketplace/installations/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    if (!hasExactKeys(body, ['ok', 'result']) || body.ok !== true
+      || !isRecord(body.result) || body.result.uninstalled !== true) {
+      throw protocolError('Webcmd Cloud returned an invalid marketplace uninstall response.');
+    }
+    return { uninstalled: true };
+  }
+
+  async updateMarketplacePlugin(name: string): Promise<HostedMarketplaceUpdateResult> {
+    const body = await this.request(`/v1/marketplace/installations/${encodeURIComponent(name)}/update`, { method: 'POST' });
+    if (!hasExactKeys(body, ['ok', 'result']) || body.ok !== true
+      || !isHostedMarketplaceUpdateResult(body.result)) {
+      throw protocolError('Webcmd Cloud returned an invalid marketplace update response.');
     }
     return body.result;
   }
@@ -457,6 +486,33 @@ function isHostedMarketplaceInstallation(value: unknown): value is HostedMarketp
     && typeof value.name === 'string'
     && typeof value.version === 'string'
     && typeof value.installSource === 'string';
+}
+
+function isHostedMarketplaceInstallationRow(value: unknown): value is HostedMarketplaceInstallationRow {
+  return hasExactKeys(value, ['name', 'version', 'installSource', 'sourceCommit', 'installedAt', 'updateAvailable'])
+    && typeof value.name === 'string'
+    && typeof value.version === 'string'
+    && typeof value.installSource === 'string'
+    && (value.sourceCommit === null || typeof value.sourceCommit === 'string')
+    && typeof value.installedAt === 'string'
+    && typeof value.updateAvailable === 'boolean';
+}
+
+// `delisted` is optional and appears ONLY when true (installed plugin whose catalog
+// entry was delisted — nothing to update to, a normal outcome not an error). hasExactKeys
+// would reject either the 3-key or 4-key shape depending on which list you pass it, so
+// check the base 3 keys with hasOnlyKeys (permits the optional 4th) and validate `delisted`
+// separately when present.
+export type HostedMarketplaceUpdateResult =
+  | { updated: boolean; name: string; version: string }
+  | { updated: boolean; name: string; version: string; delisted: true };
+
+function isHostedMarketplaceUpdateResult(value: unknown): value is HostedMarketplaceUpdateResult {
+  return hasOnlyKeys(value, ['updated', 'name', 'version', 'delisted'])
+    && typeof value.updated === 'boolean'
+    && typeof value.name === 'string'
+    && typeof value.version === 'string'
+    && (value.delisted === undefined || value.delisted === true);
 }
 
 function isHostedPublicProfile(value: unknown): boolean {

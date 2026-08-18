@@ -1,0 +1,9 @@
+{
+  "name": "webcmd-plugin-goproxy",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Webcmd commands for goproxy",
+  "peerDependencies": {
+    "@agentrhq/webcmd": ">=0.5.3"
+  }
+}

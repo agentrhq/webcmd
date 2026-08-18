@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import type { HostedContract, HostedFileArgumentContract } from './contract.js';
+import { buildHostedContract, type HostedContract, type HostedFileArgumentContract } from './contract.js';
 import type { ManifestEntry } from '../manifest-types.js';
 
 const MiB = 1024 * 1024;
@@ -158,6 +158,13 @@ function manifestCommand(manifest: ManifestEntry[], command: string): ManifestEn
   return entry;
 }
 
+function commandManifest(): ManifestEntry[] {
+  return [
+    ...readJson<ManifestEntry[]>('cli-manifest.json'),
+    ...readJson<ManifestEntry[]>('plugin-command-manifest.json'),
+  ];
+}
+
 function contractCommand(contract: HostedContract, command: string) {
   const entry = contract.commands.find(item => item.command === command);
   if (!entry) throw new Error(`Missing hosted contract command: ${command}`);
@@ -166,8 +173,8 @@ function contractCommand(contract: HostedContract, command: string) {
 
 describe('hosted file argument contract', () => {
   it('declares every real local path argument in generated artifacts', () => {
-    const manifest = readJson<ManifestEntry[]>('cli-manifest.json');
-    const contract = readJson<HostedContract>('hosted-contract.json');
+    const manifest = commandManifest();
+    const contract = buildHostedContract(manifest, [], 'test');
 
     for (const [command, expected] of Object.entries(EXPECTED_FILE_ARGUMENTS)) {
       expect(contractCommand(contract, command).fileArguments, command).toEqual(expected);
@@ -179,7 +186,7 @@ describe('hosted file argument contract', () => {
   });
 
   it('does not treat Twitter remote image URLs as file arguments', () => {
-    const contract = readJson<HostedContract>('hosted-contract.json');
+    const contract = buildHostedContract(commandManifest(), [], 'test');
 
     expect(contractCommand(contract, 'twitter/quote').fileArguments.map(arg => arg.name))
       .not.toContain('image-url');

@@ -5,6 +5,7 @@
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -63,6 +64,22 @@ export async function runCli(
       code: err.code ?? 1,
     };
   }
+}
+
+/**
+ * Place a repo-local plugin directly under `<home>/.webcmd/plugins/<site>`
+ * for E2E fixtures, skipping `webcmd plugin install`'s `npm install` step.
+ * These fixture plugins declare no real dependencies (only a peer on
+ * @agentrhq/webcmd), so `npm install` only exists to resolve that peer
+ * against the published registry — which fails for whatever version is
+ * currently mid-release and not yet published. A plain file copy is what a
+ * real install produces once the release is out.
+ */
+export function installFixturePlugin(home: string, site: string): void {
+  const source = path.join(ROOT, 'plugins', site);
+  const target = path.join(home, '.webcmd', 'plugins', site);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.cpSync(source, target, { recursive: true });
 }
 
 /**

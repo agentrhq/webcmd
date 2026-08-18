@@ -4,10 +4,23 @@
  *
  * NOTE: Some sites may block headless browsers with bot detection.
  * Tests are wrapped with tryBrowserCommand() which allows graceful failure.
+ *
+ * imdb is no longer bundled in core; it's installed as a local plugin into
+ * an isolated HOME before this suite runs.
  */
 
-import { describe, it, expect } from 'vitest';
-import { runCli, parseJsonOutput, type CliResult } from './helpers.js';
+import { afterAll, beforeAll, describe, it, expect } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { runCli as runCliBase, parseJsonOutput, installFixturePlugin, type CliResult } from './helpers.js';
+
+const TEST_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-browser-public-e2e-'));
+const FIXTURE_ENV = { HOME: TEST_HOME, USERPROFILE: TEST_HOME };
+
+function runCli(args: string[], opts: { timeout?: number; env?: Record<string, string> } = {}) {
+  return runCliBase(args, { ...opts, env: { ...FIXTURE_ENV, ...opts.env } });
+}
 
 const BROWSER_UNAVAILABLE_ENV = { WEBCMD_BROWSER_CONNECT_TIMEOUT: '5' };
 
@@ -55,6 +68,14 @@ async function expectImdbDataOrChallengeSkip(args: string[], label: string): Pro
 }
 
 describe('browser public-data commands E2E', () => {
+  beforeAll(() => {
+    installFixturePlugin(TEST_HOME, 'imdb');
+  });
+
+  afterAll(() => {
+    fs.rmSync(TEST_HOME, { recursive: true, force: true });
+  });
+
   // ── imdb ──
   it('imdb top returns chart data', async () => {
     const data = await expectImdbDataOrChallengeSkip(['imdb', 'top', '--limit', '3', '-f', 'json'], 'imdb top');

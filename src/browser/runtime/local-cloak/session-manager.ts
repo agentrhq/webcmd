@@ -10,15 +10,28 @@ import { normalizeProfileId, resolveCloakProfileDir } from './profiles.js';
 import { CloakNetworkCapture } from './network.js';
 import { findPackageRoot } from '../../../package-paths.js';
 
-/** Installed `cloakbrowser` npm package version, for doctor/status display. */
+const UNRESOLVED = Symbol('unresolved');
+let cachedCloakBrowserVersion: string | undefined | typeof UNRESOLVED = UNRESOLVED;
+
+/**
+ * Installed `cloakbrowser` npm package version, for doctor/status display.
+ *
+ * Resolved once per process. The version cannot change while we are running, and
+ * `profileStatuses()` calls this per profile, so an uncached read meant N+1
+ * synchronous resolve-read-parse cycles on every status poll. The sentinel keeps
+ * a genuine `undefined` (the catch path) cached too, so an unresolvable
+ * `cloakbrowser` is not retried on every call.
+ */
 export function resolveCloakBrowserVersion(): string | undefined {
+  if (cachedCloakBrowserVersion !== UNRESOLVED) return cachedCloakBrowserVersion;
   try {
     const entryPath = fileURLToPath(import.meta.resolve('cloakbrowser'));
-    const pkg = JSON.parse(fs.readFileSync(path.join(findPackageRoot(entryPath), 'package.json'), 'utf-8'));
-    return typeof pkg.version === 'string' ? pkg.version : undefined;
+    const pkg = JSON.parse(fs.readFileSync(path.join(findPackageRoot(entryPath), 'package.json'), 'utf-8')) as { version?: unknown };
+    cachedCloakBrowserVersion = typeof pkg.version === 'string' ? pkg.version : undefined;
   } catch {
-    return undefined;
+    cachedCloakBrowserVersion = undefined;
   }
+  return cachedCloakBrowserVersion;
 }
 
 /**

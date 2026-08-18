@@ -138,6 +138,22 @@ describe('shared command presentation', () => {
     expect(commandListPresentation([local], 'table', { externalClis }).displayLines).toEqual(expected);
   });
 
+  it('hints at plugin search/install when no site plugins are registered', () => {
+    const { displayLines } = commandListPresentation([], 'table', { externalClis: [] });
+
+    expect(displayLines).toContain(
+      "  No site plugins installed. Find one with 'webcmd plugin search <site>'"
+      + " and install it with 'webcmd plugin install <installSource>'.",
+    );
+  });
+
+  it('omits the plugin hint once at least one site is registered', () => {
+    const local = toPresentableCommand(localCommand);
+    const { displayLines } = commandListPresentation([local], 'table', { externalClis: [] });
+
+    expect(displayLines?.some((line) => line.includes('No site plugins installed'))).toBe(false);
+  });
+
   it('builds byte-identical root, site, and alias completion candidates', () => {
     const local = [toPresentableCommand(localCommand)];
     const hosted = [toPresentableCommand(hostedCommand)];

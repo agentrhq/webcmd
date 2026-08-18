@@ -1,5 +1,60 @@
 # Changelog
 
+## [0.6.0](https://github.com/agentrhq/webcmd/compare/webcmd-v0.5.4...webcmd-v0.6.0) (2026-08-10)
+
+
+### Features
+
+* migrate release tooling to openai ([#256](https://github.com/agentrhq/webcmd/issues/256)) ([dca5bbb](https://github.com/agentrhq/webcmd/commit/dca5bbb3184218853502e0af3d24726d9c505296))
+
+
+### Bug Fixes
+
+* **adapters,output:** repair site drift and markdown/console output bugs ([4d2d45b](https://github.com/agentrhq/webcmd/commit/4d2d45b27199c800108a40fe5d6e64782d0c6ea1))
+* harden docs review structured output ([#259](https://github.com/agentrhq/webcmd/issues/259)) ([a1a426a](https://github.com/agentrhq/webcmd/commit/a1a426af82ab9b3d8c973a5b627c5f76723de710))
+* use a lighter review model ([#257](https://github.com/agentrhq/webcmd/issues/257)) ([5fc7e49](https://github.com/agentrhq/webcmd/commit/5fc7e490bb6085d12273ad766675da4148b0ef22))
+
+## [0.5.4](https://github.com/agentrhq/webcmd/compare/webcmd-v0.5.3...webcmd-v0.5.4) (2026-08-09)
+
+### Highlights
+- All site adapters are now independent plugins and are no longer bundled with the core `webcmd` package. This major architectural change allows adapters to be updated individually without requiring a new `webcmd` release. Previously bundled commands can be installed using `webcmd plugin install github:agentrhq/webcmd/plugins/<site-name>`. (#216)
+
+### Improvements
+- A new `webcmd update` command allows you to upgrade `webcmd` to the latest version and refresh bundled skill links directly from the CLI. (#224)
+- The new `webcmd adapter override <site>/<command>` command lets you create a local, editable copy of a command from an installed plugin, making it easier to customize or iterate on existing adapters. (#245)
+- The `browser run` command now uses a sandboxed Playwright environment, improving the reliability and capability of browser-based automations. (#196)
+- Documentation has been updated to:
+    - Add the `webcmd skills` subcommands to the CLI reference. (#200)
+    - Document the `-f plain` output format and aliases for `yaml` and `md`. (#202)
+    - Improve the clarity and correctness of the main README file. (#205, #207)
+
+### Fixes
+- Hosted browser commands will no longer fail when the Webcmd Cloud API includes an `expiresAt` field in its response. (#194)
+- Improved the performance of status-checking commands like `webcmd doctor` by caching the browser runtime version, reducing unnecessary file reads. (#213)
+
+### Adapters
+- Nine new adapters have been added for exporting postgraduate course data from the following universities: University of Cincinnati, Concordia University, University of Göttingen, Heidelberg University, HFT Stuttgart, Illinois Institute of Technology, Johns Hopkins University, University of Alberta, and Yale University. (#192)
+- A new `luma` adapter allows you to manage Luma events, guests, and registration questions. (#195)
+- The documentation for the `skyscanner` adapter has been updated to include required flags and provide current examples. (#209)
+
+### Reverts
+- Reverted the addition of the one-click "Copy prompt" feature for AI agent setup from the documentation homepage. (#221)
+
+### Contributors
+[@ankitranjan7](https://github.com/ankitranjan7) | [@askadityapandey](https://github.com/askadityapandey) | [@beubax](https://github.com/beubax) | [@rajarshidattapy](https://github.com/rajarshidattapy) | [@rishabhraj36](https://github.com/rishabhraj36)
+
+## [0.5.3](https://github.com/agentrhq/webcmd/compare/webcmd-v0.5.2...webcmd-v0.5.3) (2026-08-07)
+
+### Improvements
+- Adds a new `system-info` command to display version information for webcmd, Node.js, and the operating system. This is useful for debugging and reporting issues.
+
+### Fixes
+- The `whoami` command now handles cases where no user is logged in more gracefully, preventing unexpected errors.
+
+### Adapters
+- **AWS**: Added support for the `eu-south-2` (Spain) region.
+- **GCP**: Added a new `gcp run list` command to list Cloud Run services.
+
 ## [0.5.3](https://github.com/agentrhq/webcmd/compare/webcmd-v0.5.2...webcmd-v0.5.3) (2026-08-03)
 
 ### Fixes

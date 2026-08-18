@@ -1,0 +1,51 @@
+# Required repository secrets:
+#   GCP_WORKLOAD_IDENTITY_PROVIDER — workload identity provider resource name
+#   GCP_RECONCILE_SERVICE_ACCOUNT  — service account with run.jobs.run on the job
+#   GCP_REGION                     — region hosting webcmd-reconcile-marketplace
+#
+# The Cloud Run Job webcmd-reconcile-marketplace must exist and run
+# `npm run job:reconcile-marketplace` with DATABASE_URL, WEBCMD_ARTIFACT_ROOT,
+# and GITHUB_TOKEN configured.
+
+name: Reconcile hosted plugin catalog
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'plugins/**'
+      - 'webcmd-plugin.json'
+  workflow_dispatch:
+    # Note: manual runs should be triggered against main to ensure github.sha
+    # points to the current tip. Reconciling an older ref would delist plugins
+    # added since that commit.
+
+concurrency:
+  group: reconcile-hosted-plugins
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_RECONCILE_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Execute Cloud Run Job
+        run: |
+          # Note: --update-env-vars on 'execute' (not 'update') is a per-execution
+          # override that does not modify the job's stored configuration. See:
+          # "environment variables overrides for an execution of a job"
+          gcloud run jobs execute webcmd-reconcile-marketplace \
+            --region "${{ secrets.GCP_REGION }}" \
+            --update-env-vars "WEBCMD_PLUGINS_COMMIT=${{ github.sha }}" \
+            --wait

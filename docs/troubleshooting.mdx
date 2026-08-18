@@ -75,6 +75,14 @@ Stable output is more important than exposing every new site field.
 
 ## Plugin Problems
 
+Webcmd core ships without site adapters. If a site is missing, search and
+install it explicitly before diagnosing command code:
+
+```bash
+webcmd plugin search <site> -f json
+webcmd plugin install <installSource-from-search>
+```
+
 ```text
 This Webcmd plugin is installed but its commands do not appear in `webcmd list -f json`. Diagnose the plugin manifest, adapter paths, and install state.
 ```

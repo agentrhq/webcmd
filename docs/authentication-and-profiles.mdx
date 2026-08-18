@@ -46,7 +46,7 @@ WEBCMD_WORKSPACE=user_64256 webcmd --profile work github whoami
 
 `--profile <name>` still selects a persona within the ambient workspace; it never crosses workspace boundaries.
 
-Hosted `profile list` returns profile rows; `delete` returns `{ "ok": true, "deleted": true }`. Public profile fields are `id`, `name`, `workspace`, `default`, `status`, `createdAt`, `updatedAt`, and `lastUsedAt`. `status` is `pending` while the hosted profile is being provisioned and `available` once it is ready. Kernel identifiers are never exposed as Webcmd API fields.
+Hosted `profile list` returns profile rows; `delete` returns `{ "ok": true, "deleted": true }`. Public profile fields are `id`, `name`, `workspace`, `default`, `status`, `createdAt`, `updatedAt`, and `lastUsedAt`. `status` is `pending` while the hosted profile is being provisioned and `available` once it is ready. Cloud provider identifiers are never exposed as Webcmd API fields.
 
 Delete hosted profiles only by immutable ID:
 

@@ -5,7 +5,7 @@ Illinois Institute of Technology postgraduate course export adapter.
 ## Install
 
 ```bash
-webcmd plugin install github:agentrhq/webcmd/plugins/iit
+webcmd plugin install github:agentrhq/webcmd/iit
 ```
 
 ## Command

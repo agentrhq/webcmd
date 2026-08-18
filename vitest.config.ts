@@ -1,4 +1,19 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
+
+const root = path.dirname(fileURLToPath(import.meta.url));
+const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')) as {
+  name: string;
+  exports: Record<string, string>;
+};
+const packageAliases = Object.entries(packageJson.exports)
+  .map(([subpath, target]) => ({
+    find: subpath === '.' ? packageJson.name : `${packageJson.name}${subpath.slice(1)}`,
+    replacement: path.resolve(root, target.replace(/^\.\/dist\//, '').replace(/\.js$/, '.ts')),
+  }))
+  .sort((a, b) => b.find.length - a.find.length);
 
 const includeExtendedE2e = process.env.WEBCMD_E2E === '1';
 export default defineConfig({
@@ -7,15 +22,15 @@ export default defineConfig({
       {
         test: {
           name: 'unit',
-          include: ['src/**/*.test.ts'],
-          exclude: ['clis/**/*.test.{ts,js}', 'src/browser/**/*.test.ts'],
+          include: ['src/*.test.ts', 'src/!(browser)/**/*.test.ts', 'src/browser/verify-fixture.test.ts'],
           sequence: { groupOrder: 0 },
         },
       },
       {
+        resolve: { alias: packageAliases },
         test: {
-          name: 'adapter',
-          include: ['clis/**/*.test.{ts,js}'],
+          name: 'plugin',
+          include: ['plugins/*/test/**/*.test.{ts,js}', 'clis/*/test/**/*.test.{ts,js}'],
           sequence: { groupOrder: 1 },
         },
       },

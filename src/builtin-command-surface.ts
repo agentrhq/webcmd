@@ -34,3 +34,25 @@ export function configurePluginInstallSurface(command: Command): Command {
     .description('Install a plugin from a git repository')
     .argument('<source>', 'Plugin source (e.g. github:user/repo)');
 }
+
+/** Configure installed-plugin listing grammar shared by local and hosted runtimes. */
+export function configurePluginListSurface(command: Command): Command {
+  return command
+    .description('List installed plugins')
+    .option('-f, --format <fmt>', 'Output format: table, json', 'table');
+}
+
+/** Configure plugin uninstall grammar shared by local and hosted runtimes. */
+export function configurePluginUninstallSurface(command: Command): Command {
+  return command
+    .description('Uninstall a plugin')
+    .argument('<name>', 'Installed plugin name');
+}
+
+/** Configure plugin update grammar shared by local and hosted runtimes. */
+export function configurePluginUpdateSurface(command: Command): Command {
+  return command
+    .description('Update a plugin (or all plugins) to the latest version')
+    .argument('[name]', 'Installed plugin name')
+    .option('--all', 'Update all installed plugins');
+}

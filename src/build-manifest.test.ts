@@ -25,6 +25,17 @@ describe('manifest helper rules', () => {
     }
   });
 
+  it('builds an empty core manifest when clis/ is absent', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-no-clis-'));
+    tempDirs.push(root);
+
+    await expect(scanClisDir(path.join(root, 'clis'))).resolves.toEqual({
+      entries: [],
+      failures: [],
+    });
+    expect(serializeManifest([])).toBe('[]\n');
+  });
+
   it('skips TS files that do not register a cli', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-manifest-'));
     tempDirs.push(dir);
@@ -512,7 +523,7 @@ describe('manifest helper rules', () => {
 
   it('does not publish per-command browser window defaults', () => {
     const manifest = JSON.parse(
-      fs.readFileSync(path.join(process.cwd(), 'cli-manifest.json'), 'utf8'),
+      fs.readFileSync(path.join(process.cwd(), 'plugin-command-manifest.json'), 'utf8'),
     ) as ManifestEntry[];
 
     expect(
@@ -521,7 +532,7 @@ describe('manifest helper rules', () => {
   });
 
   it('keeps every browser login on the local handoff contract', () => {
-    const manifest = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'cli-manifest.json'), 'utf8')) as ManifestEntry[];
+    const manifest = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'plugin-command-manifest.json'), 'utf8')) as ManifestEntry[];
     const logins = manifest.filter((entry) => entry.browser === true && entry.name === 'login');
     const keys = new Set(manifest.map((entry) => `${entry.site}/${entry.name}`));
 

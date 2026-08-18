@@ -5,7 +5,7 @@ Heidelberg University postgraduate course export adapter.
 ## Install
 
 ```bash
-webcmd plugin install github:agentrhq/webcmd/plugins/heidelberg
+webcmd plugin install github:agentrhq/webcmd/heidelberg
 ```
 
 ## Command

@@ -3,9 +3,9 @@ import { HostedClient, HostedClientError, resolveWorkspace } from './client.js';
 
 const invalidTraceUrlCases = [
   {
-    name: 'raw absolute Kernel URL with token',
+    name: 'raw absolute provider URL with token',
     field: 'liveViewUrl',
-    value: 'https://kernel.example/session/secret?token=kernel-secret-token',
+    value: 'https://provider.example/session/secret?token=provider-secret-token',
     executionId: 'exec_trace',
   },
   {
@@ -142,6 +142,85 @@ describe('HostedClient', () => {
       method: 'POST',
       body: JSON.stringify({ installSource: 'github:agentrhq/webcmd/acme' }),
     }]);
+  });
+
+  it('lists marketplace installations through the authenticated API', async () => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        result: {
+          installations: [{
+            name: 'alpha', version: '0.1.0', installSource: 'github:agentrhq/webcmd/alpha',
+            sourceCommit: null, installedAt: '2026-08-07T00:00:00.000Z', updateAvailable: false,
+          }],
+        },
+      })),
+    });
+
+    await expect(client.listMarketplaceInstallations()).resolves.toEqual([{
+      name: 'alpha', version: '0.1.0', installSource: 'github:agentrhq/webcmd/alpha',
+      sourceCommit: null, installedAt: '2026-08-07T00:00:00.000Z', updateAvailable: false,
+    }]);
+  });
+
+  it('uninstalls a marketplace plugin through the authenticated API', async () => {
+    const requests: Array<{ url: string; method: string }> = [];
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async (url, init) => {
+        requests.push({ url: String(url), method: init?.method ?? 'GET' });
+        return new Response(JSON.stringify({ ok: true, result: { uninstalled: true } }));
+      },
+    });
+
+    await expect(client.uninstallMarketplacePlugin('alpha')).resolves.toEqual({ uninstalled: true });
+    expect(requests).toEqual([{ url: 'https://api.example.com/v1/marketplace/installations/alpha', method: 'DELETE' }]);
+  });
+
+  it('accepts the ordinary 3-key update response', async () => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        result: { updated: true, name: 'alpha', version: '0.2.0' },
+      })),
+    });
+
+    await expect(client.updateMarketplacePlugin('alpha')).resolves.toEqual({
+      updated: true, name: 'alpha', version: '0.2.0',
+    });
+  });
+
+  it('accepts the 4-key delisted update response', async () => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        result: { updated: false, name: 'alpha', version: '0.1.0', delisted: true },
+      })),
+    });
+
+    await expect(client.updateMarketplacePlugin('alpha')).resolves.toEqual({
+      updated: false, name: 'alpha', version: '0.1.0', delisted: true,
+    });
+  });
+
+  it('rejects an update response with delisted: false as protocol-invalid', async () => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        result: { updated: false, name: 'alpha', version: '0.1.0', delisted: false },
+      })),
+    });
+
+    await expect(client.updateMarketplacePlugin('alpha')).rejects.toThrow(HostedClientError);
   });
 
   it('sends bearer auth and parses hosted manifest', async () => {
@@ -348,7 +427,7 @@ describe('HostedClient', () => {
   });
 
   it.each([
-    { name: 'private provider field', change: { kernelProfileId: 'private' } },
+    { name: 'private provider field', change: { providerProfileId: 'private' } },
     { name: 'missing updatedAt', change: { updatedAt: undefined } },
     { name: 'non-nullable name shape', change: { name: 7 } },
     { name: 'non-nullable workspace shape', change: { workspace: false } },

@@ -5,7 +5,7 @@ Johns Hopkins University postgraduate course export adapter.
 ## Install
 
 ```bash
-webcmd plugin install github:agentrhq/webcmd/plugins/jhu
+webcmd plugin install github:agentrhq/webcmd/jhu
 ```
 
 ## Command

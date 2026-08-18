@@ -6,6 +6,7 @@ import { Writable, type WritableOptions } from 'node:stream';
 import type { Command } from 'commander';
 import { describe, expect, it, vi } from 'vitest';
 import { browserCommandCatalog } from '../browser/command-catalog.js';
+import { buildHostedContract } from './contract.js';
 import { rewriteBrowserArgv } from '../cli-argv-preprocess.js';
 import { createProgram } from '../cli.js';
 import { formatRootHelp } from '../command-presentation.js';
@@ -17,6 +18,15 @@ import { runHostedCli } from './runner.js';
 const [packageMajor, packageMinor] = PKG_VERSION.split('.');
 const compatiblePatchVersion = `${packageMajor}.${packageMinor}.99`;
 const incompatibleMinorVersion = `${packageMajor}.${Number(packageMinor) + 1}.0`;
+
+it('ships no default site commands while preserving the browser contract', () => {
+  const contract = buildHostedContract([], browserCommandCatalog, PKG_VERSION);
+
+  expect(contract.commands).toEqual([]);
+  expect(contract.browserCommands.map(command => command.command)).toEqual(
+    browserCommandCatalog.map(command => command.command).sort((a, b) => a.localeCompare(b)),
+  );
+});
 
 const manifest = {
   userId: 'user_demo',
@@ -325,7 +335,7 @@ describe('runHostedCli', () => {
     expect(requests).toEqual(['https://api.example.com/v1/marketplace/installations']);
   });
 
-  it.each(['catalog', 'create', 'update', 'list', 'uninstall'])('rejects unsupported hosted plugin %s without an API call', async (subcommand) => {
+  it.each(['catalog'])('rejects unsupported hosted plugin %s without an API call', async (subcommand) => {
     const stderr = sink();
     const fetchImpl = vi.fn<typeof fetch>();
     const result = await runHostedCli(['plugin', subcommand], {
@@ -337,6 +347,145 @@ describe('runHostedCli', () => {
     expect(result).toEqual({ handled: true, exitCode: 78 });
     expect(stderr.text()).toContain(`webcmd plugin ${subcommand} is not available in hosted mode.`);
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('lists hosted installations as a table', async () => {
+    const stdout = sink();
+    const stderr = sink();
+    const result = await runHostedCli(['plugin', 'list'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        result: {
+          installations: [{
+            name: 'alpha', version: '0.1.0', installSource: 'github:agentrhq/webcmd/alpha',
+            sourceCommit: 'a'.repeat(40), installedAt: '2026-08-07T00:00:00.000Z', updateAvailable: true,
+          }],
+        },
+      })),
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 0 });
+    expect(stderr.text()).toBe('');
+    expect(stdout.text()).toContain('alpha');
+    expect(stdout.text()).toContain('0.1.0');
+  });
+
+  it('uninstalls a hosted plugin', async () => {
+    const requests: Array<{ url: string; method: string }> = [];
+    const stdout = sink();
+    const stderr = sink();
+    const result = await runHostedCli(['plugin', 'uninstall', 'alpha'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      fetchImpl: async (url, init) => {
+        requests.push({ url: String(url), method: init?.method ?? 'GET' });
+        return new Response(JSON.stringify({ ok: true, result: { uninstalled: true } }));
+      },
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 0 });
+    expect(stderr.text()).toBe('');
+    expect(stdout.text()).toContain('alpha');
+    expect(requests).toEqual([{ url: 'https://api.example.com/v1/marketplace/installations/alpha', method: 'DELETE' }]);
+  });
+
+  it('reports when update finds nothing newer', async () => {
+    const stdout = sink();
+    const stderr = sink();
+    const result = await runHostedCli(['plugin', 'update', 'alpha'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        result: { updated: false, name: 'alpha', version: '0.1.0' },
+      })),
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 0 });
+    expect(stderr.text()).toBe('');
+    expect(stdout.text()).toMatch(/already|up to date/i);
+  });
+
+  it('reports a delisted plugin distinctly from an ordinary no-op update', async () => {
+    const stdout = sink();
+    const stderr = sink();
+    const result = await runHostedCli(['plugin', 'update', 'alpha'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        result: { updated: false, name: 'alpha', version: '0.1.0', delisted: true },
+      })),
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 0 });
+    expect(stderr.text()).toBe('');
+    expect(stdout.text()).toMatch(/delisted/i);
+    expect(stdout.text()).not.toMatch(/already|up to date/i);
+  });
+
+  it('updates all installed plugins with --all and keeps going after one failure', async () => {
+    const stdout = sink();
+    const stderr = sink();
+    let calls = 0;
+    const result = await runHostedCli(['plugin', 'update', '--all'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      fetchImpl: async (url) => {
+        if (String(url).endsWith('/installations')) {
+          return new Response(JSON.stringify({
+            ok: true,
+            result: {
+              installations: [
+                { name: 'alpha', version: '0.1.0', installSource: 'a', sourceCommit: null, installedAt: 'x', updateAvailable: true },
+                { name: 'beta', version: '0.1.0', installSource: 'b', sourceCommit: null, installedAt: 'x', updateAvailable: true },
+              ],
+            },
+          }));
+        }
+        calls += 1;
+        if (String(url).includes('/alpha/update')) {
+          return new Response(JSON.stringify({ ok: false, error: { code: 'NOT_FOUND', message: 'gone' } }), { status: 404 });
+        }
+        return new Response(JSON.stringify({ ok: true, result: { updated: true, name: 'beta', version: '0.2.0' } }));
+      },
+    });
+
+    expect(calls).toBe(2);
+    expect(stdout.text()).toContain('beta');
+    expect(stderr.text()).toContain('alpha');
+    expect(result.exitCode).not.toBe(0);
+  });
+
+  it('scaffolds in hosted mode and prints contribute guidance instead of a local install', async () => {
+    const stdout = sink();
+    const stderr = sink();
+    const fetchImpl = vi.fn<typeof fetch>();
+    const tempDir = await mkdtemp(path.join(tmpdir(), 'webcmd-hosted-plugin-create-'));
+    try {
+      const result = await runHostedCli(['plugin', 'create', 'acme', '--dir', tempDir,
+        '--author-name', 'A', '--author-handle', 'a'], {
+        config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+        stdout: stdout.stream,
+        stderr: stderr.stream,
+        fetchImpl,
+      });
+
+      expect(result).toEqual({ handled: true, exitCode: 0 });
+      expect(stdout.text()).toContain('Plugin scaffold created');
+      expect(stdout.text()).not.toContain('plugin install file://');
+      expect(stdout.text()).toMatch(/pull request|contribute/i);
+      expect(fetchImpl).not.toHaveBeenCalled();
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
   });
 
   it('shows hosted plugin search and install help without an API call', async () => {
@@ -466,7 +615,7 @@ describe('runHostedCli', () => {
     ['missing-site', 'child', 'grandchild'],
     ['missing-site', '--format', 'json'],
     ['missing-site', '--trace=on'],
-  ])('matches local unknown-site bytes when argv is %j', async (...argv) => {
+  ])('guides an unknown site without searching, installing, or retrying when argv is %j', async (...argv) => {
     const stdout = sink();
     const stderr = sink();
     const fetchImpl = vi.fn<typeof fetch>(async () => manifestResponse());
@@ -479,10 +628,15 @@ describe('runHostedCli', () => {
     });
 
     expect(result).toEqual({ handled: true, exitCode: 2 });
-    expect(stderr.text()).toBe("error: unknown command 'missing-site'\n");
+    expect(stderr.text()).toContain([
+      'Site "missing-site" is not installed.',
+      'Search: webcmd plugin search missing-site',
+      'Install using the installSource returned by search.',
+    ].join('\n'));
     expect(stdout.text()).toBe(formatRootHelp(HOSTED_ROOT_HELP));
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(String(fetchImpl.mock.calls[0]![0])).toMatch(/\/v1\/manifest$/);
+    expect(fetchImpl.mock.calls.some(([url]) => /plugin|execute/.test(String(url)))).toBe(false);
   });
 
   it('matches local Commander bytes for an unknown site command', async () => {
@@ -1202,10 +1356,10 @@ describe('runHostedCli', () => {
       expected: 'username\n"a,""b\nline 2"\n',
     },
     {
-      name: 'literal Markdown cells',
+      name: 'escaped Markdown cells',
       result: [{ username: 'a|b\nline 2' }],
       argv: ['-f', 'md'],
-      expected: '| username |\n| --- |\n| a|b\nline 2 |\n',
+      expected: '| username |\n| --- |\n| a\\|b\nline 2 |\n',
     },
   ])('renders hosted $name with canonical literal bytes', async ({ result, argv, expected }) => {
     const stdout = sink(true);
@@ -1372,7 +1526,7 @@ describe('runHostedCli', () => {
   });
 
   it.each(['success', 'failure'])('rejects a raw provider trace URL before $phase output or attachment', async (phase) => {
-    const rawUrl = 'https://kernel.example/session/private?token=kernel-secret-token';
+    const rawUrl = 'https://provider.example/session/private?token=provider-secret-token';
     const stdout = sink();
     const stderr = sink();
     const success = phase === 'success';
@@ -1407,7 +1561,7 @@ describe('runHostedCli', () => {
     expect(stdout.text()).toBe('');
     expect(stderr.text()).toContain('HOSTED_PROTOCOL');
     expect(`${stdout.text()}\n${stderr.text()}`).not.toContain(rawUrl);
-    expect(`${stdout.text()}\n${stderr.text()}`).not.toContain('kernel-secret-token');
+    expect(`${stdout.text()}\n${stderr.text()}`).not.toContain('provider-secret-token');
   });
 
   it('accepts a manifest patch bump on the same hosted compatibility line', async () => {

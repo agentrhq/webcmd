@@ -1,0 +1,10 @@
+{
+  "name": "coupang",
+  "version": "0.1.0",
+  "description": "Webcmd commands for coupang",
+  "webcmd": ">=0.5.3",
+  "author": {
+    "name": "WebCMD Agent",
+    "handle": "agentrhq"
+  }
+}

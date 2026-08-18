@@ -5,5 +5,8 @@
   "description": "Heidelberg University postgraduate course export adapter",
   "peerDependencies": {
     "@agentrhq/webcmd": ">=0.5.2"
+  },
+  "dependencies": {
+    "undici": "^6.27.0"
   }
 }

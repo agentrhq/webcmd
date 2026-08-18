@@ -5,7 +5,7 @@ Yale University postgraduate course export adapter.
 ## Install
 
 ```bash
-webcmd plugin install github:agentrhq/webcmd/plugins/yale
+webcmd plugin install github:agentrhq/webcmd/yale
 ```
 
 ## Command
