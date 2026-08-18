@@ -787,7 +787,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
           console.error('Hint: run "webcmd skills update" once the new version is active.');
         }
       }
-      // The Cloak runtime/extension ships separately from npm; surface it if stale.
+      // The SLAB runtime ships separately from npm; surface it if stale.
       const runtimeNotice = getRuntimeUpdateNotice();
       if (runtimeNotice) process.stdout.write(runtimeNotice);
       console.log('Update complete.');
@@ -1777,7 +1777,7 @@ cli({
 
   profileCmd
     .command('list')
-    .description('List Chrome and Chromium profiles available through the Cloak runtime')
+    .description('List Chrome and Chromium profiles available through SLAB')
     .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table')
     .action(async (opts: { format?: string }, command: Command) => {
       const fmt = resolveOutputFormat(opts.format);
@@ -1823,13 +1823,13 @@ cli({
         return;
       }
       if (profiles.length === 0) {
-        console.log('No Cloak runtime profiles are active.');
+        console.log('No SLAB profiles are active.');
         console.log('Run a browser-backed command or webcmd <site> login to create one.');
         return;
       }
 
       const knownContextIds = new Set(profiles.map((profile) => profile.contextId));
-      console.log('Available Cloak profiles');
+      console.log('Available SLAB profiles');
       console.log();
       for (const profile of profiles) {
         const alias = aliasForContextId(config, profile.contextId);
@@ -1857,7 +1857,7 @@ cli({
 
   profileCmd
     .command('rename')
-    .description('Assign a local alias to an available Cloak profile')
+    .description('Assign a local alias to an available SLAB profile')
     .argument('<contextId>', 'Profile contextId from webcmd profile list')
     .argument('<alias>', 'Local alias, e.g. work or personal')
     .action((contextId: string, alias: string) => {
@@ -1872,12 +1872,12 @@ cli({
 
   profileCmd
     .command('use')
-    .description('Set the default Cloak profile for future commands')
+    .description('Set the default SLAB profile for future commands')
     .argument('<profile>', 'Profile alias or contextId')
     .action((profile: string) => {
       try {
         const config = setDefaultProfile(profile);
-        console.log(`Default Cloak profile: ${config.defaultContextId ?? profile}`);
+        console.log(`Default SLAB profile: ${config.defaultContextId ?? profile}`);
       } catch (err) {
         console.error(`Error: ${getErrorMessage(err)}`);
         process.exitCode = EXIT_CODES.USAGE_ERROR;

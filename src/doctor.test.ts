@@ -102,7 +102,7 @@ describe('doctor report rendering', () => {
 
     expect(text).toContain('[OK] Daemon: running on port 9777');
     expect(text).toContain('(v1.7.9)');
-    expect(text).toContain('[OK] Runtime: Cloak connected (v1.6.8)');
+    expect(text).toContain('[OK] Runtime: SLAB connected (v1.6.8)');
     expect(text).toContain('Everything looks good!');
     expect(text).not.toContain('webcmd browser analyze <url>');
   });
@@ -147,7 +147,7 @@ describe('doctor report rendering', () => {
     expect(text).toContain('[MISSING] Runtime: SLAB not connected');
   });
 
-  it('renders OK when the connected Cloak runtime version is unknown', () => {
+  it('renders OK when the connected SLAB runtime version is unknown', () => {
     const text = strip(renderBrowserDoctorReport({
       daemonRunning: true,
       runtimeConnected: true,
@@ -155,7 +155,7 @@ describe('doctor report rendering', () => {
       issues: [],
     }));
 
-    expect(text).toContain('[OK] Runtime: Cloak connected (version unknown)');
+    expect(text).toContain('[OK] Runtime: SLAB connected (version unknown)');
     expect(text).not.toContain('Cloak runtime is connected but did not report a version.');
     expect(text).toContain('Everything looks good!');
   });
@@ -197,7 +197,7 @@ describe('doctor report rendering', () => {
       issues: ['Cloak runtime connection is unstable.'],
     }));
 
-    expect(text).toContain('[WARN] Runtime: Cloak unstable');
+    expect(text).toContain('[WARN] Runtime: SLAB unstable');
     expect(text).toContain('Cloak runtime connection is unstable.');
   });
 

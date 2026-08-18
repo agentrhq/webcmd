@@ -229,7 +229,7 @@ export function renderBrowserDoctorReport(report: DoctorReport): string {
     : report.runtimeVersion
       ? ` (v${report.runtimeVersion})`
       : ' (version unknown)';
-  const runtimeName = report.runtimeName ?? 'SLAB';
+  const runtimeName = 'SLAB';
   const runtimeLabel = report.runtimeFlaky
     ? 'unstable (connected during live check, then disconnected)'
     : report.runtimeConnected ? 'connected' : 'not connected';
