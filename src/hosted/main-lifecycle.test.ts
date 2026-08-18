@@ -269,7 +269,18 @@ async function createHostedFixture(outcome: 'success' | 'failure' | 'browser'): 
   ].join('\n'));
   await chmod(slabExecutable, 0o755);
   await writeFile(daemonPreload, [
+    "import fs from 'node:fs';",
+    "import { syncBuiltinESMExports } from 'node:module';",
     "import { writeFileSync } from 'node:fs';",
+    'const originalExistsSync = fs.existsSync;',
+    'fs.existsSync = function existsSyncTrap(candidate) {',
+    "  if (String(candidate).includes('SLAB.app')) {",
+    `    writeFileSync(${JSON.stringify(slabAccessed)}, 'discovered');`,
+    "    throw new Error('SLAB discovery sentinel was accessed');",
+    '  }',
+    '  return originalExistsSync.apply(this, arguments);',
+    '};',
+    'syncBuiltinESMExports();',
     "if (process.argv.some(arg => arg.endsWith('/src/daemon.ts'))) {",
     `  writeFileSync(${JSON.stringify(daemonStarted)}, 'started');`,
     '}',

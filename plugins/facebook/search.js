@@ -149,7 +149,7 @@ async function searchFacebook(page, kwargs) {
   } catch (err) {
     throw new CommandExecutionError(
       `Failed to open facebook search: ${err instanceof Error ? err.message : err}`,
-      'Check that facebook.com is reachable and the Cloak browser session is running.',
+      'Check that facebook.com is reachable and the SLAB browser session is running.',
     );
   }
 
@@ -167,7 +167,7 @@ async function searchFacebook(page, kwargs) {
     throw new CommandExecutionError('facebook search returned malformed extraction payload');
   }
   if (payload.status === 'auth') {
-    throw new AuthRequiredError('www.facebook.com', 'Log in to Facebook in the active Cloak browser session before retrying.');
+    throw new AuthRequiredError('www.facebook.com', 'Log in to Facebook in the active SLAB browser session before retrying.');
   }
   if (payload.rows.length > 0) return payload.rows;
 

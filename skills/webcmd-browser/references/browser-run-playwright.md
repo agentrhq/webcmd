@@ -132,4 +132,4 @@ Run results include timing fields such as `quickjs_boot_ms`, `client_bundle_init
 
 Hosted `browser run` uses the same QuickJS sandbox and the same rules. Only the browser on
 the far end differs — hosted runs drive a Browser Use browser over CDP rather than local
-Cloak. Programs that work locally work hosted; the tables above apply in both modes.
+SLAB. Programs that work locally work hosted; the tables above apply in both modes.

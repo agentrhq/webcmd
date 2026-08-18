@@ -15,6 +15,7 @@ describe('matchSlabProfileCommand', () => {
     expect(matchSlabProfileCommand('C:\\Users\\me\\AppData\\Local\\SLAB\\SLAB.exe --user-data-dir=C:\\profiles\\work', 'C:\\profiles\\work')).toBe(true);
     expect(matchSlabProfileCommand(slabWork2, '/profiles/work')).toBe(false);
     expect(matchSlabProfileCommand(chromeWork, '/profiles/work')).toBe(false);
+    expect(matchSlabProfileCommand('/tmp/slab --user-data-dir=/profiles/work', '/profiles/work')).toBe(false);
     expect(matchSlabProfileCommand('node tool.js --user-data-dir=/profiles/work', '/profiles/work')).toBe(false);
     expect(matchSlabProfileCommand('node /tmp/.slabbrowser/tool.js --user-data-dir=/profiles/work', '/profiles/work')).toBe(false);
     expect(matchSlabProfileCommand('/tmp/.slabbrowser/helper --user-data-dir=/profiles/work', '/profiles/work')).toBe(false);

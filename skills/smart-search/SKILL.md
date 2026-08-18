@@ -43,7 +43,7 @@ webcmd web fetch --url <url>
 
 Try fetch once. Only `FETCH_BLOCKED` or `FETCH_REQUIRES_BROWSER` permits browser fallback; otherwise report the returned failure rather than retrying the URL.
 
-For browser fallback, create one Session, navigate the failed URL, inspect it, reuse that Session for allowed fallbacks, then close it. Local browser commands use Cloak; hosted browser commands use Webcmd Cloud and Browser Use. `web fetch` remains local in both modes.
+For browser fallback, create one Session, navigate the failed URL, inspect it, reuse that Session for allowed fallbacks, then close it. Local browser commands use SLAB; hosted browser commands use Webcmd Cloud and Browser Use. `web fetch` remains local in both modes.
 
 ```bash
 webcmd --profile work session create
