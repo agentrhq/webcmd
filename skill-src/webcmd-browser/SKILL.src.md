@@ -94,7 +94,7 @@ return { title: await page.title(), url: page.url() };
 JS
 ```
 
-For sandbox boundaries, artifacts, errors, snapshots, and timings, read [`references/browser-run-playwright.md`](references/browser-run-playwright.md).
+**`browser run` executes in QuickJS — not in Node, and not in the page.** `document` and `window` are not in scope (use `page.evaluate`), and `Buffer`, `require`, and `fs` do not exist. Read [`references/browser-run-playwright.md`](references/browser-run-playwright.md) before writing your first program; it lists what is available, what is blocked, and what to use instead.
 
 ---
 
