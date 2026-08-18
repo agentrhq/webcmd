@@ -27,4 +27,17 @@ describe('attachSlabProfile', () => {
     expect(bridge.release).toHaveBeenCalledWith('connection-1');
     expect(browser.close).not.toHaveBeenCalled();
   });
+
+  it('releases an attachment when CDP connection setup fails', async () => {
+    const bridge = {
+      attach: vi.fn().mockResolvedValue({
+        connectionId: 'connection-1', profile: { id: 'work', displayName: 'Work' }, cdpUrl: 'ws://127.0.0.1:9222', bearerToken: 'secret', expiresAt: '2026-08-19T00:00:00.000Z',
+      }),
+      release: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await expect(attachSlabProfile('work', { bridge, connectOverCDP: vi.fn().mockRejectedValue(new Error('CDP refused')) }))
+      .rejects.toThrow('CDP refused');
+    expect(bridge.release).toHaveBeenCalledWith('connection-1');
+  });
 });

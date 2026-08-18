@@ -109,6 +109,7 @@ interface ProfileRuntime {
   handoffTimer?: ReturnType<typeof setTimeout>;
   closing: boolean;
   disposed: boolean;
+  releasePromise?: Promise<void>;
   lastSeenAt: number;
 }
 
@@ -232,10 +233,15 @@ export class SlabSessionManager {
       context,
       browser: browser ?? {} as Browser,
       release: async () => {
-        await Promise.race([
-          context.close(),
-          new Promise<void>(resolve => setTimeout(resolve, PROFILE_CLOSE_TIMEOUT_MS)),
-        ]);
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([
+            context.close(),
+            new Promise<void>(resolve => { timer = setTimeout(resolve, PROFILE_CLOSE_TIMEOUT_MS); }),
+          ]);
+        } finally {
+          if (timer) clearTimeout(timer);
+        }
       },
     };
   }
@@ -761,6 +767,7 @@ export class SlabSessionManager {
 
   private invalidateProfileRuntime(profileId: string, runtime: ProfileRuntime): void {
     if (this.profiles.get(profileId) === runtime) this.profiles.delete(profileId);
+    void this.releaseRuntime(runtime, false);
     this.cleanupRuntime(runtime);
   }
 
@@ -771,7 +778,6 @@ export class SlabSessionManager {
     for (const entry of runtime.targetPages.values()) {
       if (entry.idleTimer) clearTimeout(entry.idleTimer);
       this.networkCapture.stop(entry.page);
-      void this.pageCdpSessions.get(entry.page)?.detach().catch(() => {});
     }
     runtime.targetPages.clear();
     runtime.sessions.clear();
@@ -781,7 +787,6 @@ export class SlabSessionManager {
       waiter.reject(new Error('Target page, context or browser has been closed'));
     }
     this.targetPageWaiters.get(runtime)?.clear();
-    void runtime.cdp?.detach().catch(() => {});
   }
 
   private attachRuntimeLifecycle(profileId: string, runtime: ProfileRuntime): void {
@@ -874,16 +879,36 @@ export class SlabSessionManager {
   }
 
   private async closeRuntime(runtime: ProfileRuntime): Promise<void> {
+    await this.releaseRuntime(runtime, true);
+  }
+
+  private async releaseRuntime(runtime: ProfileRuntime, closePages: boolean): Promise<void> {
+    if (runtime.releasePromise) return runtime.releasePromise;
+    runtime.releasePromise = (async () => {
     this.cancelProfileIdle(runtime);
     for (const entry of runtime.targetPages.values()) this.clearIdleTimer(entry);
+    const pageCdps = [...runtime.targetPages.values()].map(entry => this.pageCdpSessions.get(entry.page));
     try {
-      await Promise.all([...runtime.targetPages.values()].map(entry => (
-        pageIsClosed(entry.page) ? undefined : entry.page.close().catch(() => {})
-      )));
+      if (closePages) {
+        await Promise.all([...runtime.targetPages.values()].map(entry => (
+          pageIsClosed(entry.page) ? undefined : entry.page.close().catch(() => {})
+        )));
+      }
+      await this.closeParkingPage(runtime);
+      if (runtime.anchorTargetId) {
+        await runtime.cdp?.send('Target.closeTarget', { targetId: runtime.anchorTargetId }).catch(() => {});
+        runtime.anchorTargetId = undefined;
+      }
+      await Promise.all([
+        ...pageCdps.map(cdp => cdp?.detach().catch(() => {})),
+        runtime.cdp?.detach().catch(() => {}),
+      ]);
       await runtime.attachment.release();
     } finally {
       this.cleanupRuntime(runtime);
     }
+    })();
+    return runtime.releasePromise;
   }
 
   private async withProfileLifecycleLock<T>(profileId: string, operation: () => Promise<T>): Promise<T> {
@@ -939,7 +964,7 @@ export class SlabSessionManager {
     windowMode?: BrowserWindowMode,
   ): Promise<PlaywrightPage> {
     const openerEntry = this.openEntries(session)[0]?.[1];
-    if (!openerEntry) return await this.findReusableLaunchPage(runtime, session.id) ?? this.createWindowPage(runtime, windowMode);
+    if (!openerEntry) return this.createWindowPage(runtime, windowMode);
     await this.assertOwnedWindow(runtime, session.id, openerEntry);
     const opener = openerEntry.page;
     const openerWindowId = await this.windowIdForTarget(runtime, openerEntry.targetId, opener);
@@ -954,19 +979,6 @@ export class SlabSessionManager {
     const page = await openedPage;
     if (page) return page;
     return this.createWindowPage(runtime, windowMode);
-  }
-
-  private async findReusableLaunchPage(runtime: ProfileRuntime, sessionId: string): Promise<PlaywrightPage | undefined> {
-    for (const page of runtime.context.pages()) {
-      if (pageIsClosed(page) || page === runtime.parkingPage || page.url() !== 'about:blank') continue;
-      const targetId = await this.targetIdForPage(runtime, page).catch(() => undefined);
-      if (!targetId || targetId === runtime.anchorTargetId || runtime.targetPages.has(targetId)) continue;
-      const windowId = await this.windowIdForTarget(runtime, targetId, page).catch(() => undefined);
-      if (windowId === undefined) continue;
-      const owner = runtime.windowOwners.get(windowId);
-      if (owner === undefined || owner === sessionId) return page;
-    }
-    return undefined;
   }
 
   private async waitForContextPageForSession(

@@ -17,19 +17,21 @@ export interface AttachSlabProfileOptions {
 export async function attachSlabProfile(profileId: string, options: AttachSlabProfileOptions = {}): Promise<AttachedSlabProfile> {
   const bridge = options.bridge ?? new SlabBridgeClient();
   const attachment = await bridge.attach(profileId);
-  const browser = await (options.connectOverCDP ?? chromium.connectOverCDP)(attachment.cdpUrl, {
-    headers: { Authorization: `Bearer ${attachment.bearerToken}` },
-  });
-  const context = browser.contexts()[0];
-  if (!context) {
+  try {
+    const browser = await (options.connectOverCDP ?? chromium.connectOverCDP)(attachment.cdpUrl, {
+      headers: { Authorization: `Bearer ${attachment.bearerToken}` },
+    });
+    const context = browser.contexts()[0];
+    if (!context) throw new Error('SLAB attachment returned no persistent browser context.');
+    return {
+      profileId: attachment.profile.id,
+      browserVersion: browser.version(),
+      context,
+      browser,
+      release: () => bridge.release(attachment.connectionId),
+    };
+  } catch (error) {
     await bridge.release(attachment.connectionId).catch(() => {});
-    throw new Error('SLAB attachment returned no persistent browser context.');
+    throw error;
   }
-  return {
-    profileId: attachment.profile.id,
-    browserVersion: browser.version(),
-    context,
-    browser,
-    release: () => bridge.release(attachment.connectionId),
-  };
 }

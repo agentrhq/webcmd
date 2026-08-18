@@ -200,6 +200,56 @@ describe('SlabSessionManager', () => {
     expect(launched.context.close).not.toHaveBeenCalled();
   });
 
+  it('does not adopt a pre-existing about:blank page from an attached profile', async () => {
+    const launched = fakeContext();
+    await launched.page.goto('about:blank');
+    const manager = new SlabSessionManager({ attachProfile: vi.fn().mockResolvedValue(fakeAttachedProfile(launched)) });
+
+    const lease = await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser' });
+
+    expect(lease.page).not.toBe(launched.page);
+  });
+
+  it('releases an invalidated attachment', async () => {
+    const launched = fakeContext();
+    const attached = fakeAttachedProfile(launched);
+    const manager = new SlabSessionManager({ attachProfile: vi.fn().mockResolvedValue(attached) });
+    await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser' });
+
+    launched.context.emit('close');
+
+    await vi.waitFor(() => expect(attached.release).toHaveBeenCalledOnce());
+  });
+
+  it('closes keeper resources and detaches CDP before releasing an attachment', async () => {
+    const launched = fakeContext();
+    const attached = fakeAttachedProfile(launched);
+    const order: string[] = [];
+    launched.cdp.detach.mockImplementation(async () => { order.push('detach'); });
+    attached.release.mockImplementation(async () => { order.push('release'); });
+    const manager = new SlabSessionManager({ attachProfile: vi.fn().mockResolvedValue(attached) });
+    await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser' });
+
+    await manager.shutdown();
+
+    expect(launched.cdp.send).toHaveBeenCalledWith('Target.closeTarget', { targetId: launched.targetIdFor(launched.backgroundPages[0]!) });
+    expect(order).toEqual(['detach', 'release']);
+  });
+
+  it('closes a parking keeper before releasing an attachment', async () => {
+    const launched = fakeContext();
+    const attached = fakeAttachedProfile(launched);
+    attached.browser = {} as typeof attached.browser;
+    vi.spyOn(log, 'warn').mockImplementation(() => {});
+    const manager = new SlabSessionManager({ attachProfile: vi.fn().mockResolvedValue(attached) });
+    const lease = await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser' });
+    await manager.closeSession('default', 'work');
+
+    expect(lease.page.close).not.toHaveBeenCalled();
+    await manager.shutdown();
+    expect(lease.page.close).toHaveBeenCalledOnce();
+  });
+
   it('correlates created targets and isolates Sessions into owned windows', async () => {
     const launched = fakeContext();
     const manager = new SlabSessionManager({
@@ -218,7 +268,7 @@ describe('SlabSessionManager', () => {
       .map(tab => tab.sessionId)).toEqual(['session_a']);
   });
 
-  it('reuses the fresh launch about:blank page for the first Session window', async () => {
+  it('creates a Session window instead of adopting the launch about:blank page', async () => {
     const launched = fakeContext();
     await launched.page.goto('about:blank');
     const manager = new SlabSessionManager({
@@ -229,9 +279,9 @@ describe('SlabSessionManager', () => {
 
     const lease = await manager.getPage({ profileId: 'default', session: 'session_a', sessionId: 'session_a', surface: 'browser' });
 
-    expect(lease.page).toBe(launched.page);
+    expect(lease.page).not.toBe(launched.page);
     expect(launched.cdp.send.mock.calls.filter(([method, params]) => method === 'Target.createTarget' && !(params as { hidden?: boolean })?.hidden))
-      .toHaveLength(0);
+      .toHaveLength(1);
     expect((await manager.listPages({ profileId: 'default', session: 'session_a', sessionId: 'session_a' }))
       .map(tab => tab.sessionId)).toEqual(['session_a']);
   });
