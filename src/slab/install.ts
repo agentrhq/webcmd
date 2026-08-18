@@ -1,5 +1,6 @@
 import { execFile as execFileCallback } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { constants } from 'node:fs';
 import { access, mkdtemp, mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -18,20 +19,22 @@ type FetchResponse = {
   arrayBuffer?: () => Promise<ArrayBuffer | Uint8Array>;
 };
 
+type ExecResult = { stdout?: string } | string | void;
+
 export interface SlabInstallerIo {
   homeDir: string;
   tempDir: string;
   fetch(url: string): Promise<FetchResponse>;
-  execFile(command: string, args: string[]): Promise<unknown>;
+  execFile(command: string, args: string[]): Promise<ExecResult>;
   mkdtemp(prefix: string): Promise<string>;
   writeFile(path: string, data: Uint8Array): Promise<void>;
   sha256?(bytes: Uint8Array): Promise<string>;
   mkdir(path: string): Promise<void>;
   rm(path: string): Promise<void>;
-  access(path: string): Promise<void>;
+  access(path: string, mode: number): Promise<void>;
   replaceApp(source: string, destination: string): Promise<void>;
   verifyManifest?(manifest: SlabReleaseManifest): Promise<boolean> | boolean;
-  bundleId?(appPath: string): Promise<string>;
+  bundleId(appPath: string): Promise<string>;
 }
 
 export interface InstallSlabOptions {
@@ -66,7 +69,7 @@ export async function installSlabMacos(io: SlabInstallerIo, options: InstallSlab
   const tempPath = await io.mkdtemp(join(io.tempDir, 'webcmd-slab-'));
   const dmgPath = join(tempPath, 'SLAB.dmg');
   const mountPath = join(tempPath, 'mount');
-  const stagingPath = join(tempPath, 'SLAB.app');
+  let stagingPath: string | undefined;
   let mounted = false;
 
   try {
@@ -78,27 +81,30 @@ export async function installSlabMacos(io: SlabInstallerIo, options: InstallSlab
     await io.mkdir(mountPath);
     await io.execFile('hdiutil', ['attach', '-readonly', '-nobrowse', '-mountpoint', mountPath, dmgPath]);
     mounted = true;
-    await io.execFile('ditto', [join(mountPath, 'SLAB.app'), stagingPath]);
-    await io.execFile('codesign', ['--verify', '--deep', '--strict', '--identifier', SLAB_BUNDLE_ID, stagingPath]);
-    const bundleId = await io.bundleId?.(stagingPath);
-    if (bundleId && bundleId !== SLAB_BUNDLE_ID) throw new Error('SLAB installer bundle identifier mismatch');
-    await io.execFile('spctl', ['--assess', '--type', 'execute', '--verbose=4', stagingPath]);
 
     let applicationsDir = '/Applications';
     try {
-      await io.access(applicationsDir);
+      await io.access(applicationsDir, constants.W_OK);
     } catch {
       applicationsDir = join(io.homeDir, 'Applications');
       await io.mkdir(applicationsDir);
     }
     const appPath = join(applicationsDir, 'SLAB.app');
+    stagingPath = join(applicationsDir, '.SLAB.app.webcmd-staging');
+    await io.rm(stagingPath);
+    await io.execFile('ditto', [join(mountPath, 'SLAB.app'), stagingPath]);
+    await io.execFile('codesign', ['--verify', '--deep', '--strict', '--identifier', SLAB_BUNDLE_ID, stagingPath]);
+    if (await io.bundleId(stagingPath) !== SLAB_BUNDLE_ID) throw new Error('SLAB installer bundle identifier mismatch');
+    await io.execFile('spctl', ['--assess', '--type', 'execute', '--verbose=4', stagingPath]);
     await io.replaceApp(stagingPath, appPath);
+    stagingPath = undefined;
     if (options.launchAfterInstall) await io.execFile('open', [appPath]);
     return { platform: 'darwin', executablePath: join(appPath, 'Contents/MacOS/SLAB') };
   } finally {
     try {
       if (mounted) await io.execFile('hdiutil', ['detach', mountPath]);
     } finally {
+      if (stagingPath) await io.rm(stagingPath);
       await io.rm(tempPath);
     }
   }
@@ -109,12 +115,16 @@ export function createSlabInstallerIo(): SlabInstallerIo {
     homeDir: homedir(),
     tempDir: tmpdir(),
     fetch: globalThis.fetch,
-    execFile: async (command, args) => { await execFileAsync(command, args); },
+    execFile: async (command, args) => execFileAsync(command, args),
     mkdtemp,
     writeFile,
     mkdir: async (path) => { await mkdir(path, { recursive: true }); },
     rm: async (path) => { await rm(path, { recursive: true, force: true }); },
-    access: async (path) => { await access(path); },
+    access: async (path, mode) => { await access(path, mode); },
+    bundleId: async (appPath) => {
+      const result = await execFileAsync('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleIdentifier', join(appPath, 'Contents/Info.plist')]);
+      return result.stdout.trim();
+    },
     replaceApp: async (source, destination) => {
       const previous = `${destination}.previous`;
       await rm(previous, { recursive: true, force: true });

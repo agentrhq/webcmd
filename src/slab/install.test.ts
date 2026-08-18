@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { constants } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { installSlabMacos, type SlabInstallerIo } from './install.js';
 
@@ -20,7 +21,11 @@ function fakeInstaller(options: {
     if (command === 'codesign' && args.includes('--identifier')) operations.push('codesign-verify');
     if (command === 'spctl') operations.push('spctl-verify');
   });
-  const io: SlabInstallerIo & { operations(): string[]; execFile: typeof execFile } = {
+  const access = vi.fn(async (path: string, _mode?: number) => {
+    if (path === '/Applications' && options.canWriteSystemApplications === false) throw new Error('not writable');
+  });
+  const replaceApp = vi.fn(async () => { operations.push('replace-app'); });
+  const io: SlabInstallerIo & { operations(): string[]; execFile: typeof execFile; access: typeof access; replaceApp: typeof replaceApp } = {
     homeDir: '/Users/me',
     tempDir: '/tmp',
     fetch: async (url) => url.endsWith('.json')
@@ -35,10 +40,8 @@ function fakeInstaller(options: {
     },
     mkdir: async () => {},
     rm: vi.fn(async () => { operations.push('cleanup'); }),
-    access: async (path) => {
-      if (path === '/Applications' && options.canWriteSystemApplications === false) throw new Error('not writable');
-    },
-    replaceApp: async () => { operations.push('replace-app'); },
+    access,
+    replaceApp,
     verifyManifest: async () => options.verifyManifest ?? true,
     bundleId: async () => options.bundleId ?? 'dev.webcmd.slab',
     operations: () => operations.filter((operation) => operation !== 'cleanup'),
@@ -88,6 +91,22 @@ describe('SLAB macOS installer', () => {
     await expect(installSlabMacos(io)).resolves.toMatchObject({
       executablePath: '/Users/me/Applications/SLAB.app/Contents/MacOS/SLAB',
     });
+  });
+
+  it('checks whether system Applications is writable before selecting it', async () => {
+    const io = fakeInstaller();
+
+    await installSlabMacos(io);
+
+    expect(io.access).toHaveBeenCalledWith('/Applications', constants.W_OK);
+  });
+
+  it('stages beside the selected application destination', async () => {
+    const io = fakeInstaller();
+
+    await installSlabMacos(io);
+
+    expect(io.replaceApp).toHaveBeenCalledWith('/Applications/.SLAB.app.webcmd-staging', '/Applications/SLAB.app');
   });
 
   it('detaches and removes temporary files when verification fails after mounting', async () => {
