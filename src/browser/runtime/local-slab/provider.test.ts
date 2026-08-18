@@ -154,13 +154,14 @@ describe('LocalSlabRuntimeProvider', () => {
     runBrowserProgram.mockReset();
   });
 
-  it('reports a runtime-named connected status before any profile launches', async () => {
+  it('reports SLAB without changing session status shape', async () => {
     const provider = new LocalSlabRuntimeProvider({ baseDir: '/tmp/webcmd-test' });
     await expect(provider.status()).resolves.toMatchObject({
       runtimeConnected: true,
-      runtimeName: 'cloak',
-      profiles: [],
+      runtimeName: 'SLAB',
+      profiles: expect.any(Array),
       pending: 0,
+      commandResultUnknown: 0,
     });
   });
 

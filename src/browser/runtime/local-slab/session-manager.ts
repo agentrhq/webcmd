@@ -1,41 +1,14 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import type { Browser, BrowserContext, CDPSession, Page as PlaywrightPage } from 'playwright-core';
 import type { BrowserSurface, BrowserWindowMode, SiteSessionMode } from '../../protocol.js';
 import { normalizeProfileId } from './profiles.js';
 import { SlabNetworkCapture } from './network.js';
-import { findPackageRoot } from '../../../package-paths.js';
 import { log } from '../../../logger.js';
 import { CliError, EXIT_CODES } from '../../../errors.js';
 import { attachSlabProfile, type AttachedSlabProfile } from './attachment.js';
 
-const UNRESOLVED = Symbol('unresolved');
 const TARGET_PAGE_MATCH_TIMEOUT_MS = 1_000;
 export const PROFILE_IDLE_TIMEOUT_MS = 60_000;
 export const PROFILE_CLOSE_TIMEOUT_MS = 3_000;
-let cachedCloakBrowserVersion: string | undefined | typeof UNRESOLVED = UNRESOLVED;
-
-/**
- * Installed `cloakbrowser` npm package version, for doctor/status display.
- *
- * Resolved once per process. The version cannot change while we are running, and
- * `profileStatuses()` calls this per profile, so an uncached read meant N+1
- * synchronous resolve-read-parse cycles on every status poll. The sentinel keeps
- * a genuine `undefined` (the catch path) cached too, so an unresolvable
- * `cloakbrowser` is not retried on every call.
- */
-export function resolveCloakBrowserVersion(): string | undefined {
-  if (cachedCloakBrowserVersion !== UNRESOLVED) return cachedCloakBrowserVersion;
-  try {
-    const entryPath = fileURLToPath(import.meta.resolve('cloakbrowser'));
-    const pkg = JSON.parse(fs.readFileSync(path.join(findPackageRoot(entryPath), 'package.json'), 'utf-8')) as { version?: unknown };
-    cachedCloakBrowserVersion = typeof pkg.version === 'string' ? pkg.version : undefined;
-  } catch {
-    cachedCloakBrowserVersion = undefined;
-  }
-  return cachedCloakBrowserVersion;
-}
 
 export type AttachSlabProfile = typeof attachSlabProfile;
 export type LaunchPersistentContext = (options: { userDataDir: string; headless: boolean; humanize: boolean }) => Promise<BrowserContext>;
@@ -251,7 +224,6 @@ export class SlabSessionManager {
     return [...this.profiles.entries()].map(([contextId, runtime]) => ({
       contextId,
       runtimeConnected: true,
-      runtimeVersion: resolveCloakBrowserVersion(),
       pending: 0,
       lastSeenAt: runtime.lastSeenAt,
     }));

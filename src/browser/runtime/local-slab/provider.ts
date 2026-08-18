@@ -3,10 +3,7 @@ import type { BrowserRuntimeProvider, RuntimeStatusOptions } from '../provider.j
 import { LocalBrowserSessionStore, type BrowserSessionListRow, type BrowserSessionRecord } from '../../sessions.js';
 import { dispatchSlabAction, resolveSlabCommandProfileId } from './actions.js';
 import type { LaunchPersistentContext } from './session-manager.js';
-import {
-  SlabSessionManager,
-  resolveCloakBrowserVersion,
-} from './session-manager.js';
+import { SlabSessionManager } from './session-manager.js';
 
 export interface LocalSlabRuntimeProviderOptions {
   baseDir?: string;
@@ -36,8 +33,7 @@ export class LocalSlabRuntimeProvider implements BrowserRuntimeProvider {
     const profiles = this.manager.profileStatuses();
     return {
       runtimeConnected: true,
-      runtimeName: 'cloak',
-      runtimeVersion: resolveCloakBrowserVersion(),
+      runtimeName: 'SLAB',
       profiles,
       pending: 0,
       commandResultUnknown: 0,
