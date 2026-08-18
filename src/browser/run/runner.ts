@@ -267,7 +267,7 @@ export async function runBrowserProgram(
           name !== 'writeArtifact'
           || typeof args[0] !== 'string'
           || typeof args[1] !== 'string'
-          || (args[2] !== undefined && typeof args[2] !== 'string')
+          || (args[2] != null && typeof args[2] !== 'string')
         ) {
           throw new BrowserRunError(
             'BROWSER_RUN_INVALID_INPUT',
@@ -384,6 +384,47 @@ export async function runBrowserProgram(
           for (const byte of bytes) encoded += '%' + byte.toString(16).padStart(2, '0');
           return decodeURIComponent(encoded);
         };
+        // btoa/atob are latin1 binary-string codecs, not UTF-8. Composing them
+        // with __webcmdEncodeText/__webcmdDecodeText would corrupt binary input.
+        globalThis.btoa = value => {
+          const binary = String(value);
+          const bytes = new Uint8Array(binary.length);
+          for (let index = 0; index < binary.length; index += 1) {
+            const code = binary.charCodeAt(index);
+            if (code > 255) {
+              const error = new Error(
+                "Failed to execute 'btoa': The string to be encoded contains "
+                + 'characters outside of the Latin1 range.'
+              );
+              error.name = 'InvalidCharacterError';
+              throw error;
+            }
+            bytes[index] = code;
+          }
+          return __webcmdEncodeBase64(bytes);
+        };
+        globalThis.atob = value => {
+          let binary = '';
+          for (const byte of __webcmdDecodeBase64(String(value))) {
+            binary += String.fromCharCode(byte);
+          }
+          return binary;
+        };
+        globalThis.TextEncoder = class TextEncoder {
+          get encoding() { return 'utf-8'; }
+          encode(value = '') { return __webcmdEncodeText(value); }
+        };
+        globalThis.TextDecoder = class TextDecoder {
+          get encoding() { return 'utf-8'; }
+          decode(input) {
+            if (input === undefined) return '';
+            if (input instanceof Uint8Array) return __webcmdDecodeText(input);
+            if (input instanceof ArrayBuffer) return __webcmdDecodeText(new Uint8Array(input));
+            return __webcmdDecodeText(
+              new Uint8Array(input.buffer, input.byteOffset, input.byteLength)
+            );
+          }
+        };
       })()
     `, { filename: 'browser-run-platform.js' });
     await host.executeScript(PLAYWRIGHT_CLIENT_SOURCE, {
@@ -402,12 +443,18 @@ export async function runBrowserProgram(
         globalThis.__webcmdTransportReceive = message => {
           connection.dispatch(JSON.parse(message));
         };
-        globalThis.__webcmdWriteArtifact = async (filename, bytes, contentType) => {
-          await __webcmdHostCall(
+        globalThis.writeArtifact = async (filename, bytes, contentType) => (
+          __webcmdHostCall(
             'writeArtifact',
-            JSON.stringify([filename, __webcmdEncodeBase64(bytes), contentType]),
-          );
-        };
+            JSON.stringify([
+              filename,
+              __webcmdEncodeBase64(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)),
+              contentType,
+            ]),
+          )
+        );
+        // Legacy alias; writeArtifact is the documented name.
+        globalThis.__webcmdWriteArtifact = globalThis.writeArtifact;
         __WebcmdPlaywrightClient.quickjsPlatform.fs().promises.readFile = () => (
           unsupported('Host filesystem reads')
         );

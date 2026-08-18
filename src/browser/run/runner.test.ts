@@ -1,4 +1,6 @@
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { createRequire } from 'node:module';
 import {
   afterAll,
@@ -16,6 +18,8 @@ import {
   type BrowserContext,
   type Page,
 } from 'playwright-core';
+import { LocalBrowserRunArtifactSink } from './artifacts.js';
+import { MemorySnapshotBaselineStore } from '../snapshot/index.js';
 import { MemorySnapshotBaselineStore } from '../snapshot/index.js';
 import { unsupportedApiMessage } from './playwright-transport.js';
 import { QuickJSHost } from './quickjs-host.js';
@@ -44,10 +48,11 @@ function sessionScope(pages: () => readonly Page[] = () => context.pages()) {
   };
 }
 
-function run(source: string, options = {}) {
+function run(source: string, options = {}, input = {}) {
   return runBrowserProgram({
     ...sessionScope(),
     pageId: 'page-1',
+    ...input,
   }, source, options);
 }
 
@@ -589,6 +594,117 @@ afterAll(async () => {
     await expect(run('return process.cwd();')).rejects.toBeTruthy();
     await expect(run('return fs.readFileSync("/etc/passwd");')).rejects.toBeTruthy();
   });
+
+  it('exposes btoa/atob/TextEncoder/TextDecoder but not Buffer', async () => {
+    const output = await run(`
+      return {
+        btoa: typeof btoa,
+        atob: typeof atob,
+        TextEncoder: typeof TextEncoder,
+        TextDecoder: typeof TextDecoder,
+        Buffer: typeof Buffer,
+      };
+    `);
+
+    expect(output.result).toEqual({
+      btoa: 'function',
+      atob: 'function',
+      TextEncoder: 'function',
+      TextDecoder: 'function',
+      Buffer: 'undefined',
+    });
+  });
+
+  it('encodes btoa/atob as latin1 binary strings, not UTF-8', async () => {
+    const output = await run(`
+      const binary = String.fromCharCode(0, 128, 255);
+      return {
+        vector: btoa('hello'),
+        roundTrip: atob(btoa('webcmd')),
+        binaryRoundTrip: Array.from(atob(btoa(binary))).map(c => c.charCodeAt(0)),
+        binaryVector: btoa(binary),
+      };
+    `);
+
+    expect(output.result).toEqual({
+      vector: 'aGVsbG8=',
+      roundTrip: 'webcmd',
+      binaryRoundTrip: [0, 128, 255],
+      binaryVector: Buffer.from([0, 128, 255]).toString('base64'),
+    });
+  });
+
+  it('rejects btoa input above the latin1 range', async () => {
+    const output = await run(`
+      try {
+        btoa('caf\\u00e9\\u20ac');
+        return 'no-throw';
+      } catch (error) {
+        return error.name;
+      }
+    `);
+
+    expect(output.result).toBe('InvalidCharacterError');
+  });
+
+  it('round-trips multi-byte UTF-8 through TextEncoder/TextDecoder', async () => {
+    const output = await run(`
+      const bytes = new TextEncoder().encode('café € 🎉');
+      return {
+        bytes: Array.from(bytes),
+        decoded: new TextDecoder().decode(bytes),
+        fromBuffer: new TextDecoder().decode(bytes.buffer),
+        encoding: new TextEncoder().encoding,
+      };
+    `);
+
+    expect(output.result).toEqual({
+      bytes: Array.from(Buffer.from('café € 🎉', 'utf8')),
+      decoded: 'café € 🎉',
+      fromBuffer: 'café € 🎉',
+      encoding: 'utf-8',
+    });
+  });
+
+  it('round-trips typed arrays through the Playwright serializers', async () => {
+    const output = await run(`
+      const length = await page.evaluate(bytes => bytes.length, new Uint8Array([1, 2, 3]));
+      const returned = await page.evaluate(() => new Uint8Array([255, 0, 128]));
+      return { length, returned: Array.from(returned) };
+    `);
+
+    expect(output.result).toEqual({ length: 3, returned: [255, 0, 128] });
+  });
+
+  it.each(['writeArtifact', '__webcmdWriteArtifact'])(
+    'returns a redeemable receipt from %s',
+    async (fn) => {
+      const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-artifact-'));
+      try {
+        const output = await run(`
+          const receipt = await ${fn}(
+            'nested/report.csv',
+            new TextEncoder().encode('id,name\\n1,caf\\u00e9\\n'),
+          );
+          return receipt;
+        `, {}, { artifactSink: new LocalBrowserRunArtifactSink({ baseDir }) });
+
+        const receipt = output.result as { artifactId: string; locator: string };
+        expect(receipt).toMatchObject({
+          filename: 'nested/report.csv',
+          contentType: 'application/octet-stream',
+          byteSize: 16,
+          locator: expect.stringContaining('browser-run://'),
+        });
+        expect(output.artifacts).toEqual([receipt]);
+        expect(
+          fs.readFileSync(path.join(baseDir, receipt.artifactId, 'nested/report.csv'), 'utf8'),
+        ).toBe('id,name\n1,caf\u00e9\n');
+      } finally {
+        fs.rmSync(baseDir, { recursive: true, force: true });
+      }
+    },
+  );
 
   it('rejects absolute artifact paths instead of touching host paths', async () => {
     const target = '/tmp/webcmd-browser-run-owned.txt';
