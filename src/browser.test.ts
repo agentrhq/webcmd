@@ -1,4 +1,4 @@
-import { afterEach, describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { BrowserBridge, generateStealthJs } from './browser/index.js';
 import { extractTabEntries, diffTabIndexes, appendLimited } from './browser/tabs.js';
 import { withTimeoutMs } from './runtime.js';
@@ -6,9 +6,14 @@ import { __test__ as cdpTest } from './browser/cdp.js';
 import { classifyBrowserError } from './browser/errors.js';
 import * as daemonTransport from './browser/daemon-transport.js';
 import * as daemonLifecycle from './browser/daemon-lifecycle.js';
+import * as slabInstallation from './slab/installation.js';
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+beforeEach(() => {
+  vi.spyOn(slabInstallation, 'isSlabInstalled').mockReturnValue(true);
 });
 
 describe('browser helpers', () => {
@@ -301,6 +306,35 @@ describe('BrowserBridge state', () => {
     const bridge = new BrowserBridge();
 
     await expect(bridge.connect({ timeout: 0.1 })).rejects.toThrow('Stale daemon could not be replaced');
+  });
+});
+
+describe('local browser SLAB preflight', () => {
+  it('asks again after a previously declined setup install', async () => {
+    const { PKG_VERSION } = await import('./version.js');
+    vi.spyOn(daemonTransport, 'getDaemonHealth').mockResolvedValue({
+      state: 'ready',
+      status: {
+        ok: true, pid: 1, uptime: 0, daemonVersion: PKG_VERSION,
+        runtimeConnected: true, runtimeName: 'SLAB', pending: 0, memoryMB: 0, port: 0,
+      },
+    });
+    const install = vi.fn().mockResolvedValue({
+      platform: 'darwin' as const,
+      executablePath: '/Applications/SLAB.app/Contents/MacOS/SLAB',
+    });
+
+    await daemonLifecycle.ensureBrowserBridgeReady({
+      slab: { installed: () => false, confirm: async () => true, install },
+    });
+
+    expect(install).toHaveBeenCalledOnce();
+  });
+
+  it('fails deterministically without a TTY', async () => {
+    await expect(daemonLifecycle.ensureBrowserBridgeReady({
+      slab: { installed: () => false, interactive: false },
+    })).rejects.toMatchObject({ code: 'SLAB_REQUIRED', exitCode: 78 });
   });
 });
 

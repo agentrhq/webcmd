@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { classifyBrowserError, isTransientBrowserError } from './errors.js';
+import { classifyBrowserError, formatBrowserConnectError, isTransientBrowserError } from './errors.js';
 
 describe('classifyBrowserError', () => {
   it('classifies extension transient errors with 1500ms delay', () => {
@@ -67,5 +67,15 @@ describe('isTransientBrowserError (convenience wrapper)', () => {
 
   it('returns false for non-transient errors', () => {
     expect(isTransientBrowserError(new Error('Permission denied'))).toBe(false);
+  });
+});
+
+describe('browser connection copy', () => {
+  it('guides local runtime failures to SLAB setup', () => {
+    const error = formatBrowserConnectError('runtime-not-ready');
+
+    expect(error.hint).toContain('SLAB');
+    expect(error.hint).toContain('`webcmd setup`');
+    expect(error.hint).not.toContain('Cloak');
   });
 });

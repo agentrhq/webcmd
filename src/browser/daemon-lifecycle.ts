@@ -1,11 +1,15 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import * as fs from 'node:fs';
+import { homedir } from 'node:os';
 import * as path from 'node:path';
+import { createInterface } from 'node:readline/promises';
 import { DEFAULT_DAEMON_PORT } from '../constants.js';
-import { BrowserConnectError } from '../errors.js';
+import { BrowserConnectError, SlabRequiredError } from '../errors.js';
 import { PKG_VERSION } from '../version.js';
 import { isVerbose } from '../logger.js';
+import { createSlabInstallerIo, installSlabMacos } from '../slab/install.js';
+import { isSlabInstalled } from '../slab/installation.js';
 import { waitForBridgeReady } from './bridge-readiness.js';
 import { fetchDaemonStatus, getDaemonHealth, requestDaemonShutdown, type DaemonHealth, type DaemonStatus } from './daemon-transport.js';
 
@@ -25,6 +29,13 @@ export interface DaemonRestartResult {
 export interface EnsureBrowserBridgeReadyResult {
   health: DaemonHealth;
   spawnedProcess: ChildProcess | null;
+}
+
+interface SlabPreflight {
+  installed?: () => boolean;
+  interactive?: boolean;
+  confirm?: (prompt: string) => Promise<boolean>;
+  install?: () => Promise<unknown>;
 }
 
 export function resolveDaemonLaunchSpec(): DaemonLaunchSpec {
@@ -117,8 +128,9 @@ export async function restartDaemon(opts: { stopTimeoutMs?: number; startTimeout
 }
 
 export async function ensureBrowserBridgeReady(
-  opts: { timeoutSeconds?: number; contextId?: string; verbose?: boolean } = {},
+  opts: { timeoutSeconds?: number; contextId?: string; verbose?: boolean; slab?: SlabPreflight } = {},
 ): Promise<EnsureBrowserBridgeReadyResult> {
+  await ensureSlabReadyForBrowserCommand(opts.slab);
   const timeoutSeconds = opts.timeoutSeconds && opts.timeoutSeconds > 0 ? opts.timeoutSeconds : 10;
   const timeoutMs = timeoutSeconds * 1000;
   const verbose = opts.verbose ?? true;
@@ -177,13 +189,36 @@ export async function ensureBrowserBridgeReady(
     }
     spawnedProcess = daemonLifecycleHooks.spawnDaemonProcess();
   } else if (verbose && (isVerbose() || process.stderr.isTTY)) {
-    process.stderr.write('⏳ Waiting for Cloak runtime to connect...\n');
-    process.stderr.write('   Make sure Chrome or Chromium is open and Cloak is enabled.\n');
+    process.stderr.write('⏳ Waiting for SLAB to connect...\n');
+    process.stderr.write('   Launch SLAB, then run `webcmd setup` if it needs repair.\n');
   }
 
   const finalHealth = await waitForBridgeReady(getDaemonHealth, { timeoutMs, contextId });
   if (finalHealth.state === 'ready') return { health: finalHealth, spawnedProcess };
   throw browserConnectErrorFromHealth(finalHealth, contextId);
+}
+
+export async function ensureSlabReadyForBrowserCommand(slab: SlabPreflight = {}): Promise<void> {
+  const installed = slab.installed ?? (() => isSlabInstalled({ platform: process.platform, homeDir: homedir(), existsSync: fs.existsSync }));
+  if (installed()) return;
+  if (slab.interactive ?? (slab.confirm ? true : !!process.stdin.isTTY)) {
+    const confirm = slab.confirm ?? confirmSlabInstall;
+    if (await confirm('SLAB is required for local webcmd. Install it now? [Y/n] ')) {
+      await (slab.install ?? (() => installSlabMacos(createSlabInstallerIo(), { launchAfterInstall: true })))();
+      return;
+    }
+  }
+  throw new SlabRequiredError();
+}
+
+async function confirmSlabInstall(prompt: string): Promise<boolean> {
+  const readline = createInterface({ input: process.stdin, output: process.stderr });
+  try {
+    const answer = (await readline.question(prompt)).trim().toLowerCase();
+    return !answer || answer.startsWith('y');
+  } finally {
+    readline.close();
+  }
 }
 
 function browserConnectErrorFromHealth(health: DaemonHealth, contextId?: string): BrowserConnectError {
@@ -199,14 +234,14 @@ function browserConnectErrorFromHealth(health: DaemonHealth, contextId?: string)
     const label = contextId ?? health.status.contextId ?? 'unknown';
     return new BrowserConnectError(
       `Browser profile "${label}" is not connected`,
-      'Open the matching Chrome profile and make sure Cloak is enabled, or choose another profile with webcmd profile use <name>.',
+      'Launch SLAB, or choose another profile with webcmd profile use <name>.',
       'profile-disconnected',
     );
   }
   if (health.state === 'no-runtime') {
     return new BrowserConnectError(
       'Browser runtime is not ready',
-      'Run `webcmd daemon restart`. If CloakBrowser is downloading its browser binary, wait for it to finish and retry.',
+      'Install and launch SLAB, then run `webcmd setup` if it needs repair.',
       'runtime-not-ready',
     );
   }
