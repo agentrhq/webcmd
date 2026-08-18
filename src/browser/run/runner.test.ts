@@ -16,6 +16,7 @@ import {
   type BrowserContext,
   type Page,
 } from 'playwright-core';
+import { MemorySnapshotBaselineStore } from '../snapshot/index.js';
 import { unsupportedApiMessage } from './playwright-transport.js';
 import { QuickJSHost } from './quickjs-host.js';
 import { runBrowserProgram } from './runner.js';
@@ -99,6 +100,22 @@ afterAll(async () => {
     expect(output).not.toHaveProperty('snapshotDiff');
   });
 
+  it('clears a cached snapshot baseline when snapshotDiff is disabled', async () => {
+    const snapshotBaselineStore = new MemorySnapshotBaselineStore();
+    await run(`
+      await page.setContent('<main><button>First state</button></main>');
+      return null;
+    `, { snapshotBaselineStore });
+    expect(snapshotBaselineStore.get('page-1')).toBeDefined();
+
+    await run(`
+      await page.setContent('<main><button>Research result</button></main>');
+      return 'Research result';
+    `, { snapshotDiff: false, snapshotBaselineStore });
+
+    expect(snapshotBaselineStore.get('page-1')).toBeUndefined();
+  });
+
   it('captures a fresh before and after snapshot in the same run', async () => {
     const output = await run(`
       await page.getByRole('button', { name: 'Save' }).click();
@@ -109,19 +126,24 @@ afterAll(async () => {
     expect(output.snapshotDiff).toContain('~ ');
   });
 
-  it('URL-redacts and bounds automatic snapshot diffs', async () => {
+  it('omits an automatic snapshot diff that exceeds the output ceiling', async () => {
     const maxOutputChars = 100;
     const output = await run(`
       await page.setContent('<main><a href="https://example.test/next?ok=1&key=diff-secret&auth=diff-auth">Next</a><button>${'x'.repeat(200)}</button></main>');
       return null;
     `, { maxOutputChars });
 
-    expect(output.snapshotDiff!.length).toBeLessThanOrEqual(maxOutputChars);
-    expect(output.snapshotDiff).not.toMatch(/diff-secret|diff-auth/);
+    expect(output).not.toHaveProperty('snapshotDiff');
+    expect(JSON.stringify(output)).not.toMatch(/diff-secret|diff-auth/);
     expect(output.limits.snapshotTruncated).toBe(true);
+    expect(output.limits.snapshotDiffOmitted).toBe(true);
+    expect(output.warnings).toContainEqual(expect.objectContaining({
+      code: 'BROWSER_RUN_SNAPSHOT_DIFF_OMITTED',
+      message: expect.stringMatching(/result.*sufficient.*continue.*targeted/i),
+    }));
   });
 
-  it('warns when a structural diff omits critical snapshot content', async () => {
+  it('omits a structural diff when critical snapshot content would be lost', async () => {
     const controls = Array.from({ length: 20 }, (_, index) =>
       `<input aria-label="Critical ${index + 1}" aria-invalid="true">`).join('');
     const output = await run(`
@@ -129,14 +151,16 @@ afterAll(async () => {
       return null;
     `, { maxOutputChars: 220 });
 
+    expect(output).not.toHaveProperty('snapshotDiff');
     expect(output.limits.snapshotTruncated).toBe(true);
+    expect(output.limits.snapshotDiffOmitted).toBe(true);
     expect(output.warnings).toContainEqual(expect.objectContaining({
-      code: 'BROWSER_RUN_CRITICAL_SNAPSHOT_OMITTED',
-      message: expect.stringMatching(/inspect.*ref/i),
+      code: 'BROWSER_RUN_SNAPSHOT_DIFF_OMITTED',
+      message: expect.stringMatching(/targeted.*snapshot/i),
     }));
   });
 
-  it('warns when redaction expands an otherwise complete snapshot diff past the output limit', async () => {
+  it('omits a snapshot diff when redaction expands it past the output limit', async () => {
     const beforeHtml = '<main><button>Before</button></main>';
     const source = `
       await page.setContent('<main><a href="https://u:p@example.test/path?token=a&key=b&secret=c&password=d&auth=e&api_key=f&session_id=g&csrf=h">Account</a></main>');
@@ -149,10 +173,11 @@ afterAll(async () => {
     await page.setContent(beforeHtml);
     const output = await run(source, { maxOutputChars: generous.snapshotDiff!.length - 1 });
 
-    expect(output.snapshotDiff!.length).toBeLessThanOrEqual(generous.snapshotDiff!.length - 1);
+    expect(output).not.toHaveProperty('snapshotDiff');
     expect(output.limits.snapshotTruncated).toBe(true);
+    expect(output.limits.snapshotDiffOmitted).toBe(true);
     expect(output.warnings).toContainEqual(expect.objectContaining({
-      code: 'BROWSER_RUN_CRITICAL_SNAPSHOT_OMITTED',
+      code: 'BROWSER_RUN_SNAPSHOT_DIFF_OMITTED',
       message: expect.stringMatching(/output ceiling/i),
     }));
   });

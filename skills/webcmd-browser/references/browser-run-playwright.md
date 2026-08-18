@@ -68,7 +68,7 @@ global that the sandbox does not provide — check the two tables above before r
 
 ## Snapshot behavior
 
-Use `webcmd --session <session-id> browser snapshot --snapshot-mode act` to inspect actionable controls, `--snapshot-mode tree` for fuller page structure, or `--snapshot-mode read` for readable article/content text. Successful runs return `snapshotDiff` automatically and support `--snapshot-mode act|tree`; pass `--no-snapshot-diff` only for pure read-only code when its result already contains the needed state. A failed post-run snapshot becomes a warning, not a successful result change.
+Use `webcmd --session <session-id> browser snapshot --snapshot-mode act` to inspect actionable controls, `--snapshot-mode tree` for fuller page structure, or `--snapshot-mode read` for readable article/content text. Successful runs return `snapshotDiff` automatically and support `--snapshot-mode act|tree`. Pass `--no-snapshot-diff` for research or deterministic inspection when the result returns the exact bounded evidence needed, including navigation followed by targeted extraction or response capture. Navigation alone does not require a diff. Keep the automatic diff for exploratory or state-changing interactions whose outcome is not independently verified by the returned result. If a requested diff exceeds the output ceiling, Webcmd omits it and returns a warning; continue when the explicit result is sufficient, otherwise use a targeted snapshot or extraction. A failed post-run snapshot becomes a warning, not a successful result change.
 
 ## Timing
 
