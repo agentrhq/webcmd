@@ -5,7 +5,7 @@
  * - Direct HTTP downloads (images, documents)
  * - yt-dlp integration for video platforms
  * - Browser cookie forwarding for authenticated downloads
- * - Filename templating and deduplication
+ * - Filename templating and duplicate-target detection
  */
 
 import * as fs from 'node:fs';
@@ -35,6 +35,19 @@ export interface DownloadResult {
   size?: number;
   error?: string;
   duration?: number;
+}
+
+/**
+ * A single item's resolved download target.
+ *
+ * `conflictsWith` is the index of the earlier item that claimed the same
+ * destination path, if any.
+ */
+interface DownloadPlan {
+  url: string;
+  filename: string;
+  destPath: string;
+  conflictsWith?: number;
 }
 
 
@@ -154,6 +167,32 @@ export async function stepDownload(
     return [];
   }
 
+  // Resolve every destination up front. Items run in parallel, so two of them
+  // resolving to the same path would otherwise both download and both rename,
+  // leaving whichever finished last on disk with no diagnostic. Claiming paths
+  // in item order makes the winner deterministic and the losers reportable.
+  const plans: DownloadPlan[] = items.map((item, index) => {
+    const url = String(render(urlTemplate, { args, data, item, index }));
+    if (!url) return { url: '', filename: '', destPath: '' };
+    const filename = sanitizeFilename(
+      filenameTemplate
+        ? String(render(filenameTemplate, { args, data, item, index }))
+        : generateFilename(url, index),
+    );
+    return { url, filename, destPath: path.join(dir, filename) };
+  });
+
+  const claimedBy = new Map<string, number>();
+  for (const [index, plan] of plans.entries()) {
+    if (!plan.destPath) continue;
+    const owner = claimedBy.get(plan.destPath);
+    if (owner === undefined) {
+      claimedBy.set(plan.destPath, index);
+    } else {
+      plan.conflictsWith = owner;
+    }
+  }
+
   // Create progress tracker
   const tracker = new DownloadProgressTracker(items.length, showProgress);
 
@@ -163,13 +202,9 @@ export async function stepDownload(
 
   if (page) {
     // For yt-dlp, we need to export cookies to Netscape format
-    if (useYtdlp || items.some((item, index) => {
-      const url = String(render(urlTemplate, { args, data, item, index }));
-      return requiresYtdlp(url);
-    })) {
+    if (useYtdlp || plans.some((plan) => requiresYtdlp(plan.url))) {
       try {
-        const ytdlpDomains = [...new Set(items.flatMap((item, index) => {
-          const url = String(render(urlTemplate, { args, data, item, index }));
+        const ytdlpDomains = [...new Set(plans.flatMap(({ url }) => {
           if (!useYtdlp && !requiresYtdlp(url)) return [];
           try {
             return [new URL(url).hostname];
@@ -198,8 +233,7 @@ export async function stepDownload(
   const results = await mapConcurrent(items, concurrency, async (item, index): Promise<DownloadedItem> => {
     const startTime = Date.now();
 
-    // Render URL
-    const url = String(render(urlTemplate, { args, data, item, index }));
+    const { url, filename, destPath, conflictsWith } = plans[index];
     if (!url) {
       tracker.onFileComplete(false);
       return {
@@ -207,17 +241,6 @@ export async function stepDownload(
         _download: { status: 'failed', error: 'Empty URL' } as DownloadResult,
       };
     }
-
-    // Render filename
-    let filename: string;
-    if (filenameTemplate) {
-      filename = String(render(filenameTemplate, { args, data, item, index }));
-    } else {
-      filename = generateFilename(url, index);
-    }
-    filename = sanitizeFilename(filename);
-
-    const destPath = path.join(dir, filename);
 
     // Check if file exists and skip_existing is true
     if (skipExisting && fs.existsSync(destPath)) {
@@ -228,6 +251,18 @@ export async function stepDownload(
           status: 'skipped',
           path: destPath,
           size: fs.statSync(destPath).size,
+        } as DownloadResult,
+      };
+    }
+
+    // Report rather than race: an earlier item already owns this path.
+    if (conflictsWith !== undefined) {
+      tracker.onFileComplete(false);
+      return {
+        ...item,
+        _download: {
+          status: 'failed',
+          error: `Duplicate download target "${filename}" (already claimed by item ${conflictsWith}); give each item a unique filename`,
         } as DownloadResult,
       };
     }

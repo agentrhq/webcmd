@@ -3,6 +3,7 @@
  */
 
 import { spawn } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -97,6 +98,20 @@ export function requiresYtdlp(url: string): boolean {
 }
 
 /**
+ * Build a unique temporary path for one download attempt.
+ *
+ * The temp file stays beside the destination so the final `rename` never
+ * crosses a filesystem boundary. It must not be a plain `${destPath}.tmp`:
+ * the download pipeline step runs several items in parallel and two of them
+ * can resolve to the same destination, in which case a shared temp path lets
+ * both write into one file and lets one attempt's cleanup delete the other's
+ * in-flight data. Mirrors the temp-write naming used in hosted/files.ts.
+ */
+function createTempPath(destPath: string): string {
+  return `${destPath}.${process.pid}.${randomBytes(8).toString('hex')}.tmp`;
+}
+
+/**
  * HTTP download with progress callback.
  */
 export async function httpDownload(
@@ -116,7 +131,7 @@ export async function httpDownload(
     requestHeaders['Cookie'] = cookies;
   }
 
-  const tempPath = `${destPath}.tmp`;
+  const tempPath = createTempPath(destPath);
 
   const cleanupTempFile = async () => {
     try {

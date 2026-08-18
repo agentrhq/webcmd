@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type { IPage } from '../../types.js';
@@ -50,12 +51,21 @@ function createMockPage(getCookies: IPage['getCookies']): IPage {
 }
 
 describe('stepDownload', () => {
+  const tempDirs: string[] = [];
+
   beforeEach(() => {
     mockHttpDownload.mockReset();
     mockHttpDownload.mockResolvedValue({ success: true, size: 2 });
     mockYtdlpDownload.mockReset();
     mockYtdlpDownload.mockResolvedValue({ success: true, size: 2 });
     mockExportCookiesToNetscape.mockReset();
+  });
+
+  afterEach(() => {
+    for (const dir of tempDirs) {
+      try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
+    }
+    tempDirs.length = 0;
   });
 
   it('scopes browser cookies to each direct-download target domain', async () => {
@@ -92,6 +102,38 @@ describe('stepDownload', () => {
       path.join(os.tmpdir(), 'webcmd-download-test', '1.txt'),
       expect.objectContaining({ cookies: 'sid=b.example' }),
     );
+  });
+
+  it('reports duplicate destinations instead of racing them onto one path', async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'webcmd-download-dupe-'));
+    tempDirs.push(dir);
+
+    const results = await stepDownload(
+      null,
+      {
+        url: '${{ item.url }}',
+        dir,
+        filename: 'report.pdf',
+        progress: false,
+      },
+      [
+        { url: 'https://a.example/one.pdf' },
+        { url: 'https://b.example/two.pdf' },
+        { url: 'https://c.example/three.pdf' },
+      ],
+      {},
+    ) as Array<{ _download: { status: string; error?: string } }>;
+
+    // Only the first claimant downloads; the rest fail loudly.
+    expect(mockHttpDownload).toHaveBeenCalledTimes(1);
+    expect(mockHttpDownload).toHaveBeenCalledWith(
+      'https://a.example/one.pdf',
+      path.join(dir, 'report.pdf'),
+      expect.anything(),
+    );
+    expect(results.map((row) => row._download.status)).toEqual(['success', 'failed', 'failed']);
+    expect(results[1]._download.error).toContain('Duplicate download target "report.pdf"');
+    expect(results[2]._download.error).toContain('already claimed by item 0');
   });
 
   it('builds yt-dlp cookies from all target domains instead of only the first item', async () => {
