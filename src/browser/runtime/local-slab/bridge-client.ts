@@ -7,6 +7,8 @@ import type { SlabAttachment, SlabHelloResult, SlabProfile } from './protocol.js
 const MAX_RESPONSE_BYTES = 64 * 1024;
 const REQUEST_TIMEOUT_MS = 5_000;
 
+export class SlabBridgeUnavailableError extends Error {}
+
 interface BridgeSocket {
   destroy(): unknown;
   on(event: string, listener: (...args: any[]) => void): unknown;
@@ -93,8 +95,7 @@ export class SlabBridgeClient {
     const id = String(this.#nextId++);
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
-        this.#pending.delete(id);
-        reject(new Error(`SLAB bridge ${method} request timed out`));
+        this.#failAll(new SlabBridgeUnavailableError(`SLAB bridge ${method} request timed out`), true);
       }, REQUEST_TIMEOUT_MS);
       this.#pending.set(id, { resolve, reject, timer, validate });
       this.#socket!.write(`${JSON.stringify({ id, method, params })}\n`);
@@ -105,9 +106,9 @@ export class SlabBridgeClient {
     if (this.#socket) return;
     const socket = this.#connect();
     this.#socket = socket;
-    socket.on('data', (chunk: Buffer | string) => this.#onData(chunk.toString()));
-    socket.on('error', (error: Error) => { if (this.#socket === socket) this.#failAll(error); });
-    socket.on('close', () => { if (this.#socket === socket) this.#failAll(new Error('SLAB bridge connection closed')); });
+    socket.on('data', (chunk: Buffer | string) => { if (this.#socket === socket) this.#onData(chunk.toString()); });
+    socket.on('error', (error: Error) => { if (this.#socket === socket) this.#failAll(error, true); });
+    socket.on('close', () => { if (this.#socket === socket) this.#failAll(new Error('SLAB bridge connection closed'), true); });
   }
 
   #onData(chunk: string): void {
@@ -142,13 +143,17 @@ export class SlabBridgeClient {
     try { pending.resolve(pending.validate(response.result)); } catch (error) { pending.reject(error instanceof Error ? error : new Error('SLAB bridge returned an invalid result')); }
   }
 
-  #failAll(error: Error): void {
+  #failAll(error: Error, unavailable = false): void {
     const socket = this.#socket;
     this.#socket = undefined;
+    this.#buffer = '';
     socket?.destroy();
+    const reason = unavailable && !(error instanceof SlabBridgeUnavailableError)
+      ? new SlabBridgeUnavailableError(error.message)
+      : error;
     for (const pending of this.#pending.values()) {
       clearTimeout(pending.timer);
-      pending.reject(error);
+      pending.reject(reason);
     }
     this.#pending.clear();
   }

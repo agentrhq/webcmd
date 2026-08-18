@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
-import { SlabBridgeClient } from './bridge-client.js';
+import { SlabBridgeClient, SlabBridgeUnavailableError } from './bridge-client.js';
 
 function fakeSocket() {
   const client = Object.assign(new EventEmitter(), {
@@ -43,5 +43,69 @@ describe('SLAB bridge client', () => {
     second.server.write('{"id":"2","ok":true,"result":{"protocolVersion":1,"browserVersion":"1","browserPid":1234,"profiles":[]}}\n');
     await expect(hello).resolves.toMatchObject({ protocolVersion: 1 });
     expect(connect).toHaveBeenCalledTimes(2);
+  });
+
+  it('ignores stale socket data after reconnecting', async () => {
+    const first = fakeSocket();
+    const second = fakeSocket();
+    const client = new SlabBridgeClient({ connect: vi.fn().mockReturnValueOnce(first.client).mockReturnValueOnce(second.client) });
+    const unavailable = client.hello('1.9.0');
+    first.client.emit('error', new Error('offline'));
+    await expect(unavailable).rejects.toBeInstanceOf(SlabBridgeUnavailableError);
+
+    const hello = client.hello('1.9.0');
+    first.server.write('{"id":"2","ok":true,"result":{"protocolVersion":1,"browserVersion":"stale","browserPid":1234,"profiles":[]}}\n');
+    second.server.write('{"id":"2","ok":true,"result":{"protocolVersion":1,"browserVersion":"1","browserPid":1234,"profiles":[]}}\n');
+    await expect(hello).resolves.toMatchObject({ browserVersion: '1' });
+  });
+
+  it('rejects oversized responses', async () => {
+    const socket = fakeSocket();
+    const client = new SlabBridgeClient({ connect: () => socket.client });
+    const hello = client.hello('1.9.0');
+    socket.server.write(`${'x'.repeat(64 * 1024 + 1)}\n`);
+
+    await expect(hello).rejects.toThrow('exceeds 64 KiB');
+  });
+
+  it('rejects duplicate response IDs', async () => {
+    const socket = fakeSocket();
+    const client = new SlabBridgeClient({ connect: () => socket.client });
+    const hello = client.hello('1.9.0');
+    const attachment = client.attach('profile-1');
+    const response = '{"id":"1","ok":true,"result":{"protocolVersion":1,"browserVersion":"1","browserPid":1234,"profiles":[]}}\n';
+    socket.server.write(response);
+    socket.server.write(response);
+
+    await expect(hello).resolves.toMatchObject({ protocolVersion: 1 });
+    await expect(attachment).rejects.toThrow('duplicate response ID');
+  });
+
+  it('rejects invalid result shapes', async () => {
+    const socket = fakeSocket();
+    const client = new SlabBridgeClient({ connect: () => socket.client });
+    const hello = client.hello('1.9.0');
+    socket.server.write('{"id":"1","ok":true,"result":{"protocolVersion":1,"browserVersion":"1","profiles":[]}}\n');
+
+    await expect(hello).rejects.toThrow('invalid hello result');
+  });
+
+  it('rejects endpoint errors', async () => {
+    const socket = fakeSocket();
+    const client = new SlabBridgeClient({ connect: () => socket.client });
+    const hello = client.hello('1.9.0');
+    socket.server.write('{"id":"1","ok":false,"error":{"message":"bridge denied request"}}\n');
+
+    await expect(hello).rejects.toThrow('bridge denied request');
+  });
+
+  it('times out requests after five seconds', async () => {
+    vi.useFakeTimers();
+    const client = new SlabBridgeClient({ connect: () => fakeSocket().client });
+    const hello = client.hello('1.9.0');
+    const rejected = expect(hello).rejects.toBeInstanceOf(SlabBridgeUnavailableError);
+    await vi.advanceTimersByTimeAsync(5_000);
+    await rejected;
+    vi.useRealTimers();
   });
 });
