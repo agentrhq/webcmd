@@ -112,6 +112,28 @@ export class ConfigError extends CliError {
   }
 }
 
+export class SlabRequiredError extends CliError {
+  constructor() {
+    super(
+      'SLAB_REQUIRED',
+      'SLAB is required for local browser commands.',
+      'Run `webcmd setup`, choose local mode, and install SLAB.',
+      EXIT_CODES.CONFIG_ERROR,
+    );
+  }
+}
+
+export class SlabUpdateRequiredError extends CliError {
+  constructor(installed: string, required: string) {
+    super(
+      'SLAB_UPDATE_REQUIRED',
+      `SLAB ${installed} is incompatible with this webcmd version.`,
+      `Update SLAB to ${required} or newer, then retry.`,
+      EXIT_CODES.CONFIG_ERROR,
+    );
+  }
+}
+
 export class AuthRequiredError extends CliError {
   readonly domain: string;
   constructor(domain: string, message?: string) {

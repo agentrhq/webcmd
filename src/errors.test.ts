@@ -9,6 +9,8 @@ import {
   TimeoutError,
   ArgumentError,
   EmptyResultError,
+  SlabRequiredError,
+  SlabUpdateRequiredError,
   selectorError,
   SessionBusyError,
   attachTraceReceipt,
@@ -27,6 +29,8 @@ describe('Error type hierarchy', () => {
       new TimeoutError('test', 30),
       new ArgumentError('test'),
       new EmptyResultError('test/cmd'),
+      new SlabRequiredError(),
+      new SlabUpdateRequiredError('1.0.0', '2.0.0'),
       selectorError('.btn'),
     ];
 
@@ -79,6 +83,24 @@ describe('Error type hierarchy', () => {
   it('BrowserConnectError has correct code', () => {
     const err = new BrowserConnectError('Cannot connect');
     expect(err.code).toBe('BROWSER_CONNECT');
+  });
+
+  it('SLAB errors provide configuration guidance', () => {
+    const required = new SlabRequiredError();
+    const update = new SlabUpdateRequiredError('1.0.0', '2.0.0');
+
+    expect(required).toMatchObject({
+      code: 'SLAB_REQUIRED',
+      message: 'SLAB is required for local browser commands.',
+      hint: 'Run `webcmd setup`, choose local mode, and install SLAB.',
+      exitCode: 78,
+    });
+    expect(update).toMatchObject({
+      code: 'SLAB_UPDATE_REQUIRED',
+      message: 'SLAB 1.0.0 is incompatible with this webcmd version.',
+      hint: 'Update SLAB to 2.0.0 or newer, then retry.',
+      exitCode: 78,
+    });
   });
 });
 
