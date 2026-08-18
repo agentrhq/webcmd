@@ -7,6 +7,7 @@ import type {
   HostedBrowserFinishResponse,
   HostedBrowserSessionCloseResponse,
   HostedBrowserSessionResponse,
+  HostedRenamedBrowserSessionResponse,
   HostedBrowserSessionsResponse,
   HostedBrowserRunActionInput,
   HostedBrowserRunActionResponse,
@@ -152,15 +153,19 @@ export class HostedClient {
     return body;
   }
 
-  async renameBrowserSession(session: string, name: string, profile?: string): Promise<HostedBrowserSessionResponse> {
+  async renameBrowserSession(session: string, name: string, profile?: string): Promise<HostedRenamedBrowserSessionResponse> {
     const body = await this.request(`/v1/sessions/${encodeURIComponent(session)}/name${profileQuery(profile)}`, {
       method: 'POST',
       body: JSON.stringify({ name }),
     });
-    if (!isHostedBrowserSessionResponse(body)) {
+    // A rename carries no live view, so this row is a plain Session row.
+    if (!hasExactKeys(body, ['ok', 'session']) || body.ok !== true || !isHostedBrowserSession(body.session)) {
       throw protocolError('Webcmd Cloud returned an invalid browser session response.');
     }
-    return body;
+    if ((body.session as { name?: unknown }).name !== name) {
+      throw protocolError('Webcmd Cloud did not apply the requested Session name.');
+    }
+    return body as unknown as HostedRenamedBrowserSessionResponse;
   }
 
   async listBrowserSessions(profile?: string, limit?: number): Promise<HostedBrowserSessionsResponse> {

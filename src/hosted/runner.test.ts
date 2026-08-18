@@ -797,6 +797,8 @@ describe('runHostedCli', () => {
       if (request.url.endsWith('/v1/manifest')) return manifestResponse();
       requests.push(request);
       if (request.url.includes('/v1/browser/')) return new Response(JSON.stringify({ ok: true, result: { tabs: [] } }));
+      // A rename returns a plain Session row; only create carries a live view.
+      if (request.url.includes('/name')) return new Response(JSON.stringify({ ok: true, session: named }));
       return new Response(JSON.stringify({
         ok: true,
         session: { ...named, liveViewUrl: 'https://api.example.com/account/live/session_named' },

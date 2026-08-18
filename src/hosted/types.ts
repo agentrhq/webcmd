@@ -92,6 +92,11 @@ export interface HostedBrowserSessionResponse {
   session: HostedCreatedBrowserSession;
 }
 
+export interface HostedRenamedBrowserSessionResponse {
+  ok: true;
+  session: HostedBrowserSession;
+}
+
 export interface HostedBrowserSessionsResponse {
   ok: true;
   sessions: HostedBrowserSession[];
