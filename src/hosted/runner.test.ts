@@ -782,6 +782,54 @@ describe('runHostedCli', () => {
     ]);
   });
 
+  it('sends hosted Session names on create/rename and passes an alias selector through to the server', async () => {
+    const named = {
+      id: 'session_named', name: 'research', kind: 'explicit', profileId: 'profile_default', runtimeState: 'idle',
+      handoff: null,
+      createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:01:00.000Z', lastUsedAt: '2026-01-01T00:02:00.000Z',
+    };
+    const requests: Array<{ url: string; method: string; body?: unknown }> = [];
+    const fetchImpl = vi.fn<typeof fetch>(async (url, init) => {
+      const request = {
+        url: String(url), method: init?.method ?? 'GET',
+        ...(init?.body ? { body: JSON.parse(String(init.body)) } : {}),
+      };
+      if (request.url.endsWith('/v1/manifest')) return manifestResponse();
+      requests.push(request);
+      if (request.url.includes('/v1/browser/')) return new Response(JSON.stringify({ ok: true, result: { tabs: [] } }));
+      return new Response(JSON.stringify({
+        ok: true,
+        session: { ...named, liveViewUrl: 'https://api.example.com/account/live/session_named' },
+      }));
+    });
+
+    const create = sink();
+    expect(await runHostedCli(['session', 'create', '--name', 'research', '-f', 'json'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: create.stream,
+      fetchImpl,
+    })).toEqual({ handled: true, exitCode: 0 });
+    expect(create.text()).toContain('"name": "research"');
+
+    await runHostedCli(['session', 'rename', 'session_named', 'research', '-f', 'json'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: sink().stream,
+      fetchImpl,
+    });
+    // The hosted client never resolves aliases itself; the tenant-scoped server owns that.
+    await runHostedCli(['--session', 'research', 'browser', 'tabs'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: sink().stream,
+      fetchImpl,
+    });
+
+    expect(requests).toEqual([
+      { url: 'https://api.example.com/v1/sessions', method: 'POST', body: { name: 'research' } },
+      { url: 'https://api.example.com/v1/sessions/session_named/name', method: 'POST', body: { name: 'research' } },
+      { url: 'https://api.example.com/v1/browser/research/commands', method: 'POST', body: expect.anything() },
+    ]);
+  });
+
   it('normalizes aliases and case across hosted Session create/list/close', async () => {
     const session = {
       id: 'session_abc', kind: 'explicit', profileId: 'profile_work', runtimeState: 'idle',
@@ -2388,7 +2436,7 @@ describe('runHostedCli', () => {
 
   it.each([
     { argv: ['browser', 'tabs'], code: 'SESSION_REQUIRED' },
-    { argv: ['--session', 'work', 'browser', 'tabs'], code: 'INVALID_SESSION_SELECTOR' },
+    { argv: ['--session', 'not a session', 'browser', 'tabs'], code: 'INVALID_SESSION_SELECTOR' },
   ])('rejects an unusable raw selector before hosted transport: $code', async ({ argv, code }) => {
     const stderr = sink();
     const fetchImpl = vi.fn<typeof fetch>();

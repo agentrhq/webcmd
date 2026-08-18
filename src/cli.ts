@@ -52,7 +52,7 @@ import type { BrowserDownloadWaitResult, IPage, ScreenshotOptions } from './type
 import type { BrowserWindowMode } from './runtime.js';
 import { configureRootCommandSurface } from './root-command-surface.js';
 import { validateRawBrowserSession } from './hosted/browser-args.js';
-import { LocalBrowserSessionStore, requireSessionIdShape, type BrowserSessionListRow } from './browser/sessions.js';
+import { LocalBrowserSessionStore, isSessionIdShape, normalizeSessionName, requireSessionIdShape, type BrowserSessionListRow } from './browser/sessions.js';
 import { missingPluginGuidance, PLUGINS_DIR } from './discovery.js';
 import { loadBrowserRunSource } from './browser/run/input.js';
 import { BrowserRunError } from './browser/run/types.js';
@@ -556,7 +556,15 @@ function getCommandOption(command: Command | undefined, option: string): unknown
 }
 
 function getBrowserSession(command?: Command): string {
-  return validateRawBrowserSession(getCommandOption(command, 'session'), getCommandOption(command, 'profile') as string | undefined);
+  const raw = getCommandOption(command, 'session');
+  const profile = getCommandOption(command, 'profile') as string | undefined;
+  // Resolve aliases before shape validation so a named Session is addressable
+  // everywhere an ID is, and an unknown selector fails loudly instead of
+  // falling through to a fresh Session.
+  const selector = typeof raw === 'string' && raw.trim() && !isSessionIdShape(raw.trim())
+    ? new LocalBrowserSessionStore().resolveSelector(getSelectedProfileId(command), raw)
+    : raw;
+  return validateRawBrowserSession(selector, profile);
 }
 
 function getBrowserProfileSelection(command?: Command): ProfileSelection | undefined {
@@ -575,7 +583,7 @@ function formatHandoff(row: BrowserSessionListRow): string {
 function sessionCreateOutput(data: unknown): unknown {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return data;
   const row = data as Record<string, unknown>;
-  return { id: row.id, kind: row.kind, runtimeState: row.runtimeState };
+  return { id: row.id, ...(typeof row.name === 'string' ? { name: row.name } : {}), kind: row.kind, runtimeState: row.runtimeState };
 }
 
 function applyVerbose(opts: { verbose?: boolean }): void {
@@ -821,13 +829,39 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
   sessionCmd
     .command('create')
     .description('Create a new opaque browser Session ID for the selected Profile')
+    .option('--name <alias>', 'Reusable Session alias, unique per Profile (e.g. research)')
     .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'yaml')
     .action(async (opts, command) => {
       const fmt = resolveOutputFormat(opts.format);
       if (fmt === null) return;
       const profileId = getSelectedProfileId(command);
-      const data = await sendCommand('session-create', { contextId: profileId });
-      await renderOutput(sessionCreateOutput(data), { fmt, fmtExplicit: command.getOptionValueSource('format') === 'cli', columns: ['id', 'kind', 'runtimeState'] });
+      const name = opts.name === undefined ? undefined : normalizeSessionName(opts.name);
+      const data = await sendCommand('session-create', { contextId: profileId, ...(name ? { sessionName: name } : {}) });
+      // An older daemon silently drops the alias, which is the failure this feature exists to remove.
+      if (name && (data as { name?: unknown } | null)?.name !== name) {
+        throw new CliError(
+          'SESSION_NAME_UNSUPPORTED',
+          `The running daemon created the Session without the name "${name}".`,
+          'Run `webcmd daemon restart` to pick up this Webcmd version, then retry.',
+          EXIT_CODES.GENERIC_ERROR,
+        );
+      }
+      await renderOutput(sessionCreateOutput(data), { fmt, fmtExplicit: command.getOptionValueSource('format') === 'cli', columns: ['id', 'name', 'kind', 'runtimeState'] });
+    });
+
+  sessionCmd
+    .command('rename')
+    .description('Assign a reusable alias to an existing browser Session')
+    .argument('<session-id>', 'Existing opaque Session ID from `webcmd session create`')
+    .argument('<alias>', 'Session alias, e.g. research or checkout-qa')
+    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'yaml')
+    .action(async (sessionId: string, alias: string, opts: { format?: string }, command) => {
+      const fmt = resolveOutputFormat(opts.format);
+      if (fmt === null) return;
+      const profileId = getSelectedProfileId(command);
+      requireSessionIdShape(sessionId);
+      const record = new LocalBrowserSessionStore().rename(profileId, sessionId, alias);
+      await renderOutput(record, { fmt, fmtExplicit: command.getOptionValueSource('format') === 'cli', columns: ['id', 'name', 'kind'] });
     });
 
   sessionCmd
@@ -851,7 +885,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
         console.log(`No browser Sessions found for Profile ${profileId}.`);
         return;
       }
-      await renderOutput(output, { fmt, fmtExplicit: command.getOptionValueSource('format') === 'cli', columns: ['id', 'kind', 'runtimeState', 'handoff'] });
+      await renderOutput(output, { fmt, fmtExplicit: command.getOptionValueSource('format') === 'cli', columns: ['id', 'name', 'kind', 'runtimeState', 'handoff'] });
     });
 
   sessionCmd
@@ -864,6 +898,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
       const fmt = resolveOutputFormat(opts.format);
       if (fmt === null) return;
       const profileId = getSelectedProfileId(command);
+      sessionId = new LocalBrowserSessionStore().resolveSelector(profileId, sessionId);
       requireSessionIdShape(sessionId);
       const status = await fetchDaemonStatus({ contextId: profileId });
       if (!status || (status.runtimeConnected && !isDaemonStale(status, PKG_VERSION))) {

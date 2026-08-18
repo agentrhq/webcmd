@@ -36,6 +36,7 @@ import { HostedClient, HostedClientError, resolveWorkspace } from './client.js';
 import { HOSTED_SESSION_PROTOCOL_VERSION } from './types.js';
 import { parseHostedInvocation } from './args.js';
 import { HostedBrowserHelp, parseHostedBrowserStructure, validateRawBrowserSession } from './browser-args.js';
+import { normalizeSessionName } from '../browser/sessions.js';
 import { materializeHostedOutputs, prepareHostedFiles, rewriteHostedOutputResultPaths } from './files.js';
 import {
   findHostedCommand,
@@ -606,7 +607,7 @@ async function hostedAdapterSourceMetadata(client: HostedClient, key: string): P
 
 type ParsedHostedSessionSurface =
   | { kind: 'help'; output: string }
-  | { kind: 'run'; command: 'create' | 'list' | 'close'; format: string; formatExplicit: boolean; session?: string; force?: boolean; limit?: number };
+  | { kind: 'run'; command: 'create' | 'list' | 'close' | 'rename'; format: string; formatExplicit: boolean; session?: string; force?: boolean; limit?: number; name?: string };
 
 function parseHostedSessionSurface(argv: readonly string[], literal: boolean): ParsedHostedSessionSurface {
   let stdout = '';
@@ -621,11 +622,13 @@ function parseHostedSessionSurface(argv: readonly string[], literal: boolean): P
   root.exitOverride().configureOutput(output);
   session.exitOverride().configureOutput(output);
   const configure = (command: Command, format: string): Command => command.option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, format);
-  const setParsed = (command: 'create' | 'list' | 'close', surface: Command, format: string, extras: Omit<Exclude<ParsedHostedSessionSurface, { kind: 'help' }>, 'kind' | 'command' | 'format' | 'formatExplicit'> = {}): void => {
+  const setParsed = (command: 'create' | 'list' | 'close' | 'rename', surface: Command, format: string, extras: Omit<Exclude<ParsedHostedSessionSurface, { kind: 'help' }>, 'kind' | 'command' | 'format' | 'formatExplicit'> = {}): void => {
     parsed = { kind: 'run', command, format: validateHostedFormat(format), formatExplicit: surface.getOptionValueSource('format') === 'cli', ...extras };
   };
-  const create = configure(session.command('create'), 'yaml');
-  create.action((options: { format: string }) => setParsed('create', create, options.format));
+  const create = configure(session.command('create').option('--name <alias>', 'Reusable Session alias, unique per workspace (e.g. research)'), 'yaml');
+  create.action((options: { format: string; name?: string }) => setParsed('create', create, options.format, options.name === undefined ? {} : { name: normalizeSessionName(options.name) }));
+  const rename = configure(session.command('rename').argument('<session-id>').argument('<alias>'), 'yaml');
+  rename.action((sessionId: string, alias: string, options: { format: string }) => setParsed('rename', rename, options.format, { session: sessionId, name: normalizeSessionName(alias) }));
   const list = configure(session.command('list').option('--limit <number>', 'Maximum Sessions to return (1-100)', parseHostedSessionListLimit, 20), 'table');
   list.action((options: { format: string; limit: number }) => setParsed('list', list, options.format, { limit: options.limit }));
   const close = configure(session.command('close').argument('<session-id>').option('--force', 'Close even while the Session is busy or paused for handoff'), 'yaml');
@@ -648,7 +651,11 @@ async function dispatchHostedSession(
   profile?: string,
 ): Promise<void> {
   if (parsed.command === 'create') {
-    await renderOutput(sessionCreateOutput((await client.createBrowserSession(profile)).session), { fmt: parsed.format, fmtExplicit: parsed.formatExplicit, columns: ['id', 'kind', 'runtimeState'], stdout });
+    await renderOutput(sessionCreateOutput((await client.createBrowserSession(profile, parsed.name)).session), { fmt: parsed.format, fmtExplicit: parsed.formatExplicit, columns: ['id', 'name', 'kind', 'runtimeState'], stdout });
+    return;
+  }
+  if (parsed.command === 'rename') {
+    await renderOutput(sessionCreateOutput((await client.renameBrowserSession(parsed.session!, parsed.name!, profile)).session), { fmt: parsed.format, fmtExplicit: parsed.formatExplicit, columns: ['id', 'name', 'kind', 'runtimeState'], stdout });
     return;
   }
   if (parsed.command === 'list') {
@@ -658,7 +665,7 @@ async function dispatchHostedSession(
       await writeToStream(stdout, `No browser Sessions found${profile ? ` for Profile ${profile}` : ''}.\n`);
       return;
     }
-    await renderOutput(rows, { fmt: parsed.format, fmtExplicit: parsed.formatExplicit, columns: ['id', 'kind', 'runtimeState', 'handoff'], stdout });
+    await renderOutput(rows, { fmt: parsed.format, fmtExplicit: parsed.formatExplicit, columns: ['id', 'name', 'kind', 'runtimeState', 'handoff'], stdout });
     return;
   }
   await renderOutput(await client.closeBrowserSession(parsed.session!, profile, parsed.force === true), { fmt: parsed.format, fmtExplicit: parsed.formatExplicit, stdout });
@@ -677,6 +684,7 @@ function sessionCreateOutput(data: unknown): unknown {
   const row = data as Record<string, unknown>;
   return {
     id: row.id,
+    ...(typeof row.name === 'string' ? { name: row.name } : {}),
     kind: row.kind,
     runtimeState: row.runtimeState,
     ...(typeof row.liveViewUrl === 'string' ? { liveViewUrl: row.liveViewUrl } : {}),

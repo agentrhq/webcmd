@@ -170,9 +170,9 @@ describe('HostedClient', () => {
       session: 'session_wire',
     });
     expect(requests.map(({ url, method, liveViewCapability }) => ({ url, method, liveViewCapability }))).toEqual([
-      { url: 'https://api.example.com/v1/sessions', method: 'POST', liveViewCapability: 'hosted-live-view-v1' },
-      { url: 'https://api.example.com/v1/sessions?profile=default&limit=20', method: 'GET', liveViewCapability: 'hosted-live-view-v1' },
-      { url: 'https://api.example.com/v1/sessions/session_wire/close', method: 'POST', liveViewCapability: 'hosted-live-view-v1' },
+      { url: 'https://api.example.com/v1/sessions', method: 'POST', liveViewCapability: 'hosted-live-view-v1,hosted-session-alias-v1' },
+      { url: 'https://api.example.com/v1/sessions?profile=default&limit=20', method: 'GET', liveViewCapability: 'hosted-live-view-v1,hosted-session-alias-v1' },
+      { url: 'https://api.example.com/v1/sessions/session_wire/close', method: 'POST', liveViewCapability: 'hosted-live-view-v1,hosted-session-alias-v1' },
     ]);
   });
 
@@ -220,7 +220,7 @@ describe('HostedClient', () => {
     expect(prepareBody).toEqual({
       command: 'github/whoami', profile: 'work', session: 'session_work', executionScope: 'profile',
     });
-    expect(prepareCapability).toBe('hosted-live-view-v1');
+    expect(prepareCapability).toBe('hosted-live-view-v1,hosted-session-alias-v1');
     await expect(client.prepareExecution({ command: 'github/unknown' })).rejects.toMatchObject({ code: 'HOSTED_PROTOCOL' });
   });
 

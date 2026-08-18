@@ -12,9 +12,11 @@ describe('hosted browser argument surface', () => {
     expect(() => validateRawBrowserSession(undefined)).toThrowError(
       expect.objectContaining({ code: 'SESSION_REQUIRED', exitCode: 2 }),
     );
-    expect(() => validateRawBrowserSession('work')).toThrowError(
+    expect(() => validateRawBrowserSession('not a session')).toThrowError(
       expect.objectContaining({ code: 'INVALID_SESSION_SELECTOR', exitCode: 2 }),
     );
+    // A Session alias is a valid selector; the server resolves it.
+    expect(validateRawBrowserSession('research')).toBe('research');
   });
 
   it('includes the selected profile in raw-session recovery commands', () => {

@@ -8,6 +8,8 @@ import { CliError, ConfigError, EXIT_CODES } from '../errors.js';
 export interface BrowserSessionRecord {
   id: string;
   profileId: string;
+  /** Optional user-supplied alias, unique per Profile. */
+  name?: string;
   kind: 'explicit' | 'adapter-default';
   createdAt: string;
   updatedAt: string;
@@ -30,12 +32,49 @@ type StateFile = { version: 1; sessions: BrowserSessionRecord[] };
 const SESSION_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 export class SessionNotFoundError extends CliError {
-  constructor(sessionId: string, profileId: string) {
+  constructor(sessionId: string, profileId: string, candidates: BrowserSessionRecord[] = []) {
     super(
       'SESSION_NOT_FOUND',
       `Session not found: ${sessionId}`,
-      `Run \`webcmd --profile ${profileId} session list\` to choose an existing Session.`,
+      formatSessionCandidates(profileId, candidates),
       EXIT_CODES.EMPTY_RESULT,
+    );
+  }
+}
+
+/**
+ * Agents that cannot resolve a Session selector otherwise create a fresh Session
+ * and silently lose the isolation the caller asked for, so the miss must name the
+ * Sessions that do exist.
+ */
+function formatSessionCandidates(profileId: string, candidates: BrowserSessionRecord[]): string {
+  const listCommand = `Run \`webcmd --profile ${profileId} session list\` to choose an existing Session.`;
+  if (candidates.length === 0) return listCommand;
+  const known = candidates
+    .slice(0, 10)
+    .map((row) => (row.name ? `${row.id} (${row.name})` : row.id))
+    .join(', ');
+  return `Known Sessions for Profile ${profileId}: ${known}. ${listCommand}`;
+}
+
+export class SessionNameTakenError extends CliError {
+  constructor(name: string, sessionId: string, profileId: string) {
+    super(
+      'SESSION_NAME_TAKEN',
+      `Session name "${name}" is already used by ${sessionId} in Profile ${profileId}.`,
+      'Pick another name, or rename the existing Session first.',
+      EXIT_CODES.USAGE_ERROR,
+    );
+  }
+}
+
+export class InvalidSessionNameError extends CliError {
+  constructor(name: string, reason: string) {
+    super(
+      'INVALID_SESSION_NAME',
+      `Invalid Session name "${name}": ${reason}`,
+      'Use 1-64 characters: letters, digits, dash, underscore, or dot; it must not start with `session_`.',
+      EXIT_CODES.USAGE_ERROR,
     );
   }
 }
@@ -64,12 +103,46 @@ export class LocalBrowserSessionStore {
     this.isActive = opts.isActive ?? (() => false);
   }
 
-  create(profileId: string): BrowserSessionRecord {
+  create(profileId: string, name?: string): BrowserSessionRecord {
     const state = this.load();
+    const alias = name === undefined ? undefined : normalizeSessionName(name);
+    if (alias) this.requireNameFree(state, profileId, alias);
     const record = this.newRecord(profileId, 'explicit', state.sessions);
+    if (alias) record.name = alias;
     state.sessions.push(record);
     this.save(state);
     return { ...record };
+  }
+
+  rename(profileId: string, sessionId: string, name: string): BrowserSessionRecord {
+    const alias = normalizeSessionName(name);
+    const state = this.load();
+    const record = this.requireMutable(state, profileId, sessionId);
+    this.requireNameFree(state, profileId, alias, record.id);
+    record.name = alias;
+    this.touchRecord(state, record);
+    return { ...record };
+  }
+
+  /**
+   * Resolve a `--session` selector to a Session ID. Opaque IDs pass through so a
+   * stale local file cannot mask a Session the runtime knows about; anything else
+   * is looked up as an alias and a miss is a loud SESSION_NOT_FOUND.
+   */
+  resolveSelector(profileId: string, selector: string): string {
+    const value = selector.trim();
+    if (isSessionIdShape(value)) return value;
+    if (!isSessionNameShape(value)) throw new InvalidSessionSelectorError(value);
+    const state = this.load();
+    const scoped = state.sessions.filter((row) => row.profileId === profileId);
+    const match = scoped.find((row) => row.name === value);
+    if (match) return match.id;
+    throw new SessionNotFoundError(value, profileId, scoped);
+  }
+
+  private requireNameFree(state: StateFile, profileId: string, name: string, exceptId?: string): void {
+    const clash = state.sessions.find((row) => row.profileId === profileId && row.name === name && row.id !== exceptId);
+    if (clash) throw new SessionNameTakenError(name, clash.id, profileId);
   }
 
   find(profileId: string, sessionId: string): BrowserSessionRecord | undefined {
@@ -84,7 +157,7 @@ export class LocalBrowserSessionStore {
     requireSessionIdShape(id);
     const state = this.load();
     const record = state.sessions.find((row) => row.id === id && row.profileId === profileId);
-    if (!record) throw new SessionNotFoundError(id, profileId);
+    if (!record) throw new SessionNotFoundError(id, profileId, state.sessions.filter((row) => row.profileId === profileId));
     this.touchRecord(state, record);
     return { ...record };
   }
@@ -176,7 +249,7 @@ export class LocalBrowserSessionStore {
   private requireMutable(state: StateFile, profileId: string, sessionId: string): BrowserSessionRecord {
     requireSessionIdShape(sessionId);
     const record = state.sessions.find((row) => row.id === sessionId && row.profileId === profileId);
-    if (!record) throw new SessionNotFoundError(sessionId, profileId);
+    if (!record) throw new SessionNotFoundError(sessionId, profileId, state.sessions.filter((row) => row.profileId === profileId));
     return record;
   }
 
@@ -232,11 +305,12 @@ function validateState(value: unknown): StateFile {
     throw new ConfigError('browser-sessions.json has an unsupported schema.');
   }
   const adapterDefaults = new Set<string>();
-  const sessions = state.sessions.map((row) => validateRecord(row, adapterDefaults));
+  const names = new Set<string>();
+  const sessions = state.sessions.map((row) => validateRecord(row, adapterDefaults, names));
   return { version: 1, sessions };
 }
 
-function validateRecord(value: unknown, adapterDefaults: Set<string>): BrowserSessionRecord {
+function validateRecord(value: unknown, adapterDefaults: Set<string>, names: Set<string>): BrowserSessionRecord {
   if (!value || typeof value !== 'object') throw new ConfigError('browser-sessions.json contains an invalid Session record.');
   const row = value as Partial<BrowserSessionRecord>;
   if (typeof row.id !== 'string') throw new ConfigError('browser-sessions.json contains a Session without an id.');
@@ -260,6 +334,14 @@ function validateRecord(value: unknown, adapterDefaults: Set<string>): BrowserSe
     if (adapterDefaults.has(key)) throw new ConfigError(`browser-sessions.json contains multiple adapter-default Sessions for ${key}.`);
     adapterDefaults.add(key);
   }
+  let name: string | undefined;
+  if (row.name !== undefined) {
+    if (typeof row.name !== 'string') throw new ConfigError('browser-sessions.json contains an invalid Session name.');
+    name = normalizeSessionName(row.name);
+    const key = `${row.profileId} ${name}`;
+    if (names.has(key)) throw new ConfigError(`browser-sessions.json contains a duplicate Session name for ${row.profileId}.`);
+    names.add(key);
+  }
   const handoff = row.handoff;
   if (handoff && (
     typeof handoff.site !== 'string'
@@ -272,6 +354,7 @@ function validateRecord(value: unknown, adapterDefaults: Set<string>): BrowserSe
   return {
     id: row.id,
     profileId: row.profileId,
+    ...(name ? { name } : {}),
     kind: row.kind,
     createdAt,
     updatedAt,
@@ -280,8 +363,29 @@ function validateRecord(value: unknown, adapterDefaults: Set<string>): BrowserSe
   };
 }
 
+export function isSessionIdShape(sessionId: string): boolean {
+  return /^session_[A-Za-z0-9_-]+$/u.test(sessionId);
+}
+
 export function requireSessionIdShape(sessionId: string): void {
-  if (!/^session_[A-Za-z0-9_-]+$/u.test(sessionId)) throw new InvalidSessionSelectorError(sessionId);
+  if (!isSessionIdShape(sessionId)) throw new InvalidSessionSelectorError(sessionId);
+}
+
+/**
+ * A name that looks like an ID would make selector resolution ambiguous, so
+ * `session_`-prefixed aliases are rejected outright.
+ */
+export function isSessionNameShape(name: string): boolean {
+  return name.length <= 64 && !name.startsWith('session_') && /^[A-Za-z0-9][A-Za-z0-9_.-]*$/u.test(name);
+}
+
+export function normalizeSessionName(name: string): string {
+  const value = name.trim();
+  if (!value) throw new InvalidSessionNameError(name, 'a name is required');
+  if (value.length > 64) throw new InvalidSessionNameError(name, 'names are limited to 64 characters');
+  if (value.startsWith('session_')) throw new InvalidSessionNameError(name, 'names must not look like a Session ID');
+  if (!isSessionNameShape(value)) throw new InvalidSessionNameError(name, 'names allow letters, digits, dash, underscore, and dot');
+  return value;
 }
 
 function getWebcmdConfigDir(): string {

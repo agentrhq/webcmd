@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import yaml from 'js-yaml';
 import { cli, getRegistry, runWithDiscoverySource, Strategy } from './registry.js';
+import { LocalBrowserSessionStore } from './browser/sessions.js';
 import { BrowserCommandError } from './browser/daemon-client.js';
 import { getDaemonRunContext } from './session-lease.js';
 import type { IPage } from './types.js';
@@ -1740,7 +1741,7 @@ describe('browser raw session commands', () => {
 
   it.each([
     { argv: ['browser', 'tabs'], code: 'SESSION_REQUIRED' },
-    { argv: ['--session', 'work', 'browser', 'tabs'], code: 'INVALID_SESSION_SELECTOR' },
+    { argv: ['--session', 'not a session', 'browser', 'tabs'], code: 'INVALID_SESSION_SELECTOR' },
   ])('rejects an unusable raw selector with exit 2 before daemon dispatch: $code', async ({ argv, code }) => {
     const program = createProgram('', '');
 
@@ -1750,6 +1751,28 @@ describe('browser raw session commands', () => {
     expect(mockListExistingBrowserTabs).not.toHaveBeenCalled();
     expect(mockSendCommand).not.toHaveBeenCalled();
     expect(stderrSpy.mock.calls.flat().join('')).toContain(code);
+  });
+
+  it('addresses a named Session by alias and refuses to fall through on a miss', async () => {
+    const store = new LocalBrowserSessionStore();
+    const named = store.create('default', 'research');
+    const program = createProgram('', '');
+
+    await program.parseAsync(['node', 'webcmd', '--session', 'research', 'browser', 'tabs']);
+
+    expect(process.exitCode).toBeUndefined();
+    expect(mockListExistingBrowserTabs).toHaveBeenCalledWith(named.id, expect.anything());
+
+    mockListExistingBrowserTabs.mockClear();
+    await createProgram('', '').parseAsync(['node', 'webcmd', '--session', 'ghost', 'browser', 'tabs']);
+
+    // The point of the feature: an unresolved name must not quietly become a new Session.
+    expect(process.exitCode).toBe(66);
+    expect(mockListExistingBrowserTabs).not.toHaveBeenCalled();
+    expect(mockSendCommand).not.toHaveBeenCalled();
+    const stderr = stderrSpy.mock.calls.flat().join('');
+    expect(stderr).toContain('SESSION_NOT_FOUND');
+    expect(stderr).toContain(`${named.id} (research)`);
   });
 
   it('lists tabs without allocating a local browser runtime', async () => {
@@ -1884,6 +1907,47 @@ describe('browser Session lifecycle commands', () => {
     expect(output).toContain('session_abc');
     expect(output).toContain('runtimeState');
     expect(output).not.toContain('profileId');
+  });
+
+  it('sends --name to the daemon and surfaces the alias in create and list output', async () => {
+    mockSendCommand.mockResolvedValue({
+      id: 'session_named', name: 'research', kind: 'explicit', profileId: 'default', runtimeState: 'idle',
+    });
+
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'create', '--name', 'research', '-f', 'json']);
+
+    expect(mockSendCommand).toHaveBeenCalledWith('session-create', { contextId: 'default', sessionName: 'research' });
+    expect(JSON.parse(consoleLogSpy.mock.calls.flat().join('\n'))).toMatchObject({ id: 'session_named', name: 'research' });
+  });
+
+  it('fails loudly when a daemon creates the Session without the requested name', async () => {
+    mockSendCommand.mockResolvedValue({ id: 'session_unnamed', kind: 'explicit', profileId: 'default', runtimeState: 'idle' });
+
+    await expect(createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'create', '--name', 'research']))
+      .rejects.toMatchObject({ code: 'SESSION_NAME_UNSUPPORTED' });
+  });
+
+  it('renames a persisted Session and lists it under its name', async () => {
+    const baseDir = path.join(isolatedCliTestHome, '.webcmd');
+    fs.mkdirSync(baseDir, { recursive: true });
+    fs.writeFileSync(path.join(baseDir, 'browser-sessions.json'), JSON.stringify({
+      version: 1,
+      sessions: [{
+        id: 'session_renamable',
+        profileId: 'default',
+        kind: 'explicit',
+        createdAt: '2026-08-11T00:00:00.000Z',
+        updatedAt: '2026-08-11T00:00:00.000Z',
+        lastUsedAt: '2026-08-11T00:00:00.000Z',
+      }],
+    }), { mode: 0o600 });
+
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'rename', 'session_renamable', 'research', '-f', 'json']);
+    consoleLogSpy.mockClear();
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'list', '-f', 'json']);
+
+    expect(JSON.parse(consoleLogSpy.mock.calls.flat().join('\n')))
+      .toEqual([expect.objectContaining({ id: 'session_renamable', name: 'research' })]);
   });
 
   it('lists persisted Sessions without creating the adapter default when daemon is absent', async () => {

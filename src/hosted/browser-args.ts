@@ -6,6 +6,7 @@ import {
 } from '../browser/command-catalog.js';
 import { CommanderStructuralError } from '../command-surface.js';
 import { CliError, EXIT_CODES } from '../errors.js';
+import { isSessionIdShape, isSessionNameShape } from '../browser/sessions.js';
 import { configureRootCommandSurface } from '../root-command-surface.js';
 
 export class HostedBrowserHelp extends Error {
@@ -29,8 +30,9 @@ export function validateRawBrowserSession(value: unknown, profile?: string): str
   const profileFlag = profile?.trim() ? ` --profile ${profile.trim()}` : '';
   const help = `Create one: webcmd${profileFlag} session create\nList sessions: webcmd${profileFlag} session list`;
   if (!session) throw new CliError('SESSION_REQUIRED', 'A Session selector is required for browser commands.', help, EXIT_CODES.USAGE_ERROR);
-  if (!/^session_[A-Za-z0-9_-]+$/u.test(session)) {
-    throw new CliError('INVALID_SESSION_SELECTOR', 'Session selector must be an opaque Session ID.', help, EXIT_CODES.USAGE_ERROR);
+  // A Session alias is a valid selector; whoever owns the Session records resolves it.
+  if (!isSessionIdShape(session) && !isSessionNameShape(session)) {
+    throw new CliError('INVALID_SESSION_SELECTOR', 'Session selector must be an opaque Session ID or a Session name.', help, EXIT_CODES.USAGE_ERROR);
   }
   return session;
 }

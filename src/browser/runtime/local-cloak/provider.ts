@@ -50,7 +50,7 @@ export class LocalCloakRuntimeProvider implements BrowserRuntimeProvider {
   }
 
   async createSession(command: BrowserRuntimeCommand): Promise<BrowserSessionRecord> {
-    return this.sessions.create(this.resolveProfileId(command));
+    return this.sessions.create(this.resolveProfileId(command), command.sessionName);
   }
 
   async requireSession(command: BrowserRuntimeCommand): Promise<BrowserSessionRecord> {

@@ -149,6 +149,63 @@ describe('LocalBrowserSessionStore', () => {
       isActive: session => session.id === 'session_active',
     }).find('work', 'session_active')).toBeDefined();
   });
+  it('addresses a named session by alias and survives a reload', () => {
+    const baseDir = tempDir();
+    let next = 0;
+    const store = new LocalBrowserSessionStore({ baseDir, idFactory: () => `session_${++next}` });
+
+    const created = store.create('profile_work', 'research');
+
+    expect(created.name).toBe('research');
+    // Round trip through the file so a daemon rewrite cannot silently drop the alias.
+    expect(new LocalBrowserSessionStore({ baseDir }).resolveSelector('profile_work', 'research')).toBe(created.id);
+    expect(new LocalBrowserSessionStore({ baseDir }).list('profile_work').map((row) => row.name)).toEqual(['research']);
+  });
+
+  it('fails loudly on an unknown alias and names the sessions that do exist', () => {
+    const store = new LocalBrowserSessionStore({ baseDir: tempDir(), idFactory: () => 'session_known' });
+    store.create('profile_work', 'research');
+
+    expect(() => store.resolveSelector('profile_work', 'missing')).toThrowError(expect.objectContaining({
+      code: 'SESSION_NOT_FOUND',
+      hint: expect.stringContaining('session_known (research)'),
+    }));
+    expect(() => store.resolveSelector('profile_work', 'not an alias')).toThrowError(
+      expect.objectContaining({ code: 'INVALID_SESSION_SELECTOR' }),
+    );
+    // Opaque IDs pass through untouched so a stale local file cannot mask a live Session.
+    expect(store.resolveSelector('profile_work', 'session_elsewhere')).toBe('session_elsewhere');
+  });
+
+  it('keeps aliases unique per profile and reusable across profiles', () => {
+    let next = 0;
+    const store = new LocalBrowserSessionStore({ baseDir: tempDir(), idFactory: () => `session_${++next}` });
+    const first = store.create('profile_work', 'research');
+
+    expect(() => store.create('profile_work', 'research')).toThrowError(expect.objectContaining({
+      code: 'SESSION_NAME_TAKEN',
+    }));
+    const other = store.create('profile_personal', 'research');
+    expect(other.id).not.toBe(first.id);
+    expect(store.resolveSelector('profile_work', 'research')).toBe(first.id);
+    expect(store.resolveSelector('profile_personal', 'research')).toBe(other.id);
+  });
+
+  it('renames an existing session and rejects ID-shaped or malformed aliases', () => {
+    let next = 0;
+    const store = new LocalBrowserSessionStore({ baseDir: tempDir(), idFactory: () => `session_${++next}` });
+    const created = store.create('profile_work');
+
+    expect(store.rename('profile_work', created.id, 'research').name).toBe('research');
+    expect(store.rename('profile_work', created.id, 'research').name).toBe('research');
+    expect(store.resolveSelector('profile_work', 'research')).toBe(created.id);
+    expect(() => store.rename('profile_work', created.id, 'session_fake')).toThrowError(
+      expect.objectContaining({ code: 'INVALID_SESSION_NAME' }),
+    );
+    expect(() => store.rename('profile_work', 'session_missing', 'other')).toThrowError(
+      expect.objectContaining({ code: 'SESSION_NOT_FOUND' }),
+    );
+  });
 });
 
 function sessionRecord(

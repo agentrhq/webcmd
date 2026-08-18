@@ -72,6 +72,8 @@ export interface HostedProfilesResponse {
 
 export interface HostedBrowserSession {
   id: string;
+  /** Present only when the Session has an alias and the server honours it. */
+  name?: string;
   kind: 'explicit' | 'adapter-default';
   profileId: string;
   runtimeState: 'active' | 'idle';

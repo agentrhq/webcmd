@@ -71,6 +71,8 @@ export interface BrowserRuntimeCommand {
   discard?: boolean;
   /** Maximum Session rows returned by session-list. */
   limit?: number;
+  /** Optional user-supplied Session alias for session-create. */
+  sessionName?: string;
   cdpMethod?: string;
   cdpParams?: Record<string, unknown>;
   windowMode?: BrowserWindowMode;

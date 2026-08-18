@@ -135,10 +135,27 @@ export class HostedClient {
     return { ok: true, deleted: true };
   }
 
-  async createBrowserSession(profile?: string): Promise<HostedBrowserSessionResponse> {
+  async createBrowserSession(profile?: string, name?: string): Promise<HostedBrowserSessionResponse> {
     const body = await this.request('/v1/sessions', {
       method: 'POST',
-      body: JSON.stringify(profile !== undefined ? { profile } : {}),
+      body: JSON.stringify({
+        ...(profile !== undefined ? { profile } : {}),
+        ...(name !== undefined ? { name } : {}),
+      }),
+    });
+    if (!isHostedBrowserSessionResponse(body)) {
+      throw protocolError('Webcmd Cloud returned an invalid browser session response.');
+    }
+    if (name !== undefined && body.session.name !== name) {
+      throw protocolError('Webcmd Cloud created the Session without the requested name.');
+    }
+    return body;
+  }
+
+  async renameBrowserSession(session: string, name: string, profile?: string): Promise<HostedBrowserSessionResponse> {
+    const body = await this.request(`/v1/sessions/${encodeURIComponent(session)}/name${profileQuery(profile)}`, {
+      method: 'POST',
+      body: JSON.stringify({ name }),
     });
     if (!isHostedBrowserSessionResponse(body)) {
       throw protocolError('Webcmd Cloud returned an invalid browser session response.');
@@ -465,7 +482,7 @@ export class HostedClient {
         accept: 'application/json',
         authorization: `Bearer ${this.apiKey}`,
         'x-webcmd-session-protocol-version': String(HOSTED_SESSION_PROTOCOL_VERSION),
-        'x-webcmd-client-capabilities': 'hosted-live-view-v1',
+        'x-webcmd-client-capabilities': 'hosted-live-view-v1,hosted-session-alias-v1',
         ...(init.body ? { 'content-type': 'application/json' } : {}),
         ...(this.workspace ? { 'x-webcmd-workspace': this.workspace } : {}),
         ...(init.headers ?? {}),
@@ -647,7 +664,10 @@ function isHostedBrowserSessionCloseResponse(value: unknown): value is HostedBro
 }
 
 function isHostedBrowserSession(value: unknown): boolean {
-  return hasExactKeys(value, ['id', 'kind', 'profileId', 'runtimeState', 'handoff', 'createdAt', 'updatedAt', 'lastUsedAt'])
+  // `name` stays optional so this CLI keeps working against a cloud that predates Session aliases.
+  return hasOnlyKeys(value, ['id', 'name', 'kind', 'profileId', 'runtimeState', 'handoff', 'createdAt', 'updatedAt', 'lastUsedAt'])
+    && ['id', 'kind', 'profileId', 'runtimeState', 'handoff', 'createdAt', 'updatedAt', 'lastUsedAt'].every((key) => key in value)
+    && (value.name === undefined || typeof value.name === 'string')
     && typeof value.id === 'string'
     && (value.kind === 'explicit' || value.kind === 'adapter-default')
     && typeof value.profileId === 'string'

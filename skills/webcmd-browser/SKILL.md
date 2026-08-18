@@ -31,9 +31,11 @@ Until `doctor` is green, browser commands may fail. Registry and plugin discover
 ## Session lifecycle
 
 - Create an opaque browser session before raw browser work: `webcmd --profile <profile> session create`.
-- Raw browser commands require that ID at the root: `webcmd --session <session-id> browser ...`; the old positional session form is retired.
+- Name a session you intend to reuse: `webcmd session create --name research`. Then `--session research` works anywhere `--session <session-id>` does, and `webcmd session rename <session-id> <name>` names one after the fact. Names are unique per profile.
+- When told to work in a named session, address it by name. If it does not exist the command fails with `SESSION_NOT_FOUND` and lists the sessions that do — never create a replacement session instead.
+- Raw browser commands accept that ID or name at the root: `webcmd --session <session-id|name> browser ...`; the old positional session form is retired.
 - Profiles are cookie jars and auth scope; sessions are browser workspaces/windows within a profile. Parallel agents use separate sessions.
-- `webcmd session list` shows sessions and their handoff/runtime state; close finished work with `webcmd session close <session-id>`. Close is blocked while that Session has a live handoff.
+- `webcmd session list` shows each session's name, handoff, and runtime state; close finished work with `webcmd session close <session-id>`. Close is blocked while that Session has a live handoff.
 - Browser state in the bound page persists between calls, but each `run` gets a fresh JavaScript scope.
 - `webcmd --session <session-id> browser tabs` lists existing pages without creating a new one.
 - `webcmd --session <session-id> browser bind --page <page-id>` explicitly attaches the session to an existing page.
