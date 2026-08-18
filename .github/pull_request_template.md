@@ -18,6 +18,7 @@ Related issue:
 - [ ] I ran the checks relevant to this PR
 - [ ] I updated tests or docs if needed
 - [ ] I included output or screenshots when useful
+- [ ] If I edited `skill-src/`, I ran `make build` and committed `skills/`
 
 ### Adapter Notes
 

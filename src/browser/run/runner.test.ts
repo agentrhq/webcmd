@@ -16,6 +16,7 @@ import {
   type BrowserContext,
   type Page,
 } from 'playwright-core';
+import { unsupportedApiMessage } from './playwright-transport.js';
 import { QuickJSHost } from './quickjs-host.js';
 import { runBrowserProgram } from './runner.js';
 
@@ -530,26 +531,28 @@ afterAll(async () => {
   });
 
   it.each([
-    ['browser.close()', 'await browser.close();'],
-    ['browser.newContext()', 'await browser.newContext();'],
-    ['context.close()', 'await context.close();'],
-    ['page.close()', 'await page.close();'],
-    ['browserType.launch()', 'await browser.browserType().launch();'],
-    ['browserType.connect()', 'await browser.browserType().connect("ws://localhost");'],
-    ['browserType.connectOverCDP()', 'await browser.browserType().connectOverCDP("http://localhost");'],
-  ])('rejects ownership-changing API %s', async (_name, source) => {
+    ['browser.close()', 'await browser.close();', 'Browser.close'],
+    ['browser.newContext()', 'await browser.newContext();', 'Browser.newContext'],
+    ['context.close()', 'await context.close();', 'BrowserContext.close'],
+    ['page.close()', 'await page.close();', 'Page.close'],
+    ['browserType.launch()', 'await browser.browserType().launch();', undefined],
+    ['browserType.connect()', 'await browser.browserType().connect("ws://localhost");', undefined],
+    ['browserType.connectOverCDP()', 'await browser.browserType().connectOverCDP("http://localhost");', undefined],
+  ])('rejects ownership-changing API %s', async (_name, source, api) => {
     await expect(run(source)).rejects.toMatchObject({
       code: 'BROWSER_RUN_API_UNSUPPORTED',
+      ...(api ? { message: unsupportedApiMessage(api) } : {}),
     });
     expect(browser.isConnected()).toBe(true);
   });
 
   it.each([
-    ['browser.newBrowserCDPSession()', 'await browser.newBrowserCDPSession();'],
-    ['context.newCDPSession()', 'await context.newCDPSession(page);'],
-  ])('rejects CDP escape route %s', async (_name, source) => {
+    ['browser.newBrowserCDPSession()', 'await browser.newBrowserCDPSession();', 'Browser.newBrowserCDPSession'],
+    ['context.newCDPSession()', 'await context.newCDPSession(page);', 'BrowserContext.newCDPSession'],
+  ])('rejects CDP escape route %s', async (_name, source, api) => {
     await expect(run(source)).rejects.toMatchObject({
       code: 'BROWSER_RUN_API_UNSUPPORTED',
+      message: unsupportedApiMessage(api),
     });
     expect(browser.isConnected()).toBe(true);
     expect(page.isClosed()).toBe(false);
@@ -781,5 +784,28 @@ afterAll(async () => {
     `)).rejects.toMatchObject({
       message: expect.not.stringContaining('secret'),
     });
+  });
+});
+
+describe('unsupportedApiMessage', () => {
+  it.each([
+    ['Browser.close', 'webcmd session close <session-id>'],
+    ['Browser.newBrowserCDPSession', 'raw CDP is not exposed inside browser run'],
+    ['Browser.newContext', 'webcmd session create'],
+    ['Browser.newContextForReuse', 'webcmd session create'],
+    ['BrowserContext.close', 'webcmd session close <session-id>'],
+    ['BrowserContext.newCDPSession', 'raw CDP is not exposed inside browser run'],
+    ['Page.close', 'leave the tab open'],
+    ['Playwright.newRequest', 'use `page.request`'],
+  ])('points %s at a supported alternative', (api, remediation) => {
+    const message = unsupportedApiMessage(api);
+    expect(message).toContain(`${api} is unavailable in browser run;`);
+    expect(message).toContain(remediation);
+  });
+
+  it('keeps the generic text for an unmapped API', () => {
+    expect(unsupportedApiMessage('Browser.killForTests')).toBe(
+      'Browser.killForTests is unavailable in browser run.',
+    );
   });
 });
