@@ -1,10 +1,10 @@
 import type { BrowserRuntimeCommand, BrowserRuntimeResult, BrowserRuntimeStatus } from '../../protocol.js';
 import type { BrowserRuntimeProvider, RuntimeStatusOptions } from '../provider.js';
 import { LocalBrowserSessionStore, type BrowserSessionListRow, type BrowserSessionRecord } from '../../sessions.js';
-import { dispatchCloakAction, resolveCloakCommandProfileId } from './actions.js';
+import { dispatchSlabAction, resolveCloakCommandProfileId } from './actions.js';
 import type { LaunchPersistentContext } from './session-manager.js';
 import {
-  CloakSessionManager,
+  SlabSessionManager,
   resolveCloakBrowserVersion,
 } from './session-manager.js';
 
@@ -15,7 +15,7 @@ export interface LocalCloakRuntimeProviderOptions {
 }
 
 export class LocalCloakRuntimeProvider implements BrowserRuntimeProvider {
-  private readonly manager: CloakSessionManager;
+  private readonly manager: SlabSessionManager;
   private readonly sessions: LocalBrowserSessionStore;
   private readonly sessionQueues = new Map<string, Promise<void>>();
 
@@ -24,7 +24,7 @@ export class LocalCloakRuntimeProvider implements BrowserRuntimeProvider {
       baseDir: opts.baseDir,
       isActive: session => this.manager?.hasSession(session.profileId, session.id) ?? false,
     });
-    this.manager = new CloakSessionManager({
+    this.manager = new SlabSessionManager({
       ...opts,
       hasActiveHandoff: profileId => this.sessions.list(profileId, 100).some(session => (
         Boolean(session.handoff) && Date.parse(session.handoff!.expiresAt) > Date.now()
@@ -120,7 +120,7 @@ export class LocalCloakRuntimeProvider implements BrowserRuntimeProvider {
       }
       return await this.manager.runWithProfileActivity(
         this.resolveProfileId(command),
-        () => dispatchCloakAction(this.manager, command, signal),
+        () => dispatchSlabAction(this.manager, command, signal),
       );
     } finally {
       release();

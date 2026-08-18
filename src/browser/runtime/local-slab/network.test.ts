@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
-import { CloakNetworkCapture } from './network.js';
+import { SlabNetworkCapture } from './network.js';
 
 class FakePage extends EventEmitter {
   off(event: string, listener: (...args: any[]) => void) {
@@ -9,10 +9,10 @@ class FakePage extends EventEmitter {
   }
 }
 
-describe('CloakNetworkCapture', () => {
+describe('SlabNetworkCapture', () => {
   it('captures matching request and response metadata with a bounded buffer', async () => {
     const page = new FakePage();
-    const capture = new CloakNetworkCapture(2);
+    const capture = new SlabNetworkCapture(2);
     capture.start('api.example', page as any);
 
     const req = {
@@ -42,7 +42,7 @@ describe('CloakNetworkCapture', () => {
 
   it('matches same-url responses to their exact request identity', async () => {
     const page = new FakePage();
-    const capture = new CloakNetworkCapture(10);
+    const capture = new SlabNetworkCapture(10);
     capture.start('api.example', page as any);
 
     const firstReq = {
@@ -88,7 +88,7 @@ describe('CloakNetworkCapture', () => {
 
   it('skips response body previews for non-text content types', async () => {
     const page = new FakePage();
-    const capture = new CloakNetworkCapture(10);
+    const capture = new SlabNetworkCapture(10);
     capture.start('api.example', page as any);
 
     const req = {
@@ -120,7 +120,7 @@ describe('CloakNetworkCapture', () => {
 
   it('evicts older entries when the bounded buffer limit is exceeded', async () => {
     const page = new FakePage();
-    const capture = new CloakNetworkCapture(2);
+    const capture = new SlabNetworkCapture(2);
     capture.start('api.example', page as any);
 
     for (const id of ['one', 'two', 'three']) {

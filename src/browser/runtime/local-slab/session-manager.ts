@@ -6,7 +6,7 @@ import { launchPersistentContext as cloakLaunchPersistentContext } from 'cloakbr
 import type { BrowserSurface, BrowserWindowMode, SiteSessionMode } from '../../protocol.js';
 import { activateDarwinBackgroundContext, launchDarwinBackgroundPersistentContext } from './darwin-background-launch.js';
 import { normalizeProfileId, resolveCloakProfileDir } from './profiles.js';
-import { CloakNetworkCapture } from './network.js';
+import { SlabNetworkCapture } from './network.js';
 import { findPackageRoot } from '../../../package-paths.js';
 import { findExactCloakProfileProcesses } from './process-matcher.js';
 import { log } from '../../../logger.js';
@@ -140,7 +140,7 @@ export class SessionWindowConflictError extends CliError {
   }
 }
 
-export interface CloakSessionManagerOptions {
+export interface SlabSessionManagerOptions {
   baseDir?: string;
   launchPersistentContext?: LaunchPersistentContext;
   launchBackgroundPersistentContext?: LaunchPersistentContext;
@@ -183,8 +183,8 @@ function daemonShuttingDownError(): Error & { code: 'DAEMON_SHUTTING_DOWN' } {
   return Object.assign(new Error('The browser daemon is shutting down.'), { code: 'DAEMON_SHUTTING_DOWN' as const });
 }
 
-export class CloakSessionManager {
-  readonly networkCapture = new CloakNetworkCapture();
+export class SlabSessionManager {
+  readonly networkCapture = new SlabNetworkCapture();
 
   private readonly launchPersistentContext: LaunchPersistentContext;
   private readonly launchBackgroundPersistentContext: LaunchPersistentContext;
@@ -209,7 +209,7 @@ export class CloakSessionManager {
   private readonly sessionPageListeners = new WeakMap<SessionRuntime, Set<(page: PlaywrightPage) => void>>();
   private shuttingDown = false;
 
-  constructor(private readonly opts: CloakSessionManagerOptions = {}) {
+  constructor(private readonly opts: SlabSessionManagerOptions = {}) {
     this.launchPersistentContext = opts.launchPersistentContext ?? cloakLaunchPersistentContext;
     this.launchBackgroundPersistentContext = opts.launchBackgroundPersistentContext ?? launchDarwinBackgroundPersistentContext;
     this.activateBackgroundContext = opts.activateBackgroundContext ?? activateDarwinBackgroundContext;

@@ -10,14 +10,14 @@ import {
 import { redactText, redactUrl } from '../../../observation/redaction.js';
 import { articleHtmlToMarkdown } from '../../../download/article-download.js';
 import { waitForDownload } from './downloads.js';
-import type { CloakSessionManager } from './session-manager.js';
+import type { SlabSessionManager } from './session-manager.js';
 import type { BrowserContext, Frame, Page as PlaywrightPage } from 'playwright-core';
 import { runBrowserProgram } from '../../run/runner.js';
 import { BROWSER_RUN_MAX_SOURCE_BYTES } from '../../run/types.js';
 
-const snapshotBaselines = new WeakMap<CloakSessionManager, SnapshotBaselineStore>();
+const snapshotBaselines = new WeakMap<SlabSessionManager, SnapshotBaselineStore>();
 
-function snapshotBaselineStore(manager: CloakSessionManager): SnapshotBaselineStore {
+function snapshotBaselineStore(manager: SlabSessionManager): SnapshotBaselineStore {
   let baselineStore = snapshotBaselines.get(manager);
   if (!baselineStore) {
     baselineStore = new MemorySnapshotBaselineStore();
@@ -37,7 +37,7 @@ class CloakActionError extends Error {
   }
 }
 
-export function resolveCloakCommandProfileId(manager: CloakSessionManager, command: BrowserRuntimeCommand): string {
+export function resolveCloakCommandProfileId(manager: SlabSessionManager, command: BrowserRuntimeCommand): string {
   const requested = command.profileId ?? command.contextId;
   if (requested?.trim()) return requested.trim();
 
@@ -62,7 +62,7 @@ function invalidRequest(command: BrowserRuntimeCommand, error: string): BrowserR
   return { id: command.id, ok: false, errorCode: 'invalid_request', error };
 }
 
-async function resolveLease(manager: CloakSessionManager, command: BrowserRuntimeCommand) {
+async function resolveLease(manager: SlabSessionManager, command: BrowserRuntimeCommand) {
   const profileId = resolveCloakCommandProfileId(manager, command);
   if (command.page) {
     const existing = await manager.findPageById(command.page, {
@@ -90,7 +90,7 @@ async function resolveLease(manager: CloakSessionManager, command: BrowserRuntim
   });
 }
 
-async function resolveExistingLease(manager: CloakSessionManager, command: BrowserRuntimeCommand) {
+async function resolveExistingLease(manager: SlabSessionManager, command: BrowserRuntimeCommand) {
   const profileId = resolveCloakCommandProfileId(manager, command);
   if (command.page) {
     const existing = await manager.findPageById(command.page, {
@@ -198,7 +198,7 @@ async function captureScreenshot(page: PlaywrightPage, context: BrowserContext, 
   }
 }
 
-export async function dispatchCloakAction(manager: CloakSessionManager, command: BrowserRuntimeCommand, signal?: AbortSignal): Promise<BrowserRuntimeResult> {
+export async function dispatchSlabAction(manager: SlabSessionManager, command: BrowserRuntimeCommand, signal?: AbortSignal): Promise<BrowserRuntimeResult> {
   try {
     switch (command.action) {
       case 'navigate': {

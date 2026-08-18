@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import path from 'node:path';
 import type { BrowserContext, Page as PlaywrightPage } from 'playwright-core';
-import { CloakSessionManager, resolveLeaseKey } from './session-manager.js';
+import { SlabSessionManager, resolveLeaseKey } from './session-manager.js';
 import { log } from '../../../logger.js';
-import { dispatchCloakAction } from './actions.js';
+import { dispatchSlabAction } from './actions.js';
 
 function fakeContext() {
   const listeners = new Map<string, Set<(...args: unknown[]) => void>>();
@@ -167,7 +167,7 @@ function expectedProfileDir(profileId: string): string {
   return path.join('/tmp/webcmd-test', 'cloak', 'profiles', profileId);
 }
 
-describe('CloakSessionManager', () => {
+describe('SlabSessionManager', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
@@ -176,7 +176,7 @@ describe('CloakSessionManager', () => {
   it('launches one persistent context per profile and reuses named sessions', async () => {
     const launched = fakeContext();
     const launchPersistentContext = vi.fn().mockResolvedValue(launched.context);
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       launchPersistentContext,
     });
@@ -191,7 +191,7 @@ describe('CloakSessionManager', () => {
 
   it('correlates created targets and isolates Sessions into owned windows', async () => {
     const launched = fakeContext();
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       platform: 'darwin',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
@@ -210,7 +210,7 @@ describe('CloakSessionManager', () => {
   it('reuses the fresh launch about:blank page for the first Session window', async () => {
     const launched = fakeContext();
     await launched.page.goto('about:blank');
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       platform: 'darwin',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
@@ -233,7 +233,7 @@ describe('CloakSessionManager', () => {
       launched.emitPage(unrelated);
       return send(method, params as { targetId?: string } | undefined);
     });
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       platform: 'darwin',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
@@ -248,7 +248,7 @@ describe('CloakSessionManager', () => {
 
   it('creates later Session pages with noopener and adopts the context page in the same window', async () => {
     const launched = fakeContext();
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       platform: 'darwin',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
@@ -271,7 +271,7 @@ describe('CloakSessionManager', () => {
 
   it('falls back to another owned window when Chromium does not create the requested tab', async () => {
     const launched = fakeContext();
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       platform: 'darwin',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
@@ -288,7 +288,7 @@ describe('CloakSessionManager', () => {
 
   it('logs when window.open fails before falling back to another owned window', async () => {
     const launched = fakeContext();
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       platform: 'darwin',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
@@ -308,7 +308,7 @@ describe('CloakSessionManager', () => {
 
   it('ignores an unmarked opener-less page when waiting for a Session tab', async () => {
     const launched = fakeContext();
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       platform: 'darwin',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
@@ -335,7 +335,7 @@ describe('CloakSessionManager', () => {
 
   it('keeps a site popup owned while noopener tab creation uses another page', async () => {
     const launched = fakeContext();
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       platform: 'darwin',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
@@ -359,7 +359,7 @@ describe('CloakSessionManager', () => {
 
   it('creates a later page in its Session window when another Session was used last', async () => {
     const launched = fakeContext();
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test', platform: 'darwin',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
     });
@@ -381,7 +381,7 @@ describe('CloakSessionManager', () => {
         ? { targetId: 'missing-target' }
         : send(method, params)
     ));
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       platform: 'darwin',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
@@ -402,7 +402,7 @@ describe('CloakSessionManager', () => {
 
   it('registers a child-window popup under its opener Session', async () => {
     const launched = fakeContext();
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
     });
@@ -419,7 +419,7 @@ describe('CloakSessionManager', () => {
 
   it('rejects every operation after a Session page moves into another owned window', async () => {
     const launched = fakeContext();
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
     });
@@ -440,7 +440,7 @@ describe('CloakSessionManager', () => {
 
   it('closes a Session when its page disappears during the ownership check', async () => {
     const launched = fakeContext();
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
     });
@@ -462,7 +462,7 @@ describe('CloakSessionManager', () => {
 
   it('does not let another Session bind an owned page moved to an unowned window', async () => {
     const launched = fakeContext();
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
     });
@@ -480,7 +480,7 @@ describe('CloakSessionManager', () => {
 
   it('checks opener window ownership before calling window.open', async () => {
     const launched = fakeContext();
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
     });
@@ -495,7 +495,7 @@ describe('CloakSessionManager', () => {
 
   it('binds an unowned context page without adopting another Session page', async () => {
     const launched = fakeContext();
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
     });
@@ -522,7 +522,7 @@ describe('CloakSessionManager', () => {
     const launched = fakeContext();
     const launchPersistentContext = vi.fn().mockResolvedValue(launched.context);
     const launchBackgroundPersistentContext = vi.fn().mockResolvedValue(launched.context);
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       platform,
       launchPersistentContext,
@@ -538,7 +538,7 @@ describe('CloakSessionManager', () => {
   it('reactivates a background-launched context for foreground tab selection', async () => {
     const launched = fakeContext();
     const activateBackgroundContext = vi.fn().mockResolvedValue(undefined);
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       platform: 'darwin',
       launchBackgroundPersistentContext: vi.fn().mockResolvedValue(launched.context),
@@ -559,7 +559,7 @@ describe('CloakSessionManager', () => {
   it('foregrounds only the selected Session window during handoff', async () => {
     const launched = fakeContext();
     const activateBackgroundContext = vi.fn().mockResolvedValue(undefined);
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       platform: 'darwin',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
@@ -577,7 +577,7 @@ describe('CloakSessionManager', () => {
 
   it('creates a warm background lease tab without focusing Chromium', async () => {
     const launched = fakeContext();
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
     });
@@ -600,7 +600,7 @@ describe('CloakSessionManager', () => {
 
   it('creates an explicit background tab without focusing Chromium', async () => {
     const launched = fakeContext();
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
     });
@@ -623,7 +623,7 @@ describe('CloakSessionManager', () => {
 
   it('creates an explicit foreground tab in a new CDP window', async () => {
     const launched = fakeContext();
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
     });
@@ -645,7 +645,7 @@ describe('CloakSessionManager', () => {
 
   it('gives concurrent background tabs distinct pages', async () => {
     const launched = fakeContext();
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
     });
@@ -676,7 +676,7 @@ describe('CloakSessionManager', () => {
     const launchPersistentContext = vi.fn(() => new Promise<BrowserContext>((resolve) => {
       resolveLaunch = resolve;
     }));
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       launchPersistentContext,
     });
@@ -700,7 +700,7 @@ describe('CloakSessionManager', () => {
   it('evicts a closed runtime and clears every tracked page resource', async () => {
     vi.useFakeTimers();
     const launched = fakeContext();
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
     });
@@ -730,7 +730,7 @@ describe('CloakSessionManager', () => {
     const launchPersistentContext = vi.fn()
       .mockResolvedValueOnce(first.context)
       .mockResolvedValueOnce(replacement.context);
-    const manager = new CloakSessionManager({ baseDir: '/tmp/webcmd-test', launchPersistentContext });
+    const manager = new SlabSessionManager({ baseDir: '/tmp/webcmd-test', launchPersistentContext });
 
     await manager.getPage({ profileId: 'default', session: 'first', surface: 'browser' });
     first.context.emit('close');
@@ -754,7 +754,7 @@ describe('CloakSessionManager', () => {
       .mockImplementationOnce(() => new Promise<BrowserContext>((resolve) => {
         resolveReplacement = resolve;
       }));
-    const manager = new CloakSessionManager({ baseDir: '/tmp/webcmd-test', launchPersistentContext });
+    const manager = new SlabSessionManager({ baseDir: '/tmp/webcmd-test', launchPersistentContext });
     await manager.getPage({ profileId: 'default', session: 'first', surface: 'browser' });
     first.context.emit('close');
 
@@ -788,7 +788,7 @@ describe('CloakSessionManager', () => {
     const launchPersistentContext = vi.fn()
       .mockResolvedValueOnce(first.context)
       .mockResolvedValueOnce(replacement.context);
-    const manager = new CloakSessionManager({ baseDir: '/tmp/webcmd-test', launchPersistentContext });
+    const manager = new SlabSessionManager({ baseDir: '/tmp/webcmd-test', launchPersistentContext });
 
     const pendingLease = manager.getPage({ profileId: 'default', session: 'work', surface: 'browser' });
     await pageCreationStarted;
@@ -818,7 +818,7 @@ describe('CloakSessionManager', () => {
     const launchPersistentContext = vi.fn()
       .mockResolvedValueOnce(first.context)
       .mockResolvedValueOnce(replacement.context);
-    const manager = new CloakSessionManager({ baseDir: '/tmp/webcmd-test', launchPersistentContext });
+    const manager = new SlabSessionManager({ baseDir: '/tmp/webcmd-test', launchPersistentContext });
 
     await expect(manager.getPage({ profileId: 'default', session: 'first', surface: 'browser', idleTimeout: 25 }))
       .rejects.toThrow('Target page, context or browser has been closed');
@@ -840,7 +840,7 @@ describe('CloakSessionManager', () => {
     const launchPersistentContext = vi.fn()
       .mockResolvedValueOnce(first.context)
       .mockResolvedValueOnce(replacement.context);
-    const manager = new CloakSessionManager({ baseDir: '/tmp/webcmd-test', launchPersistentContext });
+    const manager = new SlabSessionManager({ baseDir: '/tmp/webcmd-test', launchPersistentContext });
 
     const lease = await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser' });
 
@@ -858,7 +858,7 @@ describe('CloakSessionManager', () => {
     const launchPersistentContext = vi.fn()
       .mockResolvedValueOnce(first.context)
       .mockResolvedValueOnce(replacement.context);
-    const manager = new CloakSessionManager({ baseDir: '/tmp/webcmd-test', launchPersistentContext });
+    const manager = new SlabSessionManager({ baseDir: '/tmp/webcmd-test', launchPersistentContext });
 
     const lease = await manager.newPage({ profileId: 'default', session: 'work', surface: 'browser' });
 
@@ -878,7 +878,7 @@ describe('CloakSessionManager', () => {
     const launchPersistentContext = vi.fn()
       .mockResolvedValueOnce(first.context)
       .mockResolvedValueOnce(replacement.context);
-    const manager = new CloakSessionManager({ baseDir: '/tmp/webcmd-test', launchPersistentContext });
+    const manager = new SlabSessionManager({ baseDir: '/tmp/webcmd-test', launchPersistentContext });
 
     await expect(manager.newPage({ profileId: 'default', session: 'work', surface: 'browser' }))
       .rejects.toBe(secondFailure);
@@ -902,7 +902,7 @@ describe('CloakSessionManager', () => {
       });
     });
     launched.context.newPage.mockResolvedValue(launched.page);
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
     });
@@ -939,7 +939,7 @@ describe('CloakSessionManager', () => {
     const launchPersistentContext = vi.fn()
       .mockResolvedValueOnce(launched.context)
       .mockResolvedValueOnce(replacement.context);
-    const manager = new CloakSessionManager({ baseDir: '/tmp/webcmd-test', launchPersistentContext });
+    const manager = new SlabSessionManager({ baseDir: '/tmp/webcmd-test', launchPersistentContext });
 
     const lease = await manager.newPage({
       profileId: 'default',
@@ -962,7 +962,7 @@ describe('CloakSessionManager', () => {
       .mockRejectedValueOnce(new Error('browserType.launchPersistentContext: Opening in existing browser session.'))
       .mockResolvedValueOnce(launched.context);
     const recoverLockedProfile = vi.fn().mockResolvedValue(true);
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       launchPersistentContext,
       recoverLockedProfile,
@@ -977,7 +977,7 @@ describe('CloakSessionManager', () => {
 
   it('freshPage closes the existing persistent lease page and creates a new one', async () => {
     const launched = fakeContext();
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
     });
@@ -996,7 +996,7 @@ describe('CloakSessionManager', () => {
 
   it('keeps persistent adapter pages separate by Session and site', async () => {
     const launched = fakeContext();
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
     });
@@ -1038,7 +1038,7 @@ describe('CloakSessionManager', () => {
     const leftover = launched.page;
     const created = fakeContext().page;
     launched.context.newPage.mockResolvedValue(created);
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
     });
@@ -1050,7 +1050,7 @@ describe('CloakSessionManager', () => {
 
   it('closes ephemeral adapter sessions when released', async () => {
     const launched = fakeContext();
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       platform: 'darwin',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
@@ -1063,7 +1063,7 @@ describe('CloakSessionManager', () => {
 
   it('releases only the owning ephemeral adapter site and run', async () => {
     const launched = fakeContext();
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       platform: 'darwin',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
@@ -1083,7 +1083,7 @@ describe('CloakSessionManager', () => {
 
   it('keeps persistent adapter pages tracked when release is requested', async () => {
     const launched = fakeContext();
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
     });
@@ -1100,7 +1100,7 @@ describe('CloakSessionManager', () => {
   it('closes non-persistent leases when their idle timeout expires', async () => {
     vi.useFakeTimers();
     const launched = fakeContext();
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       platform: 'darwin',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
@@ -1118,7 +1118,7 @@ describe('CloakSessionManager', () => {
   it('refreshes an idle timeout when a lease is reused', async () => {
     vi.useFakeTimers();
     const launched = fakeContext();
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       platform: 'darwin',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
@@ -1138,7 +1138,7 @@ describe('CloakSessionManager', () => {
   it('does not close persistent site sessions when their idle timeout expires', async () => {
     vi.useFakeTimers();
     const launched = fakeContext();
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
     });
@@ -1153,12 +1153,12 @@ describe('CloakSessionManager', () => {
   it('launches a preferred profile when no Cloak profile is active', async () => {
     const launched = fakeContext();
     const launchPersistentContext = vi.fn().mockResolvedValue(launched.context);
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       launchPersistentContext,
     });
 
-    await dispatchCloakAction(manager, {
+    await dispatchSlabAction(manager, {
       id: 'cmd-preferred',
       action: 'navigate',
       session: 'work',
@@ -1180,12 +1180,12 @@ describe('CloakSessionManager', () => {
     const launchPersistentContext = vi.fn()
       .mockResolvedValueOnce(first.context)
       .mockResolvedValueOnce(replacement.context);
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       launchPersistentContext,
     });
 
-    const result = await dispatchCloakAction(manager, {
+    const result = await dispatchSlabAction(manager, {
       id: 'cmd-retry-navigation',
       action: 'navigate',
       session: 'work',
@@ -1210,7 +1210,7 @@ describe('CloakSessionManager', () => {
     const launchPersistentContext = vi.fn()
       .mockResolvedValueOnce(first.context)
       .mockResolvedValueOnce(replacement.context);
-    const manager = new CloakSessionManager({ baseDir: '/tmp/webcmd-test', launchPersistentContext });
+    const manager = new SlabSessionManager({ baseDir: '/tmp/webcmd-test', launchPersistentContext });
     const key = { profileId: 'default', session: 'work', sessionId: 'session_a', surface: 'browser' as const };
     await manager.getPage(key);
     const navigation = manager.navigatePage(key, 'https://example.com/', 'load');
@@ -1227,12 +1227,12 @@ describe('CloakSessionManager', () => {
   it('falls back to the only active profile when the preferred profile is stale', async () => {
     const launched = fakeContext();
     const launchPersistentContext = vi.fn().mockResolvedValue(launched.context);
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       launchPersistentContext,
     });
 
-    await dispatchCloakAction(manager, {
+    await dispatchSlabAction(manager, {
       id: 'cmd-active',
       action: 'navigate',
       session: 'work',
@@ -1240,7 +1240,7 @@ describe('CloakSessionManager', () => {
       url: 'https://example.com/',
       contextId: 'active',
     });
-    await dispatchCloakAction(manager, {
+    await dispatchSlabAction(manager, {
       id: 'cmd-stale-default',
       action: 'navigate',
       session: 'work',
@@ -1256,12 +1256,12 @@ describe('CloakSessionManager', () => {
   it('asks for an explicit profile when a stale preferred profile meets multiple active profiles', async () => {
     const launched = fakeContext();
     const launchPersistentContext = vi.fn().mockResolvedValue(launched.context);
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       launchPersistentContext,
     });
 
-    await dispatchCloakAction(manager, {
+    await dispatchSlabAction(manager, {
       id: 'cmd-a',
       action: 'navigate',
       session: 'work-a',
@@ -1269,7 +1269,7 @@ describe('CloakSessionManager', () => {
       url: 'https://example.com/a',
       contextId: 'profile-a',
     });
-    await dispatchCloakAction(manager, {
+    await dispatchSlabAction(manager, {
       id: 'cmd-b',
       action: 'navigate',
       session: 'work-b',
@@ -1278,7 +1278,7 @@ describe('CloakSessionManager', () => {
       contextId: 'profile-b',
     });
 
-    const result = await dispatchCloakAction(manager, {
+    const result = await dispatchSlabAction(manager, {
       id: 'cmd-stale',
       action: 'navigate',
       session: 'work',
@@ -1302,7 +1302,7 @@ describe('CloakSessionManager', () => {
     launched.cdp.send.mockImplementationOnce(() => new Promise((resolve) => {
       resolveAnchor = () => resolve({ targetId: 'anchor-target' });
     }));
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       platform: 'darwin',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
@@ -1325,7 +1325,7 @@ describe('CloakSessionManager', () => {
   it('keeps an empty profile warm for sixty seconds before closing it', async () => {
     vi.useFakeTimers();
     const launched = fakeContext();
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       platform: 'linux',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
@@ -1348,7 +1348,7 @@ describe('CloakSessionManager', () => {
     const launchPersistentContext = vi.fn(() => new Promise<BrowserContext>((resolve) => {
       resolveLaunch = resolve;
     }));
-    const manager = new CloakSessionManager({ baseDir: '/tmp/webcmd-test', launchPersistentContext });
+    const manager = new SlabSessionManager({ baseDir: '/tmp/webcmd-test', launchPersistentContext });
 
     const pending = manager.getPage({ profileId: 'work', session: 'session_a', surface: 'browser' });
     await vi.waitFor(() => expect(launchPersistentContext).toHaveBeenCalledOnce());
@@ -1373,7 +1373,7 @@ describe('CloakSessionManager', () => {
         : send(method, params)
     ));
     const warn = vi.spyOn(log, 'warn').mockImplementation(() => {});
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       platform: 'darwin',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
@@ -1395,7 +1395,7 @@ describe('CloakSessionManager', () => {
     const launched = fakeContext();
     launched.context.browser.mockReturnValue(null);
     const warn = vi.spyOn(log, 'warn').mockImplementation(() => {});
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       platform: 'darwin',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
@@ -1411,7 +1411,7 @@ describe('CloakSessionManager', () => {
     vi.useFakeTimers();
     const launched = fakeContext();
     const launchPersistentContext = vi.fn().mockResolvedValue(launched.context);
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       platform,
       launchPersistentContext,
@@ -1436,7 +1436,7 @@ describe('CloakSessionManager', () => {
     vi.useFakeTimers();
     let handoffActive = true;
     const launched = fakeContext();
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
       hasActiveHandoff: () => handoffActive,
@@ -1460,7 +1460,7 @@ describe('CloakSessionManager', () => {
     vi.useFakeTimers();
     let handoffActive = true;
     const launched = fakeContext();
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
       hasActiveHandoff: () => handoffActive,
@@ -1486,7 +1486,7 @@ describe('CloakSessionManager', () => {
     const unref = vi.spyOn(Object.getPrototypeOf(timer), 'unref');
     clearTimeout(timer);
     const launched = fakeContext();
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
     });
@@ -1500,7 +1500,7 @@ describe('CloakSessionManager', () => {
 
   it('repairs one anchor for duplicate destruction and page-close notifications', async () => {
     const launched = fakeContext();
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       platform: 'darwin',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
@@ -1532,7 +1532,7 @@ describe('CloakSessionManager', () => {
       .mockResolvedValueOnce(first.context)
       .mockResolvedValueOnce(replacement.context);
     const recoverLockedProfile = vi.fn().mockResolvedValue(true);
-    const manager = new CloakSessionManager({
+    const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       platform: 'linux',
       launchPersistentContext,

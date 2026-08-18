@@ -1,13 +1,13 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright-core';
-import { dispatchCloakAction } from './actions.js';
-import { CloakSessionManager, type LaunchPersistentContext } from './session-manager.js';
+import { dispatchSlabAction } from './actions.js';
+import { SlabSessionManager, type LaunchPersistentContext } from './session-manager.js';
 import * as snapshot from '../../snapshot/index.js';
 
 let browser: Browser;
 let context: BrowserContext;
 let initialPage: Page;
-let manager: CloakSessionManager;
+let manager: SlabSessionManager;
 let launchPersistentContext: ReturnType<typeof vi.fn<LaunchPersistentContext>>;
 
 const command = (id: string, action: 'run' | 'snapshot' | 'tabs' | 'bind' | 'close-window', extra: Record<string, unknown> = {}) => ({
@@ -27,7 +27,7 @@ beforeEach(async () => {
   context = await browser.newContext();
   initialPage = await context.newPage();
   launchPersistentContext = vi.fn<LaunchPersistentContext>().mockResolvedValue(context);
-  manager = new CloakSessionManager({
+  manager = new SlabSessionManager({
     baseDir: '/tmp/webcmd-browser-run-test',
     launchPersistentContext,
   });
@@ -45,7 +45,7 @@ afterAll(async () => {
 describe('local Cloak browser run', () => {
   it('returns a bounded redacted snapshot for the current page', async () => {
     await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser' });
-    const result = await dispatchCloakAction(manager, command('snapshot-1', 'snapshot'));
+    const result = await dispatchSlabAction(manager, command('snapshot-1', 'snapshot'));
 
     expect(result).toMatchObject({
       ok: true,
@@ -66,7 +66,7 @@ describe('local Cloak browser run', () => {
     await initialPage.goto('https://example.test/page?ok=1&key=page-secret&auth=page-auth');
     await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser' });
 
-    const result = await dispatchCloakAction(manager, command('snapshot-redacted', 'snapshot', {
+    const result = await dispatchSlabAction(manager, command('snapshot-redacted', 'snapshot', {
       maxOutputChars: 500,
     }));
     const tree = (result.data as { tree: string }).tree;
@@ -83,7 +83,7 @@ describe('local Cloak browser run', () => {
       `<input aria-label="Critical ${index + 1}" aria-invalid="true">`).join('')}</main>`);
     await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser' });
 
-    const result = await dispatchCloakAction(manager, command('snapshot-critical', 'snapshot', {
+    const result = await dispatchSlabAction(manager, command('snapshot-critical', 'snapshot', {
       maxOutputChars: 220,
     }));
 
@@ -109,7 +109,7 @@ describe('local Cloak browser run', () => {
     `);
     await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser' });
 
-    const result = await dispatchCloakAction(manager, command('snapshot-readable', 'snapshot', {
+    const result = await dispatchSlabAction(manager, command('snapshot-readable', 'snapshot', {
       snapshotMode: 'read',
     }));
     const data = result.data as { tree: string; article: { source: string } | null };
@@ -129,7 +129,7 @@ describe('local Cloak browser run', () => {
     await initialPage.setContent('');
     await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser' });
 
-    const result = await dispatchCloakAction(manager, command('snapshot-read-miss', 'snapshot', {
+    const result = await dispatchSlabAction(manager, command('snapshot-read-miss', 'snapshot', {
       snapshotMode: 'read',
     }));
 
@@ -147,19 +147,19 @@ describe('local Cloak browser run', () => {
 
   it('does not create a browser session for snapshot inspection', async () => {
     const launch = vi.fn<LaunchPersistentContext>().mockResolvedValue(context);
-    const unstarted = new CloakSessionManager({
+    const unstarted = new SlabSessionManager({
       baseDir: '/tmp/webcmd-browser-snapshot-unstarted',
       launchPersistentContext: launch,
     });
 
-    const result = await dispatchCloakAction(unstarted, command('snapshot-cold', 'snapshot'));
+    const result = await dispatchSlabAction(unstarted, command('snapshot-cold', 'snapshot'));
 
     expect(result).toMatchObject({ ok: false, errorCode: 'session_not_found' });
     expect(launch).not.toHaveBeenCalled();
   });
 
   it('omits snapshotDiff when noSnapshotDiff is requested', async () => {
-    const result = await dispatchCloakAction(manager, command('run-no-diff', 'run', {
+    const result = await dispatchSlabAction(manager, command('run-no-diff', 'run', {
       source: "return 'ok';",
       noSnapshotDiff: true,
     }));
@@ -169,7 +169,7 @@ describe('local Cloak browser run', () => {
   });
 
   it('reuses the lease and keeps page state without keeping sandbox variables', async () => {
-    const first = await dispatchCloakAction(manager, command('run-1', 'run', {
+    const first = await dispatchSlabAction(manager, command('run-1', 'run', {
       source: `
         globalThis.onlyThisRun = 'gone';
         await page.setContent('<p id="state">persisted</p>');
@@ -177,7 +177,7 @@ describe('local Cloak browser run', () => {
       `,
       snapshotDiff: true,
     }));
-    const second = await dispatchCloakAction(manager, command('run-2', 'run', {
+    const second = await dispatchSlabAction(manager, command('run-2', 'run', {
       source: `
         return {
           state: await page.locator('#state').innerText(),
@@ -210,25 +210,25 @@ describe('local Cloak browser run', () => {
 
   it('lists without creating a runtime', async () => {
     const unstartedLaunch = vi.fn();
-    const unstarted = new CloakSessionManager({
+    const unstarted = new SlabSessionManager({
       baseDir: '/tmp/webcmd-browser-run-test-unstarted',
       launchPersistentContext: unstartedLaunch,
     });
 
-    await expect(dispatchCloakAction(unstarted, command('tabs', 'tabs', { op: 'list' })))
+    await expect(dispatchSlabAction(unstarted, command('tabs', 'tabs', { op: 'list' })))
       .resolves.toMatchObject({ ok: true, data: [] });
     expect(unstartedLaunch).not.toHaveBeenCalled();
   });
 
   it('does not bind a page owned by another Session', async () => {
-    const original = await dispatchCloakAction(manager, command('run-original', 'run', {
+    const original = await dispatchSlabAction(manager, command('run-original', 'run', {
       source: "await page.setContent('<p>original</p>'); return 'original';",
     }));
-    const created = await dispatchCloakAction(manager, command('new-tab', 'tabs', {
+    const created = await dispatchSlabAction(manager, command('new-tab', 'tabs', {
       op: 'new',
       session: 'manual',
     }));
-    const bound = await dispatchCloakAction(manager, command('bind', 'bind', { page: created.page }));
+    const bound = await dispatchSlabAction(manager, command('bind', 'bind', { page: created.page }));
 
     expect(original).toMatchObject({ ok: true, page: expect.any(String) });
     expect(bound).toMatchObject({ ok: false, errorCode: 'SESSION_WINDOW_CONFLICT' });
