@@ -26,6 +26,18 @@ User adapters, plugins, cache, traces, and site memory live under `~/.webcmd`.
 
 The published docs at [webcmd.dev/docs](https://webcmd.dev/docs) are built by Mintlify from the `docs/` directory in this repo. To change the published docs, edit the `.mdx` pages under `docs/` (and `docs/docs.json` for navigation) — do not edit the site directly.
 
+## Authoring Skills
+
+Edit `skill-src/`, not `skills/`. Author-only notes live in `<!-- @ ... -->` blocks and are stripped by [litprompt](https://github.com/tgvashworth/litprompt) on the way out.
+
+```bash
+make install-tool   # once: go install github.com/tgvashworth/litprompt@latest
+make build          # skill-src/**/*.src.md -> skills/**/*.md
+make verify         # fail if skills/ is stale or orphaned
+```
+
+Commit both the source and the generated output. The convention, learnings-log format, and gotchas are in [`skill-src/README.md`](skill-src/README.md).
+
 ## Documentation Sync Review
 
 Every pull request receives one advisory comment checking whether user-facing changes are reflected in `README.md`, `docs/`, and bundled `skills/`. The comment is updated after new commits and reports one of three verdicts:

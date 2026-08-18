@@ -250,3 +250,12 @@ Use `run` and inspect `page.frames()`; target the frame by URL/name and keep ifr
 - `webcmd-browser-sitemap` — consume sitemap context while driving a browser task.
 - `webcmd-sitemap-author` — update sitemap knowledge when durable context changes.
 - `webcmd-autofix` — repair an existing adapter from retained trace evidence.
+
+<!-- @
+## Learnings log
+
+Author-only. Stripped by litprompt, so it costs the running agent nothing.
+Append one dated line whenever a correction lands, or whenever an approach
+is tried and rejected. Record what was tried and why it failed, not just
+what won.
+-->

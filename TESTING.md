@@ -13,6 +13,16 @@ npm test
 the compiled public package exports. The core package contains no site
 adapters; `npm test` runs the unit and generic plugin projects.
 
+## Skill Sources
+
+Bundled skills are generated from `skill-src/` with litprompt. After editing a
+`*.src.md` file:
+
+```bash
+make build
+make verify
+```
+
 ## Focused Checks
 
 ```bash

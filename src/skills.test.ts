@@ -215,8 +215,9 @@ describe('webcmd skills content', () => {
     expect(browser).toContain('--no-snapshot-diff');
     expect(browser).not.toContain('page.snapshotForAI()');
     expect(browser).not.toContain('--snapshot-diff');
-    expect(browserRunReference).toMatch(/sandbox boundaries/i);
-    expect(browserRunReference).toMatch(/artifacts/i);
+    expect(browserRunReference).toMatch(/QuickJS/);
+    expect(browserRunReference).toMatch(/page\.evaluate/);
+    expect(browserRunReference).toMatch(/artifact/i);
     expect(browserRunReference).toContain("writeArtifact(");
     expect(browserRunReference).toMatch(/errors/i);
     expect(browserRunReference).toMatch(/snapshot behavior/i);

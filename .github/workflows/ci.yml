@@ -32,6 +32,25 @@ jobs:
       - name: Check plugin PR scope
         run: npm run check:plugin-pr-scope -- "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}"
 
+  skills:
+    name: Skill sources
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+
+      - name: Install litprompt
+        run: go install github.com/tgvashworth/litprompt@latest
+
+      - name: Check sources
+        run: make check
+
+      - name: Verify published skills are in sync
+        run: make verify
+
   build:
     name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

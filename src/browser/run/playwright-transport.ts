@@ -67,6 +67,28 @@ const DENIED_METHODS = new Map<string, Set<string>>([
   ['Playwright', new Set(['newRequest'])],
 ]);
 
+const CLOSE_SESSION = 'end the session with `webcmd session close <session-id>`';
+const NO_RAW_CDP = 'raw CDP is not exposed inside browser run; drive the page with the Playwright APIs on `page`';
+const ONE_CONTEXT = 'a run is scoped to one context; start another with `webcmd session create`';
+
+const API_REMEDIATIONS: Record<string, string> = {
+  'Browser.close': CLOSE_SESSION,
+  'Browser.newBrowserCDPSession': NO_RAW_CDP,
+  'Browser.newContext': ONE_CONTEXT,
+  'Browser.newContextForReuse': ONE_CONTEXT,
+  'BrowserContext.close': CLOSE_SESSION,
+  'BrowserContext.newCDPSession': NO_RAW_CDP,
+  'Page.close': `the session owns its tabs; leave the tab open, or ${CLOSE_SESSION}`,
+  'Playwright.newRequest': 'use `page.request` to make HTTP calls in the page\'s context',
+};
+
+export function unsupportedApiMessage(api: string): string {
+  const remediation = API_REMEDIATIONS[api];
+  return remediation
+    ? `${api} is unavailable in browser run; ${remediation}.`
+    : `${api} is unavailable in browser run.`;
+}
+
 function implementation<T>(object: T): unknown {
   const client = object as T & PlaywrightClientObject;
   const value = client._connection?.toImpl?.(object);
@@ -436,7 +458,7 @@ export class PlaywrightTransport {
         error: {
           error: {
             name: 'BrowserRunError',
-            message: `BROWSER_RUN_API_UNSUPPORTED: ${api} is unavailable in browser run.`,
+            message: `BROWSER_RUN_API_UNSUPPORTED: ${unsupportedApiMessage(api)}`,
             stack: '',
           },
         },
