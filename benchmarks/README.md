@@ -85,9 +85,14 @@ webcmd               ███████████████████�
 
 Run a controlled, sequential browser-tool benchmark. Keep task data and local evidence private.
 
+Legacy boundary: this private benchmark harness intentionally keeps its pinned
+CloakBrowser dependency so historical AXI/agent-browser/dev-browser/libretto
+runs remain comparable. It is not the webcmd local runtime and is not part of
+the SLAB browser distribution path.
+
 ## Workflow
 
-1. Confirm `uv`, the selected controller CLI, selected browser tool, and judge authentication are available (`GOOGLE_API_KEY` for `google`, `OPENAI_API_KEY` for `openai`, or a ChatGPT-authenticated `codex login` for `codex`). AXI, agent-browser, and dev-browser runs also require CloakBrowser.
+1. Confirm `uv`, the selected controller CLI, selected browser tool, and judge authentication are available (`GOOGLE_API_KEY` for `google`, `OPENAI_API_KEY` for `openai`, or a ChatGPT-authenticated `codex login` for `codex`). AXI, agent-browser, and dev-browser runs also require the legacy benchmark CloakBrowser package.
 2. Ask the user to choose a controller, model, benchmark, and task selection if any is missing.
 3. Start with one task unless the user explicitly requests a larger or full run.
 4. Run `scripts/run_eval.py` with the explicit choices.
@@ -166,7 +171,7 @@ Its `estimated_api_cost_usd` is an API-equivalent comparison metric, not a
 subscription charge; the manifest records `billing_mode` as
 `chatgpt_subscription`.
 
-For AXI with one dedicated CloakBrowser process and profile per task:
+For AXI with one dedicated legacy benchmark CloakBrowser process and profile per task:
 
 ```bash
 uv run python benchmarks/scripts/run_eval.py \
@@ -178,7 +183,7 @@ uv run python benchmarks/scripts/run_eval.py \
   --tools chrome-devtools-axi
 ```
 
-For agent-browser with one dedicated CloakBrowser process and profile per task:
+For agent-browser with one dedicated legacy benchmark CloakBrowser process and profile per task:
 
 ```bash
 uv run python benchmarks/scripts/run_eval.py \
@@ -190,7 +195,7 @@ uv run python benchmarks/scripts/run_eval.py \
   --tools agent-browser
 ```
 
-For dev-browser with one dedicated CloakBrowser process and profile per task:
+For dev-browser with one dedicated legacy benchmark CloakBrowser process and profile per task:
 
 ```bash
 npm install -g dev-browser
@@ -212,10 +217,10 @@ its `bash` and `read` tools.
 `dev-browser install` is required because it installs the daemon's Playwright
 and QuickJS dependencies. It may also download dev-browser's Chromium, but the
 benchmark does not use that browser: the task-private shim always connects
-dev-browser to the task's dedicated CloakBrowser CDP endpoint.
+dev-browser to the task's dedicated legacy benchmark CloakBrowser CDP endpoint.
 
-For Libretto Browser Tools with Codex or Pi and one dedicated CloakBrowser per
-task:
+For Libretto Browser Tools with Codex or Pi and one dedicated legacy benchmark
+CloakBrowser per task:
 
 ```bash
 npm ci
@@ -234,7 +239,7 @@ Pi, it registers the equivalent native Pi custom tools directly; use
 `--controller pi --model openai-codex/gpt-5.6-sol`. Both expose only `browser_open`,
 `browser_exec`, `browser_snapshot`, `browser_status`, and `browser_close`.
 `browser_connect` is disabled so the agent cannot leave the task's dedicated
-CloakBrowser.
+legacy benchmark CloakBrowser.
 
 Use `--stealth-view official` only with `Stealth_Bench_V1`. Never add a parallel flag or publish `results/`.
 

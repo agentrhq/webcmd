@@ -16,13 +16,14 @@ STARTUP_TIMEOUT_SECONDS = 60
 
 
 def find_cloak_package() -> Path:
+    """Locate the private benchmark harness's legacy CloakBrowser package."""
     override = os.environ.get("BROWSER_BENCH_CLOAK_PACKAGE")
     if override:
         candidates = [Path(override).expanduser()]
     else:
         npm = shutil.which("npm")
         if not npm:
-            raise RuntimeError("npm is required to locate CloakBrowser")
+            raise RuntimeError("npm is required to locate the legacy benchmark CloakBrowser")
         result = subprocess.run(
             [npm, "root", "-g"],
             text=True,
@@ -47,7 +48,7 @@ def find_cloak_package() -> Path:
         if package.get("name") == "cloakbrowser":
             return candidate.resolve()
     raise RuntimeError(
-        "CloakBrowser was not found. Install it globally, keep Webcmd installed, "
+        "Legacy benchmark CloakBrowser was not found. Install it globally, keep Webcmd installed, "
         "or set BROWSER_BENCH_CLOAK_PACKAGE to its package directory."
     )
 
@@ -82,13 +83,13 @@ async def _launch_options(profile_dir: Path, env: dict[str, str]) -> dict:
     except asyncio.TimeoutError:
         process.kill()
         await process.wait()
-        raise RuntimeError("timed out resolving CloakBrowser launch options")
+        raise RuntimeError("timed out resolving legacy benchmark CloakBrowser launch options")
     if process.returncode:
-        raise RuntimeError(f"CloakBrowser launch configuration failed: {stderr.decode(errors='replace').strip()}")
+        raise RuntimeError(f"Legacy benchmark CloakBrowser launch configuration failed: {stderr.decode(errors='replace').strip()}")
     try:
         return json.loads(stdout)
     except json.JSONDecodeError as error:
-        raise RuntimeError("CloakBrowser returned invalid launch configuration") from error
+        raise RuntimeError("Legacy benchmark CloakBrowser returned invalid launch configuration") from error
 
 
 async def _wait_for_devtools_port(profile_dir: Path) -> int:
@@ -102,14 +103,14 @@ async def _wait_for_devtools_port(profile_dir: Path) -> int:
         except (FileNotFoundError, IndexError, ValueError):
             pass
         await asyncio.sleep(0.05)
-    raise RuntimeError("timed out waiting for CloakBrowser's CDP endpoint")
+    raise RuntimeError("timed out waiting for legacy benchmark CloakBrowser's CDP endpoint")
 
 
 async def _launch_cloak(profile_dir: Path, env: dict[str, str]) -> int:
     options = await _launch_options(profile_dir, env)
     executable = Path(str(options.get("executablePath") or ""))
     if not executable.is_file():
-        raise RuntimeError(f"CloakBrowser executable is missing: {executable}")
+        raise RuntimeError(f"Legacy benchmark CloakBrowser executable is missing: {executable}")
     arguments = [
         *map(str, options.get("args") or []),
         "--password-store=basic",
@@ -123,7 +124,7 @@ async def _launch_cloak(profile_dir: Path, env: dict[str, str]) -> int:
         marker = "/Contents/MacOS/"
         executable_text = str(executable)
         if marker not in executable_text:
-            raise RuntimeError("CloakBrowser executable is not inside a macOS app bundle")
+            raise RuntimeError("Legacy benchmark CloakBrowser executable is not inside a macOS app bundle")
         app_path = executable_text.split(marker, 1)[0]
         command = ["/usr/bin/open", "-g", "-n", app_path, "--args", *arguments]
     else:
@@ -137,7 +138,7 @@ async def _launch_cloak(profile_dir: Path, env: dict[str, str]) -> int:
     )
     _, stderr = await process.communicate()
     if process.returncode:
-        raise RuntimeError(f"CloakBrowser failed to launch: {stderr.decode(errors='replace').strip()}")
+        raise RuntimeError(f"Legacy benchmark CloakBrowser failed to launch: {stderr.decode(errors='replace').strip()}")
     return await _wait_for_devtools_port(profile_dir)
 
 

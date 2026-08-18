@@ -242,15 +242,15 @@ def _build_prompt(tool: Tool, session: str, shots_dir: Path, task: str) -> str:
 - Every shell command must begin with exactly `npx -y chrome-devtools-axi`; use no substitutions, redirections, pipes, or other executables.
 - Do not use Web search, browser MCPs, Playwright, Puppeteer, curl, wget, raw HTTP, or any non-AXI automation tool.
 - Use the `$chrome-devtools-axi` skill for AXI usage guidance.
-- The AXI session and its dedicated CloakBrowser connection are already configured in the environment; do not start another browser."""
+- The AXI session and its dedicated legacy benchmark CloakBrowser connection are already configured in the environment; do not start another browser."""
     elif tool == "agent-browser":
         tool_rules = """- Use only `agent-browser` for browser interaction.
 - Use one `agent-browser` command per shell invocation; use no substitutions, redirections, pipes, or other executables.
 - Do not use `batch`, `close`, connection/profile flags, or multiple agent-browser commands in one shell invocation.
-- Never pass a URL to `agent-browser read`; use `agent-browser open URL` and then `agent-browser read` so all page traffic stays inside CloakBrowser.
+- Never pass a URL to `agent-browser read`; use `agent-browser open URL` and then `agent-browser read` so all page traffic stays inside the legacy benchmark CloakBrowser.
 - Do not use Web search, browser MCPs, Playwright, Puppeteer, curl, wget, raw HTTP, or any non-agent-browser automation tool.
 - Use the `$agent-browser` skill for agent-browser usage guidance.
-- The agent-browser session and its dedicated CloakBrowser connection are already configured in the environment; do not start, connect, configure, or close another browser."""
+- The agent-browser session and its dedicated legacy benchmark CloakBrowser connection are already configured in the environment; do not start, connect, configure, or close another browser."""
     elif tool == "dev-browser":
         tool_rules = f"""- Use only `dev-browser` for browser interaction.
 - Invoke `dev-browser` with one quoted heredoc per shell command. The heredoc body must contain only the sandboxed JavaScript described by the `$dev-browser` skill.
@@ -258,12 +258,12 @@ def _build_prompt(tool: Tool, session: str, shots_dir: Path, task: str) -> str:
 - Use no substitutions, pipes, extra redirections, or other executables.
 - Do not use Web search, browser MCPs, external Playwright, Puppeteer, curl, wget, raw HTTP, or any non-dev-browser automation tool.
 - Use the `$dev-browser` skill for dev-browser usage guidance.
-- The dev-browser command is already pinned to this task's dedicated CloakBrowser connection; do not start, connect, configure, or close another browser.
+- The dev-browser command is already pinned to this task's dedicated legacy benchmark CloakBrowser connection; do not start, connect, configure, or close another browser.
 - Save screenshots with `await saveScreenshot(await page.screenshot(), "{session}-step_001.png")`, then `{session}-step_002.png`, and so on."""
     elif tool == "libretto":
         tool_rules = """- Use only the Libretto MCP tools `browser_open`, `browser_exec`, `browser_snapshot`, `browser_status`, and `browser_close` for browser interaction.
 - Do not use shell commands, Web Search, other MCP servers or tools, Playwright outside `browser_exec`, Puppeteer, curl, wget, or raw HTTP.
-- The Libretto provider is already pinned to this task's dedicated CloakBrowser; open it with `browser_open` and do not configure another browser.
+- The Libretto provider is already pinned to this task's dedicated legacy benchmark CloakBrowser; open it with `browser_open` and do not configure another browser.
 - Reuse the session ID returned by `browser_open` and close it with `browser_close` when the task is complete."""
     else:
         tool_rules = f"""- Use only `webcmd` raw-browser commands for task execution. Do not use Web Search, browser MCPs, external Playwright, Puppeteer, curl, wget, raw HTTP, adapters, fetch commands, plugins, or any non-Webcmd automation tool.

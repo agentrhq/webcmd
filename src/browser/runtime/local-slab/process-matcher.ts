@@ -6,9 +6,8 @@ export function matchSlabProfileCommand(command: string, userDataDir: string): b
   const executable = args[0];
   const executableParts = executable?.split(/[\\/]/u) ?? [];
   const basename = executableParts.at(-1)?.toLowerCase() ?? '';
-  const parent = executableParts.at(-2)?.toLowerCase() ?? '';
   const hasMacBundle = executableParts.some(part => part.toLowerCase() === 'slab.app');
-  const isSlabApp = (basename === 'slab' || basename === 'slab.exe') && (hasMacBundle || parent === 'slab');
+  const isSlabApp = basename === 'slab' && hasMacBundle;
   const cacheIndex = executableParts.lastIndexOf('.slabbrowser');
   const isSlabCache = cacheIndex >= 0
     && /^chromium-\d+(?:\.\d+)*(?:-pro)?$/u.test(executableParts[cacheIndex + 1] ?? '')

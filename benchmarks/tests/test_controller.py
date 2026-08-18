@@ -355,7 +355,7 @@ def test_agent_browser_prompt_uses_installed_skill_and_dedicated_cloak(tmp_path)
 
     assert "`$agent-browser` skill" in prompt
     assert "only `agent-browser`" in prompt
-    assert "dedicated CloakBrowser" in prompt
+    assert "dedicated legacy benchmark CloakBrowser" in prompt
     assert "Do not use `batch`" in prompt
     assert "one `agent-browser` command per shell invocation" in prompt
     assert "Never pass a URL to `agent-browser read`" in prompt
@@ -374,7 +374,7 @@ def test_dev_browser_prompt_uses_installed_skill_quoted_heredoc_and_task_screens
     assert "`$dev-browser` skill" in prompt
     assert "only `dev-browser`" in prompt
     assert "quoted heredoc" in prompt
-    assert "dedicated CloakBrowser" in prompt
+    assert "dedicated legacy benchmark CloakBrowser" in prompt
     assert "saveScreenshot" in prompt
     assert "session-1-step_001.png" in prompt
     assert "Webcmd" not in prompt
@@ -395,7 +395,7 @@ def test_libretto_prompt_uses_only_native_tools_on_dedicated_cloak(tmp_path):
     ):
         assert f"`{tool}`" in prompt
     assert "browser_connect" not in prompt
-    assert "dedicated CloakBrowser" in prompt
+    assert "dedicated legacy benchmark CloakBrowser" in prompt
     assert "screenshot: true" in prompt
     assert "shell commands" in prompt
     assert "$libretto" not in prompt
