@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { LocalCloakRuntimeProvider } from './provider.js';
+import { LocalSlabRuntimeProvider } from './provider.js';
 import { BrowserRunError } from '../../run/types.js';
 
 const runBrowserProgram = vi.hoisted(() => vi.fn());
@@ -139,7 +139,7 @@ function makeProviderWithFakePage(initialViewport: { width: number; height: numb
     if (command === 'Target.closeTarget') return { success: true };
     return {};
   });
-  const provider = new LocalCloakRuntimeProvider({
+  const provider = new LocalSlabRuntimeProvider({
     baseDir: '/tmp/webcmd-test',
     launchPersistentContext: vi.fn().mockResolvedValue(context),
     // Commands now default to background, which routes a darwin launch through
@@ -149,13 +149,13 @@ function makeProviderWithFakePage(initialViewport: { width: number; height: numb
   return { provider, browser, page: pages[0], pages, context, cdpSession, pageCdpSessions };
 }
 
-describe('LocalCloakRuntimeProvider', () => {
+describe('LocalSlabRuntimeProvider', () => {
   beforeEach(() => {
     runBrowserProgram.mockReset();
   });
 
   it('reports a runtime-named connected status before any profile launches', async () => {
-    const provider = new LocalCloakRuntimeProvider({ baseDir: '/tmp/webcmd-test' });
+    const provider = new LocalSlabRuntimeProvider({ baseDir: '/tmp/webcmd-test' });
     await expect(provider.status()).resolves.toMatchObject({
       runtimeConnected: true,
       runtimeName: 'cloak',
@@ -167,7 +167,7 @@ describe('LocalCloakRuntimeProvider', () => {
   it('discards a temporary Session record after closing it', async () => {
     const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-provider-session-'));
     try {
-      const provider = new LocalCloakRuntimeProvider({ baseDir });
+      const provider = new LocalSlabRuntimeProvider({ baseDir });
       const session = await provider.createSession({
         id: 'create-doctor-session',
         action: 'session-create',
@@ -193,7 +193,7 @@ describe('LocalCloakRuntimeProvider', () => {
   it('does not discard a Session record unless close is forced', async () => {
     const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-provider-session-'));
     try {
-      const provider = new LocalCloakRuntimeProvider({ baseDir });
+      const provider = new LocalSlabRuntimeProvider({ baseDir });
       const session = await provider.createSession({
         id: 'create-user-session',
         action: 'session-create',
@@ -499,7 +499,7 @@ describe('LocalCloakRuntimeProvider', () => {
   it('partitions the local queue by adapter site only for adapter-default Sessions', () => {
     const { provider } = makeProviderWithFakePage();
     const queueKey = (provider as unknown as {
-      commandQueueKey(command: Parameters<LocalCloakRuntimeProvider['dispatch']>[0]): string;
+      commandQueueKey(command: Parameters<LocalSlabRuntimeProvider['dispatch']>[0]): string;
     }).commandQueueKey.bind(provider);
 
     expect(queueKey({
@@ -548,7 +548,7 @@ describe('LocalCloakRuntimeProvider', () => {
   it('keeps adapter-default page-scoped queue keys partitioned by site', async () => {
     const { provider } = makeProviderWithFakePage();
     const queueKey = (provider as unknown as {
-      commandQueueKey(command: Parameters<LocalCloakRuntimeProvider['dispatch']>[0]): string;
+      commandQueueKey(command: Parameters<LocalSlabRuntimeProvider['dispatch']>[0]): string;
     }).commandQueueKey.bind(provider);
     const github = await provider.dispatch({
       id: 'github-nav',

@@ -4,9 +4,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { CloakSessionManager } from '../../src/browser/runtime/local-cloak/session-manager.js';
-import { findExactCloakProfileProcesses } from '../../src/browser/runtime/local-cloak/process-matcher.js';
-import { resolveCloakProfileDir } from '../../src/browser/runtime/local-cloak/profiles.js';
+import { SlabSessionManager } from '../../src/browser/runtime/local-slab/session-manager.js';
+import { findExactCloakProfileProcesses } from '../../src/browser/runtime/local-slab/process-matcher.js';
+import { resolveCloakProfileDir } from '../../src/browser/runtime/local-slab/profiles.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 let server: http.Server;
@@ -46,7 +46,7 @@ describe.skipIf(process.env.WEBCMD_LIVE_CLOAK !== '1')('Cloak Session concurrenc
   it('covers isolated Profiles, explicit Session windows, noopener pages, close survival, and keeper repair', async () => {
     const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-cloak-session-gate-'));
     tempDirs.push(configDir);
-    const manager = new CloakSessionManager({ baseDir: configDir });
+    const manager = new SlabSessionManager({ baseDir: configDir });
     const profileA = `gate-a-${Date.now()}`;
     const profileB = `gate-b-${Date.now()}`;
     const keyA = {
@@ -57,7 +57,7 @@ describe.skipIf(process.env.WEBCMD_LIVE_CLOAK !== '1')('Cloak Session concurrenc
     };
     const keyB = { ...keyA, profileId: profileB, session: 'session_22222222-2222-4222-8222-222222222222', sessionId: 'session_22222222-2222-4222-8222-222222222222' };
     const keyA2 = { ...keyA, session: 'session_33333333-3333-4333-8333-333333333333', sessionId: 'session_33333333-3333-4333-8333-333333333333' };
-    const windowId = async (page: Awaited<ReturnType<CloakSessionManager['getPage']>>['page']) => {
+    const windowId = async (page: Awaited<ReturnType<SlabSessionManager['getPage']>>['page']) => {
       const cdp = await page.context().newCDPSession(page);
       try {
         const target = await cdp.send('Target.getTargetInfo') as { targetInfo: { targetId: string } };
@@ -108,7 +108,7 @@ describe.skipIf(process.env.WEBCMD_LIVE_CLOAK !== '1')('Cloak Session concurrenc
   it('falls back to a Session-owned page when window.open is blocked', async () => {
     const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-cloak-fallback-gate-'));
     tempDirs.push(configDir);
-    const manager = new CloakSessionManager({ baseDir: configDir });
+    const manager = new SlabSessionManager({ baseDir: configDir });
     const key = {
       profileId: `gate-fallback-${Date.now()}`,
       session: 'session_44444444-4444-4444-8444-444444444444',
@@ -138,7 +138,7 @@ describe.skipIf(process.env.WEBCMD_LIVE_CLOAK !== '1')('Cloak Session concurrenc
   it('distinguishes work and work-2 Cloak processes from real ps output', async () => {
     const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-cloak-process-gate-'));
     tempDirs.push(configDir);
-    const manager = new CloakSessionManager({ baseDir: configDir });
+    const manager = new SlabSessionManager({ baseDir: configDir });
     const work = { profileId: 'work', session: 'session_55555555-5555-4555-8555-555555555555', sessionId: 'session_55555555-5555-4555-8555-555555555555', surface: 'browser' as const };
     const work2 = { profileId: 'work-2', session: 'session_66666666-6666-4666-8666-666666666666', sessionId: 'session_66666666-6666-4666-8666-666666666666', surface: 'browser' as const };
     try {

@@ -8,18 +8,18 @@ import {
   resolveCloakBrowserVersion,
 } from './session-manager.js';
 
-export interface LocalCloakRuntimeProviderOptions {
+export interface LocalSlabRuntimeProviderOptions {
   baseDir?: string;
   launchPersistentContext?: LaunchPersistentContext;
   launchBackgroundPersistentContext?: LaunchPersistentContext;
 }
 
-export class LocalCloakRuntimeProvider implements BrowserRuntimeProvider {
+export class LocalSlabRuntimeProvider implements BrowserRuntimeProvider {
   private readonly manager: SlabSessionManager;
   private readonly sessions: LocalBrowserSessionStore;
   private readonly sessionQueues = new Map<string, Promise<void>>();
 
-  constructor(private readonly opts: LocalCloakRuntimeProviderOptions = {}) {
+  constructor(private readonly opts: LocalSlabRuntimeProviderOptions = {}) {
     this.sessions = new LocalBrowserSessionStore({
       baseDir: opts.baseDir,
       isActive: session => this.manager?.hasSession(session.profileId, session.id) ?? false,
