@@ -201,6 +201,7 @@ export class SlabSessionManager {
   private readonly pageTargetIds = new WeakMap<PlaywrightPage, string>();
   private readonly pageTargetIdPromises = new WeakMap<PlaywrightPage, Promise<string>>();
   private readonly pageCdpSessions = new WeakMap<PlaywrightPage, CDPSession>();
+  private readonly pageCdpDetaches = new WeakMap<PlaywrightPage, Promise<void>>();
   private readonly pendingTargetPages = new WeakMap<ProfileRuntime, Map<string, PlaywrightPage>>();
   private readonly targetPageWaiters = new WeakMap<ProfileRuntime, Map<string, {
     resolve(page: PlaywrightPage): void;
@@ -767,7 +768,9 @@ export class SlabSessionManager {
 
   private invalidateProfileRuntime(profileId: string, runtime: ProfileRuntime): void {
     if (this.profiles.get(profileId) === runtime) this.profiles.delete(profileId);
-    void this.releaseRuntime(runtime, false);
+    void this.releaseRuntime(runtime, false).catch(error => {
+      log.warn(`SLAB Profile ${profileId} release failed: ${errorMessage(error)}`);
+    });
     this.cleanupRuntime(runtime);
   }
 
@@ -887,7 +890,7 @@ export class SlabSessionManager {
     runtime.releasePromise = (async () => {
     this.cancelProfileIdle(runtime);
     for (const entry of runtime.targetPages.values()) this.clearIdleTimer(entry);
-    const pageCdps = [...runtime.targetPages.values()].map(entry => this.pageCdpSessions.get(entry.page));
+    const pages = [...runtime.targetPages.values()].map(entry => entry.page);
     try {
       if (closePages) {
         await Promise.all([...runtime.targetPages.values()].map(entry => (
@@ -900,7 +903,7 @@ export class SlabSessionManager {
         runtime.anchorTargetId = undefined;
       }
       await Promise.all([
-        ...pageCdps.map(cdp => cdp?.detach().catch(() => {})),
+        ...pages.map(page => this.detachPageCdp(page)),
         runtime.cdp?.detach().catch(() => {}),
       ]);
       await runtime.attachment.release();
@@ -1185,8 +1188,8 @@ export class SlabSessionManager {
       this.pageCdpSessions.set(page, session);
       page.once('close', () => {
         this.pageTargetIds.delete(page);
+        void this.detachPageCdp(page);
         this.pageCdpSessions.delete(page);
-        void session.detach().catch(() => {});
       });
       return targetInfo.targetId;
     })();
@@ -1310,6 +1313,15 @@ export class SlabSessionManager {
     if (!parkingPage) return;
     runtime.parkingPage = undefined;
     if (!pageIsClosed(parkingPage)) await parkingPage.close().catch(() => {});
+    await this.detachPageCdp(parkingPage);
+  }
+
+  private detachPageCdp(page: PlaywrightPage): Promise<void> {
+    const existing = this.pageCdpDetaches.get(page);
+    if (existing) return existing;
+    const detach = this.pageCdpSessions.get(page)?.detach().catch(() => {}) ?? Promise.resolve();
+    this.pageCdpDetaches.set(page, detach);
+    return detach;
   }
 
   private clearIdleTimer(entry: PageEntry): void {

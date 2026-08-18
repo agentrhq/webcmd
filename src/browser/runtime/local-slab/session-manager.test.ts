@@ -8,6 +8,7 @@ function fakeContext() {
   const listeners = new Map<string, Set<(...args: unknown[]) => void>>();
   const cdpListeners = new Map<string, Set<(...args: any[]) => void>>();
   const pageListeners = new WeakMap<object, Map<string, Set<(...args: unknown[]) => void>>>();
+  const pageCdps: Array<{ detach: ReturnType<typeof vi.fn> }> = [];
   const targetIds = new WeakMap<object, string>();
   const windowIds = new Map<string, number>();
   let targetCounter = 0;
@@ -134,14 +135,18 @@ function fakeContext() {
         allPages.push(created);
         return created;
       }),
-      newCDPSession: vi.fn(async (target: object) => ({
+      newCDPSession: vi.fn(async (target: object) => {
+        const pageCdp = {
         send: vi.fn(async (command: string, params?: { targetId?: string }) => {
           if (command === 'Target.getTargetInfo') return { targetInfo: { targetId: targetIds.get(target) } };
           if (command === 'Browser.getWindowForTarget') return { windowId: windowIds.get(params?.targetId ?? '') };
           return {};
         }),
         detach: vi.fn().mockResolvedValue(undefined),
-      })),
+        };
+        pageCdps.push(pageCdp);
+        return pageCdp;
+      }),
       browser: vi.fn().mockReturnValue({ newBrowserCDPSession: vi.fn().mockResolvedValue(cdp) }),
       cookies: vi.fn().mockResolvedValue([{ name: 'sid', value: '1', domain: 'example.com', path: '/' }]),
       close: vi.fn().mockResolvedValue(undefined),
@@ -158,6 +163,7 @@ function fakeContext() {
       for (const listener of cdpListeners.get(event) ?? []) listener(payload);
     },
     pageListenerCount: (target: object, event: string) => pageListeners.get(target)?.get(event)?.size ?? 0,
+    pageCdps,
     makePage: fakePage,
   };
 }
@@ -221,6 +227,19 @@ describe('SlabSessionManager', () => {
     await vi.waitFor(() => expect(attached.release).toHaveBeenCalledOnce());
   });
 
+  it('handles an invalidated attachment release failure', async () => {
+    const launched = fakeContext();
+    const attached = fakeAttachedProfile(launched);
+    attached.release.mockRejectedValue(new Error('bridge disconnected'));
+    const warn = vi.spyOn(log, 'warn').mockImplementation(() => {});
+    const manager = new SlabSessionManager({ attachProfile: vi.fn().mockResolvedValue(attached) });
+    await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser' });
+
+    launched.context.emit('close');
+
+    await vi.waitFor(() => expect(warn).toHaveBeenCalledWith(expect.stringContaining('bridge disconnected')));
+  });
+
   it('closes keeper resources and detaches CDP before releasing an attachment', async () => {
     const launched = fakeContext();
     const attached = fakeAttachedProfile(launched);
@@ -247,6 +266,25 @@ describe('SlabSessionManager', () => {
 
     expect(lease.page.close).not.toHaveBeenCalled();
     await manager.shutdown();
+    expect(lease.page.close).toHaveBeenCalledOnce();
+  });
+
+  it('waits for a parking-page CDP detach before releasing an attachment', async () => {
+    const launched = fakeContext();
+    const attached = fakeAttachedProfile(launched);
+    attached.browser = {} as typeof attached.browser;
+    vi.spyOn(log, 'warn').mockImplementation(() => {});
+    const manager = new SlabSessionManager({ attachProfile: vi.fn().mockResolvedValue(attached) });
+    const lease = await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser' });
+    await manager.closeSession('default', 'work');
+    let finishDetach!: () => void;
+    launched.pageCdps[0]!.detach.mockImplementation(() => new Promise<void>(resolve => { finishDetach = resolve; }));
+
+    const shutdown = manager.shutdown();
+    await vi.waitFor(() => expect(launched.pageCdps[0]!.detach).toHaveBeenCalled());
+    expect(attached.release).not.toHaveBeenCalled();
+    finishDetach();
+    await shutdown;
     expect(lease.page.close).toHaveBeenCalledOnce();
   });
 
