@@ -42,7 +42,7 @@ afterAll(async () => {
   await browser.close();
 });
 
-describe('local Cloak browser run', () => {
+describe('local SLAB browser run', () => {
   it('returns a bounded redacted snapshot for the current page', async () => {
     await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser' });
     const result = await dispatchSlabAction(manager, command('snapshot-1', 'snapshot'));

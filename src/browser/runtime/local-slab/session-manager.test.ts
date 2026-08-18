@@ -488,7 +488,7 @@ describe('SlabSessionManager', () => {
     const key = { profileId: 'default', session: 'session_a', sessionId: 'session_a', surface: 'browser' as const };
 
     const missing = manager.getPage(key);
-    const missingExpectation = expect(missing).rejects.toThrow('Timed out waiting for Cloak target missing-target');
+    const missingExpectation = expect(missing).rejects.toThrow('Timed out waiting for SLAB target missing-target');
     await vi.waitFor(() => expect(launched.cdp.send).toHaveBeenCalledWith('Target.createTarget', expect.any(Object)));
     await vi.advanceTimersByTimeAsync(1_000);
     await missingExpectation;
@@ -1050,7 +1050,7 @@ describe('SlabSessionManager', () => {
     expect(await manager.listPages({ profileId: 'default', session: 'work' })).toHaveLength(1);
   });
 
-  it('clears a stale Cloak profile owner and retries when Chromium reports an existing session', async () => {
+  it('clears a stale SLAB profile owner and retries when Chromium reports an existing session', async () => {
     const launched = fakeContext();
     const launchPersistentContext = vi.fn()
       .mockRejectedValueOnce(new Error('browserType.launchPersistentContext: Opening in existing browser session.'))
@@ -1244,7 +1244,7 @@ describe('SlabSessionManager', () => {
     expect(await manager.listPages({ profileId: 'default', session: 'site:x:uuid' })).toHaveLength(1);
   });
 
-  it('launches a preferred profile when no Cloak profile is active', async () => {
+  it('launches a preferred profile when no SLAB profile is active', async () => {
     const launched = fakeContext();
     const launchPersistentContext = vi.fn().mockResolvedValue(launched.context);
     const manager = new SlabSessionManager({

@@ -54,8 +54,7 @@ export default defineConfig({
             'tests/e2e/output-formats.test.ts',
             'tests/e2e/plugin-management.test.ts',
             'tests/e2e/article-download-pipeline.test.ts',
-            'tests/e2e/cloak-runtime.test.ts',
-            'tests/e2e/cloak-session-concurrency.test.ts',
+            'tests/e2e/slab-runtime.test.ts',
             'tests/e2e/slab-session-concurrency.test.ts',
             'tests/e2e/browser-run.test.ts',
             // Extended browser tests (20+ sites) — opt-in only:

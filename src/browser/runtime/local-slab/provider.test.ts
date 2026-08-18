@@ -311,7 +311,7 @@ describe('LocalSlabRuntimeProvider', () => {
       .resolves.toMatchObject({ id: 'exec', ok: true, data: { ok: true }, page: nav.page });
   });
 
-  it('runs Playwright-style source against the selected Cloak page', async () => {
+  it('runs Playwright-style source against the selected SLAB page', async () => {
     const { provider, browser, context, page } = makeProviderWithFakePage();
     runBrowserProgram.mockResolvedValue(runOutput('https://example.com/'));
 
@@ -810,14 +810,14 @@ describe('LocalSlabRuntimeProvider', () => {
     expect(page.screenshot).toHaveBeenCalledWith(expect.objectContaining({ fullPage: true }));
   });
 
-  it('requires an explicit Cloak tab target for bind', async () => {
+  it('requires an explicit SLAB tab target for bind', async () => {
     const { provider } = makeProviderWithFakePage();
     await expect(provider.dispatch({ id: 'bind', action: 'bind', session: 'work', surface: 'browser', profileId: 'default' }))
       .resolves.toMatchObject({
         id: 'bind',
         ok: false,
         errorCode: 'invalid_request',
-        error: 'Bind requires --page or --index for a Cloak runtime tab',
+        error: 'Bind requires --page or --index for a SLAB runtime tab',
       });
   });
 
@@ -840,7 +840,7 @@ describe('LocalSlabRuntimeProvider', () => {
     expect(pages[0].bringToFront).not.toHaveBeenCalled();
   });
 
-  it('returns a typed bind error when the requested Cloak tab is missing', async () => {
+  it('returns a typed bind error when the requested SLAB tab is missing', async () => {
     const { provider } = makeProviderWithFakePage();
     await provider.dispatch({ id: 'nav', action: 'navigate', session: 'first', surface: 'browser', url: 'https://first.example/', profileId: 'default' });
 
@@ -849,7 +849,7 @@ describe('LocalSlabRuntimeProvider', () => {
         id: 'bind',
         ok: false,
         errorCode: 'bound_tab_not_found',
-        error: 'Cloak tab not found for bind target',
+        error: 'SLAB tab not found for bind target',
       });
   });
 

@@ -805,7 +805,7 @@ export class SlabSessionManager {
     runtime.useParkingKeeper = true;
     if (runtime.keeperWarningLogged) return;
     runtime.keeperWarningLogged = true;
-    log.warn(`Cloak Profile ${profileId} hidden keeper unavailable; using a parking page: ${errorMessage(error)}`);
+    log.warn(`SLAB Profile ${profileId} hidden keeper unavailable; using a parking page: ${errorMessage(error)}`);
   }
 
   private scheduleProfileIdle(profileId: string, runtime: ProfileRuntime): void {
@@ -950,7 +950,7 @@ export class SlabSessionManager {
     try {
       await opener.evaluate((url) => window.open(url, '_blank', 'noopener,noreferrer'), targetUrl);
     } catch (error) {
-      log.warn(`Cloak window.open failed while creating a Session tab; falling back to a new window: ${errorMessage(error)}`);
+      log.warn(`SLAB window.open failed while creating a Session tab; falling back to a new window: ${errorMessage(error)}`);
     }
     const page = await openedPage;
     if (page) return page;
@@ -1036,7 +1036,7 @@ export class SlabSessionManager {
     return new Promise<PlaywrightPage>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.targetPageWaiters.get(runtime)?.delete(targetId);
-        reject(new Error(`Timed out waiting for Cloak target ${targetId}`));
+        reject(new Error(`Timed out waiting for SLAB target ${targetId}`));
       }, TARGET_PAGE_MATCH_TIMEOUT_MS);
       this.targetPageWaiters.get(runtime)!.set(targetId, { resolve, reject, timer });
     });
@@ -1178,7 +1178,7 @@ export class SlabSessionManager {
     const entry = runtime.targetPages.get(targetId);
     const targetPage = page ?? entry?.page;
     const cdp = runtime.cdp ?? (targetPage ? this.pageCdpSessions.get(targetPage) : undefined);
-    if (!cdp) throw new Error('Cloak page has no CDP session.');
+    if (!cdp) throw new Error('SLAB page has no CDP session.');
     const { windowId } = await cdp.send('Browser.getWindowForTarget', { targetId }) as { windowId: number };
     return windowId;
   }

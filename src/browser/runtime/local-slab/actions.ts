@@ -50,7 +50,7 @@ export function resolveSlabCommandProfileId(manager: SlabSessionManager, command
   if (active.length > 1) {
     throw new SlabActionError(
       'profile_required',
-      `Default Cloak profile "${preferred}" is not active and multiple profiles are running; choose one with --profile.`,
+      `Default SLAB profile "${preferred}" is not active and multiple profiles are running; choose one with --profile.`,
       undefined,
       'Run webcmd profile list, then update the default with webcmd profile use <name> or pass --profile <name>.',
     );
@@ -470,7 +470,7 @@ export async function dispatchSlabAction(manager: SlabSessionManager, command: B
             id: command.id,
             ok: false,
             errorCode: 'invalid_request',
-            error: 'Bind requires --page or --index for a Cloak runtime tab',
+            error: 'Bind requires --page or --index for a SLAB runtime tab',
             errorHint: 'Run `webcmd --session <session-id> browser tab list`, then retry with `webcmd --session <session-id> browser bind --page <page-id>`.',
           };
         }
@@ -494,8 +494,8 @@ export async function dispatchSlabAction(manager: SlabSessionManager, command: B
               id: command.id,
               ok: false,
               errorCode: 'bound_tab_not_found',
-              error: 'Cloak tab not found for bind target',
-              errorHint: 'Run `webcmd --session <session-id> browser tab list` and choose a current Cloak tab id or index.',
+              error: 'SLAB tab not found for bind target',
+              errorHint: 'Run `webcmd --session <session-id> browser tab list` and choose a current SLAB tab id or index.',
             };
           }
           return {

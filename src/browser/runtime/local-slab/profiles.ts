@@ -2,7 +2,7 @@ import path from 'node:path';
 import { CONFIG_DIR_NAME, ENV_PREFIX } from '../../../brand.js';
 import os from 'node:os';
 
-export interface CloakProfileDirOptions {
+export interface SlabProfileDirOptions {
   baseDir?: string;
 }
 
@@ -18,7 +18,7 @@ export function getWebcmdConfigDir(): string {
   return process.env[`${ENV_PREFIX}_CONFIG_DIR`] || path.join(os.homedir(), CONFIG_DIR_NAME);
 }
 
-export function resolveCloakProfileDir(profileId: string, opts: CloakProfileDirOptions = {}): string {
+export function resolveSlabProfileDir(profileId: string, opts: SlabProfileDirOptions = {}): string {
   const safeProfileId = normalizeProfileId(profileId);
-  return path.join(opts.baseDir ?? getWebcmdConfigDir(), 'cloak', 'profiles', safeProfileId);
+  return path.join(opts.baseDir ?? getWebcmdConfigDir(), 'slab', 'profiles', safeProfileId);
 }

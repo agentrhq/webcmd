@@ -5,8 +5,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SlabSessionManager } from '../../src/browser/runtime/local-slab/session-manager.js';
-import { findExactCloakProfileProcesses } from '../../src/browser/runtime/local-slab/process-matcher.js';
-import { resolveCloakProfileDir } from '../../src/browser/runtime/local-slab/profiles.js';
+import { findExactSlabProfileProcesses } from '../../src/browser/runtime/local-slab/process-matcher.js';
+import { resolveSlabProfileDir } from '../../src/browser/runtime/local-slab/profiles.js';
 import { findSlabInstallation } from '../../src/slab/installation.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -146,8 +146,8 @@ describe.skipIf(process.env.WEBCMD_LIVE_SLAB !== '1')('SLAB Session concurrency 
         work2Page.page.goto(`${baseUrl}/work-2`),
       ]);
 
-      const workProcesses = await findExactCloakProfileProcesses(resolveCloakProfileDir('work', { baseDir: configDir }));
-      const work2Processes = await findExactCloakProfileProcesses(resolveCloakProfileDir('work-2', { baseDir: configDir }));
+      const workProcesses = await findExactSlabProfileProcesses(resolveSlabProfileDir('work', { baseDir: configDir }));
+      const work2Processes = await findExactSlabProfileProcesses(resolveSlabProfileDir('work-2', { baseDir: configDir }));
       expect(workProcesses.length).toBeGreaterThan(0);
       expect(work2Processes.length).toBeGreaterThan(0);
       expect(workProcesses.every(pid => !work2Processes.includes(pid))).toBe(true);
