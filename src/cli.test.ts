@@ -149,6 +149,57 @@ describe('plugin update reconciliation reporting', () => {
   });
 });
 
+describe('site-memory and local adapter authoring', () => {
+  it('writes site-memory reads only when --output is requested', async () => {
+    const output = path.join(isolatedCliTestHome, 'memory.json');
+    const program = createProgram('', '');
+    await program.parseAsync(['node', 'webcmd', 'site', 'note', 'add', 'github', '--text', 'Uses GraphQL']);
+    await program.parseAsync(['node', 'webcmd', 'site', 'memory', 'show', 'github', '--output', output]);
+
+    expect(fs.readFileSync(output, 'utf8')).toContain('Uses GraphQL');
+  });
+
+  it('rejects unresolved local adapter source paths', async () => {
+    await expect(createProgram('', '').parseAsync(['node', 'webcmd', 'adapter', 'path', 'missing/search']))
+      .rejects.toThrow(/Adapter source is unavailable/);
+  });
+
+  it('rejects local adapter source writes while directing users to the source path', async () => {
+    const key = 'local-source/search';
+    const source = path.join(isolatedCliTestHome, 'search.js');
+    const output = path.join(isolatedCliTestHome, 'copy.js');
+    fs.writeFileSync(source, 'export default {};');
+    fs.writeFileSync(output, 'export default { updated: true };');
+    getRegistry().set(key, {
+      site: 'local-source', name: 'search', access: 'read', description: 'local source', args: [], source,
+    } as never);
+    try {
+      await expect(createProgram('', '').parseAsync(['node', 'webcmd', 'adapter', 'source', 'get', key, '--output', output]))
+        .rejects.toThrow(`webcmd adapter path ${key}`);
+      await expect(createProgram('', '').parseAsync(['node', 'webcmd', 'adapter', 'source', 'put', key, output]))
+        .rejects.toThrow(`webcmd adapter path ${key}`);
+    } finally {
+      getRegistry().delete(key);
+    }
+  });
+
+  it('rejects a registered adapter whose source was deleted', async () => {
+    const key = 'stale-source/search';
+    const source = path.join(isolatedCliTestHome, 'deleted-source.js');
+    fs.writeFileSync(source, 'export default {};');
+    fs.rmSync(source);
+    getRegistry().set(key, {
+      site: 'stale-source', name: 'search', access: 'read', description: 'stale', args: [], source,
+    } as never);
+    try {
+      await expect(createProgram('', '').parseAsync(['node', 'webcmd', 'adapter', 'path', key]))
+        .rejects.toThrow(/Adapter source is unavailable/);
+    } finally {
+      getRegistry().delete(key);
+    }
+  });
+});
+
 describe('override reporting surfaces', () => {
   const stdoutSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
   let home: string;
@@ -481,7 +532,7 @@ describe('createProgram root help descriptions', () => {
     expect(descriptionFor(program, 'browser')).not.toContain('Browser control');
     expect(descriptionFor(program, 'auth')).toBe('refresh, status');
     expect(descriptionFor(program, 'plugin')).toBe('catalog, create, install, list, search, uninstall, update');
-    expect(descriptionFor(program, 'adapter')).toBe('override, reset, status');
+    expect(descriptionFor(program, 'adapter')).toBe('override, path, reset, source, status');
     expect(descriptionFor(program, 'profile')).toBe('list, rename, use');
     expect(descriptionFor(program, 'daemon')).toBe('restart, status, stop');
     expect(descriptionFor(program, 'external')).toBe('install, list, register');
@@ -508,8 +559,15 @@ describe('createProgram root help descriptions', () => {
   it('keeps legacy local adapters manageable without claiming a bundled baseline', () => {
     const adapter = createProgram('', '').commands.find((command) => command.name() === 'adapter')!;
 
-    expect(adapter.commands.map((command) => command.name())).toEqual(['status', 'reset', 'override']);
+    expect(adapter.commands.map((command) => command.name())).toEqual(['status', 'reset', 'override', 'source', 'path']);
     expect(adapter.helpInformation()).not.toMatch(/official|baseline|eject/i);
+  });
+
+  it('describes local adapter source commands as path lookup, not source mutation', () => {
+    const adapter = createProgram('', '').commands.find((command) => command.name() === 'adapter')!;
+    const source = adapter.commands.find((command) => command.name() === 'source')!;
+
+    expect(source.description()).toBe('Inspect local adapter source paths; hosted mode reads or writes source');
   });
 
   it('renders auth namespace structured help', () => {
@@ -1206,7 +1264,7 @@ name: 'search',
       // applyRootSubcommandSummaries() rewrites .description() to a child-name listing;
       // structured help must surface the original product description via the snapshot.
       expect(data.description).toBe('Manage CLI adapters');
-      expect(data.commands.map((cmd: any) => cmd.name)).toEqual(['override', 'reset', 'status']);
+      expect(data.commands.map((cmd: any) => cmd.name)).toEqual(['override', 'path', 'reset', 'source get', 'source put', 'status']);
       const reset = data.commands.find((cmd: any) => cmd.name === 'reset');
       expect(reset).toMatchObject({
         usage: 'webcmd adapter reset [site] [options]',

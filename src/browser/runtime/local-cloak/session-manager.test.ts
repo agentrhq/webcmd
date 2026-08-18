@@ -438,6 +438,28 @@ describe('CloakSessionManager', () => {
     expect(await manager.findPageById(second.pageId, a)).toBeNull();
   });
 
+  it('closes a Session when its page disappears during the ownership check', async () => {
+    const launched = fakeContext();
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
+    });
+    const key = { profileId: 'default', session: 'session_a', sessionId: 'session_a', surface: 'browser' as const };
+    const lease = await manager.getPage(key);
+    const send = launched.cdp.send.getMockImplementation()!;
+
+    launched.cdp.send.mockImplementation(async (method: string, params?: { targetId?: string }) => {
+      if (method === 'Browser.getWindowForTarget' && params?.targetId === launched.targetIdFor(lease.page)) {
+        await lease.page.close();
+        throw new Error('Protocol error (Browser.getWindowForTarget): No target with given id');
+      }
+      return send(method, params);
+    });
+
+    await expect(manager.closeSession(key.profileId, key.sessionId)).resolves.toBe(1);
+    expect(await manager.listPages(key)).toEqual([]);
+  });
+
   it('does not let another Session bind an owned page moved to an unowned window', async () => {
     const launched = fakeContext();
     const manager = new CloakSessionManager({

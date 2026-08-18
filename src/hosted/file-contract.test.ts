@@ -41,6 +41,13 @@ const INSTAGRAM_MEDIA_CONTENT_TYPES = [
 ];
 
 const EXPECTED_FILE_ARGUMENTS: Record<string, ExpectedFileArgument[]> = {
+  'confluence/create': [{ name: 'file', direction: 'input', pathKind: 'file', multiple: false, required: true }],
+  'confluence/update': [{ name: 'file', direction: 'input', pathKind: 'file', multiple: false, required: true }],
+  'gemini/image': [{ name: 'op', direction: 'output', pathKind: 'directory', multiple: false, required: false }],
+  'geogebra/triangle': [{ name: 'output', direction: 'output', pathKind: 'file', multiple: false, required: false, defaultPath: './geogebra-triangle.png' }],
+  'geogebra/hexagon': [{ name: 'output', direction: 'output', pathKind: 'file', multiple: false, required: false, defaultPath: './geogebra-hexagon.png' }],
+  'grok/export-all': [{ name: 'manifestPath', direction: 'input', pathKind: 'file', multiple: false, required: false, contentTypes: ['application/json'] }],
+  'grok/image': [{ name: 'out', direction: 'output', pathKind: 'directory', multiple: false, required: false, defaultPath: './grok-images' }],
   'chatgpt/image': [{
     name: 'image',
     direction: 'input',
@@ -102,6 +109,12 @@ const EXPECTED_FILE_ARGUMENTS: Record<string, ExpectedFileArgument[]> = {
     contentTypes: ['video/mp4'],
     maxBytes: 250 * MiB,
   }],
+  'instagram/story': [{ name: 'media', direction: 'input', pathKind: 'file', multiple: false, required: false, contentTypes: ['image/jpeg', 'image/png', 'video/mp4'], maxBytes: 262_144_000 }],
+  'instagram/download': [{ name: 'path', direction: 'output', pathKind: 'directory', multiple: false, required: false }],
+  'luma/set-registration-questions': [{ name: 'questions-file', direction: 'input', pathKind: 'file', multiple: false, required: true, contentTypes: ['application/json'] }],
+  'notebooklm/add-source': [{ name: 'file', direction: 'input', pathKind: 'file', multiple: false, required: false }],
+  'paperreview/submit': [{ name: 'pdf', direction: 'input', pathKind: 'file', multiple: false, required: true, contentTypes: ['application/pdf'] }],
+  'pixiv/download': [{ name: 'output', direction: 'output', pathKind: 'directory', multiple: false, required: false }],
   'mercury/reimbursement-draft': [{
     name: 'receipt',
     direction: 'input',
@@ -146,6 +159,31 @@ const EXPECTED_FILE_ARGUMENTS: Record<string, ExpectedFileArgument[]> = {
     contentTypes: IMAGE_CONTENT_TYPES,
     maxBytes: 25 * MiB,
   }],
+  'slock/attachment-upload': [{ name: 'file', direction: 'input', pathKind: 'file', multiple: false, required: true }],
+  'slock/attachment-download': [{ name: 'out', direction: 'output', pathKind: 'file', multiple: false, required: false, defaultPath: './attachment.bin' }],
+  'suno/generate': [{ name: 'op', direction: 'output', pathKind: 'directory', multiple: false, required: false, defaultPath: './suno' }],
+  'suno/download': [{ name: 'op', direction: 'output', pathKind: 'directory', multiple: false, required: false, defaultPath: './suno' }],
+  'twitter/bookmarks': [
+    { name: 'resume-file', direction: 'input-output', pathKind: 'file', multiple: false, required: false, contentTypes: ['application/json'] },
+    { name: 'output-file', direction: 'output', pathKind: 'file', multiple: false, required: false },
+  ],
+  'twitter/likes': [
+    { name: 'resume-file', direction: 'input-output', pathKind: 'file', multiple: false, required: false, contentTypes: ['application/json'] },
+    { name: 'output-file', direction: 'output', pathKind: 'file', multiple: false, required: false },
+  ],
+  'uiverse/preview': [{ name: 'output', direction: 'output', pathKind: 'file', multiple: false, required: false, defaultPath: './uiverse-preview.png' }],
+  'yollomi/upload': [{ name: 'file', direction: 'input', pathKind: 'file', multiple: false, required: true }],
+  'yollomi/background': [{ name: 'output', direction: 'output', pathKind: 'directory', multiple: false, required: false }],
+  'yollomi/edit': [{ name: 'output', direction: 'output', pathKind: 'directory', multiple: false, required: false }],
+  'yollomi/face-swap': [{ name: 'output', direction: 'output', pathKind: 'directory', multiple: false, required: false }],
+  'yollomi/generate': [{ name: 'output', direction: 'output', pathKind: 'directory', multiple: false, required: false }],
+  'yollomi/object-remover': [{ name: 'output', direction: 'output', pathKind: 'directory', multiple: false, required: false }],
+  'yollomi/remove-bg': [{ name: 'output', direction: 'output', pathKind: 'directory', multiple: false, required: false }],
+  'yollomi/restore': [{ name: 'output', direction: 'output', pathKind: 'directory', multiple: false, required: false }],
+  'yollomi/try-on': [{ name: 'output', direction: 'output', pathKind: 'directory', multiple: false, required: false }],
+  'yollomi/upscale': [{ name: 'output', direction: 'output', pathKind: 'directory', multiple: false, required: false }],
+  'yollomi/video': [{ name: 'output', direction: 'output', pathKind: 'directory', multiple: false, required: false }],
+  'youtube/frames': [{ name: 'output', direction: 'output', pathKind: 'directory', multiple: false, required: false, defaultPath: './youtube-frames' }],
 };
 
 function readJson<T>(name: string): T {

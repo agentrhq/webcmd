@@ -1,9 +1,12 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
-import { buildConfigureBody, buildConfigureSidecarPayload, buildConfigureToStoryPhotoPayload, buildConfigureToStoryVideoPayload, deriveInstagramJazoest, derivePrivateApiContextFromCapture, extractInstagramRuntimeInfo, getInstagramFeedNormalizedDimensions, getInstagramStoryNormalizedDimensions, isInstagramFeedAspectRatioAllowed, isInstagramStoryAspectRatioAllowed, publishStoryViaPrivateApi, publishMediaViaPrivateApi, publishImagesViaPrivateApi, readImageAsset, resolveInstagramPrivatePublishConfig, } from '../_shared/private-publish.js';
+import { assertDirectlyUploadableMedia, buildConfigureBody, buildConfigureSidecarPayload, buildConfigureToStoryPhotoPayload, buildConfigureToStoryVideoPayload, deriveInstagramJazoest, derivePrivateApiContextFromCapture, extractInstagramRuntimeInfo, getInstagramFeedNormalizedDimensions, getInstagramStoryNormalizedDimensions, isInstagramFeedAspectRatioAllowed, isInstagramStoryAspectRatioAllowed, publishStoryViaPrivateApi, publishMediaViaPrivateApi, publishImagesViaPrivateApi, readImageAsset, readVideoAsset, resolveInstagramPrivatePublishConfig, } from '../_shared/private-publish.js';
 const tempDirs = [];
+const privatePublishSource = readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../_shared/private-publish.js'), 'utf8');
 function createTempFile(name, bytes) {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-instagram-private-'));
     tempDirs.push(dir);
@@ -11,12 +14,58 @@ function createTempFile(name, bytes) {
     fs.writeFileSync(filePath, bytes);
     return filePath;
 }
+function mp4Box(type, body) {
+    const box = Buffer.alloc(8 + body.length);
+    box.writeUInt32BE(box.length, 0);
+    box.write(type, 4, 'ascii');
+    body.copy(box, 8);
+    return box;
+}
+function createMp4Fixture(name, rotated = false, durationMs = 2000) {
+    const movieHeader = Buffer.alloc(24);
+    movieHeader.writeUInt32BE(1000, 12);
+    movieHeader.writeUInt32BE(durationMs, 16);
+    const trackHeader = Buffer.alloc(84);
+    const matrix = rotated
+        ? [0, 0x00010000, 0, -0x00010000, 0, 0, 0, 0, 0x40000000]
+        : [0x00010000, 0, 0, 0, 0x00010000, 0, 0, 0, 0x40000000];
+    matrix.forEach((value, index) => trackHeader.writeInt32BE(value, 40 + index * 4));
+    trackHeader.writeUInt32BE(1920 * 0x10000, 76);
+    trackHeader.writeUInt32BE(1080 * 0x10000, 80);
+    return createTempFile(name, Buffer.concat([
+        mp4Box('ftyp', Buffer.alloc(8)),
+        mp4Box('moov', Buffer.concat([mp4Box('mvhd', movieHeader), mp4Box('trak', mp4Box('tkhd', trackHeader))])),
+    ]));
+}
 afterAll(() => {
     for (const dir of tempDirs) {
         fs.rmSync(dir, { recursive: true, force: true });
     }
 });
 describe('instagram private publish helpers', () => {
+    it('does not require macOS conversion tools', () => {
+        expect(privatePublishSource).not.toMatch(/spawnSync|\bsips\b|\bswift\b/);
+    });
+    it('requires conversion for unsupported media formats', () => {
+        expect(assertDirectlyUploadableMedia('/tmp/media.jpg')).toBe('/tmp/media.jpg');
+        expect(assertDirectlyUploadableMedia('/tmp/media.png')).toBe('/tmp/media.png');
+        expect(assertDirectlyUploadableMedia('/tmp/media.mp4')).toBe('/tmp/media.mp4');
+        let error;
+        try {
+            assertDirectlyUploadableMedia('/tmp/media.webp');
+        }
+        catch (caught) {
+            error = caught;
+        }
+        expect(error).toMatchObject({
+            code: 'INSTAGRAM_MEDIA_CONVERSION_REQUIRED',
+            message: 'Instagram hosted publishing accepts JPEG, PNG, or MP4; convert this file before upload.',
+        });
+    });
+    it('reads transformed dimensions from rotated MP4 tracks', () => {
+        expect(readVideoAsset(createMp4Fixture('landscape.mp4'))).toMatchObject({ width: 1920, height: 1080, durationMs: 2000 });
+        expect(readVideoAsset(createMp4Fixture('portrait.mp4', true))).toMatchObject({ width: 1080, height: 1920, durationMs: 2000 });
+    });
     it('derives the private API context from captured instagram request headers', () => {
         const entries = [
             {
@@ -213,6 +262,26 @@ describe('instagram private publish helpers', () => {
             width: 1080,
             height: 1440,
         });
+    });
+    it('requires conversion through default preparation for unsupported feed and story image aspect ratios', async () => {
+        const feedImage = createTempFile('feed-needs-padding.png', Buffer.from('89504E470D0A1A0A0000000D49484452000000030000000508060000008D6F26E50000000049454E44AE426082', 'hex'));
+        const storyImage = createTempFile('story-needs-padding.png', Buffer.from('89504E470D0A1A0A0000000D49484452000000030000000308060000008D6F26E50000000049454E44AE426082', 'hex'));
+        const common = {
+            page: {},
+            apiContext: { asbdId: '359341', csrfToken: 'csrf-token', igAppId: '936619743392459', igWwwClaim: 'hmac.claim', instagramAjax: '1036517563', webSessionId: 'abc:def:ghi' },
+            jazoest: '22047',
+        };
+        await expect(publishImagesViaPrivateApi({ ...common, imagePaths: [feedImage], caption: '' })).rejects.toMatchObject({ code: 'INSTAGRAM_MEDIA_CONVERSION_REQUIRED' });
+        await expect(publishStoryViaPrivateApi({ ...common, mediaItem: { type: 'image', filePath: storyImage } })).rejects.toMatchObject({ code: 'INSTAGRAM_MEDIA_CONVERSION_REQUIRED' });
+    });
+    it('requires conversion through default preparation for stories longer than 15 seconds', async () => {
+        const video = createMp4Fixture('story-needs-trimming.mp4', false, 15_001);
+        await expect(publishStoryViaPrivateApi({
+            page: {},
+            mediaItem: { type: 'video', filePath: video },
+            apiContext: { asbdId: '359341', csrfToken: 'csrf-token', igAppId: '936619743392459', igWwwClaim: 'hmac.claim', instagramAjax: '1036517563', webSessionId: 'abc:def:ghi' },
+            jazoest: '22047',
+        })).rejects.toMatchObject({ code: 'INSTAGRAM_MEDIA_CONVERSION_REQUIRED' });
     });
     it('builds the single-photo configure_to_story payload', () => {
         expect(buildConfigureToStoryPhotoPayload({

@@ -237,6 +237,41 @@ describe('webcmd skills content', () => {
     expect(siteReconReference).not.toMatch(/webcmd browser \S+ (?:open|state|click|type|select|find|extract|network|wait|eval)/i);
   });
 
+  it('teaches CLI-based hosted adapter authoring', () => {
+    const author = bundledSkill('webcmd-adapter-author');
+    const adapterTemplate = fs.readFileSync(
+      path.join(process.cwd(), 'skills', 'webcmd-adapter-author', 'references', 'adapter-template.md'),
+      'utf8',
+    );
+    const jsdomFixturePattern = fs.readFileSync(
+      path.join(process.cwd(), 'skills', 'webcmd-adapter-author', 'references', 'jsdom-fixture-pattern.md'),
+      'utf8',
+    );
+
+    expect(author).toContain('webcmd site memory');
+    expect(author).toContain('webcmd adapter source');
+    expect(author).toContain('webcmd browser init');
+    expect(author).toContain('webcmd browser verify');
+    expect(adapterTemplate).toContain('webcmd site fixture get');
+    expect(adapterTemplate).toContain('webcmd site fixture put');
+    expect(adapterTemplate).not.toContain('~/.webcmd/');
+    expect(jsdomFixturePattern).toContain('webcmd site sample add');
+    expect(jsdomFixturePattern).not.toContain('~/.webcmd/');
+  });
+
+  it('distinguishes local adapter path lookup from hosted source reads and writes', () => {
+    const author = bundledSkill('webcmd-adapter-author');
+    const autofix = bundledSkill('webcmd-autofix');
+    const community = fs.readFileSync(path.join(process.cwd(), 'docs', 'publish-community-plugin.mdx'), 'utf8');
+
+    for (const instruction of [author, community]) {
+      expect(instruction).toMatch(/local(?:ly)?[\s\S]{0,180}adapter path[\s\S]{0,180}(?:edit|patch)/i);
+      expect(instruction).toMatch(/hosted[\s\S]{0,180}adapter source get\|put/i);
+    }
+    expect(autofix).toMatch(/adapter path[\s\S]{0,180}patch that file/i);
+    expect(autofix).toMatch(/WebCMD Cloud[\s\S]{0,180}adapter source get[\s\S]{0,180}adapter source put/i);
+  });
+
   it('keeps raw browser and handoff work scoped to explicit Sessions', () => {
     const usage = bundledSkill('webcmd-usage');
     const browser = bundledSkill('webcmd-browser');

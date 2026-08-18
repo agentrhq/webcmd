@@ -11,6 +11,7 @@ import {
 export interface LocalCloakRuntimeProviderOptions {
   baseDir?: string;
   launchPersistentContext?: LaunchPersistentContext;
+  launchBackgroundPersistentContext?: LaunchPersistentContext;
 }
 
 export class LocalCloakRuntimeProvider implements BrowserRuntimeProvider {
@@ -91,7 +92,13 @@ export class LocalCloakRuntimeProvider implements BrowserRuntimeProvider {
     return { closed: closedCount > 0, alreadyIdle: closedCount === 0, session: record.id };
   }
 
-  async dispatch(command: BrowserRuntimeCommand, signal?: AbortSignal): Promise<BrowserRuntimeResult> {
+  async dispatch(rawCommand: BrowserRuntimeCommand, signal?: AbortSignal): Promise<BrowserRuntimeResult> {
+    // Every dispatched command runs in the background unless the caller asked
+    // for a window explicitly, so no command steals focus by default. Session
+    // handoff bypasses dispatch and still foregrounds through foregroundSession.
+    const command: BrowserRuntimeCommand = rawCommand.windowMode
+      ? rawCommand
+      : { ...rawCommand, windowMode: 'background' };
     const key = this.commandQueueKey(command);
     const previous = this.sessionQueues.get(key) ?? Promise.resolve();
     let release!: () => void;

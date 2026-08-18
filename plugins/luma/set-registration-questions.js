@@ -45,7 +45,7 @@ export const setRegistrationQuestionsCommand = cli({
   access: 'write',
   args: [
     { name: 'eventId', type: 'str', required: true, positional: true },
-    { name: 'questions-file', type: 'str', required: true },
+    { name: 'questions-file', type: 'str', required: true, file: { direction: 'input', pathKind: 'file', multiple: false, contentTypes: ['application/json'] } },
     { name: 'mode', type: 'str', choices: ['append', 'replace'], required: true },
     { name: 'confirm', type: 'boolean', default: false },
   ],

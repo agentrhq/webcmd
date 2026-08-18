@@ -1,5 +1,6 @@
 import type { CommandSurfaceMetadata } from '../command-surface.js';
 import type { Arg } from '../registry.js';
+import type { FileArgumentDirection } from './contract.js';
 
 export const HOSTED_SESSION_PROTOCOL_VERSION = 1 as const;
 
@@ -9,7 +10,7 @@ export interface HostedCommandArg extends Arg {}
 
 export interface HostedFileArgument {
   name: string;
-  direction: 'input' | 'output';
+  direction: FileArgumentDirection;
   pathKind: 'file' | 'directory';
   multiple: boolean;
   required: boolean;
@@ -37,6 +38,9 @@ export interface HostedCommand extends CommandSurfaceMetadata {
   domain?: string | null;
   defaultFormat?: string | null;
   freshPage?: boolean;
+  adapterPackageId?: string;
+  sourceFile?: string;
+  modulePath?: string;
 }
 
 export interface HostedManifest {
@@ -77,9 +81,13 @@ export interface HostedBrowserSession {
   lastUsedAt: string;
 }
 
+export interface HostedCreatedBrowserSession extends HostedBrowserSession {
+  liveViewUrl: string;
+}
+
 export interface HostedBrowserSessionResponse {
   ok: true;
-  session: HostedBrowserSession;
+  session: HostedCreatedBrowserSession;
 }
 
 export interface HostedBrowserSessionsResponse {
@@ -95,6 +103,8 @@ export interface HostedBrowserSessionCloseResponse {
   displaced?: { executionId?: string; handoffSite?: string };
 }
 
+export type HostedMarketplaceAvailability = 'hosted' | 'mixed' | 'local-only';
+
 export interface HostedMarketplacePlugin {
   name: string;
   description?: string;
@@ -102,6 +112,8 @@ export interface HostedMarketplacePlugin {
   sourceId: string;
   installSource: string;
   webcmd?: string;
+  availability: HostedMarketplaceAvailability;
+  excludedCommands: string[];
 }
 
 export interface HostedMarketplaceSearchError {
@@ -129,6 +141,21 @@ export interface HostedMarketplaceInstallationRow {
   sourceCommit: string | null;
   installedAt: string;
   updateAvailable: boolean;
+}
+
+export interface HostedSiteMemoryArtifact {
+  path: string;
+  kind: string;
+  contentType: string;
+  sha256: string;
+  byteSize: number;
+  updatedAt: string;
+}
+
+export interface HostedAdapterSourceWriteResponse {
+  packageId: string;
+  storagePath: string;
+  commands: string[];
 }
 
 export interface HostedExecution {
@@ -165,6 +192,7 @@ export interface HostedPrepareExecutionResponse {
   ok: true;
   execution: HostedPreparedExecution;
   fileArguments: HostedFileArgument[];
+  liveViewUrl?: string;
 }
 
 export interface HostedArtifactReceipt {
@@ -183,7 +211,8 @@ export interface HostedArtifactReceipt {
 export interface HostedArtifactReference {
   $webcmdArtifact: {
     id?: string;
-    direction?: 'input' | 'output';
+    inputId?: string;
+    direction?: FileArgumentDirection;
     filename?: string;
     contentType?: string;
   };

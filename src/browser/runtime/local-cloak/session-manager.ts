@@ -645,7 +645,13 @@ export class CloakSessionManager {
     const sessionRuntime = runtime.sessions.get(session);
     if (!sessionRuntime) return 0;
     const entries = this.openEntries(sessionRuntime);
-    await Promise.all(entries.map(([, entry]) => this.assertOwnedWindow(runtime, session, entry)));
+    await Promise.all(entries.map(async ([, entry]) => {
+      try {
+        await this.assertOwnedWindow(runtime, session, entry);
+      } catch (error) {
+        if (!pageIsClosed(entry.page)) throw error;
+      }
+    }));
     for (const [, entry] of entries) await this.removeEntry(runtime, sessionRuntime, entry, true);
     if (entries.length > 0) runtime.lastSeenAt = Date.now();
     return entries.length;

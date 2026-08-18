@@ -16,7 +16,7 @@ cli({
     args: [
         { name: 'image', positional: true, required: true, help: 'Image URL' },
         { name: 'mask', positional: true, required: true, help: 'Mask image URL (white = area to remove)' },
-        { name: 'output', default: './yollomi-output', help: 'Output directory' },
+        { name: 'output', default: './yollomi-output', help: 'Output directory', file: { direction: 'output', pathKind: 'directory', multiple: false } },
         { name: 'no-download', type: 'boolean', default: false, help: 'Only show URL' },
     ],
     columns: ['status', 'file', 'size', 'url'],

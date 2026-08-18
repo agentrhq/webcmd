@@ -1,8 +1,6 @@
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { CommandExecutionError } from '@agentrhq/webcmd/errors';
 import { instagramPrivateApiFetch } from './protocol-capture.js';
 import { buildReadInstagramRuntimeInfoJs, } from './runtime-info.js';
@@ -11,14 +9,12 @@ const INSTAGRAM_MIN_FEED_ASPECT_RATIO = 4 / 5;
 const INSTAGRAM_MAX_FEED_ASPECT_RATIO = 1.91;
 const INSTAGRAM_MIN_STORY_ASPECT_RATIO = 9 / 16;
 const INSTAGRAM_MAX_STORY_ASPECT_RATIO = 3 / 4;
-const INSTAGRAM_PRIVATE_PAD_COLOR = 'FFFFFF';
 const INSTAGRAM_HOME_URL = 'https://www.instagram.com/';
 const INSTAGRAM_PRIVATE_CAPTURE_PATTERN = '/api/v1/|/graphql/';
 const INSTAGRAM_PRIVATE_CONFIG_RETRY_BUDGET = 2;
 const INSTAGRAM_PRIVATE_UPLOAD_RETRY_BUDGET = 2;
 const INSTAGRAM_PRIVATE_SIDECAR_TRANSCODE_ATTEMPTS = 20;
 const INSTAGRAM_PRIVATE_SIDECAR_TRANSCODE_WAIT_MS = 2000;
-const INSTAGRAM_MAX_STORY_VIDEO_DURATION_MS = 15_000;
 const INSTAGRAM_STORY_SIG_KEY = '19ce5f445dbfd9d29c59dc2a78c616a7fc090a8e018b9267bc4240a30244c53b';
 const INSTAGRAM_STORY_SIG_KEY_VERSION = '4';
 const INSTAGRAM_STORY_DEVICE = {
@@ -189,6 +185,18 @@ function inferMimeType(filePath) {
             return 'image/jpeg';
     }
 }
+export function assertDirectlyUploadableMedia(file) {
+    const extension = path.extname(file).toLowerCase();
+    if (!['.jpg', '.jpeg', '.png', '.mp4'].includes(extension)) {
+        throw Object.assign(new Error('Instagram hosted publishing accepts JPEG, PNG, or MP4; convert this file before upload.'), {
+            code: 'INSTAGRAM_MEDIA_CONVERSION_REQUIRED',
+        });
+    }
+    return file;
+}
+function conversionRequired(message) {
+    return Object.assign(new Error(message), { code: 'INSTAGRAM_MEDIA_CONVERSION_REQUIRED' });
+}
 function readPngDimensions(bytes) {
     if (bytes.length < 24)
         return null;
@@ -325,249 +333,82 @@ export function getInstagramStoryNormalizedDimensions(width, height) {
     }
     return null;
 }
-function buildPrivateNormalizedImagePath(filePath) {
-    const parsed = path.parse(filePath);
-    return path.join(os.tmpdir(), `webcmd-instagram-private-${parsed.name}-${crypto.randomUUID()}${parsed.ext || '.png'}`);
-}
 export function prepareImageAssetForPrivateUpload(filePath) {
-    const asset = readImageAsset(filePath);
-    const normalizedDimensions = getInstagramFeedNormalizedDimensions(asset.width, asset.height);
-    if (!normalizedDimensions) {
-        return asset;
+    const asset = readImageAsset(assertDirectlyUploadableMedia(filePath));
+    if (!isInstagramFeedAspectRatioAllowed(asset.width, asset.height)) {
+        throw conversionRequired(`Instagram private publish cannot pad ${asset.fileName}; convert it to a ${INSTAGRAM_MIN_FEED_ASPECT_RATIO.toFixed(2)}-${INSTAGRAM_MAX_FEED_ASPECT_RATIO.toFixed(2)} aspect ratio before upload.`);
     }
-    if (process.platform !== 'darwin') {
-        throw new CommandExecutionError(`Instagram private publish does not support auto-normalizing ${asset.fileName} on ${process.platform}`, `Use images within ${INSTAGRAM_MIN_FEED_ASPECT_RATIO.toFixed(2)}-${INSTAGRAM_MAX_FEED_ASPECT_RATIO.toFixed(2)} aspect ratio, or use the UI route`);
-    }
-    const outputPath = buildPrivateNormalizedImagePath(filePath);
-    const result = spawnSync('sips', [
-        '--padToHeightWidth',
-        String(normalizedDimensions.height),
-        String(normalizedDimensions.width),
-        '--padColor',
-        INSTAGRAM_PRIVATE_PAD_COLOR,
-        filePath,
-        '--out',
-        outputPath,
-    ], {
-        encoding: 'utf8',
-    });
-    if (result.error || result.status !== 0 || !fs.existsSync(outputPath)) {
-        const detail = [result.error?.message, result.stderr, result.stdout]
-            .map((value) => String(value || '').trim())
-            .filter(Boolean)
-            .join(' ');
-        throw new CommandExecutionError(`Instagram private publish failed to normalize ${asset.fileName}`, detail || 'sips padToHeightWidth failed');
-    }
-    return {
-        ...readImageAsset(outputPath),
-        cleanupPath: outputPath,
-    };
+    return asset;
 }
 export function prepareImageAssetForPrivateStoryUpload(filePath) {
-    const asset = readImageAsset(filePath);
-    const normalizedDimensions = getInstagramStoryNormalizedDimensions(asset.width, asset.height);
-    if (!normalizedDimensions) {
-        return asset;
+    const asset = readImageAsset(assertDirectlyUploadableMedia(filePath));
+    if (!isInstagramStoryAspectRatioAllowed(asset.width, asset.height)) {
+        throw conversionRequired(`Instagram private story publish cannot pad ${asset.fileName}; convert it to a ${INSTAGRAM_MIN_STORY_ASPECT_RATIO.toFixed(2)}-${INSTAGRAM_MAX_STORY_ASPECT_RATIO.toFixed(2)} aspect ratio before upload.`);
     }
-    if (process.platform !== 'darwin') {
-        throw new CommandExecutionError(`Instagram private story publish does not support auto-normalizing ${asset.fileName} on ${process.platform}`, `Use images within ${INSTAGRAM_MIN_STORY_ASPECT_RATIO.toFixed(2)}-${INSTAGRAM_MAX_STORY_ASPECT_RATIO.toFixed(2)} aspect ratio, or use the UI route`);
-    }
-    const outputPath = buildPrivateNormalizedImagePath(filePath);
-    const result = spawnSync('sips', [
-        '--padToHeightWidth',
-        String(normalizedDimensions.height),
-        String(normalizedDimensions.width),
-        '--padColor',
-        INSTAGRAM_PRIVATE_PAD_COLOR,
-        filePath,
-        '--out',
-        outputPath,
-    ], {
-        encoding: 'utf8',
-    });
-    if (result.error || result.status !== 0 || !fs.existsSync(outputPath)) {
-        const detail = [result.error?.message, result.stderr, result.stdout]
-            .map((value) => String(value || '').trim())
-            .filter(Boolean)
-            .join(' ');
-        throw new CommandExecutionError(`Instagram private story publish failed to normalize ${asset.fileName}`, detail || 'sips padToHeightWidth failed');
-    }
-    return {
-        ...readImageAsset(outputPath),
-        cleanupPath: outputPath,
-    };
+    return asset;
 }
-function runSwiftJsonScript(script, args, stage) {
-    const scriptPath = path.join(os.tmpdir(), `webcmd-instagram-${crypto.randomUUID()}.swift`);
-    fs.writeFileSync(scriptPath, script);
-    try {
-        const result = spawnSync('swift', [scriptPath, ...args], {
-            encoding: 'utf8',
-        });
-        if (result.error || result.status !== 0) {
-            const detail = [result.error?.message, result.stderr, result.stdout]
-                .map((value) => String(value || '').trim())
-                .filter(Boolean)
-                .join(' ');
-            throw new CommandExecutionError(`Instagram private publish failed to ${stage}`, detail || 'swift helper failed');
+function readMp4Metadata(bytes, filePath) {
+    let width = 0;
+    let height = 0;
+    let durationMs = 0;
+    const scan = (start, end) => {
+        for (let offset = start; offset + 8 <= end;) {
+            const size = bytes.readUInt32BE(offset);
+            const boxEnd = size === 0 ? end : offset + size;
+            if (size < 8 || boxEnd > end)
+                return;
+            const type = bytes.subarray(offset + 4, offset + 8).toString('ascii');
+            const body = offset + 8;
+            if (type === 'mvhd' && body + 24 <= boxEnd) {
+                const version = bytes[body];
+                const timescaleOffset = body + (version === 1 ? 20 : 12);
+                const durationOffset = timescaleOffset + 4;
+                const timescale = bytes.readUInt32BE(timescaleOffset);
+                const duration = version === 1
+                    ? Number(bytes.readBigUInt64BE(durationOffset))
+                    : bytes.readUInt32BE(durationOffset);
+                durationMs = timescale ? Math.round(duration * 1000 / timescale) : 0;
+            }
+            if (type === 'tkhd' && boxEnd >= body + 8) {
+                const trackWidth = bytes.readUInt32BE(boxEnd - 8) >>> 16;
+                const trackHeight = bytes.readUInt32BE(boxEnd - 4) >>> 16;
+                if (!width && trackWidth && trackHeight) {
+                    const matrixOffset = body + 40;
+                    const rotated = matrixOffset + 16 <= boxEnd
+                        && (bytes.readInt32BE(matrixOffset + 4) !== 0 || bytes.readInt32BE(matrixOffset + 12) !== 0);
+                    width = rotated ? trackHeight : trackWidth;
+                    height = rotated ? trackWidth : trackHeight;
+                }
+            }
+            if (['moov', 'trak', 'mdia', 'minf', 'stbl'].includes(type))
+                scan(body, boxEnd);
+            offset = boxEnd;
         }
-        return JSON.parse(String(result.stdout || '{}'));
-    }
-    catch (error) {
-        if (error instanceof CommandExecutionError)
-            throw error;
-        throw new CommandExecutionError(`Instagram private publish failed to ${stage}`, error instanceof Error ? error.message : String(error));
-    }
-    finally {
-        fs.rmSync(scriptPath, { force: true });
-    }
-}
-function readVideoMetadata(filePath) {
-    if (process.platform !== 'darwin') {
-        throw new CommandExecutionError(`Instagram private mixed-media publish does not support reading video metadata on ${process.platform}`, 'Use macOS for private mixed-media publishing, or rely on the UI fallback');
-    }
-    const metadata = runSwiftJsonScript(`
-import AVFoundation
-import Foundation
-
-let path = CommandLine.arguments[1]
-let url = URL(fileURLWithPath: path)
-let asset = AVURLAsset(url: url)
-guard let track = asset.tracks(withMediaType: .video).first else {
-  fputs("{\\"error\\":\\"missing-video-track\\"}", stderr)
-  exit(1)
-}
-let transformed = track.naturalSize.applying(track.preferredTransform)
-let width = Int(abs(transformed.width.rounded()))
-let height = Int(abs(transformed.height.rounded()))
-let durationMs = Int((CMTimeGetSeconds(asset.duration) * 1000.0).rounded())
-let payload: [String: Int] = [
-  "width": width,
-  "height": height,
-  "durationMs": durationMs,
-]
-let data = try JSONSerialization.data(withJSONObject: payload, options: [])
-FileHandle.standardOutput.write(data)
-`, [filePath], 'read video metadata');
-    if (!metadata.width || !metadata.height || !metadata.durationMs) {
-        throw new CommandExecutionError(`Instagram private publish failed to read video metadata for ${filePath}`);
-    }
-    return {
-        width: metadata.width,
-        height: metadata.height,
-        durationMs: metadata.durationMs,
     };
-}
-function buildPrivateVideoCoverPath(filePath) {
-    const parsed = path.parse(filePath);
-    return path.join(os.tmpdir(), `webcmd-instagram-private-video-cover-${parsed.name}-${crypto.randomUUID()}.jpg`);
-}
-function buildPrivateStoryVideoPath(filePath) {
-    const parsed = path.parse(filePath);
-    return path.join(os.tmpdir(), `webcmd-instagram-story-video-${parsed.name}-${crypto.randomUUID()}${parsed.ext || '.mp4'}`);
-}
-function generateVideoCoverImage(filePath) {
-    if (process.platform !== 'darwin') {
-        throw new CommandExecutionError(`Instagram private mixed-media publish does not support generating video covers on ${process.platform}`, 'Use macOS for private mixed-media publishing, or rely on the UI fallback');
-    }
-    const outputPath = buildPrivateVideoCoverPath(filePath);
-    runSwiftJsonScript(`
-import AVFoundation
-import AppKit
-import Foundation
-
-let inputPath = CommandLine.arguments[1]
-let outputPath = CommandLine.arguments[2]
-let asset = AVURLAsset(url: URL(fileURLWithPath: inputPath))
-let generator = AVAssetImageGenerator(asset: asset)
-generator.appliesPreferredTrackTransform = true
-let image = try generator.copyCGImage(at: CMTime(seconds: 0, preferredTimescale: 600), actualTime: nil)
-let rep = NSBitmapImageRep(cgImage: image)
-guard let data = rep.representation(using: .jpeg, properties: [.compressionFactor: 0.9]) else {
-  fputs("{\\"error\\":\\"jpeg-encode-failed\\"}", stderr)
-  exit(1)
-}
-try data.write(to: URL(fileURLWithPath: outputPath))
-let payload = ["ok": true]
-let json = try JSONSerialization.data(withJSONObject: payload, options: [])
-FileHandle.standardOutput.write(json)
-`, [filePath, outputPath], 'generate video cover');
-    return {
-        ...readImageAsset(outputPath),
-        cleanupPath: outputPath,
-    };
+    scan(0, bytes.length);
+    if (!width || !height || !durationMs)
+        throw new CommandExecutionError(`Failed to read MP4 metadata for ${filePath}`);
+    return { width, height, durationMs };
 }
 export function readVideoAsset(filePath) {
-    const bytes = fs.readFileSync(filePath);
-    const metadata = readVideoMetadata(filePath);
-    const coverImage = generateVideoCoverImage(filePath);
+    const bytes = fs.readFileSync(assertDirectlyUploadableMedia(filePath));
+    const metadata = readMp4Metadata(bytes, filePath);
     return {
         filePath,
         fileName: path.basename(filePath),
         mimeType: 'video/mp4',
-        width: metadata.width,
-        height: metadata.height,
-        durationMs: metadata.durationMs,
+        ...metadata,
         byteLength: bytes.length,
         bytes,
-        coverImage,
-        cleanupPaths: coverImage.cleanupPath ? [coverImage.cleanupPath] : [],
+        cleanupPaths: [],
     };
-}
-function trimVideoForInstagramStory(filePath, maxDurationMs) {
-    if (process.platform !== 'darwin') {
-        throw new CommandExecutionError(`Instagram private story publish does not support trimming long videos on ${process.platform}`, 'Use macOS for private story video publishing, or trim the video to 15 seconds first');
-    }
-    const outputPath = buildPrivateStoryVideoPath(filePath);
-    runSwiftJsonScript(`
-import AVFoundation
-import Foundation
-
-let inputPath = CommandLine.arguments[1]
-let outputPath = CommandLine.arguments[2]
-let durationMs = Int(CommandLine.arguments[3]) ?? 15000
-let asset = AVURLAsset(url: URL(fileURLWithPath: inputPath))
-guard let exportSession = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetHighestQuality) else {
-  fputs("{\\"error\\":\\"missing-export-session\\"}", stderr)
-  exit(1)
-}
-exportSession.outputURL = URL(fileURLWithPath: outputPath)
-exportSession.outputFileType = .mp4
-exportSession.shouldOptimizeForNetworkUse = true
-exportSession.timeRange = CMTimeRange(
-  start: .zero,
-  duration: CMTime(seconds: Double(durationMs) / 1000.0, preferredTimescale: 600)
-)
-let semaphore = DispatchSemaphore(value: 0)
-exportSession.exportAsynchronously {
-  semaphore.signal()
-}
-semaphore.wait()
-if exportSession.status != .completed {
-  let message = exportSession.error?.localizedDescription ?? "export-failed"
-  fputs(message, stderr)
-  exit(1)
-}
-let payload = ["ok": true]
-let json = try JSONSerialization.data(withJSONObject: payload, options: [])
-FileHandle.standardOutput.write(json)
-`, [filePath, outputPath, String(maxDurationMs)], 'trim story video');
-    return outputPath;
 }
 function prepareVideoAssetForPrivateStoryUpload(filePath) {
     const asset = readVideoAsset(filePath);
-    if (asset.durationMs <= INSTAGRAM_MAX_STORY_VIDEO_DURATION_MS) {
-        return asset;
+    if (asset.durationMs > 15_000) {
+        throw conversionRequired(`Instagram private story publish cannot trim ${asset.fileName}; trim it to 15 seconds or less before upload.`);
     }
-    const trimmedPath = trimVideoForInstagramStory(filePath, INSTAGRAM_MAX_STORY_VIDEO_DURATION_MS);
-    const trimmedAsset = readVideoAsset(trimmedPath);
-    return {
-        ...trimmedAsset,
-        cleanupPaths: [
-            ...(trimmedAsset.cleanupPaths || []),
-            trimmedPath,
-        ],
-    };
+    return asset;
 }
 function toUnixSeconds(now) {
     const value = now();
@@ -794,7 +635,7 @@ function cleanupPreparedMediaAssets(assets) {
         for (const cleanupPath of prepared.asset.cleanupPaths || []) {
             fs.rmSync(cleanupPath, { force: true });
         }
-        if (prepared.asset.coverImage.cleanupPath) {
+        if (prepared.asset.coverImage?.cleanupPath) {
             fs.rmSync(prepared.asset.coverImage.cleanupPath, { force: true });
         }
     }
@@ -823,6 +664,8 @@ async function uploadPreparedMediaAsset(fetcher, prepared, uploadId, context, mo
     if (String(videoJson?.status || '') !== 'ok') {
         throw new CommandExecutionError(`Instagram private publish video upload failed for ${prepared.asset.fileName}`);
     }
+    if (!prepared.asset.coverImage)
+        return;
     const coverResponse = await fetchPrivateUploadWithRetry(fetcher, `https://i.instagram.com/rupload_igphoto/fb_uploader_${uploadId}`, {
         method: 'POST',
         headers: buildVideoCoverRuploadHeaders(prepared.asset, uploadId, context),
@@ -1002,14 +845,16 @@ export async function publishStoryViaPrivateApi(input) {
                 uploadId,
             };
         }
-        await parseJsonResponse(await fetcher('https://i.instagram.com/api/v1/media/configure_to_story/', {
-            method: 'POST',
-            headers: {
-                ...buildPrivateApiHeaders(input.apiContext),
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: buildSignedStoryPhotoBody(prepared.asset.width, prepared.asset.height),
-        }), 'configure_to_story cover');
+        if (prepared.asset.coverImage) {
+            await parseJsonResponse(await fetcher('https://i.instagram.com/api/v1/media/configure_to_story/', {
+                method: 'POST',
+                headers: {
+                    ...buildPrivateApiHeaders(input.apiContext),
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: buildSignedStoryPhotoBody(prepared.asset.width, prepared.asset.height),
+            }), 'configure_to_story cover');
+        }
         const response = await fetcher('https://i.instagram.com/api/v1/media/configure_to_story/?video=1', {
             method: 'POST',
             headers: {

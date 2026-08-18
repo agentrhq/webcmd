@@ -44,7 +44,7 @@ import { daemonRestart, daemonStatus, daemonStop } from './commands/daemon.js';
 import { isVerbose, log } from './logger.js';
 import { BrowserCommandError, listExistingBrowserTabs, releaseSiteSessionLease, sendCommand } from './browser/daemon-client.js';
 import { fetchDaemonStatus } from './browser/daemon-transport.js';
-import { aliasForContextId, loadProfileConfig, profileRouteParams, renameProfile, resolveProfileSelection, setDefaultProfile, type ProfileSelection } from './browser/profile.js';
+import { aliasForContextId, loadProfileConfig, profileListRows, profileRouteParams, renameProfile, resolveProfileSelection, setDefaultProfile, type ProfileSelection } from './browser/profile.js';
 import { formatDaemonVersion, isDaemonStale } from './browser/daemon-version.js';
 import { DEFAULT_BROWSER_CONNECT_TIMEOUT } from './browser/config.js';
 import { CLI_COMMAND, PACKAGE_NAME } from './brand.js';
@@ -59,6 +59,8 @@ import { BrowserRunError } from './browser/run/types.js';
 import { classifyCommandOrigin, formatCommandOrigin } from './command-origin.js';
 import { readOverrideRecords, removeOverrideRecords } from './override-provenance.js';
 import { clearDaemonRunContext, generateRunId, isUnknownOutcomeError, runWithDaemonRunContext } from './session-lease.js';
+import { createLocalSiteMemoryBackend, registerSiteCommands } from './site-memory/commands.js';
+import { resolveAdapterSourcePath } from './adapter-source.js';
 
 const CLI_FILE = fileURLToPath(import.meta.url);
 const FOLLOW_POLL_MS = 1_000;
@@ -619,6 +621,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
     .name('webcmd')
     .description('Make any website your CLI. Zero setup. AI-powered.');
   configureRootCommandSurface(program);
+  registerSiteCommands(program, createLocalSiteMemoryBackend());
 
   // ── Built-in: list ────────────────────────────────────────────────────────
 
@@ -1746,6 +1749,27 @@ cli({
     .argument('<command>', 'Command to override, as <site>/<command>')
     .action(handleAdapterOverride);
 
+  const localAdapterPath = (commandKey: string): string => {
+    const [site, command, extra] = commandKey.split('/');
+    if (!site || !command || extra || site === '.' || site === '..' || command === '.' || command === '..' || site.includes('\\') || command.includes('\\')) {
+      throw new ArgumentError('Adapter command must use site/command format.');
+    }
+    const registered = getRegistry().get(`${site}/${command}`) as import('./registry.js').InternalCliCommand | undefined;
+    const source = registered && resolveAdapterSourcePath(registered);
+    if (!source) throw new ArgumentError(`Adapter source is unavailable for ${commandKey}.`);
+    return source;
+  };
+  const reportLocalAdapterPath = (commandKey: string): void => console.log(localAdapterPath(commandKey));
+  const adapterSourceCmd = adapterCmd.command('source').description('Inspect local adapter source paths; hosted mode reads or writes source');
+  adapterSourceCmd.command('get').description('Print local source path; --output is hosted-only').argument('<command>').option('-o, --output <path>').action((commandKey: string, options: { output?: string }) => {
+    if (options.output) throw new ArgumentError(`Local adapter source get does not support --output. Use webcmd adapter path ${commandKey} and edit that file.`);
+    reportLocalAdapterPath(commandKey);
+  });
+  adapterSourceCmd.command('put').description('Hosted-only source write; local users edit the adapter path').argument('<command>').argument('<path>').action((commandKey: string) => {
+    throw new ArgumentError(`Local adapter source put is unavailable. Use webcmd adapter path ${commandKey} and edit that file.`);
+  });
+  adapterCmd.command('path').argument('<command>').action((commandKey: string) => reportLocalAdapterPath(commandKey));
+
   // ── Built-in: browser profile selection ──────────────────────────────────
   const profileCmd = program.command('profile').description('Manage webcmd browser runtime profiles');
   // Snapshot before applyRootSubcommandSummaries() rewrites .description() to a child-name listing.
@@ -1754,10 +1778,41 @@ cli({
   profileCmd
     .command('list')
     .description('List Chrome and Chromium profiles available through the Cloak runtime')
-    .action(async () => {
+    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table')
+    .action(async (opts: { format?: string }, command: Command) => {
+      const fmt = resolveOutputFormat(opts.format);
+      if (fmt === null) return;
       const status = await fetchDaemonStatus();
       const config = loadProfileConfig();
       const profiles = status?.profiles ?? [];
+      const daemonUsable = Boolean(status)
+        && !isDaemonStale(status!, PKG_VERSION)
+        && Array.isArray(status!.profiles);
+      if (fmt !== 'table') {
+        // An empty list and an unreadable runtime are different facts. Emitting `[]` for a
+        // stale or absent daemon reads as "no profiles exist" and sends callers looking for
+        // profile state elsewhere, so structured mode fails loudly instead.
+        if (!daemonUsable) {
+          const error = new CliError(
+            'DAEMON_UNAVAILABLE',
+            status
+              ? `Daemon ${formatDaemonVersion(status)} is stale for CLI v${PKG_VERSION}; profile list is incomplete.`
+              : 'Daemon is not running; profile list is incomplete.',
+            status ? 'Run: webcmd daemon restart' : 'Run webcmd doctor after opening Chrome.',
+          );
+          console.error(`Error: ${error.message}`);
+          console.error(`Hint: ${error.hint}`);
+          process.exitCode = error.exitCode;
+          return;
+        }
+        // Saved-but-disconnected profiles are included: they exist, they are just not live.
+        await renderOutput(profileListRows(config, profiles), {
+          fmt,
+          fmtExplicit: command.getOptionValueSource('format') === 'cli',
+          columns: ['contextId', 'alias', 'default', 'connected', 'runtimeVersion'],
+        });
+        return;
+      }
       if (!status) {
         console.log('Daemon is not running. Run webcmd doctor after opening Chrome.');
         return;

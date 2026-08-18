@@ -47,6 +47,7 @@ describe('launchDarwinBackgroundPersistentContext', () => {
       '--password-store=basic',
       '--use-mock-keychain',
       '--disable-popup-blocking',
+      '--disable-features=DestroyProfileOnBrowserClose',
       '--user-data-dir=/tmp/cloak profile',
       '--remote-debugging-address=127.0.0.1',
       '--remote-debugging-port=0',

@@ -24,5 +24,5 @@ export function resolveAdapterSourcePath(cmd: InternalCliCommand): string | unde
     if (fs.existsSync(candidate)) return candidate;
   }
 
-  return candidates[0];
+  return undefined;
 }

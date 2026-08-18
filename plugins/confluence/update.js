@@ -12,7 +12,7 @@ cli({
     browser: false,
     args: [
         { name: 'id', positional: true, required: true, help: 'Confluence page id' },
-        { name: 'file', type: 'string', required: true, help: 'Markdown file path' },
+        { name: 'file', type: 'string', required: true, help: 'Markdown file path', file: { direction: 'input', pathKind: 'file', multiple: false } },
         { name: 'title', type: 'string', help: 'Optional replacement title; defaults to current title' },
         { name: 'version-message', type: 'string', help: 'Confluence version message' },
         { name: 'representation', type: 'string', default: 'markdown', choices: ['markdown', 'storage'], help: 'Input file format' },

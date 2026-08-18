@@ -1,4 +1,5 @@
 import { InvalidArgumentError } from 'commander';
+import { TRACE_MODES } from '../command-surface.js';
 import type {
   HostedArgumentContract,
   HostedBrowserCommandContract,
@@ -60,6 +61,20 @@ function positiveIntegerParser(optionName: string): (value: string) => number {
   };
 }
 
+function traceModeParser(value: string): string {
+  if (TRACE_MODES.includes(value as (typeof TRACE_MODES)[number])) return value;
+  throw new InvalidArgumentError(`--trace must be one of: ${TRACE_MODES.join(', ')} (got "${value}")`);
+}
+
+const adapterNamePositional: HostedArgumentContract = {
+  name: 'name',
+  type: 'string',
+  description: 'Adapter name in site/command format',
+  positional: true,
+  required: true,
+  variadic: false,
+};
+
 /** Exact local Commander flags for every catalogued browser option. */
 export function browserOptionFlags(option: HostedArgumentContract, commandPath?: string): string {
   const longName = option.name.replace(/[A-Z]/g, character => `-${character.toLowerCase()}`);
@@ -69,7 +84,10 @@ export function browserOptionFlags(option: HostedArgumentContract, commandPath?:
       : option.name === 'timeout' && commandPath === 'run' ? 'seconds'
         : option.name === 'maxOutput' ? 'characters'
           : option.name === 'snapshotMode' ? 'mode'
-          : option.name;
+          : option.name === 'seedArgs' ? 'value'
+            : option.name === 'trace' ? 'mode'
+              : option.name === 'maxTopLevelKeys' ? 'n'
+                : option.name;
   return `--${longName} <${valueName}>`;
 }
 
@@ -87,15 +105,22 @@ export function browserOptionValueParser(
   }
   if (optionName === 'snapshotMode' && commandPath === 'run') return runSnapshotModeParser;
   if (optionName === 'snapshotMode' && commandPath === 'snapshot') return snapshotModeParser;
+  if (commandPath === 'verify' && optionName === 'trace') return traceModeParser;
   if ((commandPath === 'run' && ['timeout', 'maxOutput'].includes(optionName))
-    || (commandPath === 'snapshot' && optionName === 'maxOutput')) {
-    return positiveIntegerParser(optionName === 'maxOutput' ? 'max-output' : optionName);
+    || (commandPath === 'snapshot' && optionName === 'maxOutput')
+    || (commandPath === 'verify' && optionName === 'maxTopLevelKeys')) {
+    return positiveIntegerParser(optionName === 'maxOutput'
+      ? 'max-output'
+      : optionName === 'maxTopLevelKeys'
+        ? 'max-top-level-keys'
+        : optionName);
   }
   return undefined;
 }
 
 export const browserCommandCatalog: readonly HostedBrowserCommandContract[] = [
   command('tabs', 'List pages in the existing browser session', 'tabs', [], [], 'require-existing'),
+  command('init', 'Generate an adapter scaffold', 'init', [adapterNamePositional], [], 'create-or-reuse'),
   command('bind', 'Bind this session to an existing page', 'bind', [], [
     option('page', 'Stable page id returned by tabs', { required: true }),
   ], 'require-existing'),
@@ -107,6 +132,15 @@ export const browserCommandCatalog: readonly HostedBrowserCommandContract[] = [
     required: true,
     variadic: false,
   }], [], 'require-existing'),
+  command('verify', 'Verify an adapter against its fixture', 'verify', [adapterNamePositional], [
+    flag('noFixture', 'Run without comparing a fixture'),
+    flag('writeFixture', 'Write the observed result as the fixture'),
+    flag('updateFixture', 'Replace an existing fixture with the observed result'),
+    flag('strictMemory', 'Fail when notes or endpoint memory is absent'),
+    option('seedArgs', 'Seed arguments used to invoke the command'),
+    option('trace', 'Trace capture: off, on, or retain-on-failure', { default: 'off' }),
+    option('maxTopLevelKeys', 'Maximum allowed top-level keys', { default: 12 }),
+  ], 'create-or-reuse'),
   command('run', 'Run JavaScript with Playwright', 'run', [], [
     flag('stdin', 'Read the program from stdin'),
     option('file', 'Read the program from a file'),

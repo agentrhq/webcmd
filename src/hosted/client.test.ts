@@ -71,8 +71,69 @@ const validTraceUrlCases = [
 ] as const;
 
 describe('HostedClient', () => {
+  it('preserves a raw storage endpoint error envelope', async () => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: false,
+        error: { code: 'SITE_MEMORY_NOT_FOUND', message: 'Missing notes.', exitCode: 66 },
+      }), { status: 404 }),
+    });
+
+    await expect(client.readSiteMemory('github', 'notes.md')).rejects.toMatchObject({
+      code: 'SITE_MEMORY_NOT_FOUND',
+      exitCode: 66,
+    });
+  });
+
+  it('uses raw storage endpoints for site memory and adapter source', async () => {
+    const requests: Array<{ url: string; method: string; body?: string; contentType?: string | null }> = [];
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async (url, init) => {
+        requests.push({
+          url: String(url), method: init?.method ?? 'GET',
+          ...(init?.body ? { body: String(init.body) } : {}),
+          contentType: new Headers(init?.headers).get('content-type'),
+        });
+        if ((init?.method ?? 'GET') === 'GET') return new Response('export const search = true;');
+        if (new URL(String(url)).pathname.startsWith('/v1/sites/')) return new Response(JSON.stringify({ ok: true }));
+        return new Response(JSON.stringify({ ok: true, package: { id: 'pkg_github', storagePath: 'clis/github' }, commands: ['github/search'] }));
+      },
+    });
+
+    await client.writeSiteMemory('github', 'notes.md', JSON.stringify({ text: 'Uses GraphQL' }), 'application/json');
+    await client.readSiteMemory('github', 'notes.md');
+    await client.deleteSiteMemory('github', 'notes.md');
+    await client.writeAdapterSource('pkg_github', 'clis/github/search.js', 'export const search = true;');
+    await client.readAdapterSource('pkg_github', 'clis/github/search.js');
+
+    expect(requests.map(({ url, method, contentType }) => ({ url, method, contentType }))).toEqual([
+      { url: 'https://api.example.com/v1/sites/github/memory/notes.md', method: 'PUT', contentType: 'application/json' },
+      { url: 'https://api.example.com/v1/sites/github/memory/notes.md', method: 'GET', contentType: null },
+      { url: 'https://api.example.com/v1/sites/github/memory/notes.md', method: 'DELETE', contentType: null },
+      { url: 'https://api.example.com/v1/adapters/pkg_github/source/clis/github/search.js', method: 'PUT', contentType: 'text/javascript; charset=utf-8' },
+      { url: 'https://api.example.com/v1/adapters/pkg_github/source/clis/github/search.js', method: 'GET', contentType: null },
+    ]);
+  });
+
+  it.each([
+    { stale: true },
+    { deleted: true },
+  ])('accepts Cloud site-memory deletion response %j', async (result) => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({ ok: true, ...result })),
+    });
+
+    await expect(client.deleteSiteMemory('github', 'endpoints.json', JSON.stringify({ name: 'search' }))).resolves.toBeUndefined();
+  });
+
   it('accepts the hosted Session API wire contract', async () => {
-    const requests: Array<{ url: string; method: string; body?: string }> = [];
+    const requests: Array<{ url: string; method: string; body?: string; liveViewCapability: string | null }> = [];
     const session = {
       id: 'session_wire',
       kind: 'explicit',
@@ -83,6 +144,7 @@ describe('HostedClient', () => {
       updatedAt: '2026-08-12T00:01:00.000Z',
       lastUsedAt: '2026-08-12T00:02:00.000Z',
     };
+    const createdSession = { ...session, liveViewUrl: 'https://api.example.com/account/live/session_wire' };
     const client = new HostedClient({
       apiBaseUrl: 'https://api.example.com',
       apiKey: 'key',
@@ -91,14 +153,15 @@ describe('HostedClient', () => {
           url: String(url),
           method: init?.method ?? 'GET',
           ...(init?.body ? { body: String(init.body) } : {}),
+          liveViewCapability: new Headers(init?.headers).get('x-webcmd-client-capabilities'),
         });
-        if (String(url).endsWith('/v1/sessions')) return new Response(JSON.stringify({ ok: true, session }));
+        if (String(url).endsWith('/v1/sessions')) return new Response(JSON.stringify({ ok: true, session: createdSession }));
         if (String(url).endsWith('/v1/sessions?profile=default&limit=20')) return new Response(JSON.stringify({ ok: true, sessions: [session] }));
         return new Response(JSON.stringify({ ok: true, closed: true, alreadyIdle: false, session: 'session_wire' }));
       },
     });
 
-    await expect(client.createBrowserSession()).resolves.toEqual({ ok: true, session });
+    await expect(client.createBrowserSession()).resolves.toEqual({ ok: true, session: createdSession });
     await expect(client.listBrowserSessions('default', 20)).resolves.toEqual({ ok: true, sessions: [session] });
     await expect(client.closeBrowserSession('session_wire')).resolves.toEqual({
       ok: true,
@@ -106,11 +169,59 @@ describe('HostedClient', () => {
       alreadyIdle: false,
       session: 'session_wire',
     });
-    expect(requests.map(({ url, method }) => ({ url, method }))).toEqual([
-      { url: 'https://api.example.com/v1/sessions', method: 'POST' },
-      { url: 'https://api.example.com/v1/sessions?profile=default&limit=20', method: 'GET' },
-      { url: 'https://api.example.com/v1/sessions/session_wire/close', method: 'POST' },
+    expect(requests.map(({ url, method, liveViewCapability }) => ({ url, method, liveViewCapability }))).toEqual([
+      { url: 'https://api.example.com/v1/sessions', method: 'POST', liveViewCapability: 'hosted-live-view-v1' },
+      { url: 'https://api.example.com/v1/sessions?profile=default&limit=20', method: 'GET', liveViewCapability: 'hosted-live-view-v1' },
+      { url: 'https://api.example.com/v1/sessions/session_wire/close', method: 'POST', liveViewCapability: 'hosted-live-view-v1' },
     ]);
+  });
+
+  it('requires a creation live view, keeps session rows exact, and accepts only the prepared live view field', async () => {
+    const session = {
+      id: 'session_wire', kind: 'explicit', profileId: 'profile_default', runtimeState: 'active', handoff: null,
+      createdAt: '2026-08-12T00:00:00.000Z', updatedAt: '2026-08-12T00:01:00.000Z', lastUsedAt: '2026-08-12T00:02:00.000Z',
+    };
+    let prepareBody: unknown;
+    let prepareCapability: string | null = null;
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com', apiKey: 'key',
+      fetchImpl: async (url, init) => {
+        const pathname = new URL(String(url)).pathname;
+        if (pathname === '/v1/sessions' && init?.method === 'POST') return new Response(JSON.stringify({ ok: true, session }));
+        if (pathname === '/v1/sessions' && (init?.method ?? 'GET') === 'GET') {
+          return new Response(JSON.stringify({
+            ok: true,
+            sessions: [{ ...session, liveViewUrl: 'https://api.example.com/account/live/session_wire' }],
+          }));
+        }
+        if (pathname === '/v1/executions') {
+          prepareBody = JSON.parse(String(init?.body));
+          prepareCapability = new Headers(init?.headers).get('x-webcmd-client-capabilities');
+          const command = (prepareBody as { command: string }).command;
+          return new Response(JSON.stringify({
+            ok: true,
+            execution: { id: 'exec_1', command, status: 'queued' },
+            fileArguments: [],
+            liveViewUrl: 'https://api.example.com/account/live/exec_1',
+            ...(command === 'github/unknown' ? { unexpected: true } : {}),
+          }));
+        }
+        return new Response(JSON.stringify({ ok: false, error: { code: 'UNEXPECTED', message: pathname, exitCode: 1 } }));
+      },
+    });
+
+    await expect(client.createBrowserSession()).rejects.toMatchObject({ code: 'HOSTED_PROTOCOL' });
+    await expect(client.listBrowserSessions()).rejects.toMatchObject({ code: 'HOSTED_PROTOCOL' });
+    await expect(client.prepareExecution({
+      command: 'github/whoami', profile: 'work', session: 'session_work', executionScope: 'profile',
+    })).resolves.toMatchObject({
+      liveViewUrl: 'https://api.example.com/account/live/exec_1',
+    });
+    expect(prepareBody).toEqual({
+      command: 'github/whoami', profile: 'work', session: 'session_work', executionScope: 'profile',
+    });
+    expect(prepareCapability).toBe('hosted-live-view-v1');
+    await expect(client.prepareExecution({ command: 'github/unknown' })).rejects.toMatchObject({ code: 'HOSTED_PROTOCOL' });
   });
 
   it('searches the authenticated marketplace and validates every public plugin field', async () => {
@@ -124,12 +235,26 @@ describe('HostedClient', () => {
           ok: true,
           result: {
             plugins: [{
-              name: 'acme',
-              description: 'Search Acme',
-              version: '1.0.0',
+              name: 'mercury',
+              description: 'Search Mercury',
+              version: '0.7.1',
               sourceId: 'agentrhq/webcmd',
-              installSource: 'github:agentrhq/webcmd/acme',
+              installSource: 'github:agentrhq/webcmd/mercury',
               webcmd: '>=0.4.3',
+              availability: 'mixed',
+              excludedCommands: ['mercury/reimbursement-plan'],
+            }, {
+              name: 'hosted-plugin',
+              sourceId: 'agentrhq/webcmd',
+              installSource: 'github:agentrhq/webcmd/hosted-plugin',
+              availability: 'hosted',
+              excludedCommands: [],
+            }, {
+              name: 'local-plugin',
+              sourceId: 'agentrhq/webcmd',
+              installSource: 'github:agentrhq/webcmd/local-plugin',
+              availability: 'local-only',
+              excludedCommands: ['local-plugin/run'],
             }],
             errors: [],
           },
@@ -139,12 +264,26 @@ describe('HostedClient', () => {
 
     await expect(client.searchMarketplacePlugins('Acme & Co')).resolves.toEqual({
       plugins: [{
-        name: 'acme',
-        description: 'Search Acme',
-        version: '1.0.0',
+        name: 'mercury',
+        description: 'Search Mercury',
+        version: '0.7.1',
         sourceId: 'agentrhq/webcmd',
-        installSource: 'github:agentrhq/webcmd/acme',
+        installSource: 'github:agentrhq/webcmd/mercury',
         webcmd: '>=0.4.3',
+        availability: 'mixed',
+        excludedCommands: ['mercury/reimbursement-plan'],
+      }, {
+        name: 'hosted-plugin',
+        sourceId: 'agentrhq/webcmd',
+        installSource: 'github:agentrhq/webcmd/hosted-plugin',
+        availability: 'hosted',
+        excludedCommands: [],
+      }, {
+        name: 'local-plugin',
+        sourceId: 'agentrhq/webcmd',
+        installSource: 'github:agentrhq/webcmd/local-plugin',
+        availability: 'local-only',
+        excludedCommands: ['local-plugin/run'],
       }],
       errors: [],
     });
@@ -153,6 +292,50 @@ describe('HostedClient', () => {
       { url: 'https://api.example.com/v1/marketplace/plugins?query=Acme+%26+Co', method: 'GET' },
       { url: 'https://api.example.com/v1/marketplace/plugins', method: 'GET' },
     ]);
+  });
+
+  it.each([
+    { availability: 'unsupported', excludedCommands: [] },
+    { availability: 'hosted', excludedCommands: ['valid-command', 1] },
+  ])('rejects malformed marketplace availability fields', async (plugin) => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        result: {
+          plugins: [{
+            name: 'invalid',
+            sourceId: 'agentrhq/webcmd',
+            installSource: 'github:agentrhq/webcmd/invalid',
+            ...plugin,
+          }],
+          errors: [],
+        },
+      })),
+    });
+
+    await expect(client.searchMarketplacePlugins()).rejects.toMatchObject({ code: 'HOSTED_PROTOCOL' });
+  });
+
+  it('preserves a local-only marketplace install failure from Cloud', async () => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: false,
+        error: {
+          code: 'MARKETPLACE_PLUGIN_LOCAL_ONLY',
+          message: 'This plugin is only available in local mode.',
+          help: 'Run `webcmd setup` and choose local mode to install this plugin.',
+        },
+      }), { status: 409 }),
+    });
+
+    await expect(client.installMarketplacePlugin('github:agentrhq/webcmd/local-only')).rejects.toMatchObject({
+      code: 'MARKETPLACE_PLUGIN_LOCAL_ONLY',
+      hint: 'Run `webcmd setup` and choose local mode to install this plugin.',
+    });
   });
 
   it('installs a marketplace plugin through the authenticated API', async () => {
@@ -585,7 +768,7 @@ describe('HostedClient', () => {
             execution: { id: 'exec_files', command: 'twitter/post', status: 'queued' },
             fileArguments: [{
               name: 'images',
-              direction: 'input',
+              direction: 'input-output',
               pathKind: 'file',
               multiple: true,
               required: false,
@@ -634,7 +817,7 @@ describe('HostedClient', () => {
 
     await expect(client.prepareExecution({ command: 'twitter/post' })).resolves.toMatchObject({
       execution: { id: 'exec_files', status: 'queued' },
-      fileArguments: [{ name: 'images' }],
+      fileArguments: [{ name: 'images', direction: 'input-output' }],
     });
     await expect(client.uploadExecutionArtifact({
       executionId: 'exec_files',

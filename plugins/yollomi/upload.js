@@ -24,7 +24,7 @@ cli({
     domain: YOLLOMI_DOMAIN,
     strategy: Strategy.COOKIE,
     args: [
-        { name: 'file', positional: true, required: true, help: 'Local file path to upload' },
+        { name: 'file', positional: true, required: true, help: 'Local file path to upload', file: { direction: 'input', pathKind: 'file', multiple: false } },
     ],
     columns: ['status', 'file', 'size', 'url'],
     func: async (page, kwargs) => {

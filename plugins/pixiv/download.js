@@ -20,7 +20,7 @@ cli({
     strategy: Strategy.COOKIE,
     args: [
         { name: 'illust-id', positional: true, required: true, help: 'Illustration ID' },
-        { name: 'output', default: './pixiv-downloads', help: 'Output directory' },
+        { name: 'output', default: './pixiv-downloads', help: 'Output directory', file: { direction: 'output', pathKind: 'directory', multiple: false } },
     ],
     columns: ['index', 'type', 'status', 'size'],
     func: async (page, kwargs) => {

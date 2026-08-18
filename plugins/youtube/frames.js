@@ -302,6 +302,7 @@ cli({
     { name: 'url', required: true, positional: true, help: 'YouTube watch URL, Shorts URL, or video ID' },
     { name: 'timestamps', required: false, help: 'Comma-separated exact timestamps in seconds' },
     { name: 'count', type: 'int', required: false, help: 'Automatically distribute 1-20 frames; default 5' },
+    { name: 'output', required: false, help: 'Output directory', file: { direction: 'output', pathKind: 'directory', multiple: false, defaultPath: './youtube-frames' } },
   ],
   columns: FRAME_COLUMNS,
   func: async (page, kwargs) => {
@@ -334,10 +335,9 @@ cli({
         `Use timestamps from zero up to, but not including, ${state.duration} seconds.`,
       );
     }
-    const cacheRoot = process.env.WEBCMD_CACHE_DIR
-      ? path.resolve(process.env.WEBCMD_CACHE_DIR)
-      : path.join(os.homedir(), '.webcmd', 'cache');
-    const videoRoot = path.join(cacheRoot, 'youtube-frames', videoId);
+    const videoRoot = kwargs.output
+      ? path.resolve(String(kwargs.output))
+      : path.join(process.env.WEBCMD_CACHE_DIR ? path.resolve(process.env.WEBCMD_CACHE_DIR) : path.join(os.homedir(), '.webcmd', 'cache'), 'youtube-frames', videoId);
     await fs.mkdir(videoRoot, { recursive: true });
     const runDir = path.join(videoRoot, crypto.randomUUID());
     await fs.mkdir(runDir, { recursive: false });
