@@ -283,7 +283,7 @@ describe('LocalCloakRuntimeProvider', () => {
       profileId: 'default',
     });
     expect(result).toMatchObject({ id: 'new', ok: true, page: expect.any(String) });
-    expect(pages[1].goto).toHaveBeenCalledWith('https://second.example/', expect.objectContaining({ waitUntil: 'commit' }));
+    expect(pages[0].goto).toHaveBeenCalledWith('https://second.example/', expect.objectContaining({ waitUntil: 'commit' }));
   });
 
   it('does not execute a queued command after its daemon deadline expires', async () => {
