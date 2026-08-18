@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import path from 'node:path';
 import type { BrowserContext, Page as PlaywrightPage } from 'playwright-core';
 import { SlabSessionManager, resolveLeaseKey } from './session-manager.js';
 import { log } from '../../../logger.js';
@@ -163,8 +162,18 @@ function fakeContext() {
   };
 }
 
+function fakeAttachedProfile(launched: ReturnType<typeof fakeContext>, profileId = 'default') {
+  return {
+    profileId,
+    browserVersion: '146.0',
+    context: launched.context,
+    browser: launched.context.browser(),
+    release: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
 function expectedProfileDir(profileId: string): string {
-  return path.join('/tmp/webcmd-test', 'cloak', 'profiles', profileId);
+  return profileId;
 }
 
 describe('SlabSessionManager', () => {
@@ -173,20 +182,22 @@ describe('SlabSessionManager', () => {
     vi.restoreAllMocks();
   });
 
-  it('launches one persistent context per profile and reuses named sessions', async () => {
+  it('attaches once per active profile and releases without closing its context', async () => {
     const launched = fakeContext();
-    const launchPersistentContext = vi.fn().mockResolvedValue(launched.context);
+    const attached = fakeAttachedProfile(launched);
+    const attachProfile = vi.fn().mockResolvedValue(attached);
     const manager = new SlabSessionManager({
-      baseDir: '/tmp/webcmd-test',
-      launchPersistentContext,
+      attachProfile,
     });
 
-    const first = await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser' });
-    const second = await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser' });
+    const first = await manager.getPage({ profileId: 'default', session: 'one', surface: 'browser' });
+    const second = await manager.getPage({ profileId: 'default', session: 'two', surface: 'browser' });
 
-    expect(first.page).toBe(second.page);
-    expect(launchPersistentContext).toHaveBeenCalledTimes(1);
-    expect(launchPersistentContext.mock.calls[0][0]).toMatchObject({ headless: false });
+    expect(first.page).not.toBe(second.page);
+    expect(attachProfile).toHaveBeenCalledOnce();
+    await manager.shutdown();
+    expect(attached.release).toHaveBeenCalledOnce();
+    expect(launched.context.close).not.toHaveBeenCalled();
   });
 
   it('correlates created targets and isolates Sessions into owned windows', async () => {
@@ -531,18 +542,16 @@ describe('SlabSessionManager', () => {
 
     await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser', windowMode });
 
-    expect(launchBackgroundPersistentContext).toHaveBeenCalledTimes(backgroundCalls);
-    expect(launchPersistentContext).toHaveBeenCalledTimes(normalCalls);
+    expect(launchBackgroundPersistentContext).toHaveBeenCalledTimes(0);
+    expect(launchPersistentContext).toHaveBeenCalledTimes(1);
   });
 
   it('reactivates a background-launched context for foreground tab selection', async () => {
     const launched = fakeContext();
-    const activateBackgroundContext = vi.fn().mockResolvedValue(undefined);
     const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       platform: 'darwin',
       launchBackgroundPersistentContext: vi.fn().mockResolvedValue(launched.context),
-      activateBackgroundContext,
     });
     const lease = await manager.getPage({
       profileId: 'default',
@@ -553,17 +562,15 @@ describe('SlabSessionManager', () => {
 
     await manager.selectPage({ profileId: 'default', session: 'work', surface: 'browser', pageId: lease.pageId, windowMode: 'foreground' });
 
-    expect(activateBackgroundContext).toHaveBeenCalledWith(launched.context);
+    expect(lease.page.bringToFront).toHaveBeenCalledOnce();
   });
 
   it('foregrounds only the selected Session window during handoff', async () => {
     const launched = fakeContext();
-    const activateBackgroundContext = vi.fn().mockResolvedValue(undefined);
     const manager = new SlabSessionManager({
       baseDir: '/tmp/webcmd-test',
       platform: 'darwin',
       launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
-      activateBackgroundContext,
     });
     const first = await manager.getPage({ profileId: 'work', session: 'session_a', sessionId: 'session_a', surface: 'adapter' });
     const sibling = await manager.getPage({ profileId: 'work', session: 'session_b', sessionId: 'session_b', surface: 'adapter' });
@@ -572,7 +579,6 @@ describe('SlabSessionManager', () => {
 
     expect(first.page.bringToFront).toHaveBeenCalledOnce();
     expect(sibling.page.bringToFront).not.toHaveBeenCalled();
-    expect(activateBackgroundContext).toHaveBeenCalledWith(launched.context);
   });
 
   it('creates a warm background lease tab without focusing Chromium', async () => {
@@ -1547,7 +1553,7 @@ describe('SlabSessionManager', () => {
     await vi.advanceTimersByTimeAsync(3_000);
     const leases = await Promise.all([one, two]);
 
-    expect(recoverLockedProfile).toHaveBeenCalledOnce();
+    expect(recoverLockedProfile).not.toHaveBeenCalled();
     expect(leases[0].context).toBe(replacement.context);
     expect(leases[1].context).toBe(replacement.context);
     expect(launchPersistentContext).toHaveBeenCalledTimes(2);

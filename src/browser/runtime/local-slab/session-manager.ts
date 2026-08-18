@@ -2,15 +2,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Browser, BrowserContext, CDPSession, Page as PlaywrightPage } from 'playwright-core';
-import { launchPersistentContext as cloakLaunchPersistentContext } from 'cloakbrowser';
 import type { BrowserSurface, BrowserWindowMode, SiteSessionMode } from '../../protocol.js';
-import { activateDarwinBackgroundContext, launchDarwinBackgroundPersistentContext } from './darwin-background-launch.js';
-import { normalizeProfileId, resolveCloakProfileDir } from './profiles.js';
+import { normalizeProfileId } from './profiles.js';
 import { SlabNetworkCapture } from './network.js';
 import { findPackageRoot } from '../../../package-paths.js';
-import { findExactCloakProfileProcesses } from './process-matcher.js';
 import { log } from '../../../logger.js';
 import { CliError, EXIT_CODES } from '../../../errors.js';
+import { attachSlabProfile, type AttachedSlabProfile } from './attachment.js';
 
 const UNRESOLVED = Symbol('unresolved');
 const TARGET_PAGE_MATCH_TIMEOUT_MS = 1_000;
@@ -39,7 +37,8 @@ export function resolveCloakBrowserVersion(): string | undefined {
   return cachedCloakBrowserVersion;
 }
 
-export type LaunchPersistentContext = typeof cloakLaunchPersistentContext;
+export type AttachSlabProfile = typeof attachSlabProfile;
+export type LaunchPersistentContext = (options: { userDataDir: string; headless: boolean; humanize: boolean }) => Promise<BrowserContext>;
 export type RecoverLockedProfile = (userDataDir: string) => Promise<boolean>;
 
 export interface SessionKeyInput {
@@ -95,12 +94,12 @@ export interface SlabTabInfo {
 
 interface ProfileRuntime {
   profileId: string;
+  attachment: AttachedSlabProfile;
   context: BrowserContext;
   cdp?: CDPSession;
   sessions: Map<string, SessionRuntime>;
   windowOwners: Map<number, string>;
   targetPages: Map<string, PageEntry>;
-  userDataDir: string;
   anchorTargetId?: string;
   parkingPage?: PlaywrightPage;
   useParkingKeeper: boolean;
@@ -141,12 +140,17 @@ export class SessionWindowConflictError extends CliError {
 }
 
 export interface SlabSessionManagerOptions {
+  /** @deprecated Test-only migration compatibility; production attaches through SLAB. */
   baseDir?: string;
+  /** @deprecated Test-only migration compatibility; production attaches through SLAB. */
   launchPersistentContext?: LaunchPersistentContext;
+  /** @deprecated Test-only migration compatibility; production attaches through SLAB. */
   launchBackgroundPersistentContext?: LaunchPersistentContext;
-  activateBackgroundContext?: typeof activateDarwinBackgroundContext;
+  /** @deprecated Test-only migration compatibility; production attaches through SLAB. */
   recoverLockedProfile?: RecoverLockedProfile;
+  /** @deprecated Test-only migration compatibility; production attaches through SLAB. */
   platform?: NodeJS.Platform;
+  attachProfile?: AttachSlabProfile;
   hasActiveHandoff?: (profileId: string) => boolean;
 }
 
@@ -186,11 +190,7 @@ function daemonShuttingDownError(): Error & { code: 'DAEMON_SHUTTING_DOWN' } {
 export class SlabSessionManager {
   readonly networkCapture = new SlabNetworkCapture();
 
-  private readonly launchPersistentContext: LaunchPersistentContext;
-  private readonly launchBackgroundPersistentContext: LaunchPersistentContext;
-  private readonly activateBackgroundContext: typeof activateDarwinBackgroundContext;
-  private readonly platform: NodeJS.Platform;
-  private readonly recoverLockedProfile: RecoverLockedProfile;
+  private readonly attachProfile: AttachSlabProfile;
   private readonly hasActiveHandoff: (profileId: string) => boolean;
   private readonly profiles = new Map<string, ProfileRuntime>();
   private readonly profileLaunches = new Map<string, Promise<ProfileRuntime>>();
@@ -210,12 +210,34 @@ export class SlabSessionManager {
   private shuttingDown = false;
 
   constructor(private readonly opts: SlabSessionManagerOptions = {}) {
-    this.launchPersistentContext = opts.launchPersistentContext ?? cloakLaunchPersistentContext;
-    this.launchBackgroundPersistentContext = opts.launchBackgroundPersistentContext ?? launchDarwinBackgroundPersistentContext;
-    this.activateBackgroundContext = opts.activateBackgroundContext ?? activateDarwinBackgroundContext;
-    this.platform = opts.platform ?? process.platform;
-    this.recoverLockedProfile = opts.recoverLockedProfile ?? recoverLockedCloakProfile;
+    this.attachProfile = opts.attachProfile ?? this.legacyAttachProfile;
     this.hasActiveHandoff = opts.hasActiveHandoff ?? (() => false);
+  }
+
+  private async legacyAttachProfile(profileId: string): Promise<AttachedSlabProfile> {
+    const launch = this.opts.launchPersistentContext ?? this.opts.launchBackgroundPersistentContext;
+    if (!launch) return attachSlabProfile(profileId);
+    const options = { userDataDir: profileId, headless: false, humanize: true };
+    let context: BrowserContext;
+    try {
+      context = await launch(options);
+    } catch (error) {
+      if (!(await this.opts.recoverLockedProfile?.(profileId))) throw error;
+      context = await launch(options);
+    }
+    const browser = context.browser();
+    return {
+      profileId,
+      browserVersion: '',
+      context,
+      browser: browser ?? {} as Browser,
+      release: async () => {
+        await Promise.race([
+          context.close(),
+          new Promise<void>(resolve => setTimeout(resolve, PROFILE_CLOSE_TIMEOUT_MS)),
+        ]);
+      },
+    };
   }
 
   profileStatuses() {
@@ -372,10 +394,8 @@ export class SlabSessionManager {
     await Promise.all(this.openEntries(sessionRuntime).map(([, candidate]) => (
       this.assertOwnedWindow(runtime, sessionId, candidate)
     )));
-    const browser = runtime.context.browser();
-    if (!browser) throw new Error('The selected browser context is not attached to a browser.');
     return {
-      browser,
+      browser: runtime.attachment.browser,
       context: runtime.context,
       page,
       pages: () => this.openEntries(sessionRuntime).map(([, candidate]) => candidate.page),
@@ -492,7 +512,6 @@ export class SlabSessionManager {
     await this.assertOwnedWindow(runtime, sessionId, entry);
     if (input.windowMode !== 'background') {
       await entry.page.bringToFront?.().catch(() => {});
-      await this.activateBackgroundContext(runtime.context);
     }
     this.selectEntry(sessionRuntime, entry);
     runtime.lastSeenAt = Date.now();
@@ -510,7 +529,6 @@ export class SlabSessionManager {
     const entry = match[1];
     await this.assertOwnedWindow(runtime, sessionId, entry);
     await entry.page.bringToFront?.().catch(() => {});
-    await this.activateBackgroundContext(runtime.context);
     this.selectEntry(session, entry);
     runtime.lastSeenAt = Date.now();
     return true;
@@ -567,7 +585,6 @@ export class SlabSessionManager {
 
     if (input.windowMode !== 'background') {
       await entry.page.bringToFront?.().catch(() => {});
-      await this.activateBackgroundContext(runtime.context);
     }
 
     if (currentCanonical && currentCanonical !== entry && !pageIsClosed(currentCanonical.page)) {
@@ -667,7 +684,7 @@ export class SlabSessionManager {
       if (!runtime) return;
       this.profiles.delete(profileId);
       runtime.closing = true;
-      await this.closeRuntime(runtime, false).catch(() => {});
+      await this.closeRuntime(runtime).catch(() => {});
     })));
     this.profiles.clear();
     this.profileLaunches.clear();
@@ -692,25 +709,9 @@ export class SlabSessionManager {
     });
   }
 
-  private async launchProfileRuntime(profileId: string, windowMode?: BrowserWindowMode): Promise<ProfileRuntime> {
-    const userDataDir = resolveCloakProfileDir(profileId, { baseDir: this.opts.baseDir });
-    fs.mkdirSync(userDataDir, { recursive: true });
-    const launchOptions = {
-      userDataDir,
-      headless: false,
-      humanize: true,
-    };
-    const launchPersistentContext = this.platform === 'darwin' && windowMode === 'background'
-      ? this.launchBackgroundPersistentContext
-      : this.launchPersistentContext;
-    let context: BrowserContext;
-    try {
-      context = await launchPersistentContext(launchOptions);
-    } catch (err) {
-      if (!isProfileAlreadyInUseError(err) || !(await this.recoverLockedProfile(userDataDir))) throw err;
-      context = await launchPersistentContext(launchOptions);
-    }
-    const browser = context.browser();
+  private async launchProfileRuntime(profileId: string, _windowMode?: BrowserWindowMode): Promise<ProfileRuntime> {
+    const attachment = await this.attachProfile(profileId);
+    const { context, browser } = attachment;
     let cdp: CDPSession | undefined;
     let keeperError: unknown;
     try {
@@ -720,13 +721,13 @@ export class SlabSessionManager {
     }
     const runtime: ProfileRuntime = {
       profileId,
+      attachment,
       context,
       cdp,
       sessions: new Map(),
       windowOwners: new Map(),
       targetPages: new Map(),
-      userDataDir,
-      useParkingKeeper: this.platform !== 'darwin' || !cdp,
+      useParkingKeeper: !cdp,
       keeperWarningLogged: false,
       activeCommands: this.profileActivities.get(profileId) ?? 0,
       closing: false,
@@ -751,7 +752,7 @@ export class SlabSessionManager {
     }
     if (this.shuttingDown) {
       runtime.closing = true;
-      await this.closeRuntime(runtime, false).catch(() => {});
+      await this.closeRuntime(runtime).catch(() => {});
       throw daemonShuttingDownError();
     }
     this.profiles.set(profileId, runtime);
@@ -844,7 +845,7 @@ export class SlabSessionManager {
         }
         runtime.closing = true;
         this.profiles.delete(profileId);
-        await this.closeRuntime(runtime, true);
+        await this.closeRuntime(runtime);
       });
     }, PROFILE_IDLE_TIMEOUT_MS);
     runtime.idleTimer.unref?.();
@@ -872,26 +873,15 @@ export class SlabSessionManager {
     return false;
   }
 
-  private async closeRuntime(runtime: ProfileRuntime, recoverOnTimeout: boolean): Promise<void> {
+  private async closeRuntime(runtime: ProfileRuntime): Promise<void> {
     this.cancelProfileIdle(runtime);
     for (const entry of runtime.targetPages.values()) this.clearIdleTimer(entry);
-    let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
-      await Promise.race([
-        runtime.context.close(),
-        new Promise<never>((_, reject) => {
-          timeout = setTimeout(() => reject(new Error('Cloak Profile close timed out')), PROFILE_CLOSE_TIMEOUT_MS);
-          timeout.unref?.();
-        }),
-      ]);
-    } catch (error) {
-      if (recoverOnTimeout && error instanceof Error && error.message === 'Cloak Profile close timed out') {
-        await this.recoverLockedProfile(runtime.userDataDir);
-      } else {
-        throw error;
-      }
+      await Promise.all([...runtime.targetPages.values()].map(entry => (
+        pageIsClosed(entry.page) ? undefined : entry.page.close().catch(() => {})
+      )));
+      await runtime.attachment.release();
     } finally {
-      if (timeout) clearTimeout(timeout);
       this.cleanupRuntime(runtime);
     }
   }
@@ -1332,41 +1322,4 @@ function requireSession(session: string | undefined): string {
 
 function requireSessionId(input: Pick<SessionKeyInput, 'session' | 'sessionId'>): string {
   return input.sessionId?.trim() || requireSession(input.session);
-}
-
-function isProfileAlreadyInUseError(err: unknown): boolean {
-  const message = err instanceof Error ? err.message : String(err);
-  return message.includes('Opening in existing browser session')
-    || message.includes('Failed to create a ProcessSingleton for your profile directory');
-}
-
-async function recoverLockedCloakProfile(userDataDir: string): Promise<boolean> {
-  if (process.platform === 'win32') return false;
-  const initial = await findExactCloakProfileProcesses(userDataDir);
-  if (initial.length === 0) return false;
-
-  signalPids(initial, 'SIGTERM');
-  if (await waitForProfileProcessesToExit(userDataDir, 2500)) return true;
-
-  signalPids(await findExactCloakProfileProcesses(userDataDir), 'SIGKILL');
-  return waitForProfileProcessesToExit(userDataDir, 1500);
-}
-
-async function waitForProfileProcessesToExit(userDataDir: string, timeoutMs: number): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    await new Promise<void>((resolve) => setTimeout(resolve, 100));
-    if ((await findExactCloakProfileProcesses(userDataDir)).length === 0) return true;
-  }
-  return (await findExactCloakProfileProcesses(userDataDir)).length === 0;
-}
-
-function signalPids(pids: number[], signal: NodeJS.Signals): void {
-  for (const pid of pids) {
-    try {
-      process.kill(pid, signal);
-    } catch {
-      // Already exited or not signalable; the follow-up poll decides recovery.
-    }
-  }
 }
