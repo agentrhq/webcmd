@@ -1,4 +1,6 @@
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { createRequire } from 'node:module';
 import {
   afterAll,
@@ -16,6 +18,7 @@ import {
   type BrowserContext,
   type Page,
 } from 'playwright-core';
+import { LocalBrowserRunArtifactSink } from './artifacts.js';
 import { QuickJSHost } from './quickjs-host.js';
 import { runBrowserProgram } from './runner.js';
 
@@ -42,10 +45,11 @@ function sessionScope(pages: () => readonly Page[] = () => context.pages()) {
   };
 }
 
-function run(source: string, options = {}) {
+function run(source: string, options = {}, input = {}) {
   return runBrowserProgram({
     ...sessionScope(),
     pageId: 'page-1',
+    ...input,
   }, source, options);
 }
 
@@ -642,6 +646,36 @@ afterAll(async () => {
 
     expect(output.result).toEqual({ length: 3, returned: [255, 0, 128] });
   });
+
+  it.each(['writeArtifact', '__webcmdWriteArtifact'])(
+    'returns a redeemable receipt from %s',
+    async (fn) => {
+      const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-artifact-'));
+      try {
+        const output = await run(`
+          const receipt = await ${fn}(
+            'nested/report.csv',
+            new TextEncoder().encode('id,name\\n1,caf\\u00e9\\n'),
+          );
+          return receipt;
+        `, {}, { artifactSink: new LocalBrowserRunArtifactSink({ baseDir }) });
+
+        const receipt = output.result as { artifactId: string; locator: string };
+        expect(receipt).toMatchObject({
+          filename: 'nested/report.csv',
+          contentType: 'application/octet-stream',
+          byteSize: 16,
+          locator: expect.stringContaining('browser-run://'),
+        });
+        expect(output.artifacts).toEqual([receipt]);
+        expect(
+          fs.readFileSync(path.join(baseDir, receipt.artifactId, 'nested/report.csv'), 'utf8'),
+        ).toBe('id,name\n1,caf\u00e9\n');
+      } finally {
+        fs.rmSync(baseDir, { recursive: true, force: true });
+      }
+    },
+  );
 
   it('rejects absolute artifact paths instead of touching host paths', async () => {
     const target = '/tmp/webcmd-browser-run-owned.txt';

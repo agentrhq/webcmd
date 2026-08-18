@@ -264,7 +264,7 @@ export async function runBrowserProgram(
           name !== 'writeArtifact'
           || typeof args[0] !== 'string'
           || typeof args[1] !== 'string'
-          || (args[2] !== undefined && typeof args[2] !== 'string')
+          || (args[2] != null && typeof args[2] !== 'string')
         ) {
           throw new BrowserRunError(
             'BROWSER_RUN_INVALID_INPUT',
@@ -440,12 +440,18 @@ export async function runBrowserProgram(
         globalThis.__webcmdTransportReceive = message => {
           connection.dispatch(JSON.parse(message));
         };
-        globalThis.__webcmdWriteArtifact = async (filename, bytes, contentType) => {
-          await __webcmdHostCall(
+        globalThis.writeArtifact = async (filename, bytes, contentType) => (
+          __webcmdHostCall(
             'writeArtifact',
-            JSON.stringify([filename, __webcmdEncodeBase64(bytes), contentType]),
-          );
-        };
+            JSON.stringify([
+              filename,
+              __webcmdEncodeBase64(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)),
+              contentType,
+            ]),
+          )
+        );
+        // Legacy alias; writeArtifact is the documented name.
+        globalThis.__webcmdWriteArtifact = globalThis.writeArtifact;
         __WebcmdPlaywrightClient.quickjsPlatform.fs().promises.readFile = () => (
           unsupported('Host filesystem reads')
         );
