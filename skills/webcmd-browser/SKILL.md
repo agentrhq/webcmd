@@ -184,13 +184,13 @@ For CAPTCHA or raw user takeover, stop automation, give the user any viewer URL 
 
 For native controls, inspect structure first, then use Playwright's normal form APIs inside `run`. Do not guess date formats, option labels, or file constraints from memory; read them from the DOM.
 
-`browser run` uses QuickJS, not Node.js: `Buffer` and `TextEncoder` are unavailable. For an in-memory upload, pass bytes directly:
+`browser run` uses QuickJS, not Node.js: `Buffer` is unavailable. For an in-memory upload, pass a `Uint8Array`; encode text with the supported `TextEncoder`:
 
 ```js
 await page.locator('input[type="file"]').setInputFiles({
   name: 'evidence.txt',
   mimeType: 'text/plain',
-  buffer: new Uint8Array([102, 105, 108, 101]),
+  buffer: new TextEncoder().encode('file'),
 });
 ```
 
