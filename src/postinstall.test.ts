@@ -52,4 +52,23 @@ describe('postinstall', () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('SLAB browser is required for local webcmd commands. Run `webcmd setup` to install it.');
   });
+
+  it('prints SLAB guidance when the global install shell is unknown', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-postinstall-unknown-shell-'));
+    roots.push(home);
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      HOME: home,
+      USERPROFILE: home,
+      SHELL: '/bin/unknown',
+      npm_config_global: 'true',
+    };
+    delete env.CI;
+    delete env.CONTINUOUS_INTEGRATION;
+
+    const result = spawnSync(process.execPath, ['scripts/postinstall.js'], { env, encoding: 'utf8' });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('SLAB browser is required for local webcmd commands. Run `webcmd setup` to install it.');
+  });
 });

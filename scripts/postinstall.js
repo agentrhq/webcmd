@@ -88,6 +88,8 @@ async function main() {
     return;
   }
 
+  await offerSlabInstall();
+
   const shell = detectShell();
   if (!shell) {
     // Cannot determine shell; silently skip
@@ -145,8 +147,6 @@ async function main() {
       console.error(`Warning: Could not install shell completion: ${err.message}`);
     }
   }
-
-  await offerSlabInstall();
 
   // ── Plugin discovery hint ───────────────────────────────────────────
   console.log('');
