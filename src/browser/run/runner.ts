@@ -168,6 +168,7 @@ export async function runBrowserProgram(
   let maxOutputChars = BROWSER_RUN_DEFAULT_MAX_OUTPUT_CHARS;
   let savedSnapshotDiff: string | undefined;
   let snapshotTruncated = false;
+  let snapshotDiffOmitted = false;
   const redactionOptions = {
     maxDepth: 8,
     maxArrayItems: 100,
@@ -194,6 +195,7 @@ export async function runBrowserProgram(
       limits: {
         outputTruncated: logOutputTruncated || bounded.truncated,
         snapshotTruncated,
+        ...(snapshotDiffOmitted && { snapshotDiffOmitted: true }),
       },
       ...(Object.keys(timings).length > 0 && { timings }),
     };
@@ -245,6 +247,7 @@ export async function runBrowserProgram(
   const snapshotMode = options.snapshotMode ?? 'act';
   const snapshotDiffEnabled = options.snapshotDiff !== false;
   const baselineStore = options.snapshotBaselineStore ?? new MemorySnapshotBaselineStore();
+  if (!snapshotDiffEnabled) baselineStore.clear(input.pageId);
   let host!: QuickJSHost;
   const artifactSink = input.artifactSink ?? new LocalBrowserRunArtifactSink();
   const transport = new PlaywrightTransport(input, message => (
@@ -602,14 +605,20 @@ export async function runBrowserProgram(
           redactUrl(redactText(rendered.value, { maxStringLength: Number.MAX_SAFE_INTEGER })),
           maxOutputChars,
         );
-        savedSnapshotDiff = bounded.value;
-        snapshotTruncated ||= rendered.truncated || bounded.truncated;
-        if (rendered.criticalOmitted || bounded.truncated) warnings.push({
-          code: 'BROWSER_RUN_CRITICAL_SNAPSHOT_OMITTED',
-          message: rendered.criticalOmitted
-            ? rendered.warnings[0] ?? 'Critical snapshot content was omitted; inspect the nearest [more ref=...] scope.'
-            : 'Critical snapshot content was omitted while enforcing the output ceiling.',
-        });
+        const diffExceededCeiling = rendered.truncated || bounded.truncated;
+        snapshotTruncated ||= diffExceededCeiling;
+        if (diffExceededCeiling) {
+          snapshotDiffOmitted = true;
+          warnings.push({
+            code: 'BROWSER_RUN_SNAPSHOT_DIFF_OMITTED',
+            message:
+              `Snapshot diff exceeded the ${maxOutputChars}-character output ceiling and was omitted. `
+              + 'If the returned result and page metadata are sufficient, continue without another observation. '
+              + 'Otherwise inspect the relevant scope with a targeted browser snapshot or extraction.',
+          });
+        } else {
+          savedSnapshotDiff = bounded.value;
+        }
       } catch (snapshotError) {
         baselineStore.clear(input.pageId);
         warnings.push({
@@ -633,6 +642,7 @@ export async function runBrowserProgram(
       limits: {
         outputTruncated: logOutputTruncated || bounded.truncated,
         snapshotTruncated,
+        ...(snapshotDiffOmitted && { snapshotDiffOmitted: true }),
       },
       timings,
     };
