@@ -33,6 +33,7 @@ import { cli, Strategy } from './registry.js';
 import { withTimeoutMs } from './runtime.js';
 import * as runtime from './runtime.js';
 import * as capRouting from './capabilityRouting.js';
+import * as slabInstallation from './slab/installation.js';
 import { clearDaemonRunContext, getDaemonRunContext } from './session-lease.js';
 import { sendCommand } from './browser/daemon-client.js';
 
@@ -616,6 +617,7 @@ describe('executeCommand — non-browser timeout', () => {
       let firstRunId: string | undefined;
       let secondRunId: string | undefined;
       const mockPage = { closeWindow: vi.fn().mockResolvedValue(undefined) } as any;
+      vi.spyOn(slabInstallation, 'isSlabInstalled').mockReturnValue(true);
       vi.spyOn(capRouting, 'shouldUseBrowserSession').mockReturnValue(true);
       vi.spyOn(runtime, 'browserSession').mockImplementation(async (_Factory, fn) => fn(mockPage));
       vi.spyOn(runtime, 'runWithTimeout')
