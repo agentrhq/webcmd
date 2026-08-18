@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.2](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.1...webcmd-v0.7.2) (2026-08-18)
+
+
+### Bug Fixes
+
+* **browser:** default every daemon command to a background window ([#328](https://github.com/agentrhq/webcmd/issues/328)) ([40a7b82](https://github.com/agentrhq/webcmd/commit/40a7b82213174ef845f015a8c1c1a2c14334cbc5))
+* **browser:** tolerate pages closing during session cleanup ([#329](https://github.com/agentrhq/webcmd/issues/329)) ([87131f5](https://github.com/agentrhq/webcmd/commit/87131f503b1c5d1a0b30b4d06a88f942fd35a89a))
+
 ## [0.7.1](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.0...webcmd-v0.7.1) (2026-08-14)
 
 ### Improvements
