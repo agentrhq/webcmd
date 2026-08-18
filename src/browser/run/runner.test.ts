@@ -20,7 +20,6 @@ import {
 } from 'playwright-core';
 import { LocalBrowserRunArtifactSink } from './artifacts.js';
 import { MemorySnapshotBaselineStore } from '../snapshot/index.js';
-import { MemorySnapshotBaselineStore } from '../snapshot/index.js';
 import { unsupportedApiMessage } from './playwright-transport.js';
 import { QuickJSHost } from './quickjs-host.js';
 import { runBrowserProgram } from './runner.js';
@@ -54,6 +53,15 @@ function run(source: string, options = {}, input = {}) {
     pageId: 'page-1',
     ...input,
   }, source, options);
+}
+
+async function runError(source: string): Promise<Error & { code?: string; hint?: string }> {
+  try {
+    await run(source);
+  } catch (cause) {
+    return cause as Error & { code?: string; hint?: string };
+  }
+  throw new Error('expected the program to fail');
 }
 
 describeWithChromium('runBrowserProgram', () => {
@@ -231,6 +239,17 @@ afterAll(async () => {
     const output = await run('return typeof page.snapshotForAI;');
 
     expect(output.result).toBe('undefined');
+  });
+  it('reports the caller line, column, and source for a compile error', async () => {
+    // An unescaped quote ends the string early; the parser trips on what follows.
+    // Line/column must be the caller's own, not the AsyncFunction wrapper's.
+    const error = await runError("const a = 1;\nconst s = 'x'y';\nreturn a;");
+
+    expect(error.code).toBe('BROWSER_RUN_SYNTAX_ERROR');
+    expect(error.message).toContain('at line 2, column 14');
+    expect(error.message).toContain("const s = 'x'y';");
+    expect(error.message).not.toContain('QuickJS promise rejected');
+    expect(error.hint).toContain('unescaped quote');
   });
   it('publishes the browser-run package subpath', () => {
     const packageJson = JSON.parse(

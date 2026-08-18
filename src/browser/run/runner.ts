@@ -489,14 +489,43 @@ export async function runBrowserProgram(
           connection.close(message);
           rejectRun?.(new Error(message));
         };
+        globalThis.__webcmdCompileError = (source, cause) => {
+          // new AsyncFunction(body) prepends two lines of wrapper, so QuickJS reports
+          // a line two ahead of the one the caller actually wrote.
+          const lines = source.split('\\n');
+          const line = (cause?.lineNumber ?? 0) - 2;
+          const column = cause?.columnNumber ?? 0;
+          const text = line >= 1 && line <= lines.length ? lines[line - 1] : undefined;
+          let excerpt = '';
+          if (text !== undefined) {
+            const start = Math.max(0, column - 60);
+            const caret = ' '.repeat(Math.max(0, column - 1 - start)) + '^';
+            excerpt = '\\n  ' + text.slice(start, column + 20) + '\\n  ' + caret;
+          }
+          const where = line >= 1 ? ' at line ' + line + ', column ' + column : '';
+          const message = cause?.message ?? 'Program failed to compile.';
+          const error = new SyntaxError(message + where + excerpt);
+          error.code = 'BROWSER_RUN_SYNTAX_ERROR';
+          error.hint = 'Your program failed to compile; the browser was never touched. '
+            + 'A common cause is an unescaped quote when embedding a URL or HTML in a '
+            + 'string literal — use double quotes or a template literal for values that '
+            + 'contain apostrophes.';
+          return error;
+        };
         globalThis.__webcmdRun = async source => {
           const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+          let program;
+          try {
+            program = new AsyncFunction(source);
+          } catch (cause) {
+            throw __webcmdCompileError(source, cause);
+          }
           let value;
           try {
             const cancellation = new Promise((_resolve, reject) => {
               rejectRun = reject;
             });
-            value = await Promise.race([new AsyncFunction(source)(), cancellation]);
+            value = await Promise.race([program(), cancellation]);
           } finally {
             rejectRun = undefined;
           }
