@@ -7,6 +7,7 @@ const {
   mockFindShadowedUserAdapters,
   mockSendCommand,
   mockSetDaemonCommandTimeoutSeconds,
+  mockFindSlabInstallation,
 } = vi.hoisted(() => ({
   mockGetDaemonHealth: vi.fn(),
   mockConnect: vi.fn(),
@@ -14,6 +15,7 @@ const {
   mockFindShadowedUserAdapters: vi.fn(),
   mockSendCommand: vi.fn(),
   mockSetDaemonCommandTimeoutSeconds: vi.fn(),
+  mockFindSlabInstallation: vi.fn(),
 }));
 
 vi.mock('./browser/daemon-transport.js', () => ({
@@ -32,6 +34,10 @@ vi.mock('./browser/daemon-client.js', () => ({
   setDaemonCommandTimeoutSeconds: mockSetDaemonCommandTimeoutSeconds,
 }));
 
+vi.mock('./slab/installation.js', () => ({
+  findSlabInstallation: mockFindSlabInstallation,
+}));
+
 vi.mock('./adapter-shadow.js', async () => {
   const actual = await vi.importActual<typeof import('./adapter-shadow.js')>('./adapter-shadow.js');
   return {
@@ -40,7 +46,7 @@ vi.mock('./adapter-shadow.js', async () => {
   };
 });
 
-import { checkConnectivity, renderBrowserDoctorReport, runBrowserDoctor } from './doctor.js';
+import { checkBrowserBinary, checkConnectivity, renderBrowserDoctorReport, runBrowserDoctor } from './doctor.js';
 
 describe('doctor report rendering', () => {
   const strip = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '');
@@ -50,6 +56,10 @@ describe('doctor report rendering', () => {
     vi.unstubAllEnvs();
     mockFindShadowedUserAdapters.mockReturnValue([]);
     mockSetDaemonCommandTimeoutSeconds.mockClear();
+    mockFindSlabInstallation.mockReturnValue({
+      platform: 'darwin',
+      executablePath: '/Applications/SLAB.app/Contents/MacOS/SLAB',
+    });
     // Doctor always runs live connectivity. Tests that want connect to fail override.
     mockConnect.mockResolvedValue({
       evaluate: vi.fn().mockResolvedValue(2),
@@ -61,6 +71,22 @@ describe('doctor report rendering', () => {
       if (action === 'session-close') return { closed: true };
       throw new Error(`Unexpected doctor command: ${action}`);
     });
+  });
+
+  it('reports the SLAB installation through the retained binary status shape', () => {
+    expect(checkBrowserBinary()).toEqual({
+      installed: true,
+      path: '/Applications/SLAB.app/Contents/MacOS/SLAB',
+      override: false,
+    });
+    const text = strip(renderBrowserDoctorReport({
+      daemonRunning: true,
+      runtimeConnected: true,
+      runtimeName: 'SLAB',
+      binary: checkBrowserBinary(),
+      issues: [],
+    }));
+    expect(text).toContain('[OK] Browser binary: installed at /Applications/SLAB.app/Contents/MacOS/SLAB');
   });
 
   it('renders OK-style report when daemon and runtime connected', () => {

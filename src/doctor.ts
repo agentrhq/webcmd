@@ -4,6 +4,8 @@
  * Simplified for the daemon-based architecture.
  */
 
+import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { DEFAULT_DAEMON_PORT } from './constants.js';
 import { BrowserBridge } from './browser/index.js';
 import { sendCommand, setDaemonCommandTimeoutSeconds } from './browser/daemon-client.js';
@@ -14,6 +16,7 @@ import type { BrowserProfileStatus } from './browser/daemon-transport.js';
 import { aliasForContextId, loadProfileConfig } from './browser/profile.js';
 import { formatDaemonVersion, isDaemonStale, staleDaemonIssue } from './browser/daemon-version.js';
 import { findShadowedUserAdapters, formatAdapterShadowIssue, type AdapterShadow } from './adapter-shadow.js';
+import { findSlabInstallation } from './slab/installation.js';
 
 const DOCTOR_LIVE_TIMEOUT_SECONDS = 8;
 
@@ -28,6 +31,14 @@ export type ConnectivityResult = {
   durationMs: number;
 };
 
+export type BrowserBinaryStatus = {
+  installed: boolean | undefined;
+  path: string;
+  downloadUrl?: string;
+  error?: string;
+  override: boolean;
+};
+
 export type DoctorReport = {
   cliVersion?: string;
   daemonRunning: boolean;
@@ -38,11 +49,19 @@ export type DoctorReport = {
   runtimeFlaky?: boolean;
   runtimeName?: string;
   runtimeVersion?: string;
+  binary?: BrowserBinaryStatus;
   connectivity?: ConnectivityResult;
   profiles?: BrowserProfileStatus[];
   adapterShadows?: AdapterShadow[];
   issues: string[];
 };
+
+export function checkBrowserBinary(): BrowserBinaryStatus {
+  const installation = findSlabInstallation({ platform: process.platform, homeDir: homedir(), existsSync });
+  return installation
+    ? { installed: true, path: installation.executablePath, override: false }
+    : { installed: false, path: '/Applications/SLAB.app', override: false };
+}
 
 /**
  * Test connectivity by attempting a real browser command.
@@ -87,6 +106,7 @@ export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<Doctor
   // (bridge.connect spawns daemon) and validates
   // end-to-end browser bridge health.
   const connectivity = await checkConnectivity();
+  const binary = checkBrowserBinary();
 
   // Single status read *after* connectivity side-effects settle.
   const health = await getDaemonHealth();
@@ -104,6 +124,9 @@ export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<Doctor
     adapterShadows = findShadowedUserAdapters();
   } catch (err) {
     issues.push(`Could not check adapter overrides: ${getErrorMessage(err)}`);
+  }
+  if (binary.installed === false) {
+    issues.push(`SLAB is not installed at ${binary.path}.\n  Run webcmd setup to install SLAB.`);
   }
   if (daemonFlaky) {
     issues.push(
@@ -171,6 +194,7 @@ export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<Doctor
     runtimeFlaky,
     runtimeName,
     runtimeVersion,
+    binary,
     connectivity,
     profiles,
     adapterShadows,
@@ -210,6 +234,18 @@ export function renderBrowserDoctorReport(report: DoctorReport): string {
     ? 'unstable (connected during live check, then disconnected)'
     : report.runtimeConnected ? 'connected' : 'not connected';
   lines.push(`${runtimeIcon} Runtime: ${runtimeName} ${runtimeLabel}${runtimeVersion}`);
+
+  if (report.binary) {
+    const binaryIcon = report.binary.installed === undefined
+      ? '[WARN]'
+      : report.binary.installed ? '[OK]' : '[MISSING]';
+    const binaryLabel = report.binary.installed === undefined
+      ? 'status unknown'
+      : report.binary.installed
+      ? `installed at ${report.binary.path}`
+      : `not installed (${report.binary.path})`;
+    lines.push(`${binaryIcon} Browser binary: ${binaryLabel}`);
+  }
 
   if (report.profiles && report.profiles.length > 0) {
     const config = loadProfileConfig();

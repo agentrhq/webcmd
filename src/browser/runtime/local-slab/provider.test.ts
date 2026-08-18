@@ -163,6 +163,7 @@ describe('LocalSlabRuntimeProvider', () => {
       pending: 0,
       commandResultUnknown: 0,
     });
+    await expect(provider.status()).resolves.toHaveProperty('runtimeVersion', undefined);
   });
 
   it('discards a temporary Session record after closing it', async () => {

@@ -224,6 +224,7 @@ export class SlabSessionManager {
     return [...this.profiles.entries()].map(([contextId, runtime]) => ({
       contextId,
       runtimeConnected: true,
+      runtimeVersion: runtime.attachment.browserVersion || undefined,
       pending: 0,
       lastSeenAt: runtime.lastSeenAt,
     }));

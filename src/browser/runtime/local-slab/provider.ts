@@ -34,6 +34,7 @@ export class LocalSlabRuntimeProvider implements BrowserRuntimeProvider {
     return {
       runtimeConnected: true,
       runtimeName: 'SLAB',
+      runtimeVersion: profiles.find(profile => profile.runtimeVersion)?.runtimeVersion,
       profiles,
       pending: 0,
       commandResultUnknown: 0,
