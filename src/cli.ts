@@ -44,7 +44,7 @@ import { daemonRestart, daemonStatus, daemonStop } from './commands/daemon.js';
 import { isVerbose, log } from './logger.js';
 import { BrowserCommandError, listExistingBrowserTabs, releaseSiteSessionLease, sendCommand } from './browser/daemon-client.js';
 import { fetchDaemonStatus } from './browser/daemon-transport.js';
-import { aliasForContextId, loadProfileConfig, profileRouteParams, renameProfile, resolveProfileSelection, setDefaultProfile, type ProfileSelection } from './browser/profile.js';
+import { aliasForContextId, loadProfileConfig, profileListRows, profileRouteParams, renameProfile, resolveProfileSelection, setDefaultProfile, type ProfileSelection } from './browser/profile.js';
 import { formatDaemonVersion, isDaemonStale } from './browser/daemon-version.js';
 import { DEFAULT_BROWSER_CONNECT_TIMEOUT } from './browser/config.js';
 import { CLI_COMMAND, PACKAGE_NAME } from './brand.js';
@@ -1778,10 +1778,41 @@ cli({
   profileCmd
     .command('list')
     .description('List Chrome and Chromium profiles available through the Cloak runtime')
-    .action(async () => {
+    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table')
+    .action(async (opts: { format?: string }, command: Command) => {
+      const fmt = resolveOutputFormat(opts.format);
+      if (fmt === null) return;
       const status = await fetchDaemonStatus();
       const config = loadProfileConfig();
       const profiles = status?.profiles ?? [];
+      const daemonUsable = Boolean(status)
+        && !isDaemonStale(status!, PKG_VERSION)
+        && Array.isArray(status!.profiles);
+      if (fmt !== 'table') {
+        // An empty list and an unreadable runtime are different facts. Emitting `[]` for a
+        // stale or absent daemon reads as "no profiles exist" and sends callers looking for
+        // profile state elsewhere, so structured mode fails loudly instead.
+        if (!daemonUsable) {
+          const error = new CliError(
+            'DAEMON_UNAVAILABLE',
+            status
+              ? `Daemon ${formatDaemonVersion(status)} is stale for CLI v${PKG_VERSION}; profile list is incomplete.`
+              : 'Daemon is not running; profile list is incomplete.',
+            status ? 'Run: webcmd daemon restart' : 'Run webcmd doctor after opening Chrome.',
+          );
+          console.error(`Error: ${error.message}`);
+          console.error(`Hint: ${error.hint}`);
+          process.exitCode = error.exitCode;
+          return;
+        }
+        // Saved-but-disconnected profiles are included: they exist, they are just not live.
+        await renderOutput(profileListRows(config, profiles), {
+          fmt,
+          fmtExplicit: command.getOptionValueSource('format') === 'cli',
+          columns: ['contextId', 'alias', 'default', 'connected', 'runtimeVersion'],
+        });
+        return;
+      }
       if (!status) {
         console.log('Daemon is not running. Run webcmd doctor after opening Chrome.');
         return;
