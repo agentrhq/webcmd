@@ -20,7 +20,6 @@ import {
 } from 'playwright-core';
 import { LocalBrowserRunArtifactSink } from './artifacts.js';
 import { MemorySnapshotBaselineStore } from '../snapshot/index.js';
-import { MemorySnapshotBaselineStore } from '../snapshot/index.js';
 import { unsupportedApiMessage } from './playwright-transport.js';
 import { QuickJSHost } from './quickjs-host.js';
 import { runBrowserProgram } from './runner.js';
