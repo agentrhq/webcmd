@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getConfigPath } from './config.js';
 import { getHostedCredentialPath } from './credentials.js';
-import { runHostedSetup } from './setup.js';
+import { runHostedSetup, type SetupIo } from './setup.js';
 
 let tempDir: string | undefined;
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -17,7 +17,68 @@ afterEach(async () => {
   tempDir = undefined;
 });
 
+function hostedSetupFixture(overrides: Partial<SetupIo>): SetupIo {
+  const answers = ['hosted', 'wcmd_live_test'];
+  return {
+    env: { WEBCMD_CONFIG_DIR: tempDir, WEBCMD_CREDENTIAL_BACKEND: 'file' },
+    question: async () => answers.shift() ?? '',
+    fetchImpl: async () => new Response(JSON.stringify({ user: { id: 'user_demo' } }), { status: 200 }),
+    write: () => {},
+    ...overrides,
+  };
+}
+
+function statusFixture(overrides: Partial<SetupIo> & { mode: 'hosted' | 'local' }): SetupIo {
+  return {
+    env: { WEBCMD_CONFIG_DIR: tempDir },
+    readFileSync: () => JSON.stringify({
+      mode: overrides.mode,
+      updatedAt: '2026-07-08T00:00:00.000Z',
+      ...(overrides.mode === 'hosted' ? { hosted: { apiBaseUrl: 'https://api.webcmd.dev', apiKeyRef: 'wcmd_cred_test' } } : {}),
+    }),
+    existsSync: () => true,
+    ...overrides,
+    status: true,
+  } as SetupIo;
+}
+
 describe('webcmd setup', () => {
+  it('offers SLAB only after local mode is selected', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-slab-'));
+    const answers = ['local', 'yes'];
+    const installSlab = vi.fn().mockResolvedValue({ platform: 'darwin', executablePath: '/Applications/SLAB.app/Contents/MacOS/SLAB' });
+    await runHostedSetup({
+      env: { WEBCMD_CONFIG_DIR: tempDir },
+      question: async () => answers.shift() ?? '',
+      isSlabInstalled: () => false,
+      installSlab,
+      ensureBridgeReady: async () => {},
+      write: () => {},
+    });
+    expect(installSlab).toHaveBeenCalledOnce();
+  });
+
+  it('never checks SLAB for hosted mode', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-hosted-slab-'));
+    const isSlabInstalled = vi.fn(() => { throw new Error('must not run'); });
+    await runHostedSetup(hostedSetupFixture({ isSlabInstalled }));
+    expect(isSlabInstalled).not.toHaveBeenCalled();
+  });
+
+  it('reports configured hosted mode without probing SLAB', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-status-slab-'));
+    const isSlabInstalled = vi.fn(() => { throw new Error('must not run'); });
+    const messages: string[] = [];
+    const code = await runHostedSetup(statusFixture({
+      mode: 'hosted',
+      isSlabInstalled,
+      write: message => { messages.push(message); },
+    }));
+    expect(code).toBe(0);
+    expect(messages.join('')).toBe('{"configured":true,"mode":"hosted"}\n');
+    expect(isSlabInstalled).not.toHaveBeenCalled();
+  });
+
   it('writes local mode from interactive answer', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-'));
     const answers = ['local'];
@@ -114,6 +175,19 @@ describe('webcmd setup', () => {
       .toMatchObject({ mode: 'local' });
   }, 20_000);
 
+  it('supports non-interactive local setup and JSON status', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-options-'));
+    const env = { ...process.env, WEBCMD_CONFIG_DIR: tempDir, WEBCMD_NO_UPDATE_CHECK: '1' };
+
+    const local = await runSetupProcess(['setup', '--mode', 'local'], env);
+    expect(local.status).toBe(0);
+    expect(JSON.parse(await readFile(getConfigPath({ env }), 'utf8'))).toMatchObject({ mode: 'local' });
+
+    const status = await runSetupProcess(['setup', '--status', '--format', 'json'], env);
+    expect(status.status).toBe(0);
+    expect(status.stdout).toBe('{"configured":true,"mode":"local"}\n');
+  }, 20_000);
+
   it('does not resolve until all caller-owned output writes complete', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-slow-output-'));
     const output = new SetupControlledWritable();
@@ -171,6 +245,22 @@ describe('webcmd setup', () => {
     expect(end).not.toHaveBeenCalled();
   });
 });
+
+async function runSetupProcess(args: string[], env: NodeJS.ProcessEnv): Promise<{ status: number | null; stdout: string }> {
+  const child = spawn(process.execPath, ['--import', 'tsx', 'src/main.ts', ...args], {
+    cwd: packageRoot,
+    env,
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  const stdout: Buffer[] = [];
+  child.stdout.on('data', chunk => stdout.push(Buffer.from(chunk)));
+  child.stdin.end();
+  const status = await new Promise<number | null>((resolve, reject) => {
+    child.once('error', reject);
+    child.once('close', resolve);
+  });
+  return { status, stdout: Buffer.concat(stdout).toString('utf8') };
+}
 
 async function within<T>(promise: Promise<T>, milliseconds = 500): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;

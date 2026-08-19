@@ -25,7 +25,7 @@ function isolatedOptions(options: Parameters<typeof runCli>[1] = {}): Parameters
 }
 
 function browserRun(session: string, source: string, options: Parameters<typeof runCli>[1] = {}) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-cloak-run-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-slab-run-'));
   sourceDirs.push(dir);
   const sourcePath = path.join(dir, 'program.js');
   fs.writeFileSync(sourcePath, source);
@@ -39,8 +39,8 @@ async function createSession(options: Parameters<typeof runCli>[1] = {}) {
 }
 
 beforeAll(async () => {
-  sharedConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-cloak-suite-'));
-  sharedProfile = `cloak-suite-${Date.now()}`;
+  sharedConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-slab-suite-'));
+  sharedProfile = `slab-suite-${Date.now()}`;
   sourceDirs.push(sharedConfigDir);
   server = http.createServer((req, res) => {
     if (req.url === '/cookie') {
@@ -67,7 +67,7 @@ beforeAll(async () => {
       return;
     }
 
-    res.end('<html><title>Cloak Smoke</title><body><button id="b">Go</button><script>window.answer = 42</script></body></html>');
+    res.end('<html><title>SLAB Smoke</title><body><button id="b">Go</button><script>window.answer = 42</script></body></html>');
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
@@ -80,7 +80,7 @@ afterAll(async () => {
   for (const dir of sourceDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
 
-describe('Cloak runtime e2e', () => {
+describe.skipIf(process.env.WEBCMD_LIVE_SLAB !== '1')('SLAB runtime e2e', () => {
   it('runs Playwright against a page through webcmd browser', async () => {
     const session = await createSession({ timeout: 120_000 });
     const result = await browserRun(session, `
@@ -88,10 +88,10 @@ describe('Cloak runtime e2e', () => {
       return await page.evaluate(() => document.title + ':' + window.answer);
     `, { timeout: 120_000 });
     expect(result.code).toBe(0);
-    expect(result.stdout).toContain('Cloak Smoke:42');
+    expect(result.stdout).toContain('SLAB Smoke:42');
   }, 180_000);
 
-  it('persists cookies inside the Cloak profile', async () => {
+  it('persists cookies inside the SLAB profile', async () => {
     const session = await createSession({ timeout: 120_000 });
     const cookies = await browserRun(session, `
       await page.goto(${JSON.stringify(`${baseUrl}/cookie`)});
@@ -103,7 +103,7 @@ describe('Cloak runtime e2e', () => {
 
   it('survives sequential open and evaluate cycles in one persistent profile', async () => {
     const profile = `task5-${Date.now()}`;
-    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-cloak-sequential-'));
+    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-slab-sequential-'));
     const run = (args: string[]) => runCli(args, {
       timeout: 120_000,
       env: {
@@ -158,7 +158,7 @@ describe('Cloak runtime e2e', () => {
         const status = await run(['daemon', 'status']);
         expect(status.code).toBe(0);
         expect(status.stdout).toContain('Daemon: running');
-        expect(status.stdout).toContain('Runtime: cloak connected');
+        expect(status.stdout).toContain('Runtime: SLAB connected');
         expect(status.stdout).toContain(`Profiles: ${profile}`);
       } finally {
         const stopped = await run(['daemon', 'stop']);

@@ -13,10 +13,12 @@ import {
 } from './daemon-client.js';
 import * as daemonLifecycle from './daemon-lifecycle.js';
 import { clearDaemonRunContext, getDaemonRunContext, setDaemonRunContext } from '../session-lease.js';
+import { SlabRequiredError } from '../errors.js';
 
 describe('daemon-client', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn());
+    vi.spyOn(daemonLifecycle, 'ensureSlabReadyForBrowserCommand').mockResolvedValue();
   });
 
   afterEach(() => {
@@ -200,6 +202,20 @@ describe('daemon-client', () => {
     expect(ids[0]).toMatch(new RegExp(`^cmd_${process.pid}_1763000000000_\\d+$`));
     expect(ids[1]).toMatch(new RegExp(`^cmd_${process.pid}_1763000000000_\\d+$`));
     expect(ids[0]).not.toBe(ids[1]);
+  });
+
+  it('checks SLAB before an already-running daemon can accept a browser command', async () => {
+    vi.spyOn(daemonLifecycle, 'ensureSlabReadyForBrowserCommand').mockRejectedValue(new SlabRequiredError());
+    vi.mocked(fetch).mockResolvedValue({
+      status: 200,
+      json: () => Promise.resolve({ id: 'server', ok: true, data: 'ok' }),
+    } as Response);
+
+    await expect(sendCommand('snapshot', { session: 'work', surface: 'browser' })).rejects.toMatchObject({
+      code: 'SLAB_REQUIRED', exitCode: 78,
+    });
+
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it('sendCommand binds the active logical run metadata to each daemon operation', async () => {

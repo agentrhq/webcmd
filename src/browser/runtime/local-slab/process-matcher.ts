@@ -1,13 +1,18 @@
 import fs from 'node:fs';
 import { execFile } from 'node:child_process';
 
-export function matchCloakProfileCommand(command: string, userDataDir: string): boolean {
+export function matchSlabProfileCommand(command: string, userDataDir: string): boolean {
   const args = splitCommand(command);
   const executable = args[0];
   const executableParts = executable?.split(/[\\/]/u) ?? [];
-  const cacheIndex = executableParts.lastIndexOf('.cloakbrowser');
-  if (cacheIndex < 0 || !/^chromium-\d+(?:\.\d+)*(?:-pro)?$/u.test(executableParts[cacheIndex + 1] ?? '')) return false;
-  if (!['chrome', 'chrome.exe', 'chromium'].includes(executableParts.at(-1)?.toLowerCase() ?? '')) return false;
+  const basename = executableParts.at(-1)?.toLowerCase() ?? '';
+  const hasMacBundle = executableParts.some(part => part.toLowerCase() === 'slab.app');
+  const isSlabApp = basename === 'slab' && hasMacBundle;
+  const cacheIndex = executableParts.lastIndexOf('.slabbrowser');
+  const isSlabCache = cacheIndex >= 0
+    && /^chromium-\d+(?:\.\d+)*(?:-pro)?$/u.test(executableParts[cacheIndex + 1] ?? '')
+    && ['chrome', 'chrome.exe', 'chromium'].includes(basename);
+  if (!isSlabApp && !isSlabCache) return false;
   for (let index = 0; index < args.length; index += 1) {
     if (args[index] === '--user-data-dir' && args[index + 1] === userDataDir) return true;
     if (args[index] === `--user-data-dir=${userDataDir}`) return true;
@@ -15,7 +20,7 @@ export function matchCloakProfileCommand(command: string, userDataDir: string): 
   return false;
 }
 
-export async function findExactCloakProfileProcesses(userDataDir: string): Promise<number[]> {
+export async function findExactSlabProfileProcesses(userDataDir: string): Promise<number[]> {
   const aliases = new Set([userDataDir]);
   try {
     aliases.add(fs.realpathSync.native(userDataDir));
@@ -28,7 +33,7 @@ export async function findExactCloakProfileProcesses(userDataDir: string): Promi
     if (!match) return [];
     const pid = Number(match[1]);
     if (!Number.isInteger(pid) || pid === process.pid) return [];
-    return [...aliases].some(dir => matchCloakProfileCommand(match[2], dir)) ? [pid] : [];
+    return [...aliases].some(dir => matchSlabProfileCommand(match[2], dir)) ? [pid] : [];
   });
   return [...new Set(pids)];
 }

@@ -88,7 +88,7 @@ function Get-DaemonLogMetadata {
   }
 }
 
-function Test-CloakDiagnosticLogName {
+function Test-SlabDiagnosticLogName {
   param(
     [Parameter(Mandatory = $true)][string]$Name
   )
@@ -98,7 +98,7 @@ function Test-CloakDiagnosticLogName {
     $Name.Equals('LOG.old', [StringComparison]::OrdinalIgnoreCase)
 }
 
-function Get-CloakLogFileMetadata {
+function Get-SlabLogFileMetadata {
   param(
     [Parameter(Mandatory = $true)][string]$Root,
     [Parameter(Mandatory = $true)]$File
@@ -172,10 +172,10 @@ function Invoke-DiagnosticsSelfTest {
 
   $diagnosticLogNames = @('browser.log', 'debug.log', 'LOG', 'LOG.old')
   foreach ($name in $diagnosticLogNames) {
-    Assert-DiagnosticsSelfTest -Condition (Test-CloakDiagnosticLogName -Name $name) -Message "known diagnostic log name was rejected: $name"
+    Assert-DiagnosticsSelfTest -Condition (Test-SlabDiagnosticLogName -Name $name) -Message "known diagnostic log name was rejected: $name"
   }
   foreach ($name in @('Login Data', 'catalog.json', 'debug.txt', 'LOG.bak')) {
-    Assert-DiagnosticsSelfTest -Condition (-not (Test-CloakDiagnosticLogName -Name $name)) -Message "non-log profile file was accepted: $name"
+    Assert-DiagnosticsSelfTest -Condition (-not (Test-SlabDiagnosticLogName -Name $name)) -Message "non-log profile file was accepted: $name"
   }
 
   $syntheticFile = [pscustomobject]@{
@@ -184,10 +184,10 @@ function Invoke-DiagnosticsSelfTest {
     LastWriteTimeUtc = [DateTime]::Parse('2024-01-03T00:00:00Z').ToUniversalTime()
     SensitiveContent = 'cookie=sensitive-value'
   }
-  $fileMetadata = Get-CloakLogFileMetadata -Root ([System.IO.Path]::GetTempPath()) -File $syntheticFile
+  $fileMetadata = Get-SlabLogFileMetadata -Root ([System.IO.Path]::GetTempPath()) -File $syntheticFile
   $fileMetadataJson = ConvertTo-Json -InputObject $fileMetadata -Depth 3
-  Assert-DiagnosticsSelfTest -Condition (($fileMetadata.PSObject.Properties.Name -join ',') -eq 'relativePath,bytes,lastWriteUtc') -Message 'Cloak file metadata contains a non-allowlisted field'
-  Assert-DiagnosticsSelfTest -Condition (-not $fileMetadataJson.Contains('sensitive-value')) -Message 'Cloak file contents survived metadata projection'
+  Assert-DiagnosticsSelfTest -Condition (($fileMetadata.PSObject.Properties.Name -join ',') -eq 'relativePath,bytes,lastWriteUtc') -Message 'SLAB file metadata contains a non-allowlisted field'
+  Assert-DiagnosticsSelfTest -Condition (-not $fileMetadataJson.Contains('sensitive-value')) -Message 'SLAB file contents survived metadata projection'
 
   Write-Host 'Diagnostics self-test passed.'
 }
@@ -198,7 +198,7 @@ if ($SelfTest) {
   return
 }
 
-$artifactRoot = Join-Path $PWD 'artifacts/windows-cloak'
+$artifactRoot = Join-Path $PWD 'artifacts/windows-slab'
 New-Item -ItemType Directory -Path $artifactRoot -Force | Out-Null
 
 $runnerMetadata = [ordered]@{
@@ -248,7 +248,7 @@ try {
 }
 
 $processMetadata = Get-Process -ErrorAction SilentlyContinue |
-  Where-Object { $_.ProcessName -match '(?i)^(node|chrome|chromium|cloak)' } |
+  Where-Object { $_.ProcessName -match '(?i)^(node|chrome|chromium|slab)' } |
   ForEach-Object {
     [ordered]@{
       name = $_.ProcessName
@@ -260,15 +260,15 @@ $processMetadata = Get-Process -ErrorAction SilentlyContinue |
   }
 Write-SanitizedJson -Path (Join-Path $artifactRoot 'process-metadata.json') -Value @($processMetadata)
 
-$cloakRoot = if ($env:USERPROFILE) { Join-Path $env:USERPROFILE '.webcmd/cloak' } else { $null }
-$cloakLogMetadata = @()
-if ($cloakRoot -and (Test-Path -LiteralPath $cloakRoot)) {
-  $cloakLogMetadata = Get-ChildItem -LiteralPath $cloakRoot -Recurse -File -ErrorAction SilentlyContinue |
-    Where-Object { Test-CloakDiagnosticLogName -Name $_.Name } |
+$slabRoot = if ($env:USERPROFILE) { Join-Path $env:USERPROFILE '.webcmd/slab' } else { $null }
+$slabLogMetadata = @()
+if ($slabRoot -and (Test-Path -LiteralPath $slabRoot)) {
+  $slabLogMetadata = Get-ChildItem -LiteralPath $slabRoot -Recurse -File -ErrorAction SilentlyContinue |
+    Where-Object { Test-SlabDiagnosticLogName -Name $_.Name } |
     ForEach-Object {
-      Get-CloakLogFileMetadata -Root $cloakRoot -File $_
+      Get-SlabLogFileMetadata -Root $slabRoot -File $_
     }
 }
-Write-SanitizedJson -Path (Join-Path $artifactRoot 'cloak-log-metadata.json') -Value @($cloakLogMetadata)
+Write-SanitizedJson -Path (Join-Path $artifactRoot 'slab-log-metadata.json') -Value @($slabLogMetadata)
 
 Write-Host "Sanitized diagnostics written to $artifactRoot"

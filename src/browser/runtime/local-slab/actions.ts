@@ -10,14 +10,14 @@ import {
 import { redactText, redactUrl } from '../../../observation/redaction.js';
 import { articleHtmlToMarkdown } from '../../../download/article-download.js';
 import { waitForDownload } from './downloads.js';
-import type { CloakSessionManager } from './session-manager.js';
+import type { SlabSessionManager } from './session-manager.js';
 import type { BrowserContext, Frame, Page as PlaywrightPage } from 'playwright-core';
 import { runBrowserProgram } from '../../run/runner.js';
 import { BROWSER_RUN_MAX_SOURCE_BYTES } from '../../run/types.js';
 
-const snapshotBaselines = new WeakMap<CloakSessionManager, SnapshotBaselineStore>();
+const snapshotBaselines = new WeakMap<SlabSessionManager, SnapshotBaselineStore>();
 
-function snapshotBaselineStore(manager: CloakSessionManager): SnapshotBaselineStore {
+function snapshotBaselineStore(manager: SlabSessionManager): SnapshotBaselineStore {
   let baselineStore = snapshotBaselines.get(manager);
   if (!baselineStore) {
     baselineStore = new MemorySnapshotBaselineStore();
@@ -26,7 +26,7 @@ function snapshotBaselineStore(manager: CloakSessionManager): SnapshotBaselineSt
   return baselineStore;
 }
 
-class CloakActionError extends Error {
+class SlabActionError extends Error {
   constructor(
     readonly errorCode: string,
     error: string,
@@ -37,7 +37,7 @@ class CloakActionError extends Error {
   }
 }
 
-export function resolveCloakCommandProfileId(manager: CloakSessionManager, command: BrowserRuntimeCommand): string {
+export function resolveSlabCommandProfileId(manager: SlabSessionManager, command: BrowserRuntimeCommand): string {
   const requested = command.profileId ?? command.contextId;
   if (requested?.trim()) return requested.trim();
 
@@ -48,9 +48,9 @@ export function resolveCloakCommandProfileId(manager: CloakSessionManager, comma
   if (active.includes(preferred)) return preferred;
   if (active.length === 1) return active[0];
   if (active.length > 1) {
-    throw new CloakActionError(
+    throw new SlabActionError(
       'profile_required',
-      `Default Cloak profile "${preferred}" is not active and multiple profiles are running; choose one with --profile.`,
+      `Default SLAB profile "${preferred}" is not active and multiple profiles are running; choose one with --profile.`,
       undefined,
       'Run webcmd profile list, then update the default with webcmd profile use <name> or pass --profile <name>.',
     );
@@ -62,8 +62,8 @@ function invalidRequest(command: BrowserRuntimeCommand, error: string): BrowserR
   return { id: command.id, ok: false, errorCode: 'invalid_request', error };
 }
 
-async function resolveLease(manager: CloakSessionManager, command: BrowserRuntimeCommand) {
-  const profileId = resolveCloakCommandProfileId(manager, command);
+async function resolveLease(manager: SlabSessionManager, command: BrowserRuntimeCommand) {
+  const profileId = resolveSlabCommandProfileId(manager, command);
   if (command.page) {
     const existing = await manager.findPageById(command.page, {
       profileId,
@@ -73,7 +73,7 @@ async function resolveLease(manager: CloakSessionManager, command: BrowserRuntim
       idleTimeout: command.idleTimeout,
     });
     if (existing) return existing;
-    throw new CloakActionError('stale_page_identity', `Page not found: ${command.page} — stale page identity`);
+    throw new SlabActionError('stale_page_identity', `Page not found: ${command.page} — stale page identity`);
   }
   return manager.getPage({
     profileId,
@@ -90,8 +90,8 @@ async function resolveLease(manager: CloakSessionManager, command: BrowserRuntim
   });
 }
 
-async function resolveExistingLease(manager: CloakSessionManager, command: BrowserRuntimeCommand) {
-  const profileId = resolveCloakCommandProfileId(manager, command);
+async function resolveExistingLease(manager: SlabSessionManager, command: BrowserRuntimeCommand) {
+  const profileId = resolveSlabCommandProfileId(manager, command);
   if (command.page) {
     const existing = await manager.findPageById(command.page, {
       profileId,
@@ -101,7 +101,7 @@ async function resolveExistingLease(manager: CloakSessionManager, command: Brows
       idleTimeout: command.idleTimeout,
     });
     if (existing) return existing;
-    throw new CloakActionError('stale_page_identity', `Page not found: ${command.page} — stale page identity`);
+    throw new SlabActionError('stale_page_identity', `Page not found: ${command.page} — stale page identity`);
   }
   const existing = await manager.findPage({
     profileId,
@@ -114,7 +114,7 @@ async function resolveExistingLease(manager: CloakSessionManager, command: Brows
     idleTimeout: command.idleTimeout,
   });
   if (existing) return existing;
-  throw new CloakActionError(
+  throw new SlabActionError(
     'session_not_found',
     `Browser session not found: ${command.session ?? ''}`,
     undefined,
@@ -125,7 +125,7 @@ async function resolveExistingLease(manager: CloakSessionManager, command: Brows
 function execTarget(page: PlaywrightPage, frameIndex: number | undefined, pageId: string): PlaywrightPage | Frame {
   if (frameIndex == null) return page;
   const frame = page.frames().slice(1)[frameIndex];
-  if (!frame) throw new CloakActionError('frame_not_found', `Frame not found: ${frameIndex}`, pageId);
+  if (!frame) throw new SlabActionError('frame_not_found', `Frame not found: ${frameIndex}`, pageId);
   return frame;
 }
 
@@ -198,12 +198,12 @@ async function captureScreenshot(page: PlaywrightPage, context: BrowserContext, 
   }
 }
 
-export async function dispatchCloakAction(manager: CloakSessionManager, command: BrowserRuntimeCommand, signal?: AbortSignal): Promise<BrowserRuntimeResult> {
+export async function dispatchSlabAction(manager: SlabSessionManager, command: BrowserRuntimeCommand, signal?: AbortSignal): Promise<BrowserRuntimeResult> {
   try {
     switch (command.action) {
       case 'navigate': {
         if (!command.url) return invalidRequest(command, 'Missing url');
-        const profileId = resolveCloakCommandProfileId(manager, command);
+        const profileId = resolveSlabCommandProfileId(manager, command);
         // 'none' maps to Playwright's 'commit': sites that stream analytics forever
         // never fire the load event, so adapters gating readiness on their own
         // selector waits must be able to skip it.
@@ -347,7 +347,7 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
       case 'close-window': {
         if (command.page) {
           const closed = await manager.closePage({
-            profileId: resolveCloakCommandProfileId(manager, command),
+            profileId: resolveSlabCommandProfileId(manager, command),
             session: command.session,
             surface: command.surface,
             pageId: command.page,
@@ -355,7 +355,7 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
           return { id: command.id, ok: true, data: { closed: Boolean(closed), page: closed ?? command.page, session: command.session } };
         } else {
           await manager.release({
-            profileId: resolveCloakCommandProfileId(manager, command),
+            profileId: resolveSlabCommandProfileId(manager, command),
             session: command.session,
             surface: command.surface,
             siteSession: command.siteSession,
@@ -371,7 +371,7 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
         switch (command.op ?? 'list') {
           case 'list': {
             const tabs = await manager.listPages({
-              profileId: resolveCloakCommandProfileId(manager, command),
+              profileId: resolveSlabCommandProfileId(manager, command),
               session: command.session,
               surface: command.surface,
             });
@@ -379,7 +379,7 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
           }
           case 'new': {
             const lease = await manager.newPage({
-              profileId: resolveCloakCommandProfileId(manager, command),
+              profileId: resolveSlabCommandProfileId(manager, command),
               session: command.session,
               surface: command.surface,
               siteSession: command.siteSession,
@@ -395,7 +395,7 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
           }
           case 'select': {
             const lease = await manager.selectPage({
-              profileId: resolveCloakCommandProfileId(manager, command),
+              profileId: resolveSlabCommandProfileId(manager, command),
               session: command.session,
               surface: command.surface,
               pageId: command.page,
@@ -407,7 +407,7 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
           }
           case 'close': {
             const closed = await manager.closePage({
-              profileId: resolveCloakCommandProfileId(manager, command),
+              profileId: resolveSlabCommandProfileId(manager, command),
               session: command.session,
               surface: command.surface,
               pageId: command.page,
@@ -470,13 +470,13 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
             id: command.id,
             ok: false,
             errorCode: 'invalid_request',
-            error: 'Bind requires --page or --index for a Cloak runtime tab',
+            error: 'Bind requires --page or --index for a SLAB runtime tab',
             errorHint: 'Run `webcmd --session <session-id> browser tab list`, then retry with `webcmd --session <session-id> browser bind --page <page-id>`.',
           };
         }
         {
           const lease = await manager.bindPage({
-            profileId: resolveCloakCommandProfileId(manager, command),
+            profileId: resolveSlabCommandProfileId(manager, command),
             session: command.session,
             surface: command.surface,
             siteSession: command.siteSession,
@@ -494,8 +494,8 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
               id: command.id,
               ok: false,
               errorCode: 'bound_tab_not_found',
-              error: 'Cloak tab not found for bind target',
-              errorHint: 'Run `webcmd --session <session-id> browser tab list` and choose a current Cloak tab id or index.',
+              error: 'SLAB tab not found for bind target',
+              errorHint: 'Run `webcmd --session <session-id> browser tab list` and choose a current SLAB tab id or index.',
             };
           }
           return {
@@ -515,7 +515,7 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
         return { id: command.id, ok: false, errorCode: 'runtime_command_failed', error: `Unknown action: ${command.action}` };
     }
   } catch (err) {
-    if (err instanceof CloakActionError) {
+    if (err instanceof SlabActionError) {
       return { id: command.id, ok: false, errorCode: err.errorCode, error: err.message, ...(err.page && { page: err.page }), ...(err.errorHint && { errorHint: err.errorHint }) };
     }
     if (

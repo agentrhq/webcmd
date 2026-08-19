@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -163,6 +163,23 @@ describe('hosted CLI process lifecycle', () => {
     await expect(readFile(fixture.discoverySentinel, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
   }, 20_000);
 
+  it('keeps hosted list, adapter, profile, and auth commands away from local SLAB and daemon paths', async () => {
+    const fixture = await createHostedFixture('success');
+
+    for (const argv of [
+      ['list'],
+      ['lifecycle', 'stream', '-f', 'plain'],
+      ['profile', 'list'],
+      ['auth', 'status', '-f', 'plain'],
+    ]) {
+      expect((await runCli(argv, fixture.env)).status).toBe(0);
+    }
+
+    await expect(readFile(fixture.discoverySentinel, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(readFile(path.join(fixture.root, 'slab-accessed'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(readFile(path.join(fixture.root, 'daemon-started'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+  }, 20_000);
+
   it('writes the live view before the prepared browser run completes', async () => {
     const fixture = await createHostedFixture('browser');
     const cli = startCli(['live', 'view', '-f', 'plain'], fixture.env);
@@ -231,6 +248,10 @@ async function createHostedFixture(outcome: 'success' | 'failure' | 'browser'): 
   const configDir = path.join(root, 'config');
   const userClis = path.join(root, '.webcmd', 'clis', 'lifecycle-sentinel');
   const discoverySentinel = path.join(root, 'local-discovery-ran');
+  const slabAccessed = path.join(root, 'slab-accessed');
+  const slabExecutable = path.join(root, 'Applications', 'SLAB.app', 'Contents', 'MacOS', 'SLAB');
+  const daemonStarted = path.join(root, 'daemon-started');
+  const daemonPreload = path.join(root, 'daemon-sentinel.mjs');
   const requests: string[] = [];
   let markRunStarted: () => void = () => undefined;
   const runStarted = new Promise<void>(resolve => { markRunStarted = resolve; });
@@ -238,6 +259,33 @@ async function createHostedFixture(outcome: 'success' | 'failure' | 'browser'): 
   const waitForRunRelease = new Promise<void>(resolve => { releaseRun = resolve; });
   await mkdir(configDir, { recursive: true });
   await mkdir(userClis, { recursive: true });
+  await mkdir(path.dirname(slabExecutable), { recursive: true });
+  await writeFile(slabExecutable, [
+    '#!/usr/bin/env node',
+    "import { writeFileSync } from 'node:fs';",
+    `writeFileSync(${JSON.stringify(slabAccessed)}, 'accessed');`,
+    "throw new Error('SLAB sentinel was accessed');",
+    '',
+  ].join('\n'));
+  await chmod(slabExecutable, 0o755);
+  await writeFile(daemonPreload, [
+    "import fs from 'node:fs';",
+    "import { syncBuiltinESMExports } from 'node:module';",
+    "import { writeFileSync } from 'node:fs';",
+    'const originalExistsSync = fs.existsSync;',
+    'fs.existsSync = function existsSyncTrap(candidate) {',
+    "  if (String(candidate).includes('SLAB.app')) {",
+    `    writeFileSync(${JSON.stringify(slabAccessed)}, 'discovered');`,
+    "    throw new Error('SLAB discovery sentinel was accessed');",
+    '  }',
+    '  return originalExistsSync.apply(this, arguments);',
+    '};',
+    'syncBuiltinESMExports();',
+    "if (process.argv.some(arg => arg.endsWith('/src/daemon.ts'))) {",
+    `  writeFileSync(${JSON.stringify(daemonStarted)}, 'started');`,
+    '}',
+    '',
+  ].join('\n'));
   await writeFile(path.join(userClis, 'sentinel.js'), [
     "import { writeFileSync } from 'node:fs';",
     `writeFileSync(${JSON.stringify(discoverySentinel)}, 'read');`,
@@ -261,6 +309,10 @@ async function createHostedFixture(outcome: 'success' | 'failure' | 'browser'): 
           commands: [command, authCommand, liveViewCommand],
         },
       });
+      return;
+    }
+    if (request.url === '/v1/profiles') {
+      sendChunkedJson(response, { ok: true, profiles: [] });
       return;
     }
     if (request.url === '/v1/executions' && request.method === 'POST' && outcome === 'browser') {
@@ -348,6 +400,7 @@ async function createHostedFixture(outcome: 'success' | 'failure' | 'browser'): 
       USERPROFILE: root,
       WEBCMD_CONFIG_DIR: configDir,
       WEBCMD_NO_UPDATE_CHECK: '1',
+      NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${pathToFileURL(daemonPreload).href}`.trim(),
     },
   };
 }

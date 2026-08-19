@@ -155,7 +155,7 @@ cli({
             throw new CommandExecutionError('Y Combinator company extraction returned an unreadable response');
         }
         if (result.blocked) {
-            throw new AuthRequiredError(HOST, 'Y Combinator blocked anonymous directory access. Open the company directory in CloakBrowser, complete any verification, then rerun the command.');
+            throw new AuthRequiredError(HOST, 'Y Combinator blocked anonymous directory access. Open the company directory in SLAB, complete any verification, then rerun the command.');
         }
         const rows = Array.isArray(result.rows) ? result.rows : [];
         if (!rows.length) {

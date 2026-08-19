@@ -29,7 +29,7 @@ type CaptureState = {
 
 const BODY_LIMIT = 8 * 1024 * 1024;
 
-export class CloakNetworkCapture {
+export class SlabNetworkCapture {
   private readonly states = new WeakMap<Page, CaptureState>();
 
   constructor(private readonly limit = 200) {}

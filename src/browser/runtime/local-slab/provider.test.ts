@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { LocalCloakRuntimeProvider } from './provider.js';
+import { LocalSlabRuntimeProvider } from './provider.js';
 import { BrowserRunError } from '../../run/types.js';
 
 const runBrowserProgram = vi.hoisted(() => vi.fn());
@@ -139,7 +139,7 @@ function makeProviderWithFakePage(initialViewport: { width: number; height: numb
     if (command === 'Target.closeTarget') return { success: true };
     return {};
   });
-  const provider = new LocalCloakRuntimeProvider({
+  const provider = new LocalSlabRuntimeProvider({
     baseDir: '/tmp/webcmd-test',
     launchPersistentContext: vi.fn().mockResolvedValue(context),
     // Commands now default to background, which routes a darwin launch through
@@ -149,25 +149,27 @@ function makeProviderWithFakePage(initialViewport: { width: number; height: numb
   return { provider, browser, page: pages[0], pages, context, cdpSession, pageCdpSessions };
 }
 
-describe('LocalCloakRuntimeProvider', () => {
+describe('LocalSlabRuntimeProvider', () => {
   beforeEach(() => {
     runBrowserProgram.mockReset();
   });
 
-  it('reports a runtime-named connected status before any profile launches', async () => {
-    const provider = new LocalCloakRuntimeProvider({ baseDir: '/tmp/webcmd-test' });
+  it('reports SLAB without changing session status shape', async () => {
+    const provider = new LocalSlabRuntimeProvider({ baseDir: '/tmp/webcmd-test' });
     await expect(provider.status()).resolves.toMatchObject({
       runtimeConnected: true,
-      runtimeName: 'cloak',
-      profiles: [],
+      runtimeName: 'SLAB',
+      profiles: expect.any(Array),
       pending: 0,
+      commandResultUnknown: 0,
     });
+    await expect(provider.status()).resolves.toHaveProperty('runtimeVersion', undefined);
   });
 
   it('discards a temporary Session record after closing it', async () => {
     const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-provider-session-'));
     try {
-      const provider = new LocalCloakRuntimeProvider({ baseDir });
+      const provider = new LocalSlabRuntimeProvider({ baseDir });
       const session = await provider.createSession({
         id: 'create-doctor-session',
         action: 'session-create',
@@ -193,7 +195,7 @@ describe('LocalCloakRuntimeProvider', () => {
   it('does not discard a Session record unless close is forced', async () => {
     const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-provider-session-'));
     try {
-      const provider = new LocalCloakRuntimeProvider({ baseDir });
+      const provider = new LocalSlabRuntimeProvider({ baseDir });
       const session = await provider.createSession({
         id: 'create-user-session',
         action: 'session-create',
@@ -309,7 +311,7 @@ describe('LocalCloakRuntimeProvider', () => {
       .resolves.toMatchObject({ id: 'exec', ok: true, data: { ok: true }, page: nav.page });
   });
 
-  it('runs Playwright-style source against the selected Cloak page', async () => {
+  it('runs Playwright-style source against the selected SLAB page', async () => {
     const { provider, browser, context, page } = makeProviderWithFakePage();
     runBrowserProgram.mockResolvedValue(runOutput('https://example.com/'));
 
@@ -499,7 +501,7 @@ describe('LocalCloakRuntimeProvider', () => {
   it('partitions the local queue by adapter site only for adapter-default Sessions', () => {
     const { provider } = makeProviderWithFakePage();
     const queueKey = (provider as unknown as {
-      commandQueueKey(command: Parameters<LocalCloakRuntimeProvider['dispatch']>[0]): string;
+      commandQueueKey(command: Parameters<LocalSlabRuntimeProvider['dispatch']>[0]): string;
     }).commandQueueKey.bind(provider);
 
     expect(queueKey({
@@ -548,7 +550,7 @@ describe('LocalCloakRuntimeProvider', () => {
   it('keeps adapter-default page-scoped queue keys partitioned by site', async () => {
     const { provider } = makeProviderWithFakePage();
     const queueKey = (provider as unknown as {
-      commandQueueKey(command: Parameters<LocalCloakRuntimeProvider['dispatch']>[0]): string;
+      commandQueueKey(command: Parameters<LocalSlabRuntimeProvider['dispatch']>[0]): string;
     }).commandQueueKey.bind(provider);
     const github = await provider.dispatch({
       id: 'github-nav',
@@ -808,14 +810,14 @@ describe('LocalCloakRuntimeProvider', () => {
     expect(page.screenshot).toHaveBeenCalledWith(expect.objectContaining({ fullPage: true }));
   });
 
-  it('requires an explicit Cloak tab target for bind', async () => {
+  it('requires an explicit SLAB tab target for bind', async () => {
     const { provider } = makeProviderWithFakePage();
     await expect(provider.dispatch({ id: 'bind', action: 'bind', session: 'work', surface: 'browser', profileId: 'default' }))
       .resolves.toMatchObject({
         id: 'bind',
         ok: false,
         errorCode: 'invalid_request',
-        error: 'Bind requires --page or --index for a Cloak runtime tab',
+        error: 'Bind requires --page or --index for a SLAB runtime tab',
       });
   });
 
@@ -838,7 +840,7 @@ describe('LocalCloakRuntimeProvider', () => {
     expect(pages[0].bringToFront).not.toHaveBeenCalled();
   });
 
-  it('returns a typed bind error when the requested Cloak tab is missing', async () => {
+  it('returns a typed bind error when the requested SLAB tab is missing', async () => {
     const { provider } = makeProviderWithFakePage();
     await provider.dispatch({ id: 'nav', action: 'navigate', session: 'first', surface: 'browser', url: 'https://first.example/', profileId: 'default' });
 
@@ -847,7 +849,7 @@ describe('LocalCloakRuntimeProvider', () => {
         id: 'bind',
         ok: false,
         errorCode: 'bound_tab_not_found',
-        error: 'Cloak tab not found for bind target',
+        error: 'SLAB tab not found for bind target',
       });
   });
 

@@ -203,8 +203,8 @@ jobs:
       - name: Run smoke tests
         run: npx vitest run --project smoke --reporter=verbose
 
-  windows-cloak-smoke:
-    name: Windows real Cloak smoke
+  windows-slab-smoke:
+    name: Windows SLAB smoke
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     timeout-minutes: 30
@@ -229,8 +229,8 @@ jobs:
         shell: pwsh
         run: ./scripts/collect-ci-diagnostics.ps1 -SelfTest
 
-      - name: Run real Cloak lifecycle smoke
-        run: npx vitest run --project e2e tests/e2e/cloak-runtime.test.ts tests/e2e/cloak-session-concurrency.test.ts
+      - name: Run SLAB lifecycle smoke
+        run: npx vitest run --project e2e tests/e2e/slab-runtime.test.ts tests/e2e/slab-session-concurrency.test.ts
 
       - name: Collect sanitized diagnostics
         if: failure()
@@ -242,5 +242,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: windows-cloak-diagnostics
-          path: artifacts/windows-cloak/**
+          name: windows-slab-diagnostics
+          path: artifacts/windows-slab/**

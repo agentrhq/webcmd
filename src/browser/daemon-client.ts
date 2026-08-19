@@ -11,7 +11,7 @@ import { getDaemonRunContext, type SessionLeaseHolder } from '../session-lease.j
 import { classifyBrowserError } from './errors.js';
 import { profileRouteParams, resolveProfileSelection } from './profile.js';
 import { DEFAULT_BROWSER_CONNECT_TIMEOUT } from './config.js';
-import { ensureBrowserBridgeReady } from './daemon-lifecycle.js';
+import { ensureBrowserBridgeReady, ensureSlabReadyForBrowserCommand } from './daemon-lifecycle.js';
 import { isPreDispatchError } from './bridge-readiness.js';
 import {
   fetchDaemonStatus,
@@ -124,6 +124,7 @@ async function sendCommandRaw(
   action: DaemonCommand['action'],
   params: DaemonCommandParams,
 ): Promise<DaemonResult> {
+  await ensureSlabReadyForBrowserCommand();
   const timeoutSeconds = effectiveCommandTimeoutSeconds(params);
   const deadlineAt = Date.now() + timeoutSeconds * 1000;
   const rawWindowMode = process.env.WEBCMD_WINDOW;

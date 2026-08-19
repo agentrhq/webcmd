@@ -15,9 +15,12 @@
  * the main source tree) so that it can run without a build step.
  */
 
+import { spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
+import { createInterface } from 'node:readline';
+import { fileURLToPath } from 'node:url';
 
 
 // ── Completion script content ──────────────────────────────────────────────
@@ -73,7 +76,7 @@ function ensureDir(dir) {
 
 // ── Main ───────────────────────────────────────────────────────────────────
 
-function main() {
+async function main() {
   // Skip in CI environments
   if (process.env.CI || process.env.CONTINUOUS_INTEGRATION) {
     return;
@@ -84,6 +87,8 @@ function main() {
   if (!isGlobal) {
     return;
   }
+
+  await offerSlabInstall();
 
   const shell = detectShell();
   if (!shell) {
@@ -152,6 +157,36 @@ function main() {
   console.log('  Then run \x1b[36mwebcmd doctor\x1b[0m to verify.');
   console.log('');
 
+}
+
+async function offerSlabInstall() {
+  if (process.platform !== 'darwin' || hasSlab()) return;
+
+  console.log('SLAB browser is required for local webcmd commands. Run `webcmd setup` to install it.');
+  if (!process.stdin.isTTY || !process.stdout.isTTY) return;
+
+  const answer = await question('Install SLAB now? [Y/n] ');
+  if (answer.trim() && !answer.trim().toLowerCase().startsWith('y')) return;
+
+  const installer = fileURLToPath(new URL('../dist/src/slab/install-cli.js', import.meta.url));
+  const result = spawnSync(process.execPath, [installer, '--consent-granted', '--no-launch'], {
+    stdio: 'inherit',
+    env: { ...process.env, WEBCMD_INSTALL_SLAB: '1' },
+  });
+  if (result.error || result.status) console.error('Warning: SLAB installation did not complete. Run `webcmd setup` to retry.');
+}
+
+function hasSlab() {
+  return existsSync('/Applications/SLAB.app/Contents/MacOS/SLAB')
+    || existsSync(join(homedir(), 'Applications', 'SLAB.app', 'Contents', 'MacOS', 'SLAB'));
+}
+
+function question(prompt) {
+  const readline = createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => readline.question(prompt, (answer) => {
+    readline.close();
+    resolve(answer);
+  }));
 }
 
 main();

@@ -1,45 +1,17 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import type { Browser, BrowserContext, CDPSession, Page as PlaywrightPage } from 'playwright-core';
-import { launchPersistentContext as cloakLaunchPersistentContext } from 'cloakbrowser';
 import type { BrowserSurface, BrowserWindowMode, SiteSessionMode } from '../../protocol.js';
-import { activateDarwinBackgroundContext, launchDarwinBackgroundPersistentContext } from './darwin-background-launch.js';
-import { normalizeProfileId, resolveCloakProfileDir } from './profiles.js';
-import { CloakNetworkCapture } from './network.js';
-import { findPackageRoot } from '../../../package-paths.js';
-import { findExactCloakProfileProcesses } from './process-matcher.js';
+import { normalizeProfileId } from './profiles.js';
+import { SlabNetworkCapture } from './network.js';
 import { log } from '../../../logger.js';
 import { CliError, EXIT_CODES } from '../../../errors.js';
+import { attachSlabProfile, type AttachedSlabProfile } from './attachment.js';
 
-const UNRESOLVED = Symbol('unresolved');
 const TARGET_PAGE_MATCH_TIMEOUT_MS = 1_000;
 export const PROFILE_IDLE_TIMEOUT_MS = 60_000;
 export const PROFILE_CLOSE_TIMEOUT_MS = 3_000;
-let cachedCloakBrowserVersion: string | undefined | typeof UNRESOLVED = UNRESOLVED;
 
-/**
- * Installed `cloakbrowser` npm package version, for doctor/status display.
- *
- * Resolved once per process. The version cannot change while we are running, and
- * `profileStatuses()` calls this per profile, so an uncached read meant N+1
- * synchronous resolve-read-parse cycles on every status poll. The sentinel keeps
- * a genuine `undefined` (the catch path) cached too, so an unresolvable
- * `cloakbrowser` is not retried on every call.
- */
-export function resolveCloakBrowserVersion(): string | undefined {
-  if (cachedCloakBrowserVersion !== UNRESOLVED) return cachedCloakBrowserVersion;
-  try {
-    const entryPath = fileURLToPath(import.meta.resolve('cloakbrowser'));
-    const pkg = JSON.parse(fs.readFileSync(path.join(findPackageRoot(entryPath), 'package.json'), 'utf-8')) as { version?: unknown };
-    cachedCloakBrowserVersion = typeof pkg.version === 'string' ? pkg.version : undefined;
-  } catch {
-    cachedCloakBrowserVersion = undefined;
-  }
-  return cachedCloakBrowserVersion;
-}
-
-export type LaunchPersistentContext = typeof cloakLaunchPersistentContext;
+export type AttachSlabProfile = typeof attachSlabProfile;
+export type LaunchPersistentContext = (options: { userDataDir: string; headless: boolean; humanize: boolean }) => Promise<BrowserContext>;
 export type RecoverLockedProfile = (userDataDir: string) => Promise<boolean>;
 
 export interface SessionKeyInput {
@@ -72,7 +44,7 @@ type PageEntry = {
   idleTimer?: ReturnType<typeof setTimeout>;
 };
 
-export interface CloakPageLease {
+export interface SlabPageLease {
   profileId: string;
   leaseKey: string;
   context: BrowserContext;
@@ -80,7 +52,7 @@ export interface CloakPageLease {
   pageId: string;
 }
 
-export interface CloakTabInfo {
+export interface SlabTabInfo {
   id: string;
   page: string;
   index: number;
@@ -95,12 +67,12 @@ export interface CloakTabInfo {
 
 interface ProfileRuntime {
   profileId: string;
+  attachment: AttachedSlabProfile;
   context: BrowserContext;
   cdp?: CDPSession;
   sessions: Map<string, SessionRuntime>;
   windowOwners: Map<number, string>;
   targetPages: Map<string, PageEntry>;
-  userDataDir: string;
   anchorTargetId?: string;
   parkingPage?: PlaywrightPage;
   useParkingKeeper: boolean;
@@ -110,6 +82,7 @@ interface ProfileRuntime {
   handoffTimer?: ReturnType<typeof setTimeout>;
   closing: boolean;
   disposed: boolean;
+  releasePromise?: Promise<void>;
   lastSeenAt: number;
 }
 
@@ -140,13 +113,18 @@ export class SessionWindowConflictError extends CliError {
   }
 }
 
-export interface CloakSessionManagerOptions {
+export interface SlabSessionManagerOptions {
+  /** @deprecated Test-only migration compatibility; production attaches through SLAB. */
   baseDir?: string;
+  /** @deprecated Test-only migration compatibility; production attaches through SLAB. */
   launchPersistentContext?: LaunchPersistentContext;
+  /** @deprecated Test-only migration compatibility; production attaches through SLAB. */
   launchBackgroundPersistentContext?: LaunchPersistentContext;
-  activateBackgroundContext?: typeof activateDarwinBackgroundContext;
+  /** @deprecated Test-only migration compatibility; production attaches through SLAB. */
   recoverLockedProfile?: RecoverLockedProfile;
+  /** @deprecated Test-only migration compatibility; production attaches through SLAB. */
   platform?: NodeJS.Platform;
+  attachProfile?: AttachSlabProfile;
   hasActiveHandoff?: (profileId: string) => boolean;
 }
 
@@ -183,14 +161,10 @@ function daemonShuttingDownError(): Error & { code: 'DAEMON_SHUTTING_DOWN' } {
   return Object.assign(new Error('The browser daemon is shutting down.'), { code: 'DAEMON_SHUTTING_DOWN' as const });
 }
 
-export class CloakSessionManager {
-  readonly networkCapture = new CloakNetworkCapture();
+export class SlabSessionManager {
+  readonly networkCapture = new SlabNetworkCapture();
 
-  private readonly launchPersistentContext: LaunchPersistentContext;
-  private readonly launchBackgroundPersistentContext: LaunchPersistentContext;
-  private readonly activateBackgroundContext: typeof activateDarwinBackgroundContext;
-  private readonly platform: NodeJS.Platform;
-  private readonly recoverLockedProfile: RecoverLockedProfile;
+  private readonly attachProfile: AttachSlabProfile;
   private readonly hasActiveHandoff: (profileId: string) => boolean;
   private readonly profiles = new Map<string, ProfileRuntime>();
   private readonly profileLaunches = new Map<string, Promise<ProfileRuntime>>();
@@ -200,6 +174,7 @@ export class CloakSessionManager {
   private readonly pageTargetIds = new WeakMap<PlaywrightPage, string>();
   private readonly pageTargetIdPromises = new WeakMap<PlaywrightPage, Promise<string>>();
   private readonly pageCdpSessions = new WeakMap<PlaywrightPage, CDPSession>();
+  private readonly pageCdpDetaches = new WeakMap<PlaywrightPage, Promise<void>>();
   private readonly pendingTargetPages = new WeakMap<ProfileRuntime, Map<string, PlaywrightPage>>();
   private readonly targetPageWaiters = new WeakMap<ProfileRuntime, Map<string, {
     resolve(page: PlaywrightPage): void;
@@ -209,20 +184,47 @@ export class CloakSessionManager {
   private readonly sessionPageListeners = new WeakMap<SessionRuntime, Set<(page: PlaywrightPage) => void>>();
   private shuttingDown = false;
 
-  constructor(private readonly opts: CloakSessionManagerOptions = {}) {
-    this.launchPersistentContext = opts.launchPersistentContext ?? cloakLaunchPersistentContext;
-    this.launchBackgroundPersistentContext = opts.launchBackgroundPersistentContext ?? launchDarwinBackgroundPersistentContext;
-    this.activateBackgroundContext = opts.activateBackgroundContext ?? activateDarwinBackgroundContext;
-    this.platform = opts.platform ?? process.platform;
-    this.recoverLockedProfile = opts.recoverLockedProfile ?? recoverLockedCloakProfile;
+  constructor(private readonly opts: SlabSessionManagerOptions = {}) {
+    this.attachProfile = opts.attachProfile ?? this.legacyAttachProfile;
     this.hasActiveHandoff = opts.hasActiveHandoff ?? (() => false);
+  }
+
+  private async legacyAttachProfile(profileId: string): Promise<AttachedSlabProfile> {
+    const launch = this.opts.launchPersistentContext ?? this.opts.launchBackgroundPersistentContext;
+    if (!launch) return attachSlabProfile(profileId);
+    const options = { userDataDir: profileId, headless: false, humanize: true };
+    let context: BrowserContext;
+    try {
+      context = await launch(options);
+    } catch (error) {
+      if (!(await this.opts.recoverLockedProfile?.(profileId))) throw error;
+      context = await launch(options);
+    }
+    const browser = context.browser();
+    return {
+      profileId,
+      browserVersion: '',
+      context,
+      browser: browser ?? {} as Browser,
+      release: async () => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([
+            context.close(),
+            new Promise<void>(resolve => { timer = setTimeout(resolve, PROFILE_CLOSE_TIMEOUT_MS); }),
+          ]);
+        } finally {
+          if (timer) clearTimeout(timer);
+        }
+      },
+    };
   }
 
   profileStatuses() {
     return [...this.profiles.entries()].map(([contextId, runtime]) => ({
       contextId,
       runtimeConnected: true,
-      runtimeVersion: resolveCloakBrowserVersion(),
+      runtimeVersion: runtime.attachment.browserVersion || undefined,
       pending: 0,
       lastSeenAt: runtime.lastSeenAt,
     }));
@@ -260,7 +262,7 @@ export class CloakSessionManager {
     }
   }
 
-  async getPage(input: SessionKeyInput): Promise<CloakPageLease> {
+  async getPage(input: SessionKeyInput): Promise<SlabPageLease> {
     const profileId = normalizeProfileId(input.profileId);
     const session = requireSession(input.session);
     const sessionId = requireSessionId(input);
@@ -295,7 +297,7 @@ export class CloakSessionManager {
     });
   }
 
-  async findPage(input: SessionKeyInput): Promise<CloakPageLease | null> {
+  async findPage(input: SessionKeyInput): Promise<SlabPageLease | null> {
     const profileId = normalizeProfileId(input.profileId);
     const sessionId = requireSessionId(input);
     const leaseKey = resolveLeaseKey(input);
@@ -310,7 +312,7 @@ export class CloakSessionManager {
     return { profileId, leaseKey, context: runtime.context, page: entry.page, pageId: entry.pageId };
   }
 
-  async findPageById(pageId: string, opts: Pick<SessionKeyInput, 'profileId' | 'session' | 'sessionId' | 'surface' | 'idleTimeout'>): Promise<CloakPageLease | null> {
+  async findPageById(pageId: string, opts: Pick<SessionKeyInput, 'profileId' | 'session' | 'sessionId' | 'surface' | 'idleTimeout'>): Promise<SlabPageLease | null> {
     const expectedProfileId = normalizeProfileId(opts.profileId);
     const sessionId = requireSessionId(opts);
     const expectedSurface = opts.surface ? normalizeSurface(opts.surface) : undefined;
@@ -372,10 +374,8 @@ export class CloakSessionManager {
     await Promise.all(this.openEntries(sessionRuntime).map(([, candidate]) => (
       this.assertOwnedWindow(runtime, sessionId, candidate)
     )));
-    const browser = runtime.context.browser();
-    if (!browser) throw new Error('The selected browser context is not attached to a browser.');
     return {
-      browser,
+      browser: runtime.attachment.browser,
       context: runtime.context,
       page,
       pages: () => this.openEntries(sessionRuntime).map(([, candidate]) => candidate.page),
@@ -389,7 +389,7 @@ export class CloakSessionManager {
     };
   }
 
-  async listPages(input: Pick<SessionKeyInput, 'profileId' | 'session' | 'sessionId' | 'surface'>): Promise<CloakTabInfo[]> {
+  async listPages(input: Pick<SessionKeyInput, 'profileId' | 'session' | 'sessionId' | 'surface'>): Promise<SlabTabInfo[]> {
     const profileId = normalizeProfileId(input.profileId);
     const sessionId = requireSessionId(input);
     const surface = input.surface ? normalizeSurface(input.surface) : undefined;
@@ -414,15 +414,15 @@ export class CloakSessionManager {
     })));
   }
 
-  async newPage(input: SessionKeyInput & { url?: string }): Promise<CloakPageLease> {
+  async newPage(input: SessionKeyInput & { url?: string }): Promise<SlabPageLease> {
     return this.newPageAttempt(input, 0);
   }
 
-  async navigatePage(input: SessionKeyInput, url: string, waitUntil: 'load' | 'commit'): Promise<CloakPageLease> {
+  async navigatePage(input: SessionKeyInput, url: string, waitUntil: 'load' | 'commit'): Promise<SlabPageLease> {
     return this.navigatePageAttempt(input, url, waitUntil, 0);
   }
 
-  private async newPageAttempt(input: SessionKeyInput & { url?: string }, attempt: number): Promise<CloakPageLease> {
+  private async newPageAttempt(input: SessionKeyInput & { url?: string }, attempt: number): Promise<SlabPageLease> {
     const profileId = normalizeProfileId(input.profileId);
     const session = requireSession(input.session);
     const sessionId = requireSessionId(input);
@@ -463,7 +463,7 @@ export class CloakSessionManager {
     return { profileId, leaseKey, context: acquired.runtime.context, page: acquired.page, pageId: entry.pageId };
   }
 
-  private async navigatePageAttempt(input: SessionKeyInput, url: string, waitUntil: 'load' | 'commit', attempt: number): Promise<CloakPageLease> {
+  private async navigatePageAttempt(input: SessionKeyInput, url: string, waitUntil: 'load' | 'commit', attempt: number): Promise<SlabPageLease> {
     const profileId = normalizeProfileId(input.profileId);
     const lease = await this.getPage(input);
     const runtime = this.profiles.get(profileId);
@@ -478,7 +478,7 @@ export class CloakSessionManager {
     }
   }
 
-  async selectPage(input: Pick<SessionKeyInput, 'profileId' | 'session' | 'sessionId' | 'surface' | 'windowMode'> & { pageId?: string; index?: number }): Promise<CloakPageLease | null> {
+  async selectPage(input: Pick<SessionKeyInput, 'profileId' | 'session' | 'sessionId' | 'surface' | 'windowMode'> & { pageId?: string; index?: number }): Promise<SlabPageLease | null> {
     const profileId = normalizeProfileId(input.profileId);
     const sessionId = requireSessionId(input);
     const runtime = this.profiles.get(profileId);
@@ -492,7 +492,6 @@ export class CloakSessionManager {
     await this.assertOwnedWindow(runtime, sessionId, entry);
     if (input.windowMode !== 'background') {
       await entry.page.bringToFront?.().catch(() => {});
-      await this.activateBackgroundContext(runtime.context);
     }
     this.selectEntry(sessionRuntime, entry);
     runtime.lastSeenAt = Date.now();
@@ -510,13 +509,12 @@ export class CloakSessionManager {
     const entry = match[1];
     await this.assertOwnedWindow(runtime, sessionId, entry);
     await entry.page.bringToFront?.().catch(() => {});
-    await this.activateBackgroundContext(runtime.context);
     this.selectEntry(session, entry);
     runtime.lastSeenAt = Date.now();
     return true;
   }
 
-  async bindPage(input: SessionKeyInput & { pageId?: string; index?: number }): Promise<CloakPageLease | null> {
+  async bindPage(input: SessionKeyInput & { pageId?: string; index?: number }): Promise<SlabPageLease | null> {
     const profileId = normalizeProfileId(input.profileId);
     const session = requireSession(input.session);
     const sessionId = requireSessionId(input);
@@ -567,7 +565,6 @@ export class CloakSessionManager {
 
     if (input.windowMode !== 'background') {
       await entry.page.bringToFront?.().catch(() => {});
-      await this.activateBackgroundContext(runtime.context);
     }
 
     if (currentCanonical && currentCanonical !== entry && !pageIsClosed(currentCanonical.page)) {
@@ -667,7 +664,7 @@ export class CloakSessionManager {
       if (!runtime) return;
       this.profiles.delete(profileId);
       runtime.closing = true;
-      await this.closeRuntime(runtime, false).catch(() => {});
+      await this.closeRuntime(runtime).catch(() => {});
     })));
     this.profiles.clear();
     this.profileLaunches.clear();
@@ -692,25 +689,9 @@ export class CloakSessionManager {
     });
   }
 
-  private async launchProfileRuntime(profileId: string, windowMode?: BrowserWindowMode): Promise<ProfileRuntime> {
-    const userDataDir = resolveCloakProfileDir(profileId, { baseDir: this.opts.baseDir });
-    fs.mkdirSync(userDataDir, { recursive: true });
-    const launchOptions = {
-      userDataDir,
-      headless: false,
-      humanize: true,
-    };
-    const launchPersistentContext = this.platform === 'darwin' && windowMode === 'background'
-      ? this.launchBackgroundPersistentContext
-      : this.launchPersistentContext;
-    let context: BrowserContext;
-    try {
-      context = await launchPersistentContext(launchOptions);
-    } catch (err) {
-      if (!isProfileAlreadyInUseError(err) || !(await this.recoverLockedProfile(userDataDir))) throw err;
-      context = await launchPersistentContext(launchOptions);
-    }
-    const browser = context.browser();
+  private async launchProfileRuntime(profileId: string, _windowMode?: BrowserWindowMode): Promise<ProfileRuntime> {
+    const attachment = await this.attachProfile(profileId);
+    const { context, browser } = attachment;
     let cdp: CDPSession | undefined;
     let keeperError: unknown;
     try {
@@ -720,13 +701,13 @@ export class CloakSessionManager {
     }
     const runtime: ProfileRuntime = {
       profileId,
+      attachment,
       context,
       cdp,
       sessions: new Map(),
       windowOwners: new Map(),
       targetPages: new Map(),
-      userDataDir,
-      useParkingKeeper: this.platform !== 'darwin' || !cdp,
+      useParkingKeeper: !cdp,
       keeperWarningLogged: false,
       activeCommands: this.profileActivities.get(profileId) ?? 0,
       closing: false,
@@ -751,7 +732,7 @@ export class CloakSessionManager {
     }
     if (this.shuttingDown) {
       runtime.closing = true;
-      await this.closeRuntime(runtime, false).catch(() => {});
+      await this.closeRuntime(runtime).catch(() => {});
       throw daemonShuttingDownError();
     }
     this.profiles.set(profileId, runtime);
@@ -760,6 +741,9 @@ export class CloakSessionManager {
 
   private invalidateProfileRuntime(profileId: string, runtime: ProfileRuntime): void {
     if (this.profiles.get(profileId) === runtime) this.profiles.delete(profileId);
+    void this.releaseRuntime(runtime, false).catch(error => {
+      log.warn(`SLAB Profile ${profileId} release failed: ${errorMessage(error)}`);
+    });
     this.cleanupRuntime(runtime);
   }
 
@@ -770,7 +754,6 @@ export class CloakSessionManager {
     for (const entry of runtime.targetPages.values()) {
       if (entry.idleTimer) clearTimeout(entry.idleTimer);
       this.networkCapture.stop(entry.page);
-      void this.pageCdpSessions.get(entry.page)?.detach().catch(() => {});
     }
     runtime.targetPages.clear();
     runtime.sessions.clear();
@@ -780,7 +763,6 @@ export class CloakSessionManager {
       waiter.reject(new Error('Target page, context or browser has been closed'));
     }
     this.targetPageWaiters.get(runtime)?.clear();
-    void runtime.cdp?.detach().catch(() => {});
   }
 
   private attachRuntimeLifecycle(profileId: string, runtime: ProfileRuntime): void {
@@ -823,7 +805,7 @@ export class CloakSessionManager {
     runtime.useParkingKeeper = true;
     if (runtime.keeperWarningLogged) return;
     runtime.keeperWarningLogged = true;
-    log.warn(`Cloak Profile ${profileId} hidden keeper unavailable; using a parking page: ${errorMessage(error)}`);
+    log.warn(`SLAB Profile ${profileId} hidden keeper unavailable; using a parking page: ${errorMessage(error)}`);
   }
 
   private scheduleProfileIdle(profileId: string, runtime: ProfileRuntime): void {
@@ -844,7 +826,7 @@ export class CloakSessionManager {
         }
         runtime.closing = true;
         this.profiles.delete(profileId);
-        await this.closeRuntime(runtime, true);
+        await this.closeRuntime(runtime);
       });
     }, PROFILE_IDLE_TIMEOUT_MS);
     runtime.idleTimer.unref?.();
@@ -872,28 +854,37 @@ export class CloakSessionManager {
     return false;
   }
 
-  private async closeRuntime(runtime: ProfileRuntime, recoverOnTimeout: boolean): Promise<void> {
+  private async closeRuntime(runtime: ProfileRuntime): Promise<void> {
+    await this.releaseRuntime(runtime, true);
+  }
+
+  private async releaseRuntime(runtime: ProfileRuntime, closePages: boolean): Promise<void> {
+    if (runtime.releasePromise) return runtime.releasePromise;
+    runtime.releasePromise = (async () => {
     this.cancelProfileIdle(runtime);
     for (const entry of runtime.targetPages.values()) this.clearIdleTimer(entry);
-    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const pages = [...runtime.targetPages.values()].map(entry => entry.page);
     try {
-      await Promise.race([
-        runtime.context.close(),
-        new Promise<never>((_, reject) => {
-          timeout = setTimeout(() => reject(new Error('Cloak Profile close timed out')), PROFILE_CLOSE_TIMEOUT_MS);
-          timeout.unref?.();
-        }),
-      ]);
-    } catch (error) {
-      if (recoverOnTimeout && error instanceof Error && error.message === 'Cloak Profile close timed out') {
-        await this.recoverLockedProfile(runtime.userDataDir);
-      } else {
-        throw error;
+      if (closePages) {
+        await Promise.all([...runtime.targetPages.values()].map(entry => (
+          pageIsClosed(entry.page) ? undefined : entry.page.close().catch(() => {})
+        )));
       }
+      await this.closeParkingPage(runtime);
+      if (runtime.anchorTargetId) {
+        await runtime.cdp?.send('Target.closeTarget', { targetId: runtime.anchorTargetId }).catch(() => {});
+        runtime.anchorTargetId = undefined;
+      }
+      await Promise.all([
+        ...pages.map(page => this.detachPageCdp(page)),
+        runtime.cdp?.detach().catch(() => {}),
+      ]);
+      await runtime.attachment.release();
     } finally {
-      if (timeout) clearTimeout(timeout);
       this.cleanupRuntime(runtime);
     }
+    })();
+    return runtime.releasePromise;
   }
 
   private async withProfileLifecycleLock<T>(profileId: string, operation: () => Promise<T>): Promise<T> {
@@ -949,7 +940,7 @@ export class CloakSessionManager {
     windowMode?: BrowserWindowMode,
   ): Promise<PlaywrightPage> {
     const openerEntry = this.openEntries(session)[0]?.[1];
-    if (!openerEntry) return await this.findReusableLaunchPage(runtime, session.id) ?? this.createWindowPage(runtime, windowMode);
+    if (!openerEntry) return this.createWindowPage(runtime, windowMode);
     await this.assertOwnedWindow(runtime, session.id, openerEntry);
     const opener = openerEntry.page;
     const openerWindowId = await this.windowIdForTarget(runtime, openerEntry.targetId, opener);
@@ -959,24 +950,11 @@ export class CloakSessionManager {
     try {
       await opener.evaluate((url) => window.open(url, '_blank', 'noopener,noreferrer'), targetUrl);
     } catch (error) {
-      log.warn(`Cloak window.open failed while creating a Session tab; falling back to a new window: ${errorMessage(error)}`);
+      log.warn(`SLAB window.open failed while creating a Session tab; falling back to a new window: ${errorMessage(error)}`);
     }
     const page = await openedPage;
     if (page) return page;
     return this.createWindowPage(runtime, windowMode);
-  }
-
-  private async findReusableLaunchPage(runtime: ProfileRuntime, sessionId: string): Promise<PlaywrightPage | undefined> {
-    for (const page of runtime.context.pages()) {
-      if (pageIsClosed(page) || page === runtime.parkingPage || page.url() !== 'about:blank') continue;
-      const targetId = await this.targetIdForPage(runtime, page).catch(() => undefined);
-      if (!targetId || targetId === runtime.anchorTargetId || runtime.targetPages.has(targetId)) continue;
-      const windowId = await this.windowIdForTarget(runtime, targetId, page).catch(() => undefined);
-      if (windowId === undefined) continue;
-      const owner = runtime.windowOwners.get(windowId);
-      if (owner === undefined || owner === sessionId) return page;
-    }
-    return undefined;
   }
 
   private async waitForContextPageForSession(
@@ -1058,7 +1036,7 @@ export class CloakSessionManager {
     return new Promise<PlaywrightPage>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.targetPageWaiters.get(runtime)?.delete(targetId);
-        reject(new Error(`Timed out waiting for Cloak target ${targetId}`));
+        reject(new Error(`Timed out waiting for SLAB target ${targetId}`));
       }, TARGET_PAGE_MATCH_TIMEOUT_MS);
       this.targetPageWaiters.get(runtime)!.set(targetId, { resolve, reject, timer });
     });
@@ -1183,8 +1161,8 @@ export class CloakSessionManager {
       this.pageCdpSessions.set(page, session);
       page.once('close', () => {
         this.pageTargetIds.delete(page);
+        void this.detachPageCdp(page);
         this.pageCdpSessions.delete(page);
-        void session.detach().catch(() => {});
       });
       return targetInfo.targetId;
     })();
@@ -1200,7 +1178,7 @@ export class CloakSessionManager {
     const entry = runtime.targetPages.get(targetId);
     const targetPage = page ?? entry?.page;
     const cdp = runtime.cdp ?? (targetPage ? this.pageCdpSessions.get(targetPage) : undefined);
-    if (!cdp) throw new Error('Cloak page has no CDP session.');
+    if (!cdp) throw new Error('SLAB page has no CDP session.');
     const { windowId } = await cdp.send('Browser.getWindowForTarget', { targetId }) as { windowId: number };
     return windowId;
   }
@@ -1308,6 +1286,15 @@ export class CloakSessionManager {
     if (!parkingPage) return;
     runtime.parkingPage = undefined;
     if (!pageIsClosed(parkingPage)) await parkingPage.close().catch(() => {});
+    await this.detachPageCdp(parkingPage);
+  }
+
+  private detachPageCdp(page: PlaywrightPage): Promise<void> {
+    const existing = this.pageCdpDetaches.get(page);
+    if (existing) return existing;
+    const detach = this.pageCdpSessions.get(page)?.detach().catch(() => {}) ?? Promise.resolve();
+    this.pageCdpDetaches.set(page, detach);
+    return detach;
   }
 
   private clearIdleTimer(entry: PageEntry): void {
@@ -1332,41 +1319,4 @@ function requireSession(session: string | undefined): string {
 
 function requireSessionId(input: Pick<SessionKeyInput, 'session' | 'sessionId'>): string {
   return input.sessionId?.trim() || requireSession(input.session);
-}
-
-function isProfileAlreadyInUseError(err: unknown): boolean {
-  const message = err instanceof Error ? err.message : String(err);
-  return message.includes('Opening in existing browser session')
-    || message.includes('Failed to create a ProcessSingleton for your profile directory');
-}
-
-async function recoverLockedCloakProfile(userDataDir: string): Promise<boolean> {
-  if (process.platform === 'win32') return false;
-  const initial = await findExactCloakProfileProcesses(userDataDir);
-  if (initial.length === 0) return false;
-
-  signalPids(initial, 'SIGTERM');
-  if (await waitForProfileProcessesToExit(userDataDir, 2500)) return true;
-
-  signalPids(await findExactCloakProfileProcesses(userDataDir), 'SIGKILL');
-  return waitForProfileProcessesToExit(userDataDir, 1500);
-}
-
-async function waitForProfileProcessesToExit(userDataDir: string, timeoutMs: number): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    await new Promise<void>((resolve) => setTimeout(resolve, 100));
-    if ((await findExactCloakProfileProcesses(userDataDir)).length === 0) return true;
-  }
-  return (await findExactCloakProfileProcesses(userDataDir)).length === 0;
-}
-
-function signalPids(pids: number[], signal: NodeJS.Signals): void {
-  for (const pid of pids) {
-    try {
-      process.kill(pid, signal);
-    } catch {
-      // Already exited or not signalable; the follow-up poll decides recovery.
-    }
-  }
 }

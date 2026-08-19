@@ -74,7 +74,11 @@ if (!fastPathHandled && argv[0] === 'completion' && argv.length >= 2) {
 if (!fastPathHandled) {
   if (argv[0] === 'setup') {
     const { runHostedSetup } = await import('./hosted/setup.js');
-    process.exitCode = await runHostedSetup();
+    const mode = argv[2] === 'local' || argv[2] === 'hosted' ? argv[2] : undefined;
+    process.exitCode = await runHostedSetup({
+      ...(mode ? { mode } : {}),
+      ...(argv[1] === '--status' && argv[2] === '--format' && argv[3] === 'json' ? { status: true } : {}),
+    });
   } else if (argv[0] === 'skills' || argv[0] === 'update') {
     const { createProgram } = await import('./cli.js');
     await createProgram(BUILTIN_CLIS, USER_CLIS).parseAsync(argv, { from: 'user' });

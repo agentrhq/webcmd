@@ -32,12 +32,12 @@ npx vitest run --project unit src/convention-audit.test.ts src/runtime-copy.test
 npm run test:plugin -- --reporter=verbose
 ```
 
-## Cloak Runtime Smoke
+## SLAB Runtime Smoke
 
 Run:
 
 ```bash
-npx vitest run --project e2e tests/e2e/cloak-runtime.test.ts
+npx vitest run --project e2e tests/e2e/slab-runtime.test.ts
 ```
 
-The first run may download the CloakBrowser Chromium binary. Browser-backed tests no longer require a Chrome extension.
+The live run requires an installed SLAB browser. Browser-backed tests no longer require a Chrome extension.
