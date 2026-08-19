@@ -317,6 +317,45 @@ describe('runHostedCli', () => {
     }
   });
 
+  it('forks a system command through hosted adapter override', async () => {
+    const stdout = sink();
+    const requested: Array<{ pathname: string; body: unknown }> = [];
+    const result = await runHostedCli(['adapter', 'override', 'github/whoami'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      fetchImpl: async (url, init) => {
+        const pathname = new URL(String(url)).pathname;
+        requested.push({ pathname, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+        return new Response(JSON.stringify({
+          ok: true,
+          command: 'github/whoami',
+          package: { id: 'package_1', name: 'private-github-whoami', visibility: 'private' },
+          installation: { id: 'install_1' },
+          sourceFile: 'clis/github/whoami.js',
+        }), { status: 201 });
+      },
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(requested).toEqual([{ pathname: '/v1/adapters/override', body: { command: 'github/whoami' } }]);
+    expect(stdout.text()).toContain('Override created for github/whoami');
+    expect(stdout.text()).toContain('package_1');
+    expect(stdout.text()).toContain('adapter source put github/whoami');
+  });
+
+  it('rejects an unsafe hosted adapter override command key before any request', async () => {
+    const stderr = sink();
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response('{}'));
+    const result = await runHostedCli(['adapter', 'override', '../escape'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stderr: stderr.stream,
+      fetchImpl,
+    });
+
+    expect(result.exitCode).not.toBe(0);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it('rejects unsafe hosted adapter command keys and source provenance', async () => {
     const stdout = sink();
     const stderr = sink();

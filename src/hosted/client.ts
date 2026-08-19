@@ -25,6 +25,7 @@ import type {
   HostedMarketplaceInstallationRow,
   HostedMarketplaceSearchResult,
   HostedSiteMemoryArtifact,
+  HostedAdapterOverrideResponse,
   HostedAdapterSourceWriteResponse,
   HostedTraceReceipt,
 } from './types.js';
@@ -248,6 +249,22 @@ export class HostedClient {
     });
     if (!isHostedAdapterSourceWriteResponse(result)) throw protocolError('Webcmd Cloud returned an invalid adapter source write response.');
     return { packageId: result.package.id, storagePath: result.package.storagePath, commands: result.commands };
+  }
+
+  /** Hosted `adapter override`: fork an installed system command into a private package. */
+  async overrideAdapter(commandKey: string): Promise<HostedAdapterOverrideResponse> {
+    const result = await this.request('/v1/adapters/override', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ command: commandKey }),
+    });
+    if (!isHostedAdapterOverrideResponse(result)) throw protocolError('Webcmd Cloud returned an invalid adapter override response.');
+    return {
+      command: result.command,
+      packageId: result.package.id,
+      packageName: result.package.name,
+      sourceFile: result.sourceFile,
+    };
   }
 
   async execute(input: {
@@ -534,6 +551,27 @@ function isHostedAdapterSourceWriteResponse(value: unknown): value is { ok: true
     && typeof value.package.storagePath === 'string'
     && Array.isArray(value.commands)
     && value.commands.every(command => typeof command === 'string');
+}
+
+function isHostedAdapterOverrideResponse(value: unknown): value is {
+  ok: true;
+  command: string;
+  package: { id: string; name: string; visibility: string };
+  installation: { id: string };
+  sourceFile: string | null;
+} {
+  return hasExactKeys(value, ['ok', 'command', 'package', 'installation', 'sourceFile'])
+    && value.ok === true
+    && typeof value.command === 'string'
+    && isRecord(value.package)
+    && hasExactKeys(value.package, ['id', 'name', 'visibility'])
+    && typeof value.package.id === 'string'
+    && typeof value.package.name === 'string'
+    && typeof value.package.visibility === 'string'
+    && isRecord(value.installation)
+    && hasExactKeys(value.installation, ['id'])
+    && typeof value.installation.id === 'string'
+    && (value.sourceFile === null || typeof value.sourceFile === 'string');
 }
 
 function isHostedError(value: unknown): value is HostedErrorResponse {

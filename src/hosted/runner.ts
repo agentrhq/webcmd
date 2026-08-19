@@ -238,7 +238,7 @@ async function dispatchHosted(
     return;
   }
 
-  if (args[0] === 'adapter' && (args[1] === 'source' || args[1] === 'path' || args[1] === '--help' || args[1] === '-h')) {
+  if (args[0] === 'adapter' && (args[1] === 'source' || args[1] === 'path' || args[1] === 'override' || args[1] === '--help' || args[1] === '-h')) {
     await runHostedAdapterSourceSurface(args.slice(1), normalized.literal, client, stdout, homeDir);
     return;
   }
@@ -527,7 +527,8 @@ function hostedSiteMemoryBackend(client: HostedClient): SiteMemoryBackend {
 type HostedAdapterSourceCommand =
   | { kind: 'get'; commandKey: string; output?: string }
   | { kind: 'put'; commandKey: string; path: string }
-  | { kind: 'path'; commandKey: string };
+  | { kind: 'path'; commandKey: string }
+  | { kind: 'override'; commandKey: string };
 
 async function runHostedAdapterSourceSurface(argv: readonly string[], literal: boolean, client: HostedClient, stdout: NodeJS.WritableStream, homeDir: string): Promise<void> {
   let parsed: HostedAdapterSourceCommand | undefined;
@@ -542,6 +543,10 @@ async function runHostedAdapterSourceSurface(argv: readonly string[], literal: b
   source.command('get').argument('<command>').option('-o, --output <path>').action((commandKey, opts: { output?: string }) => { parsed = { kind: 'get', commandKey, output: opts.output }; });
   source.command('put').argument('<command>').argument('<path>').action((commandKey, filePath) => { parsed = { kind: 'put', commandKey, path: filePath }; });
   adapter.command('path').argument('<command>').action(commandKey => { parsed = { kind: 'path', commandKey }; });
+  adapter.command('override')
+    .description('Fork an installed adapter command into a private copy you can modify')
+    .argument('<command>', 'Command to override, as <site>/<command>')
+    .action(commandKey => { parsed = { kind: 'override', commandKey }; });
   try {
     await root.parseAsync(literal ? ['--', 'adapter', ...argv] : ['adapter', ...argv], { from: 'user' });
   } catch (error) {
@@ -556,6 +561,19 @@ async function runHostedAdapterSourceSurface(argv: readonly string[], literal: b
   const { site, command } = parseAdapterCommandKey(parsed.commandKey);
   const destination = hostedAdapterDestination(homeDir, site, command);
   if (parsed.kind === 'path') return writeToStream(stdout, `${destination}\n`);
+  if (parsed.kind === 'override') {
+    const result = await client.overrideAdapter(parsed.commandKey);
+    await writeToStream(stdout, [
+      `✅ Override created for ${result.command}`,
+      `     package: ${result.packageId}`,
+      `     source:  ${result.sourceFile ?? '(unknown)'}`,
+      '',
+      '  Your private copy now takes precedence over the installed adapter.',
+      `  Edit it with: ${CLI_COMMAND} adapter source get ${result.command} then ${CLI_COMMAND} adapter source put ${result.command} <path>`,
+      '',
+    ].join('\n'));
+    return;
+  }
   const metadata = await hostedAdapterSourceMetadata(client, parsed.commandKey);
   const sourcePath = metadata.sourceFile ?? metadata.modulePath;
   if (!sourcePath) throw new ConfigError(`Hosted adapter source is unavailable for ${parsed.commandKey}.`);
