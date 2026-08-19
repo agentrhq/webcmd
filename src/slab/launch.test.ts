@@ -4,6 +4,23 @@ import { SlabUpdateRequiredError } from '../errors.js';
 import { launchSlab } from './launch.js';
 
 describe('SLAB launch', () => {
+  it('launches the installed CLI bridge when no app bundle is present', async () => {
+    const io = {
+      findInstallation: () => null,
+      isRunning: vi.fn(() => false),
+      launch: vi.fn(async () => {}),
+      restart: vi.fn(async () => {}),
+      hello: vi.fn()
+        .mockRejectedValueOnce(new SlabBridgeUnavailableError('offline'))
+        .mockResolvedValue({ protocolVersion: 1, browserVersion: '1', browserPid: 1234, profiles: [] }),
+      wait: vi.fn(async () => {}),
+      now: vi.fn(() => 0),
+    };
+
+    await expect(launchSlab(io)).resolves.toMatchObject({ protocolVersion: 1 });
+    expect(io.launch).toHaveBeenCalledWith('slab-browser');
+  });
+
   it('restarts an unavailable installed browser once', async () => {
     const hello = vi.fn()
       .mockRejectedValueOnce(new SlabBridgeUnavailableError('offline'))

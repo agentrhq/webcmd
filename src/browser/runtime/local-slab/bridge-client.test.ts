@@ -1,23 +1,40 @@
 import { EventEmitter } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
-import { SlabBridgeClient, SlabBridgeUnavailableError } from './bridge-client.js';
+import { DEFAULT_SLAB_SOCKET_PATH, SlabBridgeClient, SlabBridgeUnavailableError } from './bridge-client.js';
 
 function fakeSocket() {
   const client = Object.assign(new EventEmitter(), {
     destroy() {},
-    write() { return true; },
+    write(_data: string) { return true; },
   });
   const server = { write: (line: string) => client.emit('data', Buffer.from(line)) };
   return { client, server };
 }
 
 describe('SLAB bridge client', () => {
+  it('uses the per-user SLAB bridge socket by default', () => {
+    expect(DEFAULT_SLAB_SOCKET_PATH).toMatch(/\/\.slab\/bridge\.sock$/);
+    expect(DEFAULT_SLAB_SOCKET_PATH).not.toBe('/tmp/slab-bridge.sock');
+  });
+
   it('round-trips one request per newline-delimited response', async () => {
     const socket = fakeSocket();
     const client = new SlabBridgeClient({ connect: () => socket.client });
     const hello = client.hello('1.9.0');
     socket.server.write('{"id":"1","ok":true,"result":{"protocolVersion":1,"browserVersion":"1","browserPid":1234,"profiles":[]}}\n');
 
+    await expect(hello).resolves.toMatchObject({ protocolVersion: 1 });
+  });
+
+  it('sends the v1 protocol compatibility range', async () => {
+    const socket = fakeSocket();
+    const write = vi.spyOn(socket.client, 'write');
+    const client = new SlabBridgeClient({ connect: () => socket.client });
+    const hello = client.hello('1.9.0');
+    expect(JSON.parse(String(write.mock.calls[0]?.[0]))).toMatchObject({
+      params: { protocolVersion: 1, protocolMinVersion: 1, protocolMaxVersion: 1 },
+    });
+    socket.server.write('{"id":"1","ok":true,"result":{"protocolVersion":1,"browserVersion":"1","browserPid":1234,"profiles":[]}}\n');
     await expect(hello).resolves.toMatchObject({ protocolVersion: 1 });
   });
 
