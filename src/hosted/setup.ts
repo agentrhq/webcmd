@@ -1,5 +1,8 @@
 import { createInterface } from 'node:readline/promises';
 import { stdin as defaultInput, stdout as defaultOutput } from 'node:process';
+import { CLI_COMMAND } from '../brand.js';
+import { ArgumentError, toEnvelope } from '../errors.js';
+import { formatErrorEnvelope } from '../output.js';
 import { writeToStream } from '../stream-write.js';
 import { HostedClient } from './client.js';
 import {
@@ -18,37 +21,97 @@ import {
 export interface SetupIo extends ConfigIo, HostedCredentialIo {
   input?: NodeJS.ReadableStream;
   output?: NodeJS.WritableStream;
+  stderr?: NodeJS.WritableStream;
   fetchImpl?: typeof fetch;
   question?: (prompt: string) => Promise<string>;
   write?: (message: string) => void | Promise<void>;
+  argv?: readonly string[];
+  isTTY?: boolean;
 }
+
+type SetupMode = 'local' | 'hosted';
+
+const SETUP_USAGE = `usage: ${CLI_COMMAND} setup --mode <local|hosted> [--api-key <key>]`;
+const SETUP_EXAMPLE = `example: ${CLI_COMMAND} setup --mode local`;
+const SETUP_HELP = [
+  `${CLI_COMMAND} setup`,
+  '',
+  'Configure local or hosted mode.',
+  '',
+  '  --mode <local|hosted>   Required when stdin is not a TTY',
+  '  --api-key <key>         Required for --mode hosted when stdin is not a TTY',
+  '  -h, --help',
+  '',
+  SETUP_EXAMPLE,
+  `example: ${CLI_COMMAND} setup --mode hosted --api-key <key>`,
+  '',
+].join('\n');
 
 export async function runHostedSetup(io: SetupIo = {}): Promise<number> {
   const write = io.write
     ? async (message: string) => { await io.write!(message); }
     : async (message: string) => writeToStream(io.output ?? defaultOutput, message);
-  const ownedReadline = io.question ? undefined : createInterface({
-    input: io.input ?? defaultInput,
-    output: io.output ?? defaultOutput,
+  let ownedReadline: ReturnType<typeof createInterface> | undefined;
+  const ask = io.question ?? (async (prompt: string) => {
+    ownedReadline ??= createInterface({
+      input: io.input ?? defaultInput,
+      output: io.output ?? defaultOutput,
+    });
+    return ownedReadline.question(prompt);
   });
-  const ask = io.question ?? ((prompt: string) => ownedReadline!.question(prompt));
 
   try {
-    await write('Webcmd setup\n');
-    const mode = await ask('Use hosted Webcmd Cloud or local Webcmd? [hosted/local] ');
-    if (mode.trim().toLowerCase().startsWith('l')) {
+    const parsed = parseSetupArgs(io.argv ?? []);
+    if (parsed.help) {
+      await write(SETUP_HELP);
+      return 0;
+    }
+
+    const interactive = canPrompt(io);
+    let mode = parsed.mode;
+    if (!mode) {
+      if (!interactive) {
+        throw new ArgumentError(
+          'setup requires --mode when stdin is not a TTY.',
+          `${SETUP_USAGE}\n${SETUP_EXAMPLE}`,
+        );
+      }
+      await write('Webcmd setup\n');
+      mode = (await ask('Use hosted Webcmd Cloud or local Webcmd? [hosted/local] ')).trim().toLowerCase().startsWith('l')
+        ? 'local'
+        : 'hosted';
+    } else {
+      await write('Webcmd setup\n');
+    }
+
+    if (mode === 'local') {
+      if (parsed.apiKey) {
+        throw new ArgumentError(
+          '--api-key is only valid with --mode hosted.',
+          `${SETUP_USAGE}\n${SETUP_EXAMPLE}`,
+        );
+      }
       saveWebcmdConfig(makeLocalConfig(io.now?.() ?? new Date()), io);
       await write('Webcmd is now configured for local mode.\n');
       return 0;
     }
 
-    const apiBaseUrl = defaultHostedApiBaseUrl(io.env ?? process.env);
-    const apiKey = (await ask('Webcmd API key: ')).trim();
+    let apiKey = parsed.apiKey?.trim();
     if (!apiKey) {
-      await write('A Webcmd API key is required for hosted mode.\n');
-      return 2;
+      if (!interactive) {
+        throw new ArgumentError(
+          'setup --mode hosted requires --api-key when stdin is not a TTY.',
+          `${SETUP_USAGE}\nexample: ${CLI_COMMAND} setup --mode hosted --api-key <key>`,
+        );
+      }
+      apiKey = (await ask('Webcmd API key: ')).trim();
+      if (!apiKey) {
+        await write('A Webcmd API key is required for hosted mode.\n');
+        return 2;
+      }
     }
 
+    const apiBaseUrl = defaultHostedApiBaseUrl(io.env ?? process.env);
     let accountLabel: string | undefined;
     try {
       const me = await new HostedClient({
@@ -76,9 +139,60 @@ export async function runHostedSetup(io: SetupIo = {}): Promise<number> {
     await write(`Credential backend: ${credentialBackendLabel(credential.credentialBackend)}.\n`);
     await write('Webcmd is now configured for hosted mode.\n');
     return 0;
+  } catch (err) {
+    if (err instanceof ArgumentError) {
+      await writeToStream(io.stderr ?? process.stderr, formatErrorEnvelope(toEnvelope(err)));
+      return err.exitCode;
+    }
+    throw err;
   } finally {
     ownedReadline?.close();
   }
+}
+
+function canPrompt(io: SetupIo): boolean {
+  if (io.question) return true;
+  if (io.isTTY !== undefined) return io.isTTY;
+  return process.stdin.isTTY === true && process.stdout.isTTY === true;
+}
+
+function parseSetupArgs(argv: readonly string[]): { help?: true; mode?: SetupMode; apiKey?: string } {
+  let mode: SetupMode | undefined;
+  let apiKey: string | undefined;
+  for (let i = 0; i < argv.length; i++) {
+    const token = argv[i]!;
+    if (token === '--help' || token === '-h') return { help: true };
+
+    if (token === '--mode' || token.startsWith('--mode=')) {
+      const value = token.startsWith('--mode=') ? token.slice('--mode='.length) : argv[++i];
+      if (value !== 'local' && value !== 'hosted') {
+        throw new ArgumentError(
+          `--mode must be one of: local, hosted${value ? ` (got: "${value}")` : ''}.`,
+          `${SETUP_USAGE}\n${SETUP_EXAMPLE}`,
+        );
+      }
+      mode = value;
+      continue;
+    }
+
+    if (token === '--api-key' || token.startsWith('--api-key=')) {
+      const value = token.startsWith('--api-key=') ? token.slice('--api-key='.length) : argv[++i];
+      if (!value || value.startsWith('-')) {
+        throw new ArgumentError(
+          '--api-key requires a value.',
+          `${SETUP_USAGE}\nexample: ${CLI_COMMAND} setup --mode hosted --api-key <key>`,
+        );
+      }
+      apiKey = value;
+      continue;
+    }
+
+    throw new ArgumentError(
+      `unknown flag ${token} for \`setup\``,
+      `valid flags for \`setup\`: --mode, --api-key, --help\n${SETUP_USAGE}`,
+    );
+  }
+  return { mode, apiKey };
 }
 
 function hostedAccountLabel(body: unknown): string | undefined {

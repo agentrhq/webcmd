@@ -89,18 +89,77 @@ describe('webcmd setup', () => {
     expect(messages.join('')).toContain('Credential backend: protected file fallback.');
   });
 
-  it('persists interactive local setup before the real CLI process completes', async () => {
+  it('writes local mode from --mode without prompting', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-flags-'));
+    const messages: string[] = [];
+    const env = { WEBCMD_CONFIG_DIR: tempDir } as NodeJS.ProcessEnv;
+    const question = vi.fn(async () => 'hosted');
+
+    const code = await runHostedSetup({
+      env,
+      platform: 'linux',
+      now: () => new Date('2026-07-08T00:00:00.000Z'),
+      argv: ['--mode', 'local'],
+      isTTY: false,
+      question,
+      write: (message) => { messages.push(message); },
+    });
+
+    expect(code).toBe(0);
+    expect(question).not.toHaveBeenCalled();
+    expect(JSON.parse(await readFile(getConfigPath({ env }), 'utf8'))).toEqual({
+      mode: 'local',
+      updatedAt: '2026-07-08T00:00:00.000Z',
+    });
+    expect(messages.join('')).toContain('local mode');
+  });
+
+  it('rejects non-TTY setup without --mode and never prompts', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-nontty-'));
+    const messages: string[] = [];
+    const stderr = collectStderr();
+
+    const code = await runHostedSetup({
+      env: { WEBCMD_CONFIG_DIR: tempDir },
+      argv: [],
+      isTTY: false,
+      stderr: stderr.stream,
+      write: (message) => { messages.push(message); },
+    });
+
+    expect(code).toBe(2);
+    expect(messages.join('')).toBe('');
+    expect(stderr.text()).toContain('setup requires --mode when stdin is not a TTY.');
+    expect(stderr.text()).toContain('example: webcmd setup --mode local');
+  });
+
+  it('rejects non-TTY hosted setup without --api-key', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-hosted-key-'));
+    const stderr = collectStderr();
+
+    const code = await runHostedSetup({
+      env: { WEBCMD_CONFIG_DIR: tempDir },
+      argv: ['--mode', 'hosted'],
+      isTTY: false,
+      stderr: stderr.stream,
+      write: () => undefined,
+    });
+
+    expect(code).toBe(2);
+    expect(stderr.text()).toContain('setup --mode hosted requires --api-key');
+  });
+
+  it('persists flag-driven local setup before the real CLI process completes', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-process-'));
-    const child = spawn(process.execPath, ['--import', 'tsx', 'src/main.ts', 'setup'], {
+    const child = spawn(process.execPath, ['--import', 'tsx', 'src/main.ts', 'setup', '--mode', 'local'], {
       cwd: packageRoot,
       env: { ...process.env, WEBCMD_CONFIG_DIR: tempDir, WEBCMD_NO_UPDATE_CHECK: '1' },
-      stdio: ['pipe', 'pipe', 'pipe'],
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     child.stdout.on('data', chunk => stdout.push(Buffer.from(chunk)));
     child.stderr.on('data', chunk => stderr.push(Buffer.from(chunk)));
-    child.stdin.end('local\n');
 
     const status = await new Promise<number | null>((resolve, reject) => {
       child.once('error', reject);
@@ -113,6 +172,35 @@ describe('webcmd setup', () => {
     expect(JSON.parse(await readFile(getConfigPath({ env: { WEBCMD_CONFIG_DIR: tempDir } }), 'utf8')))
       .toMatchObject({ mode: 'local' });
   }, 20_000);
+
+  it('exits immediately when setup is run with stdin detached', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-hang-'));
+    const child = spawn(process.execPath, ['--import', 'tsx', 'src/main.ts', 'setup'], {
+      cwd: packageRoot,
+      env: { ...process.env, WEBCMD_CONFIG_DIR: tempDir, WEBCMD_NO_UPDATE_CHECK: '1' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const stderr: Buffer[] = [];
+    child.stderr.on('data', chunk => stderr.push(Buffer.from(chunk)));
+
+    const status = await new Promise<number | null>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        child.kill('SIGKILL');
+        reject(new Error('setup hung waiting for input'));
+      }, 8_000);
+      child.once('error', err => {
+        clearTimeout(timer);
+        reject(err);
+      });
+      child.once('close', code => {
+        clearTimeout(timer);
+        resolve(code);
+      });
+    });
+
+    expect(status).toBe(2);
+    expect(Buffer.concat(stderr).toString('utf8')).toContain('setup requires --mode when stdin is not a TTY.');
+  }, 12_000);
 
   it('does not resolve until all caller-owned output writes complete', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-slow-output-'));
@@ -171,6 +259,17 @@ describe('webcmd setup', () => {
     expect(end).not.toHaveBeenCalled();
   });
 });
+
+function collectStderr(): { stream: Writable; text: () => string } {
+  const chunks: Buffer[] = [];
+  const stream = new Writable({
+    write(chunk, _encoding, callback) {
+      chunks.push(Buffer.from(chunk));
+      callback();
+    },
+  });
+  return { stream, text: () => Buffer.concat(chunks).toString('utf8') };
+}
 
 async function within<T>(promise: Promise<T>, milliseconds = 500): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
