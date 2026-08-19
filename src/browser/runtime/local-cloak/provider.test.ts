@@ -142,6 +142,9 @@ function makeProviderWithFakePage(initialViewport: { width: number; height: numb
   const provider = new LocalCloakRuntimeProvider({
     baseDir: '/tmp/webcmd-test',
     launchPersistentContext: vi.fn().mockResolvedValue(context),
+    // Commands now default to background, which routes a darwin launch through
+    // the background launcher; the fake context stands in for both.
+    launchBackgroundPersistentContext: vi.fn().mockResolvedValue(context),
   });
   return { provider, browser, page: pages[0], pages, context, cdpSession, pageCdpSessions };
 }
@@ -226,6 +229,30 @@ describe('LocalCloakRuntimeProvider', () => {
     });
     expect(result).toMatchObject({ id: 'cmd-1', ok: true, page: expect.any(String) });
     expect(page.goto).toHaveBeenCalledWith('https://example.com/', expect.objectContaining({ waitUntil: 'load' }));
+  });
+
+  it.each([
+    { label: 'omits windowMode', windowMode: undefined, background: true, focus: false },
+    { label: 'asks for foreground', windowMode: 'foreground' as const, background: false, focus: true },
+  ])('opens a window tab per the command that $label', async ({ windowMode, background, focus }) => {
+    const { provider, cdpSession } = makeProviderWithFakePage();
+    for (const session of ['first', 'second']) {
+      await provider.dispatch({
+        id: `nav-${session}`,
+        action: 'navigate',
+        session,
+        surface: 'browser',
+        url: `https://${session}.example/`,
+        profileId: 'default',
+        ...(windowMode ? { windowMode } : {}),
+      });
+    }
+
+    const windowTargets = cdpSession.send.mock.calls
+      .filter(([command, params]) => command === 'Target.createTarget' && !(params as { hidden?: boolean })?.hidden)
+      .map(([, params]) => params as { background?: boolean; focus?: boolean });
+    expect(windowTargets.length).toBeGreaterThan(0);
+    for (const params of windowTargets) expect(params).toMatchObject({ background, focus });
   });
 
   it("maps waitUntil 'none' to a commit-only navigation wait", async () => {
@@ -855,7 +882,7 @@ describe('LocalCloakRuntimeProvider', () => {
 
     await expect(provider.dispatch({ id: 'select', action: 'tabs', op: 'select', session: 'work', surface: 'browser', page: created.page, profileId: 'default' }))
       .resolves.toMatchObject({ id: 'select', ok: true, page: created.page, data: { selected: true } });
-    expect(pages[0].bringToFront).toHaveBeenCalled();
+    expect(pages[0].bringToFront).not.toHaveBeenCalled();
 
     await expect(provider.dispatch({ id: 'close', action: 'tabs', op: 'close', session: 'work', surface: 'browser', page: created.page, profileId: 'default' }))
       .resolves.toMatchObject({ id: 'close', ok: true, data: { closed: created.page } });
@@ -896,7 +923,7 @@ describe('LocalCloakRuntimeProvider', () => {
     expect(pages[0].bringToFront).not.toHaveBeenCalled();
   });
 
-  it('brings bound tabs to front by default', async () => {
+  it('does not bring bound tabs to front by default', async () => {
     const { provider, pages } = makeProviderWithFakePage();
     const created = await provider.dispatch({ id: 'new', action: 'tabs', op: 'new', session: 'source', surface: 'browser', url: 'https://second.example/', profileId: 'default' });
 

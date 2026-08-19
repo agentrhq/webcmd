@@ -65,10 +65,13 @@ afterAll(() => fs.rmSync(managedBinaryDir, { recursive: true, force: true }));
 
 describe('doctor report rendering', () => {
   const strip = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '');
+  const isolatedConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-doctor-render-'));
+  afterAll(() => fs.rmSync(isolatedConfigDir, { recursive: true, force: true }));
 
   beforeEach(() => {
     vi.clearAllMocks();
     vi.unstubAllEnvs();
+    vi.stubEnv('WEBCMD_CONFIG_DIR', isolatedConfigDir);
     mockFindShadowedUserAdapters.mockReturnValue([]);
     mockSetDaemonCommandTimeoutSeconds.mockClear();
     mockEnsureBinary.mockResolvedValue(managedBinaryPath);

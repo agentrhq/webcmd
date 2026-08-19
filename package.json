@@ -1,6 +1,6 @@
 {
   "name": "@agentrhq/webcmd",
-  "version": "0.7.1",
+  "version": "0.7.3",
   "description": "Turn websites, browser sessions, desktop apps, and local tools into deterministic CLI surfaces for humans and AI agents.",
   "engines": {
     "node": ">=20.6.0"
@@ -47,6 +47,7 @@
     "NOTICE"
   ],
   "scripts": {
+    "benchmark": "uv run python benchmarks/scripts/run_eval.py",
     "dev": "tsx src/main.ts",
     "dev:bun": "bun src/main.ts",
     "build": "npm run clean-dist && npm run copy-yaml && npm run compile && npm run build-manifest && npm run build-plugin-manifest",

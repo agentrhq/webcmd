@@ -30,6 +30,7 @@ import { APIResponse } from './fetch';
 import { Events } from './events';
 import { isTargetClosedError } from './errors';
 import { ChannelOwner } from './channelOwner';
+import { quickjsEncoding } from '../../quickjs-platform';
 
 import type { BrowserContext } from './browserContext';
 import type { Page } from './page';
@@ -134,7 +135,8 @@ export class Request extends ChannelOwner<channels.RequestChannel> implements ap
   }
 
   postData(): string | null {
-    return (this._fallbackOverrides.postDataBuffer || this._initializer.postData)?.toString('utf-8') || null;
+    const buffer = this._fallbackOverrides.postDataBuffer || this._initializer.postData;
+    return (buffer && quickjsEncoding.decodeText(buffer)) || null;
   }
 
   postDataBuffer(): Buffer | null {
@@ -731,7 +733,7 @@ export class Response extends ChannelOwner<channels.ResponseChannel> implements 
 
   async text(): Promise<string> {
     const content = await this.body();
-    return content.toString('utf8');
+    return quickjsEncoding.decodeText(content);
   }
 
   async json(): Promise<object> {

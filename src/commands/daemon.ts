@@ -5,15 +5,55 @@
  *   webcmd daemon restart — graceful shutdown, then start a fresh daemon
  */
 
-import { fetchDaemonStatus, requestDaemonShutdown } from '../browser/daemon-transport.js';
+import { fetchDaemonStatus, requestDaemonShutdown, type DaemonStatus } from '../browser/daemon-transport.js';
 import { restartDaemon } from '../browser/daemon-lifecycle.js';
 import { formatDuration } from '../download/progress.js';
 import { log } from '../logger.js';
 import { PKG_VERSION } from '../version.js';
 import { formatDaemonVersion, isDaemonStale } from '../browser/daemon-version.js';
+import { render } from '../output.js';
 
-export async function daemonStatus(): Promise<void> {
+/** Machine-readable projection of `daemon status`, mirroring the text rendering. */
+function daemonStatusData(status: DaemonStatus | null): Record<string, unknown> {
+  if (!status) return { running: false };
+  const stale = isDaemonStale(status, PKG_VERSION);
+  return {
+    running: true,
+    stale,
+    pid: status.pid,
+    version: formatDaemonVersion(status),
+    cliVersion: PKG_VERSION,
+    uptimeMs: Math.round(status.uptime * 1000),
+    runtimeConnected: status.runtimeConnected,
+    runtimeName: status.runtimeName,
+    runtimeVersion: status.runtimeVersion ?? null,
+    profileRequired: status.profileRequired === true,
+    profileDisconnected: status.profileDisconnected === true,
+    profiles: (status.profiles ?? []).map(profile => ({
+      contextId: profile.contextId,
+      runtimeConnected: profile.runtimeConnected,
+      runtimeVersion: profile.runtimeVersion ?? null,
+    })),
+    memoryMB: status.memoryMB,
+    port: status.port,
+  };
+}
+
+export interface DaemonStatusOptions {
+  fmt?: string;
+  fmtExplicit?: boolean;
+}
+
+export async function daemonStatus(opts: DaemonStatusOptions = {}): Promise<void> {
+  const fmt = opts.fmt ?? 'table';
+  const fmtExplicit = opts.fmtExplicit ?? false;
   const status = await fetchDaemonStatus();
+
+  if (fmt !== 'table') {
+    await render(daemonStatusData(status), { fmt, fmtExplicit });
+    return;
+  }
+
   if (!status) {
     console.log('Daemon: not running');
     return;

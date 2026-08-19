@@ -1,7 +1,11 @@
+import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   addFieldMapping,
@@ -136,7 +140,7 @@ describe('local site memory store', () => {
     await expect(readFileBody(homeDir, 'field-map.json')).resolves.toMatch(/"meaning": "other"/);
   });
 
-  it('survives two concurrent appendNote calls', async () => {
+  it('survives two concurrent in-process appendNote calls', async () => {
     const homeDir = await tempHome();
     await Promise.all([
       appendNote({ ...base, homeDir, text: 'alpha' }),
@@ -146,6 +150,37 @@ describe('local site memory store', () => {
     const body = await readNotes(homeDir);
     expect(body).toContain('alpha');
     expect(body).toContain('beta');
+  });
+
+  it('keeps every note when separate processes append at the same time', async () => {
+    const homeDir = await tempHome();
+
+    await runWriters(homeDir, 'note');
+
+    const body = await readNotes(homeDir);
+    for (const text of expectedWrites('note')) expect(body).toContain(text);
+  }, 120_000);
+
+  it('keeps every endpoint when separate processes write at the same time', async () => {
+    const homeDir = await tempHome();
+
+    await runWriters(homeDir, 'endpoint');
+
+    const endpoints = JSON.parse(await readFileBody(homeDir, 'endpoints.json'));
+    expect(Object.keys(endpoints).sort()).toEqual(expectedWrites('endpoint').sort());
+  }, 120_000);
+
+  it('hides write lock markers from readers', async () => {
+    const homeDir = await tempHome();
+    await appendNote({ ...base, homeDir, text: 'hello' });
+    await writeFile(join(homeDir, '.webcmd/sites', base.site, 'notes.md.lock'), '{"pid":1}\n');
+
+    await expect(showSiteMemory(base.site, { homeDir })).resolves.toEqual([
+      expect.objectContaining({ path: 'notes.md' }),
+    ]);
+    await expect(listSiteMemory(base.site, { homeDir })).resolves.toEqual([
+      expect.objectContaining({ path: 'notes.md' }),
+    ]);
   });
 
   it('uses the injected home instead of the real home directory', async () => {
@@ -245,6 +280,31 @@ async function tempHome() {
   const dir = await mkdtemp(join(tmpdir(), 'webcmd-site-memory-'));
   tempHomes.push(dir);
   return dir;
+}
+
+const WRITER_PROCESSES = 6;
+const WRITES_PER_PROCESS = 4;
+const run = promisify(execFile);
+const require = createRequire(import.meta.url);
+
+/**
+ * The in-process promise chain cannot see another `webcmd` invocation, so the
+ * only way to cover the read-modify-write race is to run real processes. Each
+ * child writes several times to widen the window they can interleave in.
+ */
+async function runWriters(homeDir: string, mode: 'note' | 'endpoint') {
+  const script = fileURLToPath(new URL('./__fixtures__/concurrent-writer.mts', import.meta.url));
+  await Promise.all(Array.from({ length: WRITER_PROCESSES }, (_unused, index) => run(
+    process.execPath,
+    [require.resolve('tsx/cli'), script, homeDir, base.site, mode, `w${index}`, String(WRITES_PER_PROCESS)],
+    { env: { ...process.env, HOME: homeDir } },
+  )));
+}
+
+function expectedWrites(mode: 'note' | 'endpoint'): string[] {
+  return Array.from({ length: WRITER_PROCESSES }, (_unused, index) => index).flatMap((index) => (
+    Array.from({ length: WRITES_PER_PROCESS }, (_item, write) => `${mode}-w${index}-${write}`)
+  ));
 }
 
 async function readNotes(homeDir: string) {

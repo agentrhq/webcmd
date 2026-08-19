@@ -41,6 +41,19 @@ const authCommand = {
   defaultFormat: 'plain',
 };
 
+const liveViewCommand = {
+  site: 'live',
+  name: 'view',
+  command: 'live/view',
+  description: 'Exercise the hosted live view lifecycle',
+  access: 'read',
+  strategy: 'UI',
+  browser: true,
+  args: [],
+  columns: ['value'],
+  defaultFormat: 'plain',
+};
+
 afterEach(async () => {
   await Promise.all(servers.splice(0).map(server => new Promise<void>((resolve, reject) => {
     server.close(error => error ? reject(error) : resolve());
@@ -150,6 +163,20 @@ describe('hosted CLI process lifecycle', () => {
     await expect(readFile(fixture.discoverySentinel, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
   }, 20_000);
 
+  it('writes the live view before the prepared browser run completes', async () => {
+    const fixture = await createHostedFixture('browser');
+    const cli = startCli(['live', 'view', '-f', 'plain'], fixture.env);
+
+    await fixture.runStarted;
+    await eventually(() => cli.stderr() === 'Webcmd live view: https://api.example.test/account/live/live_token\n');
+    fixture.releaseRun();
+
+    const result = await cli.done;
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe('live result\n');
+    expect(result.stderr).toBe('Webcmd live view: https://api.example.test/account/live/live_token\n');
+  }, 20_000);
+
   it('rejects daemon commands in hosted mode without local discovery', async () => {
     const fixture = await createHostedFixture('success');
 
@@ -191,11 +218,13 @@ describe('hosted CLI process lifecycle', () => {
   }, 20_000);
 });
 
-async function createHostedFixture(outcome: 'success' | 'failure'): Promise<{
+async function createHostedFixture(outcome: 'success' | 'failure' | 'browser'): Promise<{
   root: string;
   env: NodeJS.ProcessEnv;
   discoverySentinel: string;
   requests: string[];
+  runStarted: Promise<void>;
+  releaseRun: () => void;
 }> {
   const root = await mkdtemp(path.join(tmpdir(), 'webcmd-hosted-lifecycle-'));
   tempRoots.push(root);
@@ -203,6 +232,10 @@ async function createHostedFixture(outcome: 'success' | 'failure'): Promise<{
   const userClis = path.join(root, '.webcmd', 'clis', 'lifecycle-sentinel');
   const discoverySentinel = path.join(root, 'local-discovery-ran');
   const requests: string[] = [];
+  let markRunStarted: () => void = () => undefined;
+  const runStarted = new Promise<void>(resolve => { markRunStarted = resolve; });
+  let releaseRun: () => void = () => undefined;
+  const waitForRunRelease = new Promise<void>(resolve => { releaseRun = resolve; });
   await mkdir(configDir, { recursive: true });
   await mkdir(userClis, { recursive: true });
   await writeFile(path.join(userClis, 'sentinel.js'), [
@@ -225,8 +258,28 @@ async function createHostedFixture(outcome: 'success' | 'failure'): Promise<{
             webcmdPackageVersion: PKG_VERSION,
             generatedAt: '2026-07-14T00:00:00.000Z',
           },
-          commands: [command, authCommand],
+          commands: [command, authCommand, liveViewCommand],
         },
+      });
+      return;
+    }
+    if (request.url === '/v1/executions' && request.method === 'POST' && outcome === 'browser') {
+      sendChunkedJson(response, {
+        ok: true,
+        execution: { id: 'exec_live', command: 'live/view', status: 'queued' },
+        fileArguments: [],
+        liveViewUrl: 'https://api.example.test/account/live/live_token',
+      });
+      return;
+    }
+    if (request.url === '/v1/executions/exec_live/run' && request.method === 'POST' && outcome === 'browser') {
+      markRunStarted();
+      await waitForRunRelease;
+      sendChunkedJson(response, {
+        ok: true,
+        result: { value: 'live result' },
+        columns: ['value'],
+        execution: { id: 'exec_live', command: 'live/view', status: 'succeeded' },
       });
       return;
     }
@@ -287,6 +340,8 @@ async function createHostedFixture(outcome: 'success' | 'failure'): Promise<{
     root,
     discoverySentinel,
     requests,
+    runStarted,
+    releaseRun,
     env: {
       ...process.env,
       HOME: root,
@@ -310,17 +365,21 @@ function runCli(args: string[], env: NodeJS.ProcessEnv, imports: string[] = []):
   stdout: string;
   stderr: string;
 }> {
-  return new Promise((resolve, reject) => {
-    const importArgs = imports.flatMap(specifier => ['--import', pathToFileURL(specifier).href]);
-    const child = spawn(process.execPath, [...importArgs, '--import', 'tsx', entrypoint, ...args], {
-      cwd: packageRoot,
-      env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    const stdout: Buffer[] = [];
-    const stderr: Buffer[] = [];
-    child.stdout.on('data', chunk => stdout.push(Buffer.from(chunk)));
-    child.stderr.on('data', chunk => stderr.push(Buffer.from(chunk)));
+  return startCli(args, env, imports).done;
+}
+
+function startCli(args: string[], env: NodeJS.ProcessEnv, imports: string[] = []) {
+  const importArgs = imports.flatMap(specifier => ['--import', pathToFileURL(specifier).href]);
+  const child = spawn(process.execPath, [...importArgs, '--import', 'tsx', entrypoint, ...args], {
+    cwd: packageRoot,
+    env,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  const stdout: Buffer[] = [];
+  const stderr: Buffer[] = [];
+  child.stdout.on('data', chunk => stdout.push(Buffer.from(chunk)));
+  child.stderr.on('data', chunk => stderr.push(Buffer.from(chunk)));
+  const done = new Promise<{ status: number | null; stdout: string; stderr: string }>((resolve, reject) => {
     child.once('error', reject);
     child.once('close', status => resolve({
       status,
@@ -328,6 +387,18 @@ function runCli(args: string[], env: NodeJS.ProcessEnv, imports: string[] = []):
       stderr: Buffer.concat(stderr).toString('utf8'),
     }));
   });
+  return {
+    done,
+    stderr: () => Buffer.concat(stderr).toString('utf8'),
+  };
+}
+
+async function eventually(predicate: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (predicate()) return;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  throw new Error('condition did not become true');
 }
 
 async function createDelayedStdoutPreload(root: string): Promise<string> {

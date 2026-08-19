@@ -11,6 +11,7 @@ import type {
   HostedCommand,
   HostedCommandArg,
   HostedExecuteResponse,
+  HostedPrepareExecutionResponse,
 } from './types.js';
 
 export interface HostedPreparedFiles {
@@ -36,6 +37,10 @@ export async function prepareHostedFiles(input: {
   command: HostedCommand;
   args: Record<string, unknown>;
   cwd?: string;
+  profile?: string;
+  session?: string;
+  executionScope?: 'profile' | 'stateless';
+  onPrepared?: (prepared: HostedPrepareExecutionResponse) => Promise<void>;
 }): Promise<HostedPreparedFiles> {
   const fileArgs = input.command.args.filter(hasFileMetadata);
   const cwd = input.cwd ?? process.cwd();
@@ -123,7 +128,13 @@ export async function prepareHostedFiles(input: {
     }
   }
 
-  const prepared = await input.client.prepareExecution({ command: input.command.command });
+  const prepared = await input.client.prepareExecution({
+    command: input.command.command,
+    ...(input.profile !== undefined ? { profile: input.profile } : {}),
+    ...(input.session !== undefined ? { session: input.session } : {}),
+    ...(input.executionScope !== undefined ? { executionScope: input.executionScope } : {}),
+  });
+  await input.onPrepared?.(prepared);
   const referencesByArgument = new Map<string, HostedArtifactReference[]>();
   const inputIdByPath = new Map<string, string>();
   for (const upload of inputs) {

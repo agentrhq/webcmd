@@ -62,6 +62,20 @@ function invalidRequest(command: BrowserRuntimeCommand, error: string): BrowserR
   return { id: command.id, ok: false, errorCode: 'invalid_request', error };
 }
 
+/**
+ * Translate the command vocabulary ('load' | 'none') into Playwright's for a
+ * `page.goto` call. 'none' maps to 'commit': sites that stream analytics forever
+ * never fire the load event, so adapters gating readiness on their own selector
+ * waits must be able to skip it.
+ *
+ * Every Playwright-backed navigation in this runtime goes through here, so a
+ * future waitUntil value reaches all of them at once — the hardcoded literal at
+ * the second call site is what left `tab new --url` hanging after #106/#107.
+ */
+function toGotoWaitUntil(waitUntil: BrowserRuntimeCommand['waitUntil']): 'load' | 'commit' {
+  return waitUntil === 'none' ? 'commit' : 'load';
+}
+
 async function resolveLease(manager: CloakSessionManager, command: BrowserRuntimeCommand) {
   const profileId = resolveCloakCommandProfileId(manager, command);
   if (command.page) {
@@ -204,9 +218,6 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
       case 'navigate': {
         if (!command.url) return invalidRequest(command, 'Missing url');
         const profileId = resolveCloakCommandProfileId(manager, command);
-        // 'none' maps to Playwright's 'commit': sites that stream analytics forever
-        // never fire the load event, so adapters gating readiness on their own
-        // selector waits must be able to skip it.
         const lease = await manager.navigatePage(
           {
             profileId,
@@ -222,7 +233,7 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
             windowMode: command.windowMode,
           },
           command.url,
-          command.waitUntil === 'none' ? 'commit' : 'load',
+          toGotoWaitUntil(command.waitUntil),
         );
         return { id: command.id, ok: true, data: { title: await lease.page.title(), url: lease.page.url(), timedOut: false }, page: lease.pageId };
       }
@@ -390,6 +401,7 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
               runId: command.runId,
               idleTimeout: command.idleTimeout,
               url: command.url,
+              waitUntil: toGotoWaitUntil(command.waitUntil),
               windowMode: command.windowMode,
             });
             return { id: command.id, ok: true, data: { title: await lease.page.title(), url: lease.page.url() }, page: lease.pageId };

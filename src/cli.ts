@@ -19,14 +19,14 @@ import './fetch/command.js';
 import { commandListPresentation, filterCommandsByTag, toPresentableCommand } from './command-presentation.js';
 import { configureCompletionCommandSurface, configureListCommandSurface, configurePluginInstallSurface, configurePluginListSurface, configurePluginSearchSurface } from './builtin-command-surface.js';
 import { OUTPUT_FORMAT_HELP, resolveOutputFormat } from './command-surface.js';
-import { render as renderOutput } from './output.js';
+import { render as renderOutput, formatErrorEnvelope } from './output.js';
 import { PKG_VERSION } from './version.js';
 import { printCompletionScript } from './completion.js';
 import { loadExternalClis, executeExternalCli, installExternalCli, registerExternalCli, isBinaryInstalled, formatExternalCliLabel } from './external.js';
 import { addWebcmdSkills, listWebcmdSkills, removeWebcmdSkills, updateWebcmdSkill, type WebcmdSkillAddResult } from './skills.js';
 import { registerAllCommands } from './commanderAdapter.js';
 import { buildRootHelpPresentation, classifyAdapter, installCommanderNamespaceStructuredHelp, installRootPresentationHelp, leadingPositionalFromUsage, rootHelpData, type RootAdapterGroups } from './help.js';
-import { EXIT_CODES, getErrorMessage, BrowserConnectError, CliError, ArgumentError } from './errors.js';
+import { EXIT_CODES, getErrorMessage, toEnvelope, BrowserConnectError, CliError, ArgumentError } from './errors.js';
 import { TargetError, type TargetErrorCode } from './browser/target-errors.js';
 import { resolveTargetJs, getTextResolvedJs, getValueResolvedJs, getAttributesResolvedJs, selectResolvedJs, isAutocompleteResolvedJs, type ResolveOptions, type TargetMatchLevel } from './browser/target-resolver.js';
 import { buildFindJs, buildSemanticFindJs, isFindError, type FindResult, type FindError, type SemanticFindOptions } from './browser/find.js';
@@ -41,10 +41,10 @@ import { analyzeSite, type PageSignals } from './browser/analyze.js';
 import { browserOptionValueParser } from './browser/command-catalog.js';
 import { registerAuthCommands } from './commands/auth.js';
 import { daemonRestart, daemonStatus, daemonStop } from './commands/daemon.js';
-import { isVerbose, log } from './logger.js';
+import { enableVerbose, isVerbose, log } from './logger.js';
 import { BrowserCommandError, listExistingBrowserTabs, releaseSiteSessionLease, sendCommand } from './browser/daemon-client.js';
 import { fetchDaemonStatus } from './browser/daemon-transport.js';
-import { aliasForContextId, loadProfileConfig, profileRouteParams, renameProfile, resolveProfileSelection, setDefaultProfile, type ProfileSelection } from './browser/profile.js';
+import { aliasForContextId, loadProfileConfig, profileListRows, profileRouteParams, renameProfile, resolveProfileSelection, setDefaultProfile, type ProfileSelection } from './browser/profile.js';
 import { formatDaemonVersion, isDaemonStale } from './browser/daemon-version.js';
 import { DEFAULT_BROWSER_CONNECT_TIMEOUT } from './browser/config.js';
 import { CLI_COMMAND, PACKAGE_NAME } from './brand.js';
@@ -579,7 +579,20 @@ function sessionCreateOutput(data: unknown): unknown {
 }
 
 function applyVerbose(opts: { verbose?: boolean }): void {
-  if (opts.verbose) process.env.WEBCMD_VERBOSE = '1';
+  enableVerbose(opts.verbose === true);
+}
+
+/**
+ * Add `-v` to a browser leaf that performs bridge/CDP I/O.
+ *
+ * The CDP client already gates diagnostics on `isVerbose()`
+ * (`src/browser/cdp.ts`), but the raw browser leaves rejected the flag, so those
+ * diagnostics were only reachable by setting `WEBCMD_VERBOSE` by hand (#174).
+ * Filesystem-only leaves (`init`, `fork`) are deliberately left out: a flag
+ * there would advertise diagnostics that do not exist.
+ */
+function withBrowserVerbose(command: Command): Command {
+  return command.option('-v, --verbose', 'Debug output', false);
 }
 
 function formatChildCommandSummary(command: Command): string {
@@ -667,56 +680,67 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
 
   // ── Built-in: validate / verify ───────────────────────────────────────────
 
-  program
+  const validateCmd = program
     .command('validate')
     .description('Validate CLI definitions')
     .argument('[target]', 'site or site/name')
-    .action(async (target) => {
-      const { validateClisWithTarget, renderValidationReport } = await import('./validate.js');
-      console.log(renderValidationReport(validateClisWithTarget([BUILTIN_CLIS, USER_CLIS], target)));
-    });
+    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
+  validateCmd.action(async (target, opts) => {
+    const fmt = resolveOutputFormat(opts.format);
+    if (fmt === null) return;
+    const fmtExplicit = validateCmd.getOptionValueSource('format') === 'cli';
+    const { validateClisWithTarget, renderValidationReport } = await import('./validate.js');
+    const report = validateClisWithTarget([BUILTIN_CLIS, USER_CLIS], target);
+    if (fmt === 'table') console.log(renderValidationReport(report));
+    else await renderOutput(report, { fmt, fmtExplicit });
+  });
 
-  program
+  const verifyCmd = program
     .command('verify')
     .description('Validate + smoke test')
     .argument('[target]')
     .option('--smoke', 'Run smoke tests', false)
-    .action(async (target, opts) => {
-      const { verifyClis, renderVerifyReport } = await import('./verify.js');
-      const r = await verifyClis({ builtinClis: BUILTIN_CLIS, userClis: USER_CLIS, target, smoke: opts.smoke });
-      console.log(renderVerifyReport(r));
-      process.exitCode = r.ok ? EXIT_CODES.SUCCESS : EXIT_CODES.GENERIC_ERROR;
+    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
+  verifyCmd.action(async (target, opts) => {
+    const fmt = resolveOutputFormat(opts.format);
+    if (fmt === null) return;
+    const fmtExplicit = verifyCmd.getOptionValueSource('format') === 'cli';
+    const { verifyClis, renderVerifyReport } = await import('./verify.js');
+    const r = await verifyClis({ builtinClis: BUILTIN_CLIS, userClis: USER_CLIS, target, smoke: opts.smoke });
+    if (fmt === 'table') console.log(renderVerifyReport(r));
+    else await renderOutput(r, { fmt, fmtExplicit });
+    process.exitCode = r.ok ? EXIT_CODES.SUCCESS : EXIT_CODES.GENERIC_ERROR;
+  });
+
+  // Bare `skills` and `skills list` render the same rows; the only difference is
+  // the invocation reported in the table footer.
+  const renderSkillsList = (fmt: string, fmtExplicit: boolean, source: string): Promise<void> =>
+    renderOutput(listWebcmdSkills(), {
+      fmt,
+      fmtExplicit,
+      columns: ['name', 'description', 'version', 'path'],
+      title: 'webcmd/skills/list',
+      source,
     });
 
   const skillsCmd = program
     .command('skills')
     .description('List, add, update, and remove bundled Webcmd skills')
-    .action(() => {
-      const rows = listWebcmdSkills();
-      renderOutput(rows, {
-        fmt: 'table',
-        fmtExplicit: false,
-        columns: ['name', 'description', 'version', 'path'],
-        title: 'webcmd/skills/list',
-        source: 'webcmd skills',
-      });
-    });
+    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
+  skillsCmd.action(async (opts) => {
+    const fmt = resolveOutputFormat(opts.format);
+    if (fmt === null) return;
+    await renderSkillsList(fmt, skillsCmd.getOptionValueSource('format') === 'cli', 'webcmd skills');
+  });
 
   const skillsListCmd = skillsCmd
     .command('list')
     .description('List bundled Webcmd skills')
     .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
-  skillsListCmd.action((opts) => {
+  skillsListCmd.action(async (opts) => {
     const fmt = resolveOutputFormat(opts.format);
     if (fmt === null) return;
-    const rows = listWebcmdSkills();
-    renderOutput(rows, {
-      fmt,
-      fmtExplicit: skillsListCmd.getOptionValueSource('format') === 'cli',
-      columns: ['name', 'description', 'version', 'path'],
-      title: 'webcmd/skills/list',
-      source: 'webcmd skills list',
-    });
+    await renderSkillsList(fmt, skillsListCmd.getOptionValueSource('format') === 'cli', 'webcmd skills list');
   });
 
   skillsCmd
@@ -898,6 +922,21 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
     .description('Run Playwright programs against an explicit browser Session');
   const originalBrowserDescription = browser.description();
 
+  // Retired browser subcommands. `fork` was a duplicate of `adapter override`
+  // that never appeared in the docs; commander's bare "unknown command" leaves
+  // the caller with no way to find the replacement, so name it.
+  const RETIRED_BROWSER_SUBCOMMANDS: Record<string, string> = {
+    fork: `${CLI_COMMAND} adapter override <site>/<command>`,
+  };
+  browser.on('command:*', (operands: string[]) => {
+    const name = operands[0]!;
+    const replacement = RETIRED_BROWSER_SUBCOMMANDS[name];
+    console.error(replacement
+      ? `error: '${CLI_COMMAND} browser ${name}' was removed. Use: ${replacement}`
+      : `error: unknown command '${name}'`);
+    process.exitCode = EXIT_CODES.USAGE_ERROR;
+  });
+
   // ── Init (adapter scaffolding) ──
 
   browser.command('init')
@@ -965,14 +1004,9 @@ cli({
       }
     });
 
-  browser.command('fork')
-    .argument('<name>', 'Command to fork in site/command format')
-    .description('Fork an installed plugin command into a private copy')
-    .action(handleAdapterOverride);
-
   // ── Verify (test adapter) ──
 
-  browser.command('verify')
+  const browserVerifyCmd = browser.command('verify')
     .argument('<name>', 'Adapter name in site/command format (e.g. hn/top)')
     .option('--write-fixture', 'Write a starter fixture to ~/.webcmd/sites/<site>/verify/<command>.json if none exists')
     .option('--update-fixture', 'Overwrite an existing fixture with one derived from current output')
@@ -981,8 +1015,17 @@ cli({
     .option('--seed-args <value>', 'Seed args when no fixture exists; use JSON array/object for multiple args or flags')
     .option('--trace <mode>', 'Trace capture for the adapter subprocess: off, on, retain-on-failure', 'off')
     .option('--max-top-level-keys <n>', 'Override the row-shape top-level key cap (default: 12) for adapters whose rows are wide by design')
-    .description('Execute an adapter and validate output; uses fixture at ~/.webcmd/sites/<site>/verify/<cmd>.json when present')
-    .action(async (name: string, opts: { fixture?: boolean; writeFixture?: boolean; updateFixture?: boolean; strictMemory?: boolean; seedArgs?: string; trace?: string; maxTopLevelKeys?: string } = {}) => {
+    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table')
+    .description('Execute an adapter and validate output; uses fixture at ~/.webcmd/sites/<site>/verify/<cmd>.json when present');
+  browserVerifyCmd.action(async (name: string, opts: { fixture?: boolean; writeFixture?: boolean; updateFixture?: boolean; strictMemory?: boolean; seedArgs?: string; trace?: string; maxTopLevelKeys?: string; format?: string } = {}) => {
+      const fmt = resolveOutputFormat(opts.format);
+      if (fmt === null) return;
+      const fmtExplicit = browserVerifyCmd.getOptionValueSource('format') === 'cli';
+      const asTable = fmt === 'table';
+      // Prose-only progress/detail lines. The structured report below carries the
+      // same facts as data; -f json/yaml callers get the report, not this text.
+      const notice = (...lines: string[]) => { if (asTable) for (const line of lines) console.log(line); };
+
       try {
         const parts = name.split('/');
         if (parts.length !== 2) { console.error('Name must be site/command format'); process.exitCode = EXIT_CODES.USAGE_ERROR; return; }
@@ -1007,17 +1050,19 @@ cli({
         const { loadFixture, writeFixture, deriveFixture, validateRows, validateRowShape, fixturePath, expandFixtureArgs, parseSeedArgs } = await import('./browser/verify-fixture.js');
         const filePath = path.join(os.homedir(), '.webcmd', 'clis', site, `${command}.js`);
         if (!fs.existsSync(filePath)) {
-          console.error(`Adapter not found: ${filePath}`);
-          console.error(`Run "webcmd browser init ${name}" to create it.`);
+          const message = `Adapter not found: ${filePath}`;
+          const hint = `Run "webcmd browser init ${name}" to create it.`;
+          if (asTable) { console.error(message); console.error(hint); }
+          else await renderOutput({ ok: false, site, command, error: { code: 'ADAPTER_NOT_FOUND', message, hint } }, { fmt, fmtExplicit });
           process.exitCode = EXIT_CODES.GENERIC_ERROR;
           return;
         }
 
-        console.log(`🔍 Verifying ${name}...\n`);
-        console.log(`  Loading: ${filePath}`);
+        notice(`🔍 Verifying ${name}...\n`, `  Loading: ${filePath}`);
 
         const useFixture = opts.fixture !== false;
         let fixture = useFixture ? loadFixture(site, command) : null;
+        const declaredFixturePath = fixturePath(site, command);
 
         // Build adapter args: fixture.args override the legacy --limit 3 heuristic.
         //   - object form   { "limit": 3 }            → `--limit 3`
@@ -1047,91 +1092,146 @@ cli({
             ...(invocation.shell ? { shell: true } : {}),
           });
         } catch (err) {
-          console.log(`  Executing: webcmd ${site} ${command} ${argDisplay}\n`);
+          notice(`  Executing: webcmd ${site} ${command} ${argDisplay}\n`);
           const execErr = err as { stdout?: string | Buffer; stderr?: string | Buffer };
-          if (execErr.stdout) console.log(String(execErr.stdout));
-          if (execErr.stderr) console.error(String(execErr.stderr).slice(0, 500));
-          console.log(`\n  ✗ Adapter failed. Fix the code and try again.`);
+          if (asTable) {
+            if (execErr.stdout) console.log(String(execErr.stdout));
+            if (execErr.stderr) console.error(String(execErr.stderr).slice(0, 500));
+            console.log(`\n  ✗ Adapter failed. Fix the code and try again.`);
+          } else {
+            await renderOutput({
+              ok: false,
+              site,
+              command,
+              error: {
+                code: 'ADAPTER_EXEC_FAILED',
+                message: 'Adapter failed to execute.',
+                ...(execErr.stderr ? { stderr: String(execErr.stderr).slice(0, 500) } : {}),
+              },
+            }, { fmt, fmtExplicit });
+          }
           process.exitCode = EXIT_CODES.GENERIC_ERROR;
           return;
         }
 
-        console.log(`  Executing: webcmd ${site} ${command} ${argDisplay}\n`);
+        notice(`  Executing: webcmd ${site} ${command} ${argDisplay}\n`);
 
         let rows: Record<string, unknown>[];
         try {
           rows = normalizeVerifyRows(JSON.parse(rawJson));
         } catch {
-          console.log(rawJson);
-          console.log('\n  ✗ Could not parse adapter output as JSON. Is `--format json` broken?');
+          if (asTable) {
+            console.log(rawJson);
+            console.log('\n  ✗ Could not parse adapter output as JSON. Is `--format json` broken?');
+          } else {
+            await renderOutput({
+              ok: false,
+              site,
+              command,
+              error: { code: 'ADAPTER_OUTPUT_NOT_JSON', message: 'Could not parse adapter output as JSON.' },
+            }, { fmt, fmtExplicit });
+          }
           process.exitCode = EXIT_CODES.GENERIC_ERROR;
           return;
         }
 
-        console.log(renderVerifyPreview(rows));
-        console.log(`\n  → ${rows.length} row${rows.length === 1 ? '' : 's'}`);
+        notice(renderVerifyPreview(rows), `\n  → ${rows.length} row${rows.length === 1 ? '' : 's'}`);
 
         const shapeFailures = validateRowShape(rows, { maxTopLevelKeys });
         if (shapeFailures.length > 0) {
-          console.log(`\n  ✗ Adapter output violates row shape conventions:`);
-          for (const f of shapeFailures.slice(0, 20)) {
-            const where = f.rowIndex !== undefined ? `row[${f.rowIndex}] ` : '';
-            console.log(`    - [${f.rule}] ${where}${f.detail}`);
+          if (asTable) {
+            console.log(`\n  ✗ Adapter output violates row shape conventions:`);
+            for (const f of shapeFailures.slice(0, 20)) {
+              const where = f.rowIndex !== undefined ? `row[${f.rowIndex}] ` : '';
+              console.log(`    - [${f.rule}] ${where}${f.detail}`);
+            }
+            if (shapeFailures.length > 20) {
+              console.log(`    ... and ${shapeFailures.length - 20} more failure(s)`);
+            }
+            console.log(`\n  Keep rows agent-native: <=${maxTopLevelKeys ?? 12} top-level keys, nesting depth <=1, and id-shaped fields at top level.`);
+            console.log(`  If this adapter's rows are wide by design, rerun with --max-top-level-keys <n>.`);
+          } else {
+            await renderOutput({ ok: false, site, command, rowCount: rows.length, shapeFailures }, { fmt, fmtExplicit });
           }
-          if (shapeFailures.length > 20) {
-            console.log(`    ... and ${shapeFailures.length - 20} more failure(s)`);
-          }
-          console.log(`\n  Keep rows agent-native: <=${maxTopLevelKeys ?? 12} top-level keys, nesting depth <=1, and id-shaped fields at top level.`);
-          console.log(`  If this adapter's rows are wide by design, rerun with --max-top-level-keys <n>.`);
           process.exitCode = EXIT_CODES.GENERIC_ERROR;
           return;
         }
 
         // ── Fixture handling ───────────────────────────────────────────
+        let fixtureAction: 'none' | 'written' | 'updated' | 'skipped-exists' = 'none';
         if (opts.writeFixture || opts.updateFixture) {
           if (fixture && !opts.updateFixture) {
-            console.log(`\n  Fixture already exists at ${fixturePath(site, command)}.`);
-            console.log(`  Use --update-fixture to overwrite.`);
+            notice(`\n  Fixture already exists at ${declaredFixturePath}.`, `  Use --update-fixture to overwrite.`);
+            fixtureAction = 'skipped-exists';
           } else {
             const fixtureArgs = explicitArgs !== undefined
               ? explicitArgs
               : (hasLimitArg ? { limit: 3 } : undefined);
             const derived = deriveFixture(rows, fixtureArgs);
             const p = writeFixture(site, command, derived);
-            console.log(`\n  ${fixture ? '↻ Updated' : '✎ Wrote'} fixture: ${p}`);
-            console.log(`  Review and hand-tune the derived expectations (add patterns / notEmpty, tighten rowCount).`);
+            notice(`\n  ${fixture ? '↻ Updated' : '✎ Wrote'} fixture: ${p}`, `  Review and hand-tune the derived expectations (add patterns / notEmpty, tighten rowCount).`);
+            fixtureAction = fixture ? 'updated' : 'written';
             fixture = derived;
           }
         }
 
         if (!fixture) {
-          console.log(`\n  ✓ Adapter runs. (No fixture at ${fixturePath(site, command)} — consider --write-fixture to seed one.)`);
+          notice(`\n  ✓ Adapter runs. (No fixture at ${declaredFixturePath} — consider --write-fixture to seed one.)`);
           const memoryReport = checkSiteMemory(site);
-          printSiteMemoryReport(memoryReport, opts.strictMemory);
-          if (!memoryReport.ok && opts.strictMemory) {
-            process.exitCode = EXIT_CODES.GENERIC_ERROR;
+          if (asTable) printSiteMemoryReport(memoryReport, opts.strictMemory);
+          const ok = !(!memoryReport.ok && opts.strictMemory);
+          if (!asTable) {
+            await renderOutput({
+              ok,
+              site,
+              command,
+              rowCount: rows.length,
+              fixture: { path: declaredFixturePath, exists: false, action: fixtureAction },
+              memory: memoryReport,
+            }, { fmt, fmtExplicit });
           }
+          if (!ok) process.exitCode = EXIT_CODES.GENERIC_ERROR;
           return;
         }
 
         const failures = validateRows(rows, fixture);
         if (failures.length === 0) {
-          console.log(`\n  ✓ Adapter matches fixture (${fixturePath(site, command)}).`);
+          notice(`\n  ✓ Adapter matches fixture (${declaredFixturePath}).`);
           const memoryReport = checkSiteMemory(site);
-          printSiteMemoryReport(memoryReport, opts.strictMemory);
-          if (!memoryReport.ok && opts.strictMemory) {
-            process.exitCode = EXIT_CODES.GENERIC_ERROR;
+          if (asTable) printSiteMemoryReport(memoryReport, opts.strictMemory);
+          const ok = !(!memoryReport.ok && opts.strictMemory);
+          if (!asTable) {
+            await renderOutput({
+              ok,
+              site,
+              command,
+              rowCount: rows.length,
+              fixture: { path: declaredFixturePath, exists: true, action: fixtureAction },
+              memory: memoryReport,
+            }, { fmt, fmtExplicit });
           }
+          if (!ok) process.exitCode = EXIT_CODES.GENERIC_ERROR;
           return;
         }
 
-        console.log(`\n  ✗ Adapter output does not match fixture:`);
-        for (const f of failures.slice(0, 20)) {
-          const where = f.rowIndex !== undefined ? `row[${f.rowIndex}] ` : '';
-          console.log(`    - [${f.rule}] ${where}${f.detail}`);
-        }
-        if (failures.length > 20) {
-          console.log(`    ... and ${failures.length - 20} more failure(s)`);
+        if (asTable) {
+          console.log(`\n  ✗ Adapter output does not match fixture:`);
+          for (const f of failures.slice(0, 20)) {
+            const where = f.rowIndex !== undefined ? `row[${f.rowIndex}] ` : '';
+            console.log(`    - [${f.rule}] ${where}${f.detail}`);
+          }
+          if (failures.length > 20) {
+            console.log(`    ... and ${failures.length - 20} more failure(s)`);
+          }
+        } else {
+          await renderOutput({
+            ok: false,
+            site,
+            command,
+            rowCount: rows.length,
+            fixture: { path: declaredFixturePath, exists: true, action: fixtureAction },
+            matchFailures: failures,
+          }, { fmt, fmtExplicit });
         }
         process.exitCode = EXIT_CODES.GENERIC_ERROR;
       } catch (err) {
@@ -1142,6 +1242,7 @@ cli({
 
   function rawBrowserAction(fn: (session: string, routing: { contextId?: string; preferredContextId?: string }, opts: Record<string, unknown>) => Promise<unknown>) {
     return async (opts: Record<string, unknown>, command: Command) => {
+      applyVerbose(opts as { verbose?: boolean });
       const runId = generateRunId();
       const commandName = `browser/${command.name()}`;
       let releaseRun = true;
@@ -1172,11 +1273,11 @@ cli({
     };
   }
 
-  browser.addCommand(new Command('tabs')
+  browser.addCommand(withBrowserVerbose(new Command('tabs')
     .description('List pages in the existing browser session')
-    .action(rawBrowserAction((session, routing) => listExistingBrowserTabs(session, routing))));
+    .action(rawBrowserAction((session, routing) => listExistingBrowserTabs(session, routing)))));
 
-  browser.addCommand(new Command('bind')
+  browser.addCommand(withBrowserVerbose(new Command('bind')
     .description('Bind this session to an existing page')
     .addOption(new Option('--page <id>', 'Stable page id returned by tabs')
       .makeOptionMandatory()
@@ -1185,16 +1286,16 @@ cli({
       const page = typeof opts.page === 'string' ? opts.page.trim() : '';
       if (!page) throw new BrowserCommandError('--page must be a non-empty stable page id', 'invalid_request');
       return sendCommand('bind', { session, surface: 'browser', ...routing, page });
-    })));
+    }))));
 
-  const runCommand = new Command('run')
+  const runCommand = withBrowserVerbose(new Command('run')
     .description('Run JavaScript with Playwright')
     .option('--stdin', 'Read the program from stdin')
     .option('--file <path>', 'Read the program from a file')
     .addOption(new Option('--timeout <seconds>', 'Execution timeout in seconds').argParser(browserOptionValueParser('run', 'timeout')!))
     .addOption(new Option('--max-output <characters>', 'Maximum returned characters').argParser(browserOptionValueParser('run', 'maxOutput')!))
     .addOption(new Option('--snapshot-mode <mode>', 'Snapshot mode for automatic diff: act or tree').default('act').argParser(browserOptionValueParser('run', 'snapshotMode')!))
-    .option('--no-snapshot-diff', 'Skip the automatic before/after snapshot diff');
+    .option('--no-snapshot-diff', 'Skip the automatic before/after snapshot diff'));
   runCommand.action(rawBrowserAction(async (session, routing, opts) => {
     let source: string;
     try {
@@ -1218,7 +1319,7 @@ cli({
   }));
   browser.addCommand(runCommand);
 
-  browser.addCommand(new Command('snapshot')
+  browser.addCommand(withBrowserVerbose(new Command('snapshot')
     .description('Inspect the current page with a compact accessibility snapshot')
     .addOption(new Option('--snapshot-mode <mode>', 'Snapshot mode: act, tree, or read').default('act').argParser(browserOptionValueParser('snapshot', 'snapshotMode')!))
     .option('--ref <ref>', 'Render only the subtree rooted at this snapshot ref')
@@ -1230,27 +1331,32 @@ cli({
       snapshotMode: opts.snapshotMode === 'tree' || opts.snapshotMode === 'read' ? opts.snapshotMode : 'act',
       ...(typeof opts.ref === 'string' ? { ref: opts.ref } : {}),
       ...(typeof opts.maxOutput === 'number' ? { maxOutputChars: opts.maxOutput } : {}),
-    }))));
+    })))));
 
-  browser.addCommand(new Command('close')
+  browser.addCommand(withBrowserVerbose(new Command('close')
     .description('Close or detach this browser session')
     .action(rawBrowserAction((session, routing) => sendCommand('close-window', {
       session,
       surface: 'browser',
       ...routing,
-    }))));
+    })))));
   // ── Built-in: doctor / completion ──────────────────────────────────────────
 
-  program
+  const doctorCmd = program
     .command('doctor')
     .description('Diagnose webcmd browser bridge connectivity')
     .option('-v, --verbose', 'Debug output')
-    .action(async (opts) => {
-      applyVerbose(opts);
-      const { runBrowserDoctor, renderBrowserDoctorReport } = await import('./doctor.js');
-      const report = await runBrowserDoctor({ cliVersion: PKG_VERSION });
-      console.log(renderBrowserDoctorReport(report));
-    });
+    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
+  doctorCmd.action(async (opts) => {
+    applyVerbose(opts);
+    const fmt = resolveOutputFormat(opts.format);
+    if (fmt === null) return;
+    const fmtExplicit = doctorCmd.getOptionValueSource('format') === 'cli';
+    const { runBrowserDoctor, renderBrowserDoctorReport } = await import('./doctor.js');
+    const report = await runBrowserDoctor({ cliVersion: PKG_VERSION });
+    if (fmt === 'table') console.log(renderBrowserDoctorReport(report));
+    else await renderOutput(report, { fmt, fmtExplicit });
+  });
 
   configureCompletionCommandSurface(program.command('completion'))
     .action((shell: string) => {
@@ -1771,17 +1877,50 @@ cli({
   adapterCmd.command('path').argument('<command>').action((commandKey: string) => reportLocalAdapterPath(commandKey));
 
   // ── Built-in: browser profile selection ──────────────────────────────────
+  const PROFILE_LIST_COLUMNS = ['contextId', 'alias', 'default', 'connected', 'runtimeVersion'];
+
   const profileCmd = program.command('profile').description('Manage webcmd browser runtime profiles');
   // Snapshot before applyRootSubcommandSummaries() rewrites .description() to a child-name listing.
   const originalProfileDescription = profileCmd.description();
 
-  profileCmd
+  const profileListCmd = profileCmd
     .command('list')
     .description('List Chrome and Chromium profiles available through the Cloak runtime')
-    .action(async () => {
+    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table')
+    .action(async (opts: { format?: string }, command: Command) => {
+      const fmt = resolveOutputFormat(opts.format);
+      if (fmt === null) return;
       const status = await fetchDaemonStatus();
       const config = loadProfileConfig();
       const profiles = status?.profiles ?? [];
+      const daemonUsable = Boolean(status)
+        && !isDaemonStale(status!, PKG_VERSION)
+        && Array.isArray(status!.profiles);
+      if (fmt !== 'table') {
+        // An empty list and an unreadable runtime are different facts. Emitting `[]` for a
+        // stale or absent daemon reads as "no profiles exist" and sends callers looking for
+        // profile state elsewhere, so structured mode fails loudly instead.
+        if (!daemonUsable) {
+          const error = new CliError(
+            'DAEMON_UNAVAILABLE',
+            status
+              ? `Daemon ${formatDaemonVersion(status)} is stale for CLI v${PKG_VERSION}; profile list is incomplete.`
+              : 'Daemon is not running; profile list is incomplete.',
+            status ? 'Run: webcmd daemon restart' : 'Run webcmd doctor after opening Chrome.',
+          );
+          console.error(`Error: ${error.message}`);
+          console.error(`Hint: ${error.hint}`);
+          process.exitCode = error.exitCode;
+          return;
+        }
+        // Saved-but-disconnected profiles are included: they exist, they are just not live.
+        await renderOutput(profileListRows(config, profiles), {
+          fmt,
+          fmtExplicit: command.getOptionValueSource('format') === 'cli',
+          columns: ['contextId', 'alias', 'default', 'connected', 'runtimeVersion'],
+        });
+        return;
+      }
       if (!status) {
         console.log('Daemon is not running. Run webcmd doctor after opening Chrome.');
         return;
@@ -1857,10 +1996,15 @@ cli({
   const daemonCmd = program.command('daemon').description('Manage the webcmd daemon');
   // Snapshot before applyRootSubcommandSummaries() rewrites .description() to a child-name listing.
   const originalDaemonDescription = daemonCmd.description();
-  daemonCmd
+  const daemonStatusCmd = daemonCmd
     .command('status')
     .description('Show daemon status')
-    .action(async () => { await daemonStatus(); });
+    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
+  daemonStatusCmd.action(async (opts) => {
+    const fmt = resolveOutputFormat(opts.format);
+    if (fmt === null) return;
+    await daemonStatus({ fmt, fmtExplicit: daemonStatusCmd.getOptionValueSource('format') === 'cli' });
+  });
   daemonCmd
     .command('stop')
     .description('Stop the daemon')
@@ -2033,8 +2177,31 @@ export async function loadAntigravityServe(pluginsDir: string = PLUGINS_DIR): Pr
   return import(pathToFileURL(path.join(pluginsDir, 'antigravity', 'serve.js')).href);
 }
 
-export function runCli(BUILTIN_CLIS: string, USER_CLIS: string): void {
-  createProgram(BUILTIN_CLIS, USER_CLIS).parse();
+/**
+ * Run the local CLI, reporting anything a built-in command throws as the same
+ * error envelope adapter commands already emit.
+ *
+ * Built-in actions used to have no handler at all: `parse()` does not await
+ * async actions, so a throw either crashed with a raw Node stack trace or
+ * surfaced as an unhandled rejection, and the `exitCode` the error carried was
+ * lost. `parseAsync` lets the rejection reach this catch.
+ */
+export async function runCli(BUILTIN_CLIS: string, USER_CLIS: string): Promise<void> {
+  try {
+    await createProgram(BUILTIN_CLIS, USER_CLIS).parseAsync();
+  } catch (err) {
+    reportCliError(err);
+  }
+}
+
+/** Render a thrown error as the shared envelope and set the exit code it carries. */
+export function reportCliError(err: unknown, stderr: NodeJS.WritableStream = process.stderr): void {
+  const envelope = toEnvelope(err);
+  if (process.env.WEBCMD_DEBUG && err instanceof Error && err.stack) {
+    envelope.error.stack = err.stack;
+  }
+  stderr.write(formatErrorEnvelope(envelope));
+  process.exitCode = envelope.error.exitCode;
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────

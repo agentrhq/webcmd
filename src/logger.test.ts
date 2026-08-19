@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { log } from './logger.js';
+import { enableVerbose, isVerbose, log } from './logger.js';
 
 describe('log', () => {
   let stderrSpy: ReturnType<typeof vi.spyOn>;
@@ -56,5 +56,42 @@ describe('log', () => {
       ['  [2/5] fetch -> example\n'],
       ['       → 3 items\n'],
     ]);
+  });
+});
+
+describe('enableVerbose', () => {
+  beforeEach(() => {
+    delete process.env.WEBCMD_VERBOSE;
+  });
+
+  afterEach(() => {
+    delete process.env.WEBCMD_VERBOSE;
+  });
+
+  it('turns verbose mode on', () => {
+    expect(isVerbose()).toBe(false);
+    enableVerbose();
+    expect(process.env.WEBCMD_VERBOSE).toBe('1');
+    expect(isVerbose()).toBe(true);
+  });
+
+  it('turns verbose mode on when passed true', () => {
+    enableVerbose(true);
+    expect(isVerbose()).toBe(true);
+  });
+
+  it('leaves the environment untouched when passed false', () => {
+    enableVerbose(false);
+    expect(process.env.WEBCMD_VERBOSE).toBeUndefined();
+    expect(isVerbose()).toBe(false);
+  });
+
+  // An explicit WEBCMD_VERBOSE=1 in the environment must survive a command that
+  // simply omits -v, otherwise exporting the variable for a whole shell session
+  // would be silently cancelled by every flagless invocation.
+  it('does not clear an environment-provided verbose mode', () => {
+    process.env.WEBCMD_VERBOSE = '1';
+    enableVerbose(false);
+    expect(isVerbose()).toBe(true);
   });
 });

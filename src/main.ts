@@ -211,5 +211,5 @@ try {
 }
 
 await emitHook('onStartup', { command: '__startup__', args: {} });
-runCli(BUILTIN_CLIS, USER_CLIS);
+await runCli(BUILTIN_CLIS, USER_CLIS);
 }

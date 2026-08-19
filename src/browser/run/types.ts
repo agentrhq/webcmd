@@ -39,13 +39,15 @@ export interface BrowserRunWarning {
   code:
     | 'BROWSER_RUN_SIDE_EFFECTS_MAY_HAVE_OCCURRED'
     | 'BROWSER_RUN_SNAPSHOT_FAILED'
-    | 'BROWSER_RUN_CRITICAL_SNAPSHOT_OMITTED';
+    | 'BROWSER_RUN_CRITICAL_SNAPSHOT_OMITTED'
+    | 'BROWSER_RUN_SNAPSHOT_DIFF_OMITTED';
   message: string;
 }
 
 export interface BrowserRunLimits {
   outputTruncated: boolean;
   snapshotTruncated: boolean;
+  snapshotDiffOmitted?: boolean;
 }
 
 export interface BrowserRunTimings {

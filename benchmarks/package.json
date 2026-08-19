@@ -1,0 +1,14 @@
+{
+  "name": "webcmd-benchmarks",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "@agentrhq/webcmd": "0.7.1",
+    "@earendil-works/pi-coding-agent": "0.80.6",
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "libretto-browser-tools": "0.1.2"
+  }
+}

@@ -113,3 +113,57 @@ export function setDefaultProfile(profile: string): ProfileConfig {
   saveProfileConfig(config);
   return config;
 }
+
+export interface ProfileListRow {
+  contextId: string;
+  alias: string;
+  default: boolean;
+  connected: boolean;
+  runtimeVersion: string;
+}
+
+/**
+ * Structured view of `profile list`, including saved-but-disconnected profiles.
+ *
+ * The prose output already surfaces disconnected aliases; structured output must too.
+ * A caller that sees only connected profiles concludes the others do not exist and goes
+ * looking for profile state elsewhere, which is exactly the wrong place to look.
+ */
+export function profileListRows(
+  config: ProfileConfig,
+  connected: Array<{ contextId: string; runtimeVersion?: string }>,
+): ProfileListRow[] {
+  const seen = new Set<string>();
+  const rows: ProfileListRow[] = [];
+  for (const profile of connected) {
+    seen.add(profile.contextId);
+    rows.push({
+      contextId: profile.contextId,
+      alias: aliasForContextId(config, profile.contextId) ?? '',
+      default: config.defaultContextId === profile.contextId,
+      connected: true,
+      runtimeVersion: profile.runtimeVersion ?? '',
+    });
+  }
+  for (const [alias, contextId] of Object.entries(config.aliases)) {
+    if (seen.has(contextId)) continue;
+    seen.add(contextId);
+    rows.push({
+      contextId,
+      alias,
+      default: config.defaultContextId === contextId,
+      connected: false,
+      runtimeVersion: '',
+    });
+  }
+  if (config.defaultContextId && !seen.has(config.defaultContextId)) {
+    rows.push({
+      contextId: config.defaultContextId,
+      alias: '',
+      default: true,
+      connected: false,
+      runtimeVersion: '',
+    });
+  }
+  return rows;
+}
