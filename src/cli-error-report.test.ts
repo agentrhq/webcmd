@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import yaml from 'js-yaml';
-import { reportCliError } from './cli.js';
+import { CommanderError } from 'commander';
+import { createProgram, handleProgramParseError, reportCliError } from './cli.js';
+import { applyUnknownOptionContract, CommanderStructuralError } from './command-surface.js';
 import { CliError, EXIT_CODES } from './errors.js';
 
 describe('reportCliError', () => {
@@ -59,5 +61,46 @@ describe('reportCliError', () => {
     } finally {
       vi.unstubAllEnvs();
     }
+  });
+});
+
+describe('handleProgramParseError', () => {
+  const previousExitCode = process.exitCode;
+  afterEach(() => { process.exitCode = previousExitCode; });
+
+  it('keeps Commander help and version as display exits, not envelopes', () => {
+    let text = '';
+    const stderr = { write: (chunk: string) => { text += chunk; return true; } } as unknown as NodeJS.WritableStream;
+    handleProgramParseError(new CommanderError(0, 'commander.helpDisplayed', '(outputHelp)'), stderr);
+    expect(text).toBe('');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('does not wrap web --help as an unknown error after the unknown-option contract is applied', async () => {
+    const program = createProgram('', '');
+    applyUnknownOptionContract(program);
+    const stdout: string[] = [];
+    const log = vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => { stdout.push(args.map(String).join(' ')); });
+    let stderr = '';
+    try {
+      await program.parseAsync(['node', 'webcmd', 'web', '--help']);
+      expect.unreachable();
+    } catch (err) {
+      handleProgramParseError(err, { write: (chunk: string) => { stderr += chunk; return true; } } as unknown as NodeJS.WritableStream);
+      expect(err).toBeInstanceOf(CommanderError);
+      expect((err as CommanderError).code).toBe('commander.helpDisplayed');
+      expect(process.exitCode).toBe(0);
+      expect(stderr).toBe('');
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('writes unknown-option structural errors to stderr', () => {
+    let text = '';
+    const stderr = { write: (chunk: string) => { text += chunk; return true; } } as unknown as NodeJS.WritableStream;
+    handleProgramParseError(new CommanderStructuralError("error: unknown option '--foo'\nhelp: valid flags for `webcmd list`: -f\n", 2), stderr);
+    expect(text).toContain("error: unknown option '--foo'");
+    expect(process.exitCode).toBe(2);
   });
 });

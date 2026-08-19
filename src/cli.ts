@@ -10,7 +10,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as readline from 'node:readline/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { Command, Option } from 'commander';
+import { Command, CommanderError, Option } from 'commander';
 import { findPackageRoot, getBuiltEntryCandidates } from './package-paths.js';
 import { type CliCommand, getRegistry } from './registry.js';
 // Side-effect import: registers client-owned `web fetch` in the core registry
@@ -2193,13 +2193,27 @@ export async function runCli(BUILTIN_CLIS: string, USER_CLIS: string): Promise<v
   try {
     await program.parseAsync();
   } catch (err) {
-    if (err instanceof CommanderStructuralError) {
-      process.stderr.write(err.output);
-      process.exitCode = err.exitCode;
-      return;
-    }
-    reportCliError(err);
+    handleProgramParseError(err);
   }
+}
+
+const COMMANDER_DISPLAY_CODES = new Set([
+  'commander.help',
+  'commander.helpDisplayed',
+  'commander.version',
+]);
+
+export function handleProgramParseError(err: unknown, stderr: NodeJS.WritableStream = process.stderr): void {
+  if (err instanceof CommanderStructuralError) {
+    stderr.write(err.output);
+    process.exitCode = err.exitCode;
+    return;
+  }
+  if (err instanceof CommanderError && COMMANDER_DISPLAY_CODES.has(err.code)) {
+    process.exitCode = err.exitCode;
+    return;
+  }
+  reportCliError(err, stderr);
 }
 
 /** Render a thrown error as the shared envelope and set the exit code it carries. */
