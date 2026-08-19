@@ -868,7 +868,7 @@ def test_pi_non_bash_tool_is_a_policy_violation():
     assert _policy_violation("webcmd", parsed.commands, parsed.event_types)
 
 
-def test_pi_may_read_only_the_registered_webcmd_browser_skill():
+def test_pi_may_read_only_the_registered_webcmd_browser_skill_tree():
     usage_skill = {
         "type": "tool_execution_start",
         "toolName": "read",
@@ -885,6 +885,26 @@ def test_pi_may_read_only_the_registered_webcmd_browser_skill():
             )
         },
     }
+    browser_reference = {
+        "type": "tool_execution_start",
+        "toolName": "read",
+        "args": {
+            "path": str(
+                Path.home()
+                / ".codex/skills/webcmd-browser/references/browser-run-playwright.md"
+            )
+        },
+    }
+    missing_browser_reference = {
+        "type": "tool_execution_start",
+        "toolName": "read",
+        "args": {
+            "path": str(
+                Path.home()
+                / ".codex/skills/webcmd-browser/references/missing.md"
+            )
+        },
+    }
     forbidden = {
         "type": "tool_execution_start",
         "toolName": "read",
@@ -893,14 +913,19 @@ def test_pi_may_read_only_the_registered_webcmd_browser_skill():
 
     usage_parsed = _parse_events("pi", [json.dumps(usage_skill)])
     browser_parsed = _parse_events("pi", [json.dumps(browser_skill)])
+    reference_parsed = _parse_events("pi", [json.dumps(browser_reference)])
+    missing_parsed = _parse_events(
+        "pi", [json.dumps(missing_browser_reference)]
+    )
     forbidden_parsed = _parse_events("pi", [json.dumps(forbidden)])
 
-    assert browser_parsed.tool_calls == 0
-    assert browser_parsed.steps_count == 0
-    assert not _policy_violation(
-        "webcmd", browser_parsed.commands, browser_parsed.event_types
-    )
-    for parsed in (usage_parsed, forbidden_parsed):
+    for parsed in (browser_parsed, reference_parsed):
+        assert parsed.tool_calls == 0
+        assert parsed.steps_count == 0
+        assert not _policy_violation(
+            "webcmd", parsed.commands, parsed.event_types
+        )
+    for parsed in (usage_parsed, missing_parsed, forbidden_parsed):
         assert parsed.tool_calls == 0
         assert parsed.steps_count == 1
         assert _policy_violation(

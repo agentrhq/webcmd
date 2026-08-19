@@ -1,196 +1,63 @@
-# Browser Agent Benchmark Comparison
+# Pi Browser Benchmark Comparison
 
-5 agents · 99 tasks each · 5 categories · accuracy, speed & token efficiency
+BU Bench results from the Pi harness with the same model and judge configuration.
 
-## Summary table
+| Tool | Accuracy | Total tokens | Agent turns | API-equivalent cost |
+|---|---:|---:|---:|---:|
+| **webcmd** | **67%** | 3,193,816 | **969** | **$25.199668** |
+| **Libretto Browser Tools** | 64% | 4,770,806 | 1,293 | $35.402135 |
+| **dev-browser** | 56% | **3,190,822** | 1,504 | $25.997430 |
 
-| Agent | Accuracy | Avg time/task | Total time | Total tokens | Tokens/correct | Steps | Tool calls |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| **dev-browser** | **75.8%** | 162.1s | 267 min | **4.49M** | **59.8K** | 1,710 | 1,504 |
-| **libretto** | 73.7% | 141.9s | 234 min | 6.10M | 83.6K | **1,452** | **1,249** |
-| **webcmd** | 70.7% | 188.8s | 312 min | 7.11M | 101.6K | 2,936 | 2,709 |
-| **agent-browser** | 63.6% | 151.9s | 251 min | 6.39M | 101.4K | 2,815 | 2,614 |
-| **chrome-devtools-axi** | 62.6% | **136.6s** | **225 min** | 6.10M | 95.3K | 2,317 | 2,116 |
+**Best in class:** accuracy → webcmd · tokens → dev-browser · agent turns → webcmd · cost → webcmd
 
-**Best in class:** accuracy → dev-browser · speed → chrome-devtools-axi · tokens → dev-browser · efficiency → dev-browser · fewest steps → libretto
+## Evaluation configuration
 
-## Overall accuracy (% of 99 passed)
+| Setting | Value |
+|---|---|
+| Harness | Pi |
+| Controller model | `openai-codex/gpt-5.6-sol` |
+| Reasoning effort | `low` |
+| Benchmark | `BU_Bench_V1` |
+| Judge provider | Codex |
+| Judge model | `gpt-5.4` |
 
-```
-dev-browser          ███████████████████████████████████████████████████████████░░░░░░░░░░░░░░░░░  75.8%
-libretto             █████████████████████████████████████████████████████████░░░░░░░░░░░░░░░░░░░  73.7%
-webcmd               ██████████████████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░  70.7%
-agent-browser        █████████████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░  63.6%
-chrome-devtools-axi  ████████████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░  62.6%
-```
+Accuracy is the percentage of benchmark tasks that passed. Token, turn, and
+cost values are recorded controller totals. Cost is an API-equivalent estimate;
+judge usage is excluded.
 
-## Avg time per task (seconds — lower is better)
+## Reproduce and verify
 
-```
-chrome-devtools-axi  ██████████████████████████████████████████████░░░░░░░░░░  136.6s  ← fastest
-libretto             ████████████████████████████████████████████████░░░░░░░░  141.9s
-agent-browser        ███████████████████████████████████████████████████░░░░░  151.9s
-dev-browser          ██████████████████████████████████████████████████████░░  162.1s
-webcmd               ████████████████████████████████████████████████████████████████  188.8s
-```
+All three results use the configuration above. Run from the repository root.
 
-## Total tokens (millions — lower is better)
-
-```
-dev-browser          ████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░  4.49M  ← leanest
-chrome-devtools-axi  ██████████████████████████████████████████████████████░░░░░░░░░░  6.10M
-libretto             ██████████████████████████████████████████████████████░░░░░░░░░░  6.10M
-agent-browser        █████████████████████████████████████████████████████████░░░░░░  6.39M
-webcmd               ████████████████████████████████████████████████████████████████  7.11M
-```
-
-## Tokens per correct answer (lower = more efficient)
-
-```
-dev-browser          █████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░  59.8K  ← best
-libretto             ████████████████████████████████████████████████████░░░░░░░░░░░░  83.6K
-chrome-devtools-axi  ████████████████████████████████████████████████████████████░░░░  95.3K
-agent-browser        ███████████████████████████████████████████████████████████████░  101.4K
-webcmd               ████████████████████████████████████████████████████████████████  101.6K
-```
-
-## Accuracy by category (% pass rate)
-
-| Category | webcmd | chrome-devtools-axi | agent-browser | dev-browser | libretto |
-|---|---:|---:|---:|---:|---:|
-| BrowseComp | 75% | 80% | 75% | **90%** | 80% |
-| GAIA | 55% | 35% | **65%** | 60% | 40% |
-| InteractionTests | **100%** | 84.2% | 84.2% | 89.5% | **100%** |
-| OM2W2 | 65% | 60% | 45% | **80%** | 70% |
-| WebBenchREAD | 60% | 55% | 50% | 60% | **80%** |
-
-## Steps & tool calls (total actions)
-
-| Agent | Steps | Tool calls |
-|---|---:|---:|
-| libretto | 1,452 | 1,249 |
-| dev-browser | 1,710 | 1,504 |
-| chrome-devtools-axi | 2,317 | 2,116 |
-| agent-browser | 2,815 | 2,614 |
-| webcmd | 2,936 | 2,709 |
-
----
-
-*All five agents completed 99 tasks. Time and token totals are cumulative across the run. Avg time = total time ÷ 99. Tokens/correct = total tokens ÷ tasks passed.*
-
----
-
-
-# Browser Bench Eval
-
-Run a controlled, sequential browser-tool benchmark. Keep task data and local evidence private.
-
-## Workflow
-
-1. Confirm `uv`, the selected controller CLI, selected browser tool, and judge authentication are available (`GOOGLE_API_KEY` for `google`, `OPENAI_API_KEY` for `openai`, or a ChatGPT-authenticated `codex login` for `codex`). AXI, agent-browser, and dev-browser runs also require CloakBrowser.
-2. Ask the user to choose a controller, model, benchmark, and task selection if any is missing.
-3. Start with one task unless the user explicitly requests a larger or full run.
-4. Run `scripts/run_eval.py` with the explicit choices.
-5. Report selected task count, overall accuracy, category accuracy, terminal statuses, controller time, steps, tool calls, token usage, and the ignored local result path.
-6. Compare runs only when manifest metadata (benchmark, dataset hash, controller, model, and tools) match.
-
-The legacy `tokens` metric remains non-cached controller input plus controller
-output. Task results also record the controller's ordinary input, cached reads,
-cache writes, output, and reasoning-output detail. For `gpt-5.6-sol`,
-`estimated_api_cost_usd` applies the documented API rates to each completed
-controller turn before summing them, including the long-context multiplier.
-This is an API-equivalent estimate; ChatGPT-authenticated Codex runs are not
-necessarily billed through the API. Judge usage is excluded.
-
-## Commands
+First install the pinned benchmark dependencies and authenticate Pi:
 
 ```bash
-uv run python benchmarks/scripts/run_eval.py \
-  --controller codex \
-  --model gpt-5 \
-  --benchmark BU_Bench_V1 \
-  --tasks 1 \
-  --tools webcmd
+npm --prefix benchmarks ci --ignore-scripts
+./benchmarks/node_modules/.bin/pi
+# In Pi, run /login, select OpenAI Codex, then exit.
 ```
 
-Use OpenAI instead of Gemini for judging:
+Pi reads the resulting credentials from `~/.pi/agent/auth.json`. Preflight
+verifies the credentials, benchmark dependencies, and selected browser tool
+before starting a task.
+
+### webcmd
 
 ```bash
-uv run python benchmarks/scripts/run_eval.py \
-  --controller codex \
-  --model gpt-5 \
-  --benchmark BU_Bench_V1 \
-  --tasks 1 \
-  --tools webcmd \
-  --judge-provider openai \
-  --judge-model gpt-4o-mini
-```
+webcmd skills add --provider codex --scope user
 
-Use the signed-in Codex subscription for judging:
-
-```bash
 uv run python benchmarks/scripts/run_eval.py \
   --controller pi \
   --model openai-codex/gpt-5.6-sol \
   --reasoning-effort low \
   --benchmark BU_Bench_V1 \
-  --tasks 1 \
+  --tasks all \
   --tools webcmd \
   --judge-provider codex \
   --judge-model gpt-5.4
 ```
 
-Codex judging runs ephemerally in an isolated, read-only temporary directory.
-Its token usage and cost are excluded, like the other judge providers.
-
-Pi uses the pinned SDK sidecar from the repository's Node lockfile:
-
-```bash
-npm --prefix benchmarks ci --ignore-scripts
-webcmd skills add --provider codex --scope user
-./benchmarks/node_modules/.bin/pi
-# In Pi, run /login and select OpenAI Codex, then exit.
-
-uv run python benchmarks/scripts/run_eval.py \
-  --controller pi \
-  --model openai-codex/gpt-5.6-sol \
-  --reasoning-effort low \
-  --benchmark BU_Bench_V1 \
-  --tasks 1 \
-  --tools webcmd
-```
-
-The Pi sidecar reads the resulting OAuth credentials from
-`~/.pi/agent/auth.json`, and preflight verifies them before creating a task.
-Its `estimated_api_cost_usd` is an API-equivalent comparison metric, not a
-subscription charge; the manifest records `billing_mode` as
-`chatgpt_subscription`.
-
-For AXI with one dedicated CloakBrowser process and profile per task:
-
-```bash
-uv run python benchmarks/scripts/run_eval.py \
-  --controller codex \
-  --model gpt-5.6-sol \
-  --reasoning-effort high \
-  --benchmark BU_Bench_V1 \
-  --tasks 1 \
-  --tools chrome-devtools-axi
-```
-
-For agent-browser with one dedicated CloakBrowser process and profile per task:
-
-```bash
-uv run python benchmarks/scripts/run_eval.py \
-  --controller codex \
-  --model gpt-5.6-sol \
-  --reasoning-effort high \
-  --benchmark BU_Bench_V1 \
-  --tasks 1 \
-  --tools agent-browser
-```
-
-For dev-browser with one dedicated CloakBrowser process and profile per task:
+### dev-browser
 
 ```bash
 npm install -g dev-browser
@@ -198,45 +65,57 @@ dev-browser install
 dev-browser install-skill --codex
 
 uv run python benchmarks/scripts/run_eval.py \
-  --controller codex \
-  --model gpt-5.6-sol \
-  --benchmark BU_Bench_V1 \
-  --tasks all \
-  --tools dev-browser
-```
-
-Use `--controller pi --model openai-codex/gpt-5.6-sol` to run the same lane through
-Pi. The Pi sidecar mounts the installed `dev-browser` skill and enables only
-its `bash` and `read` tools.
-
-`dev-browser install` is required because it installs the daemon's Playwright
-and QuickJS dependencies. It may also download dev-browser's Chromium, but the
-benchmark does not use that browser: the task-private shim always connects
-dev-browser to the task's dedicated CloakBrowser CDP endpoint.
-
-For Libretto Browser Tools with Codex or Pi and one dedicated CloakBrowser per
-task:
-
-```bash
-npm ci
-
-uv run python benchmarks/scripts/run_eval.py \
-  --controller codex \
-  --model gpt-5.6-sol \
+  --controller pi \
+  --model openai-codex/gpt-5.6-sol \
   --reasoning-effort low \
   --benchmark BU_Bench_V1 \
-  --task-indices 0,1 \
-  --tools libretto
+  --tasks all \
+  --tools dev-browser \
+  --judge-provider codex \
+  --judge-model gpt-5.4
 ```
 
-With Codex, the harness injects its pinned stdio MCP server per attempt. With
-Pi, it registers the equivalent native Pi custom tools directly; use
-`--controller pi --model openai-codex/gpt-5.6-sol`. Both expose only `browser_open`,
-`browser_exec`, `browser_snapshot`, `browser_status`, and `browser_close`.
-`browser_connect` is disabled so the agent cannot leave the task's dedicated
-CloakBrowser.
+The Pi sidecar mounts the installed `dev-browser` skill and enables only its
+`bash` and `read` tools. The benchmark connects it to the task's dedicated
+CloakBrowser CDP endpoint.
 
-Use `--stealth-view official` only with `Stealth_Bench_V1`. Never add a parallel flag or publish `results/`.
+### Libretto Browser Tools
+
+```bash
+uv run python benchmarks/scripts/run_eval.py \
+  --controller pi \
+  --model openai-codex/gpt-5.6-sol \
+  --reasoning-effort low \
+  --benchmark BU_Bench_V1 \
+  --tasks all \
+  --tools libretto \
+  --judge-provider codex \
+  --judge-model gpt-5.4
+```
+
+Pi registers the pinned Libretto browser tools directly:
+`browser_open`, `browser_exec`, `browser_snapshot`, `browser_status`, and
+`browser_close`. `browser_connect` is disabled so the agent cannot leave the
+task's dedicated CloakBrowser.
+
+## Verify a run
+
+Each run writes a manifest, aggregate summary, per-task result, transcript, and
+screenshots under `benchmarks/results/<run-id>/`. Verify that the manifests
+match on benchmark dataset hash, Pi controller, controller model, reasoning
+effort, and judge configuration before comparing tools. The table above reports
+the aggregate accuracy, token, agent-turn, and API-equivalent cost fields from
+those artifacts.
+
+For an independently auditable public result, publish sanitized copies of each
+run's manifest, summary, and per-task result JSON. Review transcripts and
+screenshots before publishing because they can contain authenticated browser
+state or private account data.
+
+Controller token totals include non-cached input and output tokens. Cached
+reads are recorded separately. Cost is calculated per controller turn,
+including the model's long-context multiplier, and then summed. Judge tokens
+and judge cost are excluded.
 
 Webcmd attempts use the dedicated `benchmark` Profile. The harness creates one
 opaque Session per task before starting the controller, passes that Session to

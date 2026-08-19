@@ -353,7 +353,7 @@ def test_preflight_rejects_unpinned_webcmd_version(monkeypatch):
     monkeypatch.setenv("GOOGLE_API_KEY", "secret")
     monkeypatch.setattr(run_eval.subprocess, "run", fake_run)
 
-    with pytest.raises(RuntimeError, match="Webcmd 0.7.1 is required, found 0.7.0"):
+    with pytest.raises(RuntimeError, match="Webcmd 0.7.3 is required, found 0.7.0"):
         run_eval.preflight("codex", ["webcmd"])
 
     assert ["webcmd", "doctor"] not in calls

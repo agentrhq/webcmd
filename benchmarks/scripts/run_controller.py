@@ -643,8 +643,9 @@ def _parse_events(
                 steps.append(_short(f"tool: {name} {_short(arguments)}"))
             elif (
                 name == "read"
-                and Path(str(arguments.get("path") or "")).expanduser().resolve()
-                in PI_SETUP_SKILL_FILES.get(tool or "webcmd", frozenset())
+                and _pi_setup_skill_read_allowed(
+                    tool, arguments.get("path")
+                )
             ):
                 steps.append(_short(f"setup_tool: {name} {_short(arguments)}"))
             elif tool == "libretto":
@@ -926,6 +927,26 @@ def _unwrap_single_shell_command(command: str) -> str | None:
     return words[2]
 
 
+def _webcmd_skill_path_allowed(value: object) -> bool:
+    try:
+        target = Path(str(value or "")).expanduser().resolve()
+        target.relative_to(WEBCMD_BROWSER_SKILL_ROOT)
+    except (OSError, ValueError):
+        return False
+    return target.is_file()
+
+
+def _pi_setup_skill_read_allowed(tool: Tool | None, value: object) -> bool:
+    selected_tool = tool or "webcmd"
+    if selected_tool == "webcmd":
+        return _webcmd_skill_path_allowed(value)
+    try:
+        target = Path(str(value or "")).expanduser().resolve()
+    except OSError:
+        return False
+    return target in PI_SETUP_SKILL_FILES.get(selected_tool, frozenset())
+
+
 def _webcmd_skill_read_allowed(command: str) -> bool:
     inner = _unwrap_single_shell_command(command)
     if inner is None:
@@ -944,12 +965,7 @@ def _webcmd_skill_read_allowed(command: str) -> bool:
         target_value = segment[3]
     else:
         return False
-    try:
-        target = Path(target_value).expanduser().resolve()
-        target.relative_to(WEBCMD_BROWSER_SKILL_ROOT)
-    except (OSError, ValueError):
-        return False
-    return target.is_file()
+    return _webcmd_skill_path_allowed(target_value)
 
 
 def _dev_browser_command_allowed(command: str) -> bool:

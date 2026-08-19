@@ -39,7 +39,7 @@ BENCHMARKS = (*DATASET_HASHES, "Stealth_Webcmd")
 STEALTH_EXCLUDED_CATEGORIES = {"hCaptcha", "GeeTest", "Temu Slider"}
 REASONING_EFFORTS = ("low", "medium", "high", "xhigh", "max", "ultra")
 PI_THINKING_LEVELS = frozenset(REASONING_EFFORTS) - {"ultra"}
-WEBCMD_EVAL_VERSION = "0.7.1"
+WEBCMD_EVAL_VERSION = "0.7.3"
 STEALTH_CATEGORY_BY_TASK_ID = {
     "76": "Akamai",
     "77": "Cloudflare",
