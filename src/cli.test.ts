@@ -2026,6 +2026,38 @@ describe('structured output for data-returning built-ins', () => {
     ]);
   });
 
+  it('rejects profile use of an unknown name and enumerates valid profiles', async () => {
+    vi.mocked(fetch).mockResolvedValue(daemonStatusResponse({
+      profiles: [{ contextId: 'ctx_live', runtimeConnected: true, runtimeVersion: '1.0.3', pending: 0 }],
+    }));
+
+    await expect(createProgram('', '').parseAsync(['node', 'webcmd', 'profile', 'use', '__audit_nope__']))
+      .rejects.toThrow(/No profile matches "__audit_nope__". Valid profiles: ctx_live/);
+  });
+
+  it('sets the default from a connected profile', async () => {
+    vi.mocked(fetch).mockResolvedValue(daemonStatusResponse({
+      profiles: [{ contextId: 'ctx_live', runtimeConnected: true, runtimeVersion: '1.0.3', pending: 0 }],
+    }));
+
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'profile', 'use', 'ctx_live']);
+
+    expect(stdout()).toContain('Default Cloak profile: ctx_live');
+  });
+
+  it('sets the default from a saved alias when the daemon is down', async () => {
+    fs.mkdirSync(process.env.WEBCMD_CONFIG_DIR!, { recursive: true });
+    fs.writeFileSync(path.join(process.env.WEBCMD_CONFIG_DIR!, 'browser-profiles.json'), JSON.stringify({
+      version: 1,
+      aliases: { work: 'ctx_work' },
+    }));
+    vi.mocked(fetch).mockRejectedValue(new Error('ECONNREFUSED'));
+
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'profile', 'use', 'work']);
+
+    expect(stdout()).toContain('Default Cloak profile: ctx_work');
+  });
+
   it('fails structured profile list with DAEMON_UNAVAILABLE instead of an empty array', async () => {
     vi.mocked(fetch).mockRejectedValue(new Error('ECONNREFUSED'));
 

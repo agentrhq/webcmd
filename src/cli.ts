@@ -1982,15 +1982,15 @@ cli({
   profileCmd
     .command('use')
     .description('Set the default Cloak profile for future commands')
-    .argument('<profile>', 'Profile alias or contextId')
-    .action((profile: string) => {
-      try {
-        const config = setDefaultProfile(profile);
-        console.log(`Default Cloak profile: ${config.defaultContextId ?? profile}`);
-      } catch (err) {
-        console.error(`Error: ${getErrorMessage(err)}`);
-        process.exitCode = EXIT_CODES.USAGE_ERROR;
-      }
+    .argument('<profile>', 'Profile alias or contextId from webcmd profile list')
+    .action(async (profile: string) => {
+      const status = await fetchDaemonStatus();
+      const config = loadProfileConfig();
+      const connected = status && !isDaemonStale(status, PKG_VERSION) && Array.isArray(status.profiles)
+        ? status.profiles
+        : [];
+      const next = setDefaultProfile(profile, profileListRows(config, connected));
+      console.log(`Default Cloak profile: ${next.defaultContextId ?? profile}`);
     });
 
   // ── Built-in: daemon ──────────────────────────────────────────────────────

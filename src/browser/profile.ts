@@ -1,7 +1,8 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { CONFIG_DIR_NAME, ENV_PREFIX } from '../brand.js';
+import { CLI_COMMAND, CONFIG_DIR_NAME, ENV_PREFIX } from '../brand.js';
+import { ArgumentError } from '../errors.js';
 
 export const DEFAULT_CONTEXT_ID = 'default';
 
@@ -105,11 +106,48 @@ export function renameProfile(contextId: string, alias: string): ProfileConfig {
   return config;
 }
 
-export function setDefaultProfile(profile: string): ProfileConfig {
-  const contextId = resolveProfileContextId(profile) ?? normalizeContextId(profile);
-  if (!contextId) throw new Error('profile is required');
+export function knownProfileLabels(rows: ProfileListRow[]): string[] {
+  const labels: string[] = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    if (!row.alias || seen.has(row.alias)) continue;
+    seen.add(row.alias);
+    labels.push(row.alias);
+  }
+  for (const row of rows) {
+    if (seen.has(row.contextId)) continue;
+    seen.add(row.contextId);
+    labels.push(row.contextId);
+  }
+  return labels;
+}
+
+export function resolveKnownProfile(profile: string, rows: ProfileListRow[]): ProfileListRow | undefined {
+  const name = normalizeContextId(profile);
+  if (!name) return undefined;
+  return rows.find(row => row.contextId === name || row.alias === name);
+}
+
+export function setDefaultProfile(profile: string, rows: ProfileListRow[]): ProfileConfig {
+  const name = normalizeContextId(profile);
+  if (!name) throw new ArgumentError('profile is required');
+  const match = resolveKnownProfile(name, rows);
+  if (!match) {
+    const labels = knownProfileLabels(rows);
+    const usage = `usage: ${CLI_COMMAND} profile use <alias|contextId>`;
+    if (labels.length === 0) {
+      throw new ArgumentError(
+        `No profile matches "${name}". No Cloak profiles are available.`,
+        `${usage}\nRun ${CLI_COMMAND} profile list, or create one with a browser-backed command.`,
+      );
+    }
+    throw new ArgumentError(
+      `No profile matches "${name}". Valid profiles: ${labels.join(', ')}`,
+      `${usage}\nexample: ${CLI_COMMAND} profile use ${labels[0]}`,
+    );
+  }
   const config = loadProfileConfig();
-  config.defaultContextId = contextId;
+  config.defaultContextId = match.contextId;
   saveProfileConfig(config);
   return config;
 }
