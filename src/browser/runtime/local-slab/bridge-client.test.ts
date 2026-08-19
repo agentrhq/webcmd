@@ -13,7 +13,8 @@ function fakeSocket() {
 
 describe('SLAB bridge client', () => {
   it('uses the per-user SLAB bridge socket by default', () => {
-    expect(DEFAULT_SLAB_SOCKET_PATH).toMatch(/\/\.slab\/bridge\.sock$/);
+    if (process.platform === 'win32') expect(DEFAULT_SLAB_SOCKET_PATH).toMatch(/^\\\\\.\\pipe\\slab-bridge-/);
+    else expect(DEFAULT_SLAB_SOCKET_PATH).toMatch(/\/\.slab\/run\/slab-bridge\.sock$/);
     expect(DEFAULT_SLAB_SOCKET_PATH).not.toBe('/tmp/slab-bridge.sock');
   });
 
@@ -32,7 +33,7 @@ describe('SLAB bridge client', () => {
     const client = new SlabBridgeClient({ connect: () => socket.client });
     const hello = client.hello('1.9.0');
     expect(JSON.parse(String(write.mock.calls[0]?.[0]))).toMatchObject({
-      params: { protocolVersion: 1, protocolMinVersion: 1, protocolMaxVersion: 1 },
+      params: { protocolVersion: { min: 1, max: 1 } },
     });
     socket.server.write('{"id":"1","ok":true,"result":{"protocolVersion":1,"browserVersion":"1","browserPid":1234,"profiles":[]}}\n');
     await expect(hello).resolves.toMatchObject({ protocolVersion: 1 });

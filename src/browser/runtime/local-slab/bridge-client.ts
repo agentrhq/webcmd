@@ -1,12 +1,15 @@
 import { createConnection } from 'node:net';
-import { homedir } from 'node:os';
+import { homedir, platform, userInfo } from 'node:os';
 import { join } from 'node:path';
 import { SlabUpdateRequiredError } from '../../../errors.js';
 import type { SlabAttachment, SlabHelloResult, SlabProfile } from './protocol.js';
 
 const MAX_RESPONSE_BYTES = 64 * 1024;
 const REQUEST_TIMEOUT_MS = 5_000;
-export const DEFAULT_SLAB_SOCKET_PATH = join(homedir(), '.slab', 'bridge.sock');
+const pipeUser = (process.env.USERNAME ?? userInfo().username).replace(/[^a-zA-Z0-9_.-]/g, '_');
+export const DEFAULT_SLAB_SOCKET_PATH = platform() === 'win32'
+  ? `\\\\.\\pipe\\slab-bridge-${pipeUser}`
+  : join(homedir(), '.slab', 'run', 'slab-bridge.sock');
 const PROTOCOL_MIN_VERSION = 1;
 const PROTOCOL_MAX_VERSION = 1;
 
@@ -29,6 +32,8 @@ type PendingRequest = {
   timer: NodeJS.Timeout;
   validate(result: unknown): unknown;
 };
+
+const protocolVersionRange = { min: PROTOCOL_MIN_VERSION, max: PROTOCOL_MAX_VERSION } as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -72,9 +77,7 @@ export class SlabBridgeClient {
   hello(clientVersion: string): Promise<SlabHelloResult> {
     return this.#request('hello', {
       clientVersion,
-      protocolVersion: PROTOCOL_MAX_VERSION,
-      protocolMinVersion: PROTOCOL_MIN_VERSION,
-      protocolMaxVersion: PROTOCOL_MAX_VERSION,
+      protocolVersion: protocolVersionRange,
     }, (result) => {
       if (!isRecord(result) || typeof result.protocolVersion !== 'number'
         || result.protocolVersion < PROTOCOL_MIN_VERSION || result.protocolVersion > PROTOCOL_MAX_VERSION) {
@@ -87,19 +90,19 @@ export class SlabBridgeClient {
   }
 
   attach(profileId: string): Promise<SlabAttachment> {
-    return this.#request('attach', { protocolVersion: PROTOCOL_MAX_VERSION, profileId }, (result) => {
+    return this.#request('attach', { protocolVersion: protocolVersionRange, profileId }, (result) => {
       if (!attachment(result)) throw new Error('SLAB bridge returned an invalid attachment');
       return result;
     });
   }
 
   async release(connectionId: string): Promise<void> {
-    await this.#request('release', { protocolVersion: PROTOCOL_MAX_VERSION, connectionId }, (result) => {
+    await this.#request('release', { protocolVersion: protocolVersionRange, connectionId }, (result) => {
       if (result !== null && result !== undefined) throw new Error('SLAB bridge returned an invalid release result');
     });
   }
 
-  #request<T>(method: string, params: Record<string, string | number>, validate: (result: unknown) => T): Promise<T> {
+  #request<T>(method: string, params: Record<string, unknown>, validate: (result: unknown) => T): Promise<T> {
     this.#ensureSocket();
     const id = String(this.#nextId++);
     return new Promise<T>((resolve, reject) => {
