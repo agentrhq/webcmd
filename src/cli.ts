@@ -667,56 +667,65 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
 
   // ── Built-in: validate / verify ───────────────────────────────────────────
 
-  program
+  const validateCmd = program
     .command('validate')
     .description('Validate CLI definitions')
     .argument('[target]', 'site or site/name')
-    .action(async (target) => {
-      const { validateClisWithTarget, renderValidationReport } = await import('./validate.js');
-      console.log(renderValidationReport(validateClisWithTarget([BUILTIN_CLIS, USER_CLIS], target)));
-    });
+    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
+  validateCmd.action(async (target, opts) => {
+    const fmt = resolveOutputFormat(opts.format);
+    if (fmt === null) return;
+    const fmtExplicit = validateCmd.getOptionValueSource('format') === 'cli';
+    const { validateClisWithTarget, renderValidationReport } = await import('./validate.js');
+    const report = validateClisWithTarget([BUILTIN_CLIS, USER_CLIS], target);
+    if (fmt === 'table') console.log(renderValidationReport(report));
+    else await renderOutput(report, { fmt, fmtExplicit });
+  });
 
-  program
+  const verifyCmd = program
     .command('verify')
     .description('Validate + smoke test')
     .argument('[target]')
     .option('--smoke', 'Run smoke tests', false)
-    .action(async (target, opts) => {
-      const { verifyClis, renderVerifyReport } = await import('./verify.js');
-      const r = await verifyClis({ builtinClis: BUILTIN_CLIS, userClis: USER_CLIS, target, smoke: opts.smoke });
-      console.log(renderVerifyReport(r));
-      process.exitCode = r.ok ? EXIT_CODES.SUCCESS : EXIT_CODES.GENERIC_ERROR;
+    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
+  verifyCmd.action(async (target, opts) => {
+    const fmt = resolveOutputFormat(opts.format);
+    if (fmt === null) return;
+    const fmtExplicit = verifyCmd.getOptionValueSource('format') === 'cli';
+    const { verifyClis, renderVerifyReport } = await import('./verify.js');
+    const r = await verifyClis({ builtinClis: BUILTIN_CLIS, userClis: USER_CLIS, target, smoke: opts.smoke });
+    if (fmt === 'table') console.log(renderVerifyReport(r));
+    else await renderOutput(r, { fmt, fmtExplicit });
+    process.exitCode = r.ok ? EXIT_CODES.SUCCESS : EXIT_CODES.GENERIC_ERROR;
+  });
+
+  const renderSkillsList = (fmt: string, fmtExplicit: boolean, source: string): Promise<void> =>
+    renderOutput(listWebcmdSkills(), {
+      fmt,
+      fmtExplicit,
+      columns: ['name', 'description', 'version', 'path'],
+      title: 'webcmd/skills/list',
+      source,
     });
 
   const skillsCmd = program
     .command('skills')
     .description('List, add, update, and remove bundled Webcmd skills')
-    .action(() => {
-      const rows = listWebcmdSkills();
-      renderOutput(rows, {
-        fmt: 'table',
-        fmtExplicit: false,
-        columns: ['name', 'description', 'version', 'path'],
-        title: 'webcmd/skills/list',
-        source: 'webcmd skills',
-      });
-    });
+    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
+  skillsCmd.action(async (opts) => {
+    const fmt = resolveOutputFormat(opts.format);
+    if (fmt === null) return;
+    await renderSkillsList(fmt, skillsCmd.getOptionValueSource('format') === 'cli', 'webcmd skills');
+  });
 
   const skillsListCmd = skillsCmd
     .command('list')
     .description('List bundled Webcmd skills')
     .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
-  skillsListCmd.action((opts) => {
+  skillsListCmd.action(async (opts) => {
     const fmt = resolveOutputFormat(opts.format);
     if (fmt === null) return;
-    const rows = listWebcmdSkills();
-    renderOutput(rows, {
-      fmt,
-      fmtExplicit: skillsListCmd.getOptionValueSource('format') === 'cli',
-      columns: ['name', 'description', 'version', 'path'],
-      title: 'webcmd/skills/list',
-      source: 'webcmd skills list',
-    });
+    await renderSkillsList(fmt, skillsListCmd.getOptionValueSource('format') === 'cli', 'webcmd skills list');
   });
 
   skillsCmd
@@ -1251,16 +1260,21 @@ cli({
     }))));
   // ── Built-in: doctor / completion ──────────────────────────────────────────
 
-  program
+  const doctorCmd = program
     .command('doctor')
     .description('Diagnose webcmd browser bridge connectivity')
     .option('-v, --verbose', 'Debug output')
-    .action(async (opts) => {
-      applyVerbose(opts);
-      const { runBrowserDoctor, renderBrowserDoctorReport } = await import('./doctor.js');
-      const report = await runBrowserDoctor({ cliVersion: PKG_VERSION });
-      console.log(renderBrowserDoctorReport(report));
-    });
+    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
+  doctorCmd.action(async (opts) => {
+    applyVerbose(opts);
+    const fmt = resolveOutputFormat(opts.format);
+    if (fmt === null) return;
+    const fmtExplicit = doctorCmd.getOptionValueSource('format') === 'cli';
+    const { runBrowserDoctor, renderBrowserDoctorReport } = await import('./doctor.js');
+    const report = await runBrowserDoctor({ cliVersion: PKG_VERSION });
+    if (fmt === 'table') console.log(renderBrowserDoctorReport(report));
+    else await renderOutput(report, { fmt, fmtExplicit });
+  });
 
   configureCompletionCommandSurface(program.command('completion'))
     .action((shell: string) => {
@@ -1898,10 +1912,15 @@ cli({
   const daemonCmd = program.command('daemon').description('Manage the webcmd daemon');
   // Snapshot before applyRootSubcommandSummaries() rewrites .description() to a child-name listing.
   const originalDaemonDescription = daemonCmd.description();
-  daemonCmd
+  const daemonStatusCmd = daemonCmd
     .command('status')
     .description('Show daemon status')
-    .action(async () => { await daemonStatus(); });
+    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
+  daemonStatusCmd.action(async (opts) => {
+    const fmt = resolveOutputFormat(opts.format);
+    if (fmt === null) return;
+    await daemonStatus({ fmt, fmtExplicit: daemonStatusCmd.getOptionValueSource('format') === 'cli' });
+  });
   daemonCmd
     .command('stop')
     .description('Stop the daemon')

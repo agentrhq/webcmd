@@ -1743,6 +1743,146 @@ describe('profile list', () => {
   });
 });
 
+describe('structured output for data-returning built-ins', () => {
+  const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+  beforeEach(() => {
+    process.exitCode = undefined;
+    consoleLogSpy.mockClear();
+    vi.stubGlobal('fetch', vi.fn());
+  });
+
+  const stdout = () => consoleLogSpy.mock.calls.flat().join('\n');
+
+  const captureStderr = async (run: () => Promise<void>): Promise<string> => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await run();
+      return spy.mock.calls.flat().join('\n');
+    } finally {
+      spy.mockRestore();
+    }
+  };
+
+  const daemonStatusResponse = (overrides: Record<string, unknown> = {}) => ({
+    ok: true,
+    json: async () => ({
+      ok: true,
+      pid: 123,
+      uptime: 12,
+      daemonVersion: PKG_VERSION,
+      runtimeConnected: true,
+      runtimeName: 'Cloak',
+      runtimeVersion: '1.0.3',
+      profiles: [],
+      pending: 0,
+      memoryMB: 20,
+      port: 9777,
+      ...overrides,
+    }),
+  } as Response);
+
+  it('renders validate as JSON without the human report', async () => {
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'validate', '-f', 'json']);
+
+    expect(JSON.parse(stdout())).toMatchObject({
+      ok: expect.any(Boolean),
+      errors: expect.any(Number),
+      warnings: expect.any(Number),
+      commands: expect.any(Number),
+    });
+  });
+
+  it('keeps the human validate report when no format is requested', async () => {
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'validate']);
+
+    expect(() => JSON.parse(stdout())).toThrow();
+  });
+
+  it('renders verify as YAML and still sets the report exit code', async () => {
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'verify', '-f', 'yaml']);
+
+    const parsed = yaml.load(stdout()) as { ok: boolean; validation: unknown };
+    expect(parsed).toMatchObject({ ok: expect.any(Boolean) });
+    expect(parsed.validation).toBeDefined();
+    expect(process.exitCode).toBe(parsed.ok ? 0 : 1);
+  });
+
+  it('renders the same skill rows for bare skills and skills list', async () => {
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'skills', '-f', 'json']);
+    const bare = JSON.parse(stdout());
+    consoleLogSpy.mockClear();
+
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'skills', 'list', '-f', 'json']);
+    expect(JSON.parse(stdout())).toEqual(bare);
+  });
+
+  it('renders daemon status as JSON', async () => {
+    vi.mocked(fetch).mockResolvedValue(daemonStatusResponse());
+
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'daemon', 'status', '-f', 'json']);
+
+    expect(JSON.parse(stdout())).toMatchObject({
+      running: true,
+      stale: false,
+      pid: 123,
+      port: 9777,
+      runtimeConnected: true,
+      runtimeName: 'Cloak',
+    });
+  });
+
+  it('reports a stopped daemon as structured data rather than prose', async () => {
+    vi.mocked(fetch).mockRejectedValue(new Error('ECONNREFUSED'));
+
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'daemon', 'status', '-f', 'json']);
+
+    expect(JSON.parse(stdout())).toEqual({ running: false });
+  });
+
+  it('renders profile list rows and marks disconnected saved profiles', async () => {
+    vi.mocked(fetch).mockResolvedValue(daemonStatusResponse({
+      profiles: [{ contextId: 'ctx_live', runtimeConnected: true, runtimeVersion: '1.0.3', pending: 0 }],
+    }));
+
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'profile', 'list', '-f', 'json']);
+
+    expect(JSON.parse(stdout())).toEqual([
+      { contextId: 'ctx_live', alias: '', default: false, connected: true, runtimeVersion: '1.0.3' },
+    ]);
+  });
+
+  it('fails structured profile list with DAEMON_UNAVAILABLE instead of an empty array', async () => {
+    vi.mocked(fetch).mockRejectedValue(new Error('ECONNREFUSED'));
+
+    const stderr = await captureStderr(async () => {
+      await createProgram('', '').parseAsync(['node', 'webcmd', 'profile', 'list', '-f', 'json']);
+    });
+
+    expect(process.exitCode).toBe(1);
+    expect(stdout()).toBe('');
+    expect(stderr).toContain('Daemon is not running; profile list is incomplete.');
+    expect(stderr).toContain('Run webcmd doctor after opening Chrome.');
+  });
+
+  it.each([
+    ['validate'],
+    ['verify'],
+    ['skills'],
+    ['doctor'],
+    ['daemon', 'status'],
+    ['profile', 'list'],
+  ])('rejects an unsupported format for %s', async (...command) => {
+    const stderr = await captureStderr(async () => {
+      await createProgram('', '').parseAsync(['node', 'webcmd', ...command, '-f', 'xml']);
+    });
+
+    expect(process.exitCode).toBe(2);
+    expect(stderr).toContain('Unknown output format "xml"');
+    expect(stdout()).toBe('');
+  });
+});
+
 describe('browser raw session commands', () => {
   const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
   const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);

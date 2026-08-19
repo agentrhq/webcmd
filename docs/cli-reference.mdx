@@ -160,6 +160,24 @@ webcmd hackernews top -f csv
 
 Agents should use JSON unless they are presenting output to a human.
 
+### Reports and status commands
+
+`validate`, `verify`, `doctor`, `skills`, `adapter status`, `daemon status`, and `profile list` also accept `-f/--format`:
+
+```bash
+webcmd validate -f json
+webcmd verify -f yaml
+webcmd doctor -f json
+webcmd daemon status -f json
+webcmd profile list -f json
+```
+
+Each keeps its human-readable report as the `table` rendering, which stays the default. Pass another format to get the underlying result object instead — the validation report for `validate`, the verify report for `verify`, the diagnostic report for `doctor`, and a row set for `profile list`.
+
+`daemon status -f json` returns `{ "running": false }` when no daemon is reachable, and otherwise reports `running`, `stale`, `pid`, `version`, `uptimeMs`, `runtimeConnected`, `profiles`, `memoryMB`, and `port`.
+
+`profile list` returns one row per profile with `contextId`, `alias`, `default`, `connected`, and `runtimeVersion`, covering both connected profiles and saved aliases that are not currently connected. If the daemon is unreachable or stale, `profile list -f json`/`-f yaml` fails with a `DAEMON_UNAVAILABLE` error (exit 1) and a restart hint instead of returning `[]` — an empty list and an unreadable runtime are different facts.
+
 ## Global Flags
 
 | Flag / Env | Purpose |
