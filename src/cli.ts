@@ -693,6 +693,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
     const report = validateClisWithTarget([BUILTIN_CLIS, USER_CLIS], target);
     if (fmt === 'table') console.log(renderValidationReport(report));
     else await renderOutput(report, { fmt, fmtExplicit });
+    process.exitCode = report.ok ? EXIT_CODES.SUCCESS : EXIT_CODES.GENERIC_ERROR;
   });
 
   const verifyCmd = program

@@ -2,6 +2,9 @@
 import { getRegistry, fullName, type CliCommand, type InternalCliCommand } from './registry.js';
 import { getRegisteredStepNames } from './pipeline/registry.js';
 import { CLI_COMMAND } from './brand.js';
+import { ArgumentError } from './errors.js';
+
+const SITE_LIST_LIMIT = 20;
 
 /**
  * Pipeline step names — derived from the live pipeline registry on each
@@ -36,10 +39,17 @@ export interface ValidationReport {
  */
 export function validateClisWithTarget(_dirs: string[], target?: string): ValidationReport {
   const registry = getRegistry();
-  const results: CommandValidationResult[] = [];
-  let errors = 0; let warnings = 0;
+  const commands = collectCanonicalCommands(registry);
+  const normalizedTarget = target?.trim();
+  const selected = normalizedTarget
+    ? commandsMatchingTarget(commands, resolveValidateTarget(registry, normalizedTarget))
+    : commands;
 
-  if (registry.size === 0) {
+  if (normalizedTarget && selected.length === 0) {
+    throwUnknownValidateTarget(normalizedTarget, commands);
+  }
+
+  if (commands.length === 0) {
     const r: CommandValidationResult = {
       label: '(registry)',
       errors: [],
@@ -48,31 +58,9 @@ export function validateClisWithTarget(_dirs: string[], target?: string): Valida
     return { ok: true, results: [r], errors: 0, warnings: 1, commands: 0 };
   }
 
-  // Resolve alias target: if target is "site/alias", resolve to canonical "site/name"
-  let resolvedTarget = target;
-  if (target?.includes('/')) {
-    const cmd = registry.get(target);
-    if (cmd) resolvedTarget = fullName(cmd);
-  }
-
-  // Deduplicate: registry maps both canonical "site/name" and aliases to the same command
-  const seen = new Set<CliCommand>();
-
-  for (const [key, cmd] of registry) {
-    if (seen.has(cmd)) continue;
-    // Only validate via canonical key to avoid duplicates from aliases
-    if (key !== fullName(cmd)) continue;
-    seen.add(cmd);
-
-    // Target filter: "site" or "site/name"
-    if (resolvedTarget) {
-      if (resolvedTarget.includes('/')) {
-        if (key !== resolvedTarget) continue;
-      } else {
-        if (cmd.site !== resolvedTarget) continue;
-      }
-    }
-
+  const results: CommandValidationResult[] = [];
+  let errors = 0; let warnings = 0;
+  for (const cmd of selected) {
     const r = validateCommand(cmd);
     results.push(r);
     errors += r.errors.length;
@@ -80,6 +68,62 @@ export function validateClisWithTarget(_dirs: string[], target?: string): Valida
   }
 
   return { ok: errors === 0, results, errors, warnings, commands: results.length };
+}
+
+function collectCanonicalCommands(registry: Map<string, CliCommand>): CliCommand[] {
+  const seen = new Set<CliCommand>();
+  const commands: CliCommand[] = [];
+  for (const [key, cmd] of registry) {
+    if (seen.has(cmd) || key !== fullName(cmd)) continue;
+    seen.add(cmd);
+    commands.push(cmd);
+  }
+  return commands;
+}
+
+function resolveValidateTarget(registry: Map<string, CliCommand>, target: string): string {
+  if (!target.includes('/')) return target;
+  const cmd = registry.get(target);
+  return cmd ? fullName(cmd) : target;
+}
+
+function commandsMatchingTarget(commands: CliCommand[], target: string): CliCommand[] {
+  if (target.includes('/')) return commands.filter(cmd => fullName(cmd) === target);
+  return commands.filter(cmd => cmd.site === target);
+}
+
+function throwUnknownValidateTarget(target: string, commands: CliCommand[]): never {
+  const usage = `usage: ${CLI_COMMAND} validate <site|site/name>`;
+  const sites = [...new Set(commands.map(cmd => cmd.site))].sort((a, b) => a.localeCompare(b));
+
+  if (target.includes('/')) {
+    const site = target.slice(0, target.indexOf('/'));
+    const names = commands.filter(cmd => cmd.site === site).map(cmd => cmd.name).sort((a, b) => a.localeCompare(b));
+    if (names.length > 0) {
+      throw new ArgumentError(
+        `No command matches "${target}". Valid commands for ${site}: ${names.join(', ')}`,
+        `${usage}\nexample: ${CLI_COMMAND} validate ${site}/${names[0]}`,
+      );
+    }
+  }
+
+  if (sites.length === 0) {
+    const search = target.includes('/') ? target.slice(0, target.indexOf('/')) : target;
+    throw new ArgumentError(
+      `No command matches "${target}". No sites are installed.`,
+      `${usage}\nSearch: ${CLI_COMMAND} plugin search ${search}`,
+    );
+  }
+
+  const listed = sites.slice(0, SITE_LIST_LIMIT);
+  const siteList = sites.length > SITE_LIST_LIMIT
+    ? `Valid sites (${listed.length} of ${sites.length}): ${listed.join(', ')}`
+    : `Valid sites: ${listed.join(', ')}`;
+  const more = sites.length > SITE_LIST_LIMIT ? `\nList all: ${CLI_COMMAND} list` : '';
+  throw new ArgumentError(
+    `No command matches "${target}". ${siteList}`,
+    `${usage}\nexample: ${CLI_COMMAND} validate ${sites[0]}${more}`,
+  );
 }
 
 function validateCommand(cmd: CliCommand): CommandValidationResult {

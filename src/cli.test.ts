@@ -1948,6 +1948,25 @@ describe('structured output for data-returning built-ins', () => {
     });
   });
 
+  it('rejects validate for an unknown target instead of passing zero commands', async () => {
+    await expect(createProgram('', '').parseAsync(['node', 'webcmd', 'validate', 'nope']))
+      .rejects.toThrow(/No command matches "nope"/);
+  });
+
+  it('sets a non-zero exit code when validate finds command errors', async () => {
+    const key = 'validate-fail-exit/broken';
+    getRegistry().set(key, {
+      site: 'validate-fail-exit', name: 'broken', access: 'read', description: 'broken', args: [],
+    } as never);
+    try {
+      await createProgram('', '').parseAsync(['node', 'webcmd', 'validate', 'validate-fail-exit']);
+      expect(process.exitCode).toBe(1);
+      expect(stdout()).toContain('FAIL');
+    } finally {
+      getRegistry().delete(key);
+    }
+  });
+
   it('keeps the human validate report when no format is requested', async () => {
     await createProgram('', '').parseAsync(['node', 'webcmd', 'validate']);
 
