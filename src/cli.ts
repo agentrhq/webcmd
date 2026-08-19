@@ -19,14 +19,14 @@ import './fetch/command.js';
 import { commandListPresentation, filterCommandsByTag, toPresentableCommand } from './command-presentation.js';
 import { configureCompletionCommandSurface, configureListCommandSurface, configurePluginInstallSurface, configurePluginListSurface, configurePluginSearchSurface } from './builtin-command-surface.js';
 import { OUTPUT_FORMAT_HELP, resolveOutputFormat } from './command-surface.js';
-import { render as renderOutput } from './output.js';
+import { render as renderOutput, formatErrorEnvelope } from './output.js';
 import { PKG_VERSION } from './version.js';
 import { printCompletionScript } from './completion.js';
 import { loadExternalClis, executeExternalCli, installExternalCli, registerExternalCli, isBinaryInstalled, formatExternalCliLabel } from './external.js';
 import { addWebcmdSkills, listWebcmdSkills, removeWebcmdSkills, updateWebcmdSkill, type WebcmdSkillAddResult } from './skills.js';
 import { registerAllCommands } from './commanderAdapter.js';
 import { buildRootHelpPresentation, classifyAdapter, installCommanderNamespaceStructuredHelp, installRootPresentationHelp, leadingPositionalFromUsage, rootHelpData, type RootAdapterGroups } from './help.js';
-import { EXIT_CODES, getErrorMessage, BrowserConnectError, CliError, ArgumentError } from './errors.js';
+import { EXIT_CODES, getErrorMessage, toEnvelope, BrowserConnectError, CliError, ArgumentError } from './errors.js';
 import { TargetError, type TargetErrorCode } from './browser/target-errors.js';
 import { resolveTargetJs, getTextResolvedJs, getValueResolvedJs, getAttributesResolvedJs, selectResolvedJs, isAutocompleteResolvedJs, type ResolveOptions, type TargetMatchLevel } from './browser/target-resolver.js';
 import { buildFindJs, buildSemanticFindJs, isFindError, type FindResult, type FindError, type SemanticFindOptions } from './browser/find.js';
@@ -2064,8 +2064,31 @@ export async function loadAntigravityServe(pluginsDir: string = PLUGINS_DIR): Pr
   return import(pathToFileURL(path.join(pluginsDir, 'antigravity', 'serve.js')).href);
 }
 
-export function runCli(BUILTIN_CLIS: string, USER_CLIS: string): void {
-  createProgram(BUILTIN_CLIS, USER_CLIS).parse();
+/**
+ * Run the local CLI, reporting anything a built-in command throws as the same
+ * error envelope adapter commands already emit.
+ *
+ * Built-in actions used to have no handler at all: `parse()` does not await
+ * async actions, so a throw either crashed with a raw Node stack trace or
+ * surfaced as an unhandled rejection, and the `exitCode` the error carried was
+ * lost. `parseAsync` lets the rejection reach this catch.
+ */
+export async function runCli(BUILTIN_CLIS: string, USER_CLIS: string): Promise<void> {
+  try {
+    await createProgram(BUILTIN_CLIS, USER_CLIS).parseAsync();
+  } catch (err) {
+    reportCliError(err);
+  }
+}
+
+/** Render a thrown error as the shared envelope and set the exit code it carries. */
+export function reportCliError(err: unknown, stderr: NodeJS.WritableStream = process.stderr): void {
+  const envelope = toEnvelope(err);
+  if (process.env.WEBCMD_DEBUG && err instanceof Error && err.stack) {
+    envelope.error.stack = err.stack;
+  }
+  stderr.write(formatErrorEnvelope(envelope));
+  process.exitCode = envelope.error.exitCode;
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
