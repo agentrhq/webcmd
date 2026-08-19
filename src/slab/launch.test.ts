@@ -80,4 +80,28 @@ describe('SLAB launch', () => {
     expect(io.restart).toHaveBeenCalledOnce();
     expect(io.wait).toHaveBeenCalledOnce();
   });
+
+  it('checks the running macOS app bundle instead of the inner launcher binary', async () => {
+    const calls: Array<{ command: string; args: string[] }> = [];
+    vi.doMock('node:child_process', async () => ({
+      execFile: (command: string, args: string[], callback: (error?: Error | null) => void) => {
+        calls.push({ command, args });
+        callback(null);
+      },
+      spawn: vi.fn(),
+    }));
+    vi.resetModules();
+    const { createSlabLaunchIo } = await import('./launch.js');
+    const io = createSlabLaunchIo();
+    const executable = '/Applications/SLAB.app/Contents/MacOS/SLAB';
+
+    await io.isRunning(executable);
+    await io.restart(executable);
+
+    expect(calls).toEqual([
+      { command: 'pgrep', args: ['-f', '/Applications/SLAB.app'] },
+      { command: 'pkill', args: ['-f', '/Applications/SLAB.app'] },
+      { command: 'open', args: ['/Applications/SLAB.app'] },
+    ]);
+  });
 });

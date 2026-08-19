@@ -43,26 +43,34 @@ export function createSlabLaunchIo(): SlabLaunchIo {
   const client = new SlabBridgeClient();
   return {
     findInstallation: () => findSlabInstallation({ platform: process.platform, homeDir: homedir(), existsSync }),
-    isRunning: async (executablePath) => execFile('pgrep', ['-f', executablePath]).then(() => true, () => false),
+    isRunning: async (executablePath) => execFile('pgrep', ['-f', appProcessPattern(executablePath)]).then(() => true, () => false),
     launch: async (executablePath) => {
       if (executablePath === 'slab-browser') {
         const child = spawn(executablePath, ['bridge'], { detached: true, stdio: 'ignore' });
         child.unref();
         return;
       }
-      await execFile('open', [dirname(dirname(dirname(executablePath)))]);
+      await execFile('open', [appBundlePath(executablePath)]);
     },
     restart: async (executablePath) => {
-      await execFile('pkill', ['-f', executablePath]).catch(() => {});
+      await execFile('pkill', ['-f', appProcessPattern(executablePath)]).catch(() => {});
       if (executablePath === 'slab-browser') {
         const child = spawn(executablePath, ['bridge'], { detached: true, stdio: 'ignore' });
         child.unref();
       } else {
-        await execFile('open', [dirname(dirname(dirname(executablePath)))]);
+        await execFile('open', [appBundlePath(executablePath)]);
       }
     },
     hello: () => client.hello('webcmd'),
     wait: () => new Promise((resolve) => setTimeout(resolve, 100)),
     now: Date.now,
   };
+}
+
+function appProcessPattern(executablePath: string): string {
+  return executablePath === 'slab-browser' ? executablePath : appBundlePath(executablePath);
+}
+
+function appBundlePath(executablePath: string): string {
+  return dirname(dirname(dirname(executablePath)));
 }
