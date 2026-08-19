@@ -530,6 +530,33 @@ afterAll(async () => {
     });
   });
 
+  it('decodes response bodies and post data as text', async () => {
+    await context.route('https://example.test/json', route => route.fulfill({
+      contentType: 'application/json',
+      body: '{"id":1,"title":"Essence"}',
+    }));
+    const output = await run(`
+      const requestPromise = page.waitForRequest('**/json');
+      const responsePromise = page.waitForResponse('**/json');
+      await page.evaluate(
+        () => fetch('https://example.test/json', { method: 'POST', body: 'h\u00e9llo' })
+      );
+      const request = await requestPromise;
+      const response = await responsePromise;
+      return {
+        postData: request.postData(),
+        text: await response.text(),
+        json: await response.json(),
+      };
+    `);
+
+    expect(output.result).toEqual({
+      postData: 'h\u00e9llo',
+      text: '{"id":1,"title":"Essence"}',
+      json: { id: 1, title: 'Essence' },
+    });
+  });
+
   it('waits for downloads', async () => {
     const output = await run(`
       const downloadPromise = page.waitForEvent('download');

@@ -16,6 +16,7 @@ This is the client-only subset of Playwright that runs in Webcmd's QuickJS sandb
 - `vendor/client/artifact.ts` reads artifact protocol streams into `Uint8Array` data and writes only through `__webcmdWriteArtifact`; host paths and server-side `saveAs` are unavailable.
 - `vendor/client/elementHandle.ts` accepts only in-memory upload payloads and rejects filesystem paths before attempting any filesystem operation.
 - `vendor/protocol/{serializers,validatorPrimitives}.ts` use injected base64 codecs and `Uint8Array` rather than `Buffer`.
+- `vendor/client/network.ts` decodes response bodies and post data with the injected UTF-8 codec; `Buffer.prototype.toString('utf8')` is unavailable and `Uint8Array.prototype.toString` would comma-join the bytes.
 - `vendor/isomorphic/time.ts` falls back to QuickJS's native `Date` when the browser `performance` global is absent.
 - Vendored TypeScript files are marked `@ts-nocheck`: the checked bundle is esbuild's transpiled artifact, while their upstream monorepo type aliases are intentionally not part of Webcmd's host compilation.
 

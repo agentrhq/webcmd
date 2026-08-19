@@ -9206,7 +9206,8 @@ ${headers.join("\n")}`;
       return this._fallbackOverrides.method || this._initializer.method;
     }
     postData() {
-      return (this._fallbackOverrides.postDataBuffer || this._initializer.postData)?.toString("utf-8") || null;
+      const buffer = this._fallbackOverrides.postDataBuffer || this._initializer.postData;
+      return buffer && quickjsEncoding.decodeText(buffer) || null;
     }
     postDataBuffer() {
       return this._fallbackOverrides.postDataBuffer || this._initializer.postData || null;
@@ -9691,7 +9692,7 @@ ${headers.join("\n")}`;
     }
     async text() {
       const content = await this.body();
-      return content.toString("utf8");
+      return quickjsEncoding.decodeText(content);
     }
     async json() {
       const content = await this.text();
