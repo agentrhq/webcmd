@@ -251,6 +251,15 @@ afterAll(async () => {
     expect(error.message).not.toContain('QuickJS promise rejected');
     expect(error.hint).toContain('unescaped quote');
   });
+
+  it('does not blame the caller syntax for a runtime SyntaxError', async () => {
+    // JSON.parse throws a SyntaxError from a program that compiled fine.
+    const error = await runError("return JSON.parse('1,2,3');");
+
+    expect(error.code).toBeUndefined();
+    expect(error.name).toBe('SyntaxError');
+    expect(error.hint).toBeUndefined();
+  });
   it('publishes the browser-run package subpath', () => {
     const packageJson = JSON.parse(
       fs.readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'),

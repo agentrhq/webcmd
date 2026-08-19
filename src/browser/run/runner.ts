@@ -93,7 +93,6 @@ function normalizeExecutionError(error: unknown): Error {
     );
   }
   const message = error instanceof Error ? error.message : String(error);
-  const errorKind = error instanceof Error ? error.name : '';
   const unsupported = message.match(/BROWSER_RUN_API_UNSUPPORTED:\s*(.*)/s)
     ?? message.match(/(File paths? are unavailable in the QuickJS sandbox[^.]*)/i);
   if (unsupported) {
@@ -115,13 +114,10 @@ function normalizeExecutionError(error: unknown): Error {
       'Browser-run execution exceeded its memory limit.',
     );
   }
-  if (/syntaxerror/i.test(`${errorKind}: ${message}`)) {
-    return new BrowserRunError(
-      'BROWSER_RUN_SYNTAX_ERROR',
-      sanitize(message),
-      'Fix the browser-run JavaScript syntax and retry.',
-    );
-  }
+  // A compile failure of the caller's program is tagged BROWSER_RUN_SYNTAX_ERROR where it
+  // happens and returned by the code.startsWith('BROWSER_RUN_') branch above. Every
+  // SyntaxError reaching here is therefore a runtime one — JSON.parse on malformed input is
+  // the common case — so it keeps its own name and message like any other runtime error.
   const normalized = new Error(sanitize(message));
   normalized.name = error instanceof Error ? error.name : 'Error';
   return normalized;
