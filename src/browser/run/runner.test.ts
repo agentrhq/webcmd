@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -555,6 +556,46 @@ afterAll(async () => {
       text: '{"id":1,"title":"Essence"}',
       json: { id: 1, title: 'Essence' },
     });
+  });
+
+  it('fetches through page.request and decodes the response as text', async () => {
+    const server = http.createServer((request, response) => {
+      const chunks: Buffer[] = [];
+      request.on('data', chunk => chunks.push(chunk));
+      request.on('end', () => {
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.end(JSON.stringify({
+          method: request.method,
+          title: 'Ess\u00e9nce',
+          body: Buffer.concat(chunks).toString('utf8'),
+        }));
+      });
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as import('node:net').AddressInfo;
+    try {
+      const output = await run(`
+        const response = await page.request.get('http://127.0.0.1:${port}/api');
+        const posted = await page.request.post('http://127.0.0.1:${port}/api', {
+          data: { ok: true },
+        });
+        return {
+          status: response.status(),
+          text: await response.text(),
+          json: await response.json(),
+          posted: await posted.json(),
+        };
+      `);
+
+      expect(output.result).toEqual({
+        status: 200,
+        text: '{"method":"GET","title":"Ess\u00e9nce","body":""}',
+        json: { method: 'GET', title: 'Ess\u00e9nce', body: '' },
+        posted: { method: 'POST', title: 'Ess\u00e9nce', body: '{"ok":true}' },
+      });
+    } finally {
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
   });
 
   it('waits for downloads', async () => {

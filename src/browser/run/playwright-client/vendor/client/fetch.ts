@@ -25,6 +25,7 @@ import { RawHeaders } from './network';
 import { Tracing } from './tracing';
 import { mkdirIfNeeded } from './fileUtils';
 import { TimeoutSettings } from './timeoutSettings';
+import { quickjsEncoding } from '../../quickjs-platform';
 
 import type { Playwright } from './playwright';
 import type { ClientCertificate, FilePayload, Headers, RemoteAddr, SecurityDetails, SetStorageState, StorageState, TimeoutOptions } from './types';
@@ -183,7 +184,7 @@ export class APIRequestContext extends ChannelOwner<channels.APIRequestContextCh
       let encodedParams = undefined;
       if (typeof options.params === 'string')
         encodedParams = options.params;
-      else if (options.params instanceof URLSearchParams)
+      else if (globalThis.URLSearchParams && options.params instanceof URLSearchParams)
         encodedParams = options.params.toString();
       // Cannot call allHeaders() here as the request may be paused inside route handler.
       const headersObj = options.headers || options.request?.headers();
@@ -197,8 +198,8 @@ export class APIRequestContext extends ChannelOwner<channels.APIRequestContextCh
           if (isJsonContentType(headers))
             jsonData = isJsonParsable(options.data) ? options.data : JSON.stringify(options.data);
           else
-            postDataBuffer = Buffer.from(options.data, 'utf8');
-        } else if (Buffer.isBuffer(options.data)) {
+            postDataBuffer = quickjsEncoding.encodeText(options.data);
+        } else if (options.data instanceof Uint8Array) {
           postDataBuffer = options.data;
         } else if (typeof options.data === 'object' || typeof options.data === 'number' || typeof options.data === 'boolean') {
           jsonData = JSON.stringify(options.data);
@@ -278,7 +279,7 @@ async function toFormField(platform: Platform, name: string, value: string | num
   const typeOfValue = typeof value;
   if (isFilePayload(value)) {
     const payload = value as FilePayload;
-    if (!Buffer.isBuffer(payload.buffer))
+    if (!(payload.buffer instanceof Uint8Array))
       throw new Error(`Unexpected buffer type of 'data.${name}'`);
     return { name, file: filePayloadToJson(payload) };
   } else if (typeOfValue === 'string' || typeOfValue === 'number' || typeOfValue === 'boolean') {
@@ -366,7 +367,7 @@ export class APIResponse implements api.APIResponse {
 
   async text(): Promise<string> {
     const content = await this.body();
-    return content.toString('utf8');
+    return quickjsEncoding.decodeText(content);
   }
 
   async json(): Promise<object> {
