@@ -15,7 +15,6 @@ describe('browserCommandCatalog', () => {
       'tabs',
       'init',
       'bind',
-      'fork',
       'verify',
       'run',
       'snapshot',
@@ -23,18 +22,13 @@ describe('browserCommandCatalog', () => {
     ]);
   });
 
-  it('exposes hosted adapter fork with a required command name', () => {
-    const fork = browserCommandCatalog.find(command => command.command === 'fork');
-    expect(fork).toMatchObject({ action: 'fork', sessionPolicy: 'require-existing' });
-    expect(fork?.positionals).toEqual([
-      expect.objectContaining({ name: 'name', required: true, positional: true }),
-    ]);
+  it('does not expose the retired fork command', () => {
+    expect(browserCommandCatalog.find(command => command.command === 'fork')).toBeUndefined();
   });
 
   it('keeps adapter authoring separate from the raw session catalog', () => {
     expect(browserCommand().commands.map(command => command.name())).toEqual([
       'init',
-      'fork',
       'verify',
       'tabs',
       'bind',

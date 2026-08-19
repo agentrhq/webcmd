@@ -9,6 +9,7 @@ import { getDaemonRunContext } from './session-lease.js';
 import type { IPage } from './types.js';
 import { TargetError } from './browser/target-errors.js';
 import { PKG_VERSION } from './version.js';
+import { EXIT_CODES } from './errors.js';
 import { classifyAdapter, getInstalledRootHelpPresentation } from './help.js';
 import {
   commandListPresentation,
@@ -1132,6 +1133,24 @@ name: 'search',
     }
   });
 
+  it('points the retired browser fork subcommand at adapter override', () => {
+    const errors: string[] = [];
+    const spy = vi.spyOn(console, 'error').mockImplementation((msg: unknown) => { errors.push(String(msg)); });
+    const previousExitCode = process.exitCode;
+    try {
+      createProgram('', '').parse(['browser', 'fork', 'hackernews/top'], { from: 'user' });
+      expect(errors.join('\n')).toContain('webcmd adapter override <site>/<command>');
+      expect(process.exitCode).toBe(EXIT_CODES.USAGE_ERROR);
+
+      errors.length = 0;
+      createProgram('', '').parse(['browser', 'nonsense'], { from: 'user' });
+      expect(errors.join('\n')).toBe("error: unknown command 'nonsense'");
+    } finally {
+      spy.mockRestore();
+      process.exitCode = previousExitCode;
+    }
+  });
+
   it('renders browser namespace structured help from Commander metadata', () => {
     const argv = process.argv;
     try {
@@ -1145,8 +1164,8 @@ name: 'search',
       expect(data.namespace).toBe('browser');
       expect(data.command).toBe('webcmd browser');
       expect(data.description).toBe('Run Playwright programs against an explicit browser Session');
-      expect(data.command_count).toBe(8);
-      expect(data.commands.map((cmd: any) => cmd.name)).toEqual(['bind', 'close', 'fork', 'init', 'run', 'snapshot', 'tabs', 'verify']);
+      expect(data.command_count).toBe(7);
+      expect(data.commands.map((cmd: any) => cmd.name)).toEqual(['bind', 'close', 'init', 'run', 'snapshot', 'tabs', 'verify']);
       expect(data.namespace_options).not.toEqual(expect.arrayContaining([
         expect.objectContaining({ name: 'session' }),
       ]));

@@ -124,14 +124,6 @@ export const browserCommandCatalog: readonly HostedBrowserCommandContract[] = [
   command('bind', 'Bind this session to an existing page', 'bind', [], [
     option('page', 'Stable page id returned by tabs', { required: true }),
   ], 'require-existing'),
-  command('fork', 'Fork an installed plugin command into a private copy', 'fork', [{
-    name: 'name',
-    type: 'string',
-    description: 'Command to fork in site/command format',
-    positional: true,
-    required: true,
-    variadic: false,
-  }], [], 'require-existing'),
   command('verify', 'Verify an adapter against its fixture', 'verify', [adapterNamePositional], [
     flag('noFixture', 'Run without comparing a fixture'),
     flag('writeFixture', 'Write the observed result as the fixture'),

@@ -898,6 +898,21 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
     .description('Run Playwright programs against an explicit browser Session');
   const originalBrowserDescription = browser.description();
 
+  // Retired browser subcommands. `fork` was a duplicate of `adapter override`
+  // that never appeared in the docs; commander's bare "unknown command" leaves
+  // the caller with no way to find the replacement, so name it.
+  const RETIRED_BROWSER_SUBCOMMANDS: Record<string, string> = {
+    fork: `${CLI_COMMAND} adapter override <site>/<command>`,
+  };
+  browser.on('command:*', (operands: string[]) => {
+    const name = operands[0]!;
+    const replacement = RETIRED_BROWSER_SUBCOMMANDS[name];
+    console.error(replacement
+      ? `error: '${CLI_COMMAND} browser ${name}' was removed. Use: ${replacement}`
+      : `error: unknown command '${name}'`);
+    process.exitCode = EXIT_CODES.USAGE_ERROR;
+  });
+
   // ── Init (adapter scaffolding) ──
 
   browser.command('init')
@@ -964,11 +979,6 @@ cli({
         process.exitCode = EXIT_CODES.GENERIC_ERROR;
       }
     });
-
-  browser.command('fork')
-    .argument('<name>', 'Command to fork in site/command format')
-    .description('Fork an installed plugin command into a private copy')
-    .action(handleAdapterOverride);
 
   // ── Verify (test adapter) ──
 
