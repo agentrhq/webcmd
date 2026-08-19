@@ -22,6 +22,7 @@ import {
 } from '../completion-shared.js';
 import { CliError, ConfigError, EXIT_CODES, toEnvelope } from '../errors.js';
 import { getRequestedHelpFormat, renderStructuredHelp } from '../help.js';
+import { enableVerbose } from '../logger.js';
 import { findPackageRoot } from '../package-paths.js';
 import { formatErrorEnvelope, render as renderOutput } from '../output.js';
 import { StreamWriteError, writeToStream } from '../stream-write.js';
@@ -238,7 +239,7 @@ async function dispatchHosted(
     return;
   }
 
-  if (args[0] === 'adapter' && (args[1] === 'source' || args[1] === 'path' || args[1] === '--help' || args[1] === '-h')) {
+  if (args[0] === 'adapter' && (args[1] === 'source' || args[1] === 'path' || args[1] === 'override' || args[1] === '--help' || args[1] === '-h')) {
     await runHostedAdapterSourceSurface(args.slice(1), normalized.literal, client, stdout, homeDir);
     return;
   }
@@ -443,10 +444,15 @@ async function dispatchHosted(
   if (command.clientOwned) {
     throw new Error(`Internal invariant: client-owned command ${command.command} reached hosted dispatch.`);
   }
+  // Hosted dispatch parsed `-v` but never acted on it, so the flag that local
+  // mode honours was a silent no-op here (#174). Applying it before the request
+  // lights up the client's HTTP diagnostics on the same env contract local mode
+  // uses, keeping the two modes' verbose behaviour aligned.
+  enableVerbose(parsed.verbose);
 
   const startTime = now();
-  const response = hasPresentFileArgument(command, parsed.args)
-    ? await executeHostedFileCommand({
+  const response = command.browser || hasPresentFileArgument(command, parsed.args)
+    ? await executeHostedPreparedCommand({
         client,
         command,
         args: parsed.args,
@@ -454,6 +460,7 @@ async function dispatchHosted(
         trace: parsed.trace,
         profile: parsed.profile ?? normalized.profile,
         session: normalized.session,
+        stderr,
       })
     : await client.execute({
         command: command.command,
@@ -526,7 +533,8 @@ function hostedSiteMemoryBackend(client: HostedClient): SiteMemoryBackend {
 type HostedAdapterSourceCommand =
   | { kind: 'get'; commandKey: string; output?: string }
   | { kind: 'put'; commandKey: string; path: string }
-  | { kind: 'path'; commandKey: string };
+  | { kind: 'path'; commandKey: string }
+  | { kind: 'override'; commandKey: string };
 
 async function runHostedAdapterSourceSurface(argv: readonly string[], literal: boolean, client: HostedClient, stdout: NodeJS.WritableStream, homeDir: string): Promise<void> {
   let parsed: HostedAdapterSourceCommand | undefined;
@@ -541,6 +549,10 @@ async function runHostedAdapterSourceSurface(argv: readonly string[], literal: b
   source.command('get').argument('<command>').option('-o, --output <path>').action((commandKey, opts: { output?: string }) => { parsed = { kind: 'get', commandKey, output: opts.output }; });
   source.command('put').argument('<command>').argument('<path>').action((commandKey, filePath) => { parsed = { kind: 'put', commandKey, path: filePath }; });
   adapter.command('path').argument('<command>').action(commandKey => { parsed = { kind: 'path', commandKey }; });
+  adapter.command('override')
+    .description('Fork an installed adapter command into a private copy you can modify')
+    .argument('<command>', 'Command to override, as <site>/<command>')
+    .action(commandKey => { parsed = { kind: 'override', commandKey }; });
   try {
     await root.parseAsync(literal ? ['--', 'adapter', ...argv] : ['adapter', ...argv], { from: 'user' });
   } catch (error) {
@@ -555,6 +567,19 @@ async function runHostedAdapterSourceSurface(argv: readonly string[], literal: b
   const { site, command } = parseAdapterCommandKey(parsed.commandKey);
   const destination = hostedAdapterDestination(homeDir, site, command);
   if (parsed.kind === 'path') return writeToStream(stdout, `${destination}\n`);
+  if (parsed.kind === 'override') {
+    const result = await client.overrideAdapter(parsed.commandKey);
+    await writeToStream(stdout, [
+      `✅ Override created for ${result.command}`,
+      `     package: ${result.packageId}`,
+      `     source:  ${result.sourceFile ?? '(unknown)'}`,
+      '',
+      '  Your private copy now takes precedence over the installed adapter.',
+      `  Edit it with: ${CLI_COMMAND} adapter source get ${result.command} then ${CLI_COMMAND} adapter source put ${result.command} <path>`,
+      '',
+    ].join('\n'));
+    return;
+  }
   const metadata = await hostedAdapterSourceMetadata(client, parsed.commandKey);
   const sourcePath = metadata.sourceFile ?? metadata.modulePath;
   if (!sourcePath) throw new ConfigError(`Hosted adapter source is unavailable for ${parsed.commandKey}.`);
@@ -674,7 +699,12 @@ function parseHostedSessionListLimit(value: string): number {
 function sessionCreateOutput(data: unknown): unknown {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return data;
   const row = data as Record<string, unknown>;
-  return { id: row.id, kind: row.kind, runtimeState: row.runtimeState };
+  return {
+    id: row.id,
+    kind: row.kind,
+    runtimeState: row.runtimeState,
+    ...(typeof row.liveViewUrl === 'string' ? { liveViewUrl: row.liveViewUrl } : {}),
+  };
 }
 
 function formatHostedSessionHandoff(handoff: unknown): string {
@@ -696,7 +726,7 @@ function hasPresentFileArgument(
   });
 }
 
-async function executeHostedFileCommand(input: {
+async function executeHostedPreparedCommand(input: {
   client: HostedClient;
   command: import('./types.js').HostedCommand;
   args: Record<string, unknown>;
@@ -704,11 +734,17 @@ async function executeHostedFileCommand(input: {
   trace: string;
   profile?: string;
   session?: string;
+  stderr: NodeJS.WritableStream;
 }): Promise<import('./types.js').HostedExecuteResponse> {
   const prepared = await prepareHostedFiles({
     client: input.client,
     command: input.command,
     args: input.args,
+    ...(input.profile !== undefined ? { profile: input.profile } : {}),
+    ...(input.session !== undefined ? { session: input.session } : {}),
+    onPrepared: async (prepared) => {
+      if (prepared.liveViewUrl) await writeToStream(input.stderr, `Webcmd live view: ${prepared.liveViewUrl}\n`);
+    },
   });
   const response = await input.client.runPreparedExecution({
     executionId: prepared.executionId,

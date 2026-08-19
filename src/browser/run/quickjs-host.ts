@@ -601,6 +601,9 @@ export class QuickJSHost {
   #toError(prefix: string, errorHandle: QuickJSHandle): Error {
     const dumped = this.#context.dump(errorHandle);
     const normalized = this.#normalizeHostError(dumped);
+    // Errors the sandbox raised deliberately already say what went wrong; prefixing
+    // them with a host-internal stage name only misdirects whoever reads the failure.
+    if (normalized.code?.startsWith('BROWSER_RUN_')) return normalized;
     normalized.message = `${prefix}: ${normalized.message}`;
     return normalized;
   }

@@ -1,4 +1,7 @@
 import fs from 'node:fs';
+import http from 'node:http';
+import os from 'node:os';
+import path from 'node:path';
 import { createRequire } from 'node:module';
 import {
   afterAll,
@@ -16,6 +19,9 @@ import {
   type BrowserContext,
   type Page,
 } from 'playwright-core';
+import { LocalBrowserRunArtifactSink } from './artifacts.js';
+import { MemorySnapshotBaselineStore } from '../snapshot/index.js';
+import { unsupportedApiMessage } from './playwright-transport.js';
 import { QuickJSHost } from './quickjs-host.js';
 import { runBrowserProgram } from './runner.js';
 
@@ -42,11 +48,21 @@ function sessionScope(pages: () => readonly Page[] = () => context.pages()) {
   };
 }
 
-function run(source: string, options = {}) {
+function run(source: string, options = {}, input = {}) {
   return runBrowserProgram({
     ...sessionScope(),
     pageId: 'page-1',
+    ...input,
   }, source, options);
+}
+
+async function runError(source: string): Promise<Error & { code?: string; hint?: string }> {
+  try {
+    await run(source);
+  } catch (cause) {
+    return cause as Error & { code?: string; hint?: string };
+  }
+  throw new Error('expected the program to fail');
 }
 
 describeWithChromium('runBrowserProgram', () => {
@@ -98,6 +114,22 @@ afterAll(async () => {
     expect(output).not.toHaveProperty('snapshotDiff');
   });
 
+  it('clears a cached snapshot baseline when snapshotDiff is disabled', async () => {
+    const snapshotBaselineStore = new MemorySnapshotBaselineStore();
+    await run(`
+      await page.setContent('<main><button>First state</button></main>');
+      return null;
+    `, { snapshotBaselineStore });
+    expect(snapshotBaselineStore.get('page-1')).toBeDefined();
+
+    await run(`
+      await page.setContent('<main><button>Research result</button></main>');
+      return 'Research result';
+    `, { snapshotDiff: false, snapshotBaselineStore });
+
+    expect(snapshotBaselineStore.get('page-1')).toBeUndefined();
+  });
+
   it('captures a fresh before and after snapshot in the same run', async () => {
     const output = await run(`
       await page.getByRole('button', { name: 'Save' }).click();
@@ -108,19 +140,24 @@ afterAll(async () => {
     expect(output.snapshotDiff).toContain('~ ');
   });
 
-  it('URL-redacts and bounds automatic snapshot diffs', async () => {
+  it('omits an automatic snapshot diff that exceeds the output ceiling', async () => {
     const maxOutputChars = 100;
     const output = await run(`
       await page.setContent('<main><a href="https://example.test/next?ok=1&key=diff-secret&auth=diff-auth">Next</a><button>${'x'.repeat(200)}</button></main>');
       return null;
     `, { maxOutputChars });
 
-    expect(output.snapshotDiff!.length).toBeLessThanOrEqual(maxOutputChars);
-    expect(output.snapshotDiff).not.toMatch(/diff-secret|diff-auth/);
+    expect(output).not.toHaveProperty('snapshotDiff');
+    expect(JSON.stringify(output)).not.toMatch(/diff-secret|diff-auth/);
     expect(output.limits.snapshotTruncated).toBe(true);
+    expect(output.limits.snapshotDiffOmitted).toBe(true);
+    expect(output.warnings).toContainEqual(expect.objectContaining({
+      code: 'BROWSER_RUN_SNAPSHOT_DIFF_OMITTED',
+      message: expect.stringMatching(/result.*sufficient.*continue.*targeted/i),
+    }));
   });
 
-  it('warns when a structural diff omits critical snapshot content', async () => {
+  it('omits a structural diff when critical snapshot content would be lost', async () => {
     const controls = Array.from({ length: 20 }, (_, index) =>
       `<input aria-label="Critical ${index + 1}" aria-invalid="true">`).join('');
     const output = await run(`
@@ -128,14 +165,16 @@ afterAll(async () => {
       return null;
     `, { maxOutputChars: 220 });
 
+    expect(output).not.toHaveProperty('snapshotDiff');
     expect(output.limits.snapshotTruncated).toBe(true);
+    expect(output.limits.snapshotDiffOmitted).toBe(true);
     expect(output.warnings).toContainEqual(expect.objectContaining({
-      code: 'BROWSER_RUN_CRITICAL_SNAPSHOT_OMITTED',
-      message: expect.stringMatching(/inspect.*ref/i),
+      code: 'BROWSER_RUN_SNAPSHOT_DIFF_OMITTED',
+      message: expect.stringMatching(/targeted.*snapshot/i),
     }));
   });
 
-  it('warns when redaction expands an otherwise complete snapshot diff past the output limit', async () => {
+  it('omits a snapshot diff when redaction expands it past the output limit', async () => {
     const beforeHtml = '<main><button>Before</button></main>';
     const source = `
       await page.setContent('<main><a href="https://u:p@example.test/path?token=a&key=b&secret=c&password=d&auth=e&api_key=f&session_id=g&csrf=h">Account</a></main>');
@@ -148,10 +187,11 @@ afterAll(async () => {
     await page.setContent(beforeHtml);
     const output = await run(source, { maxOutputChars: generous.snapshotDiff!.length - 1 });
 
-    expect(output.snapshotDiff!.length).toBeLessThanOrEqual(generous.snapshotDiff!.length - 1);
+    expect(output).not.toHaveProperty('snapshotDiff');
     expect(output.limits.snapshotTruncated).toBe(true);
+    expect(output.limits.snapshotDiffOmitted).toBe(true);
     expect(output.warnings).toContainEqual(expect.objectContaining({
-      code: 'BROWSER_RUN_CRITICAL_SNAPSHOT_OMITTED',
+      code: 'BROWSER_RUN_SNAPSHOT_DIFF_OMITTED',
       message: expect.stringMatching(/output ceiling/i),
     }));
   });
@@ -200,6 +240,26 @@ afterAll(async () => {
     const output = await run('return typeof page.snapshotForAI;');
 
     expect(output.result).toBe('undefined');
+  });
+  it('reports the caller line, column, and source for a compile error', async () => {
+    // An unescaped quote ends the string early; the parser trips on what follows.
+    // Line/column must be the caller's own, not the AsyncFunction wrapper's.
+    const error = await runError("const a = 1;\nconst s = 'x'y';\nreturn a;");
+
+    expect(error.code).toBe('BROWSER_RUN_SYNTAX_ERROR');
+    expect(error.message).toContain('at line 2, column 14');
+    expect(error.message).toContain("const s = 'x'y';");
+    expect(error.message).not.toContain('QuickJS promise rejected');
+    expect(error.hint).toContain('unescaped quote');
+  });
+
+  it('does not blame the caller syntax for a runtime SyntaxError', async () => {
+    // JSON.parse throws a SyntaxError from a program that compiled fine.
+    const error = await runError("return JSON.parse('1,2,3');");
+
+    expect(error.code).toBeUndefined();
+    expect(error.name).toBe('SyntaxError');
+    expect(error.hint).toBeUndefined();
   });
   it('publishes the browser-run package subpath', () => {
     const packageJson = JSON.parse(
@@ -500,6 +560,73 @@ afterAll(async () => {
     });
   });
 
+  it('decodes response bodies and post data as text', async () => {
+    await context.route('https://example.test/json', route => route.fulfill({
+      contentType: 'application/json',
+      body: '{"id":1,"title":"Essence"}',
+    }));
+    const output = await run(`
+      const requestPromise = page.waitForRequest('**/json');
+      const responsePromise = page.waitForResponse('**/json');
+      await page.evaluate(
+        () => fetch('https://example.test/json', { method: 'POST', body: 'h\u00e9llo' })
+      );
+      const request = await requestPromise;
+      const response = await responsePromise;
+      return {
+        postData: request.postData(),
+        text: await response.text(),
+        json: await response.json(),
+      };
+    `);
+
+    expect(output.result).toEqual({
+      postData: 'h\u00e9llo',
+      text: '{"id":1,"title":"Essence"}',
+      json: { id: 1, title: 'Essence' },
+    });
+  });
+
+  it('fetches through page.request and decodes the response as text', async () => {
+    const server = http.createServer((request, response) => {
+      const chunks: Buffer[] = [];
+      request.on('data', chunk => chunks.push(chunk));
+      request.on('end', () => {
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.end(JSON.stringify({
+          method: request.method,
+          title: 'Ess\u00e9nce',
+          body: Buffer.concat(chunks).toString('utf8'),
+        }));
+      });
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as import('node:net').AddressInfo;
+    try {
+      const output = await run(`
+        const response = await page.request.get('http://127.0.0.1:${port}/api');
+        const posted = await page.request.post('http://127.0.0.1:${port}/api', {
+          data: { ok: true },
+        });
+        return {
+          status: response.status(),
+          text: await response.text(),
+          json: await response.json(),
+          posted: await posted.json(),
+        };
+      `);
+
+      expect(output.result).toEqual({
+        status: 200,
+        text: '{"method":"GET","title":"Ess\u00e9nce","body":""}',
+        json: { method: 'GET', title: 'Ess\u00e9nce', body: '' },
+        posted: { method: 'POST', title: 'Ess\u00e9nce', body: '{"ok":true}' },
+      });
+    } finally {
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
+  });
+
   it('waits for downloads', async () => {
     const output = await run(`
       const downloadPromise = page.waitForEvent('download');
@@ -530,26 +657,28 @@ afterAll(async () => {
   });
 
   it.each([
-    ['browser.close()', 'await browser.close();'],
-    ['browser.newContext()', 'await browser.newContext();'],
-    ['context.close()', 'await context.close();'],
-    ['page.close()', 'await page.close();'],
-    ['browserType.launch()', 'await browser.browserType().launch();'],
-    ['browserType.connect()', 'await browser.browserType().connect("ws://localhost");'],
-    ['browserType.connectOverCDP()', 'await browser.browserType().connectOverCDP("http://localhost");'],
-  ])('rejects ownership-changing API %s', async (_name, source) => {
+    ['browser.close()', 'await browser.close();', 'Browser.close'],
+    ['browser.newContext()', 'await browser.newContext();', 'Browser.newContext'],
+    ['context.close()', 'await context.close();', 'BrowserContext.close'],
+    ['page.close()', 'await page.close();', 'Page.close'],
+    ['browserType.launch()', 'await browser.browserType().launch();', undefined],
+    ['browserType.connect()', 'await browser.browserType().connect("ws://localhost");', undefined],
+    ['browserType.connectOverCDP()', 'await browser.browserType().connectOverCDP("http://localhost");', undefined],
+  ])('rejects ownership-changing API %s', async (_name, source, api) => {
     await expect(run(source)).rejects.toMatchObject({
       code: 'BROWSER_RUN_API_UNSUPPORTED',
+      ...(api ? { message: unsupportedApiMessage(api) } : {}),
     });
     expect(browser.isConnected()).toBe(true);
   });
 
   it.each([
-    ['browser.newBrowserCDPSession()', 'await browser.newBrowserCDPSession();'],
-    ['context.newCDPSession()', 'await context.newCDPSession(page);'],
-  ])('rejects CDP escape route %s', async (_name, source) => {
+    ['browser.newBrowserCDPSession()', 'await browser.newBrowserCDPSession();', 'Browser.newBrowserCDPSession'],
+    ['context.newCDPSession()', 'await context.newCDPSession(page);', 'BrowserContext.newCDPSession'],
+  ])('rejects CDP escape route %s', async (_name, source, api) => {
     await expect(run(source)).rejects.toMatchObject({
       code: 'BROWSER_RUN_API_UNSUPPORTED',
+      message: unsupportedApiMessage(api),
     });
     expect(browser.isConnected()).toBe(true);
     expect(page.isClosed()).toBe(false);
@@ -561,6 +690,117 @@ afterAll(async () => {
     await expect(run('return process.cwd();')).rejects.toBeTruthy();
     await expect(run('return fs.readFileSync("/etc/passwd");')).rejects.toBeTruthy();
   });
+
+  it('exposes btoa/atob/TextEncoder/TextDecoder but not Buffer', async () => {
+    const output = await run(`
+      return {
+        btoa: typeof btoa,
+        atob: typeof atob,
+        TextEncoder: typeof TextEncoder,
+        TextDecoder: typeof TextDecoder,
+        Buffer: typeof Buffer,
+      };
+    `);
+
+    expect(output.result).toEqual({
+      btoa: 'function',
+      atob: 'function',
+      TextEncoder: 'function',
+      TextDecoder: 'function',
+      Buffer: 'undefined',
+    });
+  });
+
+  it('encodes btoa/atob as latin1 binary strings, not UTF-8', async () => {
+    const output = await run(`
+      const binary = String.fromCharCode(0, 128, 255);
+      return {
+        vector: btoa('hello'),
+        roundTrip: atob(btoa('webcmd')),
+        binaryRoundTrip: Array.from(atob(btoa(binary))).map(c => c.charCodeAt(0)),
+        binaryVector: btoa(binary),
+      };
+    `);
+
+    expect(output.result).toEqual({
+      vector: 'aGVsbG8=',
+      roundTrip: 'webcmd',
+      binaryRoundTrip: [0, 128, 255],
+      binaryVector: Buffer.from([0, 128, 255]).toString('base64'),
+    });
+  });
+
+  it('rejects btoa input above the latin1 range', async () => {
+    const output = await run(`
+      try {
+        btoa('caf\\u00e9\\u20ac');
+        return 'no-throw';
+      } catch (error) {
+        return error.name;
+      }
+    `);
+
+    expect(output.result).toBe('InvalidCharacterError');
+  });
+
+  it('round-trips multi-byte UTF-8 through TextEncoder/TextDecoder', async () => {
+    const output = await run(`
+      const bytes = new TextEncoder().encode('café € 🎉');
+      return {
+        bytes: Array.from(bytes),
+        decoded: new TextDecoder().decode(bytes),
+        fromBuffer: new TextDecoder().decode(bytes.buffer),
+        encoding: new TextEncoder().encoding,
+      };
+    `);
+
+    expect(output.result).toEqual({
+      bytes: Array.from(Buffer.from('café € 🎉', 'utf8')),
+      decoded: 'café € 🎉',
+      fromBuffer: 'café € 🎉',
+      encoding: 'utf-8',
+    });
+  });
+
+  it('round-trips typed arrays through the Playwright serializers', async () => {
+    const output = await run(`
+      const length = await page.evaluate(bytes => bytes.length, new Uint8Array([1, 2, 3]));
+      const returned = await page.evaluate(() => new Uint8Array([255, 0, 128]));
+      return { length, returned: Array.from(returned) };
+    `);
+
+    expect(output.result).toEqual({ length: 3, returned: [255, 0, 128] });
+  });
+
+  it.each(['writeArtifact', '__webcmdWriteArtifact'])(
+    'returns a redeemable receipt from %s',
+    async (fn) => {
+      const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-artifact-'));
+      try {
+        const output = await run(`
+          const receipt = await ${fn}(
+            'nested/report.csv',
+            new TextEncoder().encode('id,name\\n1,caf\\u00e9\\n'),
+          );
+          return receipt;
+        `, {}, { artifactSink: new LocalBrowserRunArtifactSink({ baseDir }) });
+
+        const receipt = output.result as { artifactId: string; locator: string };
+        expect(receipt).toMatchObject({
+          filename: 'nested/report.csv',
+          contentType: 'application/octet-stream',
+          byteSize: 16,
+          locator: expect.stringContaining('browser-run://'),
+        });
+        expect(output.artifacts).toEqual([receipt]);
+        expect(
+          fs.readFileSync(path.join(baseDir, receipt.artifactId, 'nested/report.csv'), 'utf8'),
+        ).toBe('id,name\n1,caf\u00e9\n');
+      } finally {
+        fs.rmSync(baseDir, { recursive: true, force: true });
+      }
+    },
+  );
 
   it('rejects absolute artifact paths instead of touching host paths', async () => {
     const target = '/tmp/webcmd-browser-run-owned.txt';
@@ -781,5 +1021,28 @@ afterAll(async () => {
     `)).rejects.toMatchObject({
       message: expect.not.stringContaining('secret'),
     });
+  });
+});
+
+describe('unsupportedApiMessage', () => {
+  it.each([
+    ['Browser.close', 'webcmd session close <session-id>'],
+    ['Browser.newBrowserCDPSession', 'raw CDP is not exposed inside browser run'],
+    ['Browser.newContext', 'webcmd session create'],
+    ['Browser.newContextForReuse', 'webcmd session create'],
+    ['BrowserContext.close', 'webcmd session close <session-id>'],
+    ['BrowserContext.newCDPSession', 'raw CDP is not exposed inside browser run'],
+    ['Page.close', 'leave the tab open'],
+    ['Playwright.newRequest', 'use `page.request`'],
+  ])('points %s at a supported alternative', (api, remediation) => {
+    const message = unsupportedApiMessage(api);
+    expect(message).toContain(`${api} is unavailable in browser run;`);
+    expect(message).toContain(remediation);
+  });
+
+  it('keeps the generic text for an unmapped API', () => {
+    expect(unsupportedApiMessage('Browser.killForTests')).toBe(
+      'Browser.killForTests is unavailable in browser run.',
+    );
   });
 });

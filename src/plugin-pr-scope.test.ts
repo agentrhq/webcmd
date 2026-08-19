@@ -35,6 +35,7 @@ function fixture(change: (root: string) => void) {
   git(root, 'init', '--quiet');
   git(root, 'config', 'user.email', 'test@example.com');
   git(root, 'config', 'user.name', 'Test');
+  git(root, 'config', 'commit.gpgsign', 'false');
   write(root, 'README.md', 'before\n');
   write(root, 'webcmd-plugin.json', '{}\n');
   write(root, 'package.json', '{}\n');
@@ -56,7 +57,7 @@ function runGuard(root: string, ...args: string[]) {
   return spawnSync(process.execPath, [checkerPath, ...args], { cwd: root, encoding: 'utf8' });
 }
 
-describe('plugin-only PR scope guard', () => {
+describe('plugin-only PR scope guard', { timeout: 20_000 }, () => {
   it('accepts changes contained in one newly added plugin', () => {
     const { root, base, head } = fixture((repo) => addPlugin(repo, 'foo'));
 

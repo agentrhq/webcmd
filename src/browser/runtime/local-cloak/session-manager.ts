@@ -57,6 +57,16 @@ export interface SessionKeyInput {
   freshPage?: boolean;
 }
 
+export type NewPageInput = SessionKeyInput & {
+  url?: string;
+  /**
+   * Playwright `goto` readiness for `url`, already translated from the command
+   * vocabulary by the caller. Defaults to 'load'; 'commit' skips waiting for the
+   * load event on sites that never go idle.
+   */
+  waitUntil?: 'load' | 'commit';
+};
+
 type PageEntry = {
   page: PlaywrightPage;
   pageId: string;
@@ -414,7 +424,7 @@ export class CloakSessionManager {
     })));
   }
 
-  async newPage(input: SessionKeyInput & { url?: string }): Promise<CloakPageLease> {
+  async newPage(input: NewPageInput): Promise<CloakPageLease> {
     return this.newPageAttempt(input, 0);
   }
 
@@ -422,7 +432,7 @@ export class CloakSessionManager {
     return this.navigatePageAttempt(input, url, waitUntil, 0);
   }
 
-  private async newPageAttempt(input: SessionKeyInput & { url?: string }, attempt: number): Promise<CloakPageLease> {
+  private async newPageAttempt(input: NewPageInput, attempt: number): Promise<CloakPageLease> {
     const profileId = normalizeProfileId(input.profileId);
     const session = requireSession(input.session);
     const sessionId = requireSessionId(input);
@@ -433,7 +443,7 @@ export class CloakSessionManager {
     });
     if (input.url) {
       try {
-        await acquired.page.goto(input.url, { waitUntil: 'load' });
+        await acquired.page.goto(input.url, { waitUntil: input.waitUntil ?? 'load' });
       } catch (error) {
         if (attempt === 0 && isClosedContextError(error)) {
           this.invalidateProfileRuntime(profileId, acquired.runtime);
@@ -645,7 +655,13 @@ export class CloakSessionManager {
     const sessionRuntime = runtime.sessions.get(session);
     if (!sessionRuntime) return 0;
     const entries = this.openEntries(sessionRuntime);
-    await Promise.all(entries.map(([, entry]) => this.assertOwnedWindow(runtime, session, entry)));
+    await Promise.all(entries.map(async ([, entry]) => {
+      try {
+        await this.assertOwnedWindow(runtime, session, entry);
+      } catch (error) {
+        if (!pageIsClosed(entry.page)) throw error;
+      }
+    }));
     for (const [, entry] of entries) await this.removeEntry(runtime, sessionRuntime, entry, true);
     if (entries.length > 0) runtime.lastSeenAt = Date.now();
     return entries.length;

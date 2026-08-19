@@ -93,7 +93,6 @@ function normalizeExecutionError(error: unknown): Error {
     );
   }
   const message = error instanceof Error ? error.message : String(error);
-  const errorKind = error instanceof Error ? error.name : '';
   const unsupported = message.match(/BROWSER_RUN_API_UNSUPPORTED:\s*(.*)/s)
     ?? message.match(/(File paths? are unavailable in the QuickJS sandbox[^.]*)/i);
   if (unsupported) {
@@ -115,13 +114,10 @@ function normalizeExecutionError(error: unknown): Error {
       'Browser-run execution exceeded its memory limit.',
     );
   }
-  if (/syntaxerror/i.test(`${errorKind}: ${message}`)) {
-    return new BrowserRunError(
-      'BROWSER_RUN_SYNTAX_ERROR',
-      sanitize(message),
-      'Fix the browser-run JavaScript syntax and retry.',
-    );
-  }
+  // A compile failure of the caller's program is tagged BROWSER_RUN_SYNTAX_ERROR where it
+  // happens and returned by the code.startsWith('BROWSER_RUN_') branch above. Every
+  // SyntaxError reaching here is therefore a runtime one — JSON.parse on malformed input is
+  // the common case — so it keeps its own name and message like any other runtime error.
   const normalized = new Error(sanitize(message));
   normalized.name = error instanceof Error ? error.name : 'Error';
   return normalized;
@@ -168,6 +164,7 @@ export async function runBrowserProgram(
   let maxOutputChars = BROWSER_RUN_DEFAULT_MAX_OUTPUT_CHARS;
   let savedSnapshotDiff: string | undefined;
   let snapshotTruncated = false;
+  let snapshotDiffOmitted = false;
   const redactionOptions = {
     maxDepth: 8,
     maxArrayItems: 100,
@@ -194,6 +191,7 @@ export async function runBrowserProgram(
       limits: {
         outputTruncated: logOutputTruncated || bounded.truncated,
         snapshotTruncated,
+        ...(snapshotDiffOmitted && { snapshotDiffOmitted: true }),
       },
       ...(Object.keys(timings).length > 0 && { timings }),
     };
@@ -245,6 +243,7 @@ export async function runBrowserProgram(
   const snapshotMode = options.snapshotMode ?? 'act';
   const snapshotDiffEnabled = options.snapshotDiff !== false;
   const baselineStore = options.snapshotBaselineStore ?? new MemorySnapshotBaselineStore();
+  if (!snapshotDiffEnabled) baselineStore.clear(input.pageId);
   let host!: QuickJSHost;
   const artifactSink = input.artifactSink ?? new LocalBrowserRunArtifactSink();
   const transport = new PlaywrightTransport(input, message => (
@@ -264,7 +263,7 @@ export async function runBrowserProgram(
           name !== 'writeArtifact'
           || typeof args[0] !== 'string'
           || typeof args[1] !== 'string'
-          || (args[2] !== undefined && typeof args[2] !== 'string')
+          || (args[2] != null && typeof args[2] !== 'string')
         ) {
           throw new BrowserRunError(
             'BROWSER_RUN_INVALID_INPUT',
@@ -381,6 +380,47 @@ export async function runBrowserProgram(
           for (const byte of bytes) encoded += '%' + byte.toString(16).padStart(2, '0');
           return decodeURIComponent(encoded);
         };
+        // btoa/atob are latin1 binary-string codecs, not UTF-8. Composing them
+        // with __webcmdEncodeText/__webcmdDecodeText would corrupt binary input.
+        globalThis.btoa = value => {
+          const binary = String(value);
+          const bytes = new Uint8Array(binary.length);
+          for (let index = 0; index < binary.length; index += 1) {
+            const code = binary.charCodeAt(index);
+            if (code > 255) {
+              const error = new Error(
+                "Failed to execute 'btoa': The string to be encoded contains "
+                + 'characters outside of the Latin1 range.'
+              );
+              error.name = 'InvalidCharacterError';
+              throw error;
+            }
+            bytes[index] = code;
+          }
+          return __webcmdEncodeBase64(bytes);
+        };
+        globalThis.atob = value => {
+          let binary = '';
+          for (const byte of __webcmdDecodeBase64(String(value))) {
+            binary += String.fromCharCode(byte);
+          }
+          return binary;
+        };
+        globalThis.TextEncoder = class TextEncoder {
+          get encoding() { return 'utf-8'; }
+          encode(value = '') { return __webcmdEncodeText(value); }
+        };
+        globalThis.TextDecoder = class TextDecoder {
+          get encoding() { return 'utf-8'; }
+          decode(input) {
+            if (input === undefined) return '';
+            if (input instanceof Uint8Array) return __webcmdDecodeText(input);
+            if (input instanceof ArrayBuffer) return __webcmdDecodeText(new Uint8Array(input));
+            return __webcmdDecodeText(
+              new Uint8Array(input.buffer, input.byteOffset, input.byteLength)
+            );
+          }
+        };
       })()
     `, { filename: 'browser-run-platform.js' });
     await host.executeScript(PLAYWRIGHT_CLIENT_SOURCE, {
@@ -399,12 +439,18 @@ export async function runBrowserProgram(
         globalThis.__webcmdTransportReceive = message => {
           connection.dispatch(JSON.parse(message));
         };
-        globalThis.__webcmdWriteArtifact = async (filename, bytes, contentType) => {
-          await __webcmdHostCall(
+        globalThis.writeArtifact = async (filename, bytes, contentType) => (
+          __webcmdHostCall(
             'writeArtifact',
-            JSON.stringify([filename, __webcmdEncodeBase64(bytes), contentType]),
-          );
-        };
+            JSON.stringify([
+              filename,
+              __webcmdEncodeBase64(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)),
+              contentType,
+            ]),
+          )
+        );
+        // Legacy alias; writeArtifact is the documented name.
+        globalThis.__webcmdWriteArtifact = globalThis.writeArtifact;
         __WebcmdPlaywrightClient.quickjsPlatform.fs().promises.readFile = () => (
           unsupported('Host filesystem reads')
         );
@@ -439,14 +485,43 @@ export async function runBrowserProgram(
           connection.close(message);
           rejectRun?.(new Error(message));
         };
+        globalThis.__webcmdCompileError = (source, cause) => {
+          // new AsyncFunction(body) prepends two lines of wrapper, so QuickJS reports
+          // a line two ahead of the one the caller actually wrote.
+          const lines = source.split('\\n');
+          const line = (cause?.lineNumber ?? 0) - 2;
+          const column = cause?.columnNumber ?? 0;
+          const text = line >= 1 && line <= lines.length ? lines[line - 1] : undefined;
+          let excerpt = '';
+          if (text !== undefined) {
+            const start = Math.max(0, column - 60);
+            const caret = ' '.repeat(Math.max(0, column - 1 - start)) + '^';
+            excerpt = '\\n  ' + text.slice(start, column + 20) + '\\n  ' + caret;
+          }
+          const where = line >= 1 ? ' at line ' + line + ', column ' + column : '';
+          const message = cause?.message ?? 'Program failed to compile.';
+          const error = new SyntaxError(message + where + excerpt);
+          error.code = 'BROWSER_RUN_SYNTAX_ERROR';
+          error.hint = 'Your program failed to compile; the browser was never touched. '
+            + 'A common cause is an unescaped quote when embedding a URL or HTML in a '
+            + 'string literal — use double quotes or a template literal for values that '
+            + 'contain apostrophes.';
+          return error;
+        };
         globalThis.__webcmdRun = async source => {
           const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+          let program;
+          try {
+            program = new AsyncFunction(source);
+          } catch (cause) {
+            throw __webcmdCompileError(source, cause);
+          }
           let value;
           try {
             const cancellation = new Promise((_resolve, reject) => {
               rejectRun = reject;
             });
-            value = await Promise.race([new AsyncFunction(source)(), cancellation]);
+            value = await Promise.race([program(), cancellation]);
           } finally {
             rejectRun = undefined;
           }
@@ -555,14 +630,20 @@ export async function runBrowserProgram(
           redactUrl(redactText(rendered.value, { maxStringLength: Number.MAX_SAFE_INTEGER })),
           maxOutputChars,
         );
-        savedSnapshotDiff = bounded.value;
-        snapshotTruncated ||= rendered.truncated || bounded.truncated;
-        if (rendered.criticalOmitted || bounded.truncated) warnings.push({
-          code: 'BROWSER_RUN_CRITICAL_SNAPSHOT_OMITTED',
-          message: rendered.criticalOmitted
-            ? rendered.warnings[0] ?? 'Critical snapshot content was omitted; inspect the nearest [more ref=...] scope.'
-            : 'Critical snapshot content was omitted while enforcing the output ceiling.',
-        });
+        const diffExceededCeiling = rendered.truncated || bounded.truncated;
+        snapshotTruncated ||= diffExceededCeiling;
+        if (diffExceededCeiling) {
+          snapshotDiffOmitted = true;
+          warnings.push({
+            code: 'BROWSER_RUN_SNAPSHOT_DIFF_OMITTED',
+            message:
+              `Snapshot diff exceeded the ${maxOutputChars}-character output ceiling and was omitted. `
+              + 'If the returned result and page metadata are sufficient, continue without another observation. '
+              + 'Otherwise inspect the relevant scope with a targeted browser snapshot or extraction.',
+          });
+        } else {
+          savedSnapshotDiff = bounded.value;
+        }
       } catch (snapshotError) {
         baselineStore.clear(input.pageId);
         warnings.push({
@@ -586,6 +667,7 @@ export async function runBrowserProgram(
       limits: {
         outputTruncated: logOutputTruncated || bounded.truncated,
         snapshotTruncated,
+        ...(snapshotDiffOmitted && { snapshotDiffOmitted: true }),
       },
       timings,
     };

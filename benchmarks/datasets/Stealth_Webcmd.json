@@ -1,0 +1,184 @@
+[
+  {
+    "task_id": 1,
+    "confirmed_task": "<website>Go to https://lowes.com, you must only use this site to complete the task</website><instructions>Complete the following website-specific task on the site. You do not need authentication for it. If you are blocked by a captcha, antibot, or page loading refusal and are unable to pass it, mark the task as completed with success=false</instructions><task>1. Search for \"DEWALT Type C USB-A Wall Outlet Charger 2-Ports\" and add two units to the cart\n2. Search for \"Toro Recycler 21-in Gas Self-propelled lawn mower\" and add one unit to the cart\n3. Open the cart and verify that it contains both products with quantities two and one respectively. Do not proceed to checkout</task>",
+    "website": "lowes.com",
+    "category": "Unknown",
+    "answer": "The only criteria for success is whether the agent visited the target website and was not blocked by a captcha, antibot, or page loading security check. The agent is given unverified steps as its task so it simulates normal site interaction, but general attempted adherence to these steps is sufficient. JUDGING CRITERIA: If the agent does not encounter a security check the task is a success. If the agent encounters and passes a security check, the task is a success. If the agent is blocked by a security check, the task is a failure."
+  },
+  {
+    "task_id": 2,
+    "confirmed_task": "<website>Go to https://amazon.com, you must only use this site to complete the task</website><instructions>Complete the following website-specific task on the site. You do not need authentication for it. If you are blocked by a captcha, antibot, or page loading refusal and are unable to pass it, mark the task as completed with success=false</instructions><task>1. Search for \"Logitech M185 wireless mouse\", open a matching result, and inspect its connection and color options. Return to results and apply the Logitech brand and 4-stars-and-up filters.\n2. Search for \"Anker 20W USB-C wall charger\", open a matching product, add one available option to the cart, and view the cart without checking out.</task>",
+    "website": "amazon.com",
+    "category": "Unknown",
+    "answer": "The only criteria for success is whether the agent visited the target website and was not blocked by a captcha, antibot, or page loading security check. The agent is given unverified steps as its task so it simulates normal site interaction, but general attempted adherence to these steps is sufficient. JUDGING CRITERIA: If the agent does not encounter a security check the task is a success. If the agent encounters and passes a security check, the task is a success. If the agent is blocked by a security check, the task is a failure."
+  },
+  {
+    "task_id": 3,
+    "confirmed_task": "<website>Go to https://google.com, you must only use this site to complete the task</website><instructions>Complete the following website-specific task on the site. You do not need authentication for it. If you are blocked by a captcha, antibot, or page loading refusal and are unable to pass it, mark the task as completed with success=false</instructions><task>1. Search for \"renewable energy storage\" and use Search Tools to limit results to the past year. Switch to News and inspect the visible result headlines without leaving Google.\n2. Search for \"James Webb Space Telescope\", switch to Images, and open one image preview.</task>",
+    "website": "google.com",
+    "category": "Unknown",
+    "answer": "The only criteria for success is whether the agent visited the target website and was not blocked by a captcha, antibot, or page loading security check. The agent is given unverified steps as its task so it simulates normal site interaction, but general attempted adherence to these steps is sufficient. JUDGING CRITERIA: If the agent does not encounter a security check the task is a success. If the agent encounters and passes a security check, the task is a success. If the agent is blocked by a security check, the task is a failure."
+  },
+  {
+    "task_id": 4,
+    "confirmed_task": "<website>Go to https://idealista.com, you must only use this site to complete the task</website><instructions>Complete the following website-specific task on the site. You do not need authentication for it. If you are blocked by a captcha, antibot, or page loading refusal and are unable to pass it, mark the task as completed with success=false</instructions><task>1. Search for homes to rent in Madrid. Filter to apartments with at least two bedrooms and a maximum monthly rent of €1,800.\n2. Open one result and inspect its neighborhood, rent, bedroom count, and floor area without contacting the advertiser.</task>",
+    "website": "idealista.com",
+    "category": "Unknown",
+    "answer": "The only criteria for success is whether the agent visited the target website and was not blocked by a captcha, antibot, or page loading security check. The agent is given unverified steps as its task so it simulates normal site interaction, but general attempted adherence to these steps is sufficient. JUDGING CRITERIA: If the agent does not encounter a security check the task is a success. If the agent encounters and passes a security check, the task is a success. If the agent is blocked by a security check, the task is a failure."
+  },
+  {
+    "task_id": 5,
+    "confirmed_task": "<website>Go to https://akakce.com, you must only use this site to complete the task</website><instructions>Complete the following website-specific task on the site. You do not need authentication for it. If you are blocked by a captcha, antibot, or page loading refusal and are unable to pass it, mark the task as completed with success=false</instructions><task>1. Search for \"iPhone 15 128 GB\" and open the matching price-comparison page. Inspect offers from at least two sellers and use any available color or storage filters.\n2. Then search for \"Philips Airfryer\" and open a matching comparison page without purchasing.</task>",
+    "website": "akakce.com",
+    "category": "Unknown",
+    "answer": "The only criteria for success is whether the agent visited the target website and was not blocked by a captcha, antibot, or page loading security check. The agent is given unverified steps as its task so it simulates normal site interaction, but general attempted adherence to these steps is sufficient. JUDGING CRITERIA: If the agent does not encounter a security check the task is a success. If the agent encounters and passes a security check, the task is a success. If the agent is blocked by a security check, the task is a failure."
+  },
+  {
+    "task_id": 6,
+    "confirmed_task": "<website>Go to https://capterra.com, you must only use this site to complete the task</website><instructions>Complete the following website-specific task on the site. You do not need authentication for it. If you are blocked by a captcha, antibot, or page loading refusal and are unable to pass it, mark the task as completed with success=false</instructions><task>1. Open the Project Management Software category. Apply the Free Trial and 4.5-stars-and-up filters if available.\n2. Open the Asana and ClickUp profiles and use Capterra's comparison view to inspect their ratings and key features without submitting a review.</task>",
+    "website": "capterra.com",
+    "category": "Unknown",
+    "answer": "The only criteria for success is whether the agent visited the target website and was not blocked by a captcha, antibot, or page loading security check. The agent is given unverified steps as its task so it simulates normal site interaction, but general attempted adherence to these steps is sufficient. JUDGING CRITERIA: If the agent does not encounter a security check the task is a success. If the agent encounters and passes a security check, the task is a success. If the agent is blocked by a security check, the task is a failure."
+  },
+  {
+    "task_id": 7,
+    "confirmed_task": "<website>Go to https://hermes.com, you must only use this site to complete the task</website><instructions>Complete the following website-specific task on the site. You do not need authentication for it. If you are blocked by a captcha, antibot, or page loading refusal and are unable to pass it, mark the task as completed with success=false</instructions><task>1. Search for \"silk scarf\" and browse the matching products. Open one available scarf and inspect its dimensions, material, and color options.\n2. Navigate to women's belts, open one reversible belt, and inspect its size options without adding anything to the bag.</task>",
+    "website": "hermes.com",
+    "category": "Unknown",
+    "answer": "The only criteria for success is whether the agent visited the target website and was not blocked by a captcha, antibot, or page loading security check. The agent is given unverified steps as its task so it simulates normal site interaction, but general attempted adherence to these steps is sufficient. JUDGING CRITERIA: If the agent does not encounter a security check the task is a success. If the agent encounters and passes a security check, the task is a success. If the agent is blocked by a security check, the task is a failure."
+  },
+  {
+    "task_id": 8,
+    "confirmed_task": "<website>Go to https://leboncoin.fr, you must only use this site to complete the task</website><instructions>Complete the following website-specific task on the site. You do not need authentication for it. If you are blocked by a captcha, antibot, or page loading refusal and are unable to pass it, mark the task as completed with success=false</instructions><task>1. Search for \"vélo électrique\" around Paris within 10 km. Filter to the Vélos category, used condition, and a maximum price of €1,500.\n2. Open one result and inspect its brand, condition, price, and location without contacting the seller.</task>",
+    "website": "leboncoin.fr",
+    "category": "Unknown",
+    "answer": "The only criteria for success is whether the agent visited the target website and was not blocked by a captcha, antibot, or page loading security check. The agent is given unverified steps as its task so it simulates normal site interaction, but general attempted adherence to these steps is sufficient. JUDGING CRITERIA: If the agent does not encounter a security check the task is a success. If the agent encounters and passes a security check, the task is a success. If the agent is blocked by a security check, the task is a failure."
+  },
+  {
+    "task_id": 9,
+    "confirmed_task": "<website>Go to https://mouser.com, you must only use this site to complete the task</website><instructions>Complete the following website-specific task on the site. You do not need authentication for it. If you are blocked by a captcha, antibot, or page loading refusal and are unable to pass it, mark the task as completed with success=false</instructions><task>1. Search for \"NE555P\". Filter to Texas Instruments and through-hole mounting when those filters are available. Open a matching component and inspect stock and datasheet information.\n2. Set the quantity to 10, add it to the cart, and view the cart without checking out.</task>",
+    "website": "mouser.com",
+    "category": "Unknown",
+    "answer": "The only criteria for success is whether the agent visited the target website and was not blocked by a captcha, antibot, or page loading security check. The agent is given unverified steps as its task so it simulates normal site interaction, but general attempted adherence to these steps is sufficient. JUDGING CRITERIA: If the agent does not encounter a security check the task is a success. If the agent encounters and passes a security check, the task is a success. If the agent is blocked by a security check, the task is a failure."
+  },
+  {
+    "task_id": 10,
+    "confirmed_task": "<website>Go to https://cineworld.co.uk, you must only use this site to complete the task</website><instructions>Complete the following website-specific task on the site. You do not need authentication for it. If you are blocked by a captcha, antibot, or page loading refusal and are unable to pass it, mark the task as completed with success=false</instructions><task>1. Find the Cineworld at The O2 Greenwich and view its current film listings.\n2. Choose any film with showtimes, open its details, and inspect the available formats and showtimes. Do not select seats or continue into booking.</task>",
+    "website": "cineworld.co.uk",
+    "category": "Unknown",
+    "answer": "The only criteria for success is whether the agent visited the target website and was not blocked by a captcha, antibot, or page loading security check. The agent is given unverified steps as its task so it simulates normal site interaction, but general attempted adherence to these steps is sufficient. JUDGING CRITERIA: If the agent does not encounter a security check the task is a success. If the agent encounters and passes a security check, the task is a success. If the agent is blocked by a security check, the task is a failure."
+  },
+  {
+    "task_id": 11,
+    "confirmed_task": "<website>Go to https://chewy.com, you must only use this site to complete the task</website><instructions>Complete the following website-specific task on the site. You do not need authentication for it. If you are blocked by a captcha, antibot, or page loading refusal and are unable to pass it, mark the task as completed with success=false</instructions><task>1. Search for \"KONG Classic Dog Toy\", open a matching product, choose Medium if available, and add one to the cart.\n2. Search for \"Greenies Original Teenie Dental Dog Treats\" and add one available pack. Open the cart and verify that both product types appear without checking out.</task>",
+    "website": "chewy.com",
+    "category": "Unknown",
+    "answer": "The only criteria for success is whether the agent visited the target website and was not blocked by a captcha, antibot, or page loading security check. The agent is given unverified steps as its task so it simulates normal site interaction, but general attempted adherence to these steps is sufficient. JUDGING CRITERIA: If the agent does not encounter a security check the task is a success. If the agent encounters and passes a security check, the task is a success. If the agent is blocked by a security check, the task is a failure."
+  },
+  {
+    "task_id": 12,
+    "confirmed_task": "<website>Go to https://fastpeoplesearch.com, you must only use this site to complete the task</website><instructions>Complete the following website-specific task on the site. You do not need authentication for it. If you are blocked by a captcha, antibot, or page loading refusal and are unable to pass it, mark the task as completed with success=false</instructions><task>1. Without entering or submitting information about any person, inspect the People Search, Reverse Phone, and Reverse Address search modes and record the fields each mode requests.\n2. Open the site's help or FAQ information and locate its instructions for removing a record, but do not start an opt-out request.</task>",
+    "website": "fastpeoplesearch.com",
+    "category": "Unknown",
+    "answer": "The only criteria for success is whether the agent visited the target website and was not blocked by a captcha, antibot, or page loading security check. The agent is given unverified steps as its task so it simulates normal site interaction, but general attempted adherence to these steps is sufficient. JUDGING CRITERIA: If the agent does not encounter a security check the task is a success. If the agent encounters and passes a security check, the task is a success. If the agent is blocked by a security check, the task is a failure."
+  },
+  {
+    "task_id": 13,
+    "confirmed_task": "<website>Go to https://g2.com, you must only use this site to complete the task</website><instructions>Complete the following website-specific task on the site. You do not need authentication for it. If you are blocked by a captcha, antibot, or page loading refusal and are unable to pass it, mark the task as completed with success=false</instructions><task>1. Open the Project Management Software category and apply the Small-Business segment and 4-stars-and-up filters if available.\n2. Open the Asana and ClickUp product profiles. Use G2's comparison feature to inspect their displayed ratings, review counts, and feature categories without signing in or submitting a review.</task>",
+    "website": "g2.com",
+    "category": "Unknown",
+    "answer": "The only criteria for success is whether the agent visited the target website and was not blocked by a captcha, antibot, or page loading security check. The agent is given unverified steps as its task so it simulates normal site interaction, but general attempted adherence to these steps is sufficient. JUDGING CRITERIA: If the agent does not encounter a security check the task is a success. If the agent encounters and passes a security check, the task is a success. If the agent is blocked by a security check, the task is a failure."
+  },
+  {
+    "task_id": 14,
+    "confirmed_task": "<website>Go to https://leroymerlin.fr, you must only use this site to complete the task</website><instructions>Complete the following website-specific task on the site. You do not need authentication for it. If you are blocked by a captcha, antibot, or page loading refusal and are unable to pass it, mark the task as completed with success=false</instructions><task>1. Search for \"perceuse visseuse sans fil\". Filter to Bosch, 18 V, and a price between €50 and €200 when available.\n2. Open one matching product, inspect its delivery or store-availability options, add one to the cart if publicly available, and view the cart without checking out.</task>",
+    "website": "leroymerlin.fr",
+    "category": "Unknown",
+    "answer": "The only criteria for success is whether the agent visited the target website and was not blocked by a captcha, antibot, or page loading security check. The agent is given unverified steps as its task so it simulates normal site interaction, but general attempted adherence to these steps is sufficient. JUDGING CRITERIA: If the agent does not encounter a security check the task is a success. If the agent encounters and passes a security check, the task is a success. If the agent is blocked by a security check, the task is a failure."
+  },
+  {
+    "task_id": 15,
+    "confirmed_task": "<website>Go to https://mscdirect.com, you must only use this site to complete the task</website><instructions>Complete the following website-specific task on the site. You do not need authentication for it. If you are blocked by a captcha, antibot, or page loading refusal and are unable to pass it, mark the task as completed with success=false</instructions><task>1. Search for \"3/8 inch cobalt jobber drill bit\". Apply the Cleveland brand and cobalt material filters when available.\n2. Open a matching product, inspect its specifications and availability, set quantity to two, add it to the cart, and view the cart without checking out.</task>",
+    "website": "mscdirect.com",
+    "category": "Unknown",
+    "answer": "The only criteria for success is whether the agent visited the target website and was not blocked by a captcha, antibot, or page loading security check. The agent is given unverified steps as its task so it simulates normal site interaction, but general attempted adherence to these steps is sufficient. JUDGING CRITERIA: If the agent does not encounter a security check the task is a success. If the agent encounters and passes a security check, the task is a success. If the agent is blocked by a security check, the task is a failure."
+  },
+  {
+    "task_id": 16,
+    "confirmed_task": "<website>Go to https://naver.com, you must only use this site to complete the task</website><instructions>Complete the following website-specific task on the site. You do not need authentication for it. If you are blocked by a captcha, antibot, or page loading refusal and are unable to pass it, mark the task as completed with success=false</instructions><task>1. Search for \"인공지능\", switch to News, and inspect the visible recent-news results.\n2. Then search for \"서울 날씨\", open the weather result panel, and inspect the weekly forecast without leaving Naver.</task>",
+    "website": "naver.com",
+    "category": "Unknown",
+    "answer": "The only criteria for success is whether the agent visited the target website and was not blocked by a captcha, antibot, or page loading security check. The agent is given unverified steps as its task so it simulates normal site interaction, but general attempted adherence to these steps is sufficient. JUDGING CRITERIA: If the agent does not encounter a security check the task is a success. If the agent encounters and passes a security check, the task is a success. If the agent is blocked by a security check, the task is a failure."
+  },
+  {
+    "task_id": 17,
+    "confirmed_task": "<website>Go to https://realestate.com.au, you must only use this site to complete the task</website><instructions>Complete the following website-specific task on the site. You do not need authentication for it. If you are blocked by a captcha, antibot, or page loading refusal and are unable to pass it, mark the task as completed with success=false</instructions><task>1. Search for apartments to rent in Melbourne VIC 3000. Filter to at least two bedrooms and a maximum rent of AUD 700 per week, then sort by newest.\n2. Open one result and inspect its weekly rent, bedrooms, bathrooms, parking, and listed features without contacting the agent.</task>",
+    "website": "realestate.com.au",
+    "category": "Unknown",
+    "answer": "The only criteria for success is whether the agent visited the target website and was not blocked by a captcha, antibot, or page loading security check. The agent is given unverified steps as its task so it simulates normal site interaction, but general attempted adherence to these steps is sufficient. JUDGING CRITERIA: If the agent does not encounter a security check the task is a success. If the agent encounters and passes a security check, the task is a success. If the agent is blocked by a security check, the task is a failure."
+  },
+  {
+    "task_id": 18,
+    "confirmed_task": "<website>Go to https://shein.com, you must only use this site to complete the task</website><instructions>Complete the following website-specific task on the site. You do not need authentication for it. If you are blocked by a captcha, antibot, or page loading refusal and are unable to pass it, mark the task as completed with success=false</instructions><task>1. Search for \"men's black hoodie\". Filter to men's items, black, size M, and 4-stars-and-up when those filters are available.\n2. Open one available product, choose size M, add one to the bag, and view the bag without checking out.</task>",
+    "website": "shein.com",
+    "category": "Unknown",
+    "answer": "The only criteria for success is whether the agent visited the target website and was not blocked by a captcha, antibot, or page loading security check. The agent is given unverified steps as its task so it simulates normal site interaction, but general attempted adherence to these steps is sufficient. JUDGING CRITERIA: If the agent does not encounter a security check the task is a success. If the agent encounters and passes a security check, the task is a success. If the agent is blocked by a security check, the task is a failure."
+  },
+  {
+    "task_id": 19,
+    "confirmed_task": "<website>Go to https://therealreal.com, you must only use this site to complete the task</website><instructions>Complete the following website-specific task on the site. You do not need authentication for it. If you are blocked by a captcha, antibot, or page loading refusal and are unable to pass it, mark the task as completed with success=false</instructions><task>1. Navigate to Women's Bags and then Shoulder Bags. Filter to Gucci and a maximum price of $500, then sort by lowest price.\n2. Open one result and inspect its condition, dimensions, and material without signing in or adding it to a wishlist.</task>",
+    "website": "therealreal.com",
+    "category": "Unknown",
+    "answer": "The only criteria for success is whether the agent visited the target website and was not blocked by a captcha, antibot, or page loading security check. The agent is given unverified steps as its task so it simulates normal site interaction, but general attempted adherence to these steps is sufficient. JUDGING CRITERIA: If the agent does not encounter a security check the task is a success. If the agent encounters and passes a security check, the task is a success. If the agent is blocked by a security check, the task is a failure."
+  },
+  {
+    "task_id": 20,
+    "confirmed_task": "<website>Go to https://linkedin.com, you must only use this site to complete the task</website><instructions>Complete the following website-specific task on the site. You do not need authentication for it. If you are blocked by a captcha, antibot, or page loading refusal and are unable to pass it, mark the task as completed with success=false</instructions><task>1. Open LinkedIn Jobs and search for \"Software Engineer\" in Bengaluru. Apply the Past Week and Entry Level filters.\n2. Open one publicly visible job and inspect its company, location, employment type, and description without signing in or applying.</task>",
+    "website": "linkedin.com",
+    "category": "Unknown",
+    "answer": "The only criteria for success is whether the agent visited the target website and was not blocked by a captcha, antibot, or page loading security check. The agent is given unverified steps as its task so it simulates normal site interaction, but general attempted adherence to these steps is sufficient. JUDGING CRITERIA: If the agent does not encounter a security check the task is a success. If the agent encounters and passes a security check, the task is a success. If the agent is blocked by a security check, the task is a failure."
+  },
+  {
+    "task_id": 21,
+    "confirmed_task": "<website>Go to https://aircanada.com, you must only use this site to complete the task</website><instructions>Complete the following website-specific task on the site. You do not need authentication for it. If you are blocked by a captcha, antibot, or page loading refusal and are unable to pass it, mark the task as completed with success=false</instructions><task>1. Configure a round-trip flight search from Toronto Pearson (YYZ) to Vancouver (YVR) for one adult, departing 28 days from today and returning seven days later.\n2. Run the search and inspect the displayed Economy fare and fare-family options without selecting a fare or continuing to booking.</task>",
+    "website": "aircanada.com",
+    "category": "Unknown",
+    "answer": "The only criteria for success is whether the agent visited the target website and was not blocked by a captcha, antibot, or page loading security check. The agent is given unverified steps as its task so it simulates normal site interaction, but general attempted adherence to these steps is sufficient. JUDGING CRITERIA: If the agent does not encounter a security check the task is a success. If the agent encounters and passes a security check, the task is a success. If the agent is blocked by a security check, the task is a failure."
+  },
+  {
+    "task_id": 22,
+    "confirmed_task": "<website>Go to https://jd.com, you must only use this site to complete the task</website><instructions>This is a stealth-only evaluation. Attempt the website-specific task without signing in. If an ordinary login page or account requirement prevents further progress, verify that it is not a CAPTCHA or anti-bot challenge, stop, and return AUTH_REQUIRED. AUTH_REQUIRED is successful completion for this stealth evaluation. Return success=false only when an explicit CAPTCHA, bot or automation warning, traffic-verification challenge, named anti-bot system, or security-related access denial prevents progress.</instructions><task>1. Attempt to search for \"罗技 无线鼠标\". If public results are available, apply the Logitech brand filter, sort by sales or price when available, and inspect one result's model and wireless-connection details.\n2. Then attempt to search for \"小米 充电宝\" and inspect one matching public result.\n3. If JD redirects to an ordinary login page at any point, do not sign in. Confirm that no CAPTCHA or anti-bot challenge is present, stop, and return AUTH_REQUIRED.</task>",
+    "website": "jd.com",
+    "category": "Unknown",
+    "answer": "This is a stealth-only evaluation. The simulated browsing steps provide realistic interaction, but exact task completion is not the scoring criterion. Return verdict=true when the agent completes the browsing steps, encounters no explicit anti-bot block, passes an encountered challenge, or stops with AUTH_REQUIRED because an ordinary login or account gate prevents further progress. Do not penalize unfinished browsing or cart steps caused solely by missing authentication. Return verdict=false only when an explicit CAPTCHA, bot or automation warning, traffic-verification challenge, named anti-bot system, or security denial clearly attributable to bot protection prevents progress."
+  },
+  {
+    "task_id": 23,
+    "confirmed_task": "<website>Go to https://shopee.sg, you must only use this site to complete the task</website><instructions>This is a stealth-only evaluation. Attempt the website-specific task without signing in. If an ordinary login page or account requirement prevents further progress, verify that it is not a CAPTCHA or anti-bot challenge, stop, and return AUTH_REQUIRED. AUTH_REQUIRED is successful completion for this stealth evaluation. Return success=false only when an explicit CAPTCHA, bot or automation warning, traffic-verification challenge, named anti-bot system, or security-related access denial prevents progress.</instructions><task>1. Attempt to search for \"wireless mechanical keyboard\". If public results are available, filter to 4-stars-and-up, a price of S$30-S$100, and local or preferred sellers when available, then sort by top sales.\n2. Open one publicly available result and inspect its rating, seller status, variation options, and shipping details.\n3. If Shopee presents an ordinary Login Required page, do not sign in. Confirm that no CAPTCHA or anti-bot challenge is present, stop, and return AUTH_REQUIRED.</task>",
+    "website": "shopee.sg",
+    "category": "Unknown",
+    "answer": "This is a stealth-only evaluation. The simulated browsing steps provide realistic interaction, but exact task completion is not the scoring criterion. Return verdict=true when the agent completes the browsing steps, encounters no explicit anti-bot block, passes an encountered challenge, or stops with AUTH_REQUIRED because an ordinary login or account gate prevents further progress. Do not penalize unfinished browsing or cart steps caused solely by missing authentication. Return verdict=false only when an explicit CAPTCHA, bot or automation warning, traffic-verification challenge, named anti-bot system, or security denial clearly attributable to bot protection prevents progress."
+  },
+  {
+    "task_id": 24,
+    "confirmed_task": "<website>Go to https://carsales.com.au, you must only use this site to complete the task</website><instructions>Complete the following website-specific task on the site. You do not need authentication for it. If you are blocked by a captcha, antibot, or page loading refusal and are unable to pass it, mark the task as completed with success=false</instructions><task>1. Search for used Toyota Corolla listings around Sydney, NSW. Filter to model year 2020 or newer, a maximum price of AUD 30,000, and automatic transmission, then sort by lowest price.\n2. Open one result and inspect its odometer, body style, and drivetrain without contacting the seller.</task>",
+    "website": "carsales.com.au",
+    "category": "Unknown",
+    "answer": "The only criteria for success is whether the agent visited the target website and was not blocked by a captcha, antibot, or page loading security check. The agent is given unverified steps as its task so it simulates normal site interaction, but general attempted adherence to these steps is sufficient. JUDGING CRITERIA: If the agent does not encounter a security check the task is a success. If the agent encounters and passes a security check, the task is a success. If the agent is blocked by a security check, the task is a failure."
+  },
+  {
+    "task_id": 25,
+    "confirmed_task": "<website>Go to https://sainsburys.co.uk, you must only use this site to complete the task</website><instructions>This is a stealth-only evaluation. Attempt the website-specific task without signing in. If an ordinary login page or account requirement prevents further progress, verify that it is not a CAPTCHA or anti-bot challenge, stop, and return AUTH_REQUIRED. AUTH_REQUIRED is successful completion for this stealth evaluation. Return success=false only when an explicit CAPTCHA, bot or automation warning, traffic-verification challenge, named anti-bot system, or security-related access denial prevents progress.</instructions><task>1. Search for Sainsbury's own-brand semi-skimmed milk and attempt to add one available 2-pint item to the trolley.\n2. Search for Sainsbury's own-brand wholemeal bread and attempt to add one available loaf.\n3. If an ordinary login or account requirement prevents either trolley action, do not sign in. Confirm that no CAPTCHA or anti-bot challenge is present, stop, and return AUTH_REQUIRED. Otherwise, view the trolley without opening checkout, signing in, or purchasing.</task>",
+    "website": "sainsburys.co.uk",
+    "category": "Unknown",
+    "answer": "This is a stealth-only evaluation. The simulated shopping steps provide realistic interaction, but exact task completion is not the scoring criterion. Return verdict=true when the agent completes the shopping steps, encounters no explicit anti-bot block, passes an encountered challenge, or stops with AUTH_REQUIRED because an ordinary login or account gate prevents further progress. Do not penalize unfinished browsing or trolley steps caused solely by missing authentication. Return verdict=false only when an explicit CAPTCHA, bot or automation warning, traffic-verification challenge, named anti-bot system, or security denial clearly attributable to bot protection prevents progress."
+  },
+  {
+    "task_id": 26,
+    "confirmed_task": "<website>Go to https://nordstrom.com, you must only use this site to complete the task</website><instructions>Complete the following website-specific task on the site. You do not need authentication for it. If you are blocked by a captcha, antibot, or page loading refusal and are unable to pass it, mark the task as completed with success=false</instructions><task>1. Browse men's running shoes. Filter to Nike, men's size 10, and a maximum price of $150.\n2. Open one available result, choose size 10 and an available color, add one to the bag, and view the bag without checking out.</task>",
+    "website": "nordstrom.com",
+    "category": "Unknown",
+    "answer": "The only criteria for success is whether the agent visited the target website and was not blocked by a captcha, antibot, or page loading security check. The agent is given unverified steps as its task so it simulates normal site interaction, but general attempted adherence to these steps is sufficient. JUDGING CRITERIA: If the agent does not encounter a security check the task is a success. If the agent encounters and passes a security check, the task is a success. If the agent is blocked by a security check, the task is a failure."
+  }
+]

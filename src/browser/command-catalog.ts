@@ -31,6 +31,27 @@ function flag(name: string, description: string): HostedArgumentContract {
   return { name, type: 'boolean', description, positional: false, required: false, variadic: false };
 }
 
+/**
+ * `-v` for a browser leaf that performs bridge/CDP I/O, whose diagnostics are
+ * already gated on `isVerbose()` (`src/browser/cdp.ts`).
+ *
+ * Declared here as well as in `cli.ts` because hosted help is rendered from this
+ * catalog while local help comes from Commander, and the two are asserted to be
+ * byte-identical. The explicit `false` default reproduces local's
+ * "(default: false)" suffix.
+ */
+function verboseFlag(): HostedArgumentContract {
+  return {
+    name: 'verbose',
+    type: 'boolean',
+    description: 'Debug output',
+    positional: false,
+    required: false,
+    variadic: false,
+    default: false,
+  };
+}
+
 function command(
   commandPath: string,
   description: string,
@@ -78,6 +99,7 @@ const adapterNamePositional: HostedArgumentContract = {
 /** Exact local Commander flags for every catalogued browser option. */
 export function browserOptionFlags(option: HostedArgumentContract, commandPath?: string): string {
   const longName = option.name.replace(/[A-Z]/g, character => `-${character.toLowerCase()}`);
+  if (option.name === 'verbose') return '-v, --verbose';
   if (option.type === 'boolean') return `--${longName}`;
   const valueName = option.name === 'page' ? 'id'
     : option.name === 'file' ? 'path'
@@ -119,19 +141,14 @@ export function browserOptionValueParser(
 }
 
 export const browserCommandCatalog: readonly HostedBrowserCommandContract[] = [
-  command('tabs', 'List pages in the existing browser session', 'tabs', [], [], 'require-existing'),
+  command('tabs', 'List pages in the existing browser session', 'tabs', [], [
+    verboseFlag(),
+  ], 'require-existing'),
   command('init', 'Generate an adapter scaffold', 'init', [adapterNamePositional], [], 'create-or-reuse'),
   command('bind', 'Bind this session to an existing page', 'bind', [], [
     option('page', 'Stable page id returned by tabs', { required: true }),
+    verboseFlag(),
   ], 'require-existing'),
-  command('fork', 'Fork an installed plugin command into a private copy', 'fork', [{
-    name: 'name',
-    type: 'string',
-    description: 'Command to fork in site/command format',
-    positional: true,
-    required: true,
-    variadic: false,
-  }], [], 'require-existing'),
   command('verify', 'Verify an adapter against its fixture', 'verify', [adapterNamePositional], [
     flag('noFixture', 'Run without comparing a fixture'),
     flag('writeFixture', 'Write the observed result as the fixture'),
@@ -148,11 +165,15 @@ export const browserCommandCatalog: readonly HostedBrowserCommandContract[] = [
     option('maxOutput', 'Maximum returned characters'),
     option('snapshotMode', 'Snapshot mode for automatic diff: act or tree', { default: 'act' }),
     flag('noSnapshotDiff', 'Skip the automatic before/after snapshot diff'),
+    verboseFlag(),
   ], 'create-or-reuse'),
   command('snapshot', 'Inspect the current page with a compact accessibility snapshot', 'snapshot', [], [
     option('snapshotMode', 'Snapshot mode: act, tree, or read', { default: 'act' }),
     option('ref', 'Render only the subtree rooted at this snapshot ref'),
     option('maxOutput', 'Maximum returned characters'),
+    verboseFlag(),
   ], 'require-existing'),
-  command('close', 'Close or detach this browser session', 'close-window', [], [], 'close-existing'),
+  command('close', 'Close or detach this browser session', 'close-window', [], [
+    verboseFlag(),
+  ], 'close-existing'),
 ] as const;

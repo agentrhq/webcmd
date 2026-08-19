@@ -92,7 +92,7 @@ export function formatAdapterShadowIssue(shadows: AdapterShadow[]): string {
     lines.push(`  ... and ${shadows.length - visible.length} more`);
   }
   lines.push(
-    'Run webcmd adapter override <site> <command> to track a fork, or webcmd adapter reset <site> to drop an untracked one.',
+    'Run webcmd adapter override <site>/<command> to track a fork, or webcmd adapter reset <site> to drop an untracked one.',
   );
   return lines.join('\n');
 }

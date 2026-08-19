@@ -2,7 +2,7 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Command } from 'commander';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BrowserCliCommand } from '../registry.js';
 
 const executeCommandMock = vi.hoisted(() => vi.fn());
@@ -305,5 +305,35 @@ describe('auth command format validation', () => {
 
     expect(process.exitCode).toBe(2);
     expect(executeCommandMock).not.toHaveBeenCalled();
+  });
+});
+
+// Both probes drive the browser/daemon stack, whose CDP diagnostics are already
+// gated on isVerbose() — so -v has something observable behind it here (#174).
+describe('auth verbose flag', () => {
+  afterEach(() => {
+    delete process.env.WEBCMD_VERBOSE;
+  });
+
+  it.each(['status', 'refresh'] as const)('turns on verbose mode for auth %s', async (subcommand) => {
+    delete process.env.WEBCMD_VERBOSE;
+    registerWhoami('alpha', { quick: true, quickLoggedIn: true });
+    const program = new Command('webcmd');
+    registerAuthCommands(program);
+
+    await program.parseAsync(['node', 'webcmd', 'auth', subcommand, '--site', 'alpha', '-v']);
+
+    expect(process.env.WEBCMD_VERBOSE).toBe('1');
+  });
+
+  it.each(['status', 'refresh'] as const)('leaves verbose mode off for auth %s without the flag', async (subcommand) => {
+    delete process.env.WEBCMD_VERBOSE;
+    registerWhoami('alpha', { quick: true, quickLoggedIn: true });
+    const program = new Command('webcmd');
+    registerAuthCommands(program);
+
+    await program.parseAsync(['node', 'webcmd', 'auth', subcommand, '--site', 'alpha']);
+
+    expect(process.env.WEBCMD_VERBOSE).toBeUndefined();
   });
 });

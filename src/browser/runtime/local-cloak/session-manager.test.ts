@@ -438,6 +438,28 @@ describe('CloakSessionManager', () => {
     expect(await manager.findPageById(second.pageId, a)).toBeNull();
   });
 
+  it('closes a Session when its page disappears during the ownership check', async () => {
+    const launched = fakeContext();
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
+    });
+    const key = { profileId: 'default', session: 'session_a', sessionId: 'session_a', surface: 'browser' as const };
+    const lease = await manager.getPage(key);
+    const send = launched.cdp.send.getMockImplementation()!;
+
+    launched.cdp.send.mockImplementation(async (method: string, params?: { targetId?: string }) => {
+      if (method === 'Browser.getWindowForTarget' && params?.targetId === launched.targetIdFor(lease.page)) {
+        await lease.page.close();
+        throw new Error('Protocol error (Browser.getWindowForTarget): No target with given id');
+      }
+      return send(method, params);
+    });
+
+    await expect(manager.closeSession(key.profileId, key.sessionId)).resolves.toBe(1);
+    expect(await manager.listPages(key)).toEqual([]);
+  });
+
   it('does not let another Session bind an owned page moved to an unowned window', async () => {
     const launched = fakeContext();
     const manager = new CloakSessionManager({
@@ -1529,5 +1551,84 @@ describe('CloakSessionManager', () => {
     expect(leases[0].context).toBe(replacement.context);
     expect(leases[1].context).toBe(replacement.context);
     expect(launchPersistentContext).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('waitUntil plumbing', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  function managerWithPage() {
+    const launched = fakeContext();
+    launched.context.newPage.mockResolvedValue(launched.page);
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      launchPersistentContext: vi.fn().mockResolvedValue(launched.context),
+    });
+    return { manager, page: launched.page };
+  }
+
+  // 'none' has to reach Playwright as 'commit'. Waiting for 'load' on a site that
+  // never goes idle is the hang #106 was filed about.
+  it('maps waitUntil none to commit when opening a tab with a url', async () => {
+    const { manager, page } = managerWithPage();
+
+    await dispatchCloakAction(manager, {
+      id: 'cmd-tab-none',
+      action: 'tabs',
+      op: 'new',
+      session: 'work',
+      surface: 'browser',
+      url: 'https://example.com/',
+      waitUntil: 'none',
+    });
+
+    expect(page.goto).toHaveBeenCalledWith('https://example.com/', { waitUntil: 'commit' });
+  });
+
+  it('defaults a tab opened without waitUntil to load', async () => {
+    const { manager, page } = managerWithPage();
+
+    await dispatchCloakAction(manager, {
+      id: 'cmd-tab-default',
+      action: 'tabs',
+      op: 'new',
+      session: 'work',
+      surface: 'browser',
+      url: 'https://example.com/',
+    });
+
+    expect(page.goto).toHaveBeenCalledWith('https://example.com/', { waitUntil: 'load' });
+  });
+
+  it('still maps waitUntil none to commit on navigate', async () => {
+    const { manager, page } = managerWithPage();
+
+    await dispatchCloakAction(manager, {
+      id: 'cmd-navigate-none',
+      action: 'navigate',
+      session: 'work',
+      surface: 'browser',
+      url: 'https://example.com/',
+      waitUntil: 'none',
+    });
+
+    expect(page.goto).toHaveBeenCalledWith('https://example.com/', { waitUntil: 'commit' });
+  });
+
+  it('defaults navigate without waitUntil to load', async () => {
+    const { manager, page } = managerWithPage();
+
+    await dispatchCloakAction(manager, {
+      id: 'cmd-navigate-default',
+      action: 'navigate',
+      session: 'work',
+      surface: 'browser',
+      url: 'https://example.com/',
+    });
+
+    expect(page.goto).toHaveBeenCalledWith('https://example.com/', { waitUntil: 'load' });
   });
 });

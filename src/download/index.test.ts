@@ -133,6 +133,48 @@ describe('download helpers', { retry: process.platform === 'win32' ? 2 : 0 }, ()
     expect(fs.readFileSync(destPath, 'utf8')).toBe('ok');
   });
 
+  it('gives each concurrent download of the same destination its own temp file', async () => {
+    const slowBody = 'slow-body';
+    const fastBody = 'fast-body';
+    let releaseSlowTail = () => {};
+    const slowTailReleased = new Promise<void>((resolve) => { releaseSlowTail = resolve; });
+
+    const baseUrl = await startServer(async (req, res) => {
+      const body = req.url === '/slow' ? slowBody : fastBody;
+      res.writeHead(200, { 'content-length': String(body.length) });
+      if (req.url !== '/slow') {
+        res.end(body);
+        return;
+      }
+      // Hold the slow response open so both downloads are writing at once.
+      res.write(body.slice(0, 1));
+      await slowTailReleased;
+      res.end(body.slice(1));
+    });
+
+    const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'webcmd-dl-'));
+    tempDirs.push(tempDir);
+    const destPath = path.join(tempDir, 'same-name.bin');
+    const tempFiles = () => fs.readdirSync(tempDir).filter((name) => name.endsWith('.tmp'));
+
+    const slow = httpDownload(`${baseUrl}/slow`, destPath);
+    while (tempFiles().length === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+
+    // Second attempt at the same destination, while the first still holds a
+    // temp file open. A shared `${destPath}.tmp` would let it truncate and
+    // rename the first attempt's file out from under it.
+    const fast = await httpDownload(`${baseUrl}/fast`, destPath);
+    releaseSlowTail();
+
+    expect(fast).toEqual({ success: true, size: fastBody.length });
+    expect(await slow).toEqual({ success: true, size: slowBody.length });
+    // The later rename wins; the file is one whole body, never a blend.
+    expect(fs.readFileSync(destPath, 'utf8')).toBe(slowBody);
+    expect(tempFiles()).toEqual([]);
+  });
+
   it.skipIf(process.platform === 'win32')('writes the Netscape cookie file with 0o600 owner-only permissions', async () => {
     const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'webcmd-dl-'));
     tempDirs.push(tempDir);
