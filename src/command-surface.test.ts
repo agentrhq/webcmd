@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { Command } from 'commander';
+import { Command, CommanderError } from 'commander';
 import {
   CommanderStructuralError,
   coerceCommandArguments,
   configureCommandSurface,
   parseCommandSurface,
   parseOutputFormat,
+  structuralErrorFromCommander,
   type CommandSurfaceMetadata,
   type OutputFormat,
   type TraceMode,
@@ -199,6 +200,23 @@ describe('configureCommandSurface', () => {
       '--verbose',
     ]));
     expect(command.registeredArguments.map((argument) => argument.name())).toEqual(['query', 'scope']);
+  });
+});
+
+describe('unknown option contract', () => {
+  it('enumerates the command flags and exits 2', () => {
+    try {
+      parseCommandSurface(metadata, ['needle', '--unknown']);
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(CommanderStructuralError);
+      const error = err as CommanderStructuralError;
+      expect(error.exitCode).toBe(2);
+      expect(error.output).toContain("error: unknown option '--unknown'");
+      expect(error.output).toContain('help: valid flags for `webcmd demo search`:');
+      expect(error.output).toContain('--format');
+      expect(error.output).toContain('--trace');
+    }
   });
 });
 
@@ -411,8 +429,12 @@ function captureReferenceSurface(argv: string[]): ExactSurfaceOutcome {
     root.parse([precedenceSurface.site, precedenceSurface.name, ...argv], { from: 'user' });
     return outcome ?? { kind: 'success', args: {}, format: 'table', trace: 'off' };
   } catch (error) {
+    if (error instanceof CommanderError && error.code === 'commander.helpDisplayed') return { kind: 'help' };
+    if (error instanceof CommanderError) {
+      const structural = structuralErrorFromCommander(error, command, stderr);
+      return { kind: 'structural', stderr: structural.output, exitCode: structural.exitCode };
+    }
     const commander = error as { code?: string; exitCode?: number };
-    if (commander.code === 'commander.helpDisplayed') return { kind: 'help' };
     return { kind: 'structural', stderr, exitCode: commander.exitCode ?? 1 };
   }
 }

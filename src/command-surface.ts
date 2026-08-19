@@ -1,4 +1,4 @@
-import { Command } from 'commander';
+import { Command, CommanderError } from 'commander';
 import { ArgumentError, CliError, EXIT_CODES } from './errors.js';
 import type { Arg, CliCommand, CommandArgs } from './registry.js';
 
@@ -55,6 +55,70 @@ export class CommanderStructuralError extends Error {
     super(output.trimEnd());
     this.name = 'CommanderStructuralError';
   }
+}
+
+export function visibleCommandFlags(command: Command): string[] {
+  const flags: string[] = [];
+  const seen = new Set<string>();
+  for (const option of command.options) {
+    for (const flag of [option.short, option.long]) {
+      if (!flag || seen.has(flag)) continue;
+      seen.add(flag);
+      flags.push(flag);
+    }
+  }
+  return flags;
+}
+
+export function commandInvocationPath(command: Command): string {
+  const names: string[] = [];
+  for (let current: Command | null = command; current; current = current.parent) {
+    const name = current.name();
+    if (name) names.unshift(name);
+  }
+  return names.join(' ');
+}
+
+export function formatUnknownOptionError(err: CommanderError, command: Command): string {
+  const flags = visibleCommandFlags(command);
+  const path = commandInvocationPath(command);
+  const help = flags.length > 0 ? `help: valid flags for \`${path}\`: ${flags.join(', ')}\n` : '';
+  const message = err.message.replace(/^error:\s*/i, '');
+  return `error: ${message}\n${help}`;
+}
+
+export function structuralErrorFromCommander(
+  error: CommanderError,
+  command: Command,
+  capturedStderr = '',
+): CommanderStructuralError {
+  if (error.code === 'commander.unknownOption') {
+    return new CommanderStructuralError(formatUnknownOptionError(error, command), EXIT_CODES.USAGE_ERROR);
+  }
+  return new CommanderStructuralError(capturedStderr || `${error.message}\n`, error.exitCode);
+}
+
+/** Walk argv to the leaf command Commander would have been parsing. */
+export function applyUnknownOptionContract(command: Command): void {
+  command.exitOverride((err) => {
+    if (err.code === 'commander.unknownOption') {
+      throw structuralErrorFromCommander(err, command);
+    }
+    throw err;
+  });
+  for (const child of command.commands) applyUnknownOptionContract(child);
+}
+
+export function resolveCommandFromArgv(root: Command, argv: readonly string[]): Command {
+  let current = root;
+  for (const token of argv) {
+    if (token === '--') break;
+    if (token.startsWith('-')) continue;
+    const child = current.commands.find(candidate => candidate.name() === token || candidate.aliases().includes(token));
+    if (!child) break;
+    current = child;
+  }
+  return current;
 }
 
 /** Register the adapter argument grammar and its shared execution options. */
@@ -146,6 +210,9 @@ export function parseCommandSurface(
         verbose: false,
         help: true,
       };
+    }
+    if (error instanceof CommanderError) {
+      throw structuralErrorFromCommander(error, command, stderr);
     }
     const output = stderr || `${typeof commander.message === 'string' ? commander.message : String(error)}\n`;
     throw new CommanderStructuralError(

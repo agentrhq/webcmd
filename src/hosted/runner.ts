@@ -13,7 +13,7 @@ import {
   configurePluginUpdateSurface,
 } from '../builtin-command-surface.js';
 import { BrowserSessionArgvError, rejectMisplacedSessionSelectorArgv, rejectPositionalBrowserSessionArgv } from '../cli-argv-preprocess.js';
-import { CommanderStructuralError, MissingRequiredPositionalError, OUTPUT_FORMAT_HELP, parseOutputFormat } from '../command-surface.js';
+import { CommanderStructuralError, MissingRequiredPositionalError, OUTPUT_FORMAT_HELP, parseOutputFormat, resolveCommandFromArgv, structuralErrorFromCommander } from '../command-surface.js';
 import { filterCommandsByTag, formatRootHelp, getCommandCompletionCandidates } from '../command-presentation.js';
 import {
   HOSTED_BUILTIN_COMMANDS,
@@ -508,7 +508,7 @@ async function runHostedSiteSurface(argv: readonly string[], literal: boolean, c
       await writeToStream(stdout, help);
       return;
     }
-    if (error instanceof CommanderError) throw new CommanderStructuralError(stderr || `${error.message}\n`, error.exitCode);
+    if (error instanceof CommanderError) throw structuralErrorFromCommander(error, resolveCommandFromArgv(root, ['site', ...argv]), stderr);
     throw error;
   }
 }
@@ -561,7 +561,7 @@ async function runHostedAdapterSourceSurface(argv: readonly string[], literal: b
       await writeToStream(stdout, help);
       return;
     }
-    if (error instanceof CommanderError) throw new CommanderStructuralError(stderr || `${error.message}\n`, error.exitCode);
+    if (error instanceof CommanderError) throw structuralErrorFromCommander(error, resolveCommandFromArgv(root, ['adapter', ...argv]), stderr);
     throw error;
   }
   if (!parsed) throw new CommanderStructuralError("error: command 'adapter' did not run\n", EXIT_CODES.USAGE_ERROR);
@@ -660,7 +660,7 @@ function parseHostedSessionSurface(argv: readonly string[], literal: boolean): P
   } catch (error) {
     if (!(error instanceof CommanderError)) throw error;
     if (error.code === 'commander.helpDisplayed') return { kind: 'help', output: stdout };
-    throw new CommanderStructuralError(stderr || `${error.message}\n`, error.exitCode);
+    throw structuralErrorFromCommander(error, resolveCommandFromArgv(root, ['session', ...argv]), stderr);
   }
   if (!parsed) throw new CommanderStructuralError("error: command 'session' did not run\n", 1);
   return parsed;
@@ -1137,7 +1137,7 @@ function parseHostedListSurface(argv: readonly string[], literal: boolean): Pars
   } catch (error) {
     if (!(error instanceof CommanderError)) throw error;
     if (error.code === 'commander.helpDisplayed') return { kind: 'help', output: stdout };
-    throw new CommanderStructuralError(stderr || `${error.message}\n`, error.exitCode);
+    throw structuralErrorFromCommander(error, resolveCommandFromArgv(root, ['list', ...argv]), stderr);
   }
   if (!actionRan) throw new CommanderStructuralError("error: command 'list' did not run\n", 1);
   return { kind: 'run', format: parsedFormat, formatExplicit, ...(parsedTag !== undefined ? { tag: parsedTag } : {}) };
@@ -1198,7 +1198,7 @@ function parseHostedProfileSurface(
   } catch (error) {
     if (!(error instanceof CommanderError)) throw error;
     if (error.code === 'commander.helpDisplayed') return { kind: 'help', output: stdout };
-    throw new CommanderStructuralError(stderr || `${error.message}\n`, error.exitCode);
+    throw structuralErrorFromCommander(error, resolveCommandFromArgv(root, ['profile', ...argv]), stderr);
   }
   if (!parsed) {
     throw new CommanderStructuralError("error: command 'profile' did not run\n", 1);
@@ -1295,7 +1295,7 @@ function parseHostedPluginSurface(
   } catch (error) {
     if (!(error instanceof CommanderError)) throw error;
     if (error.code === 'commander.helpDisplayed') return { kind: 'help', output: stdout };
-    throw new CommanderStructuralError(stderr || `${error.message}\n`, error.exitCode);
+    throw structuralErrorFromCommander(error, resolveCommandFromArgv(root, ['plugin', ...argv]), stderr);
   }
   if (!parsed) throw new CommanderStructuralError("error: command 'plugin' did not run\n", 1);
   return parsed;
@@ -1328,7 +1328,7 @@ function parseHostedCompletionSurface(
   } catch (error) {
     if (!(error instanceof CommanderError)) throw error;
     if (error.code === 'commander.helpDisplayed') return { kind: 'help', output: stdout };
-    throw new CommanderStructuralError(stderr || `${error.message}\n`, error.exitCode);
+    throw structuralErrorFromCommander(error, resolveCommandFromArgv(root, ['completion', ...argv]), stderr);
   }
   if (shell === undefined) {
     throw new CommanderStructuralError("error: missing required argument 'shell'\n", 1);

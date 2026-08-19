@@ -2,6 +2,7 @@ import { Writable } from 'node:stream';
 import { Command, CommanderError } from 'commander';
 import { describe, expect, it, vi } from 'vitest';
 import { createProgram } from '../cli.js';
+import { applyUnknownOptionContract, CommanderStructuralError } from '../command-surface.js';
 import { formatRootHelp } from '../command-presentation.js';
 import { HOSTED_ROOT_HELP } from '../completion-shared.js';
 import { CliError } from '../errors.js';
@@ -107,10 +108,14 @@ async function runActualLocalRoot(argv: string[]): Promise<LocalRootResult> {
     for (const child of command.commands) configureTree(child);
   };
   configureTree(program);
+  applyUnknownOptionContract(program);
   try {
     await program.parseAsync(argv, { from: 'user' });
     return { exitCode: Number(process.exitCode ?? 0), stdout, stderr };
   } catch (error) {
+    if (error instanceof CommanderStructuralError) {
+      return { exitCode: error.exitCode, stdout, stderr: error.output, errorCode: 'commander.unknownOption' };
+    }
     if (error instanceof CommanderError) {
       return { exitCode: error.exitCode, stdout, stderr, errorCode: error.code };
     }
@@ -251,10 +256,29 @@ describe('hosted root command surface', () => {
     { name: 'trailing missing profile beats malformed prefix', argv: ['--unknown', 'github', '--profile'], stderr: "error: option '--profile <name>' argument missing\n", code: 'commander.optionMissingArgument' },
   ])('matches actual local Commander root error bytes: $name', async ({ argv, stderr, code }) => {
     const local = await runActualLocalRoot(argv);
-    expect(local).toMatchObject({ exitCode: 1, stderr, errorCode: code });
-    expect(() => parseHostedRootCommandSurface(argv)).toThrowError(
-      expect.objectContaining({ output: stderr, exitCode: 1 }),
-    );
+    const unknown = code === 'commander.unknownOption';
+    expect(local.exitCode).toBe(unknown ? 2 : 1);
+    expect(local.errorCode).toBe(code);
+    if (unknown) {
+      expect(local.stderr.startsWith(stderr)).toBe(true);
+      expect(local.stderr).toContain('help: valid flags for');
+    } else {
+      expect(local.stderr).toBe(stderr);
+    }
+    try {
+      parseHostedRootCommandSurface(argv);
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(CommanderStructuralError);
+      const structural = err as CommanderStructuralError;
+      expect(structural.exitCode).toBe(local.exitCode);
+      if (unknown) {
+        expect(structural.output.startsWith(stderr)).toBe(true);
+        expect(structural.output).toContain('help: valid flags for');
+      } else {
+        expect(structural.output).toBe(stderr);
+      }
+    }
   });
 
   it.each([
@@ -361,8 +385,8 @@ describe('hosted root preflight call order', () => {
     { name: 'missing profile', argv: ['--profile'], exitCode: 1, stdout: '', stderr: "error: option '--profile <name>' argument missing\n" },
     { name: 'trailing missing profile beats help', argv: ['--help', 'github', '--profile'], exitCode: 1, stdout: '', stderr: "error: option '--profile <name>' argument missing\n" },
     { name: 'trailing missing profile beats unknown', argv: ['--unknown', 'github', '--profile'], exitCode: 1, stdout: '', stderr: "error: option '--profile <name>' argument missing\n" },
-    { name: 'unknown option', argv: ['-xV'], exitCode: 1, stdout: '', stderr: "error: unknown option '-xV'\n" },
-  ])('$name terminates before Cloud discovery', async ({ argv, exitCode, stdout: expectedStdout, stderr: expectedStderr }) => {
+    { name: 'unknown option', argv: ['-xV'], exitCode: 2, stdout: '', stderr: "error: unknown option '-xV'\n" },
+  ])('$name terminates before Cloud discovery', async ({ name, argv, exitCode, stdout: expectedStdout, stderr: expectedStderr }) => {
     const stdout = sink();
     const stderr = sink();
     const fetchImpl = vi.fn<typeof fetch>();
@@ -376,7 +400,12 @@ describe('hosted root preflight call order', () => {
 
     expect(result).toEqual({ handled: true, exitCode });
     expect(stdout.text()).toBe(expectedStdout);
-    expect(stderr.text()).toBe(expectedStderr);
+    if (name === 'unknown option') {
+      expect(stderr.text().startsWith(expectedStderr)).toBe(true);
+      expect(stderr.text()).toContain('help: valid flags for');
+    } else {
+      expect(stderr.text()).toBe(expectedStderr);
+    }
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 

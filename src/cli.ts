@@ -18,7 +18,7 @@ import { type CliCommand, getRegistry } from './registry.js';
 import './fetch/command.js';
 import { commandListPresentation, filterCommandsByTag, toPresentableCommand } from './command-presentation.js';
 import { configureCompletionCommandSurface, configureListCommandSurface, configurePluginInstallSurface, configurePluginListSurface, configurePluginSearchSurface } from './builtin-command-surface.js';
-import { OUTPUT_FORMAT_HELP, resolveOutputFormat } from './command-surface.js';
+import { applyUnknownOptionContract, CommanderStructuralError, OUTPUT_FORMAT_HELP, resolveOutputFormat } from './command-surface.js';
 import { render as renderOutput, formatErrorEnvelope, errorEnvelopeFormat, requestedFormatFromArgv } from './output.js';
 import { PKG_VERSION } from './version.js';
 import { printCompletionScript } from './completion.js';
@@ -2188,9 +2188,16 @@ export async function loadAntigravityServe(pluginsDir: string = PLUGINS_DIR): Pr
  * lost. `parseAsync` lets the rejection reach this catch.
  */
 export async function runCli(BUILTIN_CLIS: string, USER_CLIS: string): Promise<void> {
+  const program = createProgram(BUILTIN_CLIS, USER_CLIS);
+  applyUnknownOptionContract(program);
   try {
-    await createProgram(BUILTIN_CLIS, USER_CLIS).parseAsync();
+    await program.parseAsync();
   } catch (err) {
+    if (err instanceof CommanderStructuralError) {
+      process.stderr.write(err.output);
+      process.exitCode = err.exitCode;
+      return;
+    }
     reportCliError(err);
   }
 }

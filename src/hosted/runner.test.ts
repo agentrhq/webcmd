@@ -1320,7 +1320,7 @@ describe('runHostedCli', () => {
     {
       name: 'ordinary unknown option',
       tail: ['account', '--token', 'secret', '--unknown'],
-      exitCode: 1,
+      exitCode: 2,
       stderr: "error: unknown option '--unknown'\n",
       help: false,
     },
@@ -1338,7 +1338,7 @@ describe('runHostedCli', () => {
       stderr: "error: too many arguments for 'whoami'. Expected 1 argument but got 2.\n",
       help: false,
     },
-  ])('matches public Commander structural bytes and discovery order: $name', async ({ tail, exitCode, stderr: expectedStderr, help }) => {
+  ])('matches public Commander structural bytes and discovery order: $name', async ({ name, tail, exitCode, stderr: expectedStderr, help }) => {
     const structuralManifest = manifestWithStructuralArguments();
     const stdout = sink();
     const stderr = sink();
@@ -1355,7 +1355,12 @@ describe('runHostedCli', () => {
     });
 
     expect(result).toEqual({ handled: true, exitCode });
-    expect(stderr.text()).toBe(expectedStderr);
+    if (name === 'ordinary unknown option') {
+      expect(stderr.text().startsWith(expectedStderr)).toBe(true);
+      expect(stderr.text()).toContain('help: valid flags for');
+    } else {
+      expect(stderr.text()).toBe(expectedStderr);
+    }
     if (help) expect(stdout.text()).toContain('Usage: webcmd github whoami <account> [options]');
     else expect(stdout.text()).toBe('');
     expect(fetchImpl).toHaveBeenCalledTimes(1);
@@ -1444,8 +1449,9 @@ describe('runHostedCli', () => {
       fetchImpl,
     });
 
-    expect(result).toEqual({ handled: true, exitCode: 1 });
-    expect(stderr.text()).toBe("error: unknown option '--profile'\n");
+    expect(result).toEqual({ handled: true, exitCode: 2 });
+    expect(stderr.text().startsWith("error: unknown option '--profile'\n")).toBe(true);
+    expect(stderr.text()).toContain('help: valid flags for');
     expect(stdout.text()).toBe('');
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
@@ -1462,8 +1468,9 @@ describe('runHostedCli', () => {
       fetchImpl,
     });
 
-    expect(result).toEqual({ handled: true, exitCode: 1 });
-    expect(stderr.text()).toBe("error: unknown option '-dash'\n");
+    expect(result).toEqual({ handled: true, exitCode: 2 });
+    expect(stderr.text().startsWith("error: unknown option '-dash'\n")).toBe(true);
+    expect(stderr.text()).toContain('help: valid flags for');
     expect(stdout.text()).toBe('');
     expect(fetchImpl).not.toHaveBeenCalled();
   });
