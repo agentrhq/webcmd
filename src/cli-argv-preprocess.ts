@@ -4,11 +4,14 @@
  */
 
 /**
- * Browser subcommand names. If `<session>` would collide with one of these,
- * we treat it as a missing-positional error and leave argv alone so commander
- * reports a usable diagnostic.
+ * Names reserved on the `browser` command. If `<session>` would collide with
+ * one of these, we treat it as a missing-positional error and leave argv alone
+ * so commander reports a usable diagnostic.
  *
- * Keep in sync with the subcommands declared on the `browser` command in cli.ts.
+ * This is deliberately a superset of the subcommands currently declared in
+ * cli.ts: retired names stay listed so `webcmd browser <retired>` still gets
+ * `unknown command '<retired>'` instead of being read as a session id. Add
+ * new subcommands here; never remove a name that once existed.
  */
 const BROWSER_SUBCOMMAND_NAMES: ReadonlySet<string> = new Set([
   'analyze',

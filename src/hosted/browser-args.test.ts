@@ -31,15 +31,11 @@ describe('hosted browser argument surface', () => {
   });
 
   it('uses the same command catalog as local mode', () => {
-    expect(browserCommandCatalog.map(command => command.command)).toEqual(['tabs', 'init', 'bind', 'fork', 'verify', 'run', 'snapshot', 'close']);
+    expect(browserCommandCatalog.map(command => command.command)).toEqual(['tabs', 'init', 'bind', 'verify', 'run', 'snapshot', 'close']);
   });
 
-  it('parses a hosted adapter fork command', () => {
-    expect(parse(['--session', 'session_work', 'browser', 'fork', 'linkedin/search'])).toMatchObject({
-      commandName: 'fork',
-      session: 'session_work',
-      positionals: ['linkedin/search'],
-    });
+  it('rejects the retired fork command', () => {
+    expect(() => parse(['--session', 'session_work', 'browser', 'fork', 'linkedin/search'])).toThrow();
   });
 
   it('requires a stable page id for bind', () => {

@@ -48,7 +48,7 @@ webcmd --profile work session create
 
 webcmd --profile work \
   --session session_7d8f2c10-4a11-4f3e-9c22-1b6de0a91f45 \
-  browser run --stdin <<'JS'
+  browser run --stdin --no-snapshot-diff <<'JS'
 await page.goto('https://example.com');
 return { url: page.url(), title: await page.title() };
 JS
@@ -84,7 +84,30 @@ Common calls:
 | `snapshot --snapshot-mode read` | Extract readable article/content text. |
 | `run --stdin` / `run --file <path>` | Execute one Playwright-style program with `page`, `context`, `browser`, and `console`. |
 
-Keep related browser actions in one `run` and return compact JSON-compatible data. Successful runs return `snapshotDiff` automatically. Use `--no-snapshot-diff` only when the program is pure read-only and its result already contains the needed state. Do not call the legacy semantic-snapshot page helper; it is not part of Webcmd's Playwright runtime.
+Keep related browser actions in one `run` and return compact JSON-compatible data. Successful runs return `snapshotDiff` automatically unless `--no-snapshot-diff` is passed. Do not call the legacy semantic-snapshot page helper; it is not part of Webcmd's Playwright runtime.
+
+Choose diff behavior from the evidence the program returns:
+
+- Pass `--no-snapshot-diff` for research, information retrieval, and deterministic inspection when the returned result already contains the exact bounded evidence needed. This includes navigating to articles or result pages, searching, following read-only pagination, extracting links or table rows, and capturing a response. Navigation alone does not require a diff.
+- Keep the automatic diff for exploratory interactions when the resulting UI state is unknown, and for writes such as form submissions, uploads, saves, deletes, or settings changes unless the returned result independently verifies the new state.
+- If using `--no-snapshot-diff` after navigation, return identifying context such as the final URL or title together with the targeted evidence. Do not replace a diff with an unbounded body or DOM dump.
+- If Webcmd omits a diff because it exceeds the output ceiling, continue when the returned result and page metadata already verify the outcome. Otherwise take a targeted snapshot or extraction; do not request an unscoped full-page dump automatically.
+
+Research with sufficient returned evidence:
+
+```bash
+webcmd --session session_abc browser run --stdin --no-snapshot-diff <<'JS'
+await page.goto('https://example.com/archive');
+const text = await page.locator('main').innerText();
+return {
+  url: page.url(),
+  title: await page.title(),
+  matches: text.split('\n').filter(line => line.includes('Quarterfinal')).slice(0, 50),
+};
+JS
+```
+
+Keep the default diff when discovering an unfamiliar state change:
 
 ```bash
 webcmd --session session_abc browser run --stdin <<'JS'
@@ -94,7 +117,7 @@ return { title: await page.title(), url: page.url() };
 JS
 ```
 
-For sandbox boundaries, artifacts, errors, snapshots, and timings, read [`references/browser-run-playwright.md`](references/browser-run-playwright.md).
+**`browser run` executes in QuickJS — not in Node, and not in the page.** `document` and `window` are not in scope (use `page.evaluate`), and `Buffer`, `require`, and `fs` do not exist. Read [`references/browser-run-playwright.md`](references/browser-run-playwright.md) before writing your first program; it lists what is available, what is blocked, and what to use instead.
 
 ---
 
@@ -161,6 +184,18 @@ For CAPTCHA or raw user takeover, stop automation, give the user any viewer URL 
 
 For native controls, inspect structure first, then use Playwright's normal form APIs inside `run`. Do not guess date formats, option labels, or file constraints from memory; read them from the DOM.
 
+`browser run` uses QuickJS, not Node.js: `Buffer` is unavailable. For an in-memory upload, pass a `Uint8Array`; encode text with the supported `TextEncoder`:
+
+```js
+await page.locator('input[type="file"]').setInputFiles({
+  name: 'evidence.txt',
+  mimeType: 'text/plain',
+  buffer: new TextEncoder().encode('file'),
+});
+```
+
+Inspect the exact accessible name before using `getByLabel`; do not invent punctuation such as a required `*`. After filling a datepicker or masked input, verify `inputValue()` and use the widget UI if the value was cleared or rejected.
+
 ```bash
 webcmd --session session_abc browser run --stdin <<'JS'
 await page.goto('https://example.com/form');
@@ -183,7 +218,7 @@ For custom React/Radix/shadcn/Material UI dropdowns, use semantic locators and v
 ### Capture a request triggered by UI
 
 ```bash
-webcmd --session session_abc browser run --stdin <<'JS'
+webcmd --session session_abc browser run --stdin --no-snapshot-diff <<'JS'
 await page.goto('https://example.com/search');
 const pending = page.waitForResponse(r => r.url().includes('/api/search'));
 await page.getByRole('textbox', { name: /search/i }).fill('browser automation');
@@ -201,7 +236,7 @@ Use response evidence to choose an adapter strategy later. Do not paste the Play
 
 ### Read long-form content
 
-Use `snapshot --snapshot-mode read` first. If the page is an app shell or needs custom scoping, use a targeted `run` to extract the specific article/main region and return bounded Markdown or text.
+Use `snapshot --snapshot-mode read` first. If the page is an app shell or needs custom scoping, use a targeted `run` with `--no-snapshot-diff` to extract the specific article/main region and return bounded Markdown or text, including the final URL or title.
 
 ### Cross-origin iframes
 
@@ -240,6 +275,7 @@ Use `run` and inspect `page.frames()`; target the frame by URL/name and keep ifr
 | Login wall appears | Use the Authentication and human handoff recipe. |
 | User reports login complete | Run the returned verifier first. Without one, inspect fresh state and verify identity/post-action state. |
 | Page shows expected data but returned extraction is empty | Use `snapshot --snapshot-mode tree` to locate scope, or capture the network response in `run`. |
+| Snapshot diff was omitted at the output ceiling | Continue if `result` and `page` are sufficient; otherwise inspect only the relevant scope with a targeted snapshot or extraction. |
 | Output is too large | Return fewer fields, slice body/text samples, or switch from DOM dump to targeted selectors/network evidence. |
 
 ---

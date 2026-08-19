@@ -1,4 +1,5 @@
 import { attachTraceReceipt, CliError, EXIT_CODES, type ExitCode } from '../errors.js';
+import { log } from '../logger.js';
 import { HOSTED_SESSION_PROTOCOL_VERSION } from './types.js';
 import type {
   HostedBrowserActionRequest,
@@ -25,6 +26,7 @@ import type {
   HostedMarketplaceInstallationRow,
   HostedMarketplaceSearchResult,
   HostedSiteMemoryArtifact,
+  HostedAdapterOverrideResponse,
   HostedAdapterSourceWriteResponse,
   HostedTraceReceipt,
 } from './types.js';
@@ -250,6 +252,22 @@ export class HostedClient {
     return { packageId: result.package.id, storagePath: result.package.storagePath, commands: result.commands };
   }
 
+  /** Hosted `adapter override`: fork an installed system command into a private package. */
+  async overrideAdapter(commandKey: string): Promise<HostedAdapterOverrideResponse> {
+    const result = await this.request('/v1/adapters/override', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ command: commandKey }),
+    });
+    if (!isHostedAdapterOverrideResponse(result)) throw protocolError('Webcmd Cloud returned an invalid adapter override response.');
+    return {
+      command: result.command,
+      packageId: result.package.id,
+      packageName: result.package.name,
+      sourceFile: result.sourceFile,
+    };
+  }
+
   async execute(input: {
     command: string;
     args: Record<string, unknown>;
@@ -269,7 +287,12 @@ export class HostedClient {
     return body;
   }
 
-  async prepareExecution(input: { command: string }): Promise<HostedPrepareExecutionResponse> {
+  async prepareExecution(input: {
+    command: string;
+    profile?: string;
+    session?: string;
+    executionScope?: 'profile' | 'stateless';
+  }): Promise<HostedPrepareExecutionResponse> {
     const body = await this.request('/v1/executions', {
       method: 'POST',
       body: JSON.stringify(input),
@@ -453,18 +476,35 @@ export class HostedClient {
     return body;
   }
 
-  private authenticatedFetch(path: string, init: RequestInit = {}): Promise<Response> {
-    return this.fetchImpl(`${this.apiBaseUrl}${path}`, {
-      ...init,
-      headers: {
-        accept: 'application/json',
-        authorization: `Bearer ${this.apiKey}`,
-        'x-webcmd-session-protocol-version': String(HOSTED_SESSION_PROTOCOL_VERSION),
-        ...(init.body ? { 'content-type': 'application/json' } : {}),
-        ...(this.workspace ? { 'x-webcmd-workspace': this.workspace } : {}),
-        ...(init.headers ?? {}),
-      },
-    });
+  private async authenticatedFetch(path: string, init: RequestInit = {}): Promise<Response> {
+    // Verbose diagnostics deliberately carry the method, path, status and elapsed
+    // time only. The bearer token, the workspace header and request/response
+    // bodies are never logged — `-v` is a debugging aid, not a credential dump.
+    const method = init.method ?? 'GET';
+    const startedAt = Date.now();
+    log.verbose(`hosted → ${method} ${path}`);
+    try {
+      const response = await this.fetchImpl(`${this.apiBaseUrl}${path}`, {
+        ...init,
+        headers: {
+          accept: 'application/json',
+          authorization: `Bearer ${this.apiKey}`,
+          'x-webcmd-session-protocol-version': String(HOSTED_SESSION_PROTOCOL_VERSION),
+          'x-webcmd-client-capabilities': 'hosted-live-view-v1',
+          ...(init.body ? { 'content-type': 'application/json' } : {}),
+          ...(this.workspace ? { 'x-webcmd-workspace': this.workspace } : {}),
+          ...(init.headers ?? {}),
+        },
+      });
+      log.verbose(`hosted ← ${method} ${path} ${response.status} (${Date.now() - startedAt}ms)`);
+      return response;
+    } catch (error) {
+      log.verbose(
+        `hosted ✖ ${method} ${path} failed after ${Date.now() - startedAt}ms: ` +
+        `${error instanceof Error ? error.message : String(error)}`,
+      );
+      throw error;
+    }
   }
 
   private async requestText(path: string): Promise<string> {
@@ -530,6 +570,27 @@ function isHostedAdapterSourceWriteResponse(value: unknown): value is { ok: true
     && value.commands.every(command => typeof command === 'string');
 }
 
+function isHostedAdapterOverrideResponse(value: unknown): value is {
+  ok: true;
+  command: string;
+  package: { id: string; name: string; visibility: string };
+  installation: { id: string };
+  sourceFile: string | null;
+} {
+  return hasExactKeys(value, ['ok', 'command', 'package', 'installation', 'sourceFile'])
+    && value.ok === true
+    && typeof value.command === 'string'
+    && isRecord(value.package)
+    && hasExactKeys(value.package, ['id', 'name', 'visibility'])
+    && typeof value.package.id === 'string'
+    && typeof value.package.name === 'string'
+    && typeof value.package.visibility === 'string'
+    && isRecord(value.installation)
+    && hasExactKeys(value.installation, ['id'])
+    && typeof value.installation.id === 'string'
+    && (value.sourceFile === null || typeof value.sourceFile === 'string');
+}
+
 function isHostedError(value: unknown): value is HostedErrorResponse {
   if (!hasOnlyKeys(value, ['ok', 'error', 'execution', 'trace']) || value.ok !== false || !isRecord(value.error)) return false;
   if (!hasOnlyKeys(value.error, ['code', 'message', 'help', 'exitCode'])) return false;
@@ -585,14 +646,15 @@ function isHostedPrepareExecutionResponse(
   value: unknown,
   requestedCommand: string,
 ): value is HostedPrepareExecutionResponse {
-  return hasExactKeys(value, ['ok', 'execution', 'fileArguments'])
+  return hasOnlyKeys(value, ['ok', 'execution', 'fileArguments', 'liveViewUrl'])
     && value.ok === true
     && hasExactKeys(value.execution, ['id', 'command', 'status'])
     && typeof value.execution.id === 'string'
     && value.execution.command === requestedCommand
     && value.execution.status === 'queued'
     && Array.isArray(value.fileArguments)
-    && value.fileArguments.every(isHostedFileArgument);
+    && value.fileArguments.every(isHostedFileArgument)
+    && (value.liveViewUrl === undefined || typeof value.liveViewUrl === 'string');
 }
 
 function isHostedUploadArtifactResponse(
@@ -620,7 +682,7 @@ function isHostedProfilesResponse(value: unknown): value is HostedProfilesRespon
 function isHostedBrowserSessionResponse(value: unknown): value is HostedBrowserSessionResponse {
   return hasExactKeys(value, ['ok', 'session'])
     && value.ok === true
-    && isHostedBrowserSession(value.session);
+    && isHostedCreatedBrowserSession(value.session);
 }
 
 function isHostedBrowserSessionsResponse(value: unknown): value is HostedBrowserSessionsResponse {
@@ -649,6 +711,12 @@ function isHostedBrowserSession(value: unknown): boolean {
     && typeof value.createdAt === 'string'
     && typeof value.updatedAt === 'string'
     && typeof value.lastUsedAt === 'string';
+}
+
+function isHostedCreatedBrowserSession(value: unknown): boolean {
+  if (!isRecord(value) || typeof value.liveViewUrl !== 'string') return false;
+  const { liveViewUrl: _liveViewUrl, ...session } = value;
+  return isHostedBrowserSession(session);
 }
 
 function isHostedSessionHandoff(value: unknown): boolean {

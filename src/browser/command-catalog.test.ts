@@ -1,7 +1,7 @@
 import type { Command } from 'commander';
 import { describe, expect, it } from 'vitest';
 import { createProgram } from '../cli.js';
-import { browserCommandCatalog, browserOptionValueParser } from './command-catalog.js';
+import { browserCommandCatalog, browserOptionFlags, browserOptionValueParser } from './command-catalog.js';
 
 function browserCommand(): Command {
   const browser = createProgram('', '').commands.find(command => command.name() === 'browser');
@@ -15,7 +15,6 @@ describe('browserCommandCatalog', () => {
       'tabs',
       'init',
       'bind',
-      'fork',
       'verify',
       'run',
       'snapshot',
@@ -23,18 +22,13 @@ describe('browserCommandCatalog', () => {
     ]);
   });
 
-  it('exposes hosted adapter fork with a required command name', () => {
-    const fork = browserCommandCatalog.find(command => command.command === 'fork');
-    expect(fork).toMatchObject({ action: 'fork', sessionPolicy: 'require-existing' });
-    expect(fork?.positionals).toEqual([
-      expect.objectContaining({ name: 'name', required: true, positional: true }),
-    ]);
+  it('does not expose the retired fork command', () => {
+    expect(browserCommandCatalog.find(command => command.command === 'fork')).toBeUndefined();
   });
 
   it('keeps adapter authoring separate from the raw session catalog', () => {
     expect(browserCommand().commands.map(command => command.name())).toEqual([
       'init',
-      'fork',
       'verify',
       'tabs',
       'bind',
@@ -66,6 +60,7 @@ describe('browserCommandCatalog', () => {
     const commands = new Map(browserCommandCatalog.map(command => [command.command, command]));
     expect(commands.get('bind')?.options).toEqual([
       expect.objectContaining({ name: 'page', required: true }),
+      expect.objectContaining({ name: 'verbose', type: 'boolean' }),
     ]);
     expect(commands.get('run')?.options.map(option => option.name)).toEqual([
       'stdin',
@@ -74,13 +69,38 @@ describe('browserCommandCatalog', () => {
       'maxOutput',
       'snapshotMode',
       'noSnapshotDiff',
+      'verbose',
     ]);
   });
 
   it('includes snapshot as the read-only browser inspection command', () => {
     const snapshot = browserCommandCatalog.find(command => command.command === 'snapshot');
     expect(snapshot).toMatchObject({ action: 'snapshot', sessionPolicy: 'require-existing' });
-    expect(snapshot?.options.map(option => option.name)).toEqual(['snapshotMode', 'ref', 'maxOutput']);
+    expect(snapshot?.options.map(option => option.name)).toEqual(['snapshotMode', 'ref', 'maxOutput', 'verbose']);
+  });
+
+  // Verbose belongs to the bridge/CDP leaves only: the diagnostics behind it live
+  // in the CDP client, so a filesystem-only leaf would be advertising a no-op (#174).
+  it('exposes verbose on bridge leaves and withholds it from filesystem-only ones', () => {
+    const optionNames = (name: string) => browserCommandCatalog
+      .find(command => command.command === name)
+      ?.options.map(option => option.name) ?? [];
+
+    for (const leaf of ['tabs', 'bind', 'run', 'snapshot', 'close']) {
+      expect(optionNames(leaf)).toContain('verbose');
+    }
+    for (const leaf of ['init', 'fork', 'verify']) {
+      expect(optionNames(leaf)).not.toContain('verbose');
+    }
+  });
+
+  it('renders the verbose flag with its local short form', () => {
+    const verbose = browserCommandCatalog
+      .find(command => command.command === 'tabs')
+      ?.options.find(option => option.name === 'verbose');
+
+    expect(verbose).toBeDefined();
+    expect(browserOptionFlags(verbose!, 'tabs')).toBe('-v, --verbose');
   });
 
   it('parses run snapshot mode as act or tree only', () => {

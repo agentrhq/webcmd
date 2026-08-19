@@ -36,3 +36,13 @@ sitemaps/
 # Database files
 *.db
 autoresearch-results.tsv
+
+# webcmd benchmarks (dataset comparison harness)
+benchmarks/results/
+benchmarks/.venv/
+benchmarks/node_modules/
+benchmarks/**/__pycache__/
+benchmarks/.pytest_cache/
+benchmarks/pytest-cache-files-*
+benchmarks/datasets/*.json
+!benchmarks/datasets/Stealth_Webcmd.json
