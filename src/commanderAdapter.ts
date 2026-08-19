@@ -13,7 +13,7 @@
 import { Command } from 'commander';
 import { log } from './logger.js';
 import { type CliCommand, fullName, getRegistry } from './registry.js';
-import { formatErrorEnvelope, render as renderOutput } from './output.js';
+import { errorEnvelopeFormat, formatErrorEnvelope, render as renderOutput } from './output.js';
 import { configureCommandSurface, parseOutputFormat, prepareCommandArgs } from './command-surface.js';
 import {
   commandHelpData,
@@ -135,7 +135,7 @@ export function registerCommandToProgram(
         ...(runtime.stdout ? { stdout: runtime.stdout } : {}),
       });
     } catch (err) {
-      renderError(err, fullName(cmd), optionsRecord.verbose === true, optionsRecord.trace);
+      renderError(err, fullName(cmd), optionsRecord.verbose === true, optionsRecord.trace, optionsRecord.format);
       process.exitCode = resolveExitCode(err);
     }
   });
@@ -150,7 +150,7 @@ function resolveExitCode(err: unknown): number {
 
 // ── Error rendering ─────────────────────────────────────────────────────────
 
-function renderError(err: unknown, cmdName: string, verbose: boolean, traceMode?: unknown): void {
+function renderError(err: unknown, cmdName: string, verbose: boolean, traceMode?: unknown, fmt?: unknown): void {
   const envelope = toEnvelope(err);
 
   // In verbose mode, include stack trace for debugging
@@ -158,7 +158,7 @@ function renderError(err: unknown, cmdName: string, verbose: boolean, traceMode?
     envelope.error.stack = err.stack;
   }
 
-  process.stderr.write(formatErrorEnvelope(envelope, { cmdName, traceMode }));
+  process.stderr.write(formatErrorEnvelope(envelope, { cmdName, traceMode, fmt: errorEnvelopeFormat(fmt) }));
 }
 
 /**

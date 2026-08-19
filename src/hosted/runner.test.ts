@@ -516,6 +516,23 @@ describe('runHostedCli', () => {
     expect(stderr.text()).toContain('Run `webcmd setup` and choose local mode to install this plugin.');
   });
 
+  it('renders a JSON error envelope on stderr when -f json is set', async () => {
+    const stdout = sink();
+    const stderr = sink();
+    const result = await runHostedCli(['profile', 'use', 'work', '-f', 'json'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 78 });
+    expect(stdout.text()).toBe('');
+    expect(JSON.parse(stderr.text())).toMatchObject({
+      ok: false,
+      error: { code: 'CONFIG', message: 'webcmd profile use is not available in hosted mode.' },
+    });
+  });
+
   it.each(['catalog'])('rejects unsupported hosted plugin %s without an API call', async (subcommand) => {
     const stderr = sink();
     const fetchImpl = vi.fn<typeof fetch>();

@@ -24,7 +24,7 @@ import { CliError, ConfigError, EXIT_CODES, toEnvelope } from '../errors.js';
 import { getRequestedHelpFormat, renderStructuredHelp } from '../help.js';
 import { enableVerbose } from '../logger.js';
 import { findPackageRoot } from '../package-paths.js';
-import { formatErrorEnvelope, render as renderOutput } from '../output.js';
+import { errorEnvelopeFormat, formatErrorEnvelope, requestedFormatFromArgv, render as renderOutput } from '../output.js';
 import { StreamWriteError, writeToStream } from '../stream-write.js';
 import { PKG_VERSION } from '../version.js';
 import { getCompletionScriptFast } from '../completion-fast.js';
@@ -151,6 +151,7 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
     await writeToStream(stderr, formatErrorEnvelope(toEnvelope(err), {
       cmdName: hostedCommandName(argv),
       traceMode: hostedTraceMode(argv),
+      fmt: errorEnvelopeFormat(requestedFormatFromArgv(argv)),
     }));
     return {
       handled: true,

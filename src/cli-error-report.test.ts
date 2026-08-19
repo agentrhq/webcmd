@@ -37,6 +37,20 @@ describe('reportCliError', () => {
     expect(process.exitCode).toBe(EXIT_CODES.GENERIC_ERROR);
   });
 
+  it('renders JSON when -f json is on argv', () => {
+    const previous = process.argv;
+    process.argv = ['node', 'webcmd', 'validate', 'nope', '-f', 'json'];
+    try {
+      expect(JSON.parse(capture(new CliError('ARGUMENT', 'No command matches "nope".', undefined, EXIT_CODES.USAGE_ERROR))))
+        .toEqual({
+          ok: false,
+          error: { code: 'ARGUMENT', message: 'No command matches "nope".', exitCode: EXIT_CODES.USAGE_ERROR },
+        });
+    } finally {
+      process.argv = previous;
+    }
+  });
+
   it('omits the stack unless WEBCMD_DEBUG is set', () => {
     expect(yaml.load(capture(new Error('boom'))) as any).not.toHaveProperty('error.stack');
     vi.stubEnv('WEBCMD_DEBUG', '1');

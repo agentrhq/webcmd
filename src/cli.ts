@@ -19,7 +19,7 @@ import './fetch/command.js';
 import { commandListPresentation, filterCommandsByTag, toPresentableCommand } from './command-presentation.js';
 import { configureCompletionCommandSurface, configureListCommandSurface, configurePluginInstallSurface, configurePluginListSurface, configurePluginSearchSurface } from './builtin-command-surface.js';
 import { OUTPUT_FORMAT_HELP, resolveOutputFormat } from './command-surface.js';
-import { render as renderOutput, formatErrorEnvelope } from './output.js';
+import { render as renderOutput, formatErrorEnvelope, errorEnvelopeFormat, requestedFormatFromArgv } from './output.js';
 import { PKG_VERSION } from './version.js';
 import { printCompletionScript } from './completion.js';
 import { loadExternalClis, executeExternalCli, installExternalCli, registerExternalCli, isBinaryInstalled, formatExternalCliLabel } from './external.js';
@@ -2201,7 +2201,9 @@ export function reportCliError(err: unknown, stderr: NodeJS.WritableStream = pro
   if (process.env.WEBCMD_DEBUG && err instanceof Error && err.stack) {
     envelope.error.stack = err.stack;
   }
-  stderr.write(formatErrorEnvelope(envelope));
+  stderr.write(formatErrorEnvelope(envelope, {
+    fmt: errorEnvelopeFormat(requestedFormatFromArgv(process.argv.slice(2))),
+  }));
   process.exitCode = envelope.error.exitCode;
 }
 

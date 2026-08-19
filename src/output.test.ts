@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { Writable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
-import { formatErrorEnvelope, formatOutput, render } from './output.js';
+import { formatErrorEnvelope, formatOutput, render, requestedFormatFromArgv } from './output.js';
 
 function sink(isTTY: boolean): { stream: Writable; text: () => string } {
   let data = '';
@@ -140,16 +140,18 @@ describe('formatOutput', () => {
 });
 
 describe('formatErrorEnvelope', () => {
+  const envelope = {
+    ok: false as const,
+    error: {
+      code: 'AUTH_REQUIRED',
+      message: 'Sign in first',
+      help: 'Run webcmd github login.',
+      exitCode: 77,
+    },
+  };
+
   it('returns the local YAML envelope bytes without writing to stderr', () => {
-    expect(formatErrorEnvelope({
-      ok: false,
-      error: {
-        code: 'AUTH_REQUIRED',
-        message: 'Sign in first',
-        help: 'Run webcmd github login.',
-        exitCode: 77,
-      },
-    })).toBe([
+    expect(formatErrorEnvelope(envelope)).toBe([
       'ok: false',
       'error:',
       '  code: AUTH_REQUIRED',
@@ -158,5 +160,34 @@ describe('formatErrorEnvelope', () => {
       '  exitCode: 77',
       '',
     ].join('\n'));
+  });
+
+  it('serializes JSON when -f json was requested', () => {
+    expect(formatErrorEnvelope(envelope, { fmt: 'json' })).toBe(`${JSON.stringify(envelope, null, 2)}\n`);
+  });
+
+  it('keeps YAML for table and omitted formats', () => {
+    expect(formatErrorEnvelope(envelope, { fmt: 'table' })).toMatch(/^ok: false\nerror:/);
+  });
+
+  it('omits YAML AutoFix comments from JSON envelopes', () => {
+    const text = formatErrorEnvelope({
+      ok: false,
+      error: { code: 'EMPTY_RESULT', message: 'none', exitCode: 66 },
+    }, { fmt: 'json', cmdName: 'github/issue' });
+    expect(text).not.toContain('# AutoFix');
+    expect(JSON.parse(text)).toMatchObject({ ok: false, error: { code: 'EMPTY_RESULT' } });
+  });
+});
+
+describe('requestedFormatFromArgv', () => {
+  it.each([
+    { argv: ['list', '-f', 'json'], format: 'json' },
+    { argv: ['list', '--format', 'JSON'], format: 'JSON' },
+    { argv: ['list', '--format=yaml'], format: 'yaml' },
+    { argv: ['list'], format: undefined },
+    { argv: ['list', '--', '-f', 'json'], format: undefined },
+  ])('$argv → $format', ({ argv, format }) => {
+    expect(requestedFormatFromArgv(argv)).toBe(format);
   });
 });

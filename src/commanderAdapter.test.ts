@@ -382,6 +382,31 @@ describe('commanderAdapter error envelope output', () => {
     stderrSpy.mockRestore();
   });
 
+  it('outputs a JSON error envelope on stderr when -f json is set', async () => {
+    const program = new Command();
+    const siteCmd = program.command('github');
+    registerCommandToProgram(siteCmd, cmd);
+
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    mockExecuteCommand.mockRejectedValueOnce(
+      new EmptyResultError(
+        'github/issue',
+        'Pass the full issue URL instead of a bare issue number.',
+      ),
+    );
+
+    await program.parseAsync(['node', 'webcmd', 'github', 'issue', '12345', '-f', 'json']);
+
+    const output = stderrSpy.mock.calls.map(c => String(c[0])).join('');
+    expect(JSON.parse(output)).toMatchObject({
+      ok: false,
+      error: { code: 'EMPTY_RESULT' },
+    });
+    expect(output).not.toContain('# AutoFix');
+
+    stderrSpy.mockRestore();
+  });
+
   it('outputs YAML error envelope for selector errors', async () => {
     const program = new Command();
     const siteCmd = program.command('github');
