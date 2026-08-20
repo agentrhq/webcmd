@@ -307,7 +307,7 @@ async function dispatchHosted(
       return;
     }
     if (parsed.command === 'install') {
-      const installed = await client.installMarketplacePlugin(parsed.source);
+      const installed = await client.installMarketplacePlugin(parsed.source, { all: parsed.all });
       await writeToStream(stdout, `✅ Plugin "${installed.name}" installed successfully. Commands are ready to use.\n`);
       return;
     }
@@ -1223,7 +1223,7 @@ async function dispatchHostedProfile(
 type ParsedHostedPluginSurface =
   | { kind: 'help'; output: string }
   | { kind: 'run'; command: 'search'; query?: string; format: string; formatExplicit: boolean }
-  | { kind: 'run'; command: 'install'; source: string }
+  | { kind: 'run'; command: 'install'; source: string; all: boolean }
   | { kind: 'run'; command: 'list'; format: string; formatExplicit: boolean }
   | { kind: 'run'; command: 'uninstall'; name: string }
   | { kind: 'run'; command: 'update'; name?: string; all: boolean }
@@ -1250,8 +1250,8 @@ function parseHostedPluginSurface(
     parsed = { kind: 'run', command: 'search', ...(query !== undefined ? { query } : {}), format: validateHostedFormat(String(requestedOutputFormat(search, options.format))), formatExplicit: outputFormatIsExplicit(search) };
   });
   const install = configurePluginInstallSurface(plugin.command('install'));
-  install.exitOverride().configureOutput(output).action((source: string) => {
-    parsed = { kind: 'run', command: 'install', source };
+  install.exitOverride().configureOutput(output).action((source: string, options: { all?: boolean }) => {
+    parsed = { kind: 'run', command: 'install', source, all: options.all === true };
   });
   const list = configurePluginListSurface(plugin.command('list'));
   list.exitOverride().configureOutput(output).action((options: { format: string }) => {

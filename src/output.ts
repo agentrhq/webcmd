@@ -83,19 +83,24 @@ export function errorEnvelopeFormat(fmt?: unknown): 'json' | 'yaml' {
 
 export function requestedFormatFromArgv(argv: readonly string[]): string | undefined {
   let format: string | undefined;
+  let explicitFormat = false;
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i]!;
     if (token === '--') break;
     if (token === '--json') {
-      format = 'json';
+      if (!explicitFormat) format = 'json';
       continue;
     }
     if (token === '-f' || token === '--format') {
+      explicitFormat = true;
       const value = argv[i + 1];
       format = value && !value.startsWith('-') ? value : undefined;
       continue;
     }
-    if (token.startsWith('--format=')) format = token.slice('--format='.length) || undefined;
+    if (token.startsWith('--format=')) {
+      explicitFormat = true;
+      format = token.slice('--format='.length) || undefined;
+    }
   }
   return format;
 }

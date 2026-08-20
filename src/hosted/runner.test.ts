@@ -493,6 +493,28 @@ describe('runHostedCli', () => {
     expect(requests).toEqual(['https://api.example.com/v1/marketplace/installations']);
   });
 
+  it('forwards plugin install --all to the hosted marketplace API', async () => {
+    let requestBody: unknown;
+    const result = await runHostedCli(['plugin', 'install', 'github:agentrhq/webcmd', '--all'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      fetchImpl: async (_url, init) => {
+        requestBody = JSON.parse(String(init?.body));
+        return new Response(JSON.stringify({
+          ok: true,
+          result: {
+            installationId: 'install_all',
+            name: 'webcmd',
+            version: '1.0.0',
+            installSource: 'github:agentrhq/webcmd',
+          },
+        }));
+      },
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(requestBody).toEqual({ installSource: 'github:agentrhq/webcmd', all: true });
+  });
+
   it('renders Cloud local-only marketplace install guidance', async () => {
     const stdout = sink();
     const stderr = sink();

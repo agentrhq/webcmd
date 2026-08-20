@@ -41,7 +41,7 @@ describe('site memory format flags', () => {
   ])('accepts format flags on %s %s %s', async (...argv) => {
     const store = backend();
     await program(store).parseAsync(argv, { from: 'user' });
-    expect(store.show.mock.calls.length + store.list.mock.calls.length).toBeGreaterThan(0);
+    expect(vi.mocked(store.show).mock.calls.length + vi.mocked(store.list).mock.calls.length).toBeGreaterThan(0);
   });
 
   it('rejects unknown flags with the valid set including --format and --json', async () => {

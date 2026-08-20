@@ -49,21 +49,25 @@ function normalizeStructuredHelpFormat(value: string | undefined): StructuredHel
 
 export function getRequestedHelpFormat(argv: readonly string[] = process.argv): StructuredHelpFormat | undefined {
   let format: StructuredHelpFormat | undefined;
+  let explicitFormat = false;
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i];
     if (token === '--json') {
-      format = 'json';
+      if (!explicitFormat) format = 'json';
       continue;
     }
     if (token === '-f' || token === '--format') {
+      explicitFormat = true;
       format = normalizeStructuredHelpFormat(argv[i + 1]);
       continue;
     }
     if (token.startsWith('--format=')) {
+      explicitFormat = true;
       format = normalizeStructuredHelpFormat(token.slice('--format='.length));
       continue;
     }
     if (token.startsWith('-f') && token.length > 2) {
+      explicitFormat = true;
       format = normalizeStructuredHelpFormat(token.slice(2));
     }
   }

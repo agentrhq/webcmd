@@ -96,8 +96,11 @@ describe('parseCommandSurface', () => {
     });
   });
 
-  it('lets an explicit --format win over --json', () => {
-    expect(parseCommandSurface(metadata, ['needle', '--json', '--format', 'yaml'])).toMatchObject({
+  it.each([
+    ['needle', '--json', '--format', 'yaml'],
+    ['needle', '--format', 'yaml', '--json'],
+  ])('lets an explicit --format win over --json for %j', (...argv) => {
+    expect(parseCommandSurface(metadata, argv)).toMatchObject({
       format: 'yaml',
       formatExplicit: true,
     });
