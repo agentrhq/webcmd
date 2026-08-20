@@ -270,6 +270,7 @@ Use `run` and inspect `page.frames()`; target the frame by URL/name and keep ifr
 | `run` times out before returning | Increase `--timeout` only after checking whether the wait condition is wrong. |
 | Write may have happened before timeout | Take a fresh snapshot before retrying. Avoid duplicate submissions. |
 | `SESSION_REQUIRED` | Create a Session, then retry with root `--session <session-id>`. |
+| `SESSION_NOT_FOUND` | Pass the same `--profile` used on `session create`. `session list` is per profile. |
 | `SESSION_BUSY` | Wait for the listed holder; if it is dead, `webcmd session close <session-id> --force` is the last resort. |
 | `SESSION_PAUSED_FOR_HUMAN_HANDOFF` | Finish the handoff and run the returned verifier before retrying. |
 | Login wall appears | Use the Authentication and human handoff recipe. |
@@ -294,4 +295,7 @@ Author-only. Stripped by litprompt, so it costs the running agent nothing.
 Append one dated line whenever a correction lands, or whenever an approach
 is tried and rejected. Record what was tried and why it failed, not just
 what won.
+
+- 2026-08-20: `session close` without `--profile` said Session not found and
+  listed the default profile. Name the owning profile when the id exists elsewhere.
 -->

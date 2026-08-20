@@ -30,11 +30,14 @@ type StateFile = { version: 1; sessions: BrowserSessionRecord[] };
 const SESSION_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 export class SessionNotFoundError extends CliError {
-  constructor(sessionId: string, profileId: string) {
+  constructor(sessionId: string, profileId: string, ownerProfileId?: string) {
+    const hint = ownerProfileId && ownerProfileId !== profileId
+      ? `This Session belongs to profile ${ownerProfileId}. Retry with \`webcmd --profile ${ownerProfileId} session close ${sessionId}\`. List with \`webcmd --profile ${ownerProfileId} session list\`.`
+      : `Sessions are per profile. Run \`webcmd --profile ${profileId} session list\` or \`webcmd profile list\`, then pass the same \`--profile\` used on create.`;
     super(
       'SESSION_NOT_FOUND',
       `Session not found: ${sessionId}`,
-      `Run \`webcmd --profile ${profileId} session list\` to choose an existing Session.`,
+      hint,
       EXIT_CODES.EMPTY_RESULT,
     );
   }
@@ -84,7 +87,10 @@ export class LocalBrowserSessionStore {
     requireSessionIdShape(id);
     const state = this.load();
     const record = state.sessions.find((row) => row.id === id && row.profileId === profileId);
-    if (!record) throw new SessionNotFoundError(id, profileId);
+    if (!record) {
+      const owner = state.sessions.find((row) => row.id === id);
+      throw new SessionNotFoundError(id, profileId, owner?.profileId);
+    }
     this.touchRecord(state, record);
     return { ...record };
   }
@@ -176,7 +182,10 @@ export class LocalBrowserSessionStore {
   private requireMutable(state: StateFile, profileId: string, sessionId: string): BrowserSessionRecord {
     requireSessionIdShape(sessionId);
     const record = state.sessions.find((row) => row.id === sessionId && row.profileId === profileId);
-    if (!record) throw new SessionNotFoundError(sessionId, profileId);
+    if (!record) {
+      const owner = state.sessions.find((row) => row.id === sessionId);
+      throw new SessionNotFoundError(sessionId, profileId, owner?.profileId);
+    }
     return record;
   }
 
