@@ -39,6 +39,7 @@
   "files": [
     "dist/src/",
     "skills/**",
+    "mcp-skills/**",
     "cli-manifest.json",
     "hosted-contract.json",
     "plugin-catalog.json",
