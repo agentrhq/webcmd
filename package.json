@@ -33,7 +33,8 @@
     "./fetch/command": "./dist/src/fetch/command.js",
     "./pipeline": "./dist/src/pipeline/index.js",
     "./plugin-runtime": "./dist/src/plugin-runtime.js",
-    "./hosted/availability": "./dist/src/hosted/availability.js"
+    "./hosted/availability": "./dist/src/hosted/availability.js",
+    "./hosted/programmatic": "./dist/src/hosted/programmatic.js"
   },
   "files": [
     "dist/src/",
