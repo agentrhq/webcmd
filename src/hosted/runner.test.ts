@@ -2625,6 +2625,9 @@ describe('runHostedCli injected I/O', () => {
   it('aborts an in-flight invocation when the signal fires', async () => {
     const controller = new AbortController();
     const stderr = createCaptureStream(64 * 1024);
+    let fetchStartedResolve!: () => void;
+    const fetchStarted = new Promise<void>((resolve) => { fetchStartedResolve = resolve; });
+    let receivedSignal: AbortSignal | undefined;
     const run = runHostedCli(['list'], {
       config: hostedConfig,
       env: {},
@@ -2634,12 +2637,38 @@ describe('runHostedCli injected I/O', () => {
       stderr: stderr.stream,
       fetchImpl: ((_url: string, init?: RequestInit) =>
         new Promise((_resolve, reject) => {
-          init?.signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+          receivedSignal = init?.signal ?? undefined;
+          fetchStartedResolve();
+          receivedSignal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
         })) as unknown as typeof fetch,
     });
+    await fetchStarted;
+    expect(receivedSignal).toBe(controller.signal);
     controller.abort();
     const result = await run;
     expect(result.handled).toBe(true);
     expect(result.exitCode).not.toBe(0);
+  });
+
+  it('handles an already-aborted invocation before issuing a request', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    let fetchCalled = false;
+    const result = await runHostedCli(['list'], {
+      config: hostedConfig,
+      env: {},
+      homeDir: '/nonexistent',
+      signal: controller.signal,
+      stdout: createCaptureStream(64 * 1024).stream,
+      stderr: createCaptureStream(64 * 1024).stream,
+      fetchImpl: (async () => {
+        fetchCalled = true;
+        return new Response();
+      }) as typeof fetch,
+    });
+
+    expect(result.handled).toBe(true);
+    expect(result.exitCode).not.toBe(0);
+    expect(fetchCalled).toBe(false);
   });
 });
