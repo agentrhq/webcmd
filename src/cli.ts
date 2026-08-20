@@ -1022,16 +1022,6 @@ cli({
       }
     });
 
-  // Runs the same action as `webcmd adapter fork`: it copies a plugin command
-  // into ~/.webcmd/clis and never touches a browser Session. It stays registered
-  // and dispatchable, but locally `adapter fork` is the spelling we advertise, so
-  // it is hidden from `browser --help` below (#317). Hosted mode has no `adapter
-  // fork`, so its catalogue-driven help still lists this one.
-  const browserForkCommand = new Command('fork')
-    .argument('<name>', 'Command to fork in site/command format')
-    .description('Fork an installed plugin command into a private copy')
-    .action(handleAdapterOverride);
-
   // ── Verify (test adapter) ──
 
   const browserVerifyCmd = new Command('verify')
@@ -1380,7 +1370,6 @@ cli({
   // leads with the commands the namespace is actually named for.
   browser.addCommand(browserInitCommand);
   browser.addCommand(browserVerifyCmd);
-  browser.addCommand(browserForkCommand, { hidden: true });
 
   // Session control and adapter authoring are unrelated surfaces that both live
   // under `browser`. Group them from the shared catalog so local and hosted help

@@ -153,7 +153,7 @@ export function browserOptionValueParser(
 export const BROWSER_SESSION_HELP_GROUP = 'Browser session commands:';
 export const BROWSER_AUTHORING_HELP_GROUP = 'Adapter authoring commands:';
 
-const AUTHORING_COMMAND_PATHS: ReadonlySet<string> = new Set(['init', 'verify', 'fork']);
+const AUTHORING_COMMAND_PATHS: ReadonlySet<string> = new Set(['init', 'verify']);
 
 /** Help heading a catalogued browser command belongs under. */
 export function browserHelpGroup(commandPath: string): string {
