@@ -115,3 +115,28 @@ describe('createPluginScaffold', () => {
     expect(() => createPluginScaffold('test', { dir, author })).toThrow('not empty');
   });
 });
+
+describe('createPluginScaffold with injected io', () => {
+  it('writes the scaffold through the injected io and touches no real path', () => {
+    const written = new Map<string, string>();
+    const io = {
+      exists: () => false,
+      isEmptyDir: () => true,
+      mkdir: () => undefined,
+      writeFile: (p: string, body: string) => void written.set(p, body),
+    };
+
+    const result = createPluginScaffold('acme-widgets', {
+      dir: 'acme-widgets',
+      author: { name: 'Ada', handle: 'ada' },
+      io,
+    });
+
+    expect(result.name).toBe('acme-widgets');
+    expect(result.files.sort()).toEqual(
+      ['README.md', 'greet.ts', 'hello.ts', 'package.json', 'webcmd-plugin.json'].sort(),
+    );
+    expect([...written.keys()].some((p) => p.endsWith('webcmd-plugin.json'))).toBe(true);
+    expect(written.size).toBe(5);
+  });
+});

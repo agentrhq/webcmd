@@ -24,6 +24,8 @@ export interface ScaffoldOptions {
   description?: string;
   /** Required author attribution for the generated plugin manifest. */
   author: PluginAuthor;
+  /** Defaults to the real filesystem. The hosted path injects a virtual writer. */
+  io?: ScaffoldIo;
 }
 
 export interface ScaffoldResult {
@@ -32,10 +34,25 @@ export interface ScaffoldResult {
   files: string[];
 }
 
+export interface ScaffoldIo {
+  exists(target: string): boolean;
+  isEmptyDir(target: string): boolean;
+  mkdir(target: string): void;
+  writeFile(target: string, body: string): void;
+}
+
+export const realScaffoldIo: ScaffoldIo = {
+  exists: (target) => fs.existsSync(target),
+  isEmptyDir: (target) => fs.readdirSync(target).length === 0,
+  mkdir: (target) => void fs.mkdirSync(target, { recursive: true }),
+  writeFile: (target, body) => fs.writeFileSync(target, body, 'utf8'),
+};
+
 /**
  * Create a new plugin scaffold directory.
  */
 export function createPluginScaffold(name: string, opts: ScaffoldOptions): ScaffoldResult {
+  const io = opts.io ?? realScaffoldIo;
   // Validate name
   if (!/^[a-z][a-z0-9-]*$/.test(name)) {
     throw new Error(
@@ -50,13 +67,16 @@ export function createPluginScaffold(name: string, opts: ScaffoldOptions): Scaff
     ? path.resolve(opts.dir)
     : path.resolve(name);
 
-  if (fs.existsSync(targetDir) && fs.readdirSync(targetDir).length > 0) {
+  if (io.exists(targetDir) && !io.isEmptyDir(targetDir)) {
     throw new Error(`Directory "${targetDir}" already exists and is not empty.`);
   }
 
-  fs.mkdirSync(targetDir, { recursive: true });
+  io.mkdir(targetDir);
 
   const files: string[] = [];
+  const writeFile = (dir: string, name: string, content: string): void => {
+    io.writeFile(path.join(dir, name), content);
+  };
 
   // webcmd-plugin.json
   const manifest = {
@@ -171,8 +191,4 @@ webcmd ${name} greet --name World
   files.push('README.md');
 
   return { name, dir: targetDir, files };
-}
-
-function writeFile(dir: string, name: string, content: string): void {
-  fs.writeFileSync(path.join(dir, name), content);
 }

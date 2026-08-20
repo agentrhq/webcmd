@@ -411,10 +411,20 @@ async function dispatchHosted(
     }
     // parsed.command === 'create'
     const { createPluginScaffold } = await import('../plugin-scaffold.js');
+    const scaffoldRoot = path.resolve(parsed.name);
     const result = createPluginScaffold(parsed.name, {
-      ...(parsed.dir !== undefined ? { dir: parsed.dir } : {}),
+      dir: parsed.name,
       ...(parsed.description !== undefined ? { description: parsed.description } : {}),
       author: { name: parsed.authorName ?? '', handle: parsed.authorHandle ?? '' },
+      io: {
+        exists: () => false,
+        isEmptyDir: () => true,
+        mkdir: () => undefined,
+        writeFile: (target, body) => {
+          const relative = path.relative(scaffoldRoot, target);
+          void io.fileIo.writeText(path.posix.join(parsed.name, relative.split(path.sep).join('/')), body);
+        },
+      },
     });
     await writeToStream(stdout, `✅ Plugin scaffold created at ${result.dir}\n\n`);
     await writeToStream(stdout, '  Next steps (hosted mode):\n');
