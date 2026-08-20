@@ -745,24 +745,30 @@ describe('runHostedCli', () => {
     const stdout = sink();
     const stderr = sink();
     const fetchImpl = vi.fn<typeof fetch>();
-    const tempDir = await mkdtemp(path.join(tmpdir(), 'webcmd-hosted-plugin-create-'));
-    try {
-      const result = await runHostedCli(['plugin', 'create', 'acme', '--dir', tempDir,
-        '--author-name', 'A', '--author-handle', 'a'], {
-        config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
-        stdout: stdout.stream,
-        stderr: stderr.stream,
-        fetchImpl,
-      });
+    const outputs = createVirtualOutputSink();
+    const result = await runHostedCli(['plugin', 'create', 'acme', '--dir', 'package.json',
+      '--author-name', 'A', '--author-handle', 'a'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      files: createVirtualFileMap([]),
+      outputs,
+      fetchImpl,
+    });
 
-      expect(result).toEqual({ handled: true, exitCode: 0 });
-      expect(stdout.text()).toContain('Plugin scaffold created');
-      expect(stdout.text()).not.toContain('plugin install file://');
-      expect(stdout.text()).toMatch(/pull request|contribute/i);
-      expect(fetchImpl).not.toHaveBeenCalled();
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(result).toEqual({ handled: true, exitCode: 0 });
+    expect(stdout.text()).toContain('Plugin scaffold created');
+    expect(stdout.text()).not.toContain('plugin install file://');
+    expect(stdout.text()).toMatch(/pull request|contribute/i);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(outputs.files()).toHaveLength(5);
+    expect(outputs.files().map(file => file.path).sort()).toEqual([
+      'acme/webcmd-plugin.json',
+      'acme/package.json',
+      'acme/hello.ts',
+      'acme/greet.ts',
+      'acme/README.md',
+    ].sort());
   });
 
   it('shows hosted plugin search and install help without an API call', async () => {
