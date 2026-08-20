@@ -1,6 +1,6 @@
 ---
 name: smart-search
-description: Use when a request needs search, research, source discovery, direct URL fetch, evidence fetching, or search-capable Webcmd adapter discovery.
+description: Use when a request needs search, research, source discovery, direct URL fetch, a blocked/403/Cloudflare retry, evidence fetching, or search-capable Webcmd adapter discovery.
 ---
 
 # Smart Search
@@ -42,6 +42,8 @@ webcmd web fetch --url <url>
 ```
 
 Try fetch once. Only `FETCH_BLOCKED` or `FETCH_REQUIRES_BROWSER` permits browser fallback; otherwise report the returned failure rather than retrying the URL.
+
+If you already fetched the URL outside Webcmd and got non-2xx, 403, blocked, or Cloudflare, still run `webcmd web fetch --url <url>` once. That command does the TLS-impersonating retry. Do not jump to `browser run` from the raw status line.
 
 For browser fallback, create one Session, navigate the failed URL, inspect it, reuse that Session for allowed fallbacks, then close it. Local browser commands use Cloak; hosted browser commands use Webcmd Cloud and Browser Use. `web fetch` remains local in both modes.
 
