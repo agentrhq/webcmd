@@ -11,7 +11,8 @@ import { startDifferentialBackend, type DifferentialBackend } from './__fixtures
 const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const cliEntry = path.join(repoRoot, 'dist', 'src', 'main.js');
-const sourceFile: HostedVirtualFile = { path: 'source.js', content: new TextEncoder().encode('export const fixture = true;\n') };
+const sourceText = 'export const fixture = true;\n';
+const sourceFile: HostedVirtualFile = { path: 'source.js', content: new TextEncoder().encode(sourceText) };
 
 let backend: DifferentialBackend;
 let configDir: string;
@@ -107,13 +108,20 @@ describe('programmatic runner isolation', () => {
     expect(JSON.parse(execute?.body ?? '{}')).toMatchObject({ args: { query } });
   });
 
-  it('writes nothing to the filesystem', async () => {
+  it('keeps writer command output virtual and leaves the host cwd empty', async () => {
     const scratch = await mkdtemp(path.join(tmpdir(), 'webcmd-isolation-'));
     const before = process.cwd();
     process.chdir(scratch);
     try {
-      const result = await runProgrammatic(['list', '-f', 'json']);
-      expect(result.exitCode).toBe(0);
+      const plugin = await runProgrammatic(['plugin', 'create', 'acme-widgets', '--author-name', 'Ada', '--author-handle', 'ada']);
+      const source = await runProgrammatic(['adapter', 'source', 'get', 'acme/search', '--output', 'adapter.js']);
+      expect(plugin.exitCode).toBe(0);
+      expect(source.exitCode).toBe(0);
+      expect(plugin.outputFiles.map(file => file.path).sort()).toEqual([
+        'acme-widgets/README.md', 'acme-widgets/greet.ts', 'acme-widgets/hello.ts',
+        'acme-widgets/package.json', 'acme-widgets/webcmd-plugin.json',
+      ]);
+      expect(source.outputFiles).toEqual([{ path: 'adapter.js', content: new TextEncoder().encode('export default {};\n') }]);
       expect(await readdir(scratch)).toEqual([]);
     } finally {
       process.chdir(before);
@@ -132,11 +140,50 @@ describe('programmatic runner isolation', () => {
     expect(source.outputFiles).toEqual([{ path: 'adapter.js', content: new TextEncoder().encode('export default {};\n') }]);
   });
 
+  it('uploads identical adapter source bytes from host and virtual inputs', async () => {
+    const argv = ['adapter', 'source', 'put', 'acme/search', 'source.js'];
+    const installed = await runInstalled(argv);
+    const programmatic = await runProgrammatic(argv, [sourceFile]);
+    expect(programmatic.exitCode).toBe(installed.exitCode);
+    expect(programmatic.stdout).toBe(installed.stdout);
+    expect(programmatic.stderr).toBe(installed.stderr);
+    const bodies = backend.requests
+      .filter(request => request.method === 'PUT' && request.path === '/v1/adapters/pkg_fixture/source/search.js')
+      .slice(-2)
+      .map(request => request.body);
+    expect(bodies).toEqual([sourceText, sourceText]);
+  });
+
+  it('reports an error when the backend rejects an empty virtual adapter source', async () => {
+    const result = await runProgrammatic(
+      ['adapter', 'source', 'put', 'acme/search', 'source.js'],
+      [{ path: 'source.js', content: new Uint8Array() }],
+    );
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain('Fixture adapter source does not match expected bytes.');
+  });
+
   it('rejects an input path that escapes the virtual root', async () => {
     await expect(runHostedProgrammatic({
       argv: ['acme', 'search', '--query', 'x'], apiBaseUrl: backend.url, accessToken: 't',
       files: [{ path: '../../etc/passwd', content: new Uint8Array() }],
     })).rejects.toThrow(/escapes the virtual root/);
+  });
+
+  it('rejects an output path that escapes the virtual root without writing it', async () => {
+    const scratch = await mkdtemp(path.join(tmpdir(), 'webcmd-output-traversal-'));
+    const before = process.cwd();
+    process.chdir(scratch);
+    try {
+      const result = await runProgrammatic(['adapter', 'source', 'get', 'acme/search', '--output', '../../outside.js']);
+      expect(result.exitCode).not.toBe(0);
+      expect(result.stderr).toMatch(/escapes the virtual root|virtual file path/i);
+      expect(result.outputFiles).toEqual([]);
+      expect(await readdir(scratch)).toEqual([]);
+    } finally {
+      process.chdir(before);
+      await rm(scratch, { recursive: true, force: true });
+    }
   });
 
   it('propagates cancellation to the injected transport', async () => {

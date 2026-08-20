@@ -49,6 +49,8 @@ const browserRun = {
   profile: { id: 'profile_fixture', displayName: 'Fixture profile' },
 };
 
+const ADAPTER_SOURCE = 'export const fixture = true;\n';
+
 function executeSuccess(command: string): unknown {
   if (command === 'auth/status' || command === 'auth/refresh') {
     return {
@@ -122,6 +124,16 @@ export async function startDifferentialBackend(): Promise<DifferentialBackend> {
         return response.end('export default {};\n');
       }
       if (method === 'PUT' && path === '/v1/adapters/pkg_fixture/source/search.js') {
+        if (body !== ADAPTER_SOURCE) {
+          return json(response, {
+            ok: false,
+            error: {
+              code: 'INVALID_ADAPTER_SOURCE',
+              message: 'Fixture adapter source does not match expected bytes.',
+              exitCode: 2,
+            },
+          }, 422);
+        }
         return json(response, { ok: true, package: { id: 'pkg_fixture', storagePath: 'acme/search.js' }, commands: ['acme/search'] });
       }
       if (method === 'POST' && path === '/v1/execute') {
