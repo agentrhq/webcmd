@@ -48,19 +48,26 @@ function normalizeStructuredHelpFormat(value: string | undefined): StructuredHel
 }
 
 export function getRequestedHelpFormat(argv: readonly string[] = process.argv): StructuredHelpFormat | undefined {
+  let format: StructuredHelpFormat | undefined;
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i];
+    if (token === '--json') {
+      format = 'json';
+      continue;
+    }
     if (token === '-f' || token === '--format') {
-      return normalizeStructuredHelpFormat(argv[i + 1]);
+      format = normalizeStructuredHelpFormat(argv[i + 1]);
+      continue;
     }
     if (token.startsWith('--format=')) {
-      return normalizeStructuredHelpFormat(token.slice('--format='.length));
+      format = normalizeStructuredHelpFormat(token.slice('--format='.length));
+      continue;
     }
     if (token.startsWith('-f') && token.length > 2) {
-      return normalizeStructuredHelpFormat(token.slice(2));
+      format = normalizeStructuredHelpFormat(token.slice(2));
     }
   }
-  return undefined;
+  return format;
 }
 
 export function renderStructuredHelp(data: unknown, format: StructuredHelpFormat): string {

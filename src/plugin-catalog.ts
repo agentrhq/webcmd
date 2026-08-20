@@ -20,11 +20,11 @@ export interface PluginCatalog {
 }
 
 export interface PluginSearchRow {
+  installSource: string;
   name: string;
   description?: string;
   version?: string;
   sourceId: string;
-  installSource: string;
   webcmd?: string;
 }
 
@@ -114,21 +114,21 @@ export function removeCatalogSource(id: string, options: CatalogOptions = {}): P
 export function flattenPluginManifest(source: PluginCatalogSource, manifest: PluginManifest): PluginSearchRow[] {
   if (isMonorepo(manifest)) {
     return getEnabledPlugins(manifest).map(({ name, entry }) => ({
+      installSource: `${source.source}/${name}`,
       name,
       description: entry.description,
       version: entry.version,
       sourceId: source.id,
-      installSource: `${source.source}/${name}`,
       webcmd: entry.webcmd ?? manifest.webcmd,
     }));
   }
   if (!manifest.name) return [];
   return [{
+    installSource: source.source,
     name: manifest.name,
     description: manifest.description,
     version: manifest.version,
     sourceId: source.id,
-    installSource: source.source,
     webcmd: manifest.webcmd,
   }];
 }

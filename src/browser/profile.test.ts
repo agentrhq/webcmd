@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { ENV_PREFIX } from '../brand.js';
 import { ArgumentError } from '../errors.js';
-import { loadProfileConfig, profileListRows, profileRouteParams, resolveProfileSelection, setDefaultProfile } from './profile.js';
+import { createProfile, loadProfileConfig, profileListRows, profileRouteParams, resolveProfileSelection, setDefaultProfile } from './profile.js';
 
 describe('profile selection', () => {
   let configDir: string;
@@ -96,6 +96,31 @@ describe('profileListRows', () => {
     expect(rows).toEqual([
       { contextId: 'ctx-work', alias: 'work', default: true, connected: false, runtimeVersion: '' },
     ]);
+  });
+});
+
+describe('createProfile', () => {
+  let configDir: string;
+
+  beforeEach(() => {
+    configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-profile-create-'));
+    vi.stubEnv(`${ENV_PREFIX}_CONFIG_DIR`, configDir);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    fs.rmSync(configDir, { recursive: true, force: true });
+  });
+
+  it('creates an alias and is idempotent', () => {
+    expect(createProfile('eval-a')).toEqual({ contextId: 'eval-a', alias: 'eval-a', created: true });
+    expect(createProfile('eval-a')).toEqual({ contextId: 'eval-a', alias: 'eval-a', created: false });
+    expect(loadProfileConfig().aliases['eval-a']).toBe('eval-a');
+    expect(fs.existsSync(path.join(configDir, 'cloak', 'profiles', 'eval-a'))).toBe(true);
+  });
+
+  it('rejects an invalid alias', () => {
+    expect(() => createProfile('../nope')).toThrow(ArgumentError);
   });
 });
 

@@ -948,7 +948,7 @@ describe('runHostedCli', () => {
     });
 
     expect(result.handled).toBe(true);
-    expect(stderr.text()).toMatch(/unknown command|not supported/i);
+    expect(stderr.text()).toMatch(/unknown command|not supported|not available/i);
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 

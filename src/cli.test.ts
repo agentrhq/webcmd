@@ -534,7 +534,7 @@ describe('createProgram root help descriptions', () => {
     expect(descriptionFor(program, 'auth')).toBe('refresh, status');
     expect(descriptionFor(program, 'plugin')).toBe('catalog, create, install, list, search, uninstall, update');
     expect(descriptionFor(program, 'adapter')).toBe('override, path, reset, source, status');
-    expect(descriptionFor(program, 'profile')).toBe('list, rename, use');
+    expect(descriptionFor(program, 'profile')).toBe('create, list, rename, use');
     expect(descriptionFor(program, 'daemon')).toBe('restart, status, stop');
     expect(descriptionFor(program, 'external')).toBe('install, list, register');
   });
@@ -1123,7 +1123,7 @@ name: 'search',
       expect(data.domain).toBe('www.youtube.com');
       expect(data.positionals).toMatchObject([{ name: 'bvid', positional: true, required: true }]);
       expect(data.command_options).toMatchObject([{ name: 'with-comments', default: false }]);
-      expect(data.common_options.map((option: any) => option.name)).toEqual(['format', 'trace', 'verbose', 'help']);
+      expect(data.common_options.map((option: any) => option.name)).toEqual(['format', 'json', 'trace', 'verbose', 'help']);
       expect(data.columns).toEqual(['title', 'url']);
       expect(data).not.toHaveProperty('args');
     } finally {
@@ -1268,6 +1268,8 @@ name: 'search',
     expect(search.options.map(option => option.flags)).toContain('-f, --format <fmt>');
     expect(install.usage()).toBe('[options] <source>');
     expect(install.description()).toBe('Install a plugin from a git repository');
+    expect(install.registeredArguments[0]?.description).toContain('github:user/repo/<plugin>');
+    expect(install.options.map(option => option.long)).toContain('--all');
   });
 
   it('renders adapter namespace structured help preserving original description after applyRootSubcommandSummaries', () => {
@@ -1308,9 +1310,9 @@ name: 'search',
       expect(data).toMatchObject({
         namespace: 'profile',
         description: 'Manage webcmd browser runtime profiles',
-        command_count: 3,
+        command_count: 4,
       });
-      expect(data.commands.map((cmd: any) => cmd.name)).toEqual(['list', 'rename', 'use']);
+      expect(data.commands.map((cmd: any) => cmd.name)).toEqual(['create', 'list', 'rename', 'use']);
       const list = data.commands.find((cmd: any) => cmd.name === 'list');
       expect(list).toMatchObject({
         description: 'List Chrome and Chromium profiles available through the Cloak runtime',
@@ -2308,6 +2310,28 @@ describe('browser Session lifecycle commands', () => {
     expect(output).toContain('session_abc');
     expect(output).toContain('runtimeState');
     expect(output).not.toContain('profileId');
+  });
+
+  it('creates a session under a newly created profile', async () => {
+    mockSendCommand.mockResolvedValue({
+      id: 'session_eval',
+      kind: 'explicit',
+      profileId: 'eval-a',
+      runtimeState: 'idle',
+    });
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'profile', 'create', 'eval-a']);
+    await createProgram('', '').parseAsync(['node', 'webcmd', '--profile', 'eval-a', 'session', 'create']);
+    expect(mockSendCommand).toHaveBeenCalledWith('session-create', { contextId: 'eval-a' });
+  });
+
+  it('rejects an unknown --profile on session create with PROFILE_NOT_FOUND', async () => {
+    await expect(createProgram('', '').parseAsync(['node', 'webcmd', '--profile', 'does-not-exist', 'session', 'create']))
+      .rejects.toMatchObject({
+        code: 'PROFILE_NOT_FOUND',
+        message: expect.stringContaining('does-not-exist'),
+        hint: expect.stringMatching(/profile create[\s\S]*profile list/),
+      });
+    expect(mockSendCommand).not.toHaveBeenCalled();
   });
 
   it('lists persisted Sessions without creating the adapter default when daemon is absent', async () => {

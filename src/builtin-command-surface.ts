@@ -1,4 +1,4 @@
-import { OUTPUT_FORMAT_HELP } from './command-surface.js';
+import { addOutputFormatOption, OUTPUT_FORMAT_HELP } from './command-surface.js';
 import type { Command } from 'commander';
 
 export const LIST_COMMAND_DESCRIPTION = 'List all available CLI commands';
@@ -8,10 +8,9 @@ export const COMPLETION_SHELL_DESCRIPTION = 'Shell type: bash, zsh, or fish';
 
 /** Configure built-in grammar shared by the local and hosted runtimes. */
 export function configureListCommandSurface(command: Command): Command {
-  return command
+  return addOutputFormatOption(command
     .description(LIST_COMMAND_DESCRIPTION)
-    .option('-f, --format <fmt>', LIST_FORMAT_DESCRIPTION, 'table')
-    .option('--tag <tag>', 'Filter commands by exact tag');
+    .option('--tag <tag>', 'Filter commands by exact tag'));
 }
 
 /** Configure completion grammar shared by the local and hosted runtimes. */
@@ -23,24 +22,22 @@ export function configureCompletionCommandSurface(command: Command): Command {
 
 /** Configure plugin marketplace search grammar shared by local and hosted runtimes. */
 export function configurePluginSearchSurface(command: Command): Command {
-  return command
+  return addOutputFormatOption(command
     .description('Search installable marketplace plugins')
-    .argument('[query]', 'Search query matched against plugin name and description')
-    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
+    .argument('[query]', 'Search query matched against plugin name and description'));
 }
 
 /** Configure plugin installation grammar shared by local and hosted runtimes. */
 export function configurePluginInstallSurface(command: Command): Command {
   return command
     .description('Install a plugin from a git repository')
-    .argument('<source>', 'Plugin source (e.g. github:user/repo)');
+    .argument('<source>', 'Plugin source (e.g. github:user/repo/<plugin>)')
+    .option('--all', 'Install every plugin from a monorepo root');
 }
 
 /** Configure installed-plugin listing grammar shared by local and hosted runtimes. */
 export function configurePluginListSurface(command: Command): Command {
-  return command
-    .description('List installed plugins')
-    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
+  return addOutputFormatOption(command.description('List installed plugins'));
 }
 
 /** Configure plugin uninstall grammar shared by local and hosted runtimes. */

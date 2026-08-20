@@ -82,16 +82,22 @@ export function errorEnvelopeFormat(fmt?: unknown): 'json' | 'yaml' {
 }
 
 export function requestedFormatFromArgv(argv: readonly string[]): string | undefined {
+  let format: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i]!;
     if (token === '--') break;
+    if (token === '--json') {
+      format = 'json';
+      continue;
+    }
     if (token === '-f' || token === '--format') {
       const value = argv[i + 1];
-      return value && !value.startsWith('-') ? value : undefined;
+      format = value && !value.startsWith('-') ? value : undefined;
+      continue;
     }
-    if (token.startsWith('--format=')) return token.slice('--format='.length) || undefined;
+    if (token.startsWith('--format=')) format = token.slice('--format='.length) || undefined;
   }
-  return undefined;
+  return format;
 }
 
 /** Serialize the local error envelope without writing to process-global stderr. */

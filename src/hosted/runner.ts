@@ -13,7 +13,7 @@ import {
   configurePluginUpdateSurface,
 } from '../builtin-command-surface.js';
 import { BrowserSessionArgvError, rejectMisplacedSessionSelectorArgv, rejectPositionalBrowserSessionArgv } from '../cli-argv-preprocess.js';
-import { CommanderStructuralError, MissingRequiredPositionalError, OUTPUT_FORMAT_HELP, parseOutputFormat, resolveCommandFromArgv, structuralErrorFromCommander } from '../command-surface.js';
+import { addOutputFormatOption, CommanderStructuralError, MissingRequiredPositionalError, outputFormatIsExplicit, parseOutputFormat, requestedOutputFormat, resolveCommandFromArgv, structuralErrorFromCommander } from '../command-surface.js';
 import { filterCommandsByTag, formatRootHelp, getCommandCompletionCandidates } from '../command-presentation.js';
 import {
   HOSTED_BUILTIN_COMMANDS,
@@ -257,7 +257,7 @@ async function dispatchHosted(
   }
 
   if (args[0] === 'profile') {
-    if (args[1] === 'rename' || args[1] === 'use') {
+    if (args[1] === 'rename' || args[1] === 'use' || args[1] === 'create') {
       throw new ConfigError(
         `webcmd profile ${args[1]} is not available in hosted mode.`,
         'Hosted mode supports: webcmd profile list and delete.',
@@ -298,7 +298,7 @@ async function dispatchHosted(
         })), {
           fmt: parsed.format,
           fmtExplicit: parsed.formatExplicit,
-          columns: ['name', 'description', 'version', 'sourceId', 'installSource', 'webcmd', 'availability', 'excludedCommands'],
+          columns: ['installSource', 'name', 'description', 'version', 'sourceId', 'webcmd', 'availability', 'excludedCommands'],
           title: `${CLI_COMMAND}/plugin-search`,
           source: `${CLI_COMMAND} plugin search`,
           stdout,
@@ -645,9 +645,9 @@ function parseHostedSessionSurface(argv: readonly string[], literal: boolean): P
   };
   root.exitOverride().configureOutput(output);
   session.exitOverride().configureOutput(output);
-  const configure = (command: Command, format: string): Command => command.option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, format);
+  const configure = (command: Command, format: string): Command => addOutputFormatOption(command, format);
   const setParsed = (command: 'create' | 'list' | 'close', surface: Command, format: string, extras: Omit<Exclude<ParsedHostedSessionSurface, { kind: 'help' }>, 'kind' | 'command' | 'format' | 'formatExplicit'> = {}): void => {
-    parsed = { kind: 'run', command, format: validateHostedFormat(format), formatExplicit: surface.getOptionValueSource('format') === 'cli', ...extras };
+    parsed = { kind: 'run', command, format: validateHostedFormat(String(requestedOutputFormat(surface, format))), formatExplicit: outputFormatIsExplicit(surface), ...extras };
   };
   const create = configure(session.command('create'), 'yaml');
   create.action((options: { format: string }) => setParsed('create', create, options.format));
@@ -1127,9 +1127,9 @@ function parseHostedListSurface(argv: readonly string[], literal: boolean): Pars
   root.exitOverride().configureOutput(output);
   list.exitOverride().configureOutput(output).action((options: { format: string; tag?: string }) => {
     actionRan = true;
-    parsedFormat = validateHostedFormat(options.format);
+    parsedFormat = validateHostedFormat(String(requestedOutputFormat(list, options.format)));
     parsedTag = options.tag;
-    formatExplicit = list.getOptionValueSource('format') === 'cli';
+    formatExplicit = outputFormatIsExplicit(list);
   });
 
   try {
@@ -1171,8 +1171,7 @@ function parseHostedProfileSurface(
   root.exitOverride().configureOutput(output);
   profile.exitOverride().configureOutput(output);
 
-  const configureFormat = (command: Command): Command =>
-    command.option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
+  const configureFormat = (command: Command): Command => addOutputFormatOption(command);
   const setParsed = (
     command: HostedProfileCommand,
     surface: Command,
@@ -1182,8 +1181,8 @@ function parseHostedProfileSurface(
     parsed = {
       kind: 'run',
       command,
-      format: validateHostedFormat(options.format),
-      formatExplicit: surface.getOptionValueSource('format') === 'cli',
+      format: validateHostedFormat(String(requestedOutputFormat(surface, options.format))),
+      formatExplicit: outputFormatIsExplicit(surface),
       ...(value !== undefined ? { value } : {}),
     };
   };
@@ -1248,7 +1247,7 @@ function parseHostedPluginSurface(
 
   const search = configurePluginSearchSurface(plugin.command('search'));
   search.exitOverride().configureOutput(output).action((query: string | undefined, options: { format: string }) => {
-    parsed = { kind: 'run', command: 'search', ...(query !== undefined ? { query } : {}), format: validateHostedFormat(options.format), formatExplicit: search.getOptionValueSource('format') === 'cli' };
+    parsed = { kind: 'run', command: 'search', ...(query !== undefined ? { query } : {}), format: validateHostedFormat(String(requestedOutputFormat(search, options.format))), formatExplicit: outputFormatIsExplicit(search) };
   });
   const install = configurePluginInstallSurface(plugin.command('install'));
   install.exitOverride().configureOutput(output).action((source: string) => {
@@ -1256,7 +1255,7 @@ function parseHostedPluginSurface(
   });
   const list = configurePluginListSurface(plugin.command('list'));
   list.exitOverride().configureOutput(output).action((options: { format: string }) => {
-    parsed = { kind: 'run', command: 'list', format: validateHostedFormat(options.format), formatExplicit: list.getOptionValueSource('format') === 'cli' };
+    parsed = { kind: 'run', command: 'list', format: validateHostedFormat(String(requestedOutputFormat(list, options.format))), formatExplicit: outputFormatIsExplicit(list) };
   });
   const uninstall = configurePluginUninstallSurface(plugin.command('uninstall'));
   uninstall.exitOverride().configureOutput(output).action((name: string) => {

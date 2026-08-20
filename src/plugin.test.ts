@@ -1202,7 +1202,34 @@ describe('installPlugin transactional staging', () => {
       return '';
     });
 
-    expect(() => installPlugin(monorepoSource)).toThrow(`npm install failed`);
+    expect(() => installPlugin(monorepoSource, { all: true })).toThrow(`npm install failed`);
+    expect(fs.existsSync(monorepoRepoDir)).toBe(false);
+    expect(fs.existsSync(monorepoLink)).toBe(false);
+    expect(_readLockFile().alpha).toBeUndefined();
+  });
+
+  it('refuses a monorepo root without --all and installs nothing', () => {
+    mockExecFileSync.mockImplementation((cmd, args) => {
+      if (cmd === 'git' && Array.isArray(args) && args[0] === 'clone') {
+        const cloneDir = String(args[args.length - 1]);
+        const alphaDir = path.join(cloneDir, 'packages', 'alpha');
+        const betaDir = path.join(cloneDir, 'packages', 'beta');
+        fs.mkdirSync(alphaDir, { recursive: true });
+        fs.mkdirSync(betaDir, { recursive: true });
+        fs.writeFileSync(path.join(cloneDir, 'webcmd-plugin.json'), JSON.stringify({
+          plugins: {
+            alpha: { path: 'packages/alpha' },
+            beta: { path: 'packages/beta' },
+          },
+        }));
+        fs.writeFileSync(path.join(alphaDir, 'hello.js'), 'cli({ site: "test", name: "hello", access: "read" })');
+        fs.writeFileSync(path.join(betaDir, 'hello.js'), 'cli({ site: "test", name: "hello", access: "read" })');
+        return '';
+      }
+      return '';
+    });
+
+    expect(() => installPlugin(monorepoSource)).toThrow(/This source has 2 plugins/);
     expect(fs.existsSync(monorepoRepoDir)).toBe(false);
     expect(fs.existsSync(monorepoLink)).toBe(false);
     expect(_readLockFile().alpha).toBeUndefined();
@@ -1783,6 +1810,9 @@ describe('updatePlugin dirty-checkout guard', () => {
     _writeLockFile(lock);
 
     mockExecFileSync.mockImplementation((cmd, args, opts) => {
+      if (cmd === 'git' && Array.isArray(args) && args[0] === 'diff') {
+        return opts?.cwd === monorepoRepoDir ? 'M\tpackages/alpha-dirty/old.js\n' : '';
+      }
       if (cmd === 'git' && Array.isArray(args) && args[0] === 'status') {
         return opts?.cwd === monorepoRepoDir ? ' M packages/alpha-dirty/old.js\n' : '';
       }
@@ -1815,6 +1845,9 @@ describe('updatePlugin dirty-checkout guard', () => {
     _writeLockFile(lock);
 
     mockExecFileSync.mockImplementation((cmd, args, opts) => {
+      if (cmd === 'git' && Array.isArray(args) && args[0] === 'diff') {
+        return opts?.cwd === monorepoRepoDir ? 'M\tpackages/alpha-dirty/old.js\n' : '';
+      }
       if (cmd === 'git' && Array.isArray(args) && args[0] === 'status') {
         return opts?.cwd === monorepoRepoDir ? ' M packages/alpha-dirty/old.js\n' : '';
       }
@@ -1841,6 +1874,86 @@ describe('updatePlugin dirty-checkout guard', () => {
     });
 
     expect(() => updatePlugin(monorepoPluginName, { force: true })).not.toThrow();
+  });
+
+  it('updates one monorepo plugin when only a sibling path is dirty', () => {
+    const subDir = path.join(monorepoRepoDir, 'packages', monorepoPluginName);
+    const siblingDir = path.join(monorepoRepoDir, 'packages', 'rest-countries');
+    fs.mkdirSync(subDir, { recursive: true });
+    fs.mkdirSync(siblingDir, { recursive: true });
+    fs.writeFileSync(path.join(subDir, 'old.js'), 'cli({ site: "old", name: "old", access: "read" })');
+    fs.writeFileSync(path.join(siblingDir, 'top.js'), 'cli({ site: "rest-countries", name: "top", access: "read" })');
+    fs.mkdirSync(PLUGINS_DIR, { recursive: true });
+    fs.symlinkSync(subDir, monorepoLink, 'dir');
+    const siblingLink = path.join(PLUGINS_DIR, 'rest-countries');
+    fs.symlinkSync(siblingDir, siblingLink, 'dir');
+
+    const lock = _readLockFile();
+    lock[monorepoPluginName] = {
+      source: {
+        kind: 'monorepo',
+        url: 'https://github.com/user/webcmd-plugins-__test-dirty-mono__.git',
+        repoName: monorepoName,
+        subPath: `packages/${monorepoPluginName}`,
+      },
+      commitHash: 'oldmonooldmonooldmonooldmonooldmonoold',
+      installedAt: '2025-01-01T00:00:00.000Z',
+    };
+    lock['rest-countries'] = {
+      source: {
+        kind: 'monorepo',
+        url: 'https://github.com/user/webcmd-plugins-__test-dirty-mono__.git',
+        repoName: monorepoName,
+        subPath: 'packages/rest-countries',
+      },
+      commitHash: 'oldmonooldmonooldmonooldmonooldmonoold',
+      installedAt: '2025-01-01T00:00:00.000Z',
+    };
+    _writeLockFile(lock);
+
+    mockExecFileSync.mockImplementation((cmd, args, opts) => {
+      if (cmd === 'git' && Array.isArray(args) && args[0] === 'diff') {
+        const pathspec = Array.isArray(args) ? args[args.length - 1] : '';
+        if (pathspec === `packages/${monorepoPluginName}`) return '';
+        return 'M\tpackages/rest-countries/top.js\n';
+      }
+      if (cmd === 'git' && Array.isArray(args) && args[0] === 'status') {
+        return opts?.cwd === monorepoRepoDir ? ' M packages/rest-countries/top.js\n' : '';
+      }
+      if (cmd === 'git' && Array.isArray(args) && args[0] === 'clone') {
+        const cloneDir = String(args[4]);
+        const alphaDir = path.join(cloneDir, 'packages', monorepoPluginName);
+        const siblingClone = path.join(cloneDir, 'packages', 'rest-countries');
+        fs.mkdirSync(alphaDir, { recursive: true });
+        fs.mkdirSync(siblingClone, { recursive: true });
+        fs.writeFileSync(path.join(cloneDir, 'package.json'), JSON.stringify({
+          name: 'webcmd-plugins-__test-dirty-mono__',
+          private: true,
+        }));
+        fs.writeFileSync(path.join(cloneDir, 'webcmd-plugin.json'), JSON.stringify({
+          plugins: {
+            [monorepoPluginName]: { path: `packages/${monorepoPluginName}` },
+            'rest-countries': { path: 'packages/rest-countries' },
+          },
+        }));
+        fs.writeFileSync(path.join(alphaDir, 'hello.js'), 'cli({ site: "test", name: "hello", access: "read" })');
+        fs.writeFileSync(path.join(siblingClone, 'top.js'), 'SHOULD_NOT_BE_COPIED');
+        return '';
+      }
+      if (cmd === 'git' && Array.isArray(args) && args[0] === 'rev-parse' && args[1] === 'HEAD') {
+        return '1234567890abcdef1234567890abcdef12345678\n';
+      }
+      return '';
+    });
+
+    expect(updatePlugin(monorepoPluginName)).toEqual([monorepoPluginName]);
+    expect(fs.readFileSync(path.join(siblingDir, 'top.js'), 'utf-8')).toContain('rest-countries');
+    expect(fs.existsSync(path.join(subDir, 'hello.js'))).toBe(true);
+
+    try { fs.unlinkSync(siblingLink); } catch {}
+    const finalLock = _readLockFile();
+    delete finalLock['rest-countries'];
+    _writeLockFile(finalLock);
   });
 
   it('local (symlinked) plugin updates are not blocked by the dirty-checkout guard', () => {
