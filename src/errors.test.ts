@@ -188,6 +188,7 @@ describe('SessionBusyError platform hints', () => {
 
   it('uses PowerShell process guidance on Windows when the holder pid is known', () => {
     const err = new SessionBusyError(holder, 'win32', () => true);
+    expect(err.hint).toContain('run the same command again');
     expect(err.hint).toContain('Stop-Process -Id 4242');
     expect(err.hint).not.toContain('kill 4242');
   });
@@ -195,6 +196,7 @@ describe('SessionBusyError platform hints', () => {
   it('uses Task Manager guidance on Windows when the holder pid is unavailable', () => {
     const err = new SessionBusyError({ ...holder, pid: undefined }, 'win32');
     expect(err.hint).toMatch(/wait/i);
+    expect(err.hint).toContain('run the same command again');
     expect(err.hint).toContain('Task Manager');
     expect(err.hint).not.toContain('Stop-Process');
   });
@@ -217,6 +219,7 @@ describe('SessionBusyError platform hints', () => {
     expect(err.hint).toMatch(/wait/i);
     expect(err.hint).not.toContain('kill 4242');
     expect(err.hint).toContain('webcmd session close --force session_a');
+    expect(err.hint).not.toContain('Do not force-close');
   });
 
   it.each([

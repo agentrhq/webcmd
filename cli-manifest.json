@@ -2,7 +2,7 @@
   {
     "site": "web",
     "name": "fetch",
-    "description": "Fetch a URL with local HTTP clients",
+    "description": "Fetch a URL with local HTTP clients. Use after a blocked, 403, or Cloudflare response; never opens a browser.",
     "access": "read",
     "strategy": "public",
     "browser": false,

@@ -45,7 +45,7 @@ export const HOSTED_ROOT_HELP: RootHelpPresentation = {
     { name: 'list', description: 'List all available hosted CLI commands' },
     { name: 'profile', description: 'Manage hosted browser profiles' },
     { name: 'setup', description: 'Configure local or hosted mode' },
-    { name: 'web', description: 'Fetch URLs locally without launching a browser' },
+    { name: 'web', description: 'Fetch URLs locally without launching a browser. Use after a blocked, 403, or Cloudflare response.' },
   ],
   localOnlyCommands: [
     { name: 'adapter', description: 'Manage adapters installed on this computer' },

@@ -5,6 +5,7 @@ import {
   formatCommandHelpText,
   formatRootAdapterHelpText,
   formatSiteHelpText,
+  getRequestedHelpFormat,
   siteHelpData,
 } from './help.js';
 import {
@@ -59,6 +60,10 @@ describe('classifyAdapter', () => {
     expect(classifyAdapter('news.ycombinator.com')).toBe('site');
     expect(classifyAdapter('192.168.1.1')).toBe('site');
   });
+});
+
+it('lets explicit --format win over --json in structured help', () => {
+  expect(getRequestedHelpFormat(['webcmd', '--help', '--format', 'yaml', '--json'])).toBe('yaml');
 });
 
 describe('formatRootAdapterHelpText', () => {

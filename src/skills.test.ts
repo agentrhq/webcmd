@@ -280,11 +280,13 @@ describe('webcmd skills content', () => {
     const autofix = bundledSkill('webcmd-autofix');
 
     expect(usage).toContain('webcmd session create -f json');
+    expect(usage).toContain('webcmd profile create work');
     expect(usage).toContain('webcmd --session session_abc browser');
     expect(usage).toContain('SESSION_BUSY');
     expect(usage).toContain('SESSION_REQUIRED');
     expect(usage).toMatch(/Adapter commands may omit `--session`[\s\S]{0,200}adapter-default session/i);
     expect(usage).toMatch(/retired positional session form is invalid/i);
+    expect(browser).toContain('webcmd profile create work');
     expect(browser).toMatch(/Profiles are cookie jars[\s\S]{0,180}sessions are browser workspaces\/windows/i);
     expect(browser).toMatch(/Parallel agents use separate sessions/i);
     expect(browser).toContain('SESSION_BUSY');

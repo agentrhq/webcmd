@@ -201,7 +201,7 @@ describe('hosted root command surface', () => {
   it('advertises client-owned web fetch at the hosted root', () => {
     expect(HOSTED_ROOT_HELP.commands).toContainEqual({
       name: 'web',
-      description: 'Fetch URLs locally without launching a browser',
+      description: 'Fetch URLs locally without launching a browser. Use after a blocked, 403, or Cloudflare response.',
     });
   });
 

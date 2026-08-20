@@ -158,7 +158,7 @@ export const browserCommandCatalog: readonly HostedBrowserCommandContract[] = [
     option('trace', 'Trace capture: off, on, or retain-on-failure', { default: 'off' }),
     option('maxTopLevelKeys', 'Maximum allowed top-level keys', { default: 12 }),
   ], 'create-or-reuse'),
-  command('run', 'Run JavaScript with Playwright', 'run', [], [
+  command('run', 'Run JavaScript with Playwright. A second overlapping run returns SESSION_BUSY; wait and retry.', 'run', [], [
     flag('stdin', 'Read the program from stdin'),
     option('file', 'Read the program from a file'),
     option('timeout', 'Execution timeout in seconds'),

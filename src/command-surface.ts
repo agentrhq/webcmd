@@ -8,6 +8,8 @@ export const OUTPUT_FORMATS = ['table', 'plain', 'json', 'yaml', 'md', 'csv'] as
 export const OUTPUT_FORMAT_ALIASES: Readonly<Record<string, string>> = { yml: 'yaml', markdown: 'md' };
 /** Shared option description so every `-f/--format` flag advertises the same formats. */
 export const OUTPUT_FORMAT_HELP = `Output format: ${OUTPUT_FORMATS.join(', ')}`;
+/** Shared `--json` description so the flag is listed wherever `--format` is. */
+export const JSON_FORMAT_ALIAS_HELP = 'Alias of --format json';
 export const TRACE_MODES = ['off', 'on', 'retain-on-failure'] as const;
 
 const BROWSER_WINDOW_MODES = ['foreground', 'background'] as const;
@@ -137,8 +139,7 @@ export function configureCommandSurface(command: Command, metadata: CommandSurfa
     else command.option(flag, arg.help ?? '');
   }
 
-  command
-    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table')
+  addOutputFormatOption(command)
     .option('--trace <mode>', `Trace capture: ${TRACE_MODES.join(', ')}`, 'off')
     .option('-v, --verbose', 'Debug output', false);
 
@@ -228,8 +229,8 @@ export function parseCommandSurface(
   // format validation, and trace validation occurs inside executeCommand after
   // both. Commander has already enforced required positionals/options.
   const args = coerceCommandArguments(metadata.args, input);
-  const formatExplicit = command.getOptionValueSource('format') === 'cli';
-  const format = parseOutputFormat(formatExplicit ? parsedOptions.format : defaultFormat);
+  const formatExplicit = outputFormatIsExplicit(command);
+  const format = parseOutputFormat(formatExplicit ? requestedOutputFormat(command, parsedOptions.format) : defaultFormat);
   const trace = parseTraceMode(parsedOptions.trace ?? 'off');
   const verbose = parsedOptions.verbose === true;
 
@@ -352,6 +353,29 @@ export function resolveOutputFormat(raw: string | undefined): OutputFormat | nul
     }
     throw err;
   }
+}
+
+/** Register `-f/--format` plus the `--json` alias on one command. */
+export function addOutputFormatOption(command: Command, defaultFormat = 'table'): Command {
+  return command
+    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, defaultFormat)
+    .option('--json', JSON_FORMAT_ALIAS_HELP, false);
+}
+
+export function outputFormatIsExplicit(command: Command): boolean {
+  return command.getOptionValueSource('format') === 'cli' || command.getOptionValueSource('json') === 'cli';
+}
+
+/** Resolve `--json` onto `--format json` unless `--format` was also passed. */
+export function requestedOutputFormat(command: Command, format: unknown): unknown {
+  return command.getOptionValueSource('json') === 'cli' && command.getOptionValueSource('format') !== 'cli'
+    ? 'json'
+    : format;
+}
+
+export function resolveCommandOutputFormat(command: Command, format: unknown): OutputFormat | null {
+  const raw = requestedOutputFormat(command, format);
+  return resolveOutputFormat(raw === undefined ? undefined : String(raw));
 }
 
 function parseTraceMode(value: unknown): TraceMode {

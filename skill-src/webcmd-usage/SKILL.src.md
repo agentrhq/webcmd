@@ -65,11 +65,16 @@ Profiles are cookie jars and authentication scope. Sessions are browser workspac
 
 ```bash
 webcmd session create -f json
+webcmd profile create work
+webcmd --profile work session create -f json
 webcmd --session session_abc browser snapshot --snapshot-mode act
 webcmd --session session_abc browser run --stdin
 webcmd session list
 webcmd session close session_abc
 ```
+
+Create a named profile before using it. If `--profile <name> session create` returns
+`PROFILE_NOT_FOUND`, run `webcmd profile create <name>` and retry.
 
 `webcmd session close <session-id>` is blocked while that Session has a live human handoff.
 Adapter commands may omit `--session` and use the selected profile's adapter-default session. Pass `--session <session-id>` to route one into an explicit session. Raw browser commands never omit it; the retired positional session form is invalid.

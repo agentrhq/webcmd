@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Command, InvalidArgumentError, Option } from 'commander';
-import { OUTPUT_FORMAT_HELP, resolveOutputFormat } from '../command-surface.js';
+import { addOutputFormatOption, outputFormatIsExplicit, resolveCommandOutputFormat } from '../command-surface.js';
 import { AuthRequiredError, CliError, getErrorMessage } from '../errors.js';
 import { executeCommand } from '../execution.js';
 import { enableVerbose } from '../logger.js';
@@ -467,13 +467,13 @@ export function registerAuthCommands(program: Command): Command {
     .option('--concurrency <n>', 'Maximum sites to check at once')
     .option('--timeout <seconds>', 'Per-site timeout in seconds')
     .addOption(new Option('--only <status>', 'Filter rows by status').choices(['all', 'logged-in', 'not-logged-in', 'unknown', 'error']).default('all'))
-    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table')
-    .option('-v, --verbose', 'Debug output', false)
-    .action(async (opts) => {
+    .option('-v, --verbose', 'Debug output', false);
+  addOutputFormatOption(status);
+  status.action(async (opts) => {
       // Both auth probes drive the browser/daemon stack, so verbose mode surfaces
       // the CDP diagnostics those layers already gate on `isVerbose()` (#174).
       enableVerbose(opts.verbose === true);
-      const fmt = resolveOutputFormat(opts.format);
+      const fmt = resolveCommandOutputFormat(status, opts.format);
       if (fmt === null) return;
       const globals = typeof status.optsWithGlobals === 'function' ? status.optsWithGlobals() as Record<string, unknown> : {};
       const rows = await collectAuthStatus({
@@ -486,7 +486,7 @@ export function registerAuthCommands(program: Command): Command {
       });
       renderOutput(rows, {
         fmt,
-        fmtExplicit: status.getOptionValueSource('format') === 'cli',
+        fmtExplicit: outputFormatIsExplicit(status),
         columns: ['site', 'status', 'identity', 'checked', 'error'],
         title: 'webcmd/auth status',
         source: opts.full ? 'full whoami probe' : 'quick auth check',
@@ -500,11 +500,11 @@ export function registerAuthCommands(program: Command): Command {
     .option('--all', 'Ignore the 24h refresh throttle and force every selected site', false)
     .option('--concurrency <n>', 'Maximum sites to refresh at once')
     .option('--timeout <seconds>', 'Per-site timeout in seconds')
-    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table')
-    .option('-v, --verbose', 'Debug output', false)
-    .action(async (opts) => {
+    .option('-v, --verbose', 'Debug output', false);
+  addOutputFormatOption(refresh);
+  refresh.action(async (opts) => {
       enableVerbose(opts.verbose === true);
-      const fmt = resolveOutputFormat(opts.format);
+      const fmt = resolveCommandOutputFormat(refresh, opts.format);
       if (fmt === null) return;
       const globals = typeof refresh.optsWithGlobals === 'function' ? refresh.optsWithGlobals() as Record<string, unknown> : {};
       const rows = await collectAuthRefresh({
@@ -516,7 +516,7 @@ export function registerAuthCommands(program: Command): Command {
       });
       renderOutput(rows, {
         fmt,
-        fmtExplicit: refresh.getOptionValueSource('format') === 'cli',
+        fmtExplicit: outputFormatIsExplicit(refresh),
         columns: ['site', 'status', 'last_touched_at', 'next_refresh_at', 'error'],
         title: 'webcmd/auth refresh',
         source: opts.all ? 'forced persistent touch' : 'persistent touch with 24h throttle',

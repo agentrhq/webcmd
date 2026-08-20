@@ -89,6 +89,23 @@ describe('parseCommandSurface', () => {
     });
   });
 
+  it('treats --json as an explicit --format json alias', () => {
+    expect(parseCommandSurface(metadata, ['needle', '--json'])).toMatchObject({
+      format: 'json',
+      formatExplicit: true,
+    });
+  });
+
+  it.each([
+    ['needle', '--json', '--format', 'yaml'],
+    ['needle', '--format', 'yaml', '--json'],
+  ])('lets an explicit --format win over --json for %j', (...argv) => {
+    expect(parseCommandSurface(metadata, argv)).toMatchObject({
+      format: 'yaml',
+      formatExplicit: true,
+    });
+  });
+
   it.each<{ input: string; normalized: OutputFormat }>([
     { input: 'table', normalized: 'table' },
     { input: 'plain', normalized: 'plain' },
@@ -196,6 +213,7 @@ describe('configureCommandSurface', () => {
       '--enabled',
       '--label',
       '--format',
+      '--json',
       '--trace',
       '--verbose',
     ]));
@@ -215,6 +233,7 @@ describe('unknown option contract', () => {
       expect(error.output).toContain("error: unknown option '--unknown'");
       expect(error.output).toContain('help: valid flags for `webcmd demo search`:');
       expect(error.output).toContain('--format');
+      expect(error.output).toContain('--json');
       expect(error.output).toContain('--trace');
     }
   });
