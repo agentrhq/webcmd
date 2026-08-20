@@ -290,6 +290,8 @@ describe('webcmd skills content', () => {
     expect(browser).toContain('SESSION_BUSY');
     expect(browser).toContain('SESSION_PAUSED_FOR_HUMAN_HANDOFF');
     expect(browser).toContain('webcmd session close <session-id> --force');
+    expect(usage).toMatch(/second `webcmd --session <id>/);
+    expect(browser).toContain('Do not implement Session occupancy inside the page');
     for (const skill of [usage, browser, autofix]) {
       expect(skill).toMatch(/handoff is scoped to (?:its|the) Session/i);
       expect(skill).toMatch(/(?:verify_command|handoff\.verifyCommand)[\s\S]{0,200}verbatim[\s\S]{0,120}`--session`/i);
