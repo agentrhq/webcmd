@@ -20,7 +20,7 @@ import {
   HOSTED_ROOT_HELP,
   LOCAL_ONLY_COMMAND_HELP,
 } from '../completion-shared.js';
-import { CliError, ConfigError, EXIT_CODES, toEnvelope } from '../errors.js';
+import { CliError, ConfigError, EXIT_CODES, InterruptedError, toEnvelope } from '../errors.js';
 import { getRequestedHelpFormat, renderStructuredHelp } from '../help.js';
 import { enableVerbose } from '../logger.js';
 import { findPackageRoot } from '../package-paths.js';
@@ -63,7 +63,12 @@ import type {
   HostedManifest,
 } from './types.js';
 import type { HostedBrowserCommandContract } from './contract.js';
-import type { VirtualFileMap, VirtualOutputSink } from './virtual-files.js';
+import {
+  createVirtualFileMap,
+  createVirtualOutputSink,
+  type VirtualFileMap,
+  type VirtualOutputSink,
+} from './virtual-files.js';
 
 export interface HostedRunnerOptions {
   config?: WebcmdConfig;
@@ -89,6 +94,10 @@ export interface HostedRunnerOptions {
 interface HostedDispatchIo {
   stdin?: string;
   fileIo: HostedFileIo;
+  virtualScaffold?: {
+    files: VirtualFileMap;
+    outputs: VirtualOutputSink;
+  };
 }
 
 export interface HostedRunResult {
@@ -146,13 +155,16 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
       fetchImpl: opts.fetchImpl,
       ...(opts.signal ? { signal: opts.signal } : {}),
     });
-    const fileIo: HostedFileIo =
-      opts.files && opts.outputs
-        ? createVirtualHostedFileIo(opts.files, opts.outputs)
-        : realHostedFileIo;
+    const usesVirtualFileIo = opts.files !== undefined || opts.outputs !== undefined;
+    const virtualFiles = opts.files ?? createVirtualFileMap([]);
+    const virtualOutputs = opts.outputs ?? createVirtualOutputSink();
+    const fileIo: HostedFileIo = usesVirtualFileIo
+      ? createVirtualHostedFileIo(virtualFiles, virtualOutputs)
+      : realHostedFileIo;
     const io: HostedDispatchIo = {
       ...(opts.stdin !== undefined ? { stdin: opts.stdin } : {}),
       fileIo,
+      ...(usesVirtualFileIo ? { virtualScaffold: { files: virtualFiles, outputs: virtualOutputs } } : {}),
     };
     await dispatchHosted(
       argv,
@@ -164,8 +176,9 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
       io,
     );
     return { handled: true, exitCode: EXIT_CODES.SUCCESS };
-  } catch (err) {
-    if (err instanceof StreamWriteError) throw err;
+  } catch (caught) {
+    if (caught instanceof StreamWriteError) throw caught;
+    const err = opts.signal?.aborted ? new InterruptedError() : caught;
     if (err instanceof BrowserSessionArgvError) {
       await writeToStream(stderr, `error: ${err.message}\n`);
       return { handled: true, exitCode: EXIT_CODES.USAGE_ERROR };
@@ -410,22 +423,22 @@ async function dispatchHosted(
       return;
     }
     // parsed.command === 'create'
-    const { createPluginScaffold } = await import('../plugin-scaffold.js');
-    const scaffoldRoot = path.resolve(parsed.name);
-    const result = createPluginScaffold(parsed.name, {
-      dir: parsed.name,
+    const { createPluginScaffold, createVirtualPluginScaffold } = await import('../plugin-scaffold.js');
+    const scaffoldOptions = {
+      ...(parsed.dir !== undefined ? { dir: parsed.dir } : {}),
       ...(parsed.description !== undefined ? { description: parsed.description } : {}),
       author: { name: parsed.authorName ?? '', handle: parsed.authorHandle ?? '' },
-      io: {
-        exists: () => false,
-        isEmptyDir: () => true,
-        mkdir: () => undefined,
-        writeFile: (target, body) => {
-          const relative = path.relative(scaffoldRoot, target);
-          void io.fileIo.writeText(path.posix.join(parsed.name, relative.split(path.sep).join('/')), body);
-        },
-      },
-    });
+    };
+    const result = io.virtualScaffold
+      ? createVirtualPluginScaffold(parsed.name, scaffoldOptions, {
+          exists: (target) => virtualScaffoldConflicts(io.virtualScaffold!.files, target),
+          isEmptyDir: (target) => !virtualScaffoldConflicts(io.virtualScaffold!.files, target),
+          mkdir: () => undefined,
+          writeFile: (target, body) => {
+            io.virtualScaffold!.outputs.write(target, new TextEncoder().encode(body));
+          },
+        })
+      : createPluginScaffold(parsed.name, scaffoldOptions);
     await writeToStream(stdout, `✅ Plugin scaffold created at ${result.dir}\n\n`);
     await writeToStream(stdout, '  Next steps (hosted mode):\n');
     await writeToStream(stdout, '    1. Author and verify the adapter in the cloud:\n');
@@ -550,6 +563,15 @@ async function dispatchHosted(
   if (parsed.trace === 'on' && response.trace) {
     await writeToStream(stderr, `Webcmd trace artifact: ${response.trace.receipt}\n`);
   }
+}
+
+function virtualScaffoldConflicts(files: VirtualFileMap, target: string): boolean {
+  for (const existing of files.keys()) {
+    if (existing === target || existing.startsWith(`${target}/`) || target.startsWith(`${existing}/`)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 async function runHostedSiteSurface(argv: readonly string[], literal: boolean, client: HostedClient, stdout: NodeJS.WritableStream): Promise<void> {

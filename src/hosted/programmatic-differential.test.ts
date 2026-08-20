@@ -140,6 +140,47 @@ describe('programmatic runner isolation', () => {
     expect(source.outputFiles).toEqual([{ path: 'adapter.js', content: new TextEncoder().encode('export default {};\n') }]);
   });
 
+  it('preserves installed --dir and collision behavior while virtual paths stay relative', async () => {
+    const pluginName = 'differential-scaffold';
+    const installedDir = 'installed-scaffolds/custom';
+    const collisionDir = 'installed-scaffolds/non-empty';
+    await mkdir(path.join(configDir, collisionDir), { recursive: true });
+    await writeFile(path.join(configDir, collisionDir, 'existing.txt'), 'occupied');
+    try {
+      const installed = await runInstalled(['plugin', 'create', pluginName, '--dir', installedDir,
+        '--author-name', 'Ada', '--author-handle', 'ada']);
+      expect(installed.exitCode).toBe(0);
+      await expect(access(path.join(configDir, installedDir, 'README.md'))).resolves.toBeUndefined();
+
+      const installedCollision = await runInstalled(['plugin', 'create', `${pluginName}-collision`, '--dir', collisionDir,
+        '--author-name', 'Ada', '--author-handle', 'ada']);
+      expect(installedCollision.exitCode).not.toBe(0);
+      expect(installedCollision.stderr).toContain('not empty');
+
+      const programmatic = await runProgrammatic(['plugin', 'create', pluginName, '--dir', 'virtual-scaffolds/custom',
+        '--author-name', 'Ada', '--author-handle', 'ada']);
+      expect(programmatic.exitCode).toBe(installed.exitCode);
+      expect(programmatic.outputFiles.map(file => file.path)).toContain('virtual-scaffolds/custom/README.md');
+      expect(programmatic.stdout).not.toContain(process.cwd());
+      expect(programmatic.outputFiles.every(file => !path.isAbsolute(file.path))).toBe(true);
+
+      const virtualCollision = await runHostedProgrammatic({
+        argv: ['plugin', 'create', `${pluginName}-collision`, '--dir', 'virtual-scaffolds/non-empty',
+          '--author-name', 'Ada', '--author-handle', 'ada'],
+        apiBaseUrl: backend.url,
+        accessToken: 'fixture-token',
+        files: [{ path: 'virtual-scaffolds/non-empty/existing.txt', content: new Uint8Array([1]) }],
+      });
+      expect(virtualCollision.exitCode).toBe(installedCollision.exitCode);
+      expect(virtualCollision.stderr).toContain('not empty');
+      expect(virtualCollision.outputFiles).toEqual([]);
+    } finally {
+      await rm(path.join(configDir, 'installed-scaffolds'), { recursive: true, force: true });
+      await rm(path.join(configDir, pluginName), { recursive: true, force: true });
+      await rm(path.join(configDir, `${pluginName}-collision`), { recursive: true, force: true });
+    }
+  }, 20_000);
+
   it('uploads identical adapter source bytes from host and virtual inputs', async () => {
     const argv = ['adapter', 'source', 'put', 'acme/search', 'source.js'];
     const installed = await runInstalled(argv);
@@ -212,9 +253,9 @@ describe('programmatic runner isolation', () => {
     await requestStarted;
     controller.abort();
     await expect(result).resolves.toMatchObject({
-      exitCode: 1,
+      exitCode: 130,
       stdout: '',
-      stderr: expect.stringContaining('cancelled by client disconnect'),
+      stderr: expect.stringContaining('INTERRUPTED'),
     });
   });
 });
