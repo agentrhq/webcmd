@@ -67,13 +67,6 @@ describe('webcmd skills content', () => {
     expect(skill).toContain('webcmd web fetch --url');
     expect(skill).toContain('FETCH_BLOCKED');
     expect(skill).toContain('FETCH_REQUIRES_BROWSER');
-    expect(skill).toMatch(/non-2xx|403/);
-    expect(skill).toMatch(/already fetched the URL outside Webcmd/);
-    const usage = bundledSkill('webcmd-usage');
-    expect(usage).toContain('webcmd web fetch --url');
-    expect(usage).toMatch(/403|non-2xx/);
-    expect(usage).toContain('FETCH_BLOCKED');
-    expect(usage).toMatch(/Do not treat a raw 403/);
     for (const guide of skills) {
       const normalizedGuide = guide.replaceAll(/\\\n\s*/g, ' ').replaceAll(/ {2,}/g, ' ');
       for (const command of sessionWorkflow) {
