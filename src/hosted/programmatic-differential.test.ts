@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -171,18 +171,30 @@ describe('programmatic runner isolation', () => {
   });
 
   it('rejects an output path that escapes the virtual root without writing it', async () => {
-    const scratch = await mkdtemp(path.join(tmpdir(), 'webcmd-output-traversal-'));
+    const tempParent = await mkdtemp(path.join(tmpdir(), 'webcmd-output-traversal-parent-'));
+    const scratch = path.join(tempParent, 'nested', 'scratch');
+    await mkdir(scratch, { recursive: true });
+    const output = `../../${path.basename(tempParent)}-escaped-target.js`;
+    const target = path.resolve(scratch, output);
+    const relativeTarget = path.relative(tempParent, target);
+    if (!relativeTarget || relativeTarget.startsWith('..') || path.isAbsolute(relativeTarget)) {
+      throw new Error(`Refusing to clean a target outside this test's temporary parent: ${target}`);
+    }
     const before = process.cwd();
     process.chdir(scratch);
     try {
-      const result = await runProgrammatic(['adapter', 'source', 'get', 'acme/search', '--output', '../../outside.js']);
+      await expect(access(target)).rejects.toMatchObject({ code: 'ENOENT' });
+      const result = await runProgrammatic(['adapter', 'source', 'get', 'acme/search', '--output', output]);
       expect(result.exitCode).not.toBe(0);
       expect(result.stderr).toMatch(/escapes the virtual root|virtual file path/i);
       expect(result.outputFiles).toEqual([]);
       expect(await readdir(scratch)).toEqual([]);
+      await expect(access(target)).rejects.toMatchObject({ code: 'ENOENT' });
     } finally {
       process.chdir(before);
+      await rm(target, { force: true });
       await rm(scratch, { recursive: true, force: true });
+      await rm(tempParent, { recursive: true, force: true });
     }
   });
 
