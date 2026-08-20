@@ -161,4 +161,9 @@ Author-only. Stripped by litprompt, so it costs the running agent nothing.
 Append one dated line whenever a correction lands, or whenever an approach
 is tried and rejected. Record what was tried and why it failed, not just
 what won.
+
+- 2026-08-20: Five fresh baseline evaluations of `origin/main` already routed
+  a supplied URL through `webcmd web fetch`; the explicit external non-2xx,
+  403, and Cloudflare wording improves discoverability rather than adding new
+  runtime behavior.
 -->

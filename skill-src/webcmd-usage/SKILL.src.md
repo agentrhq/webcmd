@@ -285,4 +285,10 @@ Author-only. Stripped by litprompt, so it costs the running agent nothing.
 Append one dated line whenever a correction lands, or whenever an approach
 is tried and rejected. Record what was tried and why it failed, not just
 what won.
+
+- 2026-08-20: A prior generic-client 403 is not authority to escalate to the
+  browser; browser use remains gated on Webcmd returning `FETCH_BLOCKED` or
+  `FETCH_REQUIRES_BROWSER`.
+- 2026-08-20: Review rejected saying `web fetch` always performs a
+  TLS-impersonating retry; it may do so only when it detects a challenge.
 -->
