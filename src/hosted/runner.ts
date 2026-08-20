@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,7 +29,7 @@ import { StreamWriteError, writeToStream } from '../stream-write.js';
 import { PKG_VERSION } from '../version.js';
 import { getCompletionScriptFast } from '../completion-fast.js';
 import { browserCommandCatalog } from '../browser/command-catalog.js';
-import { loadBrowserRunSource } from '../browser/run/input.js';
+import { loadBrowserRunSource, readProcessStdin } from '../browser/run/input.js';
 import { BrowserRunError } from '../browser/run/types.js';
 import { CLI_COMMAND } from '../brand.js';
 import { formatPluginSearchEmptyCopy, presentPluginSearch } from '../plugin-search-presentation.js';
@@ -592,7 +592,7 @@ async function runHostedAdapterSourceSurface(
   client: HostedClient,
   stdout: NodeJS.WritableStream,
   homeDir: string,
-  _io: HostedDispatchIo,
+  io: HostedDispatchIo,
 ): Promise<void> {
   let parsed: HostedAdapterSourceCommand | undefined;
   let help = '';
@@ -644,12 +644,14 @@ async function runHostedAdapterSourceSurface(
   if (parsed.kind === 'get') {
     const body = await client.readAdapterSource(metadata.adapterPackageId!, sourcePath);
     if (parsed.output === '-') return writeToStream(stdout, body);
-    const output = parsed.output ?? destination;
-    mkdirSync(path.dirname(output), { recursive: true });
-    writeFileSync(output, body, 'utf8');
+    await io.fileIo.writeText(parsed.output ?? destination, body);
     return;
   }
-  const result = await client.writeAdapterSource(metadata.adapterPackageId!, sourcePath, readFileSync(parsed.path, 'utf8'));
+  const result = await client.writeAdapterSource(
+    metadata.adapterPackageId!,
+    sourcePath,
+    await io.fileIo.readText(parsed.path),
+  );
   await writeToStream(stdout, `${result.commands.join('\n')}\n`);
 }
 
@@ -803,7 +805,7 @@ async function executeHostedPreparedCommand(input: {
     onPrepared: async (prepared) => {
       if (prepared.liveViewUrl) await writeToStream(input.stderr, `Webcmd live view: ${prepared.liveViewUrl}\n`);
     },
-  });
+  }, input.io.fileIo);
   const response = await input.client.runPreparedExecution({
     executionId: prepared.executionId,
     command: input.command.command,
@@ -817,7 +819,7 @@ async function executeHostedPreparedCommand(input: {
     client: input.client,
     response,
     outputs: prepared.outputs,
-  });
+  }, input.io.fileIo);
   return {
     ...response,
     result: rewriteHostedOutputResultPaths(response.result, materialized),
@@ -841,7 +843,7 @@ async function dispatchHostedBrowser(
   io: HostedDispatchIo,
 ): Promise<void> {
   const args = invocation.action === 'set-file-input'
-    ? materializeHostedBrowserUploadArgs(invocation.args, io.fileIo)
+    ? await materializeHostedBrowserUploadArgs(invocation.args, io.fileIo)
     : invocation.args;
   const response = await client.runBrowserAction(invocation.session, {
     command: invocation.command,
@@ -854,25 +856,25 @@ async function dispatchHostedBrowser(
   await renderHostedBrowserResponse(stdout, invocation, response, io);
 }
 
-function materializeHostedBrowserUploadArgs(
+async function materializeHostedBrowserUploadArgs(
   args: Record<string, unknown>,
-  _io: HostedFileIo,
-): Record<string, unknown> {
+  io: HostedFileIo,
+): Promise<Record<string, unknown>> {
   const files = args.files;
   if (!Array.isArray(files)) return args;
   return {
     ...args,
-    files: files.map((file) => {
+    files: await Promise.all(files.map(async (file) => {
       if (typeof file !== 'string') return file;
-      const body = readFileSync(file);
+      const body = await io.readFile(file);
       return {
         $webcmdBrowserUpload: {
-          filename: path.basename(file),
+          filename: path.posix.basename(file),
           contentType: contentTypeForUpload(file),
           base64: Buffer.from(body).toString('base64'),
         },
       };
-    }),
+    })),
   };
 }
 
@@ -977,13 +979,23 @@ function parseBrowserLeaf(
 async function materializeBrowserRunSource(
   commandName: string,
   args: Record<string, unknown>,
-  _io: HostedDispatchIo,
+  io: HostedDispatchIo,
 ): Promise<Record<string, unknown>> {
   if (commandName !== 'run') return args;
   try {
     const source = await loadBrowserRunSource({
       stdin: args.stdin === true,
       file: typeof args.file === 'string' ? args.file : undefined,
+    }, {
+      readStdin: async () => {
+        if (io.stdin !== undefined) return io.stdin;
+        if (io.fileIo === realHostedFileIo) return readProcessStdin();
+        throw new ConfigError(
+          'No stdin was supplied to this invocation.',
+          'Pass the program with --file, or supply stdin.',
+        );
+      },
+      readFile: (filePath) => io.fileIo.readText(filePath),
     });
     const { stdin: _stdin, file: _file, ...rest } = args;
     return { ...rest, source };
@@ -1112,7 +1124,7 @@ async function renderHostedBrowserResponse(
   stdout: NodeJS.WritableStream,
   invocation: ParsedHostedBrowserInvocation,
   response: HostedBrowserRunActionResponse | HostedBrowserSnapshotActionResponse,
-  _io: HostedDispatchIo,
+  io: HostedDispatchIo,
 ): Promise<void> {
   const result = response.result;
   if (invocation.action === 'snapshot' && result && typeof result === 'object') {
@@ -1128,7 +1140,7 @@ async function renderHostedBrowserResponse(
   if (invocation.action === 'screenshot' && result && typeof result === 'object') {
     const base64 = (result as { base64?: unknown }).base64;
     if (typeof base64 === 'string' && invocation.localPath) {
-      writeFileSync(invocation.localPath, Buffer.from(base64, 'base64'));
+      await io.fileIo.writeFile(invocation.localPath, Buffer.from(base64, 'base64'));
       await writeToStream(stdout, `Screenshot saved to: ${invocation.localPath}\n`);
       return;
     }

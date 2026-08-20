@@ -15,7 +15,7 @@ export interface BrowserRunSourceIo {
   readFile(filePath: string): Promise<string>;
 }
 
-async function readProcessStdin(): Promise<string> {
+export async function readProcessStdin(): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of processStdin) {
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
