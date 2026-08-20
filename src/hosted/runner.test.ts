@@ -16,6 +16,7 @@ import { PKG_VERSION } from '../version.js';
 import { makeHostedConfig, makeLocalConfig } from './config.js';
 import { createCaptureStream } from './capture-stream.js';
 import { runHostedCli } from './runner.js';
+import { createVirtualFileMap, createVirtualOutputSink } from './virtual-files.js';
 
 const [packageMajor, packageMinor] = PKG_VERSION.split('.');
 const compatiblePatchVersion = `${packageMajor}.${packageMinor}.99`;
@@ -316,6 +317,34 @@ describe('runHostedCli', () => {
     } finally {
       await rm(homeDir, { recursive: true, force: true });
     }
+  });
+
+  it('writes the default adapter source destination into virtual outputs', async () => {
+    const outputs = createVirtualOutputSink();
+    const source = 'export const whoami = true;\n';
+    const sourceManifest = {
+      ...manifest,
+      commands: [{ ...manifest.commands[0], adapterPackageId: 'pkg_github', sourceFile: 'clis/github/whoami.js' }],
+    };
+
+    const result = await runHostedCli(['adapter', 'source', 'get', 'github/whoami'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      homeDir: '/nonexistent-home',
+      files: createVirtualFileMap([]),
+      outputs,
+      fetchImpl: async (url) => {
+        const pathname = new URL(String(url)).pathname;
+        return pathname === '/v1/manifest'
+          ? new Response(JSON.stringify({ ok: true, manifest: sourceManifest }))
+          : new Response(source);
+      },
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(outputs.files()).toEqual([{
+      path: '.webcmd/hosted/clis/github/whoami.js',
+      content: new TextEncoder().encode(source),
+    }]);
   });
 
   it('forks a system command through hosted adapter override', async () => {

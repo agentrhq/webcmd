@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -293,6 +293,21 @@ describe('hosted file transfer helpers', () => {
 
     expect(client.prepareExecution).not.toHaveBeenCalled();
     expect(client.uploadExecutionArtifact).not.toHaveBeenCalled();
+  });
+
+  it.skipIf(process.platform === 'win32')('reports a broken input symlink as a non-regular file', async () => {
+    tempDir = await mkdtemp(path.join(tmpdir(), 'webcmd-hosted-files-'));
+    await symlink(path.join(tempDir, 'missing.png'), path.join(tempDir, 'broken.png'));
+    const client = fakeClient();
+
+    await expect(prepareHostedFiles({
+      client,
+      command: fileCommand,
+      cwd: tempDir,
+      args: { text: 'hello', images: './broken.png' },
+    })).rejects.toMatchObject({ code: 'HOSTED_FILE_NOT_FILE' });
+
+    expect(client.prepareExecution).not.toHaveBeenCalled();
   });
 
   it('rejects unsafe relative output paths before downloading', async () => {

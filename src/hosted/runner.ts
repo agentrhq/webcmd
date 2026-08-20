@@ -644,7 +644,7 @@ async function runHostedAdapterSourceSurface(
   if (parsed.kind === 'get') {
     const body = await client.readAdapterSource(metadata.adapterPackageId!, sourcePath);
     if (parsed.output === '-') return writeToStream(stdout, body);
-    await io.fileIo.writeText(parsed.output ?? destination, body);
+    await io.fileIo.writeText(parsed.output ?? hostedAdapterOutputDestination(destination, site, command, io.fileIo), body);
     return;
   }
   const result = await client.writeAdapterSource(
@@ -667,6 +667,17 @@ function hostedAdapterDestination(homeDir: string, site: string, command: string
   const relative = path.relative(root, destination);
   if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new ConfigError('Hosted adapter destination is invalid.');
   return destination;
+}
+
+function hostedAdapterOutputDestination(
+  installedDestination: string,
+  site: string,
+  command: string,
+  io: HostedFileIo,
+): string {
+  return io === realHostedFileIo
+    ? installedDestination
+    : path.posix.join('.webcmd', 'hosted', 'clis', site, `${command}.js`);
 }
 
 function validateHostedRelativePath(value: string, label: string): void {

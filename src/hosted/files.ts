@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { CliError, EXIT_CODES } from '../errors.js';
 import type { HostedClient } from './client.js';
-import { realHostedFileIo, type HostedFileIo } from './file-io.js';
+import { VirtualFileMissingError, realHostedFileIo, type HostedFileIo } from './file-io.js';
 import type {
   HostedArtifactReceipt,
   HostedArtifactReference,
@@ -275,17 +275,17 @@ function resolveUserPath(cwd: string, value: string, io: HostedFileIo): string {
 }
 
 async function readLocalFile(localPath: string, argName: string, io: HostedFileIo): Promise<Uint8Array> {
-  if (!await io.exists(localPath)) {
-    throw new CliError(
-      'HOSTED_FILE_NOT_FOUND',
-      `Input file for "${argName}" was not found.`,
-      `Check the local path and try again.`,
-      EXIT_CODES.USAGE_ERROR,
-    );
-  }
   try {
-    return await io.readFile(localPath);
-  } catch {
+    return await io.readRegularFile(localPath);
+  } catch (error) {
+    if (error instanceof VirtualFileMissingError || isMissingFileError(error)) {
+      throw new CliError(
+        'HOSTED_FILE_NOT_FOUND',
+        `Input file for "${argName}" was not found.`,
+        `Check the local path and try again.`,
+        EXIT_CODES.USAGE_ERROR,
+      );
+    }
     throw new CliError(
       'HOSTED_FILE_NOT_FILE',
       `Input path for "${argName}" must be a regular file.`,
@@ -293,6 +293,13 @@ async function readLocalFile(localPath: string, argName: string, io: HostedFileI
       EXIT_CODES.USAGE_ERROR,
     );
   }
+}
+
+function isMissingFileError(error: unknown): boolean {
+  return !!error
+    && typeof error === 'object'
+    && 'code' in error
+    && (error as { code?: unknown }).code === 'ENOENT';
 }
 
 function contentTypeForPath(localPath: string): string {
