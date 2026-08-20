@@ -97,6 +97,11 @@ export function requestedFormatFromArgv(argv: readonly string[]): string | undef
       format = value && !value.startsWith('-') ? value : undefined;
       continue;
     }
+    if (token.startsWith('-f') && token.length > 2) {
+      explicitFormat = true;
+      format = token.slice(2);
+      continue;
+    }
     if (token.startsWith('--format=')) {
       explicitFormat = true;
       format = token.slice('--format='.length) || undefined;

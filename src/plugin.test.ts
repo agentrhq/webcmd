@@ -1456,6 +1456,143 @@ describe('updatePlugin transactional staging', () => {
     expect(_readLockFile()[monorepoPluginName]?.commitHash).toBe('oldmonooldmonooldmonooldmonooldmonoold');
   });
 
+  it('keeps each published monorepo commit available as the next update baseline', () => {
+    const subDir = path.join(monorepoRepoDir, 'packages', monorepoPluginName);
+    fs.mkdirSync(subDir, { recursive: true });
+    fs.writeFileSync(path.join(subDir, 'old.js'), 'cli({ site: "old", name: "old", access: "read" })');
+    fs.mkdirSync(PLUGINS_DIR, { recursive: true });
+    fs.symlinkSync(subDir, monorepoLink, 'dir');
+
+    const oldHash = '0'.repeat(40);
+    const updateHashes = ['1'.repeat(40), '2'.repeat(40)];
+    const availableBaselines = new Set([oldHash]);
+    const retainedRefs: string[] = [];
+    const cloneHashes = new Map<string, string>();
+    let cloneCount = 0;
+    const lock = _readLockFile();
+    lock[monorepoPluginName] = {
+      source: {
+        kind: 'monorepo',
+        url: 'https://github.com/user/webcmd-plugins-__test-transactional-mono-update__.git',
+        repoName: monorepoName,
+        subPath: `packages/${monorepoPluginName}`,
+      },
+      commitHash: oldHash,
+      installedAt: '2025-01-01T00:00:00.000Z',
+    };
+    _writeLockFile(lock);
+
+    mockExecFileSync.mockImplementation((cmd, args, opts) => {
+      if (cmd === 'git' && Array.isArray(args) && args[0] === 'diff') {
+        const baseline = String(args[2]);
+        if (!availableBaselines.has(baseline)) throw new Error(`fatal: bad object ${baseline}`);
+        return '';
+      }
+      if (cmd === 'git' && Array.isArray(args) && args[0] === 'clone') {
+        const cloneDir = String(args[4]);
+        const alphaDir = path.join(cloneDir, 'packages', monorepoPluginName);
+        fs.mkdirSync(alphaDir, { recursive: true });
+        fs.writeFileSync(path.join(cloneDir, 'package.json'), JSON.stringify({
+          name: 'webcmd-plugins-__test-transactional-mono-update__',
+          private: true,
+        }));
+        fs.writeFileSync(path.join(cloneDir, 'webcmd-plugin.json'), JSON.stringify({
+          plugins: {
+            [monorepoPluginName]: { path: `packages/${monorepoPluginName}` },
+          },
+        }));
+        fs.writeFileSync(path.join(alphaDir, 'hello.js'), `// update ${cloneCount + 1}\ncli({ site: "test", name: "hello", access: "read" })`);
+        cloneHashes.set(cloneDir, updateHashes[cloneCount++]!);
+        return '';
+      }
+      if (cmd === 'git' && Array.isArray(args) && args[0] === 'fetch') {
+        const refspec = String(args[3]);
+        retainedRefs.push(refspec);
+        availableBaselines.add(refspec.split(':')[0]!);
+        return '';
+      }
+      if (cmd === 'git' && Array.isArray(args) && args[0] === 'rev-parse' && args[1] === 'HEAD') {
+        return `${cloneHashes.get(String(opts?.cwd)) ?? oldHash}\n`;
+      }
+      return '';
+    });
+
+    expect(updatePlugin(monorepoPluginName)).toEqual([monorepoPluginName]);
+    expect(updatePlugin(monorepoPluginName)).toEqual([monorepoPluginName]);
+    expect(_readLockFile()[monorepoPluginName]?.commitHash).toBe(updateHashes[1]);
+    expect(retainedRefs).toEqual(updateHashes.map((hash) => `${hash}:refs/webcmd/baselines/${hash}`));
+  });
+
+  it('publishes hoisted dependencies without replacing dirty sibling source', () => {
+    const subDir = path.join(monorepoRepoDir, 'packages', monorepoPluginName);
+    const siblingDir = path.join(monorepoRepoDir, 'packages', 'sibling');
+    fs.mkdirSync(subDir, { recursive: true });
+    fs.mkdirSync(siblingDir, { recursive: true });
+    fs.mkdirSync(path.join(monorepoRepoDir, 'node_modules', 'old-dependency'), { recursive: true });
+    fs.writeFileSync(path.join(subDir, 'old.js'), 'cli({ site: "old", name: "old", access: "read" })');
+    fs.writeFileSync(path.join(siblingDir, 'source.js'), 'dirty sibling source');
+    fs.mkdirSync(PLUGINS_DIR, { recursive: true });
+    fs.symlinkSync(subDir, monorepoLink, 'dir');
+
+    const oldHash = '0'.repeat(40);
+    const updateHash = '1'.repeat(40);
+    const lock = _readLockFile();
+    lock[monorepoPluginName] = {
+      source: {
+        kind: 'monorepo',
+        url: 'https://github.com/user/webcmd-plugins-__test-transactional-mono-update__.git',
+        repoName: monorepoName,
+        subPath: `packages/${monorepoPluginName}`,
+      },
+      commitHash: oldHash,
+      installedAt: '2025-01-01T00:00:00.000Z',
+    };
+    _writeLockFile(lock);
+
+    mockExecFileSync.mockImplementation((cmd, args, opts) => {
+      if (cmd === 'git' && Array.isArray(args) && args[0] === 'diff') return '';
+      if (cmd === 'git' && Array.isArray(args) && args[0] === 'status') {
+        return opts?.cwd === monorepoRepoDir ? ' M packages/sibling/source.js\n' : '';
+      }
+      if (cmd === 'git' && Array.isArray(args) && args[0] === 'clone') {
+        const cloneDir = String(args[4]);
+        const alphaDir = path.join(cloneDir, 'packages', monorepoPluginName);
+        const siblingCloneDir = path.join(cloneDir, 'packages', 'sibling');
+        fs.mkdirSync(alphaDir, { recursive: true });
+        fs.mkdirSync(siblingCloneDir, { recursive: true });
+        fs.writeFileSync(path.join(cloneDir, 'package.json'), JSON.stringify({
+          name: 'webcmd-plugins-__test-transactional-mono-update__',
+          private: true,
+          workspaces: ['packages/*'],
+        }));
+        fs.writeFileSync(path.join(cloneDir, 'webcmd-plugin.json'), JSON.stringify({
+          plugins: {
+            [monorepoPluginName]: { path: `packages/${monorepoPluginName}` },
+            sibling: { path: 'packages/sibling' },
+          },
+        }));
+        fs.writeFileSync(path.join(alphaDir, 'hello.js'), 'cli({ site: "test", name: "hello", access: "read" })');
+        fs.writeFileSync(path.join(siblingCloneDir, 'source.js'), 'remote sibling source');
+        return '';
+      }
+      if (cmd === 'npm' && Array.isArray(args) && args[0] === 'install') {
+        const dependencyDir = path.join(String(opts?.cwd), 'node_modules', 'shared-dependency');
+        fs.mkdirSync(dependencyDir, { recursive: true });
+        fs.writeFileSync(path.join(dependencyDir, 'index.js'), 'module.exports = "updated";');
+        return '';
+      }
+      if (cmd === 'git' && Array.isArray(args) && args[0] === 'rev-parse' && args[1] === 'HEAD') {
+        return `${updateHash}\n`;
+      }
+      return '';
+    });
+
+    expect(updatePlugin(monorepoPluginName)).toEqual([monorepoPluginName]);
+    expect(fs.readFileSync(path.join(monorepoRepoDir, 'node_modules', 'shared-dependency', 'index.js'), 'utf-8'))
+      .toContain('updated');
+    expect(fs.readFileSync(path.join(siblingDir, 'source.js'), 'utf-8')).toBe('dirty sibling source');
+  });
+
   it('relinks monorepo plugins when the updated manifest moves their subPath', () => {
     const oldSubDir = path.join(monorepoRepoDir, 'packages', 'old-alpha');
     fs.mkdirSync(oldSubDir, { recursive: true });

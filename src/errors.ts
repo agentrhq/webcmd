@@ -157,14 +157,15 @@ function formatBusyHint(holder: SessionLeaseHolder, platform: string, pidAlive: 
   const forceClose = !hasLivePid && holder.sessionId
     ? ` Last resort: run \`webcmd session close --force ${holder.sessionId}\`.`
     : '';
+  const retry = 'Wait, then run the same command again.';
   if (platform === 'win32') {
     return scope + (!hasLivePid
-      ? `Wait for it to finish, or use Task Manager to stop the owning process if it is stuck.${forceClose}`
-      : `Wait for it to finish, or run \`Stop-Process -Id ${holder.pid}\` in PowerShell if it is stuck.`);
+      ? `${retry} If it does not finish, use Task Manager to stop the owning process.${forceClose}`
+      : `${retry} Do not force-close. If it is stuck, run \`Stop-Process -Id ${holder.pid}\` in PowerShell.`);
   }
-    return scope + (!hasLivePid
-      ? `Wait, then run the same command again. Do not force-close.${forceClose}`
-      : `Wait, then run the same command again. Do not force-close. If it is stuck, run \`kill ${holder.pid}\`.`);
+  return scope + (!hasLivePid
+    ? `${retry}${forceClose}`
+    : `${retry} Do not force-close. If it is stuck, run \`kill ${holder.pid}\`.`);
 }
 
 /** A persistent write session is temporarily owned by another logical run. */

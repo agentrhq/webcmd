@@ -185,6 +185,7 @@ describe('requestedFormatFromArgv', () => {
     { argv: ['list', '-f', 'json'], format: 'json' },
     { argv: ['list', '--format', 'JSON'], format: 'JSON' },
     { argv: ['list', '--format=yaml'], format: 'yaml' },
+    { argv: ['list', '-fyaml', '--json'], format: 'yaml' },
     { argv: ['list', '--json'], format: 'json' },
     { argv: ['list', '--json', '--format', 'yaml'], format: 'yaml' },
     { argv: ['list'], format: undefined },

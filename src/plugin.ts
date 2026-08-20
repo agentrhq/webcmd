@@ -514,6 +514,18 @@ export function getCommitHash(dir: string): string | undefined {
   }
 }
 
+function retainMonorepoBaseline(repoDir: string, cloneDir: string, commitHash: string): void {
+  execFileSync(
+    'git',
+    ['fetch', '--no-tags', cloneDir, `${commitHash}:refs/webcmd/baselines/${commitHash}`],
+    {
+      cwd: repoDir,
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    },
+  );
+}
+
 /** True only for git's "this directory has no repository at all" failure. */
 function isNotAGitRepositoryError(error: unknown): boolean {
   const stderr = typeof (error as { stderr?: unknown })?.stderr === 'string'
@@ -815,12 +827,20 @@ function publishMonorepoPlugins(
   repoDir: string,
   pluginsDir: string,
   plugins: MonorepoPublishPlugin[],
-  publishRepo?: { stagingDir: string; parentDir: string; replaceSubPath?: string },
+  publishRepo?: {
+    stagingDir: string;
+    parentDir: string;
+    replaceSubPath?: string;
+    sharedNodeModulesDir?: string;
+  },
   writeLock?: (commitHash: string | undefined) => void,
 ): void {
   runTransaction((tx) => {
     if (publishRepo?.replaceSubPath) {
       tx.track(beginReplaceDir(publishRepo.stagingDir, resolveRepoContainedPath(repoDir, publishRepo.replaceSubPath)));
+      if (publishRepo.sharedNodeModulesDir && fs.existsSync(publishRepo.sharedNodeModulesDir)) {
+        tx.track(beginReplaceDir(publishRepo.sharedNodeModulesDir, path.join(repoDir, 'node_modules')));
+      }
     } else if (publishRepo) {
       fs.mkdirSync(publishRepo.parentDir, { recursive: true });
       tx.track(beginReplaceDir(publishRepo.stagingDir, repoDir));
@@ -1332,6 +1352,8 @@ export function updatePlugin(name: string, options: { force?: boolean } = {}): s
 
       const plugin = updatedPlugins[0];
       if (!plugin) return [];
+      const commitHash = getCommitHash(tmpCloneDir);
+      if (commitHash) retainMonorepoBaseline(monoDir, tmpCloneDir, commitHash);
       publishMonorepoPlugins(
         monoDir,
         PLUGINS_DIR,
@@ -1340,9 +1362,10 @@ export function updatePlugin(name: string, options: { force?: boolean } = {}): s
           stagingDir: resolveRepoContainedPath(tmpCloneDir, plugin.manifestEntry.path),
           parentDir: path.dirname(monoDir),
           replaceSubPath: plugin.manifestEntry.path,
+          sharedNodeModulesDir: path.join(tmpCloneDir, 'node_modules'),
         },
         () => {
-          updateMonorepoLockEntries(lock, updatedPlugins, cloneUrl, monoName, getCommitHash(tmpCloneDir));
+          updateMonorepoLockEntries(lock, updatedPlugins, cloneUrl, monoName, commitHash);
           writeLockFile(lock);
         },
       );
