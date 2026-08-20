@@ -14,6 +14,7 @@ import { formatRootHelp } from '../command-presentation.js';
 import { HOSTED_ROOT_HELP } from '../completion-shared.js';
 import { PKG_VERSION } from '../version.js';
 import { makeHostedConfig, makeLocalConfig } from './config.js';
+import { createCaptureStream } from './capture-stream.js';
 import { runHostedCli } from './runner.js';
 
 const [packageMajor, packageMinor] = PKG_VERSION.split('.');
@@ -2584,5 +2585,61 @@ describe('runHostedCli', () => {
     expect(result.exitCode).toBe(2);
     expect(fetchImpl).not.toHaveBeenCalled();
     expect(stderr.text()).toContain(code);
+  });
+});
+
+describe('runHostedCli injected I/O', () => {
+  const hostedConfig = {
+    mode: 'hosted' as const,
+    updatedAt: new Date(0).toISOString(),
+    hosted: { apiBaseUrl: 'https://api.example.test', apiKey: 'token' },
+  };
+
+  it('does not read process.env when env is injected', async () => {
+    const previous = process.env.WEBCMD_WORKSPACE;
+    process.env.WEBCMD_WORKSPACE = 'leaked-workspace';
+    try {
+      const seenHeaders: Record<string, string>[] = [];
+      const stdout = createCaptureStream(64 * 1024);
+      await runHostedCli(['list'], {
+        config: hostedConfig,
+        env: {},
+        homeDir: '/nonexistent',
+        stdout: stdout.stream,
+        stderr: createCaptureStream(64 * 1024).stream,
+        fetchImpl: (async (_url: string, init?: RequestInit) => {
+          seenHeaders.push(init?.headers as Record<string, string>);
+          return new Response(
+            JSON.stringify({ userId: 'u1', metadata: { contractSchemaVersion: 1, sessionProtocolVersion: 1, webcmdPackageVersion: '0.7.4', generatedAt: new Date(0).toISOString() }, commands: [] }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          );
+        }) as unknown as typeof fetch,
+      });
+      expect(seenHeaders[0]?.['x-webcmd-workspace']).toBeUndefined();
+    } finally {
+      if (previous === undefined) delete process.env.WEBCMD_WORKSPACE;
+      else process.env.WEBCMD_WORKSPACE = previous;
+    }
+  });
+
+  it('aborts an in-flight invocation when the signal fires', async () => {
+    const controller = new AbortController();
+    const stderr = createCaptureStream(64 * 1024);
+    const run = runHostedCli(['list'], {
+      config: hostedConfig,
+      env: {},
+      homeDir: '/nonexistent',
+      signal: controller.signal,
+      stdout: createCaptureStream(64 * 1024).stream,
+      stderr: stderr.stream,
+      fetchImpl: ((_url: string, init?: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+        })) as unknown as typeof fetch,
+    });
+    controller.abort();
+    const result = await run;
+    expect(result.handled).toBe(true);
+    expect(result.exitCode).not.toBe(0);
   });
 });
