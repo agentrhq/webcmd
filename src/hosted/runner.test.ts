@@ -2654,13 +2654,14 @@ describe('runHostedCli injected I/O', () => {
     const controller = new AbortController();
     controller.abort();
     let fetchCalled = false;
+    const stderr = createCaptureStream(64 * 1024);
     const result = await runHostedCli(['list'], {
       config: hostedConfig,
       env: {},
       homeDir: '/nonexistent',
       signal: controller.signal,
       stdout: createCaptureStream(64 * 1024).stream,
-      stderr: createCaptureStream(64 * 1024).stream,
+      stderr: stderr.stream,
       fetchImpl: (async () => {
         fetchCalled = true;
         return new Response();
@@ -2670,5 +2671,9 @@ describe('runHostedCli injected I/O', () => {
     expect(result.handled).toBe(true);
     expect(result.exitCode).not.toBe(0);
     expect(fetchCalled).toBe(false);
+    expect(yaml.load(stderr.result().text)).toMatchObject({
+      ok: false,
+      error: { code: 'UNKNOWN' },
+    });
   });
 });
