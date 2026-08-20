@@ -54,10 +54,24 @@ describe('createCaptureStream', () => {
     expect(new TextDecoder().decode(result.full!)).toBe('abcdefghij');
   });
 
+  it('copies retained bytes instead of keeping the source buffer alive', async () => {
+    const capture = createCaptureStream(4, 1024);
+    const source = Buffer.from('abcdefghij');
+    await write(capture.stream, source);
+    source.fill('x');
+    const result = capture.result();
+    expect(result.text).toBe('abcd');
+    expect(new TextDecoder().decode(result.full!)).toBe('abcdefghij');
+  });
+
   it('retains nothing extra when the stream fits inline', async () => {
     const capture = createCaptureStream(1024, 4096);
-    await write(capture.stream, 'small');
-    expect(capture.result().full).toBeUndefined();
+    const source = Buffer.from('small');
+    await write(capture.stream, source);
+    source.fill('x');
+    const result = capture.result();
+    expect(result.text).toBe('small');
+    expect(result.full).toBeUndefined();
   });
 
   it('bounds the retained copy too, so a runaway stream cannot exhaust memory', async () => {

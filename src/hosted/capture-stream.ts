@@ -52,28 +52,40 @@ export function createCaptureStream(
 
   const kept: Buffer[] = [];
   let keptBytes = 0;
-  const spilled: Buffer[] = [];
+  let spilled: Buffer[] | undefined;
   let spilledBytes = 0;
   let byteSize = 0;
 
   const stream = new Writable({
     write(chunk: Buffer | string, encoding: BufferEncoding, callback: (error?: Error | null) => void) {
       const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding);
+      const previousByteSize = byteSize;
       byteSize += buf.byteLength;
 
       if (keptBytes < limitBytes) {
         const room = limitBytes - keptBytes;
         const slice = buf.byteLength <= room ? buf : buf.subarray(0, room);
-        kept.push(slice);
+        kept.push(Buffer.from(slice));
         keptBytes += slice.byteLength;
       }
 
-      // Retained separately and bounded, so oversized output survives for the
-      // overflow artifact without letting a runaway command exhaust memory.
-      if (spilledBytes < spillLimitBytes) {
+      // Retain a separately bounded copy only after the stream overflows. It
+      // starts with the already-owned inline bytes, then captures the rest of
+      // this and subsequent chunks without retaining source backing buffers.
+      if (spilled === undefined && byteSize > limitBytes) {
+        spilled = kept.map((part) => Buffer.from(part));
+        spilledBytes = keptBytes;
+        const overflowStart = Math.max(0, limitBytes - previousByteSize);
+        const overflow = buf.subarray(overflowStart);
+        if (spilledBytes < spillLimitBytes && overflow.byteLength > 0) {
+          const room = spillLimitBytes - spilledBytes;
+          spilled.push(Buffer.from(overflow.subarray(0, room)));
+          spilledBytes += Math.min(room, overflow.byteLength);
+        }
+      } else if (spilled !== undefined && spilledBytes < spillLimitBytes) {
         const room = spillLimitBytes - spilledBytes;
-        const slice = buf.byteLength <= room ? buf : buf.subarray(0, room);
-        spilled.push(slice);
+        const slice = buf.subarray(0, room);
+        spilled.push(Buffer.from(slice));
         spilledBytes += slice.byteLength;
       }
 
@@ -91,7 +103,9 @@ export function createCaptureStream(
         text: usable.toString('utf8'),
         byteSize,
         truncated,
-        ...(truncated ? { full: new Uint8Array(Buffer.concat(spilled, spilledBytes)) } : {}),
+        ...(truncated && spilled !== undefined
+          ? { full: new Uint8Array(Buffer.concat(spilled, spilledBytes)) }
+          : {}),
       };
     },
   };
