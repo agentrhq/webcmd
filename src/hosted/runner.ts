@@ -307,7 +307,13 @@ async function dispatchHosted(
       return;
     }
     if (parsed.command === 'install') {
-      const installed = await client.installMarketplacePlugin(parsed.source, { all: parsed.all });
+      if (parsed.all) {
+        throw new ConfigError(
+          'plugin install --all is not available in hosted mode.',
+          'Install one plugin with `webcmd plugin install github:user/repo/<plugin>`, or run `webcmd setup` and choose local mode for --all.',
+        );
+      }
+      const installed = await client.installMarketplacePlugin(parsed.source);
       await writeToStream(stdout, `✅ Plugin "${installed.name}" installed successfully. Commands are ready to use.\n`);
       return;
     }

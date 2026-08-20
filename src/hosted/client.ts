@@ -177,10 +177,10 @@ export class HostedClient {
     return body.result;
   }
 
-  async installMarketplacePlugin(installSource: string, options: { all?: boolean } = {}): Promise<HostedMarketplaceInstallation> {
+  async installMarketplacePlugin(installSource: string): Promise<HostedMarketplaceInstallation> {
     const body = await this.request('/v1/marketplace/installations', {
       method: 'POST',
-      body: JSON.stringify({ installSource, ...(options.all === true ? { all: true } : {}) }),
+      body: JSON.stringify({ installSource }),
     });
     if (!hasExactKeys(body, ['ok', 'result']) || body.ok !== true || !isHostedMarketplaceInstallation(body.result)) {
       throw protocolError('Webcmd Cloud returned an invalid marketplace installation response.');

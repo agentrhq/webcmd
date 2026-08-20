@@ -493,26 +493,26 @@ describe('runHostedCli', () => {
     expect(requests).toEqual(['https://api.example.com/v1/marketplace/installations']);
   });
 
-  it('forwards plugin install --all to the hosted marketplace API', async () => {
-    let requestBody: unknown;
+  it('rejects plugin install --all in hosted mode before a marketplace request', async () => {
+    const stderr = sink();
+    const fetchImpl = vi.fn<typeof fetch>();
     const result = await runHostedCli(['plugin', 'install', 'github:agentrhq/webcmd', '--all'], {
       config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
-      fetchImpl: async (_url, init) => {
-        requestBody = JSON.parse(String(init?.body));
-        return new Response(JSON.stringify({
-          ok: true,
-          result: {
-            installationId: 'install_all',
-            name: 'webcmd',
-            version: '1.0.0',
-            installSource: 'github:agentrhq/webcmd',
-          },
-        }));
-      },
+      stderr: stderr.stream,
+      fetchImpl,
     });
 
-    expect(result.exitCode).toBe(0);
-    expect(requestBody).toEqual({ installSource: 'github:agentrhq/webcmd', all: true });
+    expect(result).toEqual({ handled: true, exitCode: 78 });
+    expect(yaml.load(stderr.text())).toMatchObject({
+      error: {
+        code: 'CONFIG',
+        message: 'plugin install --all is not available in hosted mode.',
+        help: expect.stringContaining('github:user/repo/<plugin>'),
+        exitCode: 78,
+      },
+    });
+    expect((yaml.load(stderr.text()) as { error: { help: string } }).error.help).toContain('local mode');
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it('renders Cloud local-only marketplace install guidance', async () => {
