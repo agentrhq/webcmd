@@ -10,7 +10,7 @@ Webcmd turns websites, Electron desktop apps, and external CLIs into a uniform `
 
 For any search, research, source discovery, direct URL fetch, evidence gathering, or “look this up” request, load `smart-search` before choosing commands. `smart-search` owns fetch-first search, browser-fetch escalation, last-resort search adapters, and source-summary rules.
 
-If a direct fetch (`webfetch`, `curl`, or any non-webcmd HTTP client) returns non-2xx, 403, blocked, or a Cloudflare challenge, the next command is `webcmd web fetch --url <url>`. Do not open a browser until that command returns `FETCH_BLOCKED` or `FETCH_REQUIRES_BROWSER`.
+For a known URL, the first-choice Webcmd fetch path is `webcmd web fetch --url <url>`. Use it before browser work or non-Webcmd HTTP clients. Do not open a browser until that command returns `FETCH_BLOCKED` or `FETCH_REQUIRES_BROWSER`.
 
 ## CLI Preflight
 

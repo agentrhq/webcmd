@@ -65,6 +65,7 @@ describe('webcmd skills content', () => {
     expect(skill).toContain('webcmd plugin search');
     expect(skill).toContain('webcmd plugin install');
     expect(skill).toContain('webcmd web fetch --url');
+    expect(skill).toContain('first-choice Webcmd fetch path');
     expect(skill).toContain('FETCH_BLOCKED');
     expect(skill).toContain('FETCH_REQUIRES_BROWSER');
     for (const guide of skills) {
@@ -280,6 +281,7 @@ describe('webcmd skills content', () => {
     const autofix = bundledSkill('webcmd-autofix');
 
     expect(usage).toContain('webcmd session create -f json');
+    expect(usage).toContain('first-choice Webcmd fetch path');
     expect(usage).toContain('webcmd profile create work');
     expect(usage).toContain('webcmd --session session_abc browser');
     expect(usage).toContain('SESSION_BUSY');
