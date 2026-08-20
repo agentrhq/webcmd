@@ -1618,3 +1618,43 @@ describe('HostedClient verbose diagnostics', () => {
     expect(stderr.lines().join('')).toMatch(/hosted ✖ GET \/v1\/profiles failed after \d+ms: ECONNREFUSED/);
   });
 });
+
+describe('HostedClient abort signal', () => {
+  it('passes the constructor signal to every request', async () => {
+    const seen: (AbortSignal | null | undefined)[] = [];
+    const controller = new AbortController();
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.test',
+      apiKey: 'token',
+      signal: controller.signal,
+      fetchImpl: (async (_url: string, init?: RequestInit) => {
+        seen.push(init?.signal);
+        return new Response(JSON.stringify({ ok: true, profiles: [] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }) as unknown as typeof fetch,
+    });
+
+    await client.listProfiles();
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toBeInstanceOf(AbortSignal);
+    expect(seen[0]!.aborted).toBe(false);
+    controller.abort();
+    expect(seen[0]!.aborted).toBe(true);
+  });
+
+  it('rejects when the signal is already aborted', async () => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.test',
+      apiKey: 'token',
+      signal: AbortSignal.abort(new Error('cancelled by client disconnect')),
+      fetchImpl: (async (_url: string, init?: RequestInit) => {
+        init?.signal?.throwIfAborted();
+        return new Response('{}', { status: 200 });
+      }) as unknown as typeof fetch,
+    });
+
+    await expect(client.listProfiles()).rejects.toThrow('cancelled by client disconnect');
+  });
+});

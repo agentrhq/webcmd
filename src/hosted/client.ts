@@ -36,6 +36,11 @@ export interface HostedClientOptions {
   apiKey: string;
   workspace?: string;
   fetchImpl?: typeof fetch;
+  /**
+   * Cancels every request this client makes. The MCP path derives it from the
+   * inbound HTTP request so a client disconnect tears down in-flight work.
+   */
+  signal?: AbortSignal;
 }
 
 /**
@@ -76,12 +81,14 @@ export class HostedClient {
   private readonly apiKey: string;
   private readonly workspace: string | undefined;
   private readonly fetchImpl: typeof fetch;
+  private readonly signal: AbortSignal | undefined;
 
   constructor(options: HostedClientOptions) {
     this.apiBaseUrl = options.apiBaseUrl.replace(/\/+$/, '');
     this.apiKey = options.apiKey;
     this.workspace = options.workspace;
     this.fetchImpl = options.fetchImpl ?? fetch;
+    this.signal = options.signal;
   }
 
   async getMe(): Promise<unknown> {
@@ -359,6 +366,7 @@ export class HostedClient {
     const response = await this.fetchImpl(
       `${this.apiBaseUrl}/v1/executions/${encodeURIComponent(input.executionId)}/artifacts/${encodeURIComponent(input.artifactId)}`,
       {
+        ...(this.signal ? { signal: this.signal } : {}),
         headers: {
           accept: 'application/octet-stream',
           authorization: `Bearer ${this.apiKey}`,
@@ -484,8 +492,10 @@ export class HostedClient {
     const startedAt = Date.now();
     log.verbose(`hosted → ${method} ${path}`);
     try {
+      const signal = mergeAbortSignals(this.signal, init.signal);
       const response = await this.fetchImpl(`${this.apiBaseUrl}${path}`, {
         ...init,
+        ...(signal ? { signal } : {}),
         headers: {
           accept: 'application/json',
           authorization: `Bearer ${this.apiKey}`,
@@ -521,6 +531,15 @@ export class HostedClient {
       { ...(body.execution ? { execution: body.execution } : {}), ...(body.trace ? { trace: body.trace } : {}) },
     );
   }
+}
+
+function mergeAbortSignals(
+  base: AbortSignal | undefined,
+  perRequest: AbortSignal | null | undefined,
+): AbortSignal | undefined {
+  if (!base) return perRequest ?? undefined;
+  if (!perRequest) return base;
+  return AbortSignal.any([base, perRequest]);
 }
 
 function parseJson(text: string): unknown {
