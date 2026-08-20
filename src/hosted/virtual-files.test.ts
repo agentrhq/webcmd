@@ -28,6 +28,7 @@ describe('normalizeVirtualPath', () => {
     ['C:/Windows/system32', 'windows drive letter'],
     ['a\\b.txt', 'backslash separator'],
     ['bad\u0000name', 'control character'],
+    ['bad\u0085name', 'C1 control character'],
     ['dir/', 'directory'],
     ['.', 'current directory'],
   ])('rejects %s (%s)', (input) => {

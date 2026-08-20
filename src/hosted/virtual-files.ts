@@ -17,7 +17,7 @@ export class VirtualPathError extends Error {
   }
 }
 
-const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
+const CONTROL_CHARACTERS = /\p{Cc}/u;
 const WINDOWS_DRIVE = /^[A-Za-z]:/;
 
 export function normalizeVirtualPath(input: string): string {
