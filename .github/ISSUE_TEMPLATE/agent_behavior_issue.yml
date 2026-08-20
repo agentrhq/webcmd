@@ -1,0 +1,99 @@
+name: "Agent behavior / CLI gap"
+description: Capture eval or real-agent behavior, current Webcmd state, and open solution choices.
+title: "[Agent behavior]: "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this when an agent did the wrong thing and the fix might be CLI behavior, docs, skills, or eval design. Keep it evidence-first and open enough for senior review.
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why this issue exists
+      description: Name the eval, real workflow, or user report that exposed the behavior.
+      value: |
+        Source reports:
+
+        - `<path-or-url>`
+    validations:
+      required: true
+
+  - type: textarea
+    id: current-state
+    attributes:
+      label: Current Webcmd state
+      description: What does current main already do? Include the SHA or version checked.
+      value: |
+        As of `origin/main` `<sha>`:
+
+        - ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: observed-behavior
+    attributes:
+      label: Observed agent behavior
+      description: Describe what the agent actually did, including wrong commands, retries, and final output.
+      placeholder: |
+        The agent ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-went-wrong
+    attributes:
+      label: What went wrong
+      description: Explain the agent mental model or CLI affordance gap, not only the symptom.
+      placeholder: |
+        The agent treated ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution-directions
+    attributes:
+      label: Solution directions
+      description: Prefer product/CLI fixes first. Skill changes should be minimal and justified.
+      value: |
+        Possible directions:
+
+        1. Product/CLI:
+        2. Docs/help:
+        3. Skill guidance:
+        4. Eval/task design:
+    validations:
+      required: true
+
+  - type: textarea
+    id: senior-review
+    attributes:
+      label: Open questions for senior review
+      description: Ask the decisions that should be made before implementation.
+      value: |
+        - Should this be fixed in CLI/runtime, docs/help, skills, or eval design?
+        - What is the smallest product behavior that would make a weak skill succeed?
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Concrete checks that prove the issue is resolved.
+      value: |
+        - [ ] ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: non-goals
+    attributes:
+      label: Non-goals
+      description: Bound the issue so it does not absorb unrelated work.
+      value: |
+        - No fixture-specific workaround unless the fixture itself is the bug.
+    validations:
+      required: false
