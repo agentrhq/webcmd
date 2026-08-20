@@ -242,6 +242,27 @@ Use `snapshot --snapshot-mode read` first. If the page is an app shell or needs 
 
 Use `run` and inspect `page.frames()`; target the frame by URL/name and keep iframe actions in the same program. If Chrome cannot expose the frame, bind or navigate directly to the iframe URL when safe.
 
+### Open a new tab
+
+When a control should open another page (`target=_blank`, `window.open`, a download-in-tab):
+
+1. In the same `run`, arm `page.waitForEvent('popup')` with a short timeout **before** the click.
+2. After the click, inspect `context.pages()` or `webcmd --session <session-id> browser tabs`. A new page is the success path — bind to it and read there.
+3. If no popup arrives (blocker, `noopener`, `data:`/`blob:`/`srcdoc` origin, timeout): do **not** `page.goto` the target URL on the current bound page. That replaces the opener (iframes, form state, and the original document are gone). Call `context.newPage()` and navigate the new page if a destination URL is already known (`href`, the task URL).
+4. Do not wait out the default `browser run` timeout on a popup that has not fired.
+
+```js
+const popupPromise = page.waitForEvent('popup', { timeout: 5000 }).catch(() => null);
+await page.getByRole('link', { name: /open/i }).click();
+const popup = await popupPromise;
+if (popup) {
+  return { url: popup.url(), title: await popup.title() };
+}
+const tab = await context.newPage();
+await tab.goto(knownUrl);
+return { url: tab.url(), title: await tab.title() };
+```
+
 ---
 
 ## Pitfalls
@@ -251,6 +272,7 @@ Use `run` and inspect `page.frames()`; target the frame by URL/name and keep ifr
 - **Do not run a trigger before arming the waiter.** If a request matters, create `page.waitForResponse(...)` before the click/fill/keypress that triggers it.
 - **Do not trust autocomplete or masked inputs blindly.** Fill/type can appear to work while the app rejects the value. Verify visible text, `inputValue()`, or post-action state.
 - **Do not solve CAPTCHA or auth challenges programmatically.** Use human handoff and verification.
+- **Do not recover a missing popup by navigating the current page.** Use `context.newPage()`. Same-tab `page.goto` is not a new tab.
 - **Do not turn browser-run code into adapter code.** Preserve evidence and behavior; adapters use `IPage`, fetch/intercept helpers, or existing adapter patterns.
 - **Screenshots are for humans, not for agents.** Use snapshots or targeted extraction unless the page is genuinely visual: CAPTCHA, charts, icon-only controls, or layout ambiguity.
 - **Large DOM/text dumps are usually a bug.** Scope extraction, cap returned fields, and prefer response samples or visible values.
@@ -267,6 +289,8 @@ Use `run` and inspect `page.frames()`; target the frame by URL/name and keep ifr
 | `webcmd doctor` is red | Fix the browser runtime first. Browser commands depend on it; adapter discovery does not. |
 | No suitable adapter appears | Confirm registry output was complete and non-truncated before browser fallback. |
 | Bound page is wrong or stale | Run `tabs`, choose the current page id, then `bind --page <id>` again. |
+| Click should have opened a tab, but `tabs` still shows one page | Do not `page.goto` on the bound page. `context.newPage()`, then navigate the new page if you have a URL. |
+| `waitForEvent('popup')` hangs until `BROWSER_RUN_TIMEOUT` / `BROWSER_RUN_CANCELLED` | Cap the popup wait to a few seconds. After timeout, inspect `tabs` and fall back to `context.newPage()`. |
 | `run` times out before returning | Increase `--timeout` only after checking whether the wait condition is wrong. |
 | Write may have happened before timeout | Take a fresh snapshot before retrying. Avoid duplicate submissions. |
 | `SESSION_REQUIRED` | Create a Session, then retry with root `--session <session-id>`. |

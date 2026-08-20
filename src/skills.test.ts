@@ -333,6 +333,20 @@ describe('webcmd skills content', () => {
     expect(browser).not.toMatch(/^### (?:Inspect|Get|Interact|Wait|Extract|Network)$/m);
   });
 
+  it('recovers a blocked popup without replacing the current page', () => {
+    const browser = bundledSkill('webcmd-browser');
+    const playwright = fs.readFileSync(
+      path.join(process.cwd(), 'skills', 'webcmd-browser', 'references', 'browser-run-playwright.md'),
+      'utf8',
+    );
+
+    expect(browser).toContain('### Open a new tab');
+    expect(browser).toContain('Do not recover a missing popup by navigating the current page');
+    expect(browser).toContain('context.newPage()');
+    expect(browser).toMatch(/waitForEvent\('popup'\)[\s\S]{0,80}timeout/);
+    expect(playwright).toMatch(/context\.newPage\(\)[\s\S]{0,220}not[\s\S]{0,40}`page\.goto`/);
+  });
+
   it('adds bundled skills once and refreshes them after package updates', () => {
     const firstRoot = makePackageRoot('first');
     const secondRoot = makePackageRoot('second');

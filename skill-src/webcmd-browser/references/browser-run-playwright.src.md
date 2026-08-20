@@ -33,6 +33,11 @@ do not — each run starts with a fresh scope.
 `context.newPage()` works and creates a tab the Webcmd session tracks. You cannot close it
 from inside `run` (see below); list tabs with `webcmd --session <session-id> browser tabs`.
 
+When a click does not produce a popup, `context.newPage()` is the recovery — not
+`page.goto` on the opener. Popup blockers, `noopener`, and `data:`/`blob:`/`srcdoc`
+documents often swallow `window.open`. Cap `waitForEvent('popup')`; do not let it
+consume the whole run timeout.
+
 `page.snapshotForAI()` is not available; use `webcmd browser snapshot` instead.
 
 ## What is blocked, and what to use instead
