@@ -197,6 +197,10 @@ describe('webcmd skills content', () => {
       'utf8',
     );
     expect(usage).toMatch(/existing adapter command first[\s\S]{0,220}load `webcmd-browser`[\s\S]{0,120}root `--session <session-id>`/i);
+    expect(usage).toContain('Before creating, revising, or privately overriding a command, load `webcmd-adapter-author`');
+    expect(usage).toContain('Do not invent a sibling verify command');
+    expect(author).toContain("args['note-id']");
+    expect(author).toContain('Do not add a second command whose name ends in verify');
     expect(browser).toMatch(/`tabs`, `bind --page`, `snapshot`, and `run`/i);
     expect(browser).toContain('webcmd --session <session-id> browser tabs');
     expect(browser).toContain('webcmd --session <session-id> browser bind --page');

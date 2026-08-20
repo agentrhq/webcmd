@@ -39,6 +39,8 @@ Do not install Node.js or silently fall back to `npx`.
 
 **REQUIRED SUB-SKILL:** Before raw browser work, load `webcmd-browser`.
 
+**REQUIRED SUB-SKILL:** Before creating, revising, or privately overriding a command, load `webcmd-adapter-author`.
+
 ## Install
 
 ```bash
@@ -274,6 +276,8 @@ Do not invoke these removed commands:
 - Do not emit a large unfiltered registry into a bounded output or infer absence from a truncation warning; filter at the source and narrow until the result is complete.
 - Do not assume every adapter needs a browser; check `strategy`.
 - Do not silently fall back from a failing adapter to hand-rolled `fetch`; use `--trace retain-on-failure` first.
+- Do not store authoring notes in a hand-written file next to the adapter; use the site-memory commands (`webcmd site note`, `webcmd site endpoint`, `webcmd site field-map`).
+- Do not invent a sibling verify command; use `webcmd verify` or `webcmd browser verify`.
 
 <!-- @
 ## Learnings log
@@ -282,4 +286,8 @@ Author-only. Stripped by litprompt, so it costs the running agent nothing.
 Append one dated line whenever a correction lands, or whenever an approach
 is tried and rejected. Record what was tried and why it failed, not just
 what won.
+
+- 2026-08-20: Usage force-loaded `webcmd-browser` for raw browser work but not
+  `webcmd-adapter-author` for create/revise/override. Agents then skipped
+  site-memory and invented a sibling verify command.
 -->
