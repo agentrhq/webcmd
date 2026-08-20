@@ -7,14 +7,19 @@ adapter.
 @[why adapters](../shared/why-adapters.src.md)
 @[safety rules](../shared/safety-rules.src.md)
 
+Discover candidate adapters with argv data; if the complete result and relevant
+plugin search have no suitable command, browser work is the fallback:
+
+    { "argv": ["list", "-f", "json"] }
+
 ## Session lifecycle
 
 Create one session, use its id on each bounded browser action, and close it when
 finished. Each invocation has a 240-second wall-clock budget.
 
     { "argv": ["session", "create", "-f", "json"] }
-    { "argv": ["browser", "tabs", "--session", "session_abc", "-f", "json"] }
-    { "argv": ["browser", "snapshot", "--session", "session_abc", "--snapshot-mode", "act", "-f", "json"] }
+    { "argv": ["--session", "session_abc", "browser", "tabs", "-f", "json"] }
+    { "argv": ["--session", "session_abc", "browser", "snapshot", "--snapshot-mode", "act", "-f", "json"] }
     { "argv": ["session", "close", "session_abc"] }
 
 Take a fresh snapshot after navigation, submits, SPA transitions, login, or a
@@ -27,7 +32,7 @@ fields, never an unbounded DOM dump.
 Put a browser program in an attached virtual file and invoke it with argv:
 
     {
-      "argv": ["browser", "run", "--session", "session_abc", "--file", "probe.js", "-f", "json"],
+      "argv": ["--session", "session_abc", "browser", "run", "--file", "probe.js", "-f", "json"],
       "files": [{ "path": "probe.js", "content": "await page.goto('https://example.com'); return { url: page.url(), title: await page.title() };", "encoding": "utf8" }]
     }
 

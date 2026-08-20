@@ -82,8 +82,11 @@ Anything longer is an explicit session: create one, issue bounded interactions
 against it, and poll.
 
     { "argv": ["session", "create", "-f", "json"] }
-    { "argv": ["browser", "navigate", "--session", "session_abc", "--url", "https://example.com"] }
-    { "argv": ["browser", "snapshot", "--session", "session_abc", "-f", "json"] }
+    {
+      "argv": ["--session", "session_abc", "browser", "run", "--file", "navigate.js", "-f", "json"],
+      "files": [{ "path": "navigate.js", "content": "await page.goto('https://example.com'); return { url: page.url(), title: await page.title() };", "encoding": "utf8" }]
+    }
+    { "argv": ["--session", "session_abc", "browser", "snapshot", "-f", "json"] }
     { "argv": ["session", "close", "session_abc"] }
 
 Each interaction is its own invocation and its own 240-second budget. The
@@ -112,9 +115,13 @@ Paths are relative and POSIX-style. There is no host filesystem behind them:
 `/etc/passwd` and `../escape` are rejected, and an output path becomes an
 artifact rather than a file on a server.
 
-Before starting a raw browser session, filter `webcmd list -f json` at the source using request-derived terms across `site`, `name`, `description`, and `columns`; follow `webcmd-usage` for the exact command shape. Any truncation warning means adapter discovery is incomplete: narrow the filter and inspect again. Absence from truncated output never proves that no adapter exists.
+Any truncation warning means adapter discovery is incomplete: narrow the filter and inspect again. Absence from truncated output never proves that no adapter exists.
 
-Use raw `webcmd browser` only after a complete, non-truncated registry check shows no suitable adapter and a plugin search for the missing site or capability returns no match. If plugin search returns a match, offer installation of the returned `installSource`; if it errors, report the error instead of opening the browser.
+Use a deterministic adapter before generic browser work. Discover it through
+`webcmd_cli_run` argv, and only use browser actions after a complete registry
+result and the relevant plugin search have no suitable command:
+
+    { "argv": ["list", "-f", "json"] }
 
 ## Workspaces, profiles, sessions, formats
 

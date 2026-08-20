@@ -30,11 +30,15 @@ current page and response evidence with bounded session interactions.
 
 ## Patch only tenant-owned source
 
-Fetch the named adapter source as a virtual artifact, change only that source,
-and return it with `adapter source put` plus a virtual file. Validate and verify
-after every repair round:
+Fetch the named adapter source into the virtual relative path `adapter.ts`,
+change only that virtual file, and return it with `adapter source put`. Validate
+and verify after every repair round:
 
-    { "argv": ["adapter", "source", "get", "example/search", "-f", "json"] }
+    { "argv": ["adapter", "source", "get", "example/search", "--output", "adapter.ts"] }
+    {
+      "argv": ["adapter", "source", "put", "example/search", "adapter.ts"],
+      "files": [{ "path": "adapter.ts", "artifactUri": "webcmd://artifacts/exec_.../ea_..." }]
+    }
     { "argv": ["validate", "example/search", "-f", "json"] }
     { "argv": ["browser", "verify", "example/search", "-f", "json"] }
 

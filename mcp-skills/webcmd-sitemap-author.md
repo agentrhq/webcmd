@@ -13,7 +13,7 @@ record only task-relevant structure actually observed. Current browser evidence
 wins over remembered state.
 
     { "argv": ["site", "memory", "show", "example", "-f", "json"] }
-    { "argv": ["browser", "snapshot", "--session", "session_abc", "--snapshot-mode", "tree", "-f", "json"] }
+    { "argv": ["--session", "session_abc", "browser", "snapshot", "--snapshot-mode", "tree", "-f", "json"] }
 
 Use stable ids for pages, actions, and workflows. Mark unverified paths `draft`
 or `stale`; never call them verified. Do not record secrets, private messages,

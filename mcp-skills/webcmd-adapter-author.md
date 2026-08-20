@@ -21,7 +21,7 @@ replay result, and why a simpler strategy cannot work.
     { "argv": ["list", "-f", "json"] }
     { "argv": ["site", "memory", "show", "example", "-f", "json"] }
     { "argv": ["session", "create", "-f", "json"] }
-    { "argv": ["browser", "snapshot", "--session", "session_abc", "--snapshot-mode", "tree", "-f", "json"] }
+    { "argv": ["--session", "session_abc", "browser", "snapshot", "--snapshot-mode", "tree", "-f", "json"] }
 
 Do not bypass authentication, CAPTCHA, rate limits, or access controls. An
 `action_required` response belongs to the user; provide its view URL and run its
@@ -31,13 +31,14 @@ returned verifier after the user completes it.
 
 Get the scaffold or existing source as an artifact-backed virtual file:
 
-    { "argv": ["adapter", "source", "get", "example/search", "-f", "json"] }
+    { "argv": ["adapter", "source", "get", "example/search", "--output", "adapter.ts"] }
 
-Read the returned artifact with `artifacts get`, edit its text in the tool call,
-then put it back using a virtual file attachment:
+The command materializes source at the virtual relative path `adapter.ts`. Read
+that virtual file, edit it in the tool call, then put it back using the same
+path and a virtual file attachment:
 
     {
-      "argv": ["adapter", "source", "put", "example/search", "adapter.ts", "-f", "json"],
+      "argv": ["adapter", "source", "put", "example/search", "adapter.ts"],
       "files": [{ "path": "adapter.ts", "artifactUri": "webcmd://artifacts/exec_.../ea_..." }]
     }
 

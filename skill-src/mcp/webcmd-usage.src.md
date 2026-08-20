@@ -82,8 +82,11 @@ Anything longer is an explicit session: create one, issue bounded interactions
 against it, and poll.
 
     { "argv": ["session", "create", "-f", "json"] }
-    { "argv": ["browser", "navigate", "--session", "session_abc", "--url", "https://example.com"] }
-    { "argv": ["browser", "snapshot", "--session", "session_abc", "-f", "json"] }
+    {
+      "argv": ["--session", "session_abc", "browser", "run", "--file", "navigate.js", "-f", "json"],
+      "files": [{ "path": "navigate.js", "content": "await page.goto('https://example.com'); return { url: page.url(), title: await page.title() };", "encoding": "utf8" }]
+    }
+    { "argv": ["--session", "session_abc", "browser", "snapshot", "-f", "json"] }
     { "argv": ["session", "close", "session_abc"] }
 
 Each interaction is its own invocation and its own 240-second budget. The
@@ -113,6 +116,12 @@ Paths are relative and POSIX-style. There is no host filesystem behind them:
 artifact rather than a file on a server.
 
 @[why adapters](../shared/why-adapters.src.md)
+
+Use a deterministic adapter before generic browser work. Discover it through
+`webcmd_cli_run` argv, and only use browser actions after a complete registry
+result and the relevant plugin search have no suitable command:
+
+    { "argv": ["list", "-f", "json"] }
 
 ## Workspaces, profiles, sessions, formats
 

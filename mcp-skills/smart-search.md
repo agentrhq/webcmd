@@ -26,9 +26,7 @@ For a named site, inspect the live command surface first:
 Do not create shell pipelines. Read the JSON response directly, preserve source
 URLs, and report failures rather than claiming an unperformed search.
 
-Before starting a raw browser session, filter `webcmd list -f json` at the source using request-derived terms across `site`, `name`, `description`, and `columns`; follow `webcmd-usage` for the exact command shape. Any truncation warning means adapter discovery is incomplete: narrow the filter and inspect again. Absence from truncated output never proves that no adapter exists.
-
-Use raw `webcmd browser` only after a complete, non-truncated registry check shows no suitable adapter and a plugin search for the missing site or capability returns no match. If plugin search returns a match, offer installation of the returned `installSource`; if it errors, report the error instead of opening the browser.
+Any truncation warning means adapter discovery is incomplete: narrow the filter and inspect again. Absence from truncated output never proves that no adapter exists.
 
 ## Budgets
 

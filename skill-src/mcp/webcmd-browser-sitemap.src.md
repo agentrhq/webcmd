@@ -12,7 +12,7 @@ Use a bounded session to inspect current state, then request only the smallest
 relevant hosted memory: site orientation, one matching page, one matching
 workflow, and pitfalls only when blocked.
 
-    { "argv": ["browser", "snapshot", "--session", "session_abc", "--snapshot-mode", "tree", "-f", "json"] }
+    { "argv": ["--session", "session_abc", "browser", "snapshot", "--snapshot-mode", "tree", "-f", "json"] }
     { "argv": ["site", "memory", "show", "example", "-f", "json"] }
 
 Prefer an adapter named by the workflow. If it is unavailable or fails, use the

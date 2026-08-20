@@ -4,10 +4,13 @@ Use `webcmd_cli_run` for a live browser task only after a complete, non-truncate
 adapter lookup and relevant plugin search leave no suitable deterministic
 adapter.
 
-Before starting a raw browser session, filter `webcmd list -f json` at the source using request-derived terms across `site`, `name`, `description`, and `columns`; follow `webcmd-usage` for the exact command shape. Any truncation warning means adapter discovery is incomplete: narrow the filter and inspect again. Absence from truncated output never proves that no adapter exists.
-
-Use raw `webcmd browser` only after a complete, non-truncated registry check shows no suitable adapter and a plugin search for the missing site or capability returns no match. If plugin search returns a match, offer installation of the returned `installSource`; if it errors, report the error instead of opening the browser.
+Any truncation warning means adapter discovery is incomplete: narrow the filter and inspect again. Absence from truncated output never proves that no adapter exists.
 Use live fetch results, command metadata, and command help. Do not infer command arguments from this skill, maintain a routing table, or claim a source was searched when it was not.
+
+Discover candidate adapters with argv data; if the complete result and relevant
+plugin search have no suitable command, browser work is the fallback:
+
+    { "argv": ["list", "-f", "json"] }
 
 ## Session lifecycle
 
@@ -15,8 +18,8 @@ Create one session, use its id on each bounded browser action, and close it when
 finished. Each invocation has a 240-second wall-clock budget.
 
     { "argv": ["session", "create", "-f", "json"] }
-    { "argv": ["browser", "tabs", "--session", "session_abc", "-f", "json"] }
-    { "argv": ["browser", "snapshot", "--session", "session_abc", "--snapshot-mode", "act", "-f", "json"] }
+    { "argv": ["--session", "session_abc", "browser", "tabs", "-f", "json"] }
+    { "argv": ["--session", "session_abc", "browser", "snapshot", "--snapshot-mode", "act", "-f", "json"] }
     { "argv": ["session", "close", "session_abc"] }
 
 Take a fresh snapshot after navigation, submits, SPA transitions, login, or a
@@ -29,7 +32,7 @@ fields, never an unbounded DOM dump.
 Put a browser program in an attached virtual file and invoke it with argv:
 
     {
-      "argv": ["browser", "run", "--session", "session_abc", "--file", "probe.js", "-f", "json"],
+      "argv": ["--session", "session_abc", "browser", "run", "--file", "probe.js", "-f", "json"],
       "files": [{ "path": "probe.js", "content": "await page.goto('https://example.com'); return { url: page.url(), title: await page.title() };", "encoding": "utf8" }]
     }
 
