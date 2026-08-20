@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HostedClient, HostedClientError, resolveWorkspace } from './client.js';
 
 const invalidTraceUrlCases = [
@@ -1528,5 +1528,93 @@ describe('resolveWorkspace', () => {
 
   it('returns undefined when neither --workspace nor WEBCMD_WORKSPACE is set', () => {
     expect(resolveWorkspace([], {})).toBeUndefined();
+  });
+});
+
+describe('HostedClient verbose diagnostics', () => {
+  const SECRET_KEY = 'sk-hosted-secret-value';
+
+  function captureStderr(): { lines: () => string[]; restore: () => void } {
+    const written: string[] = [];
+    const spy = vi.spyOn(process.stderr, 'write').mockImplementation((chunk: unknown) => {
+      written.push(String(chunk));
+      return true;
+    });
+    return { lines: () => written, restore: () => spy.mockRestore() };
+  }
+
+  beforeEach(() => {
+    delete process.env.WEBCMD_VERBOSE;
+  });
+
+  afterEach(() => {
+    delete process.env.WEBCMD_VERBOSE;
+    vi.restoreAllMocks();
+  });
+
+  it('stays silent when verbose mode is off', async () => {
+    const stderr = captureStderr();
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: SECRET_KEY,
+      fetchImpl: async () => new Response(JSON.stringify({ ok: true, profiles: [] })),
+    });
+
+    await client.listProfiles();
+    stderr.restore();
+
+    expect(stderr.lines()).toEqual([]);
+  });
+
+  it('reports method, path and status when verbose mode is on', async () => {
+    process.env.WEBCMD_VERBOSE = '1';
+    const stderr = captureStderr();
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: SECRET_KEY,
+      fetchImpl: async () => new Response(JSON.stringify({ ok: true, profiles: [] })),
+    });
+
+    await client.listProfiles();
+    stderr.restore();
+
+    const output = stderr.lines().join('');
+    expect(output).toContain('hosted → GET /v1/profiles');
+    expect(output).toMatch(/hosted ← GET \/v1\/profiles 200 \(\d+ms\)/);
+  });
+
+  // `-v` is a debugging aid; it must never turn into a credential dump.
+  it('never writes the bearer token or workspace header', async () => {
+    process.env.WEBCMD_VERBOSE = '1';
+    const stderr = captureStderr();
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: SECRET_KEY,
+      workspace: 'ws_secret_workspace',
+      fetchImpl: async () => new Response(JSON.stringify({ ok: true, profiles: [] })),
+    });
+
+    await client.listProfiles();
+    stderr.restore();
+
+    const output = stderr.lines().join('');
+    expect(output).not.toContain(SECRET_KEY);
+    expect(output).not.toContain('ws_secret_workspace');
+    expect(output).not.toContain('Bearer');
+  });
+
+  it('reports transport failures and still rethrows them', async () => {
+    process.env.WEBCMD_VERBOSE = '1';
+    const stderr = captureStderr();
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: SECRET_KEY,
+      fetchImpl: async () => { throw new Error('ECONNREFUSED'); },
+    });
+
+    await expect(client.listProfiles()).rejects.toThrow('ECONNREFUSED');
+    stderr.restore();
+
+    expect(stderr.lines().join('')).toMatch(/hosted ✖ GET \/v1\/profiles failed after \d+ms: ECONNREFUSED/);
   });
 });

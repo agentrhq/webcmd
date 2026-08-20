@@ -33,6 +33,7 @@ import {
   type BrowserRunResult,
   type BrowserRunTimings,
   type BrowserRunWarning,
+  isClosedContextError,
 } from './types.js';
 
 export interface BrowserRunSessionScope {
@@ -93,7 +94,6 @@ function normalizeExecutionError(error: unknown): Error {
     );
   }
   const message = error instanceof Error ? error.message : String(error);
-  const errorKind = error instanceof Error ? error.name : '';
   const unsupported = message.match(/BROWSER_RUN_API_UNSUPPORTED:\s*(.*)/s)
     ?? message.match(/(File paths? are unavailable in the QuickJS sandbox[^.]*)/i);
   if (unsupported) {
@@ -115,13 +115,10 @@ function normalizeExecutionError(error: unknown): Error {
       'Browser-run execution exceeded its memory limit.',
     );
   }
-  if (/syntaxerror/i.test(`${errorKind}: ${message}`)) {
-    return new BrowserRunError(
-      'BROWSER_RUN_SYNTAX_ERROR',
-      sanitize(message),
-      'Fix the browser-run JavaScript syntax and retry.',
-    );
-  }
+  // A compile failure of the caller's program is tagged BROWSER_RUN_SYNTAX_ERROR where it
+  // happens and returned by the code.startsWith('BROWSER_RUN_') branch above. Every
+  // SyntaxError reaching here is therefore a runtime one — JSON.parse on malformed input is
+  // the common case — so it keeps its own name and message like any other runtime error.
   const normalized = new Error(sanitize(message));
   normalized.name = error instanceof Error ? error.name : 'Error';
   return normalized;
@@ -489,14 +486,43 @@ export async function runBrowserProgram(
           connection.close(message);
           rejectRun?.(new Error(message));
         };
+        globalThis.__webcmdCompileError = (source, cause) => {
+          // new AsyncFunction(body) prepends two lines of wrapper, so QuickJS reports
+          // a line two ahead of the one the caller actually wrote.
+          const lines = source.split('\\n');
+          const line = (cause?.lineNumber ?? 0) - 2;
+          const column = cause?.columnNumber ?? 0;
+          const text = line >= 1 && line <= lines.length ? lines[line - 1] : undefined;
+          let excerpt = '';
+          if (text !== undefined) {
+            const start = Math.max(0, column - 60);
+            const caret = ' '.repeat(Math.max(0, column - 1 - start)) + '^';
+            excerpt = '\\n  ' + text.slice(start, column + 20) + '\\n  ' + caret;
+          }
+          const where = line >= 1 ? ' at line ' + line + ', column ' + column : '';
+          const message = cause?.message ?? 'Program failed to compile.';
+          const error = new SyntaxError(message + where + excerpt);
+          error.code = 'BROWSER_RUN_SYNTAX_ERROR';
+          error.hint = 'Your program failed to compile; the browser was never touched. '
+            + 'A common cause is an unescaped quote when embedding a URL or HTML in a '
+            + 'string literal — use double quotes or a template literal for values that '
+            + 'contain apostrophes.';
+          return error;
+        };
         globalThis.__webcmdRun = async source => {
           const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+          let program;
+          try {
+            program = new AsyncFunction(source);
+          } catch (cause) {
+            throw __webcmdCompileError(source, cause);
+          }
           let value;
           try {
             const cancellation = new Promise((_resolve, reject) => {
               rejectRun = reject;
             });
-            value = await Promise.race([new AsyncFunction(source)(), cancellation]);
+            value = await Promise.race([program(), cancellation]);
           } finally {
             rejectRun = undefined;
           }
@@ -625,6 +651,10 @@ export async function runBrowserProgram(
           code: 'BROWSER_RUN_SNAPSHOT_FAILED',
           message: normalizeExecutionError(snapshotError).message,
         });
+        // The run itself already succeeded, so keep ok: true — but a closed-context
+        // signature here means the connection is dying underneath it. Signal the
+        // caller out-of-band so the dead Profile runtime doesn't get reused (#314).
+        if (isClosedContextError(snapshotError)) options.onStaleContext?.();
       } finally {
         timings.snapshot_ms = (timings.snapshot_ms ?? 0) + Math.max(0, Date.now() - snapshotStartedAt);
       }

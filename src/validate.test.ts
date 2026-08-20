@@ -10,7 +10,35 @@
 import { describe, it, expect } from 'vitest';
 import { getRegisteredStepNames, registerStep } from './pipeline/registry.js';
 import { cli, getRegistry, Strategy } from './registry.js';
+import { ArgumentError } from './errors.js';
 import { validateClisWithTarget } from './validate.js';
+
+function registerValidateFixture(site: string, name: string, aliases?: string[]): void {
+  cli({
+    site,
+    name,
+    ...(aliases ? { aliases } : {}),
+    access: 'read',
+    browser: false,
+    strategy: Strategy.PUBLIC,
+    args: [],
+    func: async () => [],
+  });
+}
+
+function withValidateFixtures<T>(keys: string[], run: () => T): T {
+  const reg = getRegistry();
+  const originals = keys.map(key => [key, reg.get(key)] as const);
+  for (const key of keys) reg.delete(key);
+  try {
+    return run();
+  } finally {
+    for (const key of keys) reg.delete(key);
+    for (const [key, original] of originals) {
+      if (original) reg.set(key, original);
+    }
+  }
+}
 
 describe('validate.ts pipeline step allowlist', () => {
   it('uses every step name registered in pipeline/registry.ts', () => {
@@ -90,5 +118,76 @@ describe('validate.ts pipeline step allowlist', () => {
       // leaving it registered is harmless because the test step name is
       // namespaced and never used outside this file.
     }
+  });
+});
+
+describe('validateClisWithTarget unknown target', () => {
+  it('rejects an unknown site instead of passing zero commands', () => {
+    const site = 'validate-unknown-site';
+    const key = `${site}/search`;
+    withValidateFixtures([key], () => {
+      registerValidateFixture(site, 'search');
+
+      let thrown: unknown;
+      try {
+        validateClisWithTarget([], 'nope');
+      } catch (err) {
+        thrown = err;
+      }
+
+      expect(thrown).toBeInstanceOf(ArgumentError);
+      const error = thrown as ArgumentError;
+      expect(error.exitCode).toBe(2);
+      expect(error.message).toContain('No command matches "nope"');
+      expect(error.message).toContain(`Valid sites:`);
+      expect(error.message).toContain(site);
+      expect(error.hint).toContain('usage: webcmd validate <site|site/name>');
+      expect(error.hint).toMatch(/example: webcmd validate /);
+    });
+  });
+
+  it('enumerates commands when the site exists but the command does not', () => {
+    const site = 'validate-unknown-cmd';
+    const keys = [`${site}/search`, `${site}/synonyms`];
+    withValidateFixtures(keys, () => {
+      registerValidateFixture(site, 'search');
+      registerValidateFixture(site, 'synonyms');
+
+      expect(() => validateClisWithTarget([], `${site}/nope`)).toThrow(ArgumentError);
+      try {
+        validateClisWithTarget([], `${site}/nope`);
+      } catch (err) {
+        expect(err).toBeInstanceOf(ArgumentError);
+        expect((err as ArgumentError).message).toBe(
+          `No command matches "${site}/nope". Valid commands for ${site}: search, synonyms`,
+        );
+        expect((err as ArgumentError).hint).toBe(
+          `usage: webcmd validate <site|site/name>\nexample: webcmd validate ${site}/search`,
+        );
+      }
+    });
+  });
+
+  it('still validates an alias target after resolving it', () => {
+    const site = 'validate-alias-target';
+    const keys = [`${site}/search`, `${site}/find`];
+    withValidateFixtures(keys, () => {
+      registerValidateFixture(site, 'search', ['find']);
+      const report = validateClisWithTarget([], `${site}/find`);
+      expect(report.ok).toBe(true);
+      expect(report.commands).toBe(1);
+      expect(report.results[0]?.label).toBe(`${site}/search`);
+    });
+  });
+
+  it('still validates a known site', () => {
+    const site = 'validate-known-site';
+    const key = `${site}/search`;
+    withValidateFixtures([key], () => {
+      registerValidateFixture(site, 'search');
+      const report = validateClisWithTarget([], site);
+      expect(report.ok).toBe(true);
+      expect(report.commands).toBe(1);
+    });
   });
 });

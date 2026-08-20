@@ -4,6 +4,7 @@ import { access, lstat, mkdir, readdir, readFile, realpath, rename, stat, unlink
 import { homedir } from 'node:os';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { validateFixture } from '../browser/verify-fixture.js';
+import { withFileLock } from './file-lock.js';
 
 type JsonObject = Record<string, unknown>;
 
@@ -59,6 +60,7 @@ export interface ResponseSampleInput extends VerifyFixtureInput {}
 
 const writeChains = new Map<string, Promise<void>>();
 const tempWritePattern = /^\..+\.\d+\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.tmp$/i;
+const lockWritePattern = /\.lock$/;
 
 export function appendNote(input: NoteInput): Promise<{ path: 'notes.md' }> {
   return updateText(input.site, 'notes.md', input, (existing) => {
@@ -153,7 +155,7 @@ async function updateText(
 ): Promise<void> {
   const root = await ensureSiteRoot(site, opts);
   const target = join(root, path);
-  return withPathLock(target, async () => {
+  return withWriteLock(target, async () => {
     await atomicWrite(target, update(await readText(target)));
   });
 }
@@ -166,7 +168,7 @@ async function updateJson(
 ): Promise<void> {
   const root = await ensureSiteRoot(site, opts);
   const target = join(root, path);
-  return withPathLock(target, async () => {
+  return withWriteLock(target, async () => {
     const existing = objectValue(JSON.parse(await readText(target) || '{}')) ?? {};
     await atomicWrite(target, `${JSON.stringify(update(existing), null, 2)}\n`);
   });
@@ -178,6 +180,15 @@ async function writeSiteFile(site: string, path: string, body: string, opts: Loc
   await mkdir(dirname(target), { recursive: true });
   await assertInsideSiteRoot(root, dirname(target), path);
   await withPathLock(target, () => atomicWrite(target, body));
+}
+
+/**
+ * Guard a read-modify-write. The in-process chain runs first because it is free
+ * and settles same-process callers without touching the disk; the file lock then
+ * covers the read as well as the write, which is what other processes need.
+ */
+function withWriteLock<T>(target: string, fn: () => Promise<T>): Promise<T> {
+  return withPathLock(target, () => withFileLock(target, fn));
 }
 
 async function withPathLock<T>(target: string, fn: () => Promise<T>): Promise<T> {
@@ -230,7 +241,7 @@ function siteRoot(site: string, opts: LocalStoreOptions): string {
 
 async function memoryPaths(root: string, requested?: string[]): Promise<string[]> {
   if (!await exists(root)) return [];
-  const paths = (requested ?? await walkFiles(root)).filter((path) => !isTempWritePath(path));
+  const paths = (requested ?? await walkFiles(root)).filter((path) => !isInternalWritePath(path));
   return Promise.all(paths.map((path) => readableRelativePath(root, path))).then((items) => items.sort());
 }
 
@@ -239,7 +250,7 @@ async function walkFiles(root: string, dir = root): Promise<string[]> {
   const nested = await Promise.all(entries.map(async (entry) => {
     const path = join(dir, entry.name);
     if (entry.isDirectory()) return walkFiles(root, path);
-    if (entry.isFile() && !isTempWritePath(entry.name)) return [relative(root, path)];
+    if (entry.isFile() && !isInternalWritePath(entry.name)) return [relative(root, path)];
     return [];
   }));
   return nested.flat();
@@ -260,8 +271,10 @@ function safeRelativePath(root: string, path: string): string {
   throw new Error(`Invalid site memory path: ${path}`);
 }
 
-function isTempWritePath(path: string): boolean {
-  return tempWritePattern.test(basename(path));
+/** In-flight write bookkeeping — temp files and lock markers are not site memory. */
+function isInternalWritePath(path: string): boolean {
+  const name = basename(path);
+  return tempWritePattern.test(name) || lockWritePattern.test(name);
 }
 
 function requiredHomeDir(opts: LocalStoreOptions): string {

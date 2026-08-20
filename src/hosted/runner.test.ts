@@ -5,7 +5,7 @@ import path from 'node:path';
 import { Writable, type WritableOptions } from 'node:stream';
 import type { Command } from 'commander';
 import yaml from 'js-yaml';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { browserCommandCatalog } from '../browser/command-catalog.js';
 import { buildHostedContract } from './contract.js';
 import { rejectPositionalBrowserSessionArgv } from '../cli-argv-preprocess.js';
@@ -317,6 +317,45 @@ describe('runHostedCli', () => {
     }
   });
 
+  it('forks a system command through hosted adapter override', async () => {
+    const stdout = sink();
+    const requested: Array<{ pathname: string; body: unknown }> = [];
+    const result = await runHostedCli(['adapter', 'override', 'github/whoami'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      fetchImpl: async (url, init) => {
+        const pathname = new URL(String(url)).pathname;
+        requested.push({ pathname, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+        return new Response(JSON.stringify({
+          ok: true,
+          command: 'github/whoami',
+          package: { id: 'package_1', name: 'private-github-whoami', visibility: 'private' },
+          installation: { id: 'install_1' },
+          sourceFile: 'clis/github/whoami.js',
+        }), { status: 201 });
+      },
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(requested).toEqual([{ pathname: '/v1/adapters/override', body: { command: 'github/whoami' } }]);
+    expect(stdout.text()).toContain('Override created for github/whoami');
+    expect(stdout.text()).toContain('package_1');
+    expect(stdout.text()).toContain('adapter source put github/whoami');
+  });
+
+  it('rejects an unsafe hosted adapter override command key before any request', async () => {
+    const stderr = sink();
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response('{}'));
+    const result = await runHostedCli(['adapter', 'override', '../escape'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stderr: stderr.stream,
+      fetchImpl,
+    });
+
+    expect(result.exitCode).not.toBe(0);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it('rejects unsafe hosted adapter command keys and source provenance', async () => {
     const stdout = sink();
     const stderr = sink();
@@ -475,6 +514,23 @@ describe('runHostedCli', () => {
     expect(stdout.text()).toBe('');
     expect(stderr.text()).toContain('MARKETPLACE_PLUGIN_LOCAL_ONLY');
     expect(stderr.text()).toContain('Run `webcmd setup` and choose local mode to install this plugin.');
+  });
+
+  it('renders a JSON error envelope on stderr when -f json is set', async () => {
+    const stdout = sink();
+    const stderr = sink();
+    const result = await runHostedCli(['profile', 'use', 'work', '-f', 'json'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 78 });
+    expect(stdout.text()).toBe('');
+    expect(JSON.parse(stderr.text())).toMatchObject({
+      ok: false,
+      error: { code: 'CONFIG', message: 'webcmd profile use is not available in hosted mode.' },
+    });
   });
 
   it.each(['catalog'])('rejects unsupported hosted plugin %s without an API call', async (subcommand) => {
@@ -1264,7 +1320,7 @@ describe('runHostedCli', () => {
     {
       name: 'ordinary unknown option',
       tail: ['account', '--token', 'secret', '--unknown'],
-      exitCode: 1,
+      exitCode: 2,
       stderr: "error: unknown option '--unknown'\n",
       help: false,
     },
@@ -1282,7 +1338,7 @@ describe('runHostedCli', () => {
       stderr: "error: too many arguments for 'whoami'. Expected 1 argument but got 2.\n",
       help: false,
     },
-  ])('matches public Commander structural bytes and discovery order: $name', async ({ tail, exitCode, stderr: expectedStderr, help }) => {
+  ])('matches public Commander structural bytes and discovery order: $name', async ({ name, tail, exitCode, stderr: expectedStderr, help }) => {
     const structuralManifest = manifestWithStructuralArguments();
     const stdout = sink();
     const stderr = sink();
@@ -1299,7 +1355,12 @@ describe('runHostedCli', () => {
     });
 
     expect(result).toEqual({ handled: true, exitCode });
-    expect(stderr.text()).toBe(expectedStderr);
+    if (name === 'ordinary unknown option') {
+      expect(stderr.text().startsWith(expectedStderr)).toBe(true);
+      expect(stderr.text()).toContain('help: valid flags for');
+    } else {
+      expect(stderr.text()).toBe(expectedStderr);
+    }
     if (help) expect(stdout.text()).toContain('Usage: webcmd github whoami <account> [options]');
     else expect(stdout.text()).toBe('');
     expect(fetchImpl).toHaveBeenCalledTimes(1);
@@ -1388,8 +1449,9 @@ describe('runHostedCli', () => {
       fetchImpl,
     });
 
-    expect(result).toEqual({ handled: true, exitCode: 1 });
-    expect(stderr.text()).toBe("error: unknown option '--profile'\n");
+    expect(result).toEqual({ handled: true, exitCode: 2 });
+    expect(stderr.text().startsWith("error: unknown option '--profile'\n")).toBe(true);
+    expect(stderr.text()).toContain('help: valid flags for');
     expect(stdout.text()).toBe('');
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
@@ -1406,8 +1468,9 @@ describe('runHostedCli', () => {
       fetchImpl,
     });
 
-    expect(result).toEqual({ handled: true, exitCode: 1 });
-    expect(stderr.text()).toBe("error: unknown option '-dash'\n");
+    expect(result).toEqual({ handled: true, exitCode: 2 });
+    expect(stderr.text().startsWith("error: unknown option '-dash'\n")).toBe(true);
+    expect(stderr.text()).toContain('help: valid flags for');
     expect(stdout.text()).toBe('');
     expect(fetchImpl).not.toHaveBeenCalled();
   });
@@ -1634,6 +1697,76 @@ describe('runHostedCli', () => {
       'Webcmd live view: https://api.example.com/account/live/session_a',
       '',
     ].join('\n'));
+  });
+
+  // Hosted dispatch parsed -v and then dropped it, so the flag local mode honours
+  // was a silent no-op in hosted mode (#174).
+  describe('hosted verbose mode', () => {
+    let written: string[] = [];
+
+    function runWhoami(argv: string[]) {
+      return runHostedCli(argv, {
+        config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'hosted-secret-key' }),
+        stdout: sink().stream,
+        fetchImpl: async (url) => (String(url).endsWith('/v1/manifest')
+          ? manifestResponse()
+          : executionResponse({ result: [{ username: 'octocat' }], columns: ['username'] })),
+      });
+    }
+
+    beforeEach(() => {
+      delete process.env.WEBCMD_VERBOSE;
+      written = [];
+      vi.spyOn(process.stderr, 'write').mockImplementation((chunk: unknown) => {
+        written.push(String(chunk));
+        return true;
+      });
+    });
+
+    afterEach(() => {
+      delete process.env.WEBCMD_VERBOSE;
+      vi.restoreAllMocks();
+    });
+
+    it('turns on verbose mode and emits request diagnostics for -v', async () => {
+      await expect(runWhoami(['github', 'whoami', '-f', 'json', '-v'])).resolves.toMatchObject({ exitCode: 0 });
+
+      expect(process.env.WEBCMD_VERBOSE).toBe('1');
+      const output = written.join('');
+      expect(output).toContain('hosted → POST /v1/execute');
+      expect(output).toMatch(/hosted ← POST \/v1\/execute 200 \(\d+ms\)/);
+      expect(output).not.toContain('hosted-secret-key');
+    });
+
+    it('emits no diagnostics without -v', async () => {
+      await expect(runWhoami(['github', 'whoami', '-f', 'json'])).resolves.toMatchObject({ exitCode: 0 });
+
+      expect(process.env.WEBCMD_VERBOSE).toBeUndefined();
+      expect(written.join('')).not.toContain('hosted →');
+    });
+
+    // The wire body is a server contract; -v is a local concern and must not
+    // start appearing as an unknown field in execute requests.
+    it('keeps verbose out of the /v1/execute request body', async () => {
+      const bodies: unknown[] = [];
+      await runHostedCli(['github', 'whoami', '-f', 'json', '-v'], {
+        config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+        stdout: sink().stream,
+        fetchImpl: async (url, init) => {
+          if (init?.body) bodies.push(JSON.parse(String(init.body)) as unknown);
+          return String(url).endsWith('/v1/manifest')
+            ? manifestResponse()
+            : executionResponse({ result: [{ username: 'octocat' }], columns: ['username'] });
+        },
+      });
+
+      expect(bodies.at(-1)).toEqual({
+        command: 'github/whoami',
+        args: {},
+        format: 'json',
+        trace: 'off',
+      });
+    });
   });
 
   it('uploads local file args, runs a prepared execution, and materializes hosted output artifacts', async () => {

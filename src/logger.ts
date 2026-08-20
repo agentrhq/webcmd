@@ -10,6 +10,23 @@ export function isVerbose(): boolean {
   return value !== '' && value !== '0' && value !== 'false' && value !== 'no' && value !== 'off';
 }
 
+/**
+ * Turn on verbose diagnostics for the rest of the process.
+ *
+ * `-v` is parsed at several independent entry points — local Commander actions,
+ * hosted dispatch, raw browser leaves, auth probes — while every consumer reads
+ * the single `WEBCMD_VERBOSE` environment contract that `isVerbose()` defines.
+ * Routing each entry point through this helper keeps them from drifting, and
+ * lets child processes (adapter subprocesses, `browser verify`) inherit the mode.
+ *
+ * Passing `false` leaves the environment untouched rather than clearing it, so
+ * an explicit `WEBCMD_VERBOSE=1` in the environment still wins when the flag is
+ * simply absent from the command line.
+ */
+export function enableVerbose(enabled: boolean = true): void {
+  if (enabled) process.env.WEBCMD_VERBOSE = '1';
+}
+
 export const log = {
   /** Informational message (always shown) */
   info(msg: string): void {

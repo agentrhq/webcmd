@@ -11,6 +11,7 @@ import { findPackageRoot } from '../../../package-paths.js';
 import { findExactCloakProfileProcesses } from './process-matcher.js';
 import { log } from '../../../logger.js';
 import { CliError, EXIT_CODES } from '../../../errors.js';
+import { isClosedContextError } from '../../run/types.js';
 
 const UNRESOLVED = Symbol('unresolved');
 const TARGET_PAGE_MATCH_TIMEOUT_MS = 1_000;
@@ -56,6 +57,16 @@ export interface SessionKeyInput {
   /** Discard the existing leased page (if any) and create a new one under the same lease. */
   freshPage?: boolean;
 }
+
+export type NewPageInput = SessionKeyInput & {
+  url?: string;
+  /**
+   * Playwright `goto` readiness for `url`, already translated from the command
+   * vocabulary by the caller. Defaults to 'load'; 'commit' skips waiting for the
+   * load event on sites that never go idle.
+   */
+  waitUntil?: 'load' | 'commit';
+};
 
 type PageEntry = {
   page: PlaywrightPage;
@@ -170,11 +181,6 @@ function pageIsClosed(page: PlaywrightPage): boolean {
   return page.isClosed?.() === true;
 }
 
-function isClosedContextError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return /Target page, context or browser has been closed/i.test(message);
-}
-
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -272,11 +278,21 @@ export class CloakSessionManager {
       const sessionRuntime = this.getSessionRuntime(runtime, sessionId);
       const existing = sessionRuntime.pages.get(leaseKey);
       if (existing && !pageIsClosed(existing.page) && !freshPage) {
-        await this.assertOwnedWindow(runtime, sessionId, existing);
-        runtime.lastSeenAt = Date.now();
-        existing.idleTimeout = input.idleTimeout;
-        this.refreshIdleTimer(runtime, sessionRuntime, leaseKey, existing);
-        return { profileId, leaseKey, context: runtime.context, page: existing.page, pageId: existing.pageId };
+        try {
+          await this.assertOwnedWindow(runtime, sessionId, existing);
+          runtime.lastSeenAt = Date.now();
+          existing.idleTimeout = input.idleTimeout;
+          this.refreshIdleTimer(runtime, sessionRuntime, leaseKey, existing);
+          return { profileId, leaseKey, context: runtime.context, page: existing.page, pageId: existing.pageId };
+        } catch (error) {
+          if (!isClosedContextError(error)) throw error;
+          // isClosed() reported false, but the liveness probe above shows the
+          // underlying CDP connection is actually dead. Invalidate the Profile
+          // runtime and fall through to acquire a fresh page instead of handing
+          // the same broken lease back out (webcmd#314).
+          this.invalidateProfileRuntime(profileId, runtime);
+          if (!pageIsClosed(existing.page)) await existing.page.close().catch(() => {});
+        }
       }
       const acquired = await this.acquireSessionPage(profileId, sessionId, input.windowMode);
       const entry = await this.registerOwnedPage(acquired.runtime, acquired.session, acquired.page, {
@@ -414,7 +430,7 @@ export class CloakSessionManager {
     })));
   }
 
-  async newPage(input: SessionKeyInput & { url?: string }): Promise<CloakPageLease> {
+  async newPage(input: NewPageInput): Promise<CloakPageLease> {
     return this.newPageAttempt(input, 0);
   }
 
@@ -422,7 +438,7 @@ export class CloakSessionManager {
     return this.navigatePageAttempt(input, url, waitUntil, 0);
   }
 
-  private async newPageAttempt(input: SessionKeyInput & { url?: string }, attempt: number): Promise<CloakPageLease> {
+  private async newPageAttempt(input: NewPageInput, attempt: number): Promise<CloakPageLease> {
     const profileId = normalizeProfileId(input.profileId);
     const session = requireSession(input.session);
     const sessionId = requireSessionId(input);
@@ -433,7 +449,7 @@ export class CloakSessionManager {
     });
     if (input.url) {
       try {
-        await acquired.page.goto(input.url, { waitUntil: 'load' });
+        await acquired.page.goto(input.url, { waitUntil: input.waitUntil ?? 'load' });
       } catch (error) {
         if (attempt === 0 && isClosedContextError(error)) {
           this.invalidateProfileRuntime(profileId, acquired.runtime);
@@ -655,6 +671,19 @@ export class CloakSessionManager {
     for (const [, entry] of entries) await this.removeEntry(runtime, sessionRuntime, entry, true);
     if (entries.length > 0) runtime.lastSeenAt = Date.now();
     return entries.length;
+  }
+
+  /**
+   * Invalidates the Profile runtime backing `context`, if it's still the active
+   * one, without evicting or retrying the command that observed it. Used by the
+   * `run` action (webcmd#314) when a post-run snapshot capture surfaces a
+   * closed-context signature: the run itself may have genuinely succeeded, but
+   * the connection is dying, so the next command on this Session shouldn't be
+   * handed the same lease.
+   */
+  invalidateIfClosedContext(profileId: string, context: BrowserContext): void {
+    const runtime = this.profiles.get(profileId);
+    if (runtime?.context === context) this.invalidateProfileRuntime(profileId, runtime);
   }
 
   async shutdown(): Promise<void> {

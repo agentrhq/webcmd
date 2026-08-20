@@ -13,7 +13,7 @@ import {
   configurePluginUpdateSurface,
 } from '../builtin-command-surface.js';
 import { BrowserSessionArgvError, rejectMisplacedSessionSelectorArgv, rejectPositionalBrowserSessionArgv } from '../cli-argv-preprocess.js';
-import { CommanderStructuralError, MissingRequiredPositionalError, OUTPUT_FORMAT_HELP, parseOutputFormat } from '../command-surface.js';
+import { CommanderStructuralError, MissingRequiredPositionalError, OUTPUT_FORMAT_HELP, parseOutputFormat, resolveCommandFromArgv, structuralErrorFromCommander } from '../command-surface.js';
 import { filterCommandsByTag, formatRootHelp, getCommandCompletionCandidates } from '../command-presentation.js';
 import {
   HOSTED_BUILTIN_COMMANDS,
@@ -22,8 +22,9 @@ import {
 } from '../completion-shared.js';
 import { CliError, ConfigError, EXIT_CODES, toEnvelope } from '../errors.js';
 import { getRequestedHelpFormat, renderStructuredHelp } from '../help.js';
+import { enableVerbose } from '../logger.js';
 import { findPackageRoot } from '../package-paths.js';
-import { formatErrorEnvelope, render as renderOutput } from '../output.js';
+import { errorEnvelopeFormat, formatErrorEnvelope, requestedFormatFromArgv, render as renderOutput } from '../output.js';
 import { StreamWriteError, writeToStream } from '../stream-write.js';
 import { PKG_VERSION } from '../version.js';
 import { getCompletionScriptFast } from '../completion-fast.js';
@@ -150,6 +151,7 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
     await writeToStream(stderr, formatErrorEnvelope(toEnvelope(err), {
       cmdName: hostedCommandName(argv),
       traceMode: hostedTraceMode(argv),
+      fmt: errorEnvelopeFormat(requestedFormatFromArgv(argv)),
     }));
     return {
       handled: true,
@@ -238,7 +240,7 @@ async function dispatchHosted(
     return;
   }
 
-  if (args[0] === 'adapter' && (args[1] === 'source' || args[1] === 'path' || args[1] === '--help' || args[1] === '-h')) {
+  if (args[0] === 'adapter' && (args[1] === 'source' || args[1] === 'path' || args[1] === 'override' || args[1] === '--help' || args[1] === '-h')) {
     await runHostedAdapterSourceSurface(args.slice(1), normalized.literal, client, stdout, homeDir);
     return;
   }
@@ -443,6 +445,11 @@ async function dispatchHosted(
   if (command.clientOwned) {
     throw new Error(`Internal invariant: client-owned command ${command.command} reached hosted dispatch.`);
   }
+  // Hosted dispatch parsed `-v` but never acted on it, so the flag that local
+  // mode honours was a silent no-op here (#174). Applying it before the request
+  // lights up the client's HTTP diagnostics on the same env contract local mode
+  // uses, keeping the two modes' verbose behaviour aligned.
+  enableVerbose(parsed.verbose);
 
   const startTime = now();
   const response = command.browser || hasPresentFileArgument(command, parsed.args)
@@ -501,7 +508,7 @@ async function runHostedSiteSurface(argv: readonly string[], literal: boolean, c
       await writeToStream(stdout, help);
       return;
     }
-    if (error instanceof CommanderError) throw new CommanderStructuralError(stderr || `${error.message}\n`, error.exitCode);
+    if (error instanceof CommanderError) throw structuralErrorFromCommander(error, resolveCommandFromArgv(root, ['site', ...argv]), stderr);
     throw error;
   }
 }
@@ -527,7 +534,8 @@ function hostedSiteMemoryBackend(client: HostedClient): SiteMemoryBackend {
 type HostedAdapterSourceCommand =
   | { kind: 'get'; commandKey: string; output?: string }
   | { kind: 'put'; commandKey: string; path: string }
-  | { kind: 'path'; commandKey: string };
+  | { kind: 'path'; commandKey: string }
+  | { kind: 'override'; commandKey: string };
 
 async function runHostedAdapterSourceSurface(argv: readonly string[], literal: boolean, client: HostedClient, stdout: NodeJS.WritableStream, homeDir: string): Promise<void> {
   let parsed: HostedAdapterSourceCommand | undefined;
@@ -542,6 +550,10 @@ async function runHostedAdapterSourceSurface(argv: readonly string[], literal: b
   source.command('get').argument('<command>').option('-o, --output <path>').action((commandKey, opts: { output?: string }) => { parsed = { kind: 'get', commandKey, output: opts.output }; });
   source.command('put').argument('<command>').argument('<path>').action((commandKey, filePath) => { parsed = { kind: 'put', commandKey, path: filePath }; });
   adapter.command('path').argument('<command>').action(commandKey => { parsed = { kind: 'path', commandKey }; });
+  adapter.command('override')
+    .description('Fork an installed adapter command into a private copy you can modify')
+    .argument('<command>', 'Command to override, as <site>/<command>')
+    .action(commandKey => { parsed = { kind: 'override', commandKey }; });
   try {
     await root.parseAsync(literal ? ['--', 'adapter', ...argv] : ['adapter', ...argv], { from: 'user' });
   } catch (error) {
@@ -549,13 +561,26 @@ async function runHostedAdapterSourceSurface(argv: readonly string[], literal: b
       await writeToStream(stdout, help);
       return;
     }
-    if (error instanceof CommanderError) throw new CommanderStructuralError(stderr || `${error.message}\n`, error.exitCode);
+    if (error instanceof CommanderError) throw structuralErrorFromCommander(error, resolveCommandFromArgv(root, ['adapter', ...argv]), stderr);
     throw error;
   }
   if (!parsed) throw new CommanderStructuralError("error: command 'adapter' did not run\n", EXIT_CODES.USAGE_ERROR);
   const { site, command } = parseAdapterCommandKey(parsed.commandKey);
   const destination = hostedAdapterDestination(homeDir, site, command);
   if (parsed.kind === 'path') return writeToStream(stdout, `${destination}\n`);
+  if (parsed.kind === 'override') {
+    const result = await client.overrideAdapter(parsed.commandKey);
+    await writeToStream(stdout, [
+      `✅ Override created for ${result.command}`,
+      `     package: ${result.packageId}`,
+      `     source:  ${result.sourceFile ?? '(unknown)'}`,
+      '',
+      '  Your private copy now takes precedence over the installed adapter.',
+      `  Edit it with: ${CLI_COMMAND} adapter source get ${result.command} then ${CLI_COMMAND} adapter source put ${result.command} <path>`,
+      '',
+    ].join('\n'));
+    return;
+  }
   const metadata = await hostedAdapterSourceMetadata(client, parsed.commandKey);
   const sourcePath = metadata.sourceFile ?? metadata.modulePath;
   if (!sourcePath) throw new ConfigError(`Hosted adapter source is unavailable for ${parsed.commandKey}.`);
@@ -635,7 +660,7 @@ function parseHostedSessionSurface(argv: readonly string[], literal: boolean): P
   } catch (error) {
     if (!(error instanceof CommanderError)) throw error;
     if (error.code === 'commander.helpDisplayed') return { kind: 'help', output: stdout };
-    throw new CommanderStructuralError(stderr || `${error.message}\n`, error.exitCode);
+    throw structuralErrorFromCommander(error, resolveCommandFromArgv(root, ['session', ...argv]), stderr);
   }
   if (!parsed) throw new CommanderStructuralError("error: command 'session' did not run\n", 1);
   return parsed;
@@ -1112,7 +1137,7 @@ function parseHostedListSurface(argv: readonly string[], literal: boolean): Pars
   } catch (error) {
     if (!(error instanceof CommanderError)) throw error;
     if (error.code === 'commander.helpDisplayed') return { kind: 'help', output: stdout };
-    throw new CommanderStructuralError(stderr || `${error.message}\n`, error.exitCode);
+    throw structuralErrorFromCommander(error, resolveCommandFromArgv(root, ['list', ...argv]), stderr);
   }
   if (!actionRan) throw new CommanderStructuralError("error: command 'list' did not run\n", 1);
   return { kind: 'run', format: parsedFormat, formatExplicit, ...(parsedTag !== undefined ? { tag: parsedTag } : {}) };
@@ -1173,7 +1198,7 @@ function parseHostedProfileSurface(
   } catch (error) {
     if (!(error instanceof CommanderError)) throw error;
     if (error.code === 'commander.helpDisplayed') return { kind: 'help', output: stdout };
-    throw new CommanderStructuralError(stderr || `${error.message}\n`, error.exitCode);
+    throw structuralErrorFromCommander(error, resolveCommandFromArgv(root, ['profile', ...argv]), stderr);
   }
   if (!parsed) {
     throw new CommanderStructuralError("error: command 'profile' did not run\n", 1);
@@ -1270,7 +1295,7 @@ function parseHostedPluginSurface(
   } catch (error) {
     if (!(error instanceof CommanderError)) throw error;
     if (error.code === 'commander.helpDisplayed') return { kind: 'help', output: stdout };
-    throw new CommanderStructuralError(stderr || `${error.message}\n`, error.exitCode);
+    throw structuralErrorFromCommander(error, resolveCommandFromArgv(root, ['plugin', ...argv]), stderr);
   }
   if (!parsed) throw new CommanderStructuralError("error: command 'plugin' did not run\n", 1);
   return parsed;
@@ -1303,7 +1328,7 @@ function parseHostedCompletionSurface(
   } catch (error) {
     if (!(error instanceof CommanderError)) throw error;
     if (error.code === 'commander.helpDisplayed') return { kind: 'help', output: stdout };
-    throw new CommanderStructuralError(stderr || `${error.message}\n`, error.exitCode);
+    throw structuralErrorFromCommander(error, resolveCommandFromArgv(root, ['completion', ...argv]), stderr);
   }
   if (shell === undefined) {
     throw new CommanderStructuralError("error: missing required argument 'shell'\n", 1);

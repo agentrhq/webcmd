@@ -96,6 +96,14 @@ describe('management commands E2E', () => {
     expect(stdout).toContain('PASS');
   });
 
+  it('validate unknown target fails instead of passing zero commands', async () => {
+    const { stdout, stderr, code } = await runManagementCli(['validate', 'nope']);
+    expect(code).toBe(2);
+    expect(stdout).not.toContain('PASS');
+    expect(stderr).toContain('No command matches "nope"');
+    expect(stderr).toContain(FIXTURE_SITE);
+  });
+
   // ── verify ──
   it('verify runs validation without smoke tests', async () => {
     const { stdout, code } = await runManagementCli(['verify']);

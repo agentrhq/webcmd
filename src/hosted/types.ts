@@ -158,6 +158,13 @@ export interface HostedAdapterSourceWriteResponse {
   commands: string[];
 }
 
+export interface HostedAdapterOverrideResponse {
+  command: string;
+  packageId: string;
+  packageName: string;
+  sourceFile: string | null;
+}
+
 export interface HostedExecution {
   id: string;
   command: string;

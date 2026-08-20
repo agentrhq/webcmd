@@ -3,7 +3,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { ENV_PREFIX } from '../brand.js';
-import { profileListRows, profileRouteParams, resolveProfileSelection } from './profile.js';
+import { ArgumentError } from '../errors.js';
+import { loadProfileConfig, profileListRows, profileRouteParams, resolveProfileSelection, setDefaultProfile } from './profile.js';
 
 describe('profile selection', () => {
   let configDir: string;
@@ -95,5 +96,62 @@ describe('profileListRows', () => {
     expect(rows).toEqual([
       { contextId: 'ctx-work', alias: 'work', default: true, connected: false, runtimeVersion: '' },
     ]);
+  });
+});
+
+describe('setDefaultProfile membership', () => {
+  let configDir: string;
+
+  beforeEach(() => {
+    configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-profile-use-'));
+    vi.stubEnv(`${ENV_PREFIX}_CONFIG_DIR`, configDir);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    fs.rmSync(configDir, { recursive: true, force: true });
+  });
+
+  const rows = profileListRows(
+    { version: 1, aliases: { work: 'ctx-work' }, defaultContextId: 'ctx-default' },
+    [{ contextId: 'ctx-live', runtimeVersion: '1.0.3' }],
+  );
+
+  it('sets the default from a connected contextId', () => {
+    const config = setDefaultProfile('ctx-live', rows);
+    expect(config.defaultContextId).toBe('ctx-live');
+    expect(loadProfileConfig().defaultContextId).toBe('ctx-live');
+  });
+
+  it('sets the default from a saved alias and stores the contextId', () => {
+    expect(setDefaultProfile('work', rows).defaultContextId).toBe('ctx-work');
+  });
+
+  it('rejects an unknown name and enumerates valid profiles', () => {
+    try {
+      setDefaultProfile('__audit_nope__', rows);
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(ArgumentError);
+      expect((err as ArgumentError).exitCode).toBe(2);
+      expect((err as ArgumentError).message).toBe(
+        'No profile matches "__audit_nope__". Valid profiles: work, ctx-live, ctx-work, ctx-default',
+      );
+      expect((err as ArgumentError).hint).toBe(
+        'usage: webcmd profile use <alias|contextId>\nexample: webcmd profile use work',
+      );
+    }
+  });
+
+  it('rejects an unknown name when no profiles exist', () => {
+    expect(() => setDefaultProfile('__audit_nope__', [])).toThrow(ArgumentError);
+    try {
+      setDefaultProfile('__audit_nope__', []);
+    } catch (err) {
+      expect((err as ArgumentError).message).toBe(
+        'No profile matches "__audit_nope__". No Cloak profiles are available.',
+      );
+      expect((err as ArgumentError).hint).toContain('webcmd profile list');
+    }
   });
 });

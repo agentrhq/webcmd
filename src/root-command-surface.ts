@@ -1,5 +1,5 @@
 import { Command, CommanderError } from 'commander';
-import { CommanderStructuralError } from './command-surface.js';
+import { CommanderStructuralError, structuralErrorFromCommander } from './command-surface.js';
 import { PKG_VERSION } from './version.js';
 
 export const ROOT_PROFILE_FLAGS = '--profile <name>';
@@ -86,7 +86,7 @@ export function parseHostedRootCommandSurface(argv: readonly string[]): HostedRo
     if (error.code === 'commander.version') {
       return { kind: 'version', output: stdout || `${PKG_VERSION}\n` };
     }
-    throw new CommanderStructuralError(stderr || `${error.message}\n`, error.exitCode);
+    throw structuralErrorFromCommander(error, root, stderr);
   }
 
   const { profile, session } = root.opts<{ profile?: string; session?: string }>();

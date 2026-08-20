@@ -25,6 +25,7 @@ export interface RenderOptions {
 export interface ErrorRenderOptions {
   cmdName?: string;
   traceMode?: unknown;
+  fmt?: unknown;
 }
 
 export interface StreamRenderOptions extends RenderOptions {
@@ -76,8 +77,27 @@ export async function render(data: unknown, opts: StreamRenderOptions = {}): Pro
   console.log(output.endsWith('\n') ? output.slice(0, -1) : output);
 }
 
+export function errorEnvelopeFormat(fmt?: unknown): 'json' | 'yaml' {
+  return typeof fmt === 'string' && fmt.trim().toLowerCase() === 'json' ? 'json' : 'yaml';
+}
+
+export function requestedFormatFromArgv(argv: readonly string[]): string | undefined {
+  for (let i = 0; i < argv.length; i++) {
+    const token = argv[i]!;
+    if (token === '--') break;
+    if (token === '-f' || token === '--format') {
+      const value = argv[i + 1];
+      return value && !value.startsWith('-') ? value : undefined;
+    }
+    if (token.startsWith('--format=')) return token.slice('--format='.length) || undefined;
+  }
+  return undefined;
+}
+
 /** Serialize the local error envelope without writing to process-global stderr. */
 export function formatErrorEnvelope(envelope: ErrorEnvelope, opts: ErrorRenderOptions = {}): string {
+  const fmt = errorEnvelopeFormat(opts.fmt);
+  if (fmt === 'json') return formatOutput(envelope, { fmt: 'json', fmtExplicit: true });
   let output = yaml.dump(envelope, { sortKeys: false, lineWidth: 120, noRefs: true });
   const code = envelope.error.code;
   if (

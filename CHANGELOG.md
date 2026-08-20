@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.7.4](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.3...webcmd-v0.7.4) (2026-08-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* **cli:** `webcmd browser fork` is removed. Use `webcmd adapter override <site>/<command>`.
+
+### Features
+
+* add structured output to report and status built-ins ([#306](https://github.com/agentrhq/webcmd/issues/306)) ([0ee02ce](https://github.com/agentrhq/webcmd/commit/0ee02ce432ed45d866c6b7ace6d2bcbf22cebcc3))
+* **cli:** add -f/--format to browser verify ([2dc8ae0](https://github.com/agentrhq/webcmd/commit/2dc8ae0ccd39994bac4e2de795d8e58f4a6feef3))
+* **cli:** add -f/--format to browser verify ([#351](https://github.com/agentrhq/webcmd/issues/351)) ([ccfc04f](https://github.com/agentrhq/webcmd/commit/ccfc04f022ffbc499722ac5cb60e3fe31a319de9))
+
+
+### Bug Fixes
+
+* **browser:** decode response bodies as UTF-8 text in the run sandbox ([#357](https://github.com/agentrhq/webcmd/issues/357)) ([65d31cd](https://github.com/agentrhq/webcmd/commit/65d31cd78a3eabc15d2872b77028517d1692f2b7))
+* **browser:** don't reuse a dead page/context lease in browser run ([#324](https://github.com/agentrhq/webcmd/issues/324)) ([ef4fda7](https://github.com/agentrhq/webcmd/commit/ef4fda76c321cba3efcb70ca428ffc1b0158488d))
+* **browser:** report the caller's line and column for browser-run compile errors ([#356](https://github.com/agentrhq/webcmd/issues/356)) ([44f1c5f](https://github.com/agentrhq/webcmd/commit/44f1c5f64d07c24cdd13d8c9581005648f16cc4f))
+* **cli:** fail validate on unknown target instead of PASS ([#366](https://github.com/agentrhq/webcmd/issues/366)) ([5d8e289](https://github.com/agentrhq/webcmd/commit/5d8e28988211791670d6b778f03b0e18a46590d7))
+* **cli:** honour -f json on the error envelope ([#368](https://github.com/agentrhq/webcmd/issues/368)) ([bc102a9](https://github.com/agentrhq/webcmd/commit/bc102a980e501e4b4cbbd6ffa4e5060fb2eed4cd))
+* **cli:** never prompt in webcmd setup when stdin is not a TTY ([#369](https://github.com/agentrhq/webcmd/issues/369)) ([51eb2d1](https://github.com/agentrhq/webcmd/commit/51eb2d10137cd729e25353fb513aa03e3177baa3))
+* **cli:** reject unknown profile use instead of poisoning the default ([#367](https://github.com/agentrhq/webcmd/issues/367)) ([2419b01](https://github.com/agentrhq/webcmd/commit/2419b01b2f1e6c6dce37396aa520ac93c21d4b54))
+* **cli:** remove browser fork, add adapter override to hosted mode ([#361](https://github.com/agentrhq/webcmd/issues/361)) ([3919f6f](https://github.com/agentrhq/webcmd/commit/3919f6fe678878c9ab802ab772dc5f75f198ecea))
+* **cli:** report built-in command errors instead of crashing ([#363](https://github.com/agentrhq/webcmd/issues/363)) ([ef149b1](https://github.com/agentrhq/webcmd/commit/ef149b145b41c5a1034cd6798c9a3f6f85d4675c))
+* **cli:** unknown flags exit 2 and list valid flags ([#370](https://github.com/agentrhq/webcmd/issues/370)) ([9cd0d5a](https://github.com/agentrhq/webcmd/commit/9cd0d5a453fe4718604443214e04203090fb5da7))
+* **download:** isolate temp files and reject duplicate download targets ([#333](https://github.com/agentrhq/webcmd/issues/333)) ([4c9c322](https://github.com/agentrhq/webcmd/commit/4c9c322963c1048a4b88301081c787c167d9f24a))
+* **local-cloak:** honour waitUntil when opening a tab with a url ([#316](https://github.com/agentrhq/webcmd/issues/316)) ([5a65936](https://github.com/agentrhq/webcmd/commit/5a659367c37c06ad00881068ff27576547a993bf))
+* make -v effective in hosted, browser, and auth commands ([#315](https://github.com/agentrhq/webcmd/issues/315)) ([7a72596](https://github.com/agentrhq/webcmd/commit/7a72596d8c3e4166f1877cab3271a80edc7279d2))
+* **site-memory:** lock site memory writes across processes ([#321](https://github.com/agentrhq/webcmd/issues/321)) ([a740cbe](https://github.com/agentrhq/webcmd/commit/a740cbe3b08379ab08c61a59f9f81da1729398f1))
+
+
+### Miscellaneous Chores
+
+* release 0.7.4 ([bb6f7b3](https://github.com/agentrhq/webcmd/commit/bb6f7b3257820034b168f875998fe924b3512fff))
+
 ## [0.7.3](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.2...webcmd-v0.7.3) (2026-08-18)
 
 ### Improvements

@@ -8929,7 +8929,7 @@ ${"=".repeat(headerLength)}`;
         let encodedParams = void 0;
         if (typeof options.params === "string")
           encodedParams = options.params;
-        else if (options.params instanceof URLSearchParams)
+        else if (globalThis.URLSearchParams && options.params instanceof URLSearchParams)
           encodedParams = options.params.toString();
         const headersObj = options.headers || options.request?.headers();
         const headers = headersObj ? headersObjectToArray(headersObj) : void 0;
@@ -8942,8 +8942,8 @@ ${"=".repeat(headerLength)}`;
             if (isJsonContentType(headers))
               jsonData = isJsonParsable(options.data) ? options.data : JSON.stringify(options.data);
             else
-              postDataBuffer = Buffer.from(options.data, "utf8");
-          } else if (Buffer.isBuffer(options.data)) {
+              postDataBuffer = quickjsEncoding.encodeText(options.data);
+          } else if (options.data instanceof Uint8Array) {
             postDataBuffer = options.data;
           } else if (typeof options.data === "object" || typeof options.data === "number" || typeof options.data === "boolean") {
             jsonData = JSON.stringify(options.data);
@@ -9020,7 +9020,7 @@ ${"=".repeat(headerLength)}`;
     const typeOfValue = typeof value;
     if (isFilePayload(value)) {
       const payload = value;
-      if (!Buffer.isBuffer(payload.buffer))
+      if (!(payload.buffer instanceof Uint8Array))
         throw new Error(`Unexpected buffer type of 'data.${name}'`);
       return { name, file: filePayloadToJson(payload) };
     } else if (typeOfValue === "string" || typeOfValue === "number" || typeOfValue === "boolean") {
@@ -9094,7 +9094,7 @@ ${"=".repeat(headerLength)}`;
     }
     async text() {
       const content = await this.body();
-      return content.toString("utf8");
+      return quickjsEncoding.decodeText(content);
     }
     async json() {
       const content = await this.text();
@@ -9206,7 +9206,8 @@ ${headers.join("\n")}`;
       return this._fallbackOverrides.method || this._initializer.method;
     }
     postData() {
-      return (this._fallbackOverrides.postDataBuffer || this._initializer.postData)?.toString("utf-8") || null;
+      const buffer = this._fallbackOverrides.postDataBuffer || this._initializer.postData;
+      return buffer && quickjsEncoding.decodeText(buffer) || null;
     }
     postDataBuffer() {
       return this._fallbackOverrides.postDataBuffer || this._initializer.postData || null;
@@ -9691,7 +9692,7 @@ ${headers.join("\n")}`;
     }
     async text() {
       const content = await this.body();
-      return content.toString("utf8");
+      return quickjsEncoding.decodeText(content);
     }
     async json() {
       const content = await this.text();

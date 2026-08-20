@@ -134,6 +134,8 @@ Use this fallback order:
 
 Command-specific flags such as `--limit` and `--filter` are not universal. Read `<site> <command> --help`.
 
+Report and status commands — `validate`, `verify`, `doctor`, `skills`, `adapter status`, `daemon status`, and `profile list` — default to a human-readable `table` rendering and return their underlying result object under any other format. Use `-f json` when parsing them. `profile list -f json` returns rows of `contextId`, `alias`, `default`, `connected`, and `runtimeVersion`, and fails with a `DAEMON_UNAVAILABLE` error (exit 1) instead of `[]` when the daemon is unreachable or stale. `daemon status -f json` returns `{ "running": false }` when no daemon is reachable; that guidance goes to stdout as data, not stderr.
+
 ## Output Formats
 
 - `json`: pretty-printed, 2-space indent. Best default for agents.
@@ -199,8 +201,10 @@ Scaffolding and checks:
 webcmd browser init <site>/<command>
 webcmd validate [target]
 webcmd verify [target] [--smoke]
-webcmd browser verify <site>/<command>
+webcmd browser verify <site>/<command> [-f json]
 ```
+
+`browser verify -f json` returns the verification result as data rather than the progress report: `ok`, `site`, `command`, `rowCount`, a `fixture` block, and a `memory` block, plus `shapeFailures`, `matchFailures`, or an `error.code` when it fails. Parse that instead of scraping the ✓/✗ text.
 
 Adapters import only `@agentrhq/webcmd/registry` and `@agentrhq/webcmd/errors`. `columns` must align one-to-one, in name and order, with returned row object keys. See `webcmd-adapter-author`.
 

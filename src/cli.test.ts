@@ -9,6 +9,7 @@ import { getDaemonRunContext } from './session-lease.js';
 import type { IPage } from './types.js';
 import { TargetError } from './browser/target-errors.js';
 import { PKG_VERSION } from './version.js';
+import { EXIT_CODES } from './errors.js';
 import { classifyAdapter, getInstalledRootHelpPresentation } from './help.js';
 import {
   commandListPresentation,
@@ -1132,6 +1133,24 @@ name: 'search',
     }
   });
 
+  it('points the retired browser fork subcommand at adapter override', () => {
+    const errors: string[] = [];
+    const spy = vi.spyOn(console, 'error').mockImplementation((msg: unknown) => { errors.push(String(msg)); });
+    const previousExitCode = process.exitCode;
+    try {
+      createProgram('', '').parse(['browser', 'fork', 'hackernews/top'], { from: 'user' });
+      expect(errors.join('\n')).toContain('webcmd adapter override <site>/<command>');
+      expect(process.exitCode).toBe(EXIT_CODES.USAGE_ERROR);
+
+      errors.length = 0;
+      createProgram('', '').parse(['browser', 'nonsense'], { from: 'user' });
+      expect(errors.join('\n')).toBe("error: unknown command 'nonsense'");
+    } finally {
+      spy.mockRestore();
+      process.exitCode = previousExitCode;
+    }
+  });
+
   it('renders browser namespace structured help from Commander metadata', () => {
     const argv = process.argv;
     try {
@@ -1145,8 +1164,8 @@ name: 'search',
       expect(data.namespace).toBe('browser');
       expect(data.command).toBe('webcmd browser');
       expect(data.description).toBe('Run Playwright programs against an explicit browser Session');
-      expect(data.command_count).toBe(8);
-      expect(data.commands.map((cmd: any) => cmd.name)).toEqual(['bind', 'close', 'fork', 'init', 'run', 'snapshot', 'tabs', 'verify']);
+      expect(data.command_count).toBe(7);
+      expect(data.commands.map((cmd: any) => cmd.name)).toEqual(['bind', 'close', 'init', 'run', 'snapshot', 'tabs', 'verify']);
       expect(data.namespace_options).not.toEqual(expect.arrayContaining([
         expect.objectContaining({ name: 'session' }),
       ]));
@@ -1175,7 +1194,7 @@ name: 'search',
         usage: 'webcmd browser bind [options]',
         positionals: [],
       });
-      expect(bind.command_options.map((option: any) => option.name)).toEqual(['page']);
+      expect(bind.command_options.map((option: any) => option.name)).toEqual(['page', 'verbose']);
       expect(data.structured_help).toMatchObject({
         formats: ['yaml', 'json'],
         usage: 'webcmd browser --help -f yaml',
@@ -1658,6 +1677,158 @@ describe('browser verify', () => {
       fs.rmSync(fakeHome, { recursive: true, force: true });
     }
   });
+
+  describe('structured output', () => {
+    const consoleLogSpy = vi.mocked(console.log);
+
+    /**
+     * Runs `browser verify` against a throwaway adapter under a temp HOME and
+     * returns whatever reached stdout. Every structured-output case needs the
+     * same scaffolding; only the adapter rows and argv differ.
+     */
+    const runVerify = async (
+      slug: string,
+      adapterOutput: string,
+      argv: string[],
+      seedFixture?: unknown,
+    ): Promise<string> => {
+      const originalHome = process.env.HOME;
+      const originalUserProfile = process.env.USERPROFILE;
+      const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), `webcmd-browser-verify-${slug}-`));
+      process.env.HOME = fakeHome;
+      process.env.USERPROFILE = fakeHome;
+      mockExecFileSync.mockReturnValue(adapterOutput);
+      consoleLogSpy.mockClear();
+
+      try {
+        const adapterDir = path.join(fakeHome, '.webcmd', 'clis', 'hn');
+        fs.mkdirSync(adapterDir, { recursive: true });
+        fs.writeFileSync(path.join(adapterDir, 'top.js'), 'export default {};\n', 'utf-8');
+
+        if (seedFixture !== undefined) {
+          const verifyDir = path.join(fakeHome, '.webcmd', 'sites', 'hn', 'verify');
+          fs.mkdirSync(verifyDir, { recursive: true });
+          fs.writeFileSync(path.join(verifyDir, 'top.json'), JSON.stringify(seedFixture), 'utf-8');
+        }
+
+        await createProgram('', '').parseAsync(['node', 'webcmd', '--session', 'test', 'browser', 'verify', 'hn/top', ...argv]);
+        return consoleLogSpy.mock.calls.map((args) => args.join(' ')).join('\n');
+      } finally {
+        consoleLogSpy.mockClear();
+        if (originalHome === undefined) delete process.env.HOME;
+        else process.env.HOME = originalHome;
+        if (originalUserProfile === undefined) delete process.env.USERPROFILE;
+        else process.env.USERPROFILE = originalUserProfile;
+        fs.rmSync(fakeHome, { recursive: true, force: true });
+      }
+    };
+
+    it('reports a fixture-less pass as a structured report with no prose', async () => {
+      const stdout = await runVerify('json-pass', JSON.stringify([{ title: 'ok' }]), ['--no-fixture', '-f', 'json']);
+
+      expect(process.exitCode).toBeUndefined();
+      const report = JSON.parse(stdout);
+      expect(report).toMatchObject({
+        ok: true,
+        site: 'hn',
+        command: 'top',
+        rowCount: 1,
+        fixture: { exists: false, action: 'none' },
+      });
+      expect(report.memory).toMatchObject({ ok: false });
+      // The emoji progress report is the table rendering; it must not leak into JSON.
+      expect(stdout).not.toContain('🔍');
+      expect(stdout).not.toContain('Verifying');
+    });
+
+    it('reports row-shape violations as structured failures', async () => {
+      const stdout = await runVerify(
+        'json-shape',
+        JSON.stringify([{ title: 'ok', author: { user_id: 'u1' } }]),
+        ['--no-fixture', '-f', 'json'],
+      );
+
+      expect(process.exitCode).toBe(1);
+      const report = JSON.parse(stdout);
+      expect(report.ok).toBe(false);
+      expect(report.rowCount).toBe(1);
+      expect(report.shapeFailures).toEqual(
+        expect.arrayContaining([expect.objectContaining({ rule: 'shapeNestedId' })]),
+      );
+      expect(stdout).not.toContain('violates row shape conventions');
+    });
+
+    it('reports fixture mismatches as structured failures', async () => {
+      const stdout = await runVerify(
+        'json-mismatch',
+        JSON.stringify([{ title: 'actual' }]),
+        ['-f', 'json'],
+        { expect: { columns: ['title'], rowCount: { min: 5 } } },
+      );
+
+      expect(process.exitCode).toBe(1);
+      const report = JSON.parse(stdout);
+      expect(report.ok).toBe(false);
+      expect(report.fixture).toMatchObject({ exists: true });
+      expect(report.matchFailures).toEqual(
+        expect.arrayContaining([expect.objectContaining({ rule: 'rowCount' })]),
+      );
+    });
+
+    it('reports a missing adapter as a structured error', async () => {
+      const originalHome = process.env.HOME;
+      const originalUserProfile = process.env.USERPROFILE;
+      const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-browser-verify-json-missing-'));
+      process.env.HOME = fakeHome;
+      process.env.USERPROFILE = fakeHome;
+      consoleLogSpy.mockClear();
+
+      try {
+        await createProgram('', '').parseAsync(['node', 'webcmd', '--session', 'test', 'browser', 'verify', 'hn/top', '-f', 'json']);
+
+        expect(process.exitCode).toBe(1);
+        const report = JSON.parse(consoleLogSpy.mock.calls.map((args) => args.join(' ')).join('\n'));
+        expect(report).toMatchObject({
+          ok: false,
+          site: 'hn',
+          command: 'top',
+          error: { code: 'ADAPTER_NOT_FOUND' },
+        });
+      } finally {
+        consoleLogSpy.mockClear();
+        if (originalHome === undefined) delete process.env.HOME;
+        else process.env.HOME = originalHome;
+        if (originalUserProfile === undefined) delete process.env.USERPROFILE;
+        else process.env.USERPROFILE = originalUserProfile;
+        fs.rmSync(fakeHome, { recursive: true, force: true });
+      }
+    });
+
+    it('rejects an unsupported format before running the adapter', async () => {
+      const originalHome = process.env.HOME;
+      const originalUserProfile = process.env.USERPROFILE;
+      const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-browser-verify-json-badfmt-'));
+      process.env.HOME = fakeHome;
+      process.env.USERPROFILE = fakeHome;
+
+      try {
+        const adapterDir = path.join(fakeHome, '.webcmd', 'clis', 'hn');
+        fs.mkdirSync(adapterDir, { recursive: true });
+        fs.writeFileSync(path.join(adapterDir, 'top.js'), 'export default {};\n', 'utf-8');
+
+        await createProgram('', '').parseAsync(['node', 'webcmd', '--session', 'test', 'browser', 'verify', 'hn/top', '--no-fixture', '-f', 'xml']);
+
+        expect(process.exitCode).toBe(2);
+        expect(mockExecFileSync).not.toHaveBeenCalled();
+      } finally {
+        if (originalHome === undefined) delete process.env.HOME;
+        else process.env.HOME = originalHome;
+        if (originalUserProfile === undefined) delete process.env.USERPROFILE;
+        else process.env.USERPROFILE = originalUserProfile;
+        fs.rmSync(fakeHome, { recursive: true, force: true });
+      }
+    });
+  });
 });
 
 describe('profile list', () => {
@@ -1721,6 +1892,200 @@ describe('profile list', () => {
     expect(output).not.toContain(`Browser ${'Bridge'}`);
     expect(output).not.toContain(`Webcmd ${'extension'}`);
     expect(output).not.toContain('webcmd daemon restart');
+  });
+});
+
+describe('structured output for data-returning built-ins', () => {
+  const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+  beforeEach(() => {
+    process.exitCode = undefined;
+    consoleLogSpy.mockClear();
+    vi.stubGlobal('fetch', vi.fn());
+  });
+
+  const stdout = () => consoleLogSpy.mock.calls.flat().join('\n');
+
+  // Later describes in this file install their own console.error spy at
+  // collection time, which would shadow a describe-level one here. Spy inside
+  // the test and restore, matching the local Session format tests below.
+  const captureStderr = async (run: () => Promise<void>): Promise<string> => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await run();
+      return spy.mock.calls.flat().join('\n');
+    } finally {
+      spy.mockRestore();
+    }
+  };
+
+  const daemonStatusResponse = (overrides: Record<string, unknown> = {}) => ({
+    ok: true,
+    json: async () => ({
+      ok: true,
+      pid: 123,
+      uptime: 12,
+      daemonVersion: PKG_VERSION,
+      runtimeConnected: true,
+      runtimeName: 'Cloak',
+      runtimeVersion: '1.0.3',
+      profiles: [],
+      pending: 0,
+      memoryMB: 20,
+      port: 9777,
+      ...overrides,
+    }),
+  } as Response);
+
+  it('renders validate as JSON without the human report', async () => {
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'validate', '-f', 'json']);
+
+    expect(JSON.parse(stdout())).toMatchObject({
+      ok: expect.any(Boolean),
+      errors: expect.any(Number),
+      warnings: expect.any(Number),
+      commands: expect.any(Number),
+    });
+  });
+
+  it('rejects validate for an unknown target instead of passing zero commands', async () => {
+    await expect(createProgram('', '').parseAsync(['node', 'webcmd', 'validate', 'nope']))
+      .rejects.toThrow(/No command matches "nope"/);
+  });
+
+  it('sets a non-zero exit code when validate finds command errors', async () => {
+    const key = 'validate-fail-exit/broken';
+    getRegistry().set(key, {
+      site: 'validate-fail-exit', name: 'broken', access: 'read', description: 'broken', args: [],
+    } as never);
+    try {
+      await createProgram('', '').parseAsync(['node', 'webcmd', 'validate', 'validate-fail-exit']);
+      expect(process.exitCode).toBe(1);
+      expect(stdout()).toContain('FAIL');
+    } finally {
+      getRegistry().delete(key);
+    }
+  });
+
+  it('keeps the human validate report when no format is requested', async () => {
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'validate']);
+
+    expect(() => JSON.parse(stdout())).toThrow();
+  });
+
+  it('renders verify as YAML and still sets the report exit code', async () => {
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'verify', '-f', 'yaml']);
+
+    const parsed = yaml.load(stdout()) as { ok: boolean; validation: unknown };
+    expect(parsed).toMatchObject({ ok: expect.any(Boolean) });
+    expect(parsed.validation).toBeDefined();
+    expect(process.exitCode).toBe(parsed.ok ? 0 : 1);
+  });
+
+  it('renders the same skill rows for bare skills and skills list', async () => {
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'skills', '-f', 'json']);
+    const bare = JSON.parse(stdout());
+    consoleLogSpy.mockClear();
+
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'skills', 'list', '-f', 'json']);
+    expect(JSON.parse(stdout())).toEqual(bare);
+  });
+
+  it('renders daemon status as JSON', async () => {
+    vi.mocked(fetch).mockResolvedValue(daemonStatusResponse());
+
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'daemon', 'status', '-f', 'json']);
+
+    expect(JSON.parse(stdout())).toMatchObject({
+      running: true,
+      stale: false,
+      pid: 123,
+      port: 9777,
+      runtimeConnected: true,
+      runtimeName: 'Cloak',
+    });
+  });
+
+  it('reports a stopped daemon as structured data rather than prose', async () => {
+    vi.mocked(fetch).mockRejectedValue(new Error('ECONNREFUSED'));
+
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'daemon', 'status', '-f', 'json']);
+
+    expect(JSON.parse(stdout())).toEqual({ running: false });
+  });
+
+  it('renders profile list rows and marks disconnected saved profiles', async () => {
+    vi.mocked(fetch).mockResolvedValue(daemonStatusResponse({
+      profiles: [{ contextId: 'ctx_live', runtimeConnected: true, runtimeVersion: '1.0.3', pending: 0 }],
+    }));
+
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'profile', 'list', '-f', 'json']);
+
+    expect(JSON.parse(stdout())).toEqual([
+      { contextId: 'ctx_live', alias: '', default: false, connected: true, runtimeVersion: '1.0.3' },
+    ]);
+  });
+
+  it('rejects profile use of an unknown name and enumerates valid profiles', async () => {
+    vi.mocked(fetch).mockResolvedValue(daemonStatusResponse({
+      profiles: [{ contextId: 'ctx_live', runtimeConnected: true, runtimeVersion: '1.0.3', pending: 0 }],
+    }));
+
+    await expect(createProgram('', '').parseAsync(['node', 'webcmd', 'profile', 'use', '__audit_nope__']))
+      .rejects.toThrow(/No profile matches "__audit_nope__". Valid profiles: ctx_live/);
+  });
+
+  it('sets the default from a connected profile', async () => {
+    vi.mocked(fetch).mockResolvedValue(daemonStatusResponse({
+      profiles: [{ contextId: 'ctx_live', runtimeConnected: true, runtimeVersion: '1.0.3', pending: 0 }],
+    }));
+
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'profile', 'use', 'ctx_live']);
+
+    expect(stdout()).toContain('Default Cloak profile: ctx_live');
+  });
+
+  it('sets the default from a saved alias when the daemon is down', async () => {
+    fs.mkdirSync(process.env.WEBCMD_CONFIG_DIR!, { recursive: true });
+    fs.writeFileSync(path.join(process.env.WEBCMD_CONFIG_DIR!, 'browser-profiles.json'), JSON.stringify({
+      version: 1,
+      aliases: { work: 'ctx_work' },
+    }));
+    vi.mocked(fetch).mockRejectedValue(new Error('ECONNREFUSED'));
+
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'profile', 'use', 'work']);
+
+    expect(stdout()).toContain('Default Cloak profile: ctx_work');
+  });
+
+  it('fails structured profile list with DAEMON_UNAVAILABLE instead of an empty array', async () => {
+    vi.mocked(fetch).mockRejectedValue(new Error('ECONNREFUSED'));
+
+    const stderr = await captureStderr(async () => {
+      await createProgram('', '').parseAsync(['node', 'webcmd', 'profile', 'list', '-f', 'json']);
+    });
+
+    expect(process.exitCode).toBe(1);
+    expect(stdout()).toBe('');
+    expect(stderr).toContain('Daemon is not running; profile list is incomplete.');
+    expect(stderr).toContain('Run webcmd doctor after opening Chrome.');
+  });
+
+  it.each([
+    ['validate'],
+    ['verify'],
+    ['skills'],
+    ['doctor'],
+    ['daemon', 'status'],
+    ['profile', 'list'],
+  ])('rejects an unsupported format for %s', async (...command) => {
+    const stderr = await captureStderr(async () => {
+      await createProgram('', '').parseAsync(['node', 'webcmd', ...command, '-f', 'xml']);
+    });
+
+    expect(process.exitCode).toBe(2);
+    expect(stderr).toContain('Unknown output format "xml"');
+    expect(stdout()).toBe('');
   });
 });
 
@@ -1794,6 +2159,65 @@ describe('browser raw session commands', () => {
 
     expect(mockSendCommand).toHaveBeenCalledWith('snapshot', {
       session: 'session_test', surface: 'browser', snapshotMode: 'read', ref: 'e12', maxOutputChars: 1000,
+    });
+  });
+
+  // The CDP client already gates diagnostics on isVerbose(), but the raw browser
+  // leaves rejected -v, so those diagnostics were unreachable from the CLI (#174).
+  describe('raw browser verbose flag', () => {
+    afterEach(() => {
+      delete process.env.WEBCMD_VERBOSE;
+    });
+
+    it.each(['tabs', 'snapshot', 'close'])('accepts -v on browser %s', async (leaf) => {
+      delete process.env.WEBCMD_VERBOSE;
+      const program = createProgram('', '');
+
+      await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', leaf, '-v']);
+
+      expect(process.exitCode).toBeUndefined();
+      expect(process.env.WEBCMD_VERBOSE).toBe('1');
+    });
+
+    it('accepts -v on browser bind', async () => {
+      delete process.env.WEBCMD_VERBOSE;
+      const program = createProgram('', '');
+
+      await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'bind', '--page', 'page-123', '-v']);
+
+      expect(process.env.WEBCMD_VERBOSE).toBe('1');
+      expect(mockSendCommand).toHaveBeenCalledWith('bind', {
+        session: 'session_test', surface: 'browser', page: 'page-123',
+      });
+    });
+
+    it('leaves verbose mode off when the flag is absent', async () => {
+      delete process.env.WEBCMD_VERBOSE;
+      const program = createProgram('', '');
+
+      await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'tabs']);
+
+      expect(process.env.WEBCMD_VERBOSE).toBeUndefined();
+    });
+
+    // Structural check so `run` is covered too: it needs a program source, so it
+    // cannot reach the action body from argv alone.
+    //
+    // Filesystem-only leaves stay without the flag: there are no diagnostics
+    // behind it, and advertising one would be the no-op #174 set out to remove.
+    it('declares the flag on bridge leaves and withholds it from filesystem-only ones', () => {
+      const program = createProgram('', '');
+      const browser = program.commands.find(command => command.name() === 'browser');
+      const flagsFor = (name: string) => browser?.commands
+        .find(command => command.name() === name)
+        ?.options.map(option => option.long) ?? [];
+
+      for (const leaf of ['tabs', 'bind', 'run', 'snapshot', 'close']) {
+        expect(flagsFor(leaf)).toContain('--verbose');
+      }
+      for (const leaf of ['init', 'fork']) {
+        expect(flagsFor(leaf)).not.toContain('--verbose');
+      }
     });
   });
 
