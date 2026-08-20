@@ -63,6 +63,8 @@ describe('webcmd skills content', () => {
     ];
     expect(skill).toContain('webcmd list --tag search -f json');
     expect(skill).toContain('webcmd plugin search');
+    expect(skill).toMatch(/plugin search` is catalog discovery[\s\S]{0,80}not web search/i);
+    expect(skill).toContain('Do not invent a URL from memory');
     expect(skill).toContain('webcmd plugin install');
     expect(skill).toContain('webcmd web fetch --url');
     expect(skill).toContain('FETCH_BLOCKED');

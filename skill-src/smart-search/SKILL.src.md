@@ -83,6 +83,10 @@ Query terms that collide with everyday English (`puppeteer`, `playwright`, `rust
 
 Extract useful result URLs from the fetched page and then fetch the target pages with `webcmd web fetch`. Search snippets and result titles are discovery only, not evidence. A page that yields zero usable result URLs is a failed search, not a search with no results: move to the next engine.
 
+`webcmd plugin search` is catalog discovery. It is not web search. Do not run it for a research query.
+
+A source URL may be summarized only after it appeared in fetched search results and was itself fetched. If search-engine pages have no extractable result URLs after the allowed retries, report the gap. Do not invent a URL from memory.
+
 If the search-engine result page returns `FETCH_BLOCKED` or `FETCH_REQUIRES_BROWSER`, use the Session workflow once within the browser Session budget. A recognised block, CAPTCHA, or challenge page retires that engine for this request: do not re-fetch variants of the same engine. Do not jump to adapters because one engine blocked, unless the request names a site.
 
 ## Fetch evidence
@@ -159,4 +163,8 @@ Author-only. Stripped by litprompt, so it costs the running agent nothing.
 Append one dated line whenever a correction lands, or whenever an approach
 is tried and rejected. Record what was tried and why it failed, not just
 what won.
+
+- 2026-08-20: Agents ran `plugin search` as web search, then invented a URL when
+  the SERP was empty or redirected. Catalog miss is not a search miss. No result
+  URL means report the gap, not recall a canonical page from memory.
 -->
