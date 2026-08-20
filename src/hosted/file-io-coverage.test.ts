@@ -13,7 +13,7 @@ function sourceOf(file: string): string {
 function assertNoDirectFilesystemAccess(file: 'runner.ts' | 'files.ts', text: string): void {
   const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
   const filesystemImports: ts.Node[] = [];
-  const readFileSyncCalls: ts.CallExpression[] = [];
+  const readFileSyncReferences: ts.Identifier[] = [];
 
   const visit = (node: ts.Node): void => {
     if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier) && isFilesystemModule(node.moduleSpecifier.text)) {
@@ -25,15 +25,15 @@ function assertNoDirectFilesystemAccess(file: 'runner.ts' | 'files.ts', text: st
       filesystemImports.push(node);
     }
     if (ts.isCallExpression(node) && isFilesystemModuleLoad(node)) filesystemImports.push(node);
-    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'readFileSync') {
-      readFileSyncCalls.push(node);
+    if (ts.isIdentifier(node) && node.text === 'readFileSync' && !isReadFileSyncImportBinding(node)) {
+      readFileSyncReferences.push(node);
     }
     ts.forEachChild(node, visit);
   };
   visit(source);
 
   if (file === 'files.ts') {
-    if (filesystemImports.length > 0 || readFileSyncCalls.length > 0) {
+    if (filesystemImports.length > 0 || readFileSyncReferences.length > 0) {
       throw new Error('files.ts must route filesystem access through HostedFileIo');
     }
     return;
@@ -42,7 +42,7 @@ function assertNoDirectFilesystemAccess(file: 'runner.ts' | 'files.ts', text: st
   if (filesystemImports.length !== 1 || !isAllowedRunnerFilesystemImport(filesystemImports[0]!)) {
     throw new Error('runner.ts may import only readFileSync from node:fs for the committed hosted contract');
   }
-  if (readFileSyncCalls.length !== 1 || !isHostedContractRead(readFileSyncCalls[0]!)) {
+  if (readFileSyncReferences.length !== 1 || !isHostedContractReadReference(readFileSyncReferences[0]!)) {
     throw new Error('runner.ts may read only the committed hosted-contract.json package data directly');
   }
 }
@@ -67,6 +67,16 @@ function isAllowedRunnerFilesystemImport(node: ts.Node): boolean {
     && elements.elements.length === 1
     && elements.elements[0]!.name.text === 'readFileSync'
     && elements.elements[0]!.propertyName === undefined;
+}
+
+function isReadFileSyncImportBinding(node: ts.Identifier): boolean {
+  return ts.isImportSpecifier(node.parent) && node.parent.name === node;
+}
+
+function isHostedContractReadReference(node: ts.Identifier): boolean {
+  return ts.isCallExpression(node.parent)
+    && node.parent.expression === node
+    && isHostedContractRead(node.parent);
 }
 
 function isHostedContractRead(node: ts.CallExpression): boolean {
@@ -95,5 +105,15 @@ describe('hosted dispatch filesystem coverage', () => {
     expect(() => assertNoDirectFilesystemAccess('runner.ts', "import * as fs from 'node:fs';\nfs.writeFileSync('output.txt', 'body');")).toThrow(/readFileSync/);
     expect(() => assertNoDirectFilesystemAccess('runner.ts', "const fs = require('node:fs');\nfs.writeFileSync('output.txt', 'body');")).toThrow(/readFileSync/);
     expect(() => assertNoDirectFilesystemAccess('files.ts', "void import('node:fs/promises');")).toThrow(/HostedFileIo/);
+  });
+
+  it('rejects aliases of the otherwise allowed hosted-contract reader', () => {
+    const source = [
+      "import { readFileSync } from 'node:fs';",
+      'const leak = readFileSync;',
+      "leak('/secret');",
+      "const contract = readFileSync(path.join(packageRoot, 'hosted-contract.json'), 'utf8');",
+    ].join('\n');
+    expect(() => assertNoDirectFilesystemAccess('runner.ts', source)).toThrow(/hosted-contract.json/);
   });
 });
