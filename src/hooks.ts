@@ -84,6 +84,7 @@ export async function emitHook(name: HookName, ctx: HookContext, result?: unknow
 }
 
 const BUILTIN_COMMANDS = new Set([
+  'agent-context',
   'adapter',
   'auth',
   'browser',

@@ -112,6 +112,7 @@ describe('no-op when no hooks registered', () => {
 describe('startup hook gating', () => {
   it.each([
     ['--help'],
+    ['agent-context', '--json'],
     ['list', '--format', 'json'],
     ['list', '--json'],
   ])('skips startup side effects for help or requested data output: %j', (...argv) => {
