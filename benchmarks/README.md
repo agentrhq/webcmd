@@ -101,52 +101,13 @@ task's dedicated CloakBrowser.
 ## Verify a run
 
 Each run writes a manifest, aggregate summary, per-task result, transcript, and
-screenshots under `benchmarks/results/<run-id>/`. Verify that the manifests
-match on benchmark dataset hash, Pi controller, controller model, reasoning
-effort, and judge configuration before comparing tools. The table above reports
-the aggregate accuracy, token, agent-turn, and API-equivalent cost fields from
-those artifacts.
+screenshots under `benchmarks/results/<run-id>/`. Before comparing tools, verify
+that their manifests use the same dataset hash, controller, model, reasoning
+effort, and judge configuration.
 
-For an independently auditable public result, publish sanitized copies of each
-run's manifest, summary, and per-task result JSON. Review transcripts and
-screenshots before publishing because they can contain authenticated browser
-state or private account data.
-
-Controller token totals include non-cached input and output tokens. Cached
-reads are recorded separately. Cost is calculated per controller turn,
-including the model's long-context multiplier, and then summed. Judge tokens
-and judge cost are excluded.
-
-Webcmd attempts use the dedicated `benchmark` Profile. The harness creates one
-opaque Session per task before starting the controller, passes that Session to
-the controller, and closes it only after the controller exits. The agent does
-not create or close Sessions. Its browser surface is only
-`webcmd --profile benchmark --session <session-id> browser tabs` → optional
-`bind --page PAGE` → optional `snapshot` → one or more
-`run --stdin <<'JS' ... JS` calls. Profile-level cookies, cache, and storage are
-shared across the Webcmd run; tabs and browser workspace are task-specific.
-Removed browser primitives (`open`, `state`,
-`click`, `type`, `screenshot`, `wait`, `eval`, `observe`, and `tab`) are not
-allowed. Do not run `webcmd browser --help`; the allowed surface is complete.
-Run programs must use one quoted heredoc; never invoke `run --stdin` with an
-empty stdin body. Avoid shell-fragile JavaScript such as
-`$`, template literals, regex end anchors, and mixed-quote one-liners. The global `page` is already
-available; do not call `browser.currentPage()` or `page.snapshotForAI()`. `run`
-returns a snapshot diff by default. Only positive `--timeout` and `--max-output`
-values, `--snapshot-mode act|tree`, and the boolean `--no-snapshot-diff` flag are
-accepted:
-
-```bash
-webcmd --profile benchmark \
-  --session session_7d8f2c10-4a11-4f3e-9c22-1b6de0a91f45 \
-  browser run --stdin --snapshot-mode act <<'JS'
-return await page.title()
-JS
-```
-
-The separate `snapshot` command accepts `--snapshot-mode act|tree|read`.
-
-BU Bench loads `datasets/BU_Bench_V1.json`. To skip a task without shifting its raw index, set its optional field to `"enabled": false`; leave all 100 entries in their original order.
+Review transcripts and screenshots for private account data before publishing.
+Reported token and cost totals cover the controller only; judge usage is
+excluded.
 
 ## References
 
