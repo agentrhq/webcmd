@@ -4,7 +4,7 @@ Edit here. The installable copies live in [`skills/`](../skills/) and are
 generated — do not hand-edit them.
 
 ```
-skill-src/<skill-name>/SKILL.src.md   <- edit this, never installed
+skill-src/cli/<skill-name>/SKILL.src.md <- edit this, never installed
 skills/<skill-name>/SKILL.md          <- generated, committed, installed
 ```
 
@@ -15,10 +15,10 @@ Sources carry internal notes and learnings that must not reach an installation.
 
 ```bash
 make install-tool   # go install github.com/tgvashworth/litprompt@latest
-make build          # skill-src/**/*.src.md -> skills/**/*.md
+make build          # skill-src/cli/**/*.src.md -> skills/**/*.md
 make check          # imports resolve, no cycles, nothing written
-make verify         # rebuild and fail if skills/ is stale or orphaned
-make clean          # delete skills/ (it is fully machine-owned)
+make verify         # rebuild and fail if published trees are stale or orphaned
+make clean          # delete skills/ and mcp-skills/ (both machine-owned)
 ```
 
 `skills/` **is committed**, so `webcmd skills add`, the Codex/Claude plugins,
@@ -75,9 +75,11 @@ asserts that no file named `SKILL.md` exists inside `skill-src/`.
 
 ## Shared fragments
 
-Text reused across skills goes in `skill-src/shared/` and is pulled in with an
-import. The imported file's frontmatter is stripped; only the root file's is
-kept:
+The source layout has three trees: `skill-src/cli/` builds installable CLI and
+harness skills into `skills/`; `skill-src/mcp/` builds flat MCP resource
+documents into `mcp-skills/`; and `skill-src/shared/` holds fragments imported
+by either variant but is never built alone. The imported file's frontmatter is
+stripped; only the root file's is kept:
 
 ```markdown
 @[session-budget](../shared/session-budget.md)
@@ -88,7 +90,7 @@ kept:
 References mirror the same way, so a skill's whole directory has one source:
 
 ```
-skill-src/webcmd-browser/
+skill-src/cli/webcmd-browser/
   SKILL.src.md
   references/browser-run-playwright.src.md
 
@@ -101,9 +103,9 @@ skills/webcmd-browser/          <- generated
 
 ## Adding a skill
 
-1. `mkdir -p skill-src/<skill-name>`
-2. Write `skill-src/<skill-name>/SKILL.src.md` with frontmatter (`name`, `description`).
-3. `make build` — every `*.src.md` under `skill-src/` is picked up automatically.
+1. `mkdir -p skill-src/cli/<skill-name>`
+2. Write `skill-src/cli/<skill-name>/SKILL.src.md` with frontmatter (`name`, `description`).
+3. `make build` — every `*.src.md` under `skill-src/cli/` is picked up automatically.
 4. Commit the source and the generated output, and add the skill to the table in
    [`docs/skills.mdx`](../docs/skills.mdx) plus the expected list in
    [`scripts/check-codex-plugin.mjs`](../scripts/check-codex-plugin.mjs).

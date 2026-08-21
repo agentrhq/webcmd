@@ -1,10 +1,9 @@
-import { createHash, randomBytes } from 'node:crypto';
-import { constants } from 'node:fs';
-import { lstat, mkdir, open, rename, rm } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { CliError, EXIT_CODES } from '../errors.js';
 import type { HostedClient } from './client.js';
+import { VirtualFileMissingError, realHostedFileIo, type HostedFileIo } from './file-io.js';
 import type {
   HostedArtifactReceipt,
   HostedArtifactReference,
@@ -41,7 +40,7 @@ export async function prepareHostedFiles(input: {
   session?: string;
   executionScope?: 'profile' | 'stateless';
   onPrepared?: (prepared: HostedPrepareExecutionResponse) => Promise<void>;
-}): Promise<HostedPreparedFiles> {
+}, io: HostedFileIo = realHostedFileIo): Promise<HostedPreparedFiles> {
   const fileArgs = input.command.args.filter(hasFileMetadata);
   const cwd = input.cwd ?? process.cwd();
   const remoteArgs: Record<string, unknown> = { ...input.args };
@@ -73,8 +72,8 @@ export async function prepareHostedFiles(input: {
         );
       }
       for (const value of values) {
-        const localPath = resolveLocalPath(cwd, value, arg.name);
-        const body = await readLocalFileNoSymlink(localPath, arg.name);
+        const localPath = resolveLocalPath(cwd, value, arg.name, io);
+        const body = await readLocalFile(localPath, arg.name, io);
         assertLocalInputWithinLimit(arg, body);
         const contentType = contentTypeForPath(localPath);
         assertContentTypeAllowed(arg, contentType);
@@ -95,13 +94,13 @@ export async function prepareHostedFiles(input: {
     const values = valuesForFileArg(arg, rawValue);
     const references: HostedArtifactReference[] = [];
     for (const value of values) {
-      const localPath = resolveOutputPath(cwd, value, arg.name);
+      const localPath = resolveOutputPath(cwd, value, arg.name, io);
       outputs.push({ argument: arg.name, pathKind: arg.file.pathKind, localPath });
       if (arg.file.direction === 'input-output') {
         const contentType = contentTypeForPath(localPath);
         mutable.push({ argument: arg.name, multiple: arg.file.multiple === true, localPath, contentType });
-        if (await localFileExists(localPath)) {
-          const body = await readLocalFileNoSymlink(localPath, arg.name);
+        if (await io.exists(localPath)) {
+          const body = await readLocalFile(localPath, arg.name, io);
           assertLocalInputWithinLimit(arg, body);
           assertContentTypeAllowed(arg, contentType);
           inputs.push({
@@ -182,7 +181,7 @@ export async function materializeHostedOutputs(input: {
   client: HostedClient;
   response: HostedExecuteResponse;
   outputs: HostedOutputTarget[];
-}): Promise<HostedMaterializedOutput[]> {
+}, io: HostedFileIo = realHostedFileIo): Promise<HostedMaterializedOutput[]> {
   if (!input.outputs.length) return [];
   const receipts = input.response.artifacts ?? [];
   const receiptsByArgument = new Map<string, HostedArtifactReceipt[]>();
@@ -193,37 +192,27 @@ export async function materializeHostedOutputs(input: {
     receiptsByArgument.set(receipt.argument, bucket);
   }
 
-  const tempFiles: string[] = [];
   const materialized: HostedMaterializedOutput[] = [];
-  try {
-    for (const output of input.outputs) {
-      if (output.pathKind === 'directory') await mkdir(output.localPath, { recursive: true, mode: 0o700 });
-      const receipts = receiptsByArgument.get(output.argument) ?? [];
-      const targets = input.outputs.filter(target => target.argument === output.argument && target.pathKind === 'file');
-      const outputReceipts = output.pathKind === 'file' && targets.length > 1
-        ? receipts.filter(receipt => receipt.filename === path.basename(output.localPath))
-        : receipts;
-      if (outputReceipts.length > 1 && targets.length > 1) {
-        throw new CliError('HOSTED_FILE_OUTPUT_INVALID', 'Webcmd Cloud returned ambiguous mutable file output artifacts.');
-      }
-      const seenRelativePaths = new Set<string>();
-      for (const receipt of outputReceipts) {
-        const target = targetPathForReceipt(output, receipt, seenRelativePaths);
-        const body = await input.client.downloadExecutionArtifact({
-          executionId: input.response.execution.id,
-          artifactId: receipt.artifactId,
-        });
-        assertReceiptBody(receipt, body);
-        const tempPath = await writeTempSibling(target, body);
-        tempFiles.push(tempPath);
-        await rename(tempPath, target);
-        tempFiles.splice(tempFiles.indexOf(tempPath), 1);
-        materialized.push({ argument: output.argument, artifact: receipt, localPath: target });
-      }
+  for (const output of input.outputs) {
+    const receipts = receiptsByArgument.get(output.argument) ?? [];
+    const targets = input.outputs.filter(target => target.argument === output.argument && target.pathKind === 'file');
+    const outputReceipts = output.pathKind === 'file' && targets.length > 1
+      ? receipts.filter(receipt => receipt.filename === path.basename(output.localPath))
+      : receipts;
+    if (outputReceipts.length > 1 && targets.length > 1) {
+      throw new CliError('HOSTED_FILE_OUTPUT_INVALID', 'Webcmd Cloud returned ambiguous mutable file output artifacts.');
     }
-  } catch (error) {
-    await Promise.all(tempFiles.map(temp => rm(temp, { force: true }).catch(() => undefined)));
-    throw error;
+    const seenRelativePaths = new Set<string>();
+    for (const receipt of outputReceipts) {
+      const target = targetPathForReceipt(output, receipt, seenRelativePaths, io);
+      const body = await input.client.downloadExecutionArtifact({
+        executionId: input.response.execution.id,
+        artifactId: receipt.artifactId,
+      });
+      assertReceiptBody(receipt, body);
+      await io.writeFile(target, body);
+      materialized.push({ argument: output.argument, artifact: receipt, localPath: target });
+    }
   }
   return materialized;
 }
@@ -264,39 +253,39 @@ function valuesForFileArg(arg: HostedCommandArg & { file: NonNullable<HostedComm
   return [value];
 }
 
-function resolveLocalPath(cwd: string, value: string, argName: string): string {
+function resolveLocalPath(cwd: string, value: string, argName: string, io: HostedFileIo): string {
   if (!value.trim()) {
     throw new CliError('HOSTED_FILE_ARGUMENT', `Argument "${argName}" must be a non-empty file path.`, undefined, EXIT_CODES.USAGE_ERROR);
   }
-  return resolveUserPath(cwd, value);
+  return resolveUserPath(cwd, value, io);
 }
 
-function resolveOutputPath(cwd: string, value: string, argName: string): string {
+function resolveOutputPath(cwd: string, value: string, argName: string, io: HostedFileIo): string {
   if (!value.trim()) {
     throw new CliError('HOSTED_FILE_ARGUMENT', `Argument "${argName}" must be a non-empty output path.`, undefined, EXIT_CODES.USAGE_ERROR);
   }
-  return resolveUserPath(cwd, value);
+  return resolveUserPath(cwd, value, io);
 }
 
-function resolveUserPath(cwd: string, value: string): string {
+function resolveUserPath(cwd: string, value: string, io: HostedFileIo): string {
+  if (io !== realHostedFileIo) return value;
   if (value === '~') return homedir();
   if (value.startsWith('~/')) return path.join(homedir(), value.slice(2));
   return path.resolve(cwd, value);
 }
 
-async function readLocalFileNoSymlink(localPath: string, argName: string): Promise<Uint8Array> {
-  let entry;
+async function readLocalFile(localPath: string, argName: string, io: HostedFileIo): Promise<Uint8Array> {
   try {
-    entry = await lstat(localPath);
-  } catch {
-    throw new CliError(
-      'HOSTED_FILE_NOT_FOUND',
-      `Input file for "${argName}" was not found.`,
-      `Check the local path and try again.`,
-      EXIT_CODES.USAGE_ERROR,
-    );
-  }
-  if (entry.isSymbolicLink() || !entry.isFile()) {
+    return await io.readRegularFile(localPath);
+  } catch (error) {
+    if (error instanceof VirtualFileMissingError || isMissingFileError(error)) {
+      throw new CliError(
+        'HOSTED_FILE_NOT_FOUND',
+        `Input file for "${argName}" was not found.`,
+        `Check the local path and try again.`,
+        EXIT_CODES.USAGE_ERROR,
+      );
+    }
     throw new CliError(
       'HOSTED_FILE_NOT_FILE',
       `Input path for "${argName}" must be a regular file.`,
@@ -304,21 +293,13 @@ async function readLocalFileNoSymlink(localPath: string, argName: string): Promi
       EXIT_CODES.USAGE_ERROR,
     );
   }
-  const handle = await open(localPath, constants.O_RDONLY | constants.O_NOFOLLOW);
-  try {
-    return new Uint8Array(await handle.readFile());
-  } finally {
-    await handle.close().catch(() => undefined);
-  }
 }
 
-async function localFileExists(localPath: string): Promise<boolean> {
-  try {
-    await lstat(localPath);
-    return true;
-  } catch {
-    return false;
-  }
+function isMissingFileError(error: unknown): boolean {
+  return !!error
+    && typeof error === 'object'
+    && 'code' in error
+    && (error as { code?: unknown }).code === 'ENOENT';
 }
 
 function contentTypeForPath(localPath: string): string {
@@ -377,6 +358,7 @@ function targetPathForReceipt(
   output: HostedOutputTarget,
   receipt: HostedArtifactReceipt,
   seenRelativePaths: Set<string>,
+  io: HostedFileIo,
 ): string {
   if (output.pathKind === 'file') return output.localPath;
   const relativePath = receipt.relativePath;
@@ -389,7 +371,9 @@ function targetPathForReceipt(
     );
   }
   seenRelativePaths.add(relativePath);
-  return path.resolve(output.localPath, ...relativePath.split('/'));
+  return io === realHostedFileIo
+    ? path.resolve(output.localPath, ...relativePath.split('/'))
+    : path.posix.join(output.localPath, relativePath);
 }
 
 function isSafeRelativePath(relativePath: string): boolean {
@@ -405,19 +389,6 @@ function assertReceiptBody(receipt: HostedArtifactReceipt, body: Uint8Array): vo
   if (receipt.sha256 && sha256Hex(body) !== receipt.sha256) {
     throw new CliError('HOSTED_FILE_HASH_MISMATCH', 'Downloaded artifact hash did not match the hosted receipt.');
   }
-}
-
-async function writeTempSibling(targetPath: string, body: Uint8Array): Promise<string> {
-  await mkdir(path.dirname(targetPath), { recursive: true, mode: 0o700 });
-  const tempPath = path.join(path.dirname(targetPath), `.${path.basename(targetPath)}.${process.pid}.${randomBytes(8).toString('hex')}.tmp`);
-  const handle = await open(tempPath, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
-  try {
-    await handle.writeFile(body);
-    await handle.sync();
-  } finally {
-    await handle.close().catch(() => undefined);
-  }
-  return tempPath;
 }
 
 function sha256Hex(body: Uint8Array): string {

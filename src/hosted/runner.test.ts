@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Writable, type WritableOptions } from 'node:stream';
@@ -14,7 +14,9 @@ import { formatRootHelp } from '../command-presentation.js';
 import { HOSTED_ROOT_HELP } from '../completion-shared.js';
 import { PKG_VERSION } from '../version.js';
 import { makeHostedConfig, makeLocalConfig } from './config.js';
+import { createCaptureStream } from './capture-stream.js';
 import { runHostedCli } from './runner.js';
+import { createVirtualFileMap, createVirtualOutputSink } from './virtual-files.js';
 
 const [packageMajor, packageMinor] = PKG_VERSION.split('.');
 const compatiblePatchVersion = `${packageMajor}.${packageMinor}.99`;
@@ -314,6 +316,95 @@ describe('runHostedCli', () => {
       expect(stdout.text()).toContain('Uses GraphQL');
     } finally {
       await rm(homeDir, { recursive: true, force: true });
+    }
+  });
+
+  it('writes the default adapter source destination into virtual outputs', async () => {
+    const outputs = createVirtualOutputSink();
+    const source = 'export const whoami = true;\n';
+    const sourceManifest = {
+      ...manifest,
+      commands: [{ ...manifest.commands[0], adapterPackageId: 'pkg_github', sourceFile: 'clis/github/whoami.js' }],
+    };
+
+    const result = await runHostedCli(['adapter', 'source', 'get', 'github/whoami'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      homeDir: '/nonexistent-home',
+      files: createVirtualFileMap([]),
+      outputs,
+      fetchImpl: async (url) => {
+        const pathname = new URL(String(url)).pathname;
+        return pathname === '/v1/manifest'
+          ? new Response(JSON.stringify({ ok: true, manifest: sourceManifest }))
+          : new Response(source);
+      },
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(outputs.files()).toEqual([{
+      path: '.webcmd/hosted/clis/github/whoami.js',
+      content: new TextEncoder().encode(source),
+    }]);
+  });
+
+  it('never writes to the host filesystem when only virtual files are injected', async () => {
+    const scratch = await mkdtemp(path.join(tmpdir(), 'webcmd-one-sided-files-'));
+    const sentinel = path.join(scratch, 'must-not-be-created.js');
+    const sourceManifest = {
+      ...manifest,
+      commands: [{ ...manifest.commands[0], adapterPackageId: 'pkg_github', sourceFile: 'clis/github/whoami.js' }],
+    };
+    try {
+      const result = await runHostedCli(['adapter', 'source', 'get', 'github/whoami', '--output', sentinel], {
+        config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+        files: createVirtualFileMap([]),
+        stdout: sink().stream,
+        stderr: sink().stream,
+        fetchImpl: async (url) => new URL(String(url)).pathname === '/v1/manifest'
+          ? new Response(JSON.stringify({ ok: true, manifest: sourceManifest }))
+          : new Response('host write sentinel'),
+      });
+
+      expect(result.exitCode).not.toBe(0);
+      await expect(access(sentinel)).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally {
+      await rm(scratch, { recursive: true, force: true });
+    }
+  });
+
+  it('never reads from the host filesystem when only virtual outputs are injected', async () => {
+    const scratch = await mkdtemp(path.join(tmpdir(), 'webcmd-one-sided-outputs-'));
+    const sentinel = path.join(scratch, 'must-not-be-read.js');
+    const uploadedBodies: string[] = [];
+    const sourceManifest = {
+      ...manifest,
+      commands: [{ ...manifest.commands[0], adapterPackageId: 'pkg_github', sourceFile: 'clis/github/whoami.js' }],
+    };
+    await writeFile(sentinel, 'host read sentinel');
+    try {
+      const result = await runHostedCli(['adapter', 'source', 'put', 'github/whoami', sentinel], {
+        config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+        outputs: createVirtualOutputSink(),
+        stdout: sink().stream,
+        stderr: sink().stream,
+        fetchImpl: async (url, init) => {
+          const pathname = new URL(String(url)).pathname;
+          if (pathname === '/v1/manifest') {
+            return new Response(JSON.stringify({ ok: true, manifest: sourceManifest }));
+          }
+          uploadedBodies.push(String(init?.body ?? ''));
+          return new Response(JSON.stringify({
+            ok: true,
+            package: { id: 'pkg_github', storagePath: 'plugins/pkg_github' },
+            commands: ['github/whoami'],
+          }));
+        },
+      });
+
+      expect(result.exitCode).not.toBe(0);
+      expect(uploadedBodies).toEqual([]);
+    } finally {
+      await rm(scratch, { recursive: true, force: true });
     }
   });
 
@@ -711,28 +802,56 @@ describe('runHostedCli', () => {
     expect(result.exitCode).not.toBe(0);
   });
 
-  it('scaffolds in hosted mode and prints contribute guidance instead of a local install', async () => {
+  it('scaffolds into the requested virtual directory without leaking a host path', async () => {
     const stdout = sink();
     const stderr = sink();
     const fetchImpl = vi.fn<typeof fetch>();
-    const tempDir = await mkdtemp(path.join(tmpdir(), 'webcmd-hosted-plugin-create-'));
-    try {
-      const result = await runHostedCli(['plugin', 'create', 'acme', '--dir', tempDir,
-        '--author-name', 'A', '--author-handle', 'a'], {
-        config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
-        stdout: stdout.stream,
-        stderr: stderr.stream,
-        fetchImpl,
-      });
+    const outputs = createVirtualOutputSink();
+    const result = await runHostedCli(['plugin', 'create', 'acme', '--dir', 'plugins/custom-acme',
+      '--author-name', 'A', '--author-handle', 'a'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      files: createVirtualFileMap([]),
+      outputs,
+      fetchImpl,
+    });
 
-      expect(result).toEqual({ handled: true, exitCode: 0 });
-      expect(stdout.text()).toContain('Plugin scaffold created');
-      expect(stdout.text()).not.toContain('plugin install file://');
-      expect(stdout.text()).toMatch(/pull request|contribute/i);
-      expect(fetchImpl).not.toHaveBeenCalled();
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(result).toEqual({ handled: true, exitCode: 0 });
+    expect(stdout.text()).toContain('Plugin scaffold created');
+    expect(stdout.text()).toContain('plugins/custom-acme');
+    expect(stdout.text()).not.toContain(process.cwd());
+    expect(stdout.text()).not.toContain('plugin install file://');
+    expect(stdout.text()).toMatch(/pull request|contribute/i);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(outputs.files()).toHaveLength(5);
+    expect(outputs.files().map(file => file.path).sort()).toEqual([
+      'plugins/custom-acme/webcmd-plugin.json',
+      'plugins/custom-acme/package.json',
+      'plugins/custom-acme/hello.ts',
+      'plugins/custom-acme/greet.ts',
+      'plugins/custom-acme/README.md',
+    ].sort());
+    expect(outputs.files().every(file => !path.isAbsolute(file.path) && !file.path.includes(process.cwd()))).toBe(true);
+    const readme = outputs.files().find(file => file.path.endsWith('/README.md'));
+    expect(new TextDecoder().decode(readme?.content)).toContain('file://plugins/custom-acme');
+    expect(new TextDecoder().decode(readme?.content)).not.toContain(process.cwd());
+  });
+
+  it('rejects a non-empty requested virtual scaffold directory', async () => {
+    const outputs = createVirtualOutputSink();
+    const stderr = sink();
+    const result = await runHostedCli(['plugin', 'create', 'acme', '--dir', 'plugins/custom-acme',
+      '--author-name', 'A', '--author-handle', 'a'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stderr: stderr.stream,
+      files: createVirtualFileMap([{ path: 'plugins/custom-acme/existing.txt', content: new Uint8Array([1]) }]),
+      outputs,
+    });
+
+    expect(result.exitCode).not.toBe(0);
+    expect(stderr.text()).toContain('not empty');
+    expect(outputs.files()).toEqual([]);
   });
 
   it('shows hosted plugin search and install help without an API call', async () => {
@@ -2584,5 +2703,118 @@ describe('runHostedCli', () => {
     expect(result.exitCode).toBe(2);
     expect(fetchImpl).not.toHaveBeenCalled();
     expect(stderr.text()).toContain(code);
+  });
+});
+
+describe('runHostedCli injected I/O', () => {
+  const hostedConfig = {
+    mode: 'hosted' as const,
+    updatedAt: new Date(0).toISOString(),
+    hosted: { apiBaseUrl: 'https://api.example.test', apiKey: 'token' },
+  };
+
+  it('does not read process.env when env is injected', async () => {
+    const previous = process.env.WEBCMD_WORKSPACE;
+    process.env.WEBCMD_WORKSPACE = 'leaked-workspace';
+    try {
+      const seenHeaders: Record<string, string>[] = [];
+      const stdout = createCaptureStream(64 * 1024);
+      await runHostedCli(['list'], {
+        config: hostedConfig,
+        env: {},
+        homeDir: '/nonexistent',
+        stdout: stdout.stream,
+        stderr: createCaptureStream(64 * 1024).stream,
+        fetchImpl: (async (_url: string, init?: RequestInit) => {
+          seenHeaders.push(init?.headers as Record<string, string>);
+          return new Response(
+            JSON.stringify({ userId: 'u1', metadata: { contractSchemaVersion: 1, sessionProtocolVersion: 1, webcmdPackageVersion: '0.7.4', generatedAt: new Date(0).toISOString() }, commands: [] }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          );
+        }) as unknown as typeof fetch,
+      });
+      expect(seenHeaders[0]?.['x-webcmd-workspace']).toBeUndefined();
+    } finally {
+      if (previous === undefined) delete process.env.WEBCMD_WORKSPACE;
+      else process.env.WEBCMD_WORKSPACE = previous;
+    }
+  });
+
+  it('aborts an in-flight invocation when the signal fires', async () => {
+    const controller = new AbortController();
+    const stderr = createCaptureStream(64 * 1024);
+    let fetchStartedResolve!: () => void;
+    const fetchStarted = new Promise<void>((resolve) => { fetchStartedResolve = resolve; });
+    let receivedSignal: AbortSignal | undefined;
+    const run = runHostedCli(['list'], {
+      config: hostedConfig,
+      env: {},
+      homeDir: '/nonexistent',
+      signal: controller.signal,
+      stdout: createCaptureStream(64 * 1024).stream,
+      stderr: stderr.stream,
+      fetchImpl: ((_url: string, init?: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          receivedSignal = init?.signal ?? undefined;
+          fetchStartedResolve();
+          receivedSignal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+        })) as unknown as typeof fetch,
+    });
+    await fetchStarted;
+    expect(receivedSignal).toBe(controller.signal);
+    controller.abort();
+    const result = await run;
+    expect(result.handled).toBe(true);
+    expect(result.exitCode).toBe(130);
+    expect(yaml.load(stderr.result().text)).toMatchObject({
+      ok: false,
+      error: { code: 'INTERRUPTED', exitCode: 130 },
+    });
+  });
+
+  it('handles an already-aborted invocation before issuing a request', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    let fetchCalled = false;
+    const stderr = createCaptureStream(64 * 1024);
+    const result = await runHostedCli(['list'], {
+      config: hostedConfig,
+      env: {},
+      homeDir: '/nonexistent',
+      signal: controller.signal,
+      stdout: createCaptureStream(64 * 1024).stream,
+      stderr: stderr.stream,
+      fetchImpl: (async () => {
+        fetchCalled = true;
+        return new Response();
+      }) as typeof fetch,
+    });
+
+    expect(result.handled).toBe(true);
+    expect(result.exitCode).toBe(130);
+    expect(fetchCalled).toBe(false);
+    expect(yaml.load(stderr.result().text)).toMatchObject({
+      ok: false,
+      error: { code: 'INTERRUPTED', exitCode: 130 },
+    });
+  });
+
+  it('does not misclassify an unrelated network failure as interruption', async () => {
+    const controller = new AbortController();
+    const stderr = createCaptureStream(64 * 1024);
+    const result = await runHostedCli(['list'], {
+      config: hostedConfig,
+      env: {},
+      homeDir: '/nonexistent',
+      signal: controller.signal,
+      stderr: stderr.stream,
+      fetchImpl: (async () => { throw new Error('network unavailable'); }) as typeof fetch,
+    });
+
+    expect(result.exitCode).toBe(1);
+    expect(yaml.load(stderr.result().text)).toMatchObject({
+      ok: false,
+      error: { code: 'UNKNOWN', exitCode: 1 },
+    });
   });
 });

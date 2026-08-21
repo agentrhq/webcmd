@@ -254,10 +254,7 @@ Check these off step by step:
 
 ## Key Conventions
 
-- Adapters import only `@agentrhq/webcmd/registry` and `@agentrhq/webcmd/errors`; do not add third-party dependencies.
-- Browser-run’s Playwright-style `page` and adapter `func(page,args)` are different contracts. Preserve evidence and behavior, not syntax. Implement adapters with the existing `IPage`, pipeline, Node-fetch, or interceptor APIs.
-- The `columns` array and `func` return object keys must match exactly, including order.
-- **Intermediate parsing object keys must not overlap any `columns` entry.** Otherwise silent-column-drop audits can misread the adapter. Use dedicated internal names and destructure with aliases when pushing rows.
+@[adapter conventions](../../shared/adapter-conventions.src.md)
 - **The `browser:` field determines the `func` signature:** `browser:false -> (args)`, `browser:true -> (page, args)`. If this is reversed, `args` may actually be a debug flag and all external parameters can silently fall back to defaults.
 - Throw the correct typed error for known failures according to [`references/typed-errors.md`](./references/typed-errors.md). **Do not** silently `return []`, **do not** silently `return [{sentinel}]`, and **do not** silently clamp external parameters with `Math.max/min`.
 - **Persistent site sessions keep stale DOM between commands.** `siteSession: 'persistent'` shares one tab per site; leftover modals/drawers from the previous command leak into the next one. State-sensitive write commands (checkout flows) should add `freshPage: true` (new tab, same lease — cookies/login/location survive). Verify session-scoped context (login, selected city/date) *before* side effects, and embed such context in URLs/IDs your command emits for sibling commands. See `references/adapter-template.md` and "Persistent Site Sessions and State Hygiene" in `docs/authoring.mdx`.

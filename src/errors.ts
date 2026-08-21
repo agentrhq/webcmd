@@ -136,6 +136,12 @@ export class TimeoutError extends CliError {
   }
 }
 
+export class InterruptedError extends CliError {
+  constructor(message = 'The operation was interrupted.') {
+    super('INTERRUPTED', message, undefined, EXIT_CODES.INTERRUPTED);
+  }
+}
+
 export class ArgumentError extends CliError {
   constructor(message: string, hint?: string) {
     super('ARGUMENT', message, hint, EXIT_CODES.USAGE_ERROR);

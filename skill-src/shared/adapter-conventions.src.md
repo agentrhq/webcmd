@@ -1,0 +1,4 @@
+- Adapters import only `@agentrhq/webcmd/registry` and `@agentrhq/webcmd/errors`; do not add third-party dependencies.
+- Browser-run’s Playwright-style `page` and adapter `func(page,args)` are different contracts. Preserve evidence and behavior, not syntax. Implement adapters with the existing `IPage`, pipeline, Node-fetch, or interceptor APIs.
+- The `columns` array and `func` return object keys must match exactly, including order.
+- **Intermediate parsing object keys must not overlap any `columns` entry.** Otherwise silent-column-drop audits can misread the adapter. Use dedicated internal names and destructure with aliases when pushing rows.

@@ -6,7 +6,7 @@ allowed-tools: Bash(webcmd:*), Bash(npm:*), Read
 
 # webcmd-usage
 
-Webcmd turns websites, Electron desktop apps, and external CLIs into a uniform `webcmd <site> <command>` surface that agents can drive without screen scraping. This skill is the orientation layer. Once you know the task, load the specialized skill that fits it.
+@[what Webcmd is](../../shared/what-webcmd-is.src.md)
 
 For any search, research, source discovery, direct URL fetch, evidence gathering, or “look this up” request, load `smart-search` before choosing commands. `smart-search` owns fetch-first search, browser-fetch escalation, last-resort search adapters, and source-summary rules.
 

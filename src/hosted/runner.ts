@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,7 +20,7 @@ import {
   HOSTED_ROOT_HELP,
   LOCAL_ONLY_COMMAND_HELP,
 } from '../completion-shared.js';
-import { CliError, ConfigError, EXIT_CODES, toEnvelope } from '../errors.js';
+import { CliError, ConfigError, EXIT_CODES, InterruptedError, toEnvelope } from '../errors.js';
 import { getRequestedHelpFormat, renderStructuredHelp } from '../help.js';
 import { enableVerbose } from '../logger.js';
 import { findPackageRoot } from '../package-paths.js';
@@ -29,12 +29,13 @@ import { StreamWriteError, writeToStream } from '../stream-write.js';
 import { PKG_VERSION } from '../version.js';
 import { getCompletionScriptFast } from '../completion-fast.js';
 import { browserCommandCatalog } from '../browser/command-catalog.js';
-import { loadBrowserRunSource } from '../browser/run/input.js';
+import { loadBrowserRunSource, readProcessStdin } from '../browser/run/input.js';
 import { BrowserRunError } from '../browser/run/types.js';
 import { CLI_COMMAND } from '../brand.js';
 import { formatPluginSearchEmptyCopy, presentPluginSearch } from '../plugin-search-presentation.js';
 import { missingPluginGuidance } from '../discovery.js';
 import { HostedClient, HostedClientError, resolveWorkspace } from './client.js';
+import { createVirtualHostedFileIo, realHostedFileIo, type HostedFileIo } from './file-io.js';
 import { HOSTED_SESSION_PROTOCOL_VERSION } from './types.js';
 import { parseHostedInvocation } from './args.js';
 import { HostedBrowserHelp, parseHostedBrowserStructure, validateRawBrowserSession } from './browser-args.js';
@@ -62,6 +63,12 @@ import type {
   HostedManifest,
 } from './types.js';
 import type { HostedBrowserCommandContract } from './contract.js';
+import {
+  createVirtualFileMap,
+  createVirtualOutputSink,
+  type VirtualFileMap,
+  type VirtualOutputSink,
+} from './virtual-files.js';
 
 export interface HostedRunnerOptions {
   config?: WebcmdConfig;
@@ -74,6 +81,23 @@ export interface HostedRunnerOptions {
   stdout?: NodeJS.WritableStream;
   stderr?: NodeJS.WritableStream;
   now?: () => number;
+  /** Supplies `--stdin` content without reading `process.stdin`. */
+  stdin?: string;
+  /** Cancels the invocation; derived from the inbound HTTP request by the MCP path. */
+  signal?: AbortSignal;
+  /** When set, every file read resolves against this map instead of the filesystem. */
+  files?: VirtualFileMap;
+  /** When set, every file write lands here instead of the filesystem. */
+  outputs?: VirtualOutputSink;
+}
+
+interface HostedDispatchIo {
+  stdin?: string;
+  fileIo: HostedFileIo;
+  virtualScaffold?: {
+    files: VirtualFileMap;
+    outputs: VirtualOutputSink;
+  };
 }
 
 export interface HostedRunResult {
@@ -121,16 +145,40 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
       randomUUID: opts.randomUUID,
       migrate: opts.config === undefined,
     });
+    if (opts.signal?.aborted) {
+      throw opts.signal.reason ?? new Error('The operation was aborted.');
+    }
     const client = new HostedClient({
       apiBaseUrl: config.hosted.apiBaseUrl,
       apiKey: credential.apiKey,
       workspace: resolveWorkspace(argv, opts.env ?? process.env),
       fetchImpl: opts.fetchImpl,
+      ...(opts.signal ? { signal: opts.signal } : {}),
     });
-    await dispatchHosted(argv, client, stdout, stderr, opts.now ?? Date.now, opts.homeDir ?? opts.env?.HOME ?? homedir());
+    const usesVirtualFileIo = opts.files !== undefined || opts.outputs !== undefined;
+    const virtualFiles = opts.files ?? createVirtualFileMap([]);
+    const virtualOutputs = opts.outputs ?? createVirtualOutputSink();
+    const fileIo: HostedFileIo = usesVirtualFileIo
+      ? createVirtualHostedFileIo(virtualFiles, virtualOutputs)
+      : realHostedFileIo;
+    const io: HostedDispatchIo = {
+      ...(opts.stdin !== undefined ? { stdin: opts.stdin } : {}),
+      fileIo,
+      ...(usesVirtualFileIo ? { virtualScaffold: { files: virtualFiles, outputs: virtualOutputs } } : {}),
+    };
+    await dispatchHosted(
+      argv,
+      client,
+      stdout,
+      stderr,
+      opts.now ?? Date.now,
+      opts.homeDir ?? opts.env?.HOME ?? homedir(),
+      io,
+    );
     return { handled: true, exitCode: EXIT_CODES.SUCCESS };
-  } catch (err) {
-    if (err instanceof StreamWriteError) throw err;
+  } catch (caught) {
+    if (caught instanceof StreamWriteError) throw caught;
+    const err = opts.signal?.aborted ? new InterruptedError() : caught;
     if (err instanceof BrowserSessionArgvError) {
       await writeToStream(stderr, `error: ${err.message}\n`);
       return { handled: true, exitCode: EXIT_CODES.USAGE_ERROR };
@@ -168,6 +216,7 @@ async function dispatchHosted(
   stderr: NodeJS.WritableStream,
   now: () => number,
   homeDir: string,
+  io: HostedDispatchIo = { fileIo: realHostedFileIo },
 ): Promise<void> {
   const normalized = parseHostedRootCommandSurface(argv);
   if (normalized.kind === 'help') {
@@ -229,10 +278,10 @@ async function dispatchHosted(
     return;
   }
   if (args[0] === 'browser') {
-    const invocation = await parseHostedBrowserInvocation(args, normalized.profile, normalized.session);
+    const invocation = await parseHostedBrowserInvocation(args, normalized.profile, normalized.session, io);
     const manifest = await client.getManifest();
     validateManifestContractIdentity(manifest);
-    await dispatchHostedBrowser(invocation, client, stdout);
+    await dispatchHostedBrowser(invocation, client, stdout, io);
     return;
   }
 
@@ -242,7 +291,7 @@ async function dispatchHosted(
   }
 
   if (args[0] === 'adapter' && (args[1] === 'source' || args[1] === 'path' || args[1] === 'override' || args[1] === '--help' || args[1] === '-h')) {
-    await runHostedAdapterSourceSurface(args.slice(1), normalized.literal, client, stdout, homeDir);
+    await runHostedAdapterSourceSurface(args.slice(1), normalized.literal, client, stdout, homeDir, io);
     return;
   }
 
@@ -374,12 +423,22 @@ async function dispatchHosted(
       return;
     }
     // parsed.command === 'create'
-    const { createPluginScaffold } = await import('../plugin-scaffold.js');
-    const result = createPluginScaffold(parsed.name, {
+    const { createPluginScaffold, createVirtualPluginScaffold } = await import('../plugin-scaffold.js');
+    const scaffoldOptions = {
       ...(parsed.dir !== undefined ? { dir: parsed.dir } : {}),
       ...(parsed.description !== undefined ? { description: parsed.description } : {}),
       author: { name: parsed.authorName ?? '', handle: parsed.authorHandle ?? '' },
-    });
+    };
+    const result = io.virtualScaffold
+      ? createVirtualPluginScaffold(parsed.name, scaffoldOptions, {
+          exists: (target) => virtualScaffoldConflicts(io.virtualScaffold!.files, target),
+          isEmptyDir: (target) => !virtualScaffoldConflicts(io.virtualScaffold!.files, target),
+          mkdir: () => undefined,
+          writeFile: (target, body) => {
+            io.virtualScaffold!.outputs.write(target, new TextEncoder().encode(body));
+          },
+        })
+      : createPluginScaffold(parsed.name, scaffoldOptions);
     await writeToStream(stdout, `✅ Plugin scaffold created at ${result.dir}\n\n`);
     await writeToStream(stdout, '  Next steps (hosted mode):\n');
     await writeToStream(stdout, '    1. Author and verify the adapter in the cloud:\n');
@@ -474,6 +533,7 @@ async function dispatchHosted(
         profile: parsed.profile ?? normalized.profile,
         session: normalized.session,
         stderr,
+        io,
       })
     : await client.execute({
         command: command.command,
@@ -503,6 +563,15 @@ async function dispatchHosted(
   if (parsed.trace === 'on' && response.trace) {
     await writeToStream(stderr, `Webcmd trace artifact: ${response.trace.receipt}\n`);
   }
+}
+
+function virtualScaffoldConflicts(files: VirtualFileMap, target: string): boolean {
+  for (const existing of files.keys()) {
+    if (existing === target || existing.startsWith(`${target}/`) || target.startsWith(`${existing}/`)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 async function runHostedSiteSurface(argv: readonly string[], literal: boolean, client: HostedClient, stdout: NodeJS.WritableStream): Promise<void> {
@@ -549,7 +618,14 @@ type HostedAdapterSourceCommand =
   | { kind: 'path'; commandKey: string }
   | { kind: 'override'; commandKey: string };
 
-async function runHostedAdapterSourceSurface(argv: readonly string[], literal: boolean, client: HostedClient, stdout: NodeJS.WritableStream, homeDir: string): Promise<void> {
+async function runHostedAdapterSourceSurface(
+  argv: readonly string[],
+  literal: boolean,
+  client: HostedClient,
+  stdout: NodeJS.WritableStream,
+  homeDir: string,
+  io: HostedDispatchIo,
+): Promise<void> {
   let parsed: HostedAdapterSourceCommand | undefined;
   let help = '';
   let stderr = '';
@@ -600,12 +676,14 @@ async function runHostedAdapterSourceSurface(argv: readonly string[], literal: b
   if (parsed.kind === 'get') {
     const body = await client.readAdapterSource(metadata.adapterPackageId!, sourcePath);
     if (parsed.output === '-') return writeToStream(stdout, body);
-    const output = parsed.output ?? destination;
-    mkdirSync(path.dirname(output), { recursive: true });
-    writeFileSync(output, body, 'utf8');
+    await io.fileIo.writeText(parsed.output ?? hostedAdapterOutputDestination(destination, site, command, io.fileIo), body);
     return;
   }
-  const result = await client.writeAdapterSource(metadata.adapterPackageId!, sourcePath, readFileSync(parsed.path, 'utf8'));
+  const result = await client.writeAdapterSource(
+    metadata.adapterPackageId!,
+    sourcePath,
+    await io.fileIo.readText(parsed.path),
+  );
   await writeToStream(stdout, `${result.commands.join('\n')}\n`);
 }
 
@@ -621,6 +699,17 @@ function hostedAdapterDestination(homeDir: string, site: string, command: string
   const relative = path.relative(root, destination);
   if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new ConfigError('Hosted adapter destination is invalid.');
   return destination;
+}
+
+function hostedAdapterOutputDestination(
+  installedDestination: string,
+  site: string,
+  command: string,
+  io: HostedFileIo,
+): string {
+  return io === realHostedFileIo
+    ? installedDestination
+    : path.posix.join('.webcmd', 'hosted', 'clis', site, `${command}.js`);
 }
 
 function validateHostedRelativePath(value: string, label: string): void {
@@ -748,6 +837,7 @@ async function executeHostedPreparedCommand(input: {
   profile?: string;
   session?: string;
   stderr: NodeJS.WritableStream;
+  io: HostedDispatchIo;
 }): Promise<import('./types.js').HostedExecuteResponse> {
   const prepared = await prepareHostedFiles({
     client: input.client,
@@ -758,7 +848,7 @@ async function executeHostedPreparedCommand(input: {
     onPrepared: async (prepared) => {
       if (prepared.liveViewUrl) await writeToStream(input.stderr, `Webcmd live view: ${prepared.liveViewUrl}\n`);
     },
-  });
+  }, input.io.fileIo);
   const response = await input.client.runPreparedExecution({
     executionId: prepared.executionId,
     command: input.command.command,
@@ -772,7 +862,7 @@ async function executeHostedPreparedCommand(input: {
     client: input.client,
     response,
     outputs: prepared.outputs,
-  });
+  }, input.io.fileIo);
   return {
     ...response,
     result: rewriteHostedOutputResultPaths(response.result, materialized),
@@ -793,9 +883,10 @@ async function dispatchHostedBrowser(
   invocation: ParsedHostedBrowserInvocation,
   client: HostedClient,
   stdout: NodeJS.WritableStream,
+  io: HostedDispatchIo,
 ): Promise<void> {
   const args = invocation.action === 'set-file-input'
-    ? materializeHostedBrowserUploadArgs(invocation.args)
+    ? await materializeHostedBrowserUploadArgs(invocation.args, io.fileIo)
     : invocation.args;
   const response = await client.runBrowserAction(invocation.session, {
     command: invocation.command,
@@ -805,25 +896,28 @@ async function dispatchHostedBrowser(
     ...(invocation.windowMode !== undefined ? { windowMode: invocation.windowMode } : {}),
     trace: 'off',
   });
-  await renderHostedBrowserResponse(stdout, invocation, response);
+  await renderHostedBrowserResponse(stdout, invocation, response, io);
 }
 
-function materializeHostedBrowserUploadArgs(args: Record<string, unknown>): Record<string, unknown> {
+async function materializeHostedBrowserUploadArgs(
+  args: Record<string, unknown>,
+  io: HostedFileIo,
+): Promise<Record<string, unknown>> {
   const files = args.files;
   if (!Array.isArray(files)) return args;
   return {
     ...args,
-    files: files.map((file) => {
+    files: await Promise.all(files.map(async (file) => {
       if (typeof file !== 'string') return file;
-      const body = readFileSync(file);
+      const body = await io.readFile(file);
       return {
         $webcmdBrowserUpload: {
-          filename: path.basename(file),
+          filename: path.posix.basename(file),
           contentType: contentTypeForUpload(file),
           base64: Buffer.from(body).toString('base64'),
         },
       };
-    }),
+    })),
   };
 }
 
@@ -853,6 +947,7 @@ async function parseHostedBrowserInvocation(
   argv: string[],
   profile: string | undefined,
   session: string | undefined,
+  io: HostedDispatchIo,
 ): Promise<ParsedHostedBrowserInvocation> {
   let structure;
   try {
@@ -873,7 +968,7 @@ async function parseHostedBrowserInvocation(
 
   const windowMode = structure.window === undefined ? undefined : parseWindowMode(structure.window);
   const parsed = parseBrowserLeaf(structure.commandName, structure.positionals, structure.options);
-  const browserArgs = await materializeBrowserRunSource(parsed.commandName, parsed.args);
+  const browserArgs = await materializeBrowserRunSource(parsed.commandName, parsed.args, io);
   return {
     session: validateRawBrowserSession(structure.session, profile),
     command: `browser/${parsed.commandName}`,
@@ -924,12 +1019,26 @@ function parseBrowserLeaf(
   };
 }
 
-async function materializeBrowserRunSource(commandName: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+async function materializeBrowserRunSource(
+  commandName: string,
+  args: Record<string, unknown>,
+  io: HostedDispatchIo,
+): Promise<Record<string, unknown>> {
   if (commandName !== 'run') return args;
   try {
     const source = await loadBrowserRunSource({
       stdin: args.stdin === true,
       file: typeof args.file === 'string' ? args.file : undefined,
+    }, {
+      readStdin: async () => {
+        if (io.stdin !== undefined) return io.stdin;
+        if (io.fileIo === realHostedFileIo) return readProcessStdin();
+        throw new ConfigError(
+          'No stdin was supplied to this invocation.',
+          'Pass the program with --file, or supply stdin.',
+        );
+      },
+      readFile: (filePath) => io.fileIo.readText(filePath),
     });
     const { stdin: _stdin, file: _file, ...rest } = args;
     return { ...rest, source };
@@ -1058,6 +1167,7 @@ async function renderHostedBrowserResponse(
   stdout: NodeJS.WritableStream,
   invocation: ParsedHostedBrowserInvocation,
   response: HostedBrowserRunActionResponse | HostedBrowserSnapshotActionResponse,
+  io: HostedDispatchIo,
 ): Promise<void> {
   const result = response.result;
   if (invocation.action === 'snapshot' && result && typeof result === 'object') {
@@ -1073,7 +1183,7 @@ async function renderHostedBrowserResponse(
   if (invocation.action === 'screenshot' && result && typeof result === 'object') {
     const base64 = (result as { base64?: unknown }).base64;
     if (typeof base64 === 'string' && invocation.localPath) {
-      writeFileSync(invocation.localPath, Buffer.from(base64, 'base64'));
+      await io.fileIo.writeFile(invocation.localPath, Buffer.from(base64, 'base64'));
       await writeToStream(stdout, `Screenshot saved to: ${invocation.localPath}\n`);
       return;
     }

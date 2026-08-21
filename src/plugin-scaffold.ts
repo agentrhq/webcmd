@@ -14,6 +14,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { normalizeVirtualPath } from './hosted/virtual-files.js';
 import { validatePluginAuthor, type PluginAuthor } from './plugin-manifest.js';
 import { PKG_VERSION } from './version.js';
 
@@ -24,6 +25,8 @@ export interface ScaffoldOptions {
   description?: string;
   /** Required author attribution for the generated plugin manifest. */
   author: PluginAuthor;
+  /** Defaults to the real filesystem. The hosted path injects a virtual writer. */
+  io?: ScaffoldIo;
 }
 
 export interface ScaffoldResult {
@@ -32,10 +35,56 @@ export interface ScaffoldResult {
   files: string[];
 }
 
+export interface ScaffoldIo {
+  exists(target: string): boolean;
+  isEmptyDir(target: string): boolean;
+  mkdir(target: string): void;
+  writeFile(target: string, body: string): void;
+}
+
+export const realScaffoldIo: ScaffoldIo = {
+  exists: (target) => fs.existsSync(target),
+  isEmptyDir: (target) => fs.readdirSync(target).length === 0,
+  mkdir: (target) => void fs.mkdirSync(target, { recursive: true }),
+  writeFile: (target, body) => fs.writeFileSync(target, body, 'utf8'),
+};
+
+type ScaffoldPathJoin = (directory: string, name: string) => string;
+
 /**
  * Create a new plugin scaffold directory.
  */
 export function createPluginScaffold(name: string, opts: ScaffoldOptions): ScaffoldResult {
+  const io = opts.io ?? realScaffoldIo;
+  const targetDir = opts.dir
+    ? path.resolve(opts.dir)
+    : path.resolve(name);
+  return createPluginScaffoldAt(name, opts, targetDir, io, path.join);
+}
+
+/**
+ * Create a plugin scaffold in a relative POSIX virtual filesystem.
+ *
+ * This is deliberately separate from the installed scaffold path: real
+ * scaffolds retain native path resolution and synchronous filesystem errors,
+ * while programmatic callers never receive an absolute host path.
+ */
+export function createVirtualPluginScaffold(
+  name: string,
+  opts: Omit<ScaffoldOptions, 'io'>,
+  io: ScaffoldIo,
+): ScaffoldResult {
+  const targetDir = normalizeVirtualPath(opts.dir ?? name);
+  return createPluginScaffoldAt(name, opts, targetDir, io, path.posix.join);
+}
+
+function createPluginScaffoldAt(
+  name: string,
+  opts: Omit<ScaffoldOptions, 'io'>,
+  targetDir: string,
+  io: ScaffoldIo,
+  joinPath: ScaffoldPathJoin,
+): ScaffoldResult {
   // Validate name
   if (!/^[a-z][a-z0-9-]*$/.test(name)) {
     throw new Error(
@@ -46,17 +95,16 @@ export function createPluginScaffold(name: string, opts: ScaffoldOptions): Scaff
 
   const author = validatePluginAuthor(opts.author);
 
-  const targetDir = opts.dir
-    ? path.resolve(opts.dir)
-    : path.resolve(name);
-
-  if (fs.existsSync(targetDir) && fs.readdirSync(targetDir).length > 0) {
+  if (io.exists(targetDir) && !io.isEmptyDir(targetDir)) {
     throw new Error(`Directory "${targetDir}" already exists and is not empty.`);
   }
 
-  fs.mkdirSync(targetDir, { recursive: true });
+  io.mkdir(targetDir);
 
   const files: string[] = [];
+  const writeFile = (dir: string, name: string, content: string): void => {
+    io.writeFile(joinPath(dir, name), content);
+  };
 
   // webcmd-plugin.json
   const manifest = {
@@ -171,8 +219,4 @@ webcmd ${name} greet --name World
   files.push('README.md');
 
   return { name, dir: targetDir, files };
-}
-
-function writeFile(dir: string, name: string, content: string): void {
-  fs.writeFileSync(path.join(dir, name), content);
 }
