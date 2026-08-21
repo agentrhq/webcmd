@@ -34,7 +34,7 @@ export class SessionNotFoundError extends CliError {
     super(
       'SESSION_NOT_FOUND',
       `Session not found: ${sessionId}`,
-      `Run \`webcmd --profile ${profileId} session list\` to choose an existing Session.`,
+      `Run \`webcmd --profile ${profileId} session list\` to choose an existing Session, then \`webcmd session close <session-id>\`. If it belongs to another Profile, pass \`--profile <name>\`.`,
       EXIT_CODES.EMPTY_RESULT,
     );
   }

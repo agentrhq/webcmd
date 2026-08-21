@@ -83,6 +83,22 @@ function parseSessionListLimit(value: string): number {
   return parsed;
 }
 
+function rootCommandSuggestion(name: string): string | undefined {
+  const canonical: Record<string, string> = {
+    catalog: `${CLI_COMMAND} plugin catalog list`,
+    catalogs: `${CLI_COMMAND} plugin catalog list`,
+    command: `${CLI_COMMAND} list`,
+    commands: `${CLI_COMMAND} list`,
+    cmds: `${CLI_COMMAND} list`,
+    ls: `${CLI_COMMAND} list`,
+    marketplace: `${CLI_COMMAND} plugin search <query>`,
+    plugins: `${CLI_COMMAND} plugin list`,
+    pluginlist: `${CLI_COMMAND} plugin list`,
+    search: `${CLI_COMMAND} plugin search <query>`,
+  };
+  return canonical[name.toLowerCase()];
+}
+
 type BrowserNetworkItem = {
   url: string;
   method: string;
@@ -2205,6 +2221,12 @@ cli({
 
   program.on('command:*', (operands: string[]) => {
     const binary = operands[0]!;
+    const suggestion = rootCommandSuggestion(binary);
+    if (suggestion) {
+      console.error(`Unknown command "${binary}".\nDid you mean: ${suggestion}`);
+      process.exitCode = EXIT_CODES.USAGE_ERROR;
+      return;
+    }
     console.error(missingPluginGuidance(binary));
     program.outputHelp();
     process.exitCode = EXIT_CODES.USAGE_ERROR;

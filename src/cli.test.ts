@@ -664,6 +664,27 @@ describe('createProgram root help descriptions', () => {
     }
   });
 
+  it('suggests canonical discovery commands for unambiguous root noun mistakes', async () => {
+    const stderr = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const previousExitCode = process.exitCode;
+    const program = createProgram('', '');
+    program.outputHelp = vi.fn();
+
+    try {
+      await program.parseAsync(['catalog'], { from: 'user' });
+
+      expect(stderr.mock.calls.map(([line]) => line).join('\n')).toContain([
+        'Unknown command "catalog".',
+        'Did you mean: webcmd plugin catalog list',
+      ].join('\n'));
+      expect(program.outputHelp).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(2);
+    } finally {
+      process.exitCode = previousExitCode;
+      stderr.mockRestore();
+    }
+  });
+
   it('keeps site adapters out of root commands and lists sites in the root help tail', () => {
     const registry = getRegistry();
     const snapshot = new Map(registry);
@@ -2447,6 +2468,16 @@ describe('browser Session lifecycle commands', () => {
       alreadyIdle: true,
       session: 'session_idle',
     });
+  });
+
+  it('uses positional close syntax and profile guidance when a Session is missing', async () => {
+    mockSendCommand.mockRejectedValueOnce(new Error('daemon unavailable'));
+
+    await expect(createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'close', 'session_missing']))
+      .rejects.toMatchObject({
+        code: 'SESSION_NOT_FOUND',
+        hint: expect.stringContaining('webcmd session close <session-id>'),
+      });
   });
 
   it.each([

@@ -9,6 +9,7 @@ import {
   onAfterExecute,
   emitHook,
   clearAllHooks,
+  shouldRunStartupSideEffects,
   type HookContext,
 } from './hooks.js';
 
@@ -104,6 +105,16 @@ describe('no-op when no hooks registered', () => {
     await emitHook('onBeforeExecute', { command: 'test/cmd', args: {} });
     await emitHook('onAfterExecute', { command: 'test/cmd', args: {} }, []);
     await emitHook('onStartup', { command: '__startup__', args: {} });
+  });
+});
+
+describe('startup hook gating', () => {
+  it.each([
+    ['--help'],
+    ['list', '--format', 'json'],
+    ['list', '--json'],
+  ])('skips startup side effects for help or requested data output: %j', (...argv) => {
+    expect(shouldRunStartupSideEffects(argv)).toBe(false);
   });
 });
 

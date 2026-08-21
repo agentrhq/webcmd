@@ -83,6 +83,16 @@ export async function emitHook(name: HookName, ctx: HookContext, result?: unknow
   }
 }
 
+export function shouldRunStartupSideEffects(argv: readonly string[]): boolean {
+  for (let i = 0; i < argv.length; i += 1) {
+    const token = argv[i]!;
+    if (token === '--') return true;
+    if (token === '--help' || token === '-h' || token === '--json') return false;
+    if (token === '-f' || token === '--format' || /^-f.+/.test(token) || token.startsWith('--format=')) return false;
+  }
+  return true;
+}
+
 /**
  * Remove all registered hooks. Intended for testing only.
  */
