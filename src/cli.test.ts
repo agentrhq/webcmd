@@ -2449,6 +2449,33 @@ describe('browser Session lifecycle commands', () => {
     });
   });
 
+  it('names the owning Profile when closing a Session without its --profile', async () => {
+    // The eval failure this guards: cleanup omitted `--profile`, the CLI said
+    // the Session did not exist, and the agent retried the same command.
+    mockSendCommand.mockRejectedValueOnce(new Error('daemon unavailable'));
+    const baseDir = path.join(isolatedCliTestHome, '.webcmd');
+    fs.mkdirSync(baseDir, { recursive: true });
+    fs.writeFileSync(path.join(baseDir, 'browser-sessions.json'), JSON.stringify({
+      version: 1,
+      sessions: [{
+        id: 'session_owned',
+        profileId: 'work',
+        kind: 'explicit',
+        createdAt: '2026-08-11T00:00:00.000Z',
+        updatedAt: '2026-08-11T00:00:00.000Z',
+        lastUsedAt: '2026-08-11T00:00:00.000Z',
+      }],
+    }), { mode: 0o600 });
+
+    await expect(
+      createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'close', 'session_owned', '-f', 'json']),
+    ).rejects.toThrowError(expect.objectContaining({
+      code: 'SESSION_NOT_FOUND',
+      ownerProfileId: 'work',
+      hint: 'Session session_owned belongs to Profile work. Re-run the same command with `--profile work`, for example `webcmd --profile work session close session_owned`.',
+    }));
+  });
+
   it.each([
     ['create'],
     ['list'],
