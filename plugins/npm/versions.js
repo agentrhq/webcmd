@@ -18,14 +18,16 @@ export async function versionsNpm(args, request = fetch) {
     const rows = Object.entries(timeMap)
         // skip internal bookkeeping keys that npm puts in time
         .filter(([version]) => version !== 'created' && version !== 'modified')
+        // sort on the raw full ISO timestamp BEFORE formatting so that two
+        // versions published on the same calendar date still sort correctly
+        .sort(([, left], [, right]) => String(right ?? '').localeCompare(String(left ?? '')))
+        .slice(0, limit)
         .map(([version, publishedAt]) => ({
             version,
             publishedAt: String(publishedAt ?? '').slice(0, 10),
             isLatest: version === latest,
             url: `https://www.npmjs.com/package/${name}/v/${version}`,
-        }))
-        .sort((a, b) => String(b.publishedAt).localeCompare(String(a.publishedAt)))
-        .slice(0, limit);
+        }));
 
     if (!rows.length) {
         throw new EmptyResultError('npm versions', `npm registry has no version history for "${name}".`);

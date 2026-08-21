@@ -191,6 +191,30 @@ test('npm versions respects --limit', async () => {
     assert.equal(rows[0].version, '2.1.0');
 });
 
+test('npm versions sorts correctly when two versions share the same date', async () => {
+    // Regression: sort must use the full ISO timestamp, not the truncated
+    // date-only string, so same-day releases still come out newest-first.
+    const sameDayPayload = {
+        name: 'exlib',
+        'dist-tags': { latest: '2.1.1' },
+        time: {
+            created:  '2026-06-15T08:00:00.000Z',
+            modified: '2026-06-15T14:00:00.000Z',
+            '2.1.0':  '2026-06-15T08:00:00.000Z',  // earlier on same day
+            '2.1.1':  '2026-06-15T14:00:00.000Z',  // later on same day
+        },
+    };
+    const req = fakeRequest(sameDayPayload);
+    const rows = await versionsNpm({ name: 'exlib', limit: 10 }, req);
+    assert.equal(rows.length, 2);
+    // 2.1.1 published at 14:00 must come before 2.1.0 published at 08:00
+    assert.equal(rows[0].version, '2.1.1');
+    assert.equal(rows[1].version, '2.1.0');
+    // Both format to the same date string
+    assert.equal(rows[0].publishedAt, '2026-06-15');
+    assert.equal(rows[1].publishedAt, '2026-06-15');
+});
+
 test('npm versions rejects out-of-range limit', async () => {
     await assert.rejects(
         () => versionsNpm({ name: 'exlib', limit: 51 }, fakeRequest(REGISTRY_PAYLOAD)),
