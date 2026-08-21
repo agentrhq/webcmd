@@ -98,9 +98,10 @@ def validate_args(args: argparse.Namespace) -> None:
         "dev-browser",
         "libretto",
         "browser-use",
+        "agent-browser",
     }:
         raise ValueError(
-            "Pi currently supports only Webcmd, dev-browser, Libretto, or browser-use"
+            "Pi currently supports only Webcmd, dev-browser, Libretto, browser-use, or agent-browser"
         )
     if args.tools == "libretto" and args.controller not in {"codex", "pi"}:
         raise ValueError(

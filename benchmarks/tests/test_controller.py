@@ -359,6 +359,7 @@ def test_agent_browser_prompt_uses_installed_skill_and_dedicated_cloak(tmp_path)
     assert "Do not use `batch`" in prompt
     assert "one `agent-browser` command per shell invocation" in prompt
     assert "Never pass a URL to `agent-browser read`" in prompt
+    assert "agent-browser skills get core" in prompt
     assert "Webcmd" not in prompt
     assert "chrome-devtools-axi" not in prompt
     assert str(tmp_path / "shots" / "step_001.png") in prompt
@@ -988,6 +989,85 @@ def test_pi_browser_use_skill_read_is_setup_not_a_foreign_tool():
     assert parsed.tool_calls == 0
     assert parsed.steps_count == 0
     assert not _policy_violation(
+        "browser-use", parsed.commands, parsed.event_types
+    )
+
+
+def test_pi_agent_browser_skill_read_is_setup_not_a_foreign_tool():
+    event = {
+        "type": "tool_execution_start",
+        "toolName": "read",
+        "args": {
+            "path": str(Path.home() / ".codex/skills/agent-browser/SKILL.md")
+        },
+    }
+
+    parsed = _parse_events(
+        "pi", [json.dumps(event)], tool="agent-browser"
+    )
+
+    assert parsed.tool_calls == 0
+    assert parsed.steps_count == 0
+    assert not _policy_violation(
+        "agent-browser", parsed.commands, parsed.event_types
+    )
+
+
+def test_pi_agent_browser_may_read_a_local_screenshot(tmp_path):
+    screenshot = tmp_path / "shots" / "step_002.png"
+    screenshot.parent.mkdir()
+    screenshot.write_bytes(b"\x89PNG\r\n\x1a\n")
+    event = {
+        "type": "tool_execution_start",
+        "toolName": "read",
+        "args": {"path": str(screenshot)},
+    }
+
+    parsed = _parse_events(
+        "pi", [json.dumps(event)], tool="agent-browser"
+    )
+
+    assert parsed.tool_calls == 0
+    assert parsed.steps_count == 0
+    assert "mcp_tool_call" not in parsed.event_types
+    assert not _policy_violation(
+        "agent-browser", parsed.commands, parsed.event_types
+    )
+
+
+def test_pi_agent_browser_screenshot_read_still_rejects_other_files(tmp_path):
+    other = tmp_path / "notes.txt"
+    other.write_text("secret")
+    event = {
+        "type": "tool_execution_start",
+        "toolName": "read",
+        "args": {"path": str(other)},
+    }
+
+    parsed = _parse_events(
+        "pi", [json.dumps(event)], tool="agent-browser"
+    )
+
+    assert _policy_violation(
+        "agent-browser", parsed.commands, parsed.event_types
+    )
+
+
+def test_pi_browser_use_screenshot_read_stays_a_foreign_tool(tmp_path):
+    screenshot = tmp_path / "shots" / "step_002.png"
+    screenshot.parent.mkdir()
+    screenshot.write_bytes(b"\x89PNG\r\n\x1a\n")
+    event = {
+        "type": "tool_execution_start",
+        "toolName": "read",
+        "args": {"path": str(screenshot)},
+    }
+
+    parsed = _parse_events(
+        "pi", [json.dumps(event)], tool="browser-use"
+    )
+
+    assert _policy_violation(
         "browser-use", parsed.commands, parsed.event_types
     )
 
@@ -1820,7 +1900,27 @@ def test_pi_browser_use_command_mounts_only_the_browser_use_skill():
     assert stdin == b"prompt"
 
 
-def test_codex_controller_command_applies_reasoning_effort_override():
+def test_pi_agent_browser_command_mounts_only_the_agent_browser_skill():
+    command, stdin = _controller_command(
+        "pi",
+        "openai/gpt-5.6-sol",
+        "prompt",
+        tool="agent-browser",
+        runtime_env={"AGENT_BROWSER_CDP": "http://127.0.0.1:43210"},
+    )
+
+    assert command == [
+        "node",
+        str(run_controller.PI_CONTROLLER),
+        "--model",
+        "openai/gpt-5.6-sol",
+        "--tool",
+        "agent-browser",
+        "--skill-path",
+        str(Path.home() / ".codex/skills/agent-browser"),
+    ]
+    assert str(WEBCMD_BROWSER_SKILL) not in command
+    assert stdin == b"prompt"
     command, stdin = _controller_command("codex", "gpt-5.6-sol", "prompt", "high")
 
     override_index = command.index("-c")

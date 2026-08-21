@@ -250,7 +250,26 @@ def test_cli_accepts_browser_use_for_pi():
     run_eval.validate_args(args)
 
 
-@pytest.mark.parametrize("tool", ["chrome-devtools-axi", "agent-browser"])
+def test_cli_accepts_agent_browser_for_pi():
+    args = run_eval.parse_args(
+        [
+            "--controller",
+            "pi",
+            "--model",
+            "openai/gpt-5.6-sol",
+            "--benchmark",
+            "BU_Bench_V1",
+            "--tasks",
+            "1",
+            "--tools",
+            "agent-browser",
+        ]
+    )
+
+    run_eval.validate_args(args)
+
+
+@pytest.mark.parametrize("tool", ["chrome-devtools-axi"])
 def test_cli_rejects_pi_tools_without_pi_integration(tool):
     args = run_eval.parse_args(
         [
@@ -268,7 +287,8 @@ def test_cli_rejects_pi_tools_without_pi_integration(tool):
     )
 
     with pytest.raises(
-        ValueError, match="Pi.*Webcmd, dev-browser, Libretto, or browser-use"
+        ValueError,
+        match="Pi.*Webcmd, dev-browser, Libretto, browser-use, or agent-browser",
     ):
         run_eval.validate_args(args)
 

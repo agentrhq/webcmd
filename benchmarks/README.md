@@ -101,6 +101,33 @@ The Pi sidecar mounts the installed `browser-use` skill and enables only its
 CloakBrowser CDP endpoint. Do not set `BROWSER_USE_API_KEY` for this run; cloud
 browsers would leave CloakBrowser.
 
+### agent-browser
+
+Latest CLI on npm is `0.34.0`. Skip `agent-browser install` — that downloads
+Chrome. The harness uses CloakBrowser instead.
+
+```bash
+npm install -g agent-browser@0.34.0
+mkdir -p ~/.codex/skills/agent-browser
+curl -fsSL -o ~/.codex/skills/agent-browser/SKILL.md \
+  https://raw.githubusercontent.com/vercel-labs/agent-browser/main/skills/agent-browser/SKILL.md
+
+uv run python benchmarks/scripts/run_eval.py \
+  --controller pi \
+  --model openai-codex/gpt-5.6-sol \
+  --reasoning-effort low \
+  --benchmark BU_Bench_V1 \
+  --tasks all \
+  --tools agent-browser \
+  --judge-provider codex \
+  --judge-model gpt-5.4
+```
+
+The Pi sidecar mounts the installed `agent-browser` skill stub. The agent loads
+live usage from `agent-browser skills get core`, which always matches the
+installed CLI. The benchmark pins `AGENT_BROWSER_CDP` to the task's dedicated
+CloakBrowser.
+
 ### Libretto Browser Tools
 
 ```bash

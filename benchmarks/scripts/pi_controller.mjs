@@ -69,7 +69,7 @@ function selectedTool(args) {
   if (index < 0) return "webcmd";
   const tool = args[index + 1];
   if (!tool || tool.startsWith("--")) throw new Error("--tool requires a value");
-  if (!new Set(["webcmd", "dev-browser", "libretto", "browser-use"]).has(tool)) {
+  if (!new Set(["webcmd", "dev-browser", "libretto", "browser-use", "agent-browser"]).has(tool)) {
     throw new Error(`Unsupported Pi benchmark tool: ${tool}`);
   }
   return tool;

@@ -83,10 +83,12 @@ WEBCMD_BROWSER_SKILL_FILE = WEBCMD_BROWSER_SKILL / "SKILL.md"
 WEBCMD_BROWSER_SKILL_ROOT = WEBCMD_BROWSER_SKILL.resolve()
 DEV_BROWSER_SKILL = Path.home() / ".codex/skills/dev-browser"
 BROWSER_USE_SKILL = Path.home() / ".codex/skills/browser-use"
+AGENT_BROWSER_SKILL = Path.home() / ".codex/skills/agent-browser"
 PI_SETUP_SKILL_FILES = {
     "webcmd": frozenset({WEBCMD_BROWSER_SKILL_FILE.resolve()}),
     "dev-browser": frozenset({(DEV_BROWSER_SKILL / "SKILL.md").resolve()}),
     "browser-use": frozenset({(BROWSER_USE_SKILL / "SKILL.md").resolve()}),
+    "agent-browser": frozenset({(AGENT_BROWSER_SKILL / "SKILL.md").resolve()}),
 }
 GPT_5_6_SOL_PRICES_PER_MILLION = {
     "input": 5.0,
@@ -253,7 +255,7 @@ def _build_prompt(tool: Tool, session: str, shots_dir: Path, task: str) -> str:
 - Do not use `batch`, `close`, connection/profile flags, or multiple agent-browser commands in one shell invocation.
 - Never pass a URL to `agent-browser read`; use `agent-browser open URL` and then `agent-browser read` so all page traffic stays inside CloakBrowser.
 - Do not use Web search, browser MCPs, Playwright, Puppeteer, curl, wget, raw HTTP, or any non-agent-browser automation tool.
-- Use the `$agent-browser` skill for agent-browser usage guidance.
+- Use the `$agent-browser` skill for agent-browser usage guidance. Load current CLI instructions with `agent-browser skills get core` before the first browser command.
 - The agent-browser session and its dedicated CloakBrowser connection are already configured in the environment; do not start, connect, configure, or close another browser."""
     elif tool == "dev-browser":
         tool_rules = f"""- Use only `dev-browser` for browser interaction.
@@ -376,6 +378,14 @@ def _controller_command(
         elif pi_tool == "dev-browser":
             command.extend(
                 ["--tool", pi_tool, "--skill-path", str(DEV_BROWSER_SKILL)]
+            )
+        elif pi_tool == "agent-browser":
+            if not (runtime_env or {}).get("AGENT_BROWSER_CDP"):
+                raise ValueError(
+                    "Pi agent-browser requires a task-private AGENT_BROWSER_CDP"
+                )
+            command.extend(
+                ["--tool", pi_tool, "--skill-path", str(AGENT_BROWSER_SKILL)]
             )
         elif pi_tool == "browser-use":
             if not (runtime_env or {}).get("BU_CDP_URL"):
@@ -668,8 +678,13 @@ def _parse_events(
                 steps.append(_short(f"tool: {name} {_short(arguments)}"))
             elif (
                 name == "read"
-                and _pi_setup_skill_read_allowed(
-                    tool, arguments.get("path")
+                and (
+                    _pi_setup_skill_read_allowed(
+                        tool, arguments.get("path")
+                    )
+                    or _pi_agent_browser_screenshot_read_allowed(
+                        tool, arguments.get("path")
+                    )
                 )
             ):
                 steps.append(_short(f"setup_tool: {name} {_short(arguments)}"))
@@ -990,6 +1005,22 @@ def _pi_setup_skill_read_allowed(tool: Tool | None, value: object) -> bool:
     except OSError:
         return False
     return target in PI_SETUP_SKILL_FILES.get(selected_tool, frozenset())
+
+
+def _pi_agent_browser_screenshot_read_allowed(
+    tool: Tool | None, value: object
+) -> bool:
+    if tool != "agent-browser":
+        return False
+    try:
+        target = Path(str(value or "")).expanduser().resolve()
+    except OSError:
+        return False
+    return (
+        target.suffix.lower() == ".png"
+        and target.is_file()
+        and "shots" in target.parts
+    )
 
 
 def _webcmd_skill_read_allowed(command: str) -> bool:
