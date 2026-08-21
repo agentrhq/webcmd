@@ -2056,6 +2056,56 @@ describe('structured output for data-returning built-ins', () => {
     expect(JSON.parse(stdout())).toEqual(bare);
   });
 
+  it('renders agent context as a compact machine-readable bootstrap', async () => {
+    const registry = getRegistry();
+    const snapshot = new Map(registry);
+    registry.clear();
+    try {
+      cli({
+        site: 'youtube',
+        name: 'search',
+        access: 'read',
+        description: 'Search YouTube',
+        strategy: Strategy.PUBLIC,
+        browser: false,
+      });
+
+      await createProgram('', '').parseAsync(['node', 'webcmd', 'agent-context', '--json']);
+
+      const data = JSON.parse(stdout());
+      expect(data).toMatchObject({
+        command: 'webcmd agent-context',
+        command_families: expect.arrayContaining([
+          expect.objectContaining({ name: 'adapter_commands' }),
+          expect.objectContaining({ name: 'browser_commands' }),
+        ]),
+        output_modes: {
+          formats: expect.arrayContaining(['json', 'yaml']),
+          json_alias: '--json',
+          trace_modes: expect.arrayContaining(['off', 'retain-on-failure']),
+        },
+        discovery_commands: expect.arrayContaining([
+          'webcmd list --json',
+          'webcmd <site> --help -f yaml',
+        ]),
+        common_error_recovery: expect.any(Array),
+        help_surfaces: expect.objectContaining({
+          root: 'webcmd --help -f yaml',
+          site: 'webcmd <site> --help -f yaml',
+        }),
+        adapters: expect.objectContaining({
+          site_adapters: expect.objectContaining({
+            sites: ['youtube'],
+          }),
+        }),
+      });
+      expect(data.root_commands.map((command: { name: string }) => command.name)).toContain('agent-context');
+    } finally {
+      registry.clear();
+      for (const [key, value] of snapshot) registry.set(key, value);
+    }
+  });
+
   it('renders daemon status as JSON', async () => {
     vi.mocked(fetch).mockResolvedValue(daemonStatusResponse());
 

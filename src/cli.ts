@@ -26,7 +26,7 @@ import { printCompletionScript } from './completion.js';
 import { loadExternalClis, executeExternalCli, installExternalCli, registerExternalCli, isBinaryInstalled, formatExternalCliLabel } from './external.js';
 import { addWebcmdSkills, listWebcmdSkills, removeWebcmdSkills, updateWebcmdSkill, type WebcmdSkillAddResult } from './skills.js';
 import { registerAllCommands } from './commanderAdapter.js';
-import { buildRootHelpPresentation, classifyAdapter, installCommanderNamespaceStructuredHelp, installRootPresentationHelp, leadingPositionalFromUsage, rootHelpData, type RootAdapterGroups } from './help.js';
+import { agentContextData, buildRootHelpPresentation, classifyAdapter, installCommanderNamespaceStructuredHelp, installRootPresentationHelp, leadingPositionalFromUsage, rootHelpData, type RootAdapterGroups } from './help.js';
 import { EXIT_CODES, getErrorMessage, toEnvelope, BrowserConnectError, CliError, ArgumentError } from './errors.js';
 import { TargetError, type TargetErrorCode } from './browser/target-errors.js';
 import { resolveTargetJs, getTextResolvedJs, getValueResolvedJs, getAttributesResolvedJs, selectResolvedJs, isAutocompleteResolvedJs, type ResolveOptions, type TargetMatchLevel } from './browser/target-resolver.js';
@@ -2184,6 +2184,19 @@ cli({
   }
   const adapterGroups: RootAdapterGroups = { external: externalHelpEntries, apps, sites };
   const adapterNameSet = new Set<string>([...externalNames, ...siteNames]);
+  const agentContextCmd = addOutputFormatOption(program
+    .command('agent-context')
+    .description('Print machine-readable WebCMD bootstrap context'), 'json');
+  agentContextCmd.action(async (opts) => {
+    const fmt = resolveCommandOutputFormat(agentContextCmd, opts.format);
+    if (fmt === null) return;
+    await renderOutput(agentContextData(program, adapterGroups), {
+      fmt,
+      fmtExplicit: outputFormatIsExplicit(agentContextCmd),
+      title: 'webcmd/agent-context',
+      source: 'webcmd agent-context',
+    });
+  });
   installCommanderNamespaceStructuredHelp(browser, { globalCommand: program, description: originalBrowserDescription });
   installCommanderNamespaceStructuredHelp(authCmd, { globalCommand: program, description: 'Inspect website login status' });
   installCommanderNamespaceStructuredHelp(daemonCmd, { globalCommand: program, description: originalDaemonDescription });

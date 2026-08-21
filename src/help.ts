@@ -2,6 +2,7 @@ import { Command, type Argument as CommanderArgument, type Option as CommanderOp
 import yaml from 'js-yaml';
 import type { CliCommand } from './registry.js';
 import { CLI_COMMAND } from './brand.js';
+import { OUTPUT_FORMATS, TRACE_MODES } from './command-surface.js';
 import {
   classifyAdapterDomain,
   commandHelpData as buildCommandHelpData,
@@ -439,6 +440,71 @@ export function rootHelpData(program: Command, groups: RootAdapterGroups): Recor
       `${CLI_COMMAND} list -f yaml`,
       `${CLI_COMMAND} <site> <command> -f yaml`,
     ],
+  };
+}
+
+export function agentContextData(program: Command, groups: RootAdapterGroups): Record<string, unknown> {
+  const root = rootHelpData(program, groups);
+  return {
+    command: `${CLI_COMMAND} agent-context`,
+    description: 'Machine-readable bootstrap for agents using WebCMD.',
+    command_families: [
+      {
+        name: 'adapter_commands',
+        purpose: 'Run website, app, and plugin commands.',
+        discover: `${CLI_COMMAND} list --json`,
+        inspect: `${CLI_COMMAND} <site> --help -f yaml`,
+        run: `${CLI_COMMAND} <site> <command> [args] [options]`,
+      },
+      {
+        name: 'browser_commands',
+        purpose: 'Use an existing browser session or run browser automation.',
+        discover: `${CLI_COMMAND} browser --help -f yaml`,
+        inspect: `${CLI_COMMAND} browser <command> --help -f yaml`,
+      },
+      {
+        name: 'plugin_commands',
+        purpose: 'Find, install, list, update, and inspect plugins.',
+        discover: `${CLI_COMMAND} plugin --help -f yaml`,
+        search: `${CLI_COMMAND} plugin search <query> --json`,
+      },
+      {
+        name: 'local_management',
+        purpose: 'Inspect health, sessions, profiles, skills, adapters, and daemon state.',
+        discover: `${CLI_COMMAND} --help -f yaml`,
+      },
+    ],
+    output_modes: {
+      formats: [...OUTPUT_FORMATS],
+      json_alias: '--json',
+      trace_modes: [...TRACE_MODES],
+    },
+    discovery_commands: [
+      `${CLI_COMMAND} list --json`,
+      `${CLI_COMMAND} <site> --help -f yaml`,
+      `${CLI_COMMAND} <site> <command> --help -f yaml`,
+      `${CLI_COMMAND} browser --help -f yaml`,
+      `${CLI_COMMAND} plugin search <query> --json`,
+    ],
+    common_error_recovery: [
+      `Unknown site or command: run ${CLI_COMMAND} list --json or ${CLI_COMMAND} plugin search <name> --json.`,
+      `Wrong flags or arguments: run ${CLI_COMMAND} <site> <command> --help -f yaml.`,
+      `Browser/session problem: run ${CLI_COMMAND} doctor --json, ${CLI_COMMAND} session list --json, or ${CLI_COMMAND} browser --help -f yaml.`,
+      'Adapter returned empty or selector errors: retry with --trace retain-on-failure and inspect the adapter path from the error help.',
+    ],
+    help_surfaces: {
+      root: `${CLI_COMMAND} --help -f yaml`,
+      site: `${CLI_COMMAND} <site> --help -f yaml`,
+      command: `${CLI_COMMAND} <site> <command> --help -f yaml`,
+      browser: `${CLI_COMMAND} browser --help -f yaml`,
+      plugin: `${CLI_COMMAND} plugin --help -f yaml`,
+    },
+    root_commands: root.commands,
+    adapters: {
+      external_clis: root.external_clis,
+      app_adapters: root.app_adapters,
+      site_adapters: root.site_adapters,
+    },
   };
 }
 
