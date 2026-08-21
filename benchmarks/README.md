@@ -8,6 +8,8 @@ API-equivalent cost: webcmd **$25.20** · Libretto $35.40 · dev-browser $26.00.
 
 **Best in class:** accuracy → webcmd · tokens → dev-browser · agent turns → webcmd · cost → webcmd
 
+The complete webcmd run is available [here](https://github.com/agentrhq/evals-run).
+
 ## Evaluation configuration
 
 | Setting | Value |
