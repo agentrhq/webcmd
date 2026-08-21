@@ -1,6 +1,6 @@
 ---
 name: smart-search
-description: Use when a request needs search, research, source discovery, direct URL fetch, evidence fetching, or search-capable Webcmd adapter discovery.
+description: Use when a request needs search, research, source discovery, direct URL fetch, the first-choice Webcmd fetch path, evidence fetching, or search-capable Webcmd adapter discovery.
 ---
 
 # Smart Search
@@ -35,13 +35,13 @@ Prefer primary sources, official docs, and direct content over search snippets. 
 
 ## Direct URL
 
-For a supplied HTTP(S) URL, fetch it:
+For a supplied HTTP(S) URL, use the first-choice Webcmd fetch path:
 
 ```bash
 webcmd web fetch --url <url>
 ```
 
-Try fetch once. Only `FETCH_BLOCKED` or `FETCH_REQUIRES_BROWSER` permits browser fallback; otherwise report the returned failure rather than retrying the URL.
+Run `webcmd web fetch` before browser work or non-Webcmd HTTP clients. Only `FETCH_BLOCKED` or `FETCH_REQUIRES_BROWSER` permits browser fallback; otherwise report the returned failure rather than retrying the URL. If a URL was already fetched outside Webcmd and got non-2xx, 403, blocked, or Cloudflare, that does not change the order: run `webcmd web fetch --url <url>` once before any browser escalation.
 
 For browser fallback, create one Session, navigate the failed URL, inspect it, reuse that Session for allowed fallbacks, then close it. Local browser commands use Cloak; hosted browser commands use Webcmd Cloud and Browser Use. `web fetch` remains local in both modes.
 

@@ -8,7 +8,7 @@ import type { WebFetchOptions, WebFetchResult } from './client.js';
 export const webFetchCommand = cli({
   site: 'web', name: 'fetch', access: 'read', strategy: Strategy.PUBLIC, browser: false,
   clientOwned: true,
-  description: 'Fetch a URL with local HTTP clients', defaultFormat: 'md',
+  description: 'Fetch a URL with local HTTP clients. Use after a blocked, 403, or Cloudflare response; never opens a browser.', defaultFormat: 'md',
   renderMarkdown: data => (isWebFetchResult(data) ? formatWebFetchMarkdown(data) : undefined),
   args: [
     { name: 'url', type: 'string', required: true, help: 'HTTP or HTTPS URL to fetch' },

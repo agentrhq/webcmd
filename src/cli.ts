@@ -18,7 +18,7 @@ import { type CliCommand, getRegistry } from './registry.js';
 import './fetch/command.js';
 import { commandListPresentation, filterCommandsByTag, toPresentableCommand } from './command-presentation.js';
 import { configureCompletionCommandSurface, configureListCommandSurface, configurePluginInstallSurface, configurePluginListSurface, configurePluginSearchSurface } from './builtin-command-surface.js';
-import { applyUnknownOptionContract, CommanderStructuralError, OUTPUT_FORMAT_HELP, resolveOutputFormat } from './command-surface.js';
+import { addOutputFormatOption, applyUnknownOptionContract, CommanderStructuralError, outputFormatIsExplicit, resolveCommandOutputFormat } from './command-surface.js';
 import { render as renderOutput, formatErrorEnvelope, errorEnvelopeFormat, requestedFormatFromArgv } from './output.js';
 import { PKG_VERSION } from './version.js';
 import { printCompletionScript } from './completion.js';
@@ -44,7 +44,7 @@ import { daemonRestart, daemonStatus, daemonStop } from './commands/daemon.js';
 import { enableVerbose, isVerbose, log } from './logger.js';
 import { BrowserCommandError, listExistingBrowserTabs, releaseSiteSessionLease, sendCommand } from './browser/daemon-client.js';
 import { fetchDaemonStatus } from './browser/daemon-transport.js';
-import { aliasForContextId, loadProfileConfig, profileListRows, profileRouteParams, renameProfile, resolveProfileSelection, setDefaultProfile, type ProfileSelection } from './browser/profile.js';
+import { aliasForContextId, createProfile, loadProfileConfig, normalizeContextId, ProfileNotFoundError, profileListRows, profileRouteParams, renameProfile, resolveKnownProfile, resolveProfileSelection, setDefaultProfile, type ProfileSelection } from './browser/profile.js';
 import { formatDaemonVersion, isDaemonStale } from './browser/daemon-version.js';
 import { DEFAULT_BROWSER_CONNECT_TIMEOUT } from './browser/config.js';
 import { CLI_COMMAND, PACKAGE_NAME } from './brand.js';
@@ -568,6 +568,27 @@ function getSelectedProfileId(command?: Command): string {
   return getBrowserProfileSelection(command)?.contextId ?? 'default';
 }
 
+function explicitProfileName(command?: Command): string | undefined {
+  const flag = getCommandOption(command, 'profile');
+  if (typeof flag === 'string' && flag.trim()) return flag.trim();
+  return normalizeContextId(process.env.WEBCMD_PROFILE);
+}
+
+async function requireKnownProfileId(command?: Command): Promise<string> {
+  const profileId = getSelectedProfileId(command);
+  const requested = explicitProfileName(command);
+  if (!requested) return profileId;
+  const status = await fetchDaemonStatus();
+  const connected = status && !isDaemonStale(status, PKG_VERSION) && Array.isArray(status.profiles)
+    ? status.profiles
+    : [];
+  const rows = profileListRows(loadProfileConfig(), connected);
+  if (!resolveKnownProfile(requested, rows) && !resolveKnownProfile(profileId, rows)) {
+    throw new ProfileNotFoundError(requested, rows);
+  }
+  return profileId;
+}
+
 function formatHandoff(row: BrowserSessionListRow): string {
   return row.handoff ? `${row.handoff.site} until ${row.handoff.expiresAt}` : '';
 }
@@ -640,7 +661,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
 
   const listCmd = configureListCommandSurface(program.command('list'))
     .action((opts) => {
-      const fmt = resolveOutputFormat(opts.format);
+      const fmt = resolveCommandOutputFormat(listCmd, opts.format);
       if (fmt === null) return;
       const externalClis = fmt === 'table' ? loadExternalClis() : [];
       const overrides = readOverrideRecords();
@@ -671,7 +692,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
       }
       renderOutput(presentation.rows, {
         fmt,
-        fmtExplicit: listCmd.getOptionValueSource('format') === 'cli',
+        fmtExplicit: outputFormatIsExplicit(listCmd),
         columns: presentation.columns,
         title: 'webcmd/list',
         source: 'webcmd list',
@@ -680,15 +701,14 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
 
   // ── Built-in: validate / verify ───────────────────────────────────────────
 
-  const validateCmd = program
+  const validateCmd = addOutputFormatOption(program
     .command('validate')
     .description('Validate CLI definitions')
-    .argument('[target]', 'site or site/name')
-    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
+    .argument('[target]', 'site or site/name'));
   validateCmd.action(async (target, opts) => {
-    const fmt = resolveOutputFormat(opts.format);
+    const fmt = resolveCommandOutputFormat(validateCmd, opts.format);
     if (fmt === null) return;
-    const fmtExplicit = validateCmd.getOptionValueSource('format') === 'cli';
+    const fmtExplicit = outputFormatIsExplicit(validateCmd);
     const { validateClisWithTarget, renderValidationReport } = await import('./validate.js');
     const report = validateClisWithTarget([BUILTIN_CLIS, USER_CLIS], target);
     if (fmt === 'table') console.log(renderValidationReport(report));
@@ -696,16 +716,15 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
     process.exitCode = report.ok ? EXIT_CODES.SUCCESS : EXIT_CODES.GENERIC_ERROR;
   });
 
-  const verifyCmd = program
+  const verifyCmd = addOutputFormatOption(program
     .command('verify')
     .description('Validate + smoke test')
     .argument('[target]')
-    .option('--smoke', 'Run smoke tests', false)
-    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
+    .option('--smoke', 'Run smoke tests', false));
   verifyCmd.action(async (target, opts) => {
-    const fmt = resolveOutputFormat(opts.format);
+    const fmt = resolveCommandOutputFormat(verifyCmd, opts.format);
     if (fmt === null) return;
-    const fmtExplicit = verifyCmd.getOptionValueSource('format') === 'cli';
+    const fmtExplicit = outputFormatIsExplicit(verifyCmd);
     const { verifyClis, renderVerifyReport } = await import('./verify.js');
     const r = await verifyClis({ builtinClis: BUILTIN_CLIS, userClis: USER_CLIS, target, smoke: opts.smoke });
     if (fmt === 'table') console.log(renderVerifyReport(r));
@@ -724,24 +743,22 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
       source,
     });
 
-  const skillsCmd = program
+  const skillsCmd = addOutputFormatOption(program
     .command('skills')
-    .description('List, add, update, and remove bundled Webcmd skills')
-    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
+    .description('List, add, update, and remove bundled Webcmd skills'));
   skillsCmd.action(async (opts) => {
-    const fmt = resolveOutputFormat(opts.format);
+    const fmt = resolveCommandOutputFormat(skillsCmd, opts.format);
     if (fmt === null) return;
-    await renderSkillsList(fmt, skillsCmd.getOptionValueSource('format') === 'cli', 'webcmd skills');
+    await renderSkillsList(fmt, outputFormatIsExplicit(skillsCmd), 'webcmd skills');
   });
 
-  const skillsListCmd = skillsCmd
+  const skillsListCmd = addOutputFormatOption(skillsCmd
     .command('list')
-    .description('List bundled Webcmd skills')
-    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
+    .description('List bundled Webcmd skills'));
   skillsListCmd.action(async (opts) => {
-    const fmt = resolveOutputFormat(opts.format);
+    const fmt = resolveCommandOutputFormat(skillsListCmd, opts.format);
     if (fmt === null) return;
-    await renderSkillsList(fmt, skillsListCmd.getOptionValueSource('format') === 'cli', 'webcmd skills list');
+    await renderSkillsList(fmt, outputFormatIsExplicit(skillsListCmd), 'webcmd skills list');
   });
 
   skillsCmd
@@ -825,10 +842,10 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
     .description('Scan adapters for agent-native convention violations')
     .argument('[target]', 'site or site/name')
     .option('--site <site>', 'Limit audit to one site')
-    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table')
     .option('--strict', 'Exit non-zero when violations are found', false);
+  addOutputFormatOption(conventionAuditCmd);
   conventionAuditCmd.action(async (target, opts) => {
-    const fmt = resolveOutputFormat(opts.format);
+    const fmt = resolveCommandOutputFormat(conventionAuditCmd, opts.format);
     if (fmt === null) return;
     const { runConventionAudit, renderConventionAuditText } = await import('./convention-audit.js');
     const report = runConventionAudit({
@@ -843,25 +860,23 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
 
   const sessionCmd = program.command('session').description('Create, list, and close browser Sessions');
 
-  sessionCmd
+  const sessionCreateCmd = addOutputFormatOption(sessionCmd
     .command('create')
-    .description('Create a new opaque browser Session ID for the selected Profile')
-    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'yaml')
-    .action(async (opts, command) => {
-      const fmt = resolveOutputFormat(opts.format);
+    .description('Create a new opaque browser Session ID for the selected Profile'), 'yaml');
+  sessionCreateCmd.action(async (opts, command) => {
+      const fmt = resolveCommandOutputFormat(command, opts.format);
       if (fmt === null) return;
-      const profileId = getSelectedProfileId(command);
+      const profileId = await requireKnownProfileId(command);
       const data = await sendCommand('session-create', { contextId: profileId });
-      await renderOutput(sessionCreateOutput(data), { fmt, fmtExplicit: command.getOptionValueSource('format') === 'cli', columns: ['id', 'kind', 'runtimeState'] });
+      await renderOutput(sessionCreateOutput(data), { fmt, fmtExplicit: outputFormatIsExplicit(command), columns: ['id', 'kind', 'runtimeState'] });
     });
 
-  sessionCmd
+  const sessionListCmd = addOutputFormatOption(sessionCmd
     .command('list')
     .description('List browser Sessions for the selected Profile')
-    .option('--limit <number>', 'Maximum Sessions to return (1-100)', parseSessionListLimit, 20)
-    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table')
-    .action(async (opts, command) => {
-      const fmt = resolveOutputFormat(opts.format);
+    .option('--limit <number>', 'Maximum Sessions to return (1-100)', parseSessionListLimit, 20));
+  sessionListCmd.action(async (opts, command) => {
+      const fmt = resolveCommandOutputFormat(command, opts.format);
       if (fmt === null) return;
       const profileId = getSelectedProfileId(command);
       let rows: BrowserSessionListRow[];
@@ -872,21 +887,20 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
         rows = new LocalBrowserSessionStore().list(profileId, opts.limit);
       }
       const output = rows.map((row) => ({ ...row, handoff: formatHandoff(row) }));
-      if (output.length === 0 && fmt === 'table' && command.getOptionValueSource('format') !== 'cli') {
+      if (output.length === 0 && fmt === 'table' && !outputFormatIsExplicit(command)) {
         console.log(`No browser Sessions found for Profile ${profileId}.`);
         return;
       }
-      await renderOutput(output, { fmt, fmtExplicit: command.getOptionValueSource('format') === 'cli', columns: ['id', 'kind', 'runtimeState', 'handoff'] });
+      await renderOutput(output, { fmt, fmtExplicit: outputFormatIsExplicit(command), columns: ['id', 'kind', 'runtimeState', 'handoff'] });
     });
 
-  sessionCmd
+  const sessionCloseCmd = addOutputFormatOption(sessionCmd
     .command('close')
     .description('Close a browser Session runtime without deleting its durable record')
     .argument('<session-id>', 'Existing opaque Session ID from `webcmd session create`')
-    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'yaml')
-    .option('--force', 'Close even while the Session is busy or paused for handoff')
-    .action(async (sessionId: string, opts: { format?: string; force?: boolean }, command) => {
-      const fmt = resolveOutputFormat(opts.format);
+    .option('--force', 'Close even while the Session is busy or paused for handoff'), 'yaml');
+  sessionCloseCmd.action(async (sessionId: string, opts: { format?: string; force?: boolean }, command) => {
+      const fmt = resolveCommandOutputFormat(command, opts.format);
       if (fmt === null) return;
       const profileId = getSelectedProfileId(command);
       requireSessionIdShape(sessionId);
@@ -898,7 +912,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
             session: sessionId,
             force: opts.force === true,
           });
-          await renderOutput(data, { fmt, fmtExplicit: command.getOptionValueSource('format') === 'cli' });
+          await renderOutput(data, { fmt, fmtExplicit: outputFormatIsExplicit(command) });
           return;
         } catch (error) {
           if (status || opts.force === true) throw error;
@@ -906,11 +920,11 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
       }
       if (opts.force === true) {
         const data = await sendCommand('session-close', { contextId: profileId, session: sessionId, force: true });
-        await renderOutput(data, { fmt, fmtExplicit: command.getOptionValueSource('format') === 'cli' });
+        await renderOutput(data, { fmt, fmtExplicit: outputFormatIsExplicit(command) });
         return;
       }
       new LocalBrowserSessionStore().require(profileId, sessionId);
-      await renderOutput({ closed: false, alreadyIdle: true, session: sessionId }, { fmt, fmtExplicit: command.getOptionValueSource('format') === 'cli' });
+      await renderOutput({ closed: false, alreadyIdle: true, session: sessionId }, { fmt, fmtExplicit: outputFormatIsExplicit(command) });
     });
 
   // ── Built-in: browser (browser control for Claude Code skill) ───────────────
@@ -1016,12 +1030,12 @@ cli({
     .option('--seed-args <value>', 'Seed args when no fixture exists; use JSON array/object for multiple args or flags')
     .option('--trace <mode>', 'Trace capture for the adapter subprocess: off, on, retain-on-failure', 'off')
     .option('--max-top-level-keys <n>', 'Override the row-shape top-level key cap (default: 12) for adapters whose rows are wide by design')
-    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table')
     .description('Execute an adapter and validate output; uses fixture at ~/.webcmd/sites/<site>/verify/<cmd>.json when present');
+  addOutputFormatOption(browserVerifyCmd);
   browserVerifyCmd.action(async (name: string, opts: { fixture?: boolean; writeFixture?: boolean; updateFixture?: boolean; strictMemory?: boolean; seedArgs?: string; trace?: string; maxTopLevelKeys?: string; format?: string } = {}) => {
-      const fmt = resolveOutputFormat(opts.format);
+      const fmt = resolveCommandOutputFormat(browserVerifyCmd, opts.format);
       if (fmt === null) return;
-      const fmtExplicit = browserVerifyCmd.getOptionValueSource('format') === 'cli';
+      const fmtExplicit = outputFormatIsExplicit(browserVerifyCmd);
       const asTable = fmt === 'table';
       // Prose-only progress/detail lines. The structured report below carries the
       // same facts as data; -f json/yaml callers get the report, not this text.
@@ -1263,6 +1277,13 @@ cli({
               ...(error.details !== undefined ? { details: error.details } : {}),
             },
           }, null, 2));
+        } else if (error instanceof CliError) {
+          const payload = { error: { code: error.code, message: error.message, ...(error.hint ? { hint: error.hint } : {}) } };
+          console.log(JSON.stringify(payload, null, 2));
+          process.stderr.write(`${error.code}: ${error.message}\n`);
+          if (error.hint) process.stderr.write(`${error.hint}\n`);
+          process.exitCode = error.exitCode;
+          return;
         }
         log.error(error instanceof CliError ? `${error.code}: ${error.message}` : error instanceof Error ? error.message : String(error));
         if (error instanceof CliError && error.hint) log.error(error.hint);
@@ -1290,7 +1311,7 @@ cli({
     }))));
 
   const runCommand = withBrowserVerbose(new Command('run')
-    .description('Run JavaScript with Playwright')
+    .description('Run JavaScript with Playwright. A second overlapping run returns SESSION_BUSY; wait and retry.')
     .option('--stdin', 'Read the program from stdin')
     .option('--file <path>', 'Read the program from a file')
     .addOption(new Option('--timeout <seconds>', 'Execution timeout in seconds').argParser(browserOptionValueParser('run', 'timeout')!))
@@ -1346,13 +1367,13 @@ cli({
   const doctorCmd = program
     .command('doctor')
     .description('Diagnose webcmd browser bridge connectivity')
-    .option('-v, --verbose', 'Debug output')
-    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
+    .option('-v, --verbose', 'Debug output');
+  addOutputFormatOption(doctorCmd);
   doctorCmd.action(async (opts) => {
     applyVerbose(opts);
-    const fmt = resolveOutputFormat(opts.format);
+    const fmt = resolveCommandOutputFormat(doctorCmd, opts.format);
     if (fmt === null) return;
-    const fmtExplicit = doctorCmd.getOptionValueSource('format') === 'cli';
+    const fmtExplicit = outputFormatIsExplicit(doctorCmd);
     const { runBrowserDoctor, renderBrowserDoctorReport } = await import('./doctor.js');
     const report = await runBrowserDoctor({ cliVersion: PKG_VERSION });
     if (fmt === 'table') console.log(renderBrowserDoctorReport(report));
@@ -1390,11 +1411,11 @@ cli({
   const originalPluginDescription = pluginCmd.description();
 
   configurePluginInstallSurface(pluginCmd.command('install'))
-    .action(async (source: string) => {
+    .action(async (source: string, opts: { all?: boolean }) => {
       const { installPlugin } = await import('./plugin.js');
       const { discoverPlugins } = await import('./discovery.js');
       try {
-        const result = installPlugin(source);
+        const result = installPlugin(source, { all: opts.all === true });
         await discoverPlugins();
         if (Array.isArray(result)) {
           if (result.length === 0) {
@@ -1431,7 +1452,7 @@ cli({
     .description('Update a plugin (or all plugins) to the latest version')
     .argument('[name]', 'Plugin name (required unless --all is passed)')
     .option('--all', 'Update all installed plugins')
-    .option('--force', 'Discard uncommitted changes in the plugin directory')
+    .option('--force', 'Discard uncommitted changes in this plugin\'s files')
     .action(async (name: string | undefined, opts: { all?: boolean; force?: boolean }) => {
       if (!name && !opts.all) {
         console.error('Error: Please specify a plugin name or use the --all flag.');
@@ -1496,14 +1517,14 @@ cli({
 
   const pluginListCmd = configurePluginListSurface(pluginCmd.command('list'));
   pluginListCmd.action(async (opts) => {
-    const fmt = resolveOutputFormat(opts.format);
+    const fmt = resolveCommandOutputFormat(pluginListCmd, opts.format);
     if (fmt === null) return;
     const { listPlugins } = await import('./plugin.js');
     const plugins = listPlugins();
     if (fmt !== 'table') {
       renderOutput(plugins, {
         fmt,
-        fmtExplicit: pluginListCmd.getOptionValueSource('format') === 'cli',
+        fmtExplicit: outputFormatIsExplicit(pluginListCmd),
         columns: ['name', 'commands', 'source', 'overrides', 'updateAvailable'],
         title: `${CLI_COMMAND}/plugins`,
         source: `${CLI_COMMAND} plugin list`,
@@ -1512,7 +1533,7 @@ cli({
     }
     if (plugins.length === 0) {
       console.log('  No plugins installed.');
-      console.log(`  Install one with: ${CLI_COMMAND} plugin install github:user/repo`);
+      console.log(`  Install one with: ${CLI_COMMAND} plugin install github:user/repo/<plugin>`);
       return;
     }
       console.log();
@@ -1564,12 +1585,11 @@ cli({
     .command('catalog')
     .description('Manage plugin marketplace sources');
 
-  const catalogListCmd = catalogCmd
+  const catalogListCmd = addOutputFormatOption(catalogCmd
     .command('list')
-    .description('List configured plugin marketplace sources')
-    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
+    .description('List configured plugin marketplace sources'));
   catalogListCmd.action(async (opts: { format?: string }) => {
-    const fmt = resolveOutputFormat(opts.format);
+    const fmt = resolveCommandOutputFormat(catalogListCmd, opts.format);
     if (fmt === null) return;
     const { readCatalog } = await import('./plugin-catalog.js');
     try {
@@ -1580,7 +1600,7 @@ cli({
       }
       renderOutput(catalog.sources, {
         fmt,
-        fmtExplicit: catalogListCmd.getOptionValueSource('format') === 'cli',
+        fmtExplicit: outputFormatIsExplicit(catalogListCmd),
         columns: ['id', 'source', 'manifestUrl'],
         title: `${CLI_COMMAND}/plugin-catalog`,
         source: `${CLI_COMMAND} plugin catalog list`,
@@ -1591,20 +1611,19 @@ cli({
     }
   });
 
-  const catalogAddCmd = catalogCmd
+  const catalogAddCmd = addOutputFormatOption(catalogCmd
     .command('add')
     .description('Add a plugin marketplace source')
-    .argument('<source>', 'Marketplace source, e.g. github:owner/repo')
-    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
+    .argument('<source>', 'Marketplace source, e.g. github:owner/repo'));
   catalogAddCmd.action(async (source: string, opts: { format?: string }) => {
-    const fmt = resolveOutputFormat(opts.format);
+    const fmt = resolveCommandOutputFormat(catalogAddCmd, opts.format);
     if (fmt === null) return;
     const { addCatalogSource } = await import('./plugin-catalog.js');
     try {
       const added = await addCatalogSource(source);
       renderOutput(fmt === 'json' ? added : [added], {
         fmt,
-        fmtExplicit: catalogAddCmd.getOptionValueSource('format') === 'cli',
+        fmtExplicit: outputFormatIsExplicit(catalogAddCmd),
         columns: ['id', 'source', 'manifestUrl'],
         title: `${CLI_COMMAND}/plugin-catalog`,
         source: `${CLI_COMMAND} plugin catalog add`,
@@ -1632,13 +1651,13 @@ cli({
 
   const pluginSearchCmd = configurePluginSearchSurface(pluginCmd.command('search'));
   pluginSearchCmd.action(async (query: string | undefined, opts: { format?: string }) => {
-    const fmt = resolveOutputFormat(opts.format);
+    const fmt = resolveCommandOutputFormat(pluginSearchCmd, opts.format);
     if (fmt === null) return;
     const { readCatalog, searchCatalogPlugins } = await import('./plugin-catalog.js');
     try {
       const catalog = readCatalog();
       const result = await searchCatalogPlugins(catalog, { query });
-      const fmtExplicit = pluginSearchCmd.getOptionValueSource('format') === 'cli';
+      const fmtExplicit = outputFormatIsExplicit(pluginSearchCmd);
       if (fmt === 'json') {
         renderOutput(result, { fmt });
       } else {
@@ -1646,7 +1665,7 @@ cli({
         renderOutput(result.plugins, {
           fmt,
           fmtExplicit,
-          columns: ['name', 'description', 'version', 'sourceId', 'installSource', 'webcmd'],
+          columns: ['installSource', 'name', 'description', 'version', 'sourceId', 'webcmd'],
           title: `${CLI_COMMAND}/plugin-search`,
           source: `${CLI_COMMAND} plugin search`,
         });
@@ -1718,12 +1737,11 @@ cli({
   // Snapshot before applyRootSubcommandSummaries() rewrites .description() to a child-name listing.
   const originalAdapterDescription = adapterCmd.description();
 
-  const adapterStatusCmd = adapterCmd
+  const adapterStatusCmd = addOutputFormatOption(adapterCmd
     .command('status')
-    .description('List local adapters in ~/.webcmd/clis/')
-    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
+    .description('List local adapters in ~/.webcmd/clis/'));
   adapterStatusCmd.action(async (opts: { format?: string }) => {
-      const fmt = resolveOutputFormat(opts.format);
+      const fmt = resolveCommandOutputFormat(adapterStatusCmd, opts.format);
       if (fmt === null) return;
       let userClisListed = false;
       try {
@@ -1732,7 +1750,7 @@ cli({
         const userSites = userEntries.filter(e => e.isDirectory() && e.name !== '.base').map(e => e.name).sort();
         if (userSites.length === 0) {
           if (fmt !== 'table') {
-            renderOutput([], { fmt, fmtExplicit: adapterStatusCmd.getOptionValueSource('format') === 'cli' });
+            renderOutput([], { fmt, fmtExplicit: outputFormatIsExplicit(adapterStatusCmd) });
             return;
           }
           console.log('No local adapters installed.');
@@ -1767,7 +1785,7 @@ cli({
         if (fmt !== 'table') {
           renderOutput(adapters, {
             fmt,
-            fmtExplicit: adapterStatusCmd.getOptionValueSource('format') === 'cli',
+            fmtExplicit: outputFormatIsExplicit(adapterStatusCmd),
             columns: ['command', 'kind', 'plugin', 'reconciliationNeeded', 'orphaned'],
             title: `${CLI_COMMAND}/adapter-status`,
             source: `${CLI_COMMAND} adapter status`,
@@ -1789,7 +1807,7 @@ cli({
         }
       } catch (err) {
         if (!userClisListed && (err as NodeJS.ErrnoException).code === 'ENOENT') {
-          if (fmt !== 'table') renderOutput([], { fmt, fmtExplicit: adapterStatusCmd.getOptionValueSource('format') === 'cli' });
+          if (fmt !== 'table') renderOutput([], { fmt, fmtExplicit: outputFormatIsExplicit(adapterStatusCmd) });
           else console.log('No local adapters installed.');
           return;
         }
@@ -1884,12 +1902,11 @@ cli({
   // Snapshot before applyRootSubcommandSummaries() rewrites .description() to a child-name listing.
   const originalProfileDescription = profileCmd.description();
 
-  const profileListCmd = profileCmd
+  const profileListCmd = addOutputFormatOption(profileCmd
     .command('list')
-    .description('List Chrome and Chromium profiles available through the Cloak runtime')
-    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table')
-    .action(async (opts: { format?: string }, command: Command) => {
-      const fmt = resolveOutputFormat(opts.format);
+    .description('List Chrome and Chromium profiles available through the Cloak runtime'));
+  profileListCmd.action(async (opts: { format?: string }, command: Command) => {
+      const fmt = resolveCommandOutputFormat(command, opts.format);
       if (fmt === null) return;
       const status = await fetchDaemonStatus();
       const config = loadProfileConfig();
@@ -1917,7 +1934,7 @@ cli({
         // Saved-but-disconnected profiles are included: they exist, they are just not live.
         await renderOutput(profileListRows(config, profiles), {
           fmt,
-          fmtExplicit: command.getOptionValueSource('format') === 'cli',
+          fmtExplicit: outputFormatIsExplicit(command),
           columns: ['contextId', 'alias', 'default', 'connected', 'runtimeVersion'],
         });
         return;
@@ -1965,6 +1982,17 @@ cli({
     });
 
   profileCmd
+    .command('create')
+    .description('Create a Cloak profile alias')
+    .argument('<alias>', 'Local alias, e.g. work or personal')
+    .action((alias: string) => {
+      const result = createProfile(alias);
+      console.log(result.created
+        ? `Profile ${result.alias} created (contextId: ${result.contextId}).`
+        : `Profile ${result.alias} already exists (contextId: ${result.contextId}).`);
+    });
+
+  profileCmd
     .command('rename')
     .description('Assign a local alias to an available Cloak profile')
     .argument('<contextId>', 'Profile contextId from webcmd profile list')
@@ -1997,14 +2025,13 @@ cli({
   const daemonCmd = program.command('daemon').description('Manage the webcmd daemon');
   // Snapshot before applyRootSubcommandSummaries() rewrites .description() to a child-name listing.
   const originalDaemonDescription = daemonCmd.description();
-  const daemonStatusCmd = daemonCmd
+  const daemonStatusCmd = addOutputFormatOption(daemonCmd
     .command('status')
-    .description('Show daemon status')
-    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
+    .description('Show daemon status'));
   daemonStatusCmd.action(async (opts) => {
-    const fmt = resolveOutputFormat(opts.format);
+    const fmt = resolveCommandOutputFormat(daemonStatusCmd, opts.format);
     if (fmt === null) return;
-    await daemonStatus({ fmt, fmtExplicit: daemonStatusCmd.getOptionValueSource('format') === 'cli' });
+    await daemonStatus({ fmt, fmtExplicit: outputFormatIsExplicit(daemonStatusCmd) });
   });
   daemonCmd
     .command('stop')
@@ -2048,12 +2075,11 @@ cli({
       registerExternalCli(name, { binary: opts.binary, install: opts.install, description: opts.desc });
     });
 
-  const externalListCmd = externalCmd
+  const externalListCmd = addOutputFormatOption(externalCmd
     .command('list')
-    .description('List registered external CLIs')
-    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
+    .description('List registered external CLIs'));
   externalListCmd.action((opts) => {
-    const fmt = resolveOutputFormat(opts.format);
+    const fmt = resolveCommandOutputFormat(externalListCmd, opts.format);
     if (fmt === null) return;
     const rows = loadExternalClis().map((ext) => ({
       name: ext.name,
@@ -2066,7 +2092,7 @@ cli({
     }));
     renderOutput(rows, {
       fmt,
-      fmtExplicit: externalListCmd.getOptionValueSource('format') === 'cli',
+      fmtExplicit: outputFormatIsExplicit(externalListCmd),
       columns: ['name', 'package', 'binary', 'installed', 'description', 'homepage', 'tags'],
       title: 'webcmd/external/list',
       source: 'webcmd external list',

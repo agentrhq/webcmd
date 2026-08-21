@@ -102,6 +102,13 @@ function normalizeExecutionError(error: unknown): Error {
       sanitize(unsupported[1] ?? message),
     );
   }
+  if (/Storage is disabled inside data:/i.test(message) || /Access is denied for this document/i.test(message)) {
+    return new BrowserRunError(
+      'BROWSER_RUN_INVALID_INPUT',
+      'localStorage is disabled on data: and about:blank documents.',
+      'Navigate to an http(s) URL, or use page.evaluate memory. data: pages cannot use localStorage.',
+    );
+  }
   if (/interrupted|execution timeout|timed out/i.test(message)) {
     return new BrowserRunError(
       'BROWSER_RUN_TIMEOUT',

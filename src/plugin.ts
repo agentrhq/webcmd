@@ -514,6 +514,18 @@ export function getCommitHash(dir: string): string | undefined {
   }
 }
 
+function retainMonorepoBaseline(repoDir: string, cloneDir: string, commitHash: string): void {
+  execFileSync(
+    'git',
+    ['fetch', '--no-tags', cloneDir, `${commitHash}:refs/webcmd/baselines/${commitHash}`],
+    {
+      cwd: repoDir,
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    },
+  );
+}
+
 /** True only for git's "this directory has no repository at all" failure. */
 function isNotAGitRepositoryError(error: unknown): boolean {
   const stderr = typeof (error as { stderr?: unknown })?.stderr === 'string'
@@ -551,7 +563,8 @@ function describeGitError(error: unknown): string {
  * must fail closed — this guard exists to prevent silent data loss, so an
  * inconclusive check must refuse the update rather than proceed as if clean.
  */
-export function getDirtyFiles(dir: string): string[] {
+export function getDirtyFiles(dir: string, options: { pathspec?: string; against?: string } = {}): string[] {
+  const pathspec = options.pathspec ?? '.';
   try {
     execFileSync('git', ['rev-parse', '--git-dir'], {
       cwd: dir,
@@ -566,7 +579,23 @@ export function getDirtyFiles(dir: string): string[] {
     );
   }
   try {
-    const out = execFileSync('git', ['status', '--porcelain', '--', '.'], {
+    if (options.against) {
+      const diff = execFileSync('git', ['diff', '--name-status', options.against, '--', pathspec], {
+        cwd: dir,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      const untracked = execFileSync('git', ['ls-files', '--others', '--exclude-standard', '--', pathspec], {
+        cwd: dir,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      return [
+        ...diff.split('\n').filter((line) => line.trim()).map(fromNameStatus),
+        ...untracked.split('\n').filter((line) => line.trim()).map((file) => `?? ${file.trim()}`),
+      ].filter((line) => !isInstallArtifact(line));
+    }
+    const out = execFileSync('git', ['status', '--porcelain', '--', pathspec], {
       cwd: dir,
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -613,15 +642,41 @@ function describeDirtyEntry(entry: string): string {
   return entry.startsWith('??') ? `${file} (new, unstaged)` : `${file} (modified)`;
 }
 
-function assertPluginNotDirty(name: string, dir: string, force: boolean): void {
-  if (force) return;
-  const dirty = getDirtyFiles(dir);
-  if (dirty.length === 0) return;
-  const described = dirty.slice(0, 10).map(describeDirtyEntry);
+function fromNameStatus(line: string): string {
+  const match = line.trim().match(/^([A-Z])\t?(.*)$/);
+  if (!match) return `M ${line.trim()}`;
+  const file = match[2]!.trim();
+  return match[1] === 'A' ? `?? ${file}` : `M ${file}`;
+}
+
+function dirtyPathIsInside(entry: string, subPath: string): boolean {
+  const file = dirtyEntryPath(entry).replace(/\\/g, '/');
+  const prefix = subPath.replace(/\\/g, '/').replace(/\/+$/, '');
+  return file === prefix || file.startsWith(`${prefix}/`);
+}
+
+function formatDirtyPaths(dirty: string[]): string {
+  return dirty.slice(0, 10).map(describeDirtyEntry).join('\n  ');
+}
+
+function assertPluginNotDirty(name: string, dirty: string[], force: boolean): string[] {
+  if (dirty.length === 0) return [];
+  if (force) return dirty;
   throw new PluginError(
-    `Plugin "${name}" has uncommitted changes that updating would destroy:\n  ${described.join('\n  ')}`,
+    `Plugin "${name}" has uncommitted changes that updating would destroy:\n  ${formatDirtyPaths(dirty)}`,
     'Commit or stash them, re-run with --force to discard them, or develop against a symlinked checkout with "webcmd plugin install file:///path".',
   );
+}
+
+function inspectPluginDirtiness(name: string, force: boolean, readDirty: () => string[]): string[] {
+  if (force) {
+    try {
+      return readDirty();
+    } catch {
+      return [];
+    }
+  }
+  return assertPluginNotDirty(name, readDirty(), false);
 }
 
 /**
@@ -772,11 +827,21 @@ function publishMonorepoPlugins(
   repoDir: string,
   pluginsDir: string,
   plugins: MonorepoPublishPlugin[],
-  publishRepo?: { stagingDir: string; parentDir: string },
+  publishRepo?: {
+    stagingDir: string;
+    parentDir: string;
+    replaceSubPath?: string;
+    sharedNodeModulesDir?: string;
+  },
   writeLock?: (commitHash: string | undefined) => void,
 ): void {
   runTransaction((tx) => {
-    if (publishRepo) {
+    if (publishRepo?.replaceSubPath) {
+      tx.track(beginReplaceDir(publishRepo.stagingDir, resolveRepoContainedPath(repoDir, publishRepo.replaceSubPath)));
+      if (publishRepo.sharedNodeModulesDir && fs.existsSync(publishRepo.sharedNodeModulesDir)) {
+        tx.track(beginReplaceDir(publishRepo.sharedNodeModulesDir, path.join(repoDir, 'node_modules')));
+      }
+    } else if (publishRepo) {
       fs.mkdirSync(publishRepo.parentDir, { recursive: true });
       tx.track(beginReplaceDir(publishRepo.stagingDir, repoDir));
     }
@@ -803,7 +868,7 @@ function publishMonorepoPlugins(
  *
  * Returns the installed plugin name(s).
  */
-export function installPlugin(source: string): string | string[] {
+export function installPlugin(source: string, options: { all?: boolean } = {}): string | string[] {
   const parsed = parseSource(source);
   if (!parsed) {
     throw new Error(
@@ -837,7 +902,7 @@ export function installPlugin(source: string): string | string[] {
     }
 
     if (manifest && isMonorepo(manifest)) {
-      return installMonorepo(tmpCloneDir, parsed.cloneUrl!, repoName, manifest, subPlugin);
+      return installMonorepo(tmpCloneDir, parsed.cloneUrl!, repoName, manifest, subPlugin, options.all === true);
     }
 
     // Single plugin mode
@@ -961,6 +1026,7 @@ function installMonorepo(
   repoName: string,
   manifest: PluginManifest,
   subPlugin?: string,
+  installAll = false,
 ): string[] {
   const monoreposDir = getMonoreposDir();
   const repoDir = path.join(monoreposDir, repoName);
@@ -986,6 +1052,11 @@ function installMonorepo(
   }
 
   let pluginsToInstall = getEnabledPlugins(effectiveManifest);
+  if (!subPlugin && !installAll) {
+    throw new PluginError(
+      `This source has ${pluginsToInstall.length} plugins; install one with github:user/repo/<plugin>, or pass --all to install every plugin.`,
+    );
+  }
 
   // If a specific sub-plugin was requested, filter to just that one
   if (subPlugin) {
@@ -1086,6 +1157,7 @@ function collectUpdatedMonorepoPlugins(
   manifest: PluginManifest,
   cloneUrl: string,
   tmpCloneDir: string,
+  only?: string,
 ): Array<{
   name: string;
   lockEntry: LockEntry;
@@ -1098,6 +1170,7 @@ function collectUpdatedMonorepoPlugins(
   }> = [];
 
   for (const [pluginName, entry] of Object.entries(lock)) {
+    if (only && pluginName !== only) continue;
     if (entry.source.kind !== 'monorepo' || entry.source.repoName !== monoName) continue;
     const manifestEntry = manifest.plugins?.[pluginName];
     if (!manifestEntry || manifestEntry.disabled) {
@@ -1215,8 +1288,7 @@ function isSymlinkSync(p: string): boolean {
 
 /**
  * Update a plugin by name (git pull + re-install lifecycle).
- * For monorepo sub-plugins: pulls the monorepo root and re-runs lifecycle
- * for all sub-plugins from the same monorepo.
+ * For monorepo sub-plugins: updates only the named plugin's subdirectory.
  */
 export function updatePlugin(name: string, options: { force?: boolean } = {}): string[] {
   const targetDir = path.join(PLUGINS_DIR, name);
@@ -1238,7 +1310,18 @@ export function updatePlugin(name: string, options: { force?: boolean } = {}): s
     const monoDir = path.join(getMonoreposDir(), source.repoName);
     const monoName = source.repoName;
     const cloneUrl = source.url;
-    assertPluginNotDirty(monoName, monoDir, options.force === true);
+    const discarded = inspectPluginDirtiness(name, options.force === true, () => getDirtyFiles(monoDir, {
+      pathspec: source.subPath,
+      ...(lockEntry?.commitHash ? { against: lockEntry.commitHash } : {}),
+    }));
+    if (options.force === true && discarded.length > 0) {
+      console.error(`--force will discard uncommitted changes in "${name}":\n  ${formatDirtyPaths(discarded)}`);
+    }
+    const siblingDirty = inspectPluginDirtiness(name, true, () => getDirtyFiles(monoDir))
+      .filter((entry) => !dirtyPathIsInside(entry, source.subPath));
+    if (siblingDirty.length > 0) {
+      console.error(`Shared monorepo has uncommitted files outside "${name}"; leaving them in place:\n  ${formatDirtyPaths(siblingDirty)}`);
+    }
     return withTempClone(cloneUrl, (tmpCloneDir) => {
       const manifest = readPluginManifest(tmpCloneDir);
       if (!manifest || !isMonorepo(manifest)) {
@@ -1257,6 +1340,7 @@ export function updatePlugin(name: string, options: { force?: boolean } = {}): s
         manifest,
         cloneUrl,
         tmpCloneDir,
+        name,
       );
 
       if (updatedPlugins.length > 0) {
@@ -1266,21 +1350,33 @@ export function updatePlugin(name: string, options: { force?: boolean } = {}): s
         );
       }
 
+      const plugin = updatedPlugins[0];
+      if (!plugin) return [];
+      const commitHash = getCommitHash(tmpCloneDir);
+      if (commitHash) retainMonorepoBaseline(monoDir, tmpCloneDir, commitHash);
       publishMonorepoPlugins(
         monoDir,
         PLUGINS_DIR,
-        updatedPlugins.map((plugin) => ({ name: plugin.name, subPath: plugin.manifestEntry.path })),
-        { stagingDir: tmpCloneDir, parentDir: path.dirname(monoDir) },
-        (commitHash) => {
+        [{ name: plugin.name, subPath: plugin.manifestEntry.path }],
+        {
+          stagingDir: resolveRepoContainedPath(tmpCloneDir, plugin.manifestEntry.path),
+          parentDir: path.dirname(monoDir),
+          replaceSubPath: plugin.manifestEntry.path,
+          sharedNodeModulesDir: path.join(tmpCloneDir, 'node_modules'),
+        },
+        () => {
           updateMonorepoLockEntries(lock, updatedPlugins, cloneUrl, monoName, commitHash);
           writeLockFile(lock);
         },
       );
-      return updatedPlugins.map((plugin) => plugin.name);
+      return updatedPlugins.map((item) => item.name);
     });
   }
 
-  assertPluginNotDirty(name, targetDir, options.force === true);
+  const discarded = inspectPluginDirtiness(name, options.force === true, () => getDirtyFiles(targetDir));
+  if (options.force === true && discarded.length > 0) {
+    console.error(`--force will discard uncommitted changes in "${name}":\n  ${formatDirtyPaths(discarded)}`);
+  }
 
   const cloneUrl = resolveRemotePluginSource(lockEntry, targetDir);
   withTempClone(cloneUrl, (tmpCloneDir) => {

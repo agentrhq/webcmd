@@ -14,7 +14,7 @@ import { Command } from 'commander';
 import { log } from './logger.js';
 import { type CliCommand, fullName, getRegistry } from './registry.js';
 import { errorEnvelopeFormat, formatErrorEnvelope, render as renderOutput } from './output.js';
-import { configureCommandSurface, parseOutputFormat, prepareCommandArgs } from './command-surface.js';
+import { configureCommandSurface, outputFormatIsExplicit, parseOutputFormat, prepareCommandArgs, requestedOutputFormat } from './command-surface.js';
 import {
   commandHelpData,
   formatCommandHelpText,
@@ -96,8 +96,8 @@ export function registerCommandToProgram(
       const kwargs = prepareCommandArgs(cmd, rawKwargs);
 
       const verbose = optionsRecord.verbose === true;
-      let format = parseOutputFormat(optionsRecord.format ?? 'table');
-      const formatExplicit = subCmd.getOptionValueSource('format') === 'cli';
+      let format = parseOutputFormat(requestedOutputFormat(subCmd, optionsRecord.format ?? 'table'));
+      const formatExplicit = outputFormatIsExplicit(subCmd);
       if (verbose) process.env.WEBCMD_VERBOSE = '1';
       const globals = typeof subCmd.optsWithGlobals === 'function' ? subCmd.optsWithGlobals() as Record<string, unknown> : {};
       const result = cmd.clientOwned && cmd.browser === false

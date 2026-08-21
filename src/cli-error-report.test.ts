@@ -53,6 +53,17 @@ describe('reportCliError', () => {
     }
   });
 
+  it('lets explicit --format win over --json for early errors', () => {
+    const previous = process.argv;
+    process.argv = ['node', 'webcmd', 'validate', 'nope', '--format', 'yaml', '--json'];
+    try {
+      expect(capture(new CliError('ARGUMENT', 'No command matches "nope".', undefined, EXIT_CODES.USAGE_ERROR)))
+        .toMatch(/^ok: false\n/);
+    } finally {
+      process.argv = previous;
+    }
+  });
+
   it('omits the stack unless WEBCMD_DEBUG is set', () => {
     expect(yaml.load(capture(new Error('boom'))) as any).not.toHaveProperty('error.stack');
     vi.stubEnv('WEBCMD_DEBUG', '1');

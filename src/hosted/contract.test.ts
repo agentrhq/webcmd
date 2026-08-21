@@ -151,6 +151,16 @@ describe('buildHostedContract', () => {
           choices: ['table', 'plain', 'json', 'yaml', 'md', 'csv'],
         },
         {
+          name: 'json',
+          flags: '--json',
+          type: 'boolean',
+          description: 'Alias of --format json',
+          positional: false,
+          required: false,
+          variadic: false,
+          default: false,
+        },
+        {
           name: 'trace',
           flags: '--trace <mode>',
           type: 'string',

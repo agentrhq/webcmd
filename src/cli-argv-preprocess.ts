@@ -156,6 +156,7 @@ function knownCommandOptions(cmd: DashPositionalManifestEntry): Map<string, Opti
     ['--verbose', 'none'],
     ['-f', 'required'],
     ['--format', 'required'],
+    ['--json', 'none'],
     ['--trace', 'required'],
   ]);
   if (cmd.browser) {

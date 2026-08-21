@@ -313,6 +313,19 @@ describe('commanderAdapter default formats', () => {
     );
   });
 
+  it('treats --json as an explicit json format', async () => {
+    const program = new Command();
+    const siteCmd = program.command('gemini');
+    registerCommandToProgram(siteCmd, cmd);
+
+    await program.parseAsync(['node', 'webcmd', 'gemini', 'ask', '--json']);
+
+    expect(mockRenderOutput).toHaveBeenCalledWith(
+      [{ response: 'hello' }],
+      expect.objectContaining({ fmt: 'json', fmtExplicit: true }),
+    );
+  });
+
   it('respects an explicit user format over the command defaultFormat', async () => {
     const program = new Command();
     const siteCmd = program.command('gemini');

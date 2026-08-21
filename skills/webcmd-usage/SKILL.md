@@ -10,6 +10,8 @@ Webcmd turns websites, Electron desktop apps, and external CLIs into a uniform `
 
 For any search, research, source discovery, direct URL fetch, evidence gathering, or “look this up” request, load `smart-search` before choosing commands. `smart-search` owns fetch-first search, browser-fetch escalation, last-resort search adapters, and source-summary rules.
 
+For a known URL, the first-choice Webcmd fetch path is `webcmd web fetch --url <url>`. Use it before browser work or non-Webcmd HTTP clients. Do not open a browser until that command returns `FETCH_BLOCKED` or `FETCH_REQUIRES_BROWSER`.
+
 ## CLI Preflight
 
 Before the first Webcmd command in a session, run:
@@ -63,11 +65,16 @@ Profiles are cookie jars and authentication scope. Sessions are browser workspac
 
 ```bash
 webcmd session create -f json
+webcmd profile create work
+webcmd --profile work session create -f json
 webcmd --session session_abc browser snapshot --snapshot-mode act
 webcmd --session session_abc browser run --stdin
 webcmd session list
 webcmd session close session_abc
 ```
+
+Create a named profile before using it. If `--profile <name> session create` returns
+`PROFILE_NOT_FOUND`, run `webcmd profile create <name>` and retry.
 
 `webcmd session close <session-id>` is blocked while that Session has a live human handoff.
 Adapter commands may omit `--session` and use the selected profile's adapter-default session. Pass `--session <session-id>` to route one into an explicit session. Raw browser commands never omit it; the retired positional session form is invalid.
@@ -274,3 +281,4 @@ Do not invoke these removed commands:
 - Do not emit a large unfiltered registry into a bounded output or infer absence from a truncation warning; filter at the source and narrow until the result is complete.
 - Do not assume every adapter needs a browser; check `strategy`.
 - Do not silently fall back from a failing adapter to hand-rolled `fetch`; use `--trace retain-on-failure` first.
+- Do not treat a raw 403 or challenge from a direct fetch as a browser gate; run `webcmd web fetch --url <url>` first.

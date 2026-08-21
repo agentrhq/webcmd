@@ -31,6 +31,7 @@ Until `doctor` is green, browser commands may fail. Registry and plugin discover
 ## Session lifecycle
 
 - Create an opaque browser session before raw browser work: `webcmd --profile <profile> session create`.
+- Create a named profile first: `webcmd profile create <profile>`. If an explicit profile returns `PROFILE_NOT_FOUND`, create it, then retry session creation.
 - Raw browser commands require that ID at the root: `webcmd --session <session-id> browser ...`; the old positional session form is retired.
 - Profiles are cookie jars and auth scope; sessions are browser workspaces/windows within a profile. Parallel agents use separate sessions.
 - `webcmd session list` shows sessions and their handoff/runtime state; close finished work with `webcmd session close <session-id>`. Close is blocked while that Session has a live handoff.
@@ -42,6 +43,7 @@ Until `doctor` is green, browser commands may fail. Registry and plugin discover
 For a `FETCH_BLOCKED` or `FETCH_REQUIRES_BROWSER` fallback, use one Session for the browser portion, preserve its complete opaque ID, and close it in cleanup. Local browser commands use Cloak; hosted browser commands use Webcmd Cloud and Browser Use. `web fetch` remains local in both modes and never opens a browser.
 
 ```bash
+webcmd profile create work
 webcmd --profile work session create
 # Copy the returned full ID:
 # session_7d8f2c10-4a11-4f3e-9c22-1b6de0a91f45

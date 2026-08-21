@@ -1,5 +1,5 @@
 import { CLI_COMMAND } from './brand.js';
-import { OUTPUT_FORMAT_HELP, OUTPUT_FORMATS } from './command-surface.js';
+import { JSON_FORMAT_ALIAS_HELP, OUTPUT_FORMAT_HELP, OUTPUT_FORMATS } from './command-surface.js';
 import type { Arg } from './registry.js';
 
 export interface PresentableCommand {
@@ -93,6 +93,12 @@ const COMMON_OPTIONS = [
     help: OUTPUT_FORMAT_HELP,
     default: 'table',
     choices: [...OUTPUT_FORMATS],
+  },
+  {
+    flags: '--json',
+    name: 'json',
+    help: JSON_FORMAT_ALIAS_HELP,
+    default: false,
   },
   {
     flags: '--trace <mode>',

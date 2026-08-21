@@ -37,6 +37,12 @@ describe('web fetch command', () => {
     expect(webFetchCommand).toMatchObject({ site: 'web', name: 'fetch', browser: false, clientOwned: true, defaultFormat: 'md' });
   });
 
+  it('is findable from blocked, 403, and Cloudflare', () => {
+    expect(webFetchCommand.description).toMatch(/blocked/i);
+    expect(webFetchCommand.description).toMatch(/403/);
+    expect(webFetchCommand.description).toMatch(/Cloudflare/i);
+  });
+
   it('accepts hosted root options without importing execution', async () => {
     await runWebFetchCommand(['--profile', 'work', '--workspace', 'test', 'web', 'fetch', '--url', 'https://example.com']);
 
