@@ -124,6 +124,12 @@ Reusable adapters continue to use the existing `IPage` API. Playwright-style
 programs are for reconnaissance and ad-hoc multi-step work; they are not pasted
 into adapter modules.
 
+`browser --help` lists that surface plus `close` under **Browser session
+commands**, and the adapter authoring commands `init` and `verify` under
+**Adapter authoring commands**. Forking an installed plugin command is
+`webcmd adapter override <site>/<command>` (alias: `webcmd adapter fork`);
+`webcmd browser fork` was removed.
+
 ## Top-Level Commands
 
 | Command | Purpose |
@@ -137,7 +143,7 @@ into adapter modules.
 | `profile` | List, rename, and select browser runtime profiles. |
 | `auth` | Inspect website login status, and refresh logged-in site sessions. |
 | `plugin` | Install, update, list, create, and uninstall plugins. |
-| `adapter` | Inspect or remove legacy adapters in `~/.webcmd/clis/`. |
+| `adapter` | Inspect, fork, or remove legacy adapters in `~/.webcmd/clis/`. |
 | `external` | Register or install external local CLIs. |
 | `validate` | Validate adapter definitions. |
 | `verify` | Validate and smoke test an adapter. |

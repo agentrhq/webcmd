@@ -140,6 +140,28 @@ export function browserOptionValueParser(
   return undefined;
 }
 
+/**
+ * Help-only presentation metadata for the `browser` namespace. This is not part
+ * of the hosted wire contract: the catalog below still declares every command,
+ * so local and hosted dispatch are unchanged. It only decides how
+ * `browser --help` groups them.
+ *
+ * `browser` carries two unrelated surfaces: the raw-browser session commands and
+ * the adapter authoring commands that drive the cloud/local authoring flow. Listed
+ * as one flat block they read as unrelated noise (#317), so they are grouped.
+ */
+export const BROWSER_SESSION_HELP_GROUP = 'Browser session commands:';
+export const BROWSER_AUTHORING_HELP_GROUP = 'Adapter authoring commands:';
+
+const AUTHORING_COMMAND_PATHS: ReadonlySet<string> = new Set(['init', 'verify']);
+
+/** Help heading a catalogued browser command belongs under. */
+export function browserHelpGroup(commandPath: string): string {
+  return AUTHORING_COMMAND_PATHS.has(commandPath)
+    ? BROWSER_AUTHORING_HELP_GROUP
+    : BROWSER_SESSION_HELP_GROUP;
+}
+
 export const browserCommandCatalog: readonly HostedBrowserCommandContract[] = [
   command('tabs', 'List pages in the existing browser session', 'tabs', [], [
     verboseFlag(),

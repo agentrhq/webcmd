@@ -25,7 +25,7 @@ import { printCompletionScript } from './completion.js';
 import { loadExternalClis, executeExternalCli, installExternalCli, registerExternalCli, isBinaryInstalled, formatExternalCliLabel } from './external.js';
 import { addWebcmdSkills, listWebcmdSkills, removeWebcmdSkills, updateWebcmdSkill, type WebcmdSkillAddResult } from './skills.js';
 import { registerAllCommands } from './commanderAdapter.js';
-import { buildRootHelpPresentation, classifyAdapter, installCommanderNamespaceStructuredHelp, installRootPresentationHelp, leadingPositionalFromUsage, rootHelpData, type RootAdapterGroups } from './help.js';
+import { buildRootHelpPresentation, classifyAdapter, hideAutoHelpCommands, installCommanderNamespaceStructuredHelp, installRootPresentationHelp, leadingPositionalFromUsage, rootHelpData, visibleChildCommands, type RootAdapterGroups } from './help.js';
 import { EXIT_CODES, getErrorMessage, toEnvelope, BrowserConnectError, CliError, ArgumentError } from './errors.js';
 import { TargetError, type TargetErrorCode } from './browser/target-errors.js';
 import { resolveTargetJs, getTextResolvedJs, getValueResolvedJs, getAttributesResolvedJs, selectResolvedJs, isAutocompleteResolvedJs, type ResolveOptions, type TargetMatchLevel } from './browser/target-resolver.js';
@@ -38,7 +38,7 @@ import { parseFilter, shapeMatchesFilter } from './browser/shape-filter.js';
 import { buildHtmlTreeJs, type HtmlTreeResult } from './browser/html-tree.js';
 import { buildExtractHtmlJs, runExtractFromHtml } from './browser/extract.js';
 import { analyzeSite, type PageSignals } from './browser/analyze.js';
-import { browserOptionValueParser } from './browser/command-catalog.js';
+import { browserHelpGroup, browserOptionValueParser } from './browser/command-catalog.js';
 import { registerAuthCommands } from './commands/auth.js';
 import { daemonRestart, daemonStatus, daemonStop } from './commands/daemon.js';
 import { enableVerbose, isVerbose, log } from './logger.js';
@@ -617,7 +617,7 @@ function withBrowserVerbose(command: Command): Command {
 }
 
 function formatChildCommandSummary(command: Command): string {
-  return [...new Set(command.commands.map(child => child.name()))]
+  return [...new Set(visibleChildCommands(command).map(child => child.name()))]
     .sort((a, b) => a.localeCompare(b))
     .join(', ');
 }
@@ -625,6 +625,9 @@ function formatChildCommandSummary(command: Command): string {
 function applyRootSubcommandSummaries(program: Command): void {
   for (const command of program.commands) {
     if (command.commands.length === 0) continue;
+    // The root presentation already omits Commander's auto `help [command]`;
+    // namespaces listed it a line below their own `-h, --help` option (#317).
+    hideAutoHelpCommands(command);
     const summary = formatChildCommandSummary(command);
     if (summary) command.description(summary);
   }
@@ -954,7 +957,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
 
   // ── Init (adapter scaffolding) ──
 
-  browser.command('init')
+  const browserInitCommand = new Command('init')
     .argument('<name>', 'Adapter name in site/command format (e.g. hn/top)')
     .description('Generate adapter scaffold in ~/.webcmd/clis/')
     .action(async (name: string) => {
@@ -1021,7 +1024,7 @@ cli({
 
   // ── Verify (test adapter) ──
 
-  const browserVerifyCmd = browser.command('verify')
+  const browserVerifyCmd = new Command('verify')
     .argument('<name>', 'Adapter name in site/command format (e.g. hn/top)')
     .option('--write-fixture', 'Write a starter fixture to ~/.webcmd/sites/<site>/verify/<command>.json if none exists')
     .option('--update-fixture', 'Overwrite an existing fixture with one derived from current output')
@@ -1362,6 +1365,17 @@ cli({
       surface: 'browser',
       ...routing,
     })))));
+
+  // Adapter authoring is attached after the session surface so `browser --help`
+  // leads with the commands the namespace is actually named for.
+  browser.addCommand(browserInitCommand);
+  browser.addCommand(browserVerifyCmd);
+
+  // Session control and adapter authoring are unrelated surfaces that both live
+  // under `browser`. Group them from the shared catalog so local and hosted help
+  // read the same way.
+  for (const child of browser.commands) child.helpGroup(browserHelpGroup(child.name()));
+
   // ── Built-in: doctor / completion ──────────────────────────────────────────
 
   const doctorCmd = program
@@ -1870,6 +1884,7 @@ cli({
 
   adapterCmd
     .command('override')
+    .alias('fork')
     .description('Fork an installed plugin command into ~/.webcmd/clis so you can modify it')
     .argument('<command>', 'Command to override, as <site>/<command>')
     .action(handleAdapterOverride);
