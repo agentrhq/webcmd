@@ -145,7 +145,7 @@ if (getCompIdx !== -1) {
 const { discoverClis, discoverPlugins, ensureUserCliCompatShims, ensureUserAdapters, PLUGINS_DIR } = await import('./discovery.js');
 const { getCompletions } = await import('./completion.js');
 const { runCli } = await import('./cli.js');
-const { emitHook, shouldRunStartupSideEffects } = await import('./hooks.js');
+const { emitHook, shouldEmitStartupHook, shouldRunStartupSideEffects } = await import('./hooks.js');
 const { installNodeNetwork } = await import('./node-network.js');
 const { registerUpdateNoticeOnExit, checkForUpdateBackground } = await import('./update-check.js');
 
@@ -213,7 +213,7 @@ try {
   throw err;
 }
 
-if (runStartupSideEffects) {
+if (shouldEmitStartupHook(argv)) {
   await emitHook('onStartup', { command: '__startup__', args: {} });
 }
 await runCli(BUILTIN_CLIS, USER_CLIS);

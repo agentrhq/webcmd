@@ -83,14 +83,69 @@ export async function emitHook(name: HookName, ctx: HookContext, result?: unknow
   }
 }
 
+const BUILTIN_COMMANDS = new Set([
+  'adapter',
+  'auth',
+  'browser',
+  'completion',
+  'convention-audit',
+  'daemon',
+  'doctor',
+  'external',
+  'list',
+  'plugin',
+  'profile',
+  'session',
+  'skills',
+  'update',
+  'validate',
+  'verify',
+  'web',
+]);
+
 export function shouldRunStartupSideEffects(argv: readonly string[]): boolean {
+  if (isHelp(argv)) return false;
+  return !(hasExplicitOutputFormat(argv) && BUILTIN_COMMANDS.has(rootCommand(argv) ?? ''));
+}
+
+export function shouldEmitStartupHook(argv: readonly string[]): boolean {
+  return !isHelp(argv) && !isCompletion(argv);
+}
+
+function isHelp(argv: readonly string[]): boolean {
+  for (const token of argv) {
+    if (token === '--') return false;
+    if (token === '--help' || token === '-h') return true;
+  }
+  return false;
+}
+
+function isCompletion(argv: readonly string[]): boolean {
+  return argv.includes('--get-completions');
+}
+
+function hasExplicitOutputFormat(argv: readonly string[]): boolean {
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i]!;
-    if (token === '--') return true;
-    if (token === '--help' || token === '-h' || token === '--json') return false;
-    if (token === '-f' || token === '--format' || /^-f.+/.test(token) || token.startsWith('--format=')) return false;
+    if (token === '--') return false;
+    if (token === '--json') return true;
+    if (token === '-f' || token === '--format' || /^-f.+/.test(token) || token.startsWith('--format=')) return true;
   }
-  return true;
+  return false;
+}
+
+function rootCommand(argv: readonly string[]): string | undefined {
+  for (let i = 0; i < argv.length; i += 1) {
+    const token = argv[i]!;
+    if (token === '--') return argv[i + 1];
+    if (token === '--profile' || token === '--session' || token === '--workspace') {
+      i += 1;
+      continue;
+    }
+    if (token.startsWith('--profile=') || token.startsWith('--session=') || token.startsWith('--workspace=')) continue;
+    if (!token.startsWith('-') || token === '-') return token;
+  }
+  return undefined;
 }
 
 /**

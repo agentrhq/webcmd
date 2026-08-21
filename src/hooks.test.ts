@@ -9,6 +9,7 @@ import {
   onAfterExecute,
   emitHook,
   clearAllHooks,
+  shouldEmitStartupHook,
   shouldRunStartupSideEffects,
   type HookContext,
 } from './hooks.js';
@@ -115,6 +116,25 @@ describe('startup hook gating', () => {
     ['list', '--json'],
   ])('skips startup side effects for help or requested data output: %j', (...argv) => {
     expect(shouldRunStartupSideEffects(argv)).toBe(false);
+  });
+
+  it('keeps startup side effects for completion discovery', () => {
+    expect(shouldRunStartupSideEffects(['--get-completions', '--cursor', '1'])).toBe(true);
+  });
+
+  it.each([
+    ['demo', 'state', '--json'],
+    ['demo', 'state', '-f', 'json'],
+  ])('keeps startup side effects for real plugin command execution: %j', (...argv) => {
+    expect(shouldRunStartupSideEffects(argv)).toBe(true);
+    expect(shouldEmitStartupHook(argv)).toBe(true);
+  });
+
+  it.each([
+    ['--help'],
+    ['--get-completions'],
+  ])('skips startup hooks for terminal help/completion paths: %j', (...argv) => {
+    expect(shouldEmitStartupHook(argv)).toBe(false);
   });
 });
 
