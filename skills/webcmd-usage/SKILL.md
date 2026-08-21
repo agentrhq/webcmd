@@ -41,6 +41,8 @@ Do not install Node.js or silently fall back to `npx`.
 
 **REQUIRED SUB-SKILL:** Before raw browser work, load `webcmd-browser`.
 
+**REQUIRED SUB-SKILL:** Before creating, revising, or privately overriding a command, load `webcmd-adapter-author`.
+
 ## Install
 
 ```bash
@@ -282,3 +284,5 @@ Do not invoke these removed commands:
 - Do not assume every adapter needs a browser; check `strategy`.
 - Do not silently fall back from a failing adapter to hand-rolled `fetch`; use `--trace retain-on-failure` first.
 - Do not treat a raw 403 or challenge from a direct fetch as a browser gate; run `webcmd web fetch --url <url>` first.
+- Do not store authoring notes in a hand-written file next to the adapter; use the site-memory commands (`webcmd site note`, `webcmd site endpoint`, `webcmd site field-map`).
+- Do not invent a sibling verify command; use `webcmd verify` or `webcmd browser verify`.
