@@ -43,7 +43,14 @@ describe('LocalBrowserSessionStore', () => {
     const store = new LocalBrowserSessionStore({ baseDir: tempDir(), idFactory: () => 'session_a' });
     const created = store.create('profile_work');
 
-    expect(() => store.require('profile_other', created.id)).toThrowError(expect.objectContaining({ code: 'SESSION_NOT_FOUND' }));
+    expect(() => store.require('profile_other', created.id)).toThrowError(expect.objectContaining({
+      code: 'SESSION_NOT_FOUND',
+      hint: expect.stringContaining('webcmd --profile profile_work session close'),
+    }));
+    expect(() => store.require('profile_missing', 'session_zzzzzzzz-zzzz-4zzz-8zzz-zzzzzzzzzzzz')).toThrowError(expect.objectContaining({
+      code: 'SESSION_NOT_FOUND',
+      hint: expect.stringContaining('Sessions are per profile'),
+    }));
     expect(() => store.find('profile_work', 'work')).toThrowError(expect.objectContaining({ code: 'INVALID_SESSION_SELECTOR' }));
   });
 
