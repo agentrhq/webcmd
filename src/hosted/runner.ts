@@ -20,6 +20,7 @@ import {
   HOSTED_ROOT_HELP,
   LOCAL_ONLY_COMMAND_HELP,
 } from '../completion-shared.js';
+import { splitAdapterCommandKey } from '../adapter-source.js';
 import { CliError, ConfigError, EXIT_CODES, toEnvelope } from '../errors.js';
 import { getRequestedHelpFormat, renderStructuredHelp } from '../help.js';
 import { enableVerbose } from '../logger.js';
@@ -561,7 +562,10 @@ async function runHostedAdapterSourceSurface(argv: readonly string[], literal: b
   const source = adapter.command('source');
   source.command('get').argument('<command>').option('-o, --output <path>').action((commandKey, opts: { output?: string }) => { parsed = { kind: 'get', commandKey, output: opts.output }; });
   source.command('put').argument('<command>').argument('<path>').action((commandKey, filePath) => { parsed = { kind: 'put', commandKey, path: filePath }; });
-  adapter.command('path').argument('<command>').action(commandKey => { parsed = { kind: 'path', commandKey }; });
+  adapter.command('path').argument('<command>').argument('[name]').action((commandKey, name?: string) => {
+    const key = splitAdapterCommandKey(commandKey, name);
+    parsed = { kind: 'path', commandKey: key ? `${key.site}/${key.command}` : commandKey };
+  });
   adapter.command('override')
     .description('Fork an installed adapter command into a private copy you can modify')
     .argument('<command>', 'Command to override, as <site>/<command>')
@@ -610,9 +614,11 @@ async function runHostedAdapterSourceSurface(argv: readonly string[], literal: b
 }
 
 function parseAdapterCommandKey(value: string): { site: string; command: string } {
-  const [site, command, extra] = value.split('/');
-  if (!isSafePathSegment(site) || !isSafePathSegment(command) || extra) throw new ConfigError('Adapter command must use site/command format.');
-  return { site, command };
+  const parsed = splitAdapterCommandKey(value);
+  if (!parsed || !isSafePathSegment(parsed.site) || !isSafePathSegment(parsed.command)) {
+    throw new ConfigError('Adapter command must use site/command format.');
+  }
+  return parsed;
 }
 
 function hostedAdapterDestination(homeDir: string, site: string, command: string): string {

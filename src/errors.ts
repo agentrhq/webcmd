@@ -180,12 +180,39 @@ export class SessionBusyError extends CliError {
   }
 }
 
+const ADAPTER_REPAIRABLE_CODES = new Set(['EMPTY_RESULT', 'SELECTOR', 'ADAPTER_LOAD']);
+
+/** Next action when an adapter command looks stale. Named so JSON envelopes carry it, not only YAML comments. */
+export function adapterRepairHelp(commandKey?: string): string {
+  const parts = commandKey?.trim().split(/[/\s]+/).filter(Boolean) ?? [];
+  const key = parts.length === 2 ? `${parts[0]}/${parts[1]}` : '<site>/<command>';
+  return [
+    'Treat this as adapter breakage.',
+    `Load the webcmd-autofix skill, run \`webcmd adapter path ${key}\`, patch only that file, and retry with --trace retain-on-failure.`,
+    'Do not sign up, solve CAPTCHA, log in, or replace the adapter with curl unless the error code is AUTH_REQUIRED.',
+  ].join(' ');
+}
+
+export function withAdapterRepairHelp(envelope: ErrorEnvelope, cmdName?: string): ErrorEnvelope {
+  if (!ADAPTER_REPAIRABLE_CODES.has(envelope.error.code)) return envelope;
+  const existing = envelope.error.help;
+  if (existing && /adapter path|webcmd-autofix/i.test(existing)) return envelope;
+  const repair = adapterRepairHelp(cmdName);
+  return {
+    ...envelope,
+    error: {
+      ...envelope.error,
+      help: existing ? `${existing} ${repair}` : repair,
+    },
+  };
+}
+
 export class EmptyResultError extends CliError {
   constructor(command: string, hint?: string) {
     super(
       'EMPTY_RESULT',
       `${command} returned no data`,
-      hint ?? 'The page structure may have changed, or you may need to log in',
+      hint ?? adapterRepairHelp(command),
       EXIT_CODES.EMPTY_RESULT,
     );
   }
@@ -199,7 +226,7 @@ export function selectorError(selector: string, hint?: string): CliError {
   return new CliError(
     'SELECTOR',
     `Could not find element: ${selector}`,
-    hint ?? 'The page UI may have changed. Please report this issue.',
+    hint ?? adapterRepairHelp(),
     EXIT_CODES.GENERIC_ERROR,
   );
 }

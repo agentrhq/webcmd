@@ -13,6 +13,7 @@ import {
   SessionBusyError,
   attachTraceReceipt,
   toEnvelope,
+  withAdapterRepairHelp,
 } from './errors.js';
 import type { SessionLeaseHolder } from './session-lease.js';
 
@@ -66,14 +67,17 @@ describe('Error type hierarchy', () => {
     const err = new EmptyResultError('hackernews/top');
     expect(err.code).toBe('EMPTY_RESULT');
     expect(err.message).toBe('hackernews/top returned no data');
-    expect(err.hint).toBeTruthy();
+    expect(err.hint).toContain('webcmd adapter path hackernews/top');
+    expect(err.hint).toContain('webcmd-autofix');
+    expect(err.hint).not.toMatch(/you may need to log in/i);
   });
 
   it('selectorError has default hint about page changes', () => {
     const err = selectorError('.submit-btn');
     expect(err.code).toBe('SELECTOR');
     expect(err.message).toContain('.submit-btn');
-    expect(err.hint).toContain('report');
+    expect(err.hint).toContain('webcmd adapter path');
+    expect(err.hint).toContain('webcmd-autofix');
   });
 
   it('BrowserConnectError has correct code', () => {
@@ -175,6 +179,15 @@ describe('toEnvelope', () => {
       executionId: 'exec_failure',
       artifactsUrl: '/v1/executions/exec_failure/artifacts',
     });
+  });
+
+  it('adds adapter-repair help to EMPTY_RESULT JSON envelopes', () => {
+    const envelope = withAdapterRepairHelp({
+      ok: false,
+      error: { code: 'EMPTY_RESULT', message: 'none', exitCode: 66 },
+    }, 'rest-countries/top');
+    expect(envelope.error.help).toContain('webcmd adapter path rest-countries/top');
+    expect(envelope.error.help).toMatch(/Do not sign up/i);
   });
 });
 

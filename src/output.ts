@@ -4,7 +4,7 @@
 
 import Table from 'cli-table3';
 import yaml from 'js-yaml';
-import type { ErrorEnvelope } from './errors.js';
+import { withAdapterRepairHelp, type ErrorEnvelope } from './errors.js';
 import { writeToStream } from './stream-write.js';
 
 export interface RenderOptions {
@@ -112,18 +112,20 @@ export function requestedFormatFromArgv(argv: readonly string[]): string | undef
 
 /** Serialize the local error envelope without writing to process-global stderr. */
 export function formatErrorEnvelope(envelope: ErrorEnvelope, opts: ErrorRenderOptions = {}): string {
+  const repaired = withAdapterRepairHelp(envelope, opts.cmdName);
   const fmt = errorEnvelopeFormat(opts.fmt);
-  if (fmt === 'json') return formatOutput(envelope, { fmt: 'json', fmtExplicit: true });
-  let output = yaml.dump(envelope, { sortKeys: false, lineWidth: 120, noRefs: true });
-  const code = envelope.error.code;
+  if (fmt === 'json') return formatOutput(repaired, { fmt: 'json', fmtExplicit: true });
+  let output = yaml.dump(repaired, { sortKeys: false, lineWidth: 120, noRefs: true });
+  const code = repaired.error.code;
   if (
     opts.cmdName
     && opts.traceMode !== 'on'
     && opts.traceMode !== 'retain-on-failure'
     && (code === 'SELECTOR' || code === 'EMPTY_RESULT' || code === 'ADAPTER_LOAD' || code === 'UNKNOWN')
   ) {
+    const key = opts.cmdName.includes('/') ? opts.cmdName : opts.cmdName.replace(/\s+/, '/');
     const runnable = opts.cmdName.replace('/', ' ');
-    output += '# AutoFix: re-run with --trace=retain-on-failure for trace artifact\n';
+    output += `# AutoFix: load webcmd-autofix; webcmd adapter path ${key}; re-run with --trace=retain-on-failure\n`;
     output += `# webcmd ${runnable} --trace retain-on-failure\n`;
   }
   return output;

@@ -165,6 +165,20 @@ describe('site-memory and local adapter authoring', () => {
       .rejects.toThrow(/Adapter source is unavailable/);
   });
 
+  it('accepts adapter path as two tokens', async () => {
+    const key = 'split-source/search';
+    const source = path.join(isolatedCliTestHome, 'split-search.js');
+    fs.writeFileSync(source, 'export default {};');
+    getRegistry().set(key, {
+      site: 'split-source', name: 'search', access: 'read', description: 'split', args: [], source,
+    } as never);
+    try {
+      await createProgram('', '').parseAsync(['node', 'webcmd', 'adapter', 'path', 'split-source', 'search']);
+    } finally {
+      getRegistry().delete(key);
+    }
+  });
+
   it('rejects local adapter source writes while directing users to the source path', async () => {
     const key = 'local-source/search';
     const source = path.join(isolatedCliTestHome, 'search.js');

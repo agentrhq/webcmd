@@ -61,7 +61,7 @@ import { classifyCommandOrigin, formatCommandOrigin } from './command-origin.js'
 import { readOverrideRecords, removeOverrideRecords } from './override-provenance.js';
 import { clearDaemonRunContext, generateRunId, isUnknownOutcomeError, runWithDaemonRunContext } from './session-lease.js';
 import { createLocalSiteMemoryBackend, registerSiteCommands } from './site-memory/commands.js';
-import { resolveAdapterSourcePath } from './adapter-source.js';
+import { resolveAdapterSourcePath, splitAdapterCommandKey } from './adapter-source.js';
 
 const CLI_FILE = fileURLToPath(import.meta.url);
 const FOLLOW_POLL_MS = 1_000;
@@ -1880,26 +1880,35 @@ cli({
     .argument('<command>', 'Command to override, as <site>/<command>')
     .action(handleAdapterOverride);
 
-  const localAdapterPath = (commandKey: string): string => {
-    const [site, command, extra] = commandKey.split('/');
-    if (!site || !command || extra || site === '.' || site === '..' || command === '.' || command === '..' || site.includes('\\') || command.includes('\\')) {
-      throw new ArgumentError('Adapter command must use site/command format.');
+  const localAdapterPath = (commandKey: string, commandName?: string): string => {
+    const parsed = splitAdapterCommandKey(commandKey, commandName);
+    if (!parsed) {
+      throw new ArgumentError(
+        'Adapter command must use site/command format.',
+        'Example: webcmd adapter path quotes/list  (also accepts: webcmd adapter path quotes list)',
+      );
     }
-    const registered = getRegistry().get(`${site}/${command}`) as import('./registry.js').InternalCliCommand | undefined;
+    const key = `${parsed.site}/${parsed.command}`;
+    const registered = getRegistry().get(key) as import('./registry.js').InternalCliCommand | undefined;
     const source = registered && resolveAdapterSourcePath(registered);
-    if (!source) throw new ArgumentError(`Adapter source is unavailable for ${commandKey}.`);
+    if (!source) throw new ArgumentError(`Adapter source is unavailable for ${key}.`);
     return source;
   };
-  const reportLocalAdapterPath = (commandKey: string): void => console.log(localAdapterPath(commandKey));
+  const reportLocalAdapterPath = (commandKey: string, commandName?: string): void => console.log(localAdapterPath(commandKey, commandName));
   const adapterSourceCmd = adapterCmd.command('source').description('Inspect local adapter source paths; hosted mode reads or writes source');
-  adapterSourceCmd.command('get').description('Print local source path; --output is hosted-only').argument('<command>').option('-o, --output <path>').action((commandKey: string, options: { output?: string }) => {
-    if (options.output) throw new ArgumentError(`Local adapter source get does not support --output. Use webcmd adapter path ${commandKey} and edit that file.`);
-    reportLocalAdapterPath(commandKey);
+  adapterSourceCmd.command('get').description('Print local source path; --output is hosted-only').argument('<command>').argument('[name]').option('-o, --output <path>').action((commandKey: string, commandName: string | undefined, options: { output?: string }) => {
+    const parsed = splitAdapterCommandKey(commandKey, commandName);
+    const key = parsed ? `${parsed.site}/${parsed.command}` : commandKey;
+    if (options.output) throw new ArgumentError(`Local adapter source get does not support --output. Use webcmd adapter path ${key} and edit that file.`);
+    reportLocalAdapterPath(commandKey, commandName);
   });
   adapterSourceCmd.command('put').description('Hosted-only source write; local users edit the adapter path').argument('<command>').argument('<path>').action((commandKey: string) => {
     throw new ArgumentError(`Local adapter source put is unavailable. Use webcmd adapter path ${commandKey} and edit that file.`);
   });
-  adapterCmd.command('path').argument('<command>').action((commandKey: string) => reportLocalAdapterPath(commandKey));
+  adapterCmd.command('path')
+    .argument('<command>', 'site/command, or site when followed by the command name')
+    .argument('[name]', 'command name when passed as a second token')
+    .action((commandKey: string, commandName?: string) => reportLocalAdapterPath(commandKey, commandName));
 
   // ── Built-in: browser profile selection ──────────────────────────────────
   const PROFILE_LIST_COLUMNS = ['contextId', 'alias', 'default', 'connected', 'runtimeVersion'];

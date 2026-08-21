@@ -176,7 +176,13 @@ describe('formatErrorEnvelope', () => {
       error: { code: 'EMPTY_RESULT', message: 'none', exitCode: 66 },
     }, { fmt: 'json', cmdName: 'github/issue' });
     expect(text).not.toContain('# AutoFix');
-    expect(JSON.parse(text)).toMatchObject({ ok: false, error: { code: 'EMPTY_RESULT' } });
+    expect(JSON.parse(text)).toMatchObject({
+      ok: false,
+      error: {
+        code: 'EMPTY_RESULT',
+        help: expect.stringContaining('webcmd adapter path github/issue'),
+      },
+    });
   });
 });
 

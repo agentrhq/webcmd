@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { fileURLToPath } from 'node:url';
 import type { InternalCliCommand } from './registry.js';
-import { resolveAdapterSourcePath } from './adapter-source.js';
+import { resolveAdapterSourcePath, splitAdapterCommandKey } from './adapter-source.js';
 
 const existingPath = fileURLToPath(import.meta.url);
 
@@ -39,5 +39,17 @@ describe('resolveAdapterSourcePath', () => {
   it('returns undefined when every candidate is stale', () => {
     const cmd = makeCmd({ source: '/tmp/webcmd-missing-source.js', _modulePath: '/tmp/webcmd-missing-module.js' });
     expect(resolveAdapterSourcePath(cmd)).toBeUndefined();
+  });
+});
+
+describe('splitAdapterCommandKey', () => {
+  it('accepts site/command and site command', () => {
+    expect(splitAdapterCommandKey('quotes/list')).toEqual({ site: 'quotes', command: 'list' });
+    expect(splitAdapterCommandKey('quotes', 'list')).toEqual({ site: 'quotes', command: 'list' });
+  });
+
+  it('rejects the wrong arity', () => {
+    expect(splitAdapterCommandKey('quotes')).toBeNull();
+    expect(splitAdapterCommandKey('quotes/list/extra')).toBeNull();
   });
 });
