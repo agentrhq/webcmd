@@ -647,7 +647,7 @@ describe('hosted root preflight call order', () => {
     const stderr = sink();
     const fetchImpl = vi.fn<typeof fetch>();
 
-    const hosted = runHostedCli(argv, {
+    const hosted = await runHostedCli(argv, {
       config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
       stdout: stdout.stream,
       stderr: stderr.stream,
@@ -661,13 +661,16 @@ describe('hosted root preflight call order', () => {
       errorCode: 'UNSUPPORTED_SHELL',
       errorMessage: `Unsupported shell: ${shell}. Supported: bash, zsh, fish`,
     });
-    await expect(hosted).rejects.toMatchObject({
-      code: local.errorCode,
-      message: local.errorMessage,
-      exitCode: local.exitCode,
-    });
+    expect(hosted).toEqual({ handled: true, exitCode: local.exitCode });
     expect(stdout.text()).toBe(local.stdout);
-    expect(stderr.text()).toBe(local.stderr);
+    expect(stderr.text()).toBe([
+      'ok: false',
+      'error:',
+      `  code: ${local.errorCode}`,
+      `  message: '${local.errorMessage}'`,
+      `  exitCode: ${local.exitCode}`,
+      '',
+    ].join('\n'));
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 

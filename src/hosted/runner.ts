@@ -183,7 +183,6 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
       await writeToStream(stderr, `error: ${err.message}\n`);
       return { handled: true, exitCode: EXIT_CODES.USAGE_ERROR };
     }
-    if (err instanceof CliError && err.code === 'UNSUPPORTED_SHELL') throw err;
     if (err instanceof CommanderStructuralError) {
       await writeToStream(stderr, err.output);
       return { handled: true, exitCode: err.exitCode };
