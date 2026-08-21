@@ -197,15 +197,22 @@ test('npm versions sorts correctly when two versions share the same date', async
     const sameDayPayload = {
         name: 'exlib',
         'dist-tags': { latest: '2.1.1' },
+        versions: {
+            '2.1.0': { description: 'v2.1.0' },
+            '2.1.1': { description: 'v2.1.1' },
+            // '0.0.1-ghost' intentionally absent — time-only entry below must be excluded
+        },
         time: {
-            created:  '2026-06-15T08:00:00.000Z',
-            modified: '2026-06-15T14:00:00.000Z',
-            '2.1.0':  '2026-06-15T08:00:00.000Z',  // earlier on same day
-            '2.1.1':  '2026-06-15T14:00:00.000Z',  // later on same day
+            created:       '2026-06-15T08:00:00.000Z',
+            modified:      '2026-06-15T14:00:00.000Z',
+            '2.1.0':       '2026-06-15T08:00:00.000Z',  // earlier on same day
+            '2.1.1':       '2026-06-15T14:00:00.000Z',  // later on same day
+            '0.0.1-ghost': '2026-06-15T06:00:00.000Z',  // time-only, no body.versions entry
         },
     };
     const req = fakeRequest(sameDayPayload);
     const rows = await versionsNpm({ name: 'exlib', limit: 10 }, req);
+    // ghost entry must be excluded
     assert.equal(rows.length, 2);
     // 2.1.1 published at 14:00 must come before 2.1.0 published at 08:00
     assert.equal(rows[0].version, '2.1.1');
@@ -213,6 +220,8 @@ test('npm versions sorts correctly when two versions share the same date', async
     // Both format to the same date string
     assert.equal(rows[0].publishedAt, '2026-06-15');
     assert.equal(rows[1].publishedAt, '2026-06-15');
+    // ghost must not appear at all
+    assert.ok(rows.every((r) => r.version !== '0.0.1-ghost'));
 });
 
 test('npm versions rejects out-of-range limit', async () => {

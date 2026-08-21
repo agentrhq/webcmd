@@ -13,11 +13,15 @@ export async function versionsNpm(args, request = fetch) {
     const body = await npmFetch(url, `npm versions ${name}`, request);
 
     const timeMap = body?.time && typeof body.time === 'object' ? body.time : {};
+    const versionsMap = body?.versions && typeof body.versions === 'object' ? body.versions : {};
     const latest = body?.['dist-tags']?.latest ?? '';
 
     const rows = Object.entries(timeMap)
         // skip internal bookkeeping keys that npm puts in time
         .filter(([version]) => version !== 'created' && version !== 'modified')
+        // only keep versions that actually exist in body.versions — time-only
+        // keys (e.g. unpublished entries) have no real release and must be omitted
+        .filter(([version, publishedAt]) => version in versionsMap && typeof publishedAt === 'string')
         // sort on the raw full ISO timestamp BEFORE formatting so that two
         // versions published on the same calendar date still sort correctly
         .sort(([, left], [, right]) => String(right ?? '').localeCompare(String(left ?? '')))
