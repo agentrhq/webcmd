@@ -23,7 +23,7 @@ import { LocalBrowserRunArtifactSink } from './artifacts.js';
 import { MemorySnapshotBaselineStore } from '../snapshot/index.js';
 import { unsupportedApiMessage } from './playwright-transport.js';
 import { QuickJSHost } from './quickjs-host.js';
-import { runBrowserProgram } from './runner.js';
+import { DOWNLOAD_WAIT_TIMEOUT_HINT, runBrowserProgram } from './runner.js';
 
 const playwrightServer = createRequire(import.meta.url)(
   'playwright-core/lib/coreBundle',
@@ -669,6 +669,46 @@ afterAll(async () => {
     `);
 
     expect(output.result).toBe('hello.txt');
+  });
+
+  it('captures a generated blob object-URL download as an artifact', async () => {
+    await page.setContent(`
+      <button id="convert">Normalize and download</button>
+      <pre id="preview"></pre>
+      <script>
+        convert.onclick = () => {
+          const text = 'name,amount\\nalpha,10.00\\nbeta,20.50\\ngamma,30.00\\n';
+          preview.textContent = text;
+          const a = document.createElement('a');
+          a.download = 'normalized.csv';
+          a.href = URL.createObjectURL(new Blob([text], { type: 'text/csv' }));
+          a.click();
+        };
+      </script>
+    `);
+
+    const output = await run(`
+      const downloadPromise = page.waitForEvent('download');
+      await page.locator('#convert').click();
+      const download = await downloadPromise;
+      await download.saveAs(download.suggestedFilename());
+      return { filename: download.suggestedFilename() };
+    `);
+
+    expect(output.result).toEqual({ filename: 'normalized.csv' });
+    expect(output.artifacts).toEqual([
+      expect.objectContaining({ filename: 'normalized.csv', byteSize: 47 }),
+    ]);
+  });
+
+  it('tells the caller not to recompute bytes when a download wait times out', async () => {
+    await expect(run(`
+      await page.waitForEvent('download');
+    `, { timeoutMs: 25 })).rejects.toMatchObject({
+      code: 'BROWSER_RUN_TIMEOUT',
+      message: 'Browser-run timed out waiting for a download.',
+      hint: DOWNLOAD_WAIT_TIMEOUT_HINT,
+    });
   });
 
   it('exposes only the supplied context from a shared browser', async () => {

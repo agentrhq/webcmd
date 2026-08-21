@@ -55,6 +55,25 @@ const PLAYWRIGHT_CLIENT_SOURCE = fs.readFileSync(
   'utf8',
 );
 
+const GENERIC_TIMEOUT_HINT = 'Split the task into a smaller run or increase --timeout.';
+export const DOWNLOAD_WAIT_TIMEOUT_HINT = 'A timed-out download wait is not a license to invent file contents. If a download event fired, use download.saveAs(suggestedFilename()). If none fired, report that gap. Do not rebuild the file from page logic.';
+
+function isDownloadWait(text: string): boolean {
+  return /waiting for event ["']download["']/i.test(text)
+    || /waitForEvent\(\s*['"]download['"]\s*\)/.test(text);
+}
+
+function timeoutRunError(message: string, source?: string): BrowserRunError {
+  const download = isDownloadWait(message) || (source !== undefined && isDownloadWait(source));
+  return new BrowserRunError(
+    'BROWSER_RUN_TIMEOUT',
+    download && !isDownloadWait(message)
+      ? 'Browser-run timed out waiting for a download.'
+      : message,
+    download ? DOWNLOAD_WAIT_TIMEOUT_HINT : GENERIC_TIMEOUT_HINT,
+  );
+}
+
 function requirePositiveInteger(
   value: number | undefined,
   fallback: number,
@@ -109,12 +128,11 @@ function normalizeExecutionError(error: unknown): Error {
       'Navigate to an http(s) URL, or use page.evaluate memory. data: pages cannot use localStorage.',
     );
   }
+  if (isDownloadWait(message)) {
+    return timeoutRunError(sanitize(message));
+  }
   if (/interrupted|execution timeout|timed out/i.test(message)) {
-    return new BrowserRunError(
-      'BROWSER_RUN_TIMEOUT',
-      'Browser-run execution exceeded its time limit.',
-      'Split the task into a smaller run or increase --timeout.',
-    );
+    return timeoutRunError('Browser-run execution exceeded its time limit.');
   }
   if (/out of memory|memory limit/i.test(message)) {
     return new BrowserRunError(
@@ -550,10 +568,9 @@ export async function runBrowserProgram(
     } finally {
       timings.client_bundle_init_ms = Math.max(0, Date.now() - clientBundleInitStartedAt);
     }
-    const timeoutError = () => new BrowserRunError(
-      'BROWSER_RUN_TIMEOUT',
+    const timeoutError = () => timeoutRunError(
       `Browser-run execution exceeded ${timeoutMs}ms.`,
-      'Split the task into a smaller run or increase --timeout.',
+      source,
     );
     const beforeSnapshot = snapshotDiffEnabled
       ? baselineStore.get(input.pageId) ?? await captureSnapshot(input.page)
