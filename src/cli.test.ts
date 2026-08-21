@@ -151,6 +151,18 @@ describe('plugin update reconciliation reporting', () => {
 });
 
 describe('site-memory and local adapter authoring', () => {
+  it('keeps adapter help pointed at create vs override commands', () => {
+    const program = createProgram('', '');
+    const browserInit = program.commands.find(cmd => cmd.name() === 'browser')!
+      .commands.find(cmd => cmd.name() === 'init')!;
+    const adapter = program.commands.find(cmd => cmd.name() === 'adapter')!;
+
+    expect(browserInit.helpInformation()).toContain('Create a new private adapter: webcmd browser init <site>/<command>');
+    const adapterHelp = adapter.helpInformation();
+    expect(adapterHelp).toMatch(/Override installed command: webcmd adapter override\s+<site>\/<command>/);
+    expect(adapterHelp).toMatch(/Locate local source: webcmd adapter path\s+<site>\/<command>/);
+  });
+
   it('writes site-memory reads only when --output is requested', async () => {
     const output = path.join(isolatedCliTestHome, 'memory.json');
     const program = createProgram('', '');

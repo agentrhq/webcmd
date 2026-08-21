@@ -957,7 +957,11 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
 
   browser.command('init')
     .argument('<name>', 'Adapter name in site/command format (e.g. hn/top)')
-    .description('Generate adapter scaffold in ~/.webcmd/clis/')
+    .description(`Generate adapter scaffold in ~/.webcmd/clis/
+
+Create a new private adapter: ${CLI_COMMAND} browser init <site>/<command>
+Override an installed command: ${CLI_COMMAND} adapter override <site>/<command>
+Test either local adapter: ${CLI_COMMAND} browser verify <site>/<command>`)
     .action(async (name: string) => {
       try {
         const parts = name.split('/');
@@ -1739,7 +1743,8 @@ cli({
     });
 
   // ── Built-in: adapter management ─────────────────────────────────────────
-  const adapterCmd = program.command('adapter').description('Manage CLI adapters');
+  const adapterCmd = program.command('adapter')
+    .description('Manage CLI adapters');
   // Snapshot before applyRootSubcommandSummaries() rewrites .description() to a child-name listing.
   const originalAdapterDescription = adapterCmd.description();
 
@@ -1876,7 +1881,7 @@ cli({
 
   adapterCmd
     .command('override')
-    .description('Fork an installed plugin command into ~/.webcmd/clis so you can modify it')
+    .description(`Override installed command: ${CLI_COMMAND} adapter override <site>/<command>`)
     .argument('<command>', 'Command to override, as <site>/<command>')
     .action(handleAdapterOverride);
 
@@ -1906,6 +1911,7 @@ cli({
     throw new ArgumentError(`Local adapter source put is unavailable. Use webcmd adapter path ${commandKey} and edit that file.`);
   });
   adapterCmd.command('path')
+    .description(`Locate local source: ${CLI_COMMAND} adapter path <site>/<command>`)
     .argument('<command>', 'site/command, or site when followed by the command name')
     .argument('[name]', 'command name when passed as a second token')
     .action((commandKey: string, commandName?: string) => reportLocalAdapterPath(commandKey, commandName));

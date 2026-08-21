@@ -27,6 +27,14 @@ function program(store: SiteMemoryBackend, io?: { readStdin?: () => Promise<stri
 }
 
 describe('site memory format flags', () => {
+  it('documents concise authoring commands in site-memory help', () => {
+    const help = program(backend()).commands.find(command => command.name() === 'site')!.helpInformation();
+
+    expect(help).toContain('webcmd site note add <site> --text');
+    expect(help).toContain('webcmd site endpoint set <site> <name> --url');
+    expect(help).toContain('webcmd site fixture put <site/command>');
+  });
+
   it('accepts -f json on site fixture get', async () => {
     const store = backend();
     await program(store).parseAsync(['site', 'fixture', 'get', 'quotes-toscrape/list', '-f', 'json'], { from: 'user' });

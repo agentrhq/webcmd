@@ -49,7 +49,14 @@ export function registerSiteCommands(
   stdout?: NodeJS.WritableStream,
   io: SiteCommandIo = {},
 ): void {
-  const site = root.command('site').description('Read and write site memory');
+  const site = root.command('site')
+    .description(`Read and write site memory
+
+Authoring:
+  webcmd site note add <site> --text <markdown>
+  webcmd site endpoint set <site> <name> --url <url> --method GET
+  webcmd site fixture put <site/command> <path>
+  webcmd site sample add <site/command> <path>`);
   const memory = site.command('memory').description('Inspect site memory');
   const show = addOutputFormatOption(memory.command('show').argument('<site>').option('--kind <kind>').option('-o, --output <path>'), 'json');
   show.action(async (name, opts: { kind?: string; output?: string; format?: string }) => {
