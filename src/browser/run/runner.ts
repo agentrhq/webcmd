@@ -57,21 +57,41 @@ const PLAYWRIGHT_CLIENT_SOURCE = fs.readFileSync(
 
 const GENERIC_TIMEOUT_HINT = 'Split the task into a smaller run or increase --timeout.';
 export const DOWNLOAD_WAIT_TIMEOUT_HINT = 'A timed-out download wait is not a license to invent file contents. If a download event fired, use download.saveAs(suggestedFilename()). If none fired, report that gap. Do not rebuild the file from page logic.';
+export const POPUP_WAIT_TIMEOUT_HINT = 'A missing popup is not recovered with page.goto on the current page. Open a tracked tab with context.newPage(), then goto the destination URL on that new page. Cap waitForEvent(\'popup\') with a short timeout.';
 
 function isDownloadWait(text: string): boolean {
   return /waiting for event ["']download["']/i.test(text)
     || /waitForEvent\(\s*['"]download['"]\s*\)/.test(text);
 }
 
+function isPopupOrNewTabWait(text: string): boolean {
+  return /waiting for event ["'](popup|page)["']/i.test(text)
+    || /waitForEvent\(\s*['"](?:popup|page)['"]\s*\)/.test(text);
+}
+
+function timeoutKind(message: string, source?: string): 'popup' | 'download' | undefined {
+  if (isPopupOrNewTabWait(message) || (source !== undefined && isPopupOrNewTabWait(source))) return 'popup';
+  if (isDownloadWait(message) || (source !== undefined && isDownloadWait(source))) return 'download';
+  return undefined;
+}
+
 function timeoutRunError(message: string, source?: string): BrowserRunError {
-  const download = isDownloadWait(message) || (source !== undefined && isDownloadWait(source));
-  return new BrowserRunError(
-    'BROWSER_RUN_TIMEOUT',
-    download && !isDownloadWait(message)
-      ? 'Browser-run timed out waiting for a download.'
-      : message,
-    download ? DOWNLOAD_WAIT_TIMEOUT_HINT : GENERIC_TIMEOUT_HINT,
-  );
+  const kind = timeoutKind(message, source);
+  if (kind === 'popup') {
+    return new BrowserRunError(
+      'BROWSER_RUN_TIMEOUT',
+      isPopupOrNewTabWait(message) ? message : 'Browser-run timed out waiting for a popup or new tab.',
+      POPUP_WAIT_TIMEOUT_HINT,
+    );
+  }
+  if (kind === 'download') {
+    return new BrowserRunError(
+      'BROWSER_RUN_TIMEOUT',
+      isDownloadWait(message) ? message : 'Browser-run timed out waiting for a download.',
+      DOWNLOAD_WAIT_TIMEOUT_HINT,
+    );
+  }
+  return new BrowserRunError('BROWSER_RUN_TIMEOUT', message, GENERIC_TIMEOUT_HINT);
 }
 
 function requirePositiveInteger(
@@ -128,7 +148,7 @@ function normalizeExecutionError(error: unknown): Error {
       'Navigate to an http(s) URL, or use page.evaluate memory. data: pages cannot use localStorage.',
     );
   }
-  if (isDownloadWait(message)) {
+  if (isPopupOrNewTabWait(message) || isDownloadWait(message)) {
     return timeoutRunError(sanitize(message));
   }
   if (/interrupted|execution timeout|timed out/i.test(message)) {

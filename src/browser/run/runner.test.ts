@@ -23,7 +23,7 @@ import { LocalBrowserRunArtifactSink } from './artifacts.js';
 import { MemorySnapshotBaselineStore } from '../snapshot/index.js';
 import { unsupportedApiMessage } from './playwright-transport.js';
 import { QuickJSHost } from './quickjs-host.js';
-import { DOWNLOAD_WAIT_TIMEOUT_HINT, runBrowserProgram } from './runner.js';
+import { DOWNLOAD_WAIT_TIMEOUT_HINT, POPUP_WAIT_TIMEOUT_HINT, runBrowserProgram } from './runner.js';
 
 const playwrightServer = createRequire(import.meta.url)(
   'playwright-core/lib/coreBundle',
@@ -905,6 +905,25 @@ afterAll(async () => {
     });
     expect(browser.isConnected()).toBe(true);
     expect(page.isClosed()).toBe(false);
+  });
+
+  it('tells the caller to open a tracked tab when a popup wait times out', async () => {
+    await expect(run(`
+      await page.waitForEvent('popup');
+    `, { timeoutMs: 25 })).rejects.toMatchObject({
+      code: 'BROWSER_RUN_TIMEOUT',
+      message: 'Browser-run timed out waiting for a popup or new tab.',
+      hint: POPUP_WAIT_TIMEOUT_HINT,
+    });
+  });
+
+  it('does not tell the caller to increase --timeout after an explicit popup wait timeout', async () => {
+    await expect(run(`
+      await page.waitForEvent('popup', { timeout: 50 });
+    `, { timeoutMs: 5_000 })).rejects.toMatchObject({
+      code: 'BROWSER_RUN_TIMEOUT',
+      hint: POPUP_WAIT_TIMEOUT_HINT,
+    });
   });
 
   it('cancels an in-flight run through its abort signal', async () => {

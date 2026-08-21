@@ -292,11 +292,13 @@ function scopedContext(
             };
             if (event === 'page') addPageListener(listener);
             else addContextListener(event, listener);
-            if (options?.timeout) {
+            const timeoutMs = options?.timeout
+              ?? (event === 'page' || event === 'popup' ? 3_000 : undefined);
+            if (timeoutMs) {
               timer = setTimeout(() => {
                 removeListener(listener);
-                reject(new Error(`Timeout while waiting for event "${event}"`));
-              }, options.timeout);
+                reject(new Error(`Timeout ${timeoutMs}ms exceeded while waiting for event "${event}"`));
+              }, timeoutMs);
             }
           });
         };
