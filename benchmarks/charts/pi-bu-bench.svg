@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="430" viewBox="0 0 720 430" role="img" aria-labelledby="title">
+  <title id="title">BU Bench comparison: accuracy, total tokens, and agent turns</title>
+  <style>
+    text { font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; fill: #111827; }
+    .title { font-size: 15px; font-weight: 650; }
+    .label { font-size: 13px; fill: #4b5563; }
+    .value { font-size: 13px; font-weight: 650; }
+    .track { fill: #e5e7eb; }
+    .bar { fill: #2563eb; }
+  </style>
+  <rect width="720" height="430" fill="#ffffff"/>
+
+  <text class="title" x="24" y="32">Accuracy</text>
+  <text class="label" x="24" y="62">webcmd</text>
+  <rect class="track" x="140" y="48" width="440" height="18" rx="3"/>
+  <rect class="bar" x="140" y="48" width="294.8" height="18" rx="3"/>
+  <text class="value" x="592" y="62">67%</text>
+  <text class="label" x="24" y="90">Libretto</text>
+  <rect class="track" x="140" y="76" width="440" height="18" rx="3"/>
+  <rect class="bar" x="140" y="76" width="281.6" height="18" rx="3"/>
+  <text class="value" x="592" y="90">64%</text>
+  <text class="label" x="24" y="118">dev-browser</text>
+  <rect class="track" x="140" y="104" width="440" height="18" rx="3"/>
+  <rect class="bar" x="140" y="104" width="246.4" height="18" rx="3"/>
+  <text class="value" x="592" y="118">56%</text>
+
+  <text class="title" x="24" y="168">Total tokens</text>
+  <text class="label" x="24" y="198">webcmd</text>
+  <rect class="track" x="140" y="184" width="440" height="18" rx="3"/>
+  <rect class="bar" x="140" y="184" width="294.5" height="18" rx="3"/>
+  <text class="value" x="592" y="198">3,193,816</text>
+  <text class="label" x="24" y="226">Libretto</text>
+  <rect class="track" x="140" y="212" width="440" height="18" rx="3"/>
+  <rect class="bar" x="140" y="212" width="440" height="18" rx="3"/>
+  <text class="value" x="592" y="226">4,770,806</text>
+  <text class="label" x="24" y="254">dev-browser</text>
+  <rect class="track" x="140" y="240" width="440" height="18" rx="3"/>
+  <rect class="bar" x="140" y="240" width="294.2" height="18" rx="3"/>
+  <text class="value" x="592" y="254">3,190,822</text>
+
+  <text class="title" x="24" y="304">Agent turns</text>
+  <text class="label" x="24" y="334">webcmd</text>
+  <rect class="track" x="140" y="320" width="440" height="18" rx="3"/>
+  <rect class="bar" x="140" y="320" width="283.5" height="18" rx="3"/>
+  <text class="value" x="592" y="334">969</text>
+  <text class="label" x="24" y="362">Libretto</text>
+  <rect class="track" x="140" y="348" width="440" height="18" rx="3"/>
+  <rect class="bar" x="140" y="348" width="378.3" height="18" rx="3"/>
+  <text class="value" x="592" y="362">1,293</text>
+  <text class="label" x="24" y="390">dev-browser</text>
+  <rect class="track" x="140" y="376" width="440" height="18" rx="3"/>
+  <rect class="bar" x="140" y="376" width="440" height="18" rx="3"/>
+  <text class="value" x="592" y="390">1,504</text>
+</svg>

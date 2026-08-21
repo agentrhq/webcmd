@@ -2,11 +2,9 @@
 
 BU Bench results from the Pi harness with the same model and judge configuration.
 
-| Tool | Accuracy | Total tokens | Agent turns | API-equivalent cost |
-|---|---:|---:|---:|---:|
-| **webcmd** | **67%** | 3,193,816 | **969** | **$25.199668** |
-| **Libretto Browser Tools** | 64% | 4,770,806 | 1,293 | $35.402135 |
-| **dev-browser** | 56% | **3,190,822** | 1,504 | $25.997430 |
+![Accuracy, total tokens, and agent turns](charts/pi-bu-bench.svg)
+
+API-equivalent cost: webcmd **$25.20** · Libretto $35.40 · dev-browser $26.00.
 
 **Best in class:** accuracy → webcmd · tokens → dev-browser · agent turns → webcmd · cost → webcmd
 
