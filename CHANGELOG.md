@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.8.0](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.4...webcmd-v0.8.0) (2026-08-21)
+
+
+### Features
+
+* **hosted:** add programmatic runner and MCP skill distribution ([#399](https://github.com/agentrhq/webcmd/issues/399)) ([ccfc691](https://github.com/agentrhq/webcmd/commit/ccfc691165d8fcf04766ab90b1a1f5b8fcd20729))
+
+
+### Bug Fixes
+
+* benchmark setup and report updated  ([#395](https://github.com/agentrhq/webcmd/issues/395)) ([e48cb3a](https://github.com/agentrhq/webcmd/commit/e48cb3a0994fd9c6ff20a2fbf725977417a066ca))
+* **cli:** close eval gaps for formats, profiles, and plugins ([8c5ce29](https://github.com/agentrhq/webcmd/commit/8c5ce29150fcb74fcdfcd2d053c801554ff29dfa))
+* **cli:** download wait timeout must not tell agents to invent file contents ([#398](https://github.com/agentrhq/webcmd/issues/398)) ([cc28460](https://github.com/agentrhq/webcmd/commit/cc284601e7f8fa63927ef4ce0620f12c1b366909))
+* **cli:** label plugin search as catalog discovery, not web search ([#396](https://github.com/agentrhq/webcmd/issues/396)) ([d5c7cc9](https://github.com/agentrhq/webcmd/commit/d5c7cc962bd6944e5dbeb49fee8f6a950b5c7316))
+* **cli:** popup wait timeout must not tell agents to page.goto the opener ([#397](https://github.com/agentrhq/webcmd/issues/397)) ([67cad65](https://github.com/agentrhq/webcmd/commit/67cad652684809c00fb4beafdbb15132c1ed04b8))
+
 ## [0.7.4](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.3...webcmd-v0.7.4) (2026-08-19)
 
 
