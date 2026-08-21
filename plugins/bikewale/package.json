@@ -1,0 +1,9 @@
+{
+  "name": "webcmd-plugin-bikewale",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "BikeWale bike search, news, featured lists, and variant prices for Webcmd",
+  "peerDependencies": {
+    "@agentrhq/webcmd": ">=0.1.2"
+  }
+}
