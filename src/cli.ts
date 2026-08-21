@@ -892,7 +892,10 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
         console.log(`No browser Sessions found for Profile ${profileId}.`);
         return;
       }
-      await renderOutput(output, { fmt, fmtExplicit: outputFormatIsExplicit(command), columns: ['id', 'kind', 'runtimeState', 'handoff'] });
+      // `profileId` is a column because these rows are scoped to the selected
+      // Profile. Without it the table reads as every Session on the machine,
+      // which is what led agents to act on Sessions from unrelated Profiles.
+      await renderOutput(output, { fmt, fmtExplicit: outputFormatIsExplicit(command), columns: ['id', 'profileId', 'kind', 'runtimeState', 'handoff'] });
     });
 
   const sessionCloseCmd = addOutputFormatOption(sessionCmd
