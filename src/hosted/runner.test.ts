@@ -310,8 +310,41 @@ describe('runHostedCli', () => {
 
       await expect(run(['adapter', 'source', 'get', 'github/whoami'])).resolves.toMatchObject({ exitCode: 0 });
       await expect(readFile(path.join(homeDir, '.webcmd', 'hosted', 'clis', 'github', 'whoami.js'), 'utf8')).resolves.toBe(source);
+      await expect(run(['adapter', 'source', 'get', 'github', 'whoami', '--output', '-'])).resolves.toMatchObject({ exitCode: 0 });
       await expect(run(['site', 'memory', 'show', 'github'])).resolves.toMatchObject({ exitCode: 0 });
       expect(stdout.text()).toContain('Uses GraphQL');
+    } finally {
+      await rm(homeDir, { recursive: true, force: true });
+    }
+  });
+
+  it('accepts hosted adapter source put command keys as two tokens', async () => {
+    const homeDir = await mkdtemp(path.join(tmpdir(), 'webcmd-hosted-source-put-'));
+    const update = path.join(homeDir, 'whoami.js');
+    const requested: Array<{ pathname: string; method: string; body: string }> = [];
+    const sourceManifest = {
+      ...manifest,
+      commands: [{ ...manifest.commands[0], adapterPackageId: 'pkg_github', sourceFile: 'clis/github/whoami.js' }],
+    };
+    await writeFile(update, 'export const updated = true;\n');
+    try {
+      const result = await runHostedCli(['adapter', 'source', 'put', 'github', 'whoami', update], {
+        config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+        homeDir,
+        fetchImpl: async (url, init) => {
+          const pathname = new URL(String(url)).pathname;
+          if (pathname === '/v1/manifest') return new Response(JSON.stringify({ ok: true, manifest: sourceManifest }));
+          requested.push({ pathname, method: init?.method ?? 'GET', body: String(init?.body ?? '') });
+          return new Response(JSON.stringify({ ok: true, package: { id: 'pkg_github', storagePath: 'pkg' }, commands: ['github/whoami'] }));
+        },
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(requested).toEqual([{
+        pathname: '/v1/adapters/pkg_github/source/clis/github/whoami.js',
+        method: 'PUT',
+        body: 'export const updated = true;\n',
+      }]);
     } finally {
       await rm(homeDir, { recursive: true, force: true });
     }
@@ -1107,7 +1140,15 @@ describe('runHostedCli', () => {
     });
 
     expect(result).toEqual({ handled: true, exitCode: 1 });
-    expect(stderr.text()).toBe("error: unknown command 'missing-command'\n");
+    expect(stderr.text()).toBe([
+      "error: unknown command 'missing-command'",
+      'ok: false',
+      'error:',
+      "  code: UNKNOWN",
+      "  message: 'error: unknown command ''missing-command'''",
+      '  exitCode: 1',
+      '',
+    ].join('\n'));
     expect(stdout.text()).toBe('');
   });
 
@@ -1124,7 +1165,15 @@ describe('runHostedCli', () => {
     });
 
     expect(result).toEqual({ handled: true, exitCode: 1 });
-    expect(stderr.text()).toBe("error: missing required argument 'account'\n");
+    expect(stderr.text()).toBe([
+      "error: missing required argument 'account'",
+      'ok: false',
+      'error:',
+      "  code: UNKNOWN",
+      "  message: 'error: missing required argument ''account'''",
+      '  exitCode: 1',
+      '',
+    ].join('\n'));
     expect(stdout.text()).toBe('');
   });
 
@@ -1298,7 +1347,7 @@ describe('runHostedCli', () => {
     });
 
     expect(result).toEqual({ handled: true, exitCode: 1 });
-    expect(stderr.text()).toBe("error: missing required argument 'account'\n");
+    expect(stderr.text()).toContain("error: missing required argument 'account'\nok: false\nerror:\n  code: UNKNOWN\n");
     expect(stdout.text()).toBe('');
   });
 
@@ -1404,11 +1453,13 @@ describe('runHostedCli', () => {
     });
 
     expect(result).toEqual({ handled: true, exitCode });
-    if (name === 'ordinary unknown option') {
+    if (help) {
+      expect(stderr.text()).toBe(expectedStderr);
+    } else if (name === 'ordinary unknown option') {
       expect(stderr.text().startsWith(expectedStderr)).toBe(true);
       expect(stderr.text()).toContain('help: valid flags for');
     } else {
-      expect(stderr.text()).toBe(expectedStderr);
+      expect(stderr.text()).toContain(`${expectedStderr}ok: false\nerror:\n  code: UNKNOWN\n`);
     }
     if (help) expect(stdout.text()).toContain('Usage: webcmd github whoami <account> [options]');
     else expect(stdout.text()).toBe('');
@@ -1434,7 +1485,11 @@ describe('runHostedCli', () => {
     });
 
     expect(result).toEqual({ handled: true, exitCode: 1 });
-    expect(stderr.text()).toBe("error: option '--profile <name>' argument missing\n");
+    if (calls === 1) {
+      expect(stderr.text()).toContain("error: option '--profile <name>' argument missing\nok: false\nerror:\n  code: UNKNOWN\n");
+    } else {
+      expect(stderr.text()).toBe("error: option '--profile <name>' argument missing\n");
+    }
     expect(stdout.text()).toBe('');
     expect(fetchImpl).toHaveBeenCalledTimes(calls);
   });

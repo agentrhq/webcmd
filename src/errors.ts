@@ -180,7 +180,7 @@ export class SessionBusyError extends CliError {
   }
 }
 
-const ADAPTER_REPAIRABLE_CODES = new Set(['EMPTY_RESULT', 'SELECTOR', 'ADAPTER_LOAD']);
+const ADAPTER_REPAIRABLE_CODES = new Set(['EMPTY_RESULT', 'SELECTOR', 'ADAPTER_LOAD', 'UNKNOWN']);
 
 /** Next action when an adapter command looks stale. Named so JSON envelopes carry it, not only YAML comments. */
 export function adapterRepairHelp(commandKey?: string): string {
@@ -195,6 +195,8 @@ export function adapterRepairHelp(commandKey?: string): string {
 
 export function withAdapterRepairHelp(envelope: ErrorEnvelope, cmdName?: string): ErrorEnvelope {
   if (!ADAPTER_REPAIRABLE_CODES.has(envelope.error.code)) return envelope;
+  const parts = cmdName?.trim().split(/[/\s]+/).filter(Boolean) ?? [];
+  if (envelope.error.code === 'UNKNOWN' && parts.length !== 2) return envelope;
   const existing = envelope.error.help;
   if (existing && /adapter path|webcmd-autofix/i.test(existing)) return envelope;
   const repair = adapterRepairHelp(cmdName);

@@ -184,6 +184,20 @@ describe('formatErrorEnvelope', () => {
       },
     });
   });
+
+  it('adds adapter-repair help to UNKNOWN JSON envelopes when command context is known', () => {
+    const text = formatErrorEnvelope({
+      ok: false,
+      error: { code: 'UNKNOWN', message: 'boom', exitCode: 1 },
+    }, { fmt: 'json', cmdName: 'github/issue' });
+    expect(JSON.parse(text)).toMatchObject({
+      ok: false,
+      error: {
+        code: 'UNKNOWN',
+        help: expect.stringContaining('webcmd adapter path github/issue'),
+      },
+    });
+  });
 });
 
 describe('requestedFormatFromArgv', () => {

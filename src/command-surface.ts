@@ -53,6 +53,7 @@ export class CommanderStructuralError extends Error {
   constructor(
     readonly output: string,
     readonly exitCode: number,
+    readonly appendErrorEnvelope = false,
   ) {
     super(output.trimEnd());
     this.name = 'CommanderStructuralError';
@@ -93,11 +94,17 @@ export function structuralErrorFromCommander(
   error: CommanderError,
   command: Command,
   capturedStderr = '',
+  opts: { appendErrorEnvelope?: boolean; includeCapturedStderrForUnknownOption?: boolean } = {},
 ): CommanderStructuralError {
   if (error.code === 'commander.unknownOption') {
-    return new CommanderStructuralError(formatUnknownOptionError(error, command), EXIT_CODES.USAGE_ERROR);
+    const output = `${opts.includeCapturedStderrForUnknownOption ? capturedStderr : ''}${formatUnknownOptionError(error, command)}`;
+    return new CommanderStructuralError(output, EXIT_CODES.USAGE_ERROR);
   }
-  return new CommanderStructuralError(capturedStderr || `${error.message}\n`, error.exitCode);
+  return new CommanderStructuralError(
+    capturedStderr || `${error.message}\n`,
+    error.exitCode,
+    opts.appendErrorEnvelope === true,
+  );
 }
 
 /** Walk argv to the leaf command Commander would have been parsing. */

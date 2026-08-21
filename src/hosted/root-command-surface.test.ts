@@ -516,7 +516,15 @@ describe('hosted root preflight call order', () => {
     });
     expect(hosted).toEqual({ handled: true, exitCode: local.exitCode });
     expect(stdout.text()).toBe(local.stdout);
-    expect(stderr.text()).toBe(local.stderr);
+    expect(stderr.text()).toBe([
+      local.stderr.trimEnd(),
+      'ok: false',
+      'error:',
+      "  code: UNKNOWN",
+      "  message: 'error: too many arguments for ''list''. Expected 0 arguments but got 1.'",
+      '  exitCode: 1',
+      '',
+    ].join('\n'));
   });
 
   it.each([
@@ -538,7 +546,18 @@ describe('hosted root preflight call order', () => {
 
     expect(hosted).toEqual({ handled: true, exitCode: local.exitCode });
     expect(stdout.text()).toBe(local.stdout);
-    expect(stderr.text()).toBe(local.stderr);
+    if (argv.join(' ') === 'list --help') {
+      expect(stderr.text()).toBe(local.stderr);
+    } else if (argv.join(' ') === 'list --unknown') {
+      expect(stderr.text()).toBe([
+        "error: unknown option '--unknown'",
+        "error: unknown option '--unknown'",
+        'help: valid flags for `webcmd list`: --tag, -f, --format, --json',
+        '',
+      ].join('\n'));
+    } else {
+      expect(stderr.text()).toContain('ok: false\nerror:\n  code: UNKNOWN\n');
+    }
   });
 
   it('matches the local missing completion shell error before Cloud discovery', async () => {
@@ -562,7 +581,15 @@ describe('hosted root preflight call order', () => {
     });
     expect(hosted).toEqual({ handled: true, exitCode: local.exitCode });
     expect(stdout.text()).toBe(local.stdout);
-    expect(stderr.text()).toBe(local.stderr);
+    expect(stderr.text()).toBe([
+      local.stderr.trimEnd(),
+      'ok: false',
+      'error:',
+      "  code: UNKNOWN",
+      "  message: 'error: missing required argument ''shell'''",
+      '  exitCode: 1',
+      '',
+    ].join('\n'));
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
@@ -632,8 +659,19 @@ describe('hosted root preflight call order', () => {
 
     expect(hosted).toEqual({ handled: true, exitCode: local.exitCode });
     expect(stdout.text()).toBe(local.stdout);
-    expect(stderr.text()).toBe(local.stderr);
-    if (name === 'help') expect(local.stdout).toHaveLength(181);
+    if (name === 'help') {
+      expect(stderr.text()).toBe(local.stderr);
+      expect(local.stdout).toHaveLength(181);
+    } else if (name === 'leaf version is unknown') {
+      expect(stderr.text()).toBe([
+        "error: unknown option '-V'",
+        "error: unknown option '-V'",
+        '',
+      ].join('\n'));
+    } else {
+      expect(stderr.text()).toContain(local.stderr);
+      expect(stderr.text()).toContain('ok: false\nerror:\n  code: UNKNOWN\n');
+    }
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
@@ -647,7 +685,7 @@ describe('hosted root preflight call order', () => {
     const stderr = sink();
     const fetchImpl = vi.fn<typeof fetch>();
 
-    const hosted = runHostedCli(argv, {
+    const hosted = await runHostedCli(argv, {
       config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
       stdout: stdout.stream,
       stderr: stderr.stream,
@@ -661,13 +699,16 @@ describe('hosted root preflight call order', () => {
       errorCode: 'UNSUPPORTED_SHELL',
       errorMessage: `Unsupported shell: ${shell}. Supported: bash, zsh, fish`,
     });
-    await expect(hosted).rejects.toMatchObject({
-      code: local.errorCode,
-      message: local.errorMessage,
-      exitCode: local.exitCode,
-    });
+    expect(hosted).toEqual({ handled: true, exitCode: local.exitCode });
     expect(stdout.text()).toBe(local.stdout);
-    expect(stderr.text()).toBe(local.stderr);
+    expect(stderr.text()).toBe([
+      'ok: false',
+      'error:',
+      '  code: UNSUPPORTED_SHELL',
+      `  message: '${local.errorMessage}'`,
+      '  exitCode: 1',
+      '',
+    ].join('\n'));
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
@@ -718,7 +759,7 @@ describe('hosted root preflight call order', () => {
       expect(stderr.text()).toBe(local.stderr);
     } else if (disposition === 'missing-profile') {
       expect(stdout.text()).toBe('');
-      expect(stderr.text()).toBe(local.stderr);
+      expect(stderr.text()).toContain(`${local.stderr}ok: false\nerror:\n  code: UNKNOWN\n`);
     } else if (disposition === 'help') {
       expect(stdout.text()).toBe(formatRootHelp(HOSTED_ROOT_HELP));
       expect(stderr.text()).toBe('');
@@ -753,7 +794,7 @@ describe('hosted root preflight call order', () => {
     expect(local).toMatchObject({ exitCode: 1, stdout: '', stderr: "error: unknown command 'bogus'\n" });
     expect(hosted).toEqual({ handled: true, exitCode: local.exitCode });
     expect(stdout.text()).toBe(local.stdout);
-    expect(stderr.text()).toBe(local.stderr);
+    expect(stderr.text()).toContain(`${local.stderr}ok: false\nerror:\n  code: UNKNOWN\n`);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(String(fetchImpl.mock.calls[0]![0])).toBe('https://api.example.com/v1/manifest');
   });

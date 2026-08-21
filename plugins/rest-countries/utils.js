@@ -79,7 +79,7 @@ export async function restCountriesFetch(url, label) {
         const key = String(label).trim().replace(/\s+/g, '/');
         throw new CommandExecutionError(
             `${label} hit the retired REST Countries v3.1 API`,
-            `The response is a deprecation envelope, not an empty result. Load the webcmd-autofix skill, run \`webcmd adapter path ${key}\`, patch this family (utils.js base URL), and retry with --trace retain-on-failure. Do not sign up, solve CAPTCHA, or curl another country API.`,
+            `The response is a deprecation envelope, not an empty result. Load the webcmd-autofix skill, run \`webcmd adapter path ${key}\`, patch the adapter, and retry with --trace retain-on-failure.`,
         );
     }
     return body;
@@ -87,7 +87,6 @@ export async function restCountriesFetch(url, label) {
 
 function isRetiredRestCountriesBody(body) {
     if (!body || typeof body !== 'object' || Array.isArray(body)) return false;
-    if (body.success === false) return true;
     const errors = body.errors;
     if (!Array.isArray(errors)) return false;
     return errors.some((entry) => typeof entry?.message === 'string' && /deprecated/i.test(entry.message));

@@ -121,7 +121,7 @@ export function formatErrorEnvelope(envelope: ErrorEnvelope, opts: ErrorRenderOp
     opts.cmdName
     && opts.traceMode !== 'on'
     && opts.traceMode !== 'retain-on-failure'
-    && (code === 'SELECTOR' || code === 'EMPTY_RESULT' || code === 'ADAPTER_LOAD' || code === 'UNKNOWN')
+    && (code === 'SELECTOR' || code === 'EMPTY_RESULT' || code === 'ADAPTER_LOAD' || (code === 'UNKNOWN' && opts.cmdName.includes('/')))
   ) {
     const key = opts.cmdName.includes('/') ? opts.cmdName : opts.cmdName.replace(/\s+/, '/');
     const runnable = opts.cmdName.replace('/', ' ');

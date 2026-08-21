@@ -87,6 +87,7 @@ class CommanderCompatibleError extends Error {
     readonly output: string,
     readonly exitCode: number,
     readonly stdoutOutput?: string,
+    readonly appendErrorEnvelope = false,
   ) {
     super(output.trimEnd());
   }
@@ -136,13 +137,22 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
       await writeToStream(stderr, `error: ${err.message}\n`);
       return { handled: true, exitCode: EXIT_CODES.USAGE_ERROR };
     }
-    if (err instanceof CliError && err.code === 'UNSUPPORTED_SHELL') throw err;
     if (err instanceof CommanderStructuralError) {
       await writeToStream(stderr, err.output);
+      if (err.appendErrorEnvelope) {
+        await writeToStream(stderr, formatErrorEnvelope(toEnvelope(err), {
+          fmt: errorEnvelopeFormat(requestedFormatFromArgv(argv)),
+        }));
+      }
       return { handled: true, exitCode: err.exitCode };
     }
     if (err instanceof CommanderCompatibleError) {
       await writeToStream(stderr, err.output);
+      if (err.appendErrorEnvelope) {
+        await writeToStream(stderr, formatErrorEnvelope(toEnvelope(err), {
+          fmt: errorEnvelopeFormat(requestedFormatFromArgv(argv)),
+        }));
+      }
       if (err.stdoutOutput) await writeToStream(stdout, err.stdoutOutput);
       return { handled: true, exitCode: err.exitCode };
     }
@@ -197,10 +207,6 @@ async function dispatchHosted(
     }
     const script = getCompletionScriptFast(parsed.shell);
     if (script === undefined) {
-      // Run the canonical local Commander action for this rare error path so
-      // hosted mode preserves even the historical public stack bytes.
-      const { createProgram } = await import('../cli.js');
-      await createProgram('', '').parseAsync(argv, { from: 'user' });
       throw new CliError('UNSUPPORTED_SHELL', `Unsupported shell: ${parsed.shell}. Supported: bash, zsh, fish`);
     }
     await writeToStream(stdout, script);
@@ -442,7 +448,7 @@ async function dispatchHosted(
       await writeHostedHelp(stdout, args, data, renderHostedSiteHelp(manifest, site));
       return;
     }
-    throw new CommanderCompatibleError(`error: unknown command '${commandName}'\n`, EXIT_CODES.GENERIC_ERROR);
+    throw new CommanderCompatibleError(`error: unknown command '${commandName}'\n`, EXIT_CODES.GENERIC_ERROR, undefined, true);
   }
   if (isLocalOnlyHostedCommand(command)) {
     throw new ConfigError(
@@ -450,7 +456,15 @@ async function dispatchHosted(
       LOCAL_ONLY_COMMAND_HELP,
     );
   }
-  const parsed = parseHostedInvocation(command, args.slice(2));
+  let parsed: ReturnType<typeof parseHostedInvocation>;
+  try {
+    parsed = parseHostedInvocation(command, args.slice(2));
+  } catch (error) {
+    if (error instanceof CommanderStructuralError) {
+      throw new CommanderStructuralError(error.output, error.exitCode, true);
+    }
+    throw error;
+  }
   if (parsed.help) {
     await writeHostedHelp(stdout, args, hostedCommandHelpData(command), renderHostedCommandHelp(command));
     return;
@@ -550,6 +564,11 @@ type HostedAdapterSourceCommand =
   | { kind: 'path'; commandKey: string }
   | { kind: 'override'; commandKey: string };
 
+function joinAdapterCommandKey(commandKey: string, commandName?: string): string {
+  const key = splitAdapterCommandKey(commandKey, commandName);
+  return key ? `${key.site}/${key.command}` : commandKey;
+}
+
 async function runHostedAdapterSourceSurface(argv: readonly string[], literal: boolean, client: HostedClient, stdout: NodeJS.WritableStream, homeDir: string): Promise<void> {
   let parsed: HostedAdapterSourceCommand | undefined;
   let help = '';
@@ -560,11 +579,16 @@ async function runHostedAdapterSourceSurface(argv: readonly string[], literal: b
   });
   const adapter = root.command('adapter');
   const source = adapter.command('source');
-  source.command('get').argument('<command>').option('-o, --output <path>').action((commandKey, opts: { output?: string }) => { parsed = { kind: 'get', commandKey, output: opts.output }; });
-  source.command('put').argument('<command>').argument('<path>').action((commandKey, filePath) => { parsed = { kind: 'put', commandKey, path: filePath }; });
+  source.command('get').argument('<command>').argument('[name]').option('-o, --output <path>').action((commandKey, name: string | undefined, opts: { output?: string }) => {
+    parsed = { kind: 'get', commandKey: joinAdapterCommandKey(commandKey, name), output: opts.output };
+  });
+  source.command('put').argument('<command>').argument('<path-or-name>').argument('[path]').action((commandKey, pathOrName: string, maybePath?: string) => {
+    parsed = maybePath
+      ? { kind: 'put', commandKey: joinAdapterCommandKey(commandKey, pathOrName), path: maybePath }
+      : { kind: 'put', commandKey, path: pathOrName };
+  });
   adapter.command('path').argument('<command>').argument('[name]').action((commandKey, name?: string) => {
-    const key = splitAdapterCommandKey(commandKey, name);
-    parsed = { kind: 'path', commandKey: key ? `${key.site}/${key.command}` : commandKey };
+    parsed = { kind: 'path', commandKey: joinAdapterCommandKey(commandKey, name) };
   });
   adapter.command('override')
     .description('Fork an installed adapter command into a private copy you can modify')
@@ -1155,7 +1179,10 @@ function parseHostedListSurface(argv: readonly string[], literal: boolean): Pars
   } catch (error) {
     if (!(error instanceof CommanderError)) throw error;
     if (error.code === 'commander.helpDisplayed') return { kind: 'help', output: stdout };
-    throw structuralErrorFromCommander(error, resolveCommandFromArgv(root, ['list', ...argv]), stderr);
+    throw structuralErrorFromCommander(error, resolveCommandFromArgv(root, ['list', ...argv]), stderr, {
+      appendErrorEnvelope: true,
+      includeCapturedStderrForUnknownOption: true,
+    });
   }
   if (!actionRan) throw new CommanderStructuralError("error: command 'list' did not run\n", 1);
   return { kind: 'run', format: parsedFormat, formatExplicit, ...(parsedTag !== undefined ? { tag: parsedTag } : {}) };
@@ -1345,10 +1372,13 @@ function parseHostedCompletionSurface(
   } catch (error) {
     if (!(error instanceof CommanderError)) throw error;
     if (error.code === 'commander.helpDisplayed') return { kind: 'help', output: stdout };
-    throw structuralErrorFromCommander(error, resolveCommandFromArgv(root, ['completion', ...argv]), stderr);
+    throw structuralErrorFromCommander(error, resolveCommandFromArgv(root, ['completion', ...argv]), stderr, {
+      appendErrorEnvelope: true,
+      includeCapturedStderrForUnknownOption: true,
+    });
   }
   if (shell === undefined) {
-    throw new CommanderStructuralError("error: missing required argument 'shell'\n", 1);
+    throw new CommanderStructuralError("error: missing required argument 'shell'\n", 1, true);
   }
   return { kind: 'run', shell };
 }
@@ -1366,7 +1396,7 @@ function parseUnknownSiteRootOptions(
     if (token === '--profile') {
       const value = argv[i + 1];
       if (value === undefined) {
-        throw new CommanderStructuralError("error: option '--profile <name>' argument missing\n", 1);
+        throw new CommanderStructuralError("error: option '--profile <name>' argument missing\n", 1, true);
       }
       profile = value;
       i += 1;
@@ -1482,6 +1512,7 @@ function readInstalledHostedContractIdentity(): InstalledHostedContractIdentity 
 
 function hostedCommandName(argv: readonly string[]): string | undefined {
   const positionals: string[] = [];
+  const builtinCommands = new Set(['adapter', 'browser', 'completion', 'daemon', 'doctor', 'list', 'plugin', 'profile', 'session', 'setup', 'site', 'skills', 'update', 'web']);
   const valueOptions = new Set(['--profile', '-f', '--format', '--trace']);
   for (let i = 0; i < argv.length && positionals.length < 2; i += 1) {
     const token = argv[i]!;
@@ -1492,6 +1523,7 @@ function hostedCommandName(argv: readonly string[]): string | undefined {
     if (token.startsWith('-')) continue;
     positionals.push(token);
   }
+  if (positionals[0] && builtinCommands.has(positionals[0])) return positionals[0];
   if (positionals.length < 2) return positionals[0];
   return `${positionals[0]}/${positionals[1]}`;
 }
