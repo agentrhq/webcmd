@@ -292,6 +292,7 @@ describe('webcmd skills content', () => {
     expect(browser).toMatch(/Profiles are cookie jars[\s\S]{0,180}sessions are browser workspaces\/windows/i);
     expect(browser).toMatch(/Parallel agents use separate sessions/i);
     expect(browser).toContain('SESSION_BUSY');
+    expect(browser).toContain('SESSION_NOT_FOUND');
     expect(browser).toContain('SESSION_PAUSED_FOR_HUMAN_HANDOFF');
     expect(browser).toContain('webcmd session close <session-id> --force');
     for (const skill of [usage, browser, autofix]) {

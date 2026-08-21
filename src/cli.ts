@@ -892,7 +892,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
         console.log(`No browser Sessions found for Profile ${profileId}.`);
         return;
       }
-      await renderOutput(output, { fmt, fmtExplicit: outputFormatIsExplicit(command), columns: ['id', 'kind', 'runtimeState', 'handoff'] });
+      await renderOutput(output, { fmt, fmtExplicit: outputFormatIsExplicit(command), columns: ['id', 'kind', 'profileId', 'runtimeState', 'handoff'] });
     });
 
   const sessionCloseCmd = addOutputFormatOption(sessionCmd
