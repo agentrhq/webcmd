@@ -23,8 +23,8 @@ export function configureCompletionCommandSurface(command: Command): Command {
 /** Configure plugin marketplace search grammar shared by local and hosted runtimes. */
 export function configurePluginSearchSurface(command: Command): Command {
   return addOutputFormatOption(command
-    .description('Search installable marketplace plugins')
-    .argument('[query]', 'Search query matched against plugin name and description'));
+    .description('Search the plugin catalog for installable plugins. Not web search.')
+    .argument('[query]', 'Catalog query matched against plugin name and description, not a web search'));
 }
 
 /** Configure plugin installation grammar shared by local and hosted runtimes. */

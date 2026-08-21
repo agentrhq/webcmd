@@ -1265,11 +1265,60 @@ name: 'search',
     const install = plugin.commands.find(cmd => cmd.name() === 'install')!;
 
     expect(search.usage()).toBe('[options] [query]');
+    expect(search.description()).toBe('Search the plugin catalog for installable plugins. Not web search.');
+    expect(search.registeredArguments[0]?.description).toContain('not a web search');
     expect(search.options.map(option => option.flags)).toContain('-f, --format <fmt>');
     expect(install.usage()).toBe('[options] <source>');
     expect(install.description()).toBe('Install a plugin from a git repository');
     expect(install.registeredArguments[0]?.description).toContain('github:user/repo/<plugin>');
     expect(install.options.map(option => option.long)).toContain('--all');
+  });
+
+  it('labels empty plugin search JSON as catalog discovery, not web search', async () => {
+    const catalog = await import('./plugin-catalog.js');
+    const search = vi.spyOn(catalog, 'searchCatalogPlugins').mockResolvedValue({ plugins: [], errors: [] });
+    const read = vi.spyOn(catalog, 'readCatalog').mockReturnValue({ version: 1, sources: [] });
+    const log = vi.mocked(console.log);
+    const previousExitCode = process.exitCode;
+    log.mockClear();
+    try {
+      await createProgram('', '').parseAsync(['node', 'webcmd', 'plugin', 'search', 'tls fingerprint', '-f', 'json']);
+
+      const payload = JSON.parse(log.mock.calls.flat().join('\n'));
+      expect(payload).toMatchObject({
+        kind: 'plugin-catalog',
+        query: 'tls fingerprint',
+        total: 0,
+        plugins: [],
+        errors: [],
+      });
+      expect(payload.hint).toContain('not web pages');
+      expect(payload.hint).toContain('webcmd web fetch --url "https://html.duckduckgo.com/html/?q=tls%20fingerprint"');
+      expect(search).toHaveBeenCalled();
+    } finally {
+      process.exitCode = previousExitCode;
+      search.mockRestore();
+      read.mockRestore();
+    }
+  });
+
+  it('prints catalog-not-web copy for an empty plugin search table', async () => {
+    const catalog = await import('./plugin-catalog.js');
+    const search = vi.spyOn(catalog, 'searchCatalogPlugins').mockResolvedValue({ plugins: [], errors: [] });
+    const read = vi.spyOn(catalog, 'readCatalog').mockReturnValue({ version: 1, sources: [] });
+    const log = vi.mocked(console.log);
+    const previousExitCode = process.exitCode;
+    log.mockClear();
+    try {
+      await createProgram('', '').parseAsync(['node', 'webcmd', 'plugin', 'search', 'ja3', '-f', 'table']);
+
+      expect(log.mock.calls.flat().join('\n')).toContain('No marketplace plugins matched "ja3". This command searches the plugin catalog, not the web.');
+      expect(log.mock.calls.flat().join('\n')).toContain('not web pages');
+    } finally {
+      process.exitCode = previousExitCode;
+      search.mockRestore();
+      read.mockRestore();
+    }
   });
 
   it('renders adapter namespace structured help preserving original description after applyRootSubcommandSummaries', () => {

@@ -32,6 +32,7 @@ import { browserCommandCatalog } from '../browser/command-catalog.js';
 import { loadBrowserRunSource } from '../browser/run/input.js';
 import { BrowserRunError } from '../browser/run/types.js';
 import { CLI_COMMAND } from '../brand.js';
+import { formatPluginSearchEmptyCopy, presentPluginSearch } from '../plugin-search-presentation.js';
 import { missingPluginGuidance } from '../discovery.js';
 import { HostedClient, HostedClientError, resolveWorkspace } from './client.js';
 import { HOSTED_SESSION_PROTOCOL_VERSION } from './types.js';
@@ -288,21 +289,26 @@ async function dispatchHosted(
     }
     if (parsed.command === 'search') {
       const result = await client.searchMarketplacePlugins(parsed.query);
+      const presented = presentPluginSearch(result, parsed.query);
       if (parsed.format === 'json') {
-        await renderOutput(result, { fmt: 'json', stdout });
+        await renderOutput(presented, { fmt: 'json', stdout });
       } else {
         for (const error of result.errors) await writeToStream(stderr, `Warning: ${error.sourceId}: ${error.message}\n`);
-        await renderOutput(result.plugins.map(plugin => ({
-          ...plugin,
-          excludedCommands: plugin.excludedCommands.join(','),
-        })), {
-          fmt: parsed.format,
-          fmtExplicit: parsed.formatExplicit,
-          columns: ['installSource', 'name', 'description', 'version', 'sourceId', 'webcmd', 'availability', 'excludedCommands'],
-          title: `${CLI_COMMAND}/plugin-search`,
-          source: `${CLI_COMMAND} plugin search`,
-          stdout,
-        });
+        if (presented.total === 0) {
+          await writeToStream(stdout, `${formatPluginSearchEmptyCopy(presented.query)}\n`);
+        } else {
+          await renderOutput(result.plugins.map(plugin => ({
+            ...plugin,
+            excludedCommands: plugin.excludedCommands.join(','),
+          })), {
+            fmt: parsed.format,
+            fmtExplicit: parsed.formatExplicit,
+            columns: ['installSource', 'name', 'description', 'version', 'sourceId', 'webcmd', 'availability', 'excludedCommands'],
+            title: `${CLI_COMMAND}/plugin-search`,
+            source: `${CLI_COMMAND} plugin search`,
+            stdout,
+          });
+        }
       }
       return;
     }

@@ -18,6 +18,7 @@ import { type CliCommand, getRegistry } from './registry.js';
 import './fetch/command.js';
 import { commandListPresentation, filterCommandsByTag, toPresentableCommand } from './command-presentation.js';
 import { configureCompletionCommandSurface, configureListCommandSurface, configurePluginInstallSurface, configurePluginListSurface, configurePluginSearchSurface } from './builtin-command-surface.js';
+import { formatPluginSearchEmptyCopy, presentPluginSearch } from './plugin-search-presentation.js';
 import { addOutputFormatOption, applyUnknownOptionContract, CommanderStructuralError, outputFormatIsExplicit, resolveCommandOutputFormat } from './command-surface.js';
 import { render as renderOutput, formatErrorEnvelope, errorEnvelopeFormat, requestedFormatFromArgv } from './output.js';
 import { PKG_VERSION } from './version.js';
@@ -1658,17 +1659,22 @@ cli({
       const catalog = readCatalog();
       const result = await searchCatalogPlugins(catalog, { query });
       const fmtExplicit = outputFormatIsExplicit(pluginSearchCmd);
+      const presented = presentPluginSearch(result, query);
       if (fmt === 'json') {
-        renderOutput(result, { fmt });
+        renderOutput(presented, { fmt });
       } else {
         for (const err of result.errors) console.error(`Warning: ${err.sourceId}: ${err.message}`);
-        renderOutput(result.plugins, {
-          fmt,
-          fmtExplicit,
-          columns: ['installSource', 'name', 'description', 'version', 'sourceId', 'webcmd'],
-          title: `${CLI_COMMAND}/plugin-search`,
-          source: `${CLI_COMMAND} plugin search`,
-        });
+        if (presented.total === 0) {
+          console.log(formatPluginSearchEmptyCopy(presented.query));
+        } else {
+          renderOutput(result.plugins, {
+            fmt,
+            fmtExplicit,
+            columns: ['installSource', 'name', 'description', 'version', 'sourceId', 'webcmd'],
+            title: `${CLI_COMMAND}/plugin-search`,
+            source: `${CLI_COMMAND} plugin search`,
+          });
+        }
       }
       if (catalog.sources.length > 0 && result.errors.length === catalog.sources.length) {
         process.exitCode = EXIT_CODES.GENERIC_ERROR;

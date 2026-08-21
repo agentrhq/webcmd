@@ -465,6 +465,33 @@ describe('runHostedCli', () => {
     expect(requests).toEqual(['https://api.example.com/v1/marketplace/plugins?query=mercury']);
   });
 
+  it('labels empty hosted plugin search JSON as catalog discovery, not web search', async () => {
+    const stdout = sink();
+    const stderr = sink();
+    const result = await runHostedCli(['plugin', 'search', 'tls fingerprint', '-f', 'json'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        result: { plugins: [], errors: [] },
+      })),
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 0 });
+    expect(stderr.text()).toBe('');
+    const payload = JSON.parse(stdout.text());
+    expect(payload).toMatchObject({
+      kind: 'plugin-catalog',
+      query: 'tls fingerprint',
+      total: 0,
+      plugins: [],
+      errors: [],
+    });
+    expect(payload.hint).toContain('not web pages');
+    expect(payload.hint).toContain('webcmd web fetch --url "https://html.duckduckgo.com/html/?q=tls%20fingerprint"');
+  });
+
   it('installs hosted marketplace plugins without fetching the manifest', async () => {
     const requests: string[] = [];
     const stdout = sink();
