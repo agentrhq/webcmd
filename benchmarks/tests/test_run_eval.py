@@ -222,6 +222,34 @@ def test_cli_accepts_libretto_for_pi():
     run_eval.validate_args(args)
 
 
+def test_cli_accepts_browser_use_for_codex():
+    args = run_eval.parse_args(
+        BASE + ["--tasks", "1", "--tools", "browser-use"]
+    )
+
+    run_eval.validate_args(args)
+    assert args.tools == "browser-use"
+
+
+def test_cli_accepts_browser_use_for_pi():
+    args = run_eval.parse_args(
+        [
+            "--controller",
+            "pi",
+            "--model",
+            "openai/gpt-5.6-sol",
+            "--benchmark",
+            "BU_Bench_V1",
+            "--tasks",
+            "1",
+            "--tools",
+            "browser-use",
+        ]
+    )
+
+    run_eval.validate_args(args)
+
+
 @pytest.mark.parametrize("tool", ["chrome-devtools-axi", "agent-browser"])
 def test_cli_rejects_pi_tools_without_pi_integration(tool):
     args = run_eval.parse_args(
@@ -239,7 +267,9 @@ def test_cli_rejects_pi_tools_without_pi_integration(tool):
         ]
     )
 
-    with pytest.raises(ValueError, match="Pi.*Webcmd, dev-browser, or Libretto"):
+    with pytest.raises(
+        ValueError, match="Pi.*Webcmd, dev-browser, Libretto, or browser-use"
+    ):
         run_eval.validate_args(args)
 
 
@@ -512,6 +542,35 @@ def test_preflight_checks_dev_browser_and_cloak_without_downloading_chromium(
     assert all("install" not in command and "doctor" not in command for command in calls)
 
 
+def test_preflight_checks_browser_use_and_cloak_without_cloud_auth(monkeypatch):
+    class Completed:
+        returncode = 0
+        stdout = "0.1.9\n"
+        stderr = ""
+
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        return Completed()
+
+    monkeypatch.setenv("GOOGLE_API_KEY", "secret")
+    monkeypatch.setenv("BROWSER_USE_API_KEY", "cloud-secret")
+    monkeypatch.setattr(run_eval.subprocess, "run", fake_run)
+    monkeypatch.setattr(run_eval, "cloakbrowser_version", lambda: "0.4.5")
+
+    versions = run_eval.preflight("codex", ["browser-use"])
+
+    assert versions == {
+        "codex": "0.1.9",
+        "browser-use": "0.1.9",
+        "cloakbrowser": "0.4.5",
+    }
+    assert ["browser-use", "--version"] in calls
+    assert all("install" not in command and "doctor" not in command for command in calls)
+    assert all("auth" not in command for command in calls)
+
+
 def test_preflight_checks_pinned_libretto_sidecar_and_cloak(monkeypatch):
     class Completed:
         returncode = 0
@@ -643,6 +702,38 @@ def test_manifest_records_pi_subscription_billing_mode():
     )
 
     assert manifest["controller"]["billing_mode"] == "chatgpt_subscription"
+
+
+def test_manifest_records_browser_use_with_cloakbrowser():
+    tasks = run_eval.effective_tasks(
+        "BU_Bench_V1", run_eval.load_tasks("BU_Bench_V1"), "raw"
+    )[:1]
+
+    manifest = run_eval.build_manifest(
+        run_id="run",
+        benchmark="BU_Bench_V1",
+        tasks=tasks,
+        controller="codex",
+        model="gpt-5",
+        judge_provider="google",
+        judge_model="gemini-2.5-flash",
+        versions={
+            "codex": "1",
+            "browser-use": "0.1.9",
+            "cloakbrowser": "0.4.5",
+        },
+        tools=["browser-use"],
+        timeout=1800,
+        created_at="2026-08-21T12:00:00Z",
+    )
+
+    assert manifest["tools"]["browser-use"] == {
+        "version": "0.1.9",
+        "browser": {
+            "name": "cloakbrowser",
+            "version": "0.4.5",
+        },
+    }
 
 
 def test_manifest_records_libretto_with_cloakbrowser():
@@ -1130,6 +1221,69 @@ def test_run_benchmark_passes_dev_browser_selection_and_records_cloakbrowser(
     manifest = json.loads((run_dir / "manifest.json").read_text())
     assert manifest["tools"]["dev-browser"] == {
         "version": "0.2.9",
+        "browser": {"name": "cloakbrowser", "version": "0.4.5"},
+    }
+
+
+def test_run_benchmark_passes_browser_use_selection_and_records_cloakbrowser(
+    tmp_path, monkeypatch
+):
+    task = {
+        "task_id": "a",
+        "confirmed_task": "prompt",
+        "category": "A",
+        "_raw_index": 0,
+    }
+    calls = []
+
+    async def fake_attempt(**kwargs):
+        calls.append(kwargs)
+        return {
+            "task_id": "a",
+            "tool": kwargs["tool"],
+            "category": "A",
+            "status": "completed",
+            "score": 1,
+            "metrics": {
+                "steps": 1,
+                "tool_calls": 1,
+                "total_duration": 1.0,
+                "tokens": 1,
+            },
+        }
+
+    monkeypatch.setattr(
+        run_eval,
+        "preflight",
+        lambda *args: {
+            "codex": "1",
+            "browser-use": "0.1.9",
+            "cloakbrowser": "0.4.5",
+        },
+    )
+    monkeypatch.setattr(run_eval, "load_tasks", lambda benchmark: [task])
+    monkeypatch.setattr(run_eval, "run_attempt", fake_attempt)
+    args = argparse.Namespace(
+        controller="codex",
+        model="gpt-5",
+        benchmark="Stealth_Bench_V1",
+        tasks="all",
+        task_indices=None,
+        tools="browser-use",
+        judge_provider="google",
+        judge_model="gemini-2.5-flash",
+        task_timeout=10,
+        stealth_view="raw",
+        output_dir=tmp_path,
+        reasoning_effort=None,
+    )
+
+    run_dir = asyncio.run(run_eval.run_benchmark(args))
+
+    assert calls[0]["tool"] == "browser-use"
+    manifest = json.loads((run_dir / "manifest.json").read_text())
+    assert manifest["tools"]["browser-use"] == {
+        "version": "0.1.9",
         "browser": {"name": "cloakbrowser", "version": "0.4.5"},
     }
 

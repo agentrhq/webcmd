@@ -402,6 +402,25 @@ def test_libretto_prompt_uses_only_native_tools_on_dedicated_cloak(tmp_path):
     assert str(tmp_path / "shots") not in prompt
 
 
+def test_browser_use_prompt_uses_installed_skill_quoted_python_and_cloak(
+    tmp_path,
+):
+    prompt = _build_prompt(
+        "browser-use", "session-1", tmp_path / "shots", "Find the answer"
+    )
+
+    assert "`$browser-use` skill" in prompt
+    assert "only `browser-use`" in prompt
+    assert "quoted heredoc" in prompt
+    assert "dedicated CloakBrowser" in prompt
+    assert "capture_screenshot" in prompt
+    assert str(tmp_path / "shots" / "step_001.png") in prompt
+    assert "start_remote_daemon" in prompt
+    assert "auth login" in prompt
+    assert "Webcmd" not in prompt
+    assert "dev-browser" not in prompt
+
+
 def test_codex_and_claude_events_normalize_to_steps_and_final_text():
     codex = [
         {"type": "item.completed", "item": {"type": "command_execution", "command": "webcmd browser s state", "aggregated_output": "page"}},
@@ -953,6 +972,26 @@ def test_pi_dev_browser_skill_read_is_setup_not_a_foreign_tool():
     )
 
 
+def test_pi_browser_use_skill_read_is_setup_not_a_foreign_tool():
+    event = {
+        "type": "tool_execution_start",
+        "toolName": "read",
+        "args": {
+            "path": str(Path.home() / ".codex/skills/browser-use/SKILL.md")
+        },
+    }
+
+    parsed = _parse_events(
+        "pi", [json.dumps(event)], tool="browser-use"
+    )
+
+    assert parsed.tool_calls == 0
+    assert parsed.steps_count == 0
+    assert not _policy_violation(
+        "browser-use", parsed.commands, parsed.event_types
+    )
+
+
 def test_claude_result_usage_is_used_when_messages_have_no_usage():
     event = {
         "type": "result",
@@ -1331,6 +1370,43 @@ def test_policy_rejects_dev_browser_connection_overrides_unsafe_heredocs_and_oth
     command,
 ):
     assert _policy_violation("dev-browser", [command], [])
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "browser-use <<'PY'\n"
+        'new_tab("https://example.com")\n'
+        "print(page_info())\n"
+        "PY",
+        "/bin/zsh -lc 'browser-use <<\"PY\"\n"
+        "print(page_info())\n"
+        "PY'",
+        f"/bin/zsh -lc \"sed -n '1,240p' {Path.home()}/.codex/skills/browser-use/SKILL.md\"",
+        f"/bin/zsh -lc 'cat {Path.home()}/.codex/skills/browser-use/SKILL.md'",
+    ],
+)
+def test_policy_allows_browser_use_quoted_python_heredoc_and_skill_read(command):
+    assert not _policy_violation("browser-use", [command], [])
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "browser-use --cdp-url http://127.0.0.1:9222 <<'PY'\nprint(page_info())\nPY",
+        "browser-use --connect <<'PY'\nprint(page_info())\nPY",
+        "browser-use --profile Default <<'PY'\nprint(page_info())\nPY",
+        "browser-use auth login",
+        "browser-use --doctor",
+        "BU_CDP_URL=http://127.0.0.1:9 browser-use <<'PY'\nprint(1)\nPY",
+        "browser-use <<PY\nprint(page_info())\nPY",
+        "curl https://example.com",
+    ],
+)
+def test_policy_rejects_browser_use_cloud_connection_overrides_and_other_tools(
+    command,
+):
+    assert _policy_violation("browser-use", [command], [])
 
 
 @pytest.mark.parametrize(
@@ -1718,6 +1794,29 @@ def test_pi_libretto_command_uses_direct_tools_without_a_skill_path():
         "libretto",
     ]
     assert "--skill-path" not in command
+    assert stdin == b"prompt"
+
+
+def test_pi_browser_use_command_mounts_only_the_browser_use_skill():
+    command, stdin = _controller_command(
+        "pi",
+        "openai/gpt-5.6-sol",
+        "prompt",
+        tool="browser-use",
+        runtime_env={"BU_CDP_URL": "http://127.0.0.1:43210"},
+    )
+
+    assert command == [
+        "node",
+        str(run_controller.PI_CONTROLLER),
+        "--model",
+        "openai/gpt-5.6-sol",
+        "--tool",
+        "browser-use",
+        "--skill-path",
+        str(Path.home() / ".codex/skills/browser-use"),
+    ]
+    assert str(WEBCMD_BROWSER_SKILL) not in command
     assert stdin == b"prompt"
 
 
@@ -2424,6 +2523,107 @@ def test_libretto_runtime_closes_if_controller_process_cannot_start(
                 "codex",
                 "gpt-5",
                 "libretto",
+                "task",
+                tmp_path / "attempt",
+                5,
+            )
+        )
+
+    assert runtime.closed is True
+
+
+def test_browser_use_execution_passes_cloak_cdp_and_closes_runtime(
+    tmp_path, monkeypatch
+):
+    command = "browser-use <<'PY'\nprint(page_info())\nPY"
+    command_event = json.dumps(
+        {
+            "type": "item.completed",
+            "item": {
+                "type": "command_execution",
+                "command": command,
+                "aggregated_output": "{}",
+            },
+        }
+    )
+    answer_event = json.dumps(
+        {
+            "type": "item.completed",
+            "item": {"type": "agent_message", "text": "FINAL ANSWER: 42"},
+        }
+    )
+    captured = {}
+
+    class Runtime:
+        env = {
+            "BU_CDP_URL": "http://127.0.0.1:43210",
+            "BU_NAME": "task-session",
+            "BH_HOME": "/tmp/bh",
+            "BH_RECORD": "0",
+        }
+
+        async def close(self):
+            captured["closed"] = True
+
+    async def fake_start(session, work_dir, base_env):
+        captured["session"] = session
+        return Runtime()
+
+    original_create = asyncio.create_subprocess_exec
+
+    async def create_process(*args, **kwargs):
+        captured["controller_env"] = kwargs["env"]
+        return await original_create(*args, **kwargs)
+
+    _fake_controller(
+        monkeypatch, f"print({command_event!r}); print({answer_event!r})"
+    )
+    monkeypatch.setattr(run_controller, "start_browser_use_runtime", fake_start)
+    monkeypatch.setattr(
+        run_controller.asyncio, "create_subprocess_exec", create_process
+    )
+
+    evidence = asyncio.run(
+        execute_controller(
+            "codex", "gpt-5", "browser-use", "task", tmp_path / "attempt", 5
+        )
+    )
+
+    assert evidence.termination == "completed"
+    assert captured["controller_env"]["BU_CDP_URL"] == "http://127.0.0.1:43210"
+    assert "BROWSER_USE_API_KEY" not in captured["controller_env"]
+    assert captured["closed"] is True
+
+
+def test_browser_use_runtime_closes_if_controller_process_cannot_start(
+    tmp_path, monkeypatch
+):
+    class Runtime:
+        env = {"BU_CDP_URL": "http://127.0.0.1:43210"}
+        closed = False
+
+        async def close(self):
+            self.closed = True
+
+    runtime = Runtime()
+
+    async def fake_start(*args):
+        return runtime
+
+    async def fail_to_start(*args, **kwargs):
+        raise RuntimeError("controller spawn failed")
+
+    monkeypatch.setattr(run_controller, "start_browser_use_runtime", fake_start)
+    monkeypatch.setattr(
+        run_controller.asyncio, "create_subprocess_exec", fail_to_start
+    )
+
+    with pytest.raises(RuntimeError, match="controller spawn failed"):
+        asyncio.run(
+            execute_controller(
+                "codex",
+                "gpt-5",
+                "browser-use",
                 "task",
                 tmp_path / "attempt",
                 5,

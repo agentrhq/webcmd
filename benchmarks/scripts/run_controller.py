@@ -20,12 +20,13 @@ from urllib.parse import unquote
 
 from agent_browser_runtime import start_agent_browser_runtime
 from axi_runtime import start_axi_runtime
+from browser_use_runtime import start_browser_use_runtime
 from dev_browser_runtime import start_dev_browser_runtime
 from libretto_runtime import start_libretto_runtime
 
 
 Controller = Literal["codex", "claude", "pi"]
-Tool = Literal["webcmd", "chrome-devtools-axi", "agent-browser", "dev-browser", "libretto"]
+Tool = Literal["webcmd", "chrome-devtools-axi", "agent-browser", "dev-browser", "libretto", "browser-use"]
 Termination = Literal["completed", "timeout", "controller_error", "missing_final_answer", "tool_policy_violation"]
 FINAL_ANSWER_RE = re.compile(r"^FINAL ANSWER:[ \t]*(\S[^\r\n]*)$", re.MULTILINE)
 ESSENTIAL_ENV_KEYS = {
@@ -52,6 +53,7 @@ TOOL_ENV_PREFIXES = {
     "agent-browser": (),
     "dev-browser": (),
     "libretto": (),
+    "browser-use": (),
 }
 EVALUATION_ENV_KEYS = {
     "DATASET_DECRYPTION_KEY", "DATASET_PATH", "EVIDENCE_PATH", "EXPECTED_ANSWER", "GOOGLE_API_KEY",
@@ -80,9 +82,11 @@ WEBCMD_BROWSER_SKILL = Path.home() / ".codex/skills/webcmd-browser"
 WEBCMD_BROWSER_SKILL_FILE = WEBCMD_BROWSER_SKILL / "SKILL.md"
 WEBCMD_BROWSER_SKILL_ROOT = WEBCMD_BROWSER_SKILL.resolve()
 DEV_BROWSER_SKILL = Path.home() / ".codex/skills/dev-browser"
+BROWSER_USE_SKILL = Path.home() / ".codex/skills/browser-use"
 PI_SETUP_SKILL_FILES = {
     "webcmd": frozenset({WEBCMD_BROWSER_SKILL_FILE.resolve()}),
     "dev-browser": frozenset({(DEV_BROWSER_SKILL / "SKILL.md").resolve()}),
+    "browser-use": frozenset({(BROWSER_USE_SKILL / "SKILL.md").resolve()}),
 }
 GPT_5_6_SOL_PRICES_PER_MILLION = {
     "input": 5.0,
@@ -265,6 +269,16 @@ def _build_prompt(tool: Tool, session: str, shots_dir: Path, task: str) -> str:
 - Do not use shell commands, Web Search, other MCP servers or tools, Playwright outside `browser_exec`, Puppeteer, curl, wget, or raw HTTP.
 - The Libretto provider is already pinned to this task's dedicated CloakBrowser; open it with `browser_open` and do not configure another browser.
 - Reuse the session ID returned by `browser_open` and close it with `browser_close` when the task is complete."""
+    elif tool == "browser-use":
+        tool_rules = f"""- Use only `browser-use` for browser interaction.
+- Invoke `browser-use` with one quoted heredoc per shell command. The heredoc body must contain only the Python helpers described by the `$browser-use` skill.
+- Do not pass `--cdp-url`, `--connect`, `--profile`, `--headed`, `auth`, `--doctor`, `--update`, `mac-approve`, `cloud`, or any other connection or cloud option.
+- Do not prefix the command with environment assignments. Do not call `start_remote_daemon`, `stop_remote_daemon`, or `auth login`.
+- Use no substitutions, pipes, extra redirections, or other executables.
+- Do not use Web search, browser MCPs, Playwright, Puppeteer, curl, wget, raw HTTP, or any non-browser-use automation tool.
+- Use the `$browser-use` skill for browser-use usage guidance.
+- The browser-use command is already pinned to this task's dedicated CloakBrowser connection; do not start, connect, configure, or close another browser.
+- Save screenshots with `capture_screenshot("{first_shot}")`, then `step_002.png`, and so on in the same directory."""
     else:
         tool_rules = f"""- Use only `webcmd` raw-browser commands for task execution. Do not use Web Search, browser MCPs, external Playwright, Puppeteer, curl, wget, raw HTTP, adapters, fetch commands, plugins, or any non-Webcmd automation tool.
 - Use the `$webcmd-browser` skill for browser guidance. Do not load any other Webcmd skill. This benchmark's raw-browser route is already selected. Skip adapter and plugin discovery, the top-level Webcmd router, `webcmd doctor`, and the skill's Session lifecycle steps.
@@ -274,6 +288,9 @@ def _build_prompt(tool: Tool, session: str, shots_dir: Path, task: str) -> str:
     if tool == "dev-browser":
         screenshot_rules = f"""- Save screenshots after meaningful page transitions and at the final state with `saveScreenshot`.
 - Name screenshots `{session}-step_001.png`, then `{session}-step_002.png`, `{session}-step_003.png`, and so on without overwriting. The harness collects them automatically."""
+    elif tool == "browser-use":
+        screenshot_rules = f"""- Save screenshots after meaningful page transitions and at the final state with `capture_screenshot`.
+- Name screenshots `{first_shot}`, then step_002.png, step_003.png, and so on without overwriting."""
     elif tool == "libretto":
         screenshot_rules = """- Call `browser_snapshot` with `screenshot: true` after meaningful page transitions and at the final state.
 - The harness collects those native Libretto screenshot results automatically."""
@@ -359,6 +376,14 @@ def _controller_command(
         elif pi_tool == "dev-browser":
             command.extend(
                 ["--tool", pi_tool, "--skill-path", str(DEV_BROWSER_SKILL)]
+            )
+        elif pi_tool == "browser-use":
+            if not (runtime_env or {}).get("BU_CDP_URL"):
+                raise ValueError(
+                    "Pi browser-use requires a task-private BU_CDP_URL"
+                )
+            command.extend(
+                ["--tool", pi_tool, "--skill-path", str(BROWSER_USE_SKILL)]
             )
         elif pi_tool == "libretto":
             if not (runtime_env or {}).get("LIBRETTO_CDP_URL"):
@@ -866,7 +891,7 @@ def _is_unterminated_allowed_command(tool: Tool, command: str) -> bool:
         if not words:
             return False
         executable = Path(words[0].strip("'\"")).name
-        if tool in {"webcmd", "agent-browser"}:
+        if tool in {"webcmd", "agent-browser", "browser-use"}:
             return executable == tool
         if tool == "chrome-devtools-axi":
             return (
@@ -891,12 +916,32 @@ def _dev_browser_segment_allowed(segment: list[str]) -> bool:
     return False
 
 
+def _browser_use_segment_allowed(segment: list[str]) -> bool:
+    return bool(segment) and segment == ["browser-use"]
+
+
 def _dev_browser_skill_read_allowed(command: str) -> bool:
     segments = _shell_segments(command)
     if segments is None or len(segments) != 1:
         return False
     segment = segments[0]
     skill = (Path.home() / ".codex/skills/dev-browser/SKILL.md").resolve()
+    try:
+        target = Path(segment[-1]).expanduser().resolve()
+    except (IndexError, OSError):
+        return False
+    return target == skill and segment[:-1] in (
+        ["cat"],
+        ["sed", "-n", "1,240p"],
+    )
+
+
+def _browser_use_skill_read_allowed(command: str) -> bool:
+    segments = _shell_segments(command)
+    if segments is None or len(segments) != 1:
+        return False
+    segment = segments[0]
+    skill = (BROWSER_USE_SKILL / "SKILL.md").resolve()
     try:
         target = Path(segment[-1]).expanduser().resolve()
     except (IndexError, OSError):
@@ -998,6 +1043,38 @@ def _dev_browser_command_allowed(command: str) -> bool:
     except ValueError:
         return False
     return _dev_browser_segment_allowed(segment)
+
+
+def _browser_use_command_allowed(command: str) -> bool:
+    inner = _unwrap_single_shell_command(command)
+    if inner is None:
+        return False
+    if _browser_use_skill_read_allowed(inner):
+        return True
+    lines = inner.splitlines()
+    if len(lines) < 3:
+        segments = _shell_segments(inner)
+        return (
+            segments is not None
+            and len(segments) == 1
+            and _browser_use_segment_allowed(segments[0])
+        )
+    match = re.fullmatch(
+        r"[ \t]*(?P<header>browser-use(?:[ \t]+.*?)?)[ \t]+"
+        r"<<[ \t]*(?P<quote>['\"])(?P<label>[A-Za-z_][A-Za-z0-9_]*)"
+        r"(?P=quote)[ \t]*",
+        lines[0],
+    )
+    if match is None or lines[-1].rstrip("\r") != match.group("label"):
+        return False
+    header = match.group("header")
+    if _has_unescaped_dollar(header):
+        return False
+    try:
+        segment = shlex.split(header, posix=True)
+    except ValueError:
+        return False
+    return _browser_use_segment_allowed(segment)
 
 
 def _webcmd_run_heredoc_allowed(command: str) -> bool:
@@ -1145,6 +1222,8 @@ def _segment_allowed(tool: Tool, segment: list[str]) -> bool:
         }
     if tool == "dev-browser":
         return _dev_browser_segment_allowed(segment)
+    if tool == "browser-use":
+        return _browser_use_segment_allowed(segment)
     if tool == "webcmd":
         return _webcmd_segment_allowed(segment)
     if executable == tool:
@@ -1176,6 +1255,10 @@ def _policy_violation(
     for command in commands:
         if tool == "dev-browser":
             if not _dev_browser_command_allowed(command):
+                return True
+            continue
+        if tool == "browser-use":
+            if not _browser_use_command_allowed(command):
                 return True
             continue
         if tool == "webcmd" and _webcmd_run_heredoc_allowed(command):
@@ -1417,6 +1500,8 @@ async def run_controller(controller: Controller, model: str, tool: Tool, task: s
         browser_runtime = await start_dev_browser_runtime(session, work_dir, _subprocess_env(tool=tool))
     elif tool == "libretto":
         browser_runtime = await start_libretto_runtime(session, work_dir, _subprocess_env(tool=tool))
+    elif tool == "browser-use":
+        browser_runtime = await start_browser_use_runtime(session, work_dir, _subprocess_env(tool=tool))
     merged_tool_env = {**(browser_runtime.env if browser_runtime else {}), **(tool_env or {})}
     if tool == "webcmd":
         merged_tool_env = await asyncio.to_thread(

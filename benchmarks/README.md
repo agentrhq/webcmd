@@ -79,6 +79,28 @@ The Pi sidecar mounts the installed `dev-browser` skill and enables only its
 `bash` and `read` tools. The benchmark connects it to the task's dedicated
 CloakBrowser CDP endpoint.
 
+### browser-use
+
+```bash
+uv tool install --python 3.12 browser-use==0.13.8
+browser-use skill install
+
+uv run python benchmarks/scripts/run_eval.py \
+  --controller pi \
+  --model openai-codex/gpt-5.6-sol \
+  --reasoning-effort low \
+  --benchmark BU_Bench_V1 \
+  --tasks all \
+  --tools browser-use \
+  --judge-provider codex \
+  --judge-model gpt-5.4
+```
+
+The Pi sidecar mounts the installed `browser-use` skill and enables only its
+`bash` and `read` tools. The benchmark pins `BU_CDP_URL` to the task's dedicated
+CloakBrowser CDP endpoint. Do not set `BROWSER_USE_API_KEY` for this run; cloud
+browsers would leave CloakBrowser.
+
 ### Libretto Browser Tools
 
 ```bash

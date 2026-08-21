@@ -65,6 +65,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "agent-browser",
             "dev-browser",
             "libretto",
+            "browser-use",
         ),
         default="webcmd",
     )
@@ -96,9 +97,10 @@ def validate_args(args: argparse.Namespace) -> None:
         "webcmd",
         "dev-browser",
         "libretto",
+        "browser-use",
     }:
         raise ValueError(
-            "Pi currently supports only Webcmd, dev-browser, or Libretto"
+            "Pi currently supports only Webcmd, dev-browser, Libretto, or browser-use"
         )
     if args.tools == "libretto" and args.controller not in {"codex", "pi"}:
         raise ValueError(
@@ -180,6 +182,9 @@ def preflight(controller: str, tools: list[str], judge_provider: str = "google",
                 ["node", str(LIBRETTO_MCP), "--version"], tool_env
             )
             versions["cloakbrowser"] = cloakbrowser_version()
+        elif tool == "browser-use":
+            versions[tool] = _check([tool, "--version"], tool_env)
+            versions["cloakbrowser"] = cloakbrowser_version()
         elif tool == "webcmd":
             version = _check([tool, "--version"], tool_env)
             if version != WEBCMD_EVAL_VERSION:
@@ -207,6 +212,7 @@ def build_manifest(*, run_id: str, benchmark: str, tasks: list[dict], controller
             "agent-browser",
             "dev-browser",
             "libretto",
+            "browser-use",
         }:
             tool_manifest[tool]["browser"] = {"name": "cloakbrowser", "version": versions["cloakbrowser"]}
     return {
