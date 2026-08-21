@@ -257,6 +257,8 @@ Check these off step by step:
 - Adapters import only `@agentrhq/webcmd/registry` and `@agentrhq/webcmd/errors`; do not add third-party dependencies.
 - Browser-run’s Playwright-style `page` and adapter `func(page,args)` are different contracts. Preserve evidence and behavior, not syntax. Implement adapters with the existing `IPage`, pipeline, Node-fetch, or interceptor APIs.
 - The `columns` array and `func` return object keys must match exactly, including order.
+- CLI flags map onto `args` by the declared `name`. `{ name: 'note-id' }` is `args['note-id']`, not `args.noteId`. A `type: 'boolean'` flag is `true` when passed. Do not grep the framework for camelCase aliases.
+- Verification is `webcmd browser verify` / `webcmd verify`. Do not add a second command whose name ends in verify.
 - **Intermediate parsing object keys must not overlap any `columns` entry.** Otherwise silent-column-drop audits can misread the adapter. Use dedicated internal names and destructure with aliases when pushing rows.
 - **The `browser:` field determines the `func` signature:** `browser:false -> (args)`, `browser:true -> (page, args)`. If this is reversed, `args` may actually be a debug flag and all external parameters can silently fall back to defaults.
 - Throw the correct typed error for known failures according to [`references/typed-errors.md`](./references/typed-errors.md). **Do not** silently `return []`, **do not** silently `return [{sentinel}]`, and **do not** silently clamp external parameters with `Math.max/min`.
@@ -284,4 +286,9 @@ Author-only. Stripped by litprompt, so it costs the running agent nothing.
 Append one dated line whenever a correction lands, or whenever an approach
 is tried and rejected. Record what was tried and why it failed, not just
 what won.
+
+- 2026-08-21: Agents skipped this skill, wrote notes next to the adapter, and
+  invented a sibling verify command. Usage now force-loads this skill for
+  create/revise/override. Args keys match declared `name`, not Commander camelCase (#386).
 -->
+
