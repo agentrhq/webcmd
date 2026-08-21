@@ -19,14 +19,14 @@ import './fetch/command.js';
 import { commandListPresentation, filterCommandsByTag, toPresentableCommand } from './command-presentation.js';
 import { configureCompletionCommandSurface, configureListCommandSurface, configurePluginInstallSurface, configurePluginListSurface, configurePluginSearchSurface } from './builtin-command-surface.js';
 import { formatPluginSearchEmptyCopy, presentPluginSearch } from './plugin-search-presentation.js';
-import { addOutputFormatOption, applyUnknownOptionContract, CommanderStructuralError, outputFormatIsExplicit, resolveCommandOutputFormat } from './command-surface.js';
+import { addOutputFormatOption, applyUnknownOptionContract, CommanderStructuralError, JSON_FORMAT_ALIAS_HELP, outputFormatIsExplicit, resolveCommandOutputFormat } from './command-surface.js';
 import { render as renderOutput, formatErrorEnvelope, errorEnvelopeFormat, requestedFormatFromArgv } from './output.js';
 import { PKG_VERSION } from './version.js';
 import { printCompletionScript } from './completion.js';
 import { loadExternalClis, executeExternalCli, installExternalCli, registerExternalCli, isBinaryInstalled, formatExternalCliLabel } from './external.js';
 import { addWebcmdSkills, listWebcmdSkills, removeWebcmdSkills, updateWebcmdSkill, type WebcmdSkillAddResult } from './skills.js';
 import { registerAllCommands } from './commanderAdapter.js';
-import { buildRootHelpPresentation, classifyAdapter, installCommanderNamespaceStructuredHelp, installRootPresentationHelp, leadingPositionalFromUsage, rootHelpData, type RootAdapterGroups } from './help.js';
+import { buildRootHelpPresentation, classifyAdapter, commanderCommandHelpData, installCommanderNamespaceStructuredHelp, installRootPresentationHelp, installStructuredHelp, leadingPositionalFromUsage, rootHelpData, type RootAdapterGroups } from './help.js';
 import { EXIT_CODES, getErrorMessage, toEnvelope, BrowserConnectError, CliError, ArgumentError } from './errors.js';
 import { TargetError, type TargetErrorCode } from './browser/target-errors.js';
 import { resolveTargetJs, getTextResolvedJs, getValueResolvedJs, getAttributesResolvedJs, selectResolvedJs, isAutocompleteResolvedJs, type ResolveOptions, type TargetMatchLevel } from './browser/target-resolver.js';
@@ -39,7 +39,7 @@ import { parseFilter, shapeMatchesFilter } from './browser/shape-filter.js';
 import { buildHtmlTreeJs, type HtmlTreeResult } from './browser/html-tree.js';
 import { buildExtractHtmlJs, runExtractFromHtml } from './browser/extract.js';
 import { analyzeSite, type PageSignals } from './browser/analyze.js';
-import { browserOptionValueParser } from './browser/command-catalog.js';
+import { BROWSER_RUN_HELP_TEXT, browserOptionValueParser } from './browser/command-catalog.js';
 import { registerAuthCommands } from './commands/auth.js';
 import { daemonRestart, daemonStatus, daemonStop } from './commands/daemon.js';
 import { enableVerbose, isVerbose, log } from './logger.js';
@@ -1319,6 +1319,7 @@ cli({
     .addOption(new Option('--max-output <characters>', 'Maximum returned characters').argParser(browserOptionValueParser('run', 'maxOutput')!))
     .addOption(new Option('--snapshot-mode <mode>', 'Snapshot mode for automatic diff: act or tree').default('act').argParser(browserOptionValueParser('run', 'snapshotMode')!))
     .option('--no-snapshot-diff', 'Skip the automatic before/after snapshot diff'));
+  runCommand.option('--json', JSON_FORMAT_ALIAS_HELP, false);
   runCommand.action(rawBrowserAction(async (session, routing, opts) => {
     let source: string;
     try {
@@ -2185,6 +2186,11 @@ cli({
   const adapterGroups: RootAdapterGroups = { external: externalHelpEntries, apps, sites };
   const adapterNameSet = new Set<string>([...externalNames, ...siteNames]);
   installCommanderNamespaceStructuredHelp(browser, { globalCommand: program, description: originalBrowserDescription });
+  installStructuredHelp(
+    runCommand,
+    () => commanderCommandHelpData(browser, runCommand, { globalCommand: program }),
+    BROWSER_RUN_HELP_TEXT,
+  );
   installCommanderNamespaceStructuredHelp(authCmd, { globalCommand: program, description: 'Inspect website login status' });
   installCommanderNamespaceStructuredHelp(daemonCmd, { globalCommand: program, description: originalDaemonDescription });
   installCommanderNamespaceStructuredHelp(pluginCmd, { globalCommand: program, description: originalPluginDescription });

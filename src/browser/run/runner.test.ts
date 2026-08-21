@@ -114,6 +114,16 @@ afterAll(async () => {
     expect(output).not.toHaveProperty('snapshotDiff');
   });
 
+  it('warns when a successful run captures no result, logs, page diff, or artifacts', async () => {
+    const output = await run('await Promise.resolve();', { snapshotDiff: false });
+
+    expect(output.result).toBeNull();
+    expect(output.warnings).toContainEqual(expect.objectContaining({
+      code: 'BROWSER_RUN_NO_CAPTURE',
+      message: expect.stringContaining('return structured data'),
+    }));
+  });
+
   it('clears a cached snapshot baseline when snapshotDiff is disabled', async () => {
     const snapshotBaselineStore = new MemorySnapshotBaselineStore();
     await run(`
@@ -894,6 +904,15 @@ afterAll(async () => {
   ])('returns a typed denial for host-path API %s', async (_name, source) => {
     await expect(run(source)).rejects.toMatchObject({
       code: 'BROWSER_RUN_API_UNSUPPORTED',
+    });
+  });
+
+  it('returns a typed hint for Node-only require/fs attempts in the sandbox', async () => {
+    const error = await runError("const fs = require('fs'); return fs.readFileSync('/tmp/x', 'utf8');");
+
+    expect(error).toMatchObject({
+      code: 'BROWSER_RUN_API_UNSUPPORTED',
+      hint: expect.stringContaining('Node require/fs are not available'),
     });
   });
 

@@ -1218,6 +1218,21 @@ name: 'search',
     }
   });
 
+  it('shows agent examples and the --json alias on browser run help', () => {
+    const program = createProgram('', '');
+    const browser = program.commands.find(cmd => cmd.name() === 'browser')!;
+    const run = browser.commands.find(cmd => cmd.name() === 'run')!;
+    const help = run.helpInformation();
+
+    expect(help).toContain('--json');
+    expect(help).toContain("await page.goto('https://example.com')");
+    expect(help).toContain("await page.goto('data:text/html,");
+    expect(help).toContain("await download.saveAs(download.suggestedFilename())");
+    expect(help).toContain("await page.locator('input[type=file]').setInputFiles('/tmp/upload.pdf')");
+    expect(help).toContain("const popupPromise = context.waitForEvent('page')");
+    expect(help).toContain('Node require/fs are not available inside browser run');
+  });
+
   it('renders daemon namespace structured help with leaves and global options', () => {
     const argv = process.argv;
     try {
@@ -2332,6 +2347,21 @@ describe('browser raw session commands', () => {
       await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'run', '--file', sourcePath]);
       expect(mockSendCommand).toHaveBeenCalledTimes(1);
       expect(process.exitCode).toBeDefined();
+    } finally {
+      fs.rmSync(sourcePath, { force: true });
+    }
+  });
+
+  it('accepts --json on browser run without changing the JSON daemon request', async () => {
+    const sourcePath = path.join(os.tmpdir(), `webcmd-run-${Date.now()}.js`);
+    fs.writeFileSync(sourcePath, 'return 42;', 'utf8');
+    try {
+      const program = createProgram('', '');
+      await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'run', '--file', sourcePath, '--json']);
+
+      expect(mockSendCommand).toHaveBeenCalledWith('run', {
+        session: 'session_test', surface: 'browser', source: 'return 42;', snapshotMode: 'act',
+      });
     } finally {
       fs.rmSync(sourcePath, { force: true });
     }

@@ -1,10 +1,11 @@
 import { Command, Option } from 'commander';
 import {
+  BROWSER_RUN_HELP_TEXT,
   browserCommandCatalog,
   browserOptionFlags,
   browserOptionValueParser,
 } from '../browser/command-catalog.js';
-import { CommanderStructuralError } from '../command-surface.js';
+import { CommanderStructuralError, JSON_FORMAT_ALIAS_HELP } from '../command-surface.js';
 import { CliError, EXIT_CODES } from '../errors.js';
 import { configureRootCommandSurface } from '../root-command-surface.js';
 
@@ -91,6 +92,13 @@ export function parseHostedBrowserStructure(argv: readonly string[]): ParsedHost
       if (valueParser) commanderOption.argParser(valueParser);
       leaf.addOption(commanderOption);
     }
+    if (contract.command === 'run') {
+      leaf.option('--json', JSON_FORMAT_ALIAS_HELP, false);
+      const originalHelpInformation = leaf.helpInformation.bind(leaf);
+      leaf.helpInformation = ((contextOptions?: unknown) => (
+        originalHelpInformation(contextOptions as never) + BROWSER_RUN_HELP_TEXT
+      )) as Command['helpInformation'];
+    }
     leaf.action((...actionArgs: unknown[]) => {
       const options = actionArgs[contract.positionals.length] as Record<string, unknown>;
       parsed = {
@@ -136,9 +144,9 @@ export function parseHostedBrowserStructure(argv: readonly string[]): ParsedHost
 }
 
 function normalizeBrowserOptions(command: string, options: Record<string, unknown>): Record<string, unknown> {
-  if (command !== 'run' || options.snapshotDiff !== false) return { ...options };
-  const { snapshotDiff: _snapshotDiff, ...rest } = options;
-  return { ...rest, noSnapshotDiff: true };
+  if (command !== 'run') return { ...options };
+  const { json: _json, snapshotDiff, ...rest } = options;
+  return snapshotDiff === false ? { ...rest, noSnapshotDiff: true } : rest;
 }
 
 function readBrowserGlobals(root: Command, browser: Command): Pick<
