@@ -4,6 +4,7 @@
     "name": "fetch",
     "description": "Fetch a URL with local HTTP clients. Use after a blocked, 403, or Cloudflare response; never opens a browser.",
     "access": "read",
+    "example": "webcmd web fetch --url https://example.com --raw -f json",
     "strategy": "public",
     "browser": false,
     "args": [
@@ -33,6 +34,13 @@
         "default": false,
         "required": false,
         "help": "Allow private and loopback destinations"
+      },
+      {
+        "name": "raw",
+        "type": "boolean",
+        "default": false,
+        "required": false,
+        "help": "Return the raw HTML response body instead of extracted article text; use this for CSS selector discovery, meta tags, and inline script payloads"
       }
     ],
     "defaultFormat": "md",
