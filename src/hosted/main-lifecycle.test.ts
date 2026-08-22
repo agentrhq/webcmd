@@ -121,7 +121,7 @@ describe('hosted CLI process lifecycle', () => {
       'Install using the installSource returned by search.',
       '',
     ].join('\n'));
-    expect(result.stdout).toContain('Local-only commands:');
+    expect(result.stdout).toBe('');
     await expect(readFile(fixture.discoverySentinel, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
   }, 20_000);
 

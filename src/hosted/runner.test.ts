@@ -1122,7 +1122,9 @@ describe('runHostedCli', () => {
       'Search: webcmd plugin search missing-site',
       'Install using the installSource returned by search.',
     ].join('\n'));
-    expect(stdout.text()).toBe(formatRootHelp(HOSTED_ROOT_HELP));
+    // Error path: nothing on stdout, so a caller parsing stdout cannot mistake
+    // the root help for a successful response.
+    expect(stdout.text()).toBe('');
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(String(fetchImpl.mock.calls[0]![0])).toMatch(/\/v1\/manifest$/);
     expect(fetchImpl.mock.calls.some(([url]) => /plugin|execute/.test(String(url)))).toBe(false);
@@ -1599,7 +1601,7 @@ describe('runHostedCli', () => {
     expect(stdout.text()).toBe(formatRootHelp(HOSTED_ROOT_HELP));
   });
 
-  it('writes unknown-site stderr before root-help stdout', async () => {
+  it('writes unknown-site guidance to stderr only', async () => {
     const order: string[] = [];
     const orderedSink = (label: string) => new Writable({
       write(_chunk, _encoding, callback) {
@@ -1616,7 +1618,7 @@ describe('runHostedCli', () => {
     });
 
     expect(result.exitCode).toBe(2);
-    expect(order).toEqual(['stderr', 'stdout']);
+    expect(order).toEqual(['stderr']);
   });
 
   it('does not resolve until a slow typed-error stderr write completes', async () => {

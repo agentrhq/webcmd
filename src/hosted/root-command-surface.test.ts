@@ -493,7 +493,7 @@ describe('hosted root preflight call order', () => {
 
     expect(result).toEqual({ handled: true, exitCode: 2 });
     expect(stderr.text()).toBe(MISSING_SITE_GUIDANCE);
-    expect(stdout.text()).toBe(formatRootHelp(HOSTED_ROOT_HELP));
+    expect(stdout.text()).toBe('');
   });
 
   it('preserves the literal separator when list receives a help-shaped excess argument', async () => {
@@ -766,9 +766,10 @@ describe('hosted root preflight call order', () => {
       expect(local.stdout).not.toBe('');
       expect(local.stderr).toBe('');
     } else {
-      expect(stdout.text()).toBe(formatRootHelp(HOSTED_ROOT_HELP));
+      // Unknown site is an error path: stderr only, nothing on stdout.
+      expect(stdout.text()).toBe('');
       expect(stderr.text()).toBe(MISSING_SITE_GUIDANCE);
-      expect(local.stdout).not.toBe('');
+      expect(local.stdout).toBe('');
       expect(local.stderr).toBe(MISSING_SITE_GUIDANCE);
     }
     expect(fetchImpl).toHaveBeenCalledTimes(1);
@@ -817,9 +818,9 @@ describe('hosted root preflight call order', () => {
     });
 
     expect(local).toMatchObject({ exitCode: 2, stderr: MISSING_SITE_GUIDANCE });
-    expect(local.stdout).not.toBe('');
+    expect(local.stdout).toBe('');
     expect(hosted).toEqual({ handled: true, exitCode: local.exitCode });
-    expect(stdout.text()).toBe(formatRootHelp(HOSTED_ROOT_HELP));
+    expect(stdout.text()).toBe(local.stdout);
     expect(stderr.text()).toBe(local.stderr);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(String(fetchImpl.mock.calls[0]![0])).toBe('https://api.example.com/v1/manifest');

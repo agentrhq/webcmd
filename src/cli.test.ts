@@ -1191,7 +1191,8 @@ name: 'search',
 
       errors.length = 0;
       createProgram('', '').parse(['browser', 'nonsense'], { from: 'user' });
-      expect(errors.join('\n')).toBe("error: unknown command 'nonsense'");
+      expect(errors.join('\n')).toContain("error: unknown command 'nonsense'");
+      expect(errors.join('\n')).toContain('Valid webcmd browser commands:');
     } finally {
       spy.mockRestore();
       process.exitCode = previousExitCode;
