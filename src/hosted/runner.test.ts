@@ -415,7 +415,7 @@ describe('runHostedCli', () => {
     const config = makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' });
     await expect(runHostedCli(['site', '--help'], { config, stdout: stdout.stream })).resolves.toMatchObject({ exitCode: 0 });
     await expect(runHostedCli(['adapter', 'source', '--help'], { config, stdout: stdout.stream })).resolves.toMatchObject({ exitCode: 0 });
-    expect(stdout.text()).toContain('Read and write site memory');
+    expect(stdout.text()).toContain('webcmd site <group> <verb> <site>');
     expect(stdout.text()).toContain('adapter source');
   });
 
