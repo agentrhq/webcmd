@@ -15,6 +15,7 @@ import {
   devtoSearch,
   githubSearch,
   arxivSearch,
+  redditSearch,
 } from './sources.js';
 
 function requireQuery(value) {
@@ -28,7 +29,7 @@ cli({
   name: 'research',
   tags: ['search'],
   access: 'read',
-  description: "Aggregate results about a topic across all public platforms (Hacker News, Lobsters, Stack Overflow, Dev.to, GitHub, arXiv)",
+  description: "Aggregate results about a topic across all public platforms (Hacker News, Lobsters, Stack Overflow, Dev.to, GitHub, arXiv, Reddit)",
   strategy: Strategy.PUBLIC,
   browser: false,
   args: [
@@ -36,7 +37,7 @@ cli({
     { name: 'limit', type: 'int', default: 20, help: 'Maximum total results' },
     {
       name: 'sources',
-      default: 'hn,lobsters,stackoverflow,devto,github,arxiv',
+      default: 'hn,lobsters,stackoverflow,devto,github,arxiv,reddit',
       help: 'Comma-separated sources to query (default: all)',
     },
   ],
@@ -61,6 +62,7 @@ cli({
       devto: () => devtoSearch(query, perPlatform),
       github: () => githubSearch(query, perPlatform),
       arxiv: () => arxivSearch(query, perPlatform),
+      reddit: () => redditSearch(query, perPlatform),
     };
 
     const selected = wanted.length ? wanted.filter((s) => fetchers[s]) : Object.keys(fetchers);
