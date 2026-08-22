@@ -202,6 +202,7 @@ export async function redditSearch(query, limit) {
   url.searchParams.set('limit', String(Math.min(limit, 100)));
   const res = await get(url, {
     headers: { 'User-Agent': 'Mozilla/5.0 (compatible; OmniSearch/0.1; +https://github.com/agentrhq/webcmd)' },
+    signal: AbortSignal.timeout(10_000),
   }, { source: 'Reddit' });
   const json = await res.json();
   const children = Array.isArray(json?.data?.children) ? json.data.children : [];
