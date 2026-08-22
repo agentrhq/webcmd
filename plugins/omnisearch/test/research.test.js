@@ -97,6 +97,28 @@ describe('redditSearch', () => {
     expect(rows).toHaveLength(0);
   });
 
+  it('returns empty string for createdAt when created_utc is invalid', async () => {
+    const { redditSearch } = await import('../sources.js');
+    stubFetch(() =>
+      redditResponse([
+        {
+          title: 'Malformed post',
+          author: 'op',
+          score: 1,
+          num_comments: 0,
+          created_utc: 'not-a-number',
+          url: 'https://example.com/post',
+          selftext: '',
+          permalink: '/r/test/comments/abc/',
+        },
+      ]),
+    );
+    // Must not throw — one bad timestamp returns '' not an exception
+    const rows = await redditSearch('test', 5);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].createdAt).toBe('');
+  });
+
   it('hits the correct Reddit search endpoint', async () => {
     const { redditSearch } = await import('../sources.js');
     const calls = [];

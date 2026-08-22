@@ -207,15 +207,14 @@ export async function redditSearch(query, limit) {
   const children = Array.isArray(json?.data?.children) ? json.data.children : [];
   return children.slice(0, limit).map((child) => {
     const d = child?.data ?? {};
+    const createdAt = new Date(d.created_utc ? Number(d.created_utc) * 1000 : NaN);
     return {
       platform: 'reddit',
       title: String(d.title ?? '').trim(),
       author: String(d.author ?? ''),
       score: d.score ?? 0,
       commentCount: d.num_comments ?? 0,
-      createdAt: d.created_utc
-        ? new Date(d.created_utc * 1000).toISOString()
-        : '',
+      createdAt: Number.isNaN(createdAt.getTime()) ? '' : createdAt.toISOString(),
       url: d.url ? String(d.url) : `https://www.reddit.com${d.permalink ?? ''}`,
       text: String(d.selftext ?? '').slice(0, 200),
     };
