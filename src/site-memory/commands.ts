@@ -108,17 +108,28 @@ export function registerSiteCommands(
     await emitListing(list, await backend.list(name), opts, stdout, ['path', 'updatedAt', 'byteSize', 'sha256']);
   });
 
+  /** Write commands print nothing by default; a format flag turns that into a result object. */
+  const emitWriteResult = async (command: Command, payload: Record<string, unknown>): Promise<void> => {
+    if (!outputFormatIsExplicit(command)) return;
+    const fmt = resolveCommandOutputFormat(command, (command.opts() as { format?: string }).format);
+    if (fmt === null) return;
+    await renderOutput(payload, { fmt, fmtExplicit: true, stdout });
+  };
+
   const note = withExample(site.command('note')
     .description('Read and write freeform site notes: webcmd site note <add|list> <site>')
     .usage('add|list <site> [options]'),
     'webcmd site note add example.com --text "search needs a session cookie"');
-  withExample(note.command('add')
+  const noteAdd = addOutputFormatOption(withExample(note.command('add')
     .description('Append a markdown note to a site; the site name comes before --text')
     .argument('<site>', SITE_ARG_HELP)
     .requiredOption('--text <markdown>', 'Note body, in markdown (required; there is no -m alias)')
     .option('--author <author>', 'Who wrote the note'),
-    'webcmd site note add example.com --text "search needs a session cookie" --author agent')
-    .action((name, opts: { text: string; author?: string }) => backend.note(name, opts.text, opts.author));
+    'webcmd site note add example.com --text "search needs a session cookie" --author agent'), 'json');
+  noteAdd.action(async (name, opts: { text: string; author?: string }) => {
+    await backend.note(name, opts.text, opts.author);
+    await emitWriteResult(noteAdd, { ok: true, action: 'note add', site: name });
+  });
   const noteList = addOutputFormatOption(withExample(note.command('list')
     .description('Print the notes recorded for a site')
     .argument('<site>', SITE_ARG_HELP)
@@ -132,7 +143,7 @@ export function registerSiteCommands(
     .description('Maintain the verified API endpoints found for a site: webcmd site endpoint <set|stale|list> <site>')
     .usage('set|stale|list <site> [args] [options]'),
     'webcmd site endpoint set example.com search --url https://example.com/api/search --method GET');
-  withExample(endpoint.command('set')
+  const endpointSet = addOutputFormatOption(withExample(endpoint.command('set')
     .description('Record or update one verified endpoint for a site')
     .argument('<site>', SITE_ARG_HELP)
     .argument('<name>', 'Endpoint name to store it under, e.g. search')
@@ -142,20 +153,26 @@ export function registerSiteCommands(
     .option('--rows-path <path>', 'Dot path to the result rows inside the response, e.g. data.items')
     .option('--fields <fields>', 'Comma-separated list of the response fields worth keeping')
     .option('--notes <text>', 'Freeform notes about auth, paging or quirks'),
-    'webcmd site endpoint set example.com search --url https://example.com/api/search --method GET --rows-path data.items')
-    .action((siteName, name, opts: { url: string; method: string; params?: string; rowsPath?: string; fields?: string; notes?: string }) => backend.endpoint(siteName, name, {
+    'webcmd site endpoint set example.com search --url https://example.com/api/search --method GET --rows-path data.items'), 'json');
+  endpointSet.action(async (siteName, name, opts: { url: string; method: string; params?: string; rowsPath?: string; fields?: string; notes?: string }) => {
+    await backend.endpoint(siteName, name, {
       url: opts.url, method: opts.method,
       ...(opts.params ? { params: parseJsonObject(opts.params) } : {}),
       ...(opts.rowsPath ? { rowsPath: opts.rowsPath } : {}),
       ...(opts.fields ? { sampleFields: opts.fields.split(',').map(value => value.trim()).filter(Boolean) } : {}),
       ...(opts.notes ? { notes: opts.notes } : {}),
-    }));
-  withExample(endpoint.command('stale')
+    });
+    await emitWriteResult(endpointSet, { ok: true, action: 'endpoint set', site: siteName, endpoint: name, url: opts.url, method: opts.method });
+  });
+  const endpointStale = addOutputFormatOption(withExample(endpoint.command('stale')
     .description('Mark a recorded endpoint stale once it stops returning what it used to')
     .argument('<site>', SITE_ARG_HELP)
     .argument('<name>', 'Name of the recorded endpoint to mark stale'),
-    'webcmd site endpoint stale example.com search')
-    .action((siteName, name) => backend.stale(siteName, name));
+    'webcmd site endpoint stale example.com search'), 'json');
+  endpointStale.action(async (siteName, name) => {
+    await backend.stale(siteName, name);
+    await emitWriteResult(endpointStale, { ok: true, action: 'endpoint stale', site: siteName, endpoint: name });
+  });
   const endpointList = addOutputFormatOption(withExample(endpoint.command('list')
     .description('Print the endpoints recorded for a site')
     .argument('<site>', SITE_ARG_HELP)
@@ -169,15 +186,18 @@ export function registerSiteCommands(
     .description('Explain what opaque response field names mean: webcmd site field-map add <site> <key>')
     .usage('add <site> <key> [options]'),
     'webcmd site field-map add example.com p --meaning "price in cents" --source /api/search');
-  withExample(fieldMap.command('add')
+  const fieldMapAdd = addOutputFormatOption(withExample(fieldMap.command('add')
     .description('Record what one response field means and where it was observed')
     .argument('<site>', SITE_ARG_HELP)
     .argument('<key>', 'Raw field name as it appears in the response, e.g. p')
     .requiredOption('--meaning <meaning>', 'What the field actually holds')
     .requiredOption('--source <source>', 'Where it was seen, e.g. the endpoint path')
     .option('--force', 'Overwrite an existing mapping for this key'),
-    'webcmd site field-map add example.com p --meaning "price in cents" --source /api/search')
-    .action((siteName, key, opts: { meaning: string; source: string; force?: boolean }) => backend.fieldMap(siteName, key, opts.meaning, opts.source, opts.force === true));
+    'webcmd site field-map add example.com p --meaning "price in cents" --source /api/search'), 'json');
+  fieldMapAdd.action(async (siteName, key, opts: { meaning: string; source: string; force?: boolean }) => {
+    await backend.fieldMap(siteName, key, opts.meaning, opts.source, opts.force === true);
+    await emitWriteResult(fieldMapAdd, { ok: true, action: 'field-map add', site: siteName, key });
+  });
 
   const fixture = withExample(site.command('fixture')
     .description('Read and write the verify fixtures used by webcmd browser verify: webcmd site fixture <get|put> <site>/<command>')
@@ -205,37 +225,39 @@ export function registerSiteCommands(
     if (fmt === null) return;
     await renderOutput(parseFixtureBody(body), { fmt, fmtExplicit: true, stdout });
   });
-  withExample(fixture.command('put')
+  const fixturePut = addOutputFormatOption(withExample(fixture.command('put')
     .description('Store a verify fixture for one site command, read from a file or stdin')
     .argument('<site-command>', SITE_COMMAND_ARG_HELP)
     .argument('[path]', 'File holding the fixture body; omit it and pass --stdin to read stdin')
     .option('--stdin', 'Read the fixture from stdin'),
-    'webcmd site fixture put example.com/search ./search.json')
-    .action(async (key, file: string | undefined, opts: { stdin?: boolean }) => {
-      const { site: siteName, command } = parseSiteCommand(key);
-      await backend.putFixture(siteName, command, await readSitePutSource(
-        { path: file, stdin: opts.stdin === true },
-        { readStdin: io.readStdin, usage: 'webcmd site fixture put <site/cmd>' },
-      ));
-    });
+    'webcmd site fixture put example.com/search ./search.json'), 'json');
+  fixturePut.action(async (key, file: string | undefined, opts: { stdin?: boolean }) => {
+    const { site: siteName, command } = parseSiteCommand(key);
+    await backend.putFixture(siteName, command, await readSitePutSource(
+      { path: file, stdin: opts.stdin === true },
+      { readStdin: io.readStdin, usage: 'webcmd site fixture put <site/cmd>' },
+    ));
+    await emitWriteResult(fixturePut, { ok: true, action: 'fixture put', site: siteName, command });
+  });
 
   const sample = withExample(site.command('sample')
     .description('Keep raw response samples for a site command: webcmd site sample add <site>/<command>')
     .usage('add <site>/<command> [path] [options]'),
     'webcmd site sample add example.com/search ./sample.json');
-  withExample(sample.command('add')
+  const sampleAdd = addOutputFormatOption(withExample(sample.command('add')
     .description('Save a raw response sample for one site command, read from a file or stdin')
     .argument('<site-command>', SITE_COMMAND_ARG_HELP)
     .argument('[path]', 'File holding the sample body; omit it and pass --stdin to read stdin')
     .option('--stdin', 'Read the sample from stdin'),
-    'webcmd site sample add example.com/search ./sample.json')
-    .action(async (key, file: string | undefined, opts: { stdin?: boolean }) => {
-      const { site: siteName, command } = parseSiteCommand(key);
-      await backend.sample(siteName, command, await readSitePutSource(
-        { path: file, stdin: opts.stdin === true },
-        { readStdin: io.readStdin, usage: 'webcmd site sample add <site/cmd>' },
-      ));
-    });
+    'webcmd site sample add example.com/search ./sample.json'), 'json');
+  sampleAdd.action(async (key, file: string | undefined, opts: { stdin?: boolean }) => {
+    const { site: siteName, command } = parseSiteCommand(key);
+    await backend.sample(siteName, command, await readSitePutSource(
+      { path: file, stdin: opts.stdin === true },
+      { readStdin: io.readStdin, usage: 'webcmd site sample add <site/cmd>' },
+    ));
+    await emitWriteResult(sampleAdd, { ok: true, action: 'sample add', site: siteName, command });
+  });
 }
 
 export function createLocalSiteMemoryBackend(options: LocalStoreOptions = {}): SiteMemoryBackend {

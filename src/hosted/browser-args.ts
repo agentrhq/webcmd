@@ -5,7 +5,7 @@ import {
   browserOptionFlags,
   browserOptionValueParser,
 } from '../browser/command-catalog.js';
-import { CommanderStructuralError, JSON_FORMAT_ALIAS_HELP } from '../command-surface.js';
+import { addOutputFormatOption, CommanderStructuralError } from '../command-surface.js';
 import { CliError, EXIT_CODES } from '../errors.js';
 import { configureRootCommandSurface } from '../root-command-surface.js';
 
@@ -92,8 +92,11 @@ export function parseHostedBrowserStructure(argv: readonly string[]): ParsedHost
       if (valueParser) commanderOption.argParser(valueParser);
       leaf.addOption(commanderOption);
     }
+    // Mirror the local grammar: the raw session leaves (the ones carrying `-v`)
+    // have always emitted JSON, so `json` is their default format; `init` and
+    // `verify` render like every other built-in.
+    addOutputFormatOption(leaf, contract.options.some(option => option.name === 'verbose') ? 'json' : 'table');
     if (contract.command === 'run') {
-      leaf.option('--json', JSON_FORMAT_ALIAS_HELP, false);
       const originalHelpInformation = leaf.helpInformation.bind(leaf);
       leaf.helpInformation = ((contextOptions?: unknown) => (
         originalHelpInformation(contextOptions as never) + BROWSER_RUN_HELP_TEXT

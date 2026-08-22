@@ -19,7 +19,7 @@ import './fetch/command.js';
 import { commandListPresentation, filterCommandsByTag, toPresentableCommand } from './command-presentation.js';
 import { configureCompletionCommandSurface, configureListCommandSurface, configurePluginInstallSurface, configurePluginListSurface, configurePluginSearchSurface } from './builtin-command-surface.js';
 import { formatPluginSearchEmptyCopy, presentPluginSearch } from './plugin-search-presentation.js';
-import { addOutputFormatOption, applyUnknownOptionContract, CommanderStructuralError, JSON_FORMAT_ALIAS_HELP, outputFormatIsExplicit, resolveCommandOutputFormat } from './command-surface.js';
+import { addOutputFormatOption, applyUnknownOptionContract, CommanderStructuralError, ensureOutputFormatOptions, JSON_FORMAT_ALIAS_HELP, outputFormatIsExplicit, resolveCommandOutputFormat } from './command-surface.js';
 import { render as renderOutput } from './output.js';
 import { handleProgramParseError } from './cli-error-report.js';
 import { PKG_VERSION } from './version.js';
@@ -188,6 +188,11 @@ async function handleSkillLinkCommand(action: () => WebcmdSkillAddResult | Promi
     if (err instanceof CliError && err.hint) console.error(`Hint: ${err.hint}`);
     process.exitCode = err instanceof CliError ? err.exitCode : EXIT_CODES.GENERIC_ERROR;
   }
+}
+
+/** The skills commands predate `-f/--format`; honour both spellings. */
+function wantsJsonEnvelope(opts: { json?: boolean; format?: string }): boolean {
+  return opts.json === true || opts.format === 'json';
 }
 
 function handleSkillRemoveCommand(customPath: string | undefined, json: boolean): void {
@@ -616,7 +621,8 @@ function applyVerbose(opts: { verbose?: boolean }): void {
  * there would advertise diagnostics that do not exist.
  */
 function withBrowserVerbose(command: Command): Command {
-  return command.option('-v, --verbose', 'Debug output', false);
+  // These leaves have always emitted JSON, so `json` stays their default format.
+  return addOutputFormatOption(command.option('-v, --verbose', 'Debug output', false), 'json');
 }
 
 function formatChildCommandSummary(command: Command): string {
@@ -633,17 +639,47 @@ function applyRootSubcommandSummaries(program: Command): void {
   }
 }
 
-async function handleAdapterOverride(commandKey: string): Promise<void> {
+/**
+ * Emit an action command's result in the requested format.
+ *
+ * With no `-f/--format`/`--json` the human lines are printed unchanged; with one,
+ * the command renders a structured payload instead so agents get a parseable
+ * result from `install`, `create`, `use`, … not just prose.
+ */
+async function emitActionResult(
+  command: Command,
+  payload: Record<string, unknown>,
+  human: () => void,
+): Promise<void> {
+  if (!outputFormatIsExplicit(command)) {
+    human();
+    return;
+  }
+  const fmt = resolveCommandOutputFormat(command, (command.opts() as { format?: string }).format);
+  if (fmt === null) return;
+  await renderOutput(payload, { fmt, fmtExplicit: true });
+}
+
+async function handleAdapterOverride(commandKey: string, _opts: unknown, command: Command): Promise<void> {
   const { createAdapterOverride } = await import('./adapter-override.js');
   try {
     const result = createAdapterOverride(commandKey);
-    console.log(`✅ Override created for ${result.commandKey}`);
-    console.log(`     yours: ${result.overridePath}`);
-    console.log(`     base:  ${result.basePath}`);
-    console.log();
-    console.log(`  Your copy now takes precedence over plugin "${result.plugin}".`);
-    console.log(`  "${CLI_COMMAND} plugin update" keeps updating the plugin copy, not your override,`);
-    console.log('  and will tell you when the upstream file changes so you can merge.');
+    await emitActionResult(command, {
+      ok: true,
+      action: 'override',
+      command: result.commandKey,
+      plugin: result.plugin,
+      overridePath: result.overridePath,
+      basePath: result.basePath,
+    }, () => {
+      console.log(`✅ Override created for ${result.commandKey}`);
+      console.log(`     yours: ${result.overridePath}`);
+      console.log(`     base:  ${result.basePath}`);
+      console.log();
+      console.log(`  Your copy now takes precedence over plugin "${result.plugin}".`);
+      console.log(`  "${CLI_COMMAND} plugin update" keeps updating the plugin copy, not your override,`);
+      console.log('  and will tell you when the upstream file changes so you can merge.');
+    });
   } catch (err) {
     console.error(`Error: ${getErrorMessage(err)}`);
     process.exitCode = EXIT_CODES.GENERIC_ERROR;
@@ -785,7 +821,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
           scope: resolved.scope,
           customPath: resolved.path,
         });
-      }, opts.json, 'added');
+      }, wantsJsonEnvelope(opts), 'added');
     });
 
   skillsCmd
@@ -800,7 +836,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
         provider: opts.provider,
         scope: opts.scope,
         customPath: opts.path,
-      }), opts.json, 'updated');
+      }), wantsJsonEnvelope(opts), 'updated');
     });
 
   skillsCmd
@@ -808,7 +844,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
     .description('Remove bundled Webcmd skill symlinks from supported locations')
     .option('--path <path>', 'Also remove links from a custom agent skills directory')
     .option('--json', 'Output a JSON envelope', false)
-    .action((opts) => handleSkillRemoveCommand(opts.path, opts.json));
+    .action((opts) => handleSkillRemoveCommand(opts.path, wantsJsonEnvelope(opts)));
 
   program
     .command('update')
@@ -955,7 +991,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
 Create a new private adapter: ${CLI_COMMAND} browser init <site>/<command>
 Override an installed command: ${CLI_COMMAND} adapter override <site>/<command>
 Test either local adapter: ${CLI_COMMAND} browser verify <site>/<command>`)
-    .action(async (name: string) => {
+    .action(async (name: string, _opts: unknown, initCmd: Command) => {
       try {
         const parts = name.split('/');
         if (parts.length !== 2 || !parts[0] || !parts[1]) {
@@ -977,7 +1013,9 @@ Test either local adapter: ${CLI_COMMAND} browser verify <site>/<command>`)
         const filePath = path.join(dir, `${command}.js`);
 
         if (fs.existsSync(filePath)) {
-          console.log(`Adapter already exists: ${filePath}`);
+          await emitActionResult(initCmd, {
+            ok: true, action: 'init', adapter: name, path: filePath, created: false,
+          }, () => console.log(`Adapter already exists: ${filePath}`));
           return;
         }
 
@@ -1008,9 +1046,13 @@ cli({
 `;
         fs.mkdirSync(dir, { recursive: true });
         fs.writeFileSync(filePath, template, 'utf-8');
-        console.log(`Created: ${filePath}`);
-        console.log('First time on this site? Run: webcmd session create, then webcmd --session <session-id> browser run --stdin');
-        console.log(`Edit the file to implement your adapter, then run: webcmd browser verify ${name}`);
+        await emitActionResult(initCmd, {
+          ok: true, action: 'init', adapter: name, path: filePath, created: true,
+        }, () => {
+          console.log(`Created: ${filePath}`);
+          console.log('First time on this site? Run: webcmd session create, then webcmd --session <session-id> browser run --stdin');
+          console.log(`Edit the file to implement your adapter, then run: webcmd browser verify ${name}`);
+        });
       } catch (err) {
         console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
         process.exitCode = EXIT_CODES.GENERIC_ERROR;
@@ -1259,25 +1301,28 @@ cli({
       const runId = generateRunId();
       const commandName = `browser/${command.name()}`;
       let releaseRun = true;
+      const fmt = resolveCommandOutputFormat(command, (opts as { format?: string }).format);
+      if (fmt === null) return;
+      const emit = (payload: unknown) => renderOutput(payload, { fmt, fmtExplicit: true });
       try {
         const session = getBrowserSession(command);
         const routing = profileRouteParams(getBrowserProfileSelection(command));
         const result = await runWithDaemonRunContext({ runId, command: commandName }, () => fn(session, routing, opts));
-        console.log(JSON.stringify(result, null, 2));
+        await emit(result);
       } catch (error) {
         if (isUnknownOutcomeError(error)) releaseRun = false;
         if (error instanceof BrowserCommandError && error.code) {
-          console.log(JSON.stringify({
+          await emit({
             error: {
               code: error.code,
               message: error.message,
               ...(error.hint ? { hint: error.hint } : {}),
               ...(error.details !== undefined ? { details: error.details } : {}),
             },
-          }, null, 2));
+          });
         } else if (error instanceof CliError) {
           const payload = { error: { code: error.code, message: error.message, ...(error.hint ? { hint: error.hint } : {}) } };
-          console.log(JSON.stringify(payload, null, 2));
+          await emit(payload);
           process.stderr.write(`${error.code}: ${error.message}\n`);
           if (error.hint) process.stderr.write(`${error.hint}\n`);
           process.exitCode = error.exitCode;
@@ -1316,7 +1361,6 @@ cli({
     .addOption(new Option('--max-output <characters>', 'Maximum returned characters').argParser(browserOptionValueParser('run', 'maxOutput')!))
     .addOption(new Option('--snapshot-mode <mode>', 'Snapshot mode for automatic diff: act or tree').default('act').argParser(browserOptionValueParser('run', 'snapshotMode')!))
     .option('--no-snapshot-diff', 'Skip the automatic before/after snapshot diff'));
-  runCommand.option('--json', JSON_FORMAT_ALIAS_HELP, false);
   runCommand.action(rawBrowserAction(async (session, routing, opts) => {
     let source: string;
     try {
@@ -1410,21 +1454,24 @@ cli({
   const originalPluginDescription = pluginCmd.description();
 
   configurePluginInstallSurface(pluginCmd.command('install'))
-    .action(async (source: string, opts: { all?: boolean }) => {
+    .action(async (source: string, opts: { all?: boolean }, command: Command) => {
       const { installPlugin } = await import('./plugin.js');
       const { discoverPlugins } = await import('./discovery.js');
       try {
         const result = installPlugin(source, { all: opts.all === true });
         await discoverPlugins();
-        if (Array.isArray(result)) {
-          if (result.length === 0) {
-            console.log('No plugins were installed (all skipped or incompatible).');
+        const plugins = Array.isArray(result) ? result : [result];
+        await emitActionResult(command, { ok: true, action: 'install', source, plugins }, () => {
+          if (Array.isArray(result)) {
+            if (result.length === 0) {
+              console.log('No plugins were installed (all skipped or incompatible).');
+            } else {
+              console.log(`\u2705 Installed ${result.length} plugin(s) from monorepo: ${result.join(', ')}`);
+            }
           } else {
-            console.log(`\u2705 Installed ${result.length} plugin(s) from monorepo: ${result.join(', ')}`);
+            console.log(`\u2705 Plugin "${result}" installed successfully. Commands are ready to use.`);
           }
-        } else {
-          console.log(`\u2705 Plugin "${result}" installed successfully. Commands are ready to use.`);
-        }
+        });
       } catch (err) {
         console.error(`Error: ${getErrorMessage(err)}`);
         process.exitCode = EXIT_CODES.GENERIC_ERROR;
@@ -1435,11 +1482,13 @@ cli({
     .command('uninstall')
     .description('Uninstall a plugin')
     .argument('<name>', 'Plugin name')
-    .action(async (name: string) => {
+    .action(async (name: string, _opts: unknown, command: Command) => {
       const { uninstallPlugin } = await import('./plugin.js');
       try {
         uninstallPlugin(name);
-        console.log(`✅ Plugin "${name}" uninstalled.`);
+        await emitActionResult(command, { ok: true, action: 'uninstall', plugin: name }, () => {
+          console.log(`✅ Plugin "${name}" uninstalled.`);
+        });
       } catch (err) {
         console.error(`Error: ${getErrorMessage(err)}`);
         process.exitCode = EXIT_CODES.GENERIC_ERROR;
@@ -1452,7 +1501,7 @@ cli({
     .argument('[name]', 'Plugin name (required unless --all is passed)')
     .option('--all', 'Update all installed plugins')
     .option('--force', 'Discard uncommitted changes in this plugin\'s files')
-    .action(async (name: string | undefined, opts: { all?: boolean; force?: boolean }) => {
+    .action(async (name: string | undefined, opts: { all?: boolean; force?: boolean }, command: Command) => {
       if (!name && !opts.all) {
         console.error('Error: Please specify a plugin name or use the --all flag.');
         process.exitCode = EXIT_CODES.USAGE_ERROR;
@@ -1470,6 +1519,21 @@ cli({
         const results = updateAllPlugins({ force: opts.force === true });
         if (results.length > 0) {
           await discoverPlugins();
+        }
+
+        if (outputFormatIsExplicit(command)) {
+          const failed = results.filter((result) => !result.success);
+          if (failed.length > 0) process.exitCode = EXIT_CODES.GENERIC_ERROR;
+          await emitActionResult(command, {
+            ok: failed.length === 0,
+            action: 'update',
+            plugins: results.map((result) => ({
+              name: result.name,
+              ok: result.success,
+              ...(result.success ? {} : { error: String(result.error) }),
+            })),
+          }, () => undefined);
+          return;
         }
 
         let hasErrors = false;
@@ -1505,8 +1569,14 @@ cli({
       try {
         const updatedPlugins = updatePlugin(name!, { force: opts.force === true });
         await discoverPlugins();
-        console.log(`✅ Plugin "${name}" updated successfully.`);
-        printReconcileReport(findOverridesNeedingReconcile(updatedPlugins));
+        await emitActionResult(command, {
+          ok: true,
+          action: 'update',
+          plugins: updatedPlugins.map((plugin) => ({ name: plugin, ok: true })),
+        }, () => {
+          console.log(`✅ Plugin "${name}" updated successfully.`);
+          printReconcileReport(findOverridesNeedingReconcile(updatedPlugins));
+        });
       } catch (err) {
         console.error(`Error: ${getErrorMessage(err)}`);
         process.exitCode = EXIT_CODES.GENERIC_ERROR;
@@ -1696,7 +1766,7 @@ cli({
       description?: string;
       authorName?: string;
       authorHandle?: string;
-    }) => {
+    }, command: Command) => {
       const { createPluginScaffold } = await import('./plugin-scaffold.js');
       try {
         let authorName = opts.authorName?.trim();
@@ -1719,17 +1789,25 @@ cli({
             handle: authorHandle ?? '',
           },
         });
-        console.log(`✅ Plugin scaffold created at ${result.dir}`);
-        console.log();
-        console.log('  Files created:');
-        for (const f of result.files) {
-          console.log(`    ${f}`);
-        }
-        console.log();
-        console.log('  Next steps:');
-        console.log(`    cd ${result.dir}`);
-        console.log(`    ${CLI_COMMAND} plugin install file://${result.dir}`);
-        console.log(`    ${CLI_COMMAND} ${name} hello`);
+        await emitActionResult(command, {
+          ok: true,
+          action: 'create',
+          plugin: name,
+          dir: result.dir,
+          files: result.files,
+        }, () => {
+          console.log(`✅ Plugin scaffold created at ${result.dir}`);
+          console.log();
+          console.log('  Files created:');
+          for (const f of result.files) {
+            console.log(`    ${f}`);
+          }
+          console.log();
+          console.log('  Next steps:');
+          console.log(`    cd ${result.dir}`);
+          console.log(`    ${CLI_COMMAND} plugin install file://${result.dir}`);
+          console.log(`    ${CLI_COMMAND} ${name} hello`);
+        });
       } catch (err) {
         console.error(`Error: ${getErrorMessage(err)}`);
         process.exitCode = EXIT_CODES.GENERIC_ERROR;
@@ -1831,7 +1909,7 @@ cli({
     .description('Remove a local adapter override')
     .argument('[site]', 'Site name (e.g. twitter, youtube)')
     .option('--all', 'Reset all local overrides')
-    .action(async (site: string | undefined, opts: { all?: boolean }) => {
+    .action(async (site: string | undefined, opts: { all?: boolean }, command: Command) => {
       if (opts.all) {
         let userClisListed = false;
         try {
@@ -1840,7 +1918,9 @@ cli({
           const dirs = userEntries.filter(e => e.isDirectory() && e.name !== '.base');
           readOverrideRecords();
           if (dirs.length === 0) {
-            console.log('No local sites to reset.');
+            await emitActionResult(command, { ok: true, action: 'reset', all: true, sites: [], records: 0 }, () => {
+              console.log('No local sites to reset.');
+            });
             return;
           }
           let removedRecords = 0;
@@ -1848,10 +1928,21 @@ cli({
             fs.rmSync(path.join(USER_CLIS, dir.name), { recursive: true, force: true });
             removedRecords += removeOverrideRecords(dir.name).length;
           }
-          console.log(`✅ Removed ${dirs.length} local adapter override(s) and ${removedRecords} provenance record(s).`);
+          await emitActionResult(command, {
+            ok: true,
+            action: 'reset',
+            all: true,
+            sites: dirs.map((dir) => dir.name),
+            records: removedRecords,
+          }, () => {
+            console.log(`✅ Removed ${dirs.length} local adapter override(s) and ${removedRecords} provenance record(s).`);
+          });
         } catch (err) {
-          if (!userClisListed && (err as NodeJS.ErrnoException).code === 'ENOENT') console.log('No local sites to reset.');
-          else {
+          if (!userClisListed && (err as NodeJS.ErrnoException).code === 'ENOENT') {
+            await emitActionResult(command, { ok: true, action: 'reset', all: true, sites: [], records: 0 }, () => {
+              console.log('No local sites to reset.');
+            });
+          } else {
             console.error(`Error: ${getErrorMessage(err)}`);
             process.exitCode = EXIT_CODES.GENERIC_ERROR;
           }
@@ -1875,7 +1966,15 @@ cli({
 
       fs.rmSync(userSiteDir, { recursive: true, force: true });
       const removedRecords = removeOverrideRecords(site).length;
-      console.log(`✅ Removed local adapter override "${site}" and ${removedRecords} provenance record(s).`);
+      await emitActionResult(command, {
+        ok: true,
+        action: 'reset',
+        all: false,
+        sites: [site],
+        records: removedRecords,
+      }, () => {
+        console.log(`✅ Removed local adapter override "${site}" and ${removedRecords} provenance record(s).`);
+      });
     });
 
   adapterCmd
@@ -1898,13 +1997,21 @@ cli({
     if (!source) throw new ArgumentError(`Adapter source is unavailable for ${key}.`);
     return source;
   };
-  const reportLocalAdapterPath = (commandKey: string, commandName?: string): void => console.log(localAdapterPath(commandKey, commandName));
+  const reportLocalAdapterPath = async (command: Command, commandKey: string, commandName?: string): Promise<void> => {
+    const parsed = splitAdapterCommandKey(commandKey, commandName);
+    const source = localAdapterPath(commandKey, commandName);
+    await emitActionResult(command, {
+      ok: true,
+      command: parsed ? `${parsed.site}/${parsed.command}` : commandKey,
+      path: source,
+    }, () => console.log(source));
+  };
   const adapterSourceCmd = adapterCmd.command('source').description('Inspect local adapter source paths; hosted mode reads or writes source');
-  adapterSourceCmd.command('get').description('Print local source path; --output is hosted-only').argument('<command>').argument('[name]').option('-o, --output <path>').action((commandKey: string, commandName: string | undefined, options: { output?: string }) => {
+  adapterSourceCmd.command('get').description('Print local source path; --output is hosted-only').argument('<command>').argument('[name]').option('-o, --output <path>').action(async (commandKey: string, commandName: string | undefined, options: { output?: string }, command: Command) => {
     const parsed = splitAdapterCommandKey(commandKey, commandName);
     const key = parsed ? `${parsed.site}/${parsed.command}` : commandKey;
     if (options.output) throw new ArgumentError(`Local adapter source get does not support --output. Use webcmd adapter path ${key} and edit that file.`);
-    reportLocalAdapterPath(commandKey, commandName);
+    await reportLocalAdapterPath(command, commandKey, commandName);
   });
   adapterSourceCmd.command('put').description('Hosted-only source write; local users edit the adapter path').argument('<command>').argument('<path>').action((commandKey: string) => {
     throw new ArgumentError(`Local adapter source put is unavailable. Use webcmd adapter path ${commandKey} and edit that file.`);
@@ -1913,7 +2020,7 @@ cli({
     .description(`Locate local source: ${CLI_COMMAND} adapter path <site>/<command>`)
     .argument('<command>', 'site/command, or site when followed by the command name')
     .argument('[name]', 'command name when passed as a second token')
-    .action((commandKey: string, commandName?: string) => reportLocalAdapterPath(commandKey, commandName));
+    .action((commandKey: string, commandName: string | undefined, _opts: unknown, command: Command) => reportLocalAdapterPath(command, commandKey, commandName));
 
   // ── Built-in: browser profile selection ──────────────────────────────────
   const PROFILE_LIST_COLUMNS = ['contextId', 'alias', 'default', 'connected', 'runtimeVersion'];
@@ -2005,11 +2112,19 @@ cli({
     .command('create')
     .description('Create a Cloak profile alias')
     .argument('<alias>', 'Local alias, e.g. work or personal')
-    .action((alias: string) => {
+    .action(async (alias: string, _opts: unknown, command: Command) => {
       const result = createProfile(alias);
-      console.log(result.created
-        ? `Profile ${result.alias} created (contextId: ${result.contextId}).`
-        : `Profile ${result.alias} already exists (contextId: ${result.contextId}).`);
+      await emitActionResult(command, {
+        ok: true,
+        action: 'create',
+        alias: result.alias,
+        contextId: result.contextId,
+        created: result.created,
+      }, () => {
+        console.log(result.created
+          ? `Profile ${result.alias} created (contextId: ${result.contextId}).`
+          : `Profile ${result.alias} already exists (contextId: ${result.contextId}).`);
+      });
     });
 
   profileCmd
@@ -2017,10 +2132,12 @@ cli({
     .description('Assign a local alias to an available Cloak profile')
     .argument('<contextId>', 'Profile contextId from webcmd profile list')
     .argument('<alias>', 'Local alias, e.g. work or personal')
-    .action((contextId: string, alias: string) => {
+    .action(async (contextId: string, alias: string, _opts: unknown, command: Command) => {
       try {
         renameProfile(contextId, alias);
-        console.log(`Profile ${contextId} is now aliased as ${alias}.`);
+        await emitActionResult(command, { ok: true, action: 'rename', contextId, alias }, () => {
+          console.log(`Profile ${contextId} is now aliased as ${alias}.`);
+        });
       } catch (err) {
         console.error(`Error: ${getErrorMessage(err)}`);
         process.exitCode = EXIT_CODES.USAGE_ERROR;
@@ -2031,14 +2148,21 @@ cli({
     .command('use')
     .description('Set the default Cloak profile for future commands')
     .argument('<profile>', 'Profile alias or contextId from webcmd profile list')
-    .action(async (profile: string) => {
+    .action(async (profile: string, _opts: unknown, command: Command) => {
       const status = await fetchDaemonStatus();
       const config = loadProfileConfig();
       const connected = status && !isDaemonStale(status, PKG_VERSION) && Array.isArray(status.profiles)
         ? status.profiles
         : [];
       const next = setDefaultProfile(profile, profileListRows(config, connected));
-      console.log(`Default Cloak profile: ${next.defaultContextId ?? profile}`);
+      await emitActionResult(command, {
+        ok: true,
+        action: 'use',
+        profile,
+        defaultContextId: next.defaultContextId ?? profile,
+      }, () => {
+        console.log(`Default Cloak profile: ${next.defaultContextId ?? profile}`);
+      });
     });
 
   // ── Built-in: daemon ──────────────────────────────────────────────────────
@@ -2056,11 +2180,19 @@ cli({
   daemonCmd
     .command('stop')
     .description('Stop the daemon')
-    .action(async () => { await daemonStop(); });
+    .action(async (_opts: unknown, command: Command) => {
+      await daemonStop();
+      // daemonStop/daemonRestart report progress on stderr, so the structured
+      // envelope is additive: stdout stays empty without a format flag.
+      await emitActionResult(command, { ok: !process.exitCode, action: 'stop' }, () => undefined);
+    });
   daemonCmd
     .command('restart')
     .description('Restart the daemon')
-    .action(async () => { await daemonRestart(); });
+    .action(async (_opts: unknown, command: Command) => {
+      await daemonRestart();
+      await emitActionResult(command, { ok: !process.exitCode, action: 'restart' }, () => undefined);
+    });
 
   // ── External CLIs ─────────────────────────────────────────────────────────
 
@@ -2074,14 +2206,20 @@ cli({
     .command('install')
     .description('Install an external CLI')
     .argument('<name>', 'Name of the external CLI')
-    .action((name: string) => {
+    .action(async (name: string, _opts: unknown, command: Command) => {
       const ext = externalClis.find(e => e.name === name);
       if (!ext) {
         console.error(`External CLI '${name}' not found in registry.`);
         process.exitCode = EXIT_CODES.USAGE_ERROR;
         return;
       }
-      installExternalCli(ext);
+      const installed = installExternalCli(ext);
+      await emitActionResult(command, {
+        ok: installed,
+        action: 'install',
+        cli: ext.name,
+        binary: ext.binary,
+      }, () => undefined);
     });
 
   externalCmd
@@ -2091,8 +2229,14 @@ cli({
     .option('--binary <bin>', 'Binary name if different from name')
     .option('--install <cmd>', 'Auto-install command')
     .option('--desc <text>', 'Description')
-    .action((name, opts) => {
+    .action(async (name: string, opts: { binary?: string; install?: string; desc?: string }, command: Command) => {
       registerExternalCli(name, { binary: opts.binary, install: opts.install, description: opts.desc });
+      await emitActionResult(command, {
+        ok: true,
+        action: 'register',
+        cli: name,
+        binary: opts.binary ?? name,
+      }, () => undefined);
     });
 
   const externalListCmd = addOutputFormatOption(externalCmd
@@ -2168,6 +2312,11 @@ cli({
 
   const siteNames = registerAllCommands(program, siteGroups);
   applyRootSubcommandSummaries(program);
+
+  // Every leaf in the finished tree speaks the same output-format grammar,
+  // whether or not its own registration remembered to ask for it. Must run
+  // before help presentation is captured below.
+  ensureOutputFormatOptions(program);
 
   // ── Help-text grouping: External CLIs / App adapters / Site adapters ──
   // Classification derives from each adapter's `domain` field — see classifyAdapter.

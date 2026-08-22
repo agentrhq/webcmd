@@ -437,6 +437,37 @@ export function addOutputFormatOption(command: Command, defaultFormat = 'table')
     .option('--json', JSON_FORMAT_ALIAS_HELP, false);
 }
 
+/**
+ * Give every command in a tree the same output-format grammar.
+ *
+ * Registering `-f/--format`/`--json` command by command drifted: agents learned
+ * the flag on `plugin list`, then hit `unknown option '--json'` on
+ * `plugin install`. Walking the finished tree makes acceptance the default, so
+ * commands added later cannot regress the contract.
+ *
+ * Only leaves are touched. Namespace commands (`adapter`, `plugin`, …) produce no
+ * output of their own — they print help — so a format flag there would be dead
+ * grammar in every help listing. Passthrough commands (external CLIs,
+ * `allowUnknownOption()`) are skipped too: their argv belongs to the wrapped
+ * binary, not to us.
+ */
+export function ensureOutputFormatOptions(command: Command): void {
+  for (const child of command.commands) {
+    if (child.commands.length === 0 && (child as Command & { _allowUnknownOption?: boolean })._allowUnknownOption !== true) {
+      const flags = new Set<string>();
+      for (const option of child.options) {
+        if (option.short) flags.add(option.short);
+        if (option.long) flags.add(option.long);
+      }
+      if (!flags.has('--format')) {
+        child.option(flags.has('-f') ? '--format <fmt>' : '-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
+      }
+      if (!flags.has('--json')) child.option('--json', JSON_FORMAT_ALIAS_HELP, false);
+    }
+    ensureOutputFormatOptions(child);
+  }
+}
+
 export function outputFormatIsExplicit(command: Command): boolean {
   return command.getOptionValueSource('format') === 'cli' || command.getOptionValueSource('json') === 'cli';
 }

@@ -52,6 +52,23 @@ describe('site memory format flags', () => {
     expect(vi.mocked(store.show).mock.calls.length + vi.mocked(store.list).mock.calls.length).toBeGreaterThan(0);
   });
 
+  it.each([
+    { argv: ['site', 'note', 'add', 'quotes-toscrape', '--text', 'hi'], expected: { ok: true, action: 'note add', site: 'quotes-toscrape' } },
+    { argv: ['site', 'endpoint', 'stale', 'quotes-toscrape', 'listing'], expected: { ok: true, action: 'endpoint stale', site: 'quotes-toscrape', endpoint: 'listing' } },
+    { argv: ['site', 'field-map', 'add', 'quotes-toscrape', 'q', '--meaning', 'quote', '--source', 'dom'], expected: { ok: true, action: 'field-map add', site: 'quotes-toscrape', key: 'q' } },
+  ])('renders a structured result for write command $argv.1 $argv.2', async ({ argv, expected }) => {
+    const logged: unknown[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation((value: unknown) => { logged.push(value); });
+    try {
+      await program(backend()).parseAsync(argv, { from: 'user' });
+      expect(logged).toEqual([]);
+      await program(backend()).parseAsync([...argv, '--json'], { from: 'user' });
+      expect(JSON.parse(String(logged[0]))).toEqual(expected);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('rejects unknown flags with the valid set including --format and --json', async () => {
     try {
       await program(backend()).parseAsync(['site', 'memory', 'show', 'quotes-toscrape', '--nope'], { from: 'user' });
