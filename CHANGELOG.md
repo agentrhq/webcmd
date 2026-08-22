@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.7.5](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.4...webcmd-v0.7.5) (2026-08-22)
+
+
+### Bug Fixes
+
+* benchmark setup and report updated  ([#395](https://github.com/agentrhq/webcmd/issues/395)) ([e48cb3a](https://github.com/agentrhq/webcmd/commit/e48cb3a0994fd9c6ff20a2fbf725977417a066ca))
+* **browser:** improve run agent ergonomics ([#409](https://github.com/agentrhq/webcmd/issues/409)) ([02e0d82](https://github.com/agentrhq/webcmd/commit/02e0d827c411559cb323bb0092cb1ea52b8e6762))
+* **cli:** add recovery hints for common misguesses ([#410](https://github.com/agentrhq/webcmd/issues/410)) ([b2f3098](https://github.com/agentrhq/webcmd/commit/b2f3098e808e86310a8c2f43c1e28b52bcb14177))
+* **cli:** clarify adapter authoring help ([#408](https://github.com/agentrhq/webcmd/issues/408)) ([aa38134](https://github.com/agentrhq/webcmd/commit/aa3813414b9b2998ee3cc302c9246daf3923afd5))
+* **cli:** close eval gaps for formats, profiles, and plugins ([8c5ce29](https://github.com/agentrhq/webcmd/commit/8c5ce29150fcb74fcdfcd2d053c801554ff29dfa))
+* **cli:** download wait timeout must not tell agents to invent file contents ([#398](https://github.com/agentrhq/webcmd/issues/398)) ([cc28460](https://github.com/agentrhq/webcmd/commit/cc284601e7f8fa63927ef4ce0620f12c1b366909))
+* **cli:** label plugin search as catalog discovery, not web search ([#396](https://github.com/agentrhq/webcmd/issues/396)) ([d5c7cc9](https://github.com/agentrhq/webcmd/commit/d5c7cc962bd6944e5dbeb49fee8f6a950b5c7316))
+* **cli:** point EMPTY_RESULT at adapter repair, not login ([#401](https://github.com/agentrhq/webcmd/issues/401)) ([7952285](https://github.com/agentrhq/webcmd/commit/795228590e6c99afb78d371efcdd315b5f3711bd))
+* **cli:** popup wait timeout must not tell agents to page.goto the opener ([#397](https://github.com/agentrhq/webcmd/issues/397)) ([67cad65](https://github.com/agentrhq/webcmd/commit/67cad652684809c00fb4beafdbb15132c1ed04b8))
+
 ## [0.7.4](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.3...webcmd-v0.7.4) (2026-08-19)
 
 
