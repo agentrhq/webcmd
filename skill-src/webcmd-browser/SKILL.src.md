@@ -153,6 +153,20 @@ JS
 
 If you split work across calls, use fresh snapshots between page transitions. Do not assume an observation from a prior route is still valid.
 
+To contend for one Session, issue a second `webcmd --session <session-id> …` while the first invocation is still running. Do not start a second driver inside one `run` (`Promise.all` of two writes, a homemade busy flag, or `page.evaluate` locking).
+
+```bash
+# Terminal A — long run holding the Session
+webcmd --session session_abc browser run --file long.js
+
+# Terminal B — second command against the same Session
+webcmd --session session_abc browser run --stdin --no-snapshot-diff <<'JS'
+return { url: page.url() };
+JS
+```
+
+If the second command returns `SESSION_BUSY`, wait for the listed holder, then retry that same command. Do not `--force` close a live holder.
+
 ---
 
 ## Sitemaps
@@ -250,6 +264,7 @@ Use `run` and inspect `page.frames()`; target the frame by URL/name and keep ifr
 
 - **Do not submit forms via `page.evaluate(() => document.forms[0].submit())`.** Modern sites intercept real click/submit events and silently drop direct DOM submission. Use Playwright locators and verify the post-action state.
 - **Do not reuse observations across a page transition.** Navigations, form submits, SPA route changes, login, and human handoff invalidate earlier observations. Take a fresh snapshot.
+- **Do not implement Session occupancy inside the page.** Overlap two CLI invocations on the same `--session` id. A homemade busy flag is not `SESSION_BUSY`.
 - **Do not run a trigger before arming the waiter.** If a request matters, create `page.waitForResponse(...)` before the click/fill/keypress that triggers it.
 - **Do not trust autocomplete or masked inputs blindly.** Fill/type can appear to work while the app rejects the value. Verify visible text, `inputValue()`, or post-action state.
 - **Do not solve CAPTCHA or auth challenges programmatically.** Use human handoff and verification.
@@ -272,7 +287,7 @@ Use `run` and inspect `page.frames()`; target the frame by URL/name and keep ifr
 | `run` times out before returning | Increase `--timeout` only after checking whether the wait condition is wrong. |
 | Write may have happened before timeout | Take a fresh snapshot before retrying. Avoid duplicate submissions. |
 | `SESSION_REQUIRED` | Create a Session, then retry with root `--session <session-id>`. |
-| `SESSION_BUSY` | Wait for the listed holder; if it is dead, `webcmd session close <session-id> --force` is the last resort. |
+| `SESSION_BUSY` | Wait for the listed holder, then retry the same command. If it is dead, `webcmd session close <session-id> --force` is the last resort. Do not lock inside `page.evaluate`. |
 | `SESSION_PAUSED_FOR_HUMAN_HANDOFF` | Finish the handoff and run the returned verifier before retrying. |
 | Login wall appears | Use the Authentication and human handoff recipe. |
 | User reports login complete | Run the returned verifier first. Without one, inspect fresh state and verify identity/post-action state. |
@@ -296,4 +311,9 @@ Author-only. Stripped by litprompt, so it costs the running agent nothing.
 Append one dated line whenever a correction lands, or whenever an approach
 is tried and rejected. Record what was tried and why it failed, not just
 what won.
+
+- 2026-08-21: Agents treated an in-page mutex as the session safety signal.
+  `SESSION_BUSY` is a CLI error from a second `webcmd --session` invocation, not
+  a flag inside `page.evaluate` (#385).
 -->
+
