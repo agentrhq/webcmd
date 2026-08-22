@@ -347,9 +347,9 @@ describe('override reporting surfaces', () => {
     await createProgram('', userClis, pluginsDir)
       .parseAsync(['node', 'webcmd', 'adapter', 'status', '--format', 'json']);
     expect(JSON.parse(stdoutSpy.mock.calls.flat().join('\n'))).toEqual([
-      { command: 'linkedin/search', kind: 'override', plugin: 'linkedin', reconciliationNeeded: true, orphaned: false },
-      { command: 'local/run', kind: 'user', plugin: null, reconciliationNeeded: false, orphaned: false },
-      { command: 'old/search', kind: 'override', plugin: 'old', reconciliationNeeded: false, orphaned: true },
+      { command: 'linkedin/search', kind: 'override', plugin: 'linkedin', reconciliationNeeded: true, orphaned: false, loadError: null },
+      { command: 'local/run', kind: 'user', plugin: null, reconciliationNeeded: false, orphaned: false, loadError: null },
+      { command: 'old/search', kind: 'override', plugin: 'old', reconciliationNeeded: false, orphaned: true, loadError: null },
     ]);
   });
 
