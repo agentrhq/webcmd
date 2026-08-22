@@ -54,7 +54,8 @@ import type { BrowserWindowMode } from './runtime.js';
 import { configureRootCommandSurface } from './root-command-surface.js';
 import { validateRawBrowserSession } from './hosted/browser-args.js';
 import { LocalBrowserSessionStore, requireSessionIdShape, type BrowserSessionListRow } from './browser/sessions.js';
-import { missingPluginGuidance, PLUGINS_DIR } from './discovery.js';
+import { PLUGINS_DIR } from './discovery.js';
+import { unknownRootCommandMessage, unknownSubcommandMessage } from './command-suggest.js';
 import { loadBrowserRunSource } from './browser/run/input.js';
 import { BrowserRunError } from './browser/run/types.js';
 import { classifyCommandOrigin, formatCommandOrigin } from './command-origin.js';
@@ -81,22 +82,6 @@ function parseSessionListLimit(value: string): number {
     throw new ArgumentError('Session list limit must be an integer from 1 to 100.');
   }
   return parsed;
-}
-
-function rootCommandSuggestion(name: string): string | undefined {
-  const canonical: Record<string, string> = {
-    catalog: `${CLI_COMMAND} plugin catalog list`,
-    catalogs: `${CLI_COMMAND} plugin catalog list`,
-    command: `${CLI_COMMAND} list`,
-    commands: `${CLI_COMMAND} list`,
-    cmds: `${CLI_COMMAND} list`,
-    ls: `${CLI_COMMAND} list`,
-    marketplace: `${CLI_COMMAND} plugin search <query>`,
-    plugins: `${CLI_COMMAND} plugin list`,
-    pluginlist: `${CLI_COMMAND} plugin list`,
-    search: `${CLI_COMMAND} plugin search <query>`,
-  };
-  return canonical[name.toLowerCase()];
 }
 
 type BrowserNetworkItem = {
@@ -954,20 +939,8 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
     .description('Run Playwright programs against an explicit browser Session');
   const originalBrowserDescription = browser.description();
 
-  // Retired browser subcommands. `fork` was a duplicate of `adapter override`
-  // that never appeared in the docs; commander's bare "unknown command" leaves
-  // the caller with no way to find the replacement, so name it.
-  const RETIRED_BROWSER_SUBCOMMANDS: Record<string, string> = {
-    fork: `${CLI_COMMAND} adapter override <site>/<command>`,
-  };
-  browser.on('command:*', (operands: string[]) => {
-    const name = operands[0]!;
-    const replacement = RETIRED_BROWSER_SUBCOMMANDS[name];
-    console.error(replacement
-      ? `error: '${CLI_COMMAND} browser ${name}' was removed. Use: ${replacement}`
-      : `error: unknown command '${name}'`);
-    process.exitCode = EXIT_CODES.USAGE_ERROR;
-  });
+  // Unknown `browser` subcommands (including the retired `fork`) are handled by
+  // the shared namespace handler installed at the end of createProgram.
 
   // ── Init (adapter scaffolding) ──
 
@@ -2231,18 +2204,27 @@ cli({
   // Security: do NOT auto-discover and register arbitrary system binaries.
   // Only explicitly registered external CLIs are allowed.
 
+  // Error output goes to stderr only. `outputHelp()` used to dump the whole root
+  // help to stdout here, which with `--json` in argv looked like a successful
+  // JSON response to anything parsing stdout.
   program.on('command:*', (operands: string[]) => {
-    const binary = operands[0]!;
-    const suggestion = rootCommandSuggestion(binary);
-    if (suggestion) {
-      console.error(`Unknown command "${binary}".\nDid you mean: ${suggestion}`);
-      process.exitCode = EXIT_CODES.USAGE_ERROR;
-      return;
-    }
-    console.error(missingPluginGuidance(binary));
-    program.outputHelp();
+    console.error(unknownRootCommandMessage(program, operands[0]!));
     process.exitCode = EXIT_CODES.USAGE_ERROR;
   });
+
+  // Same treatment one level down, for the built-in namespaces. Site adapter
+  // groups are left on Commander's own suggestion path so hosted mode, which
+  // has no Command tree to match against, stays byte-compatible with local.
+  const SUGGEST_NAMESPACES = new Set([
+    'adapter', 'plugin', 'session', 'profile', 'daemon', 'external', 'browser', 'site', 'auth', 'skills',
+  ]);
+  for (const namespace of program.commands) {
+    if (namespace.commands.length === 0 || !SUGGEST_NAMESPACES.has(namespace.name())) continue;
+    namespace.on('command:*', (operands: string[]) => {
+      console.error(unknownSubcommandMessage(namespace, operands[0]!));
+      process.exitCode = EXIT_CODES.USAGE_ERROR;
+    });
+  }
 
   return program;
 }

@@ -415,20 +415,14 @@ async function dispatchHosted(
       await writeToStream(stdout, formatRootHelp(HOSTED_ROOT_HELP));
       return;
     }
-    throw new CommanderCompatibleError(
-      `${missingPluginGuidance(site)}\n`,
-      EXIT_CODES.USAGE_ERROR,
-      formatRootHelp(HOSTED_ROOT_HELP),
-    );
+    // No help on stdout: an error path that emits a well-formed document to
+    // stdout reads as success to anything parsing it.
+    throw new CommanderCompatibleError(`${missingPluginGuidance(site)}\n`, EXIT_CODES.USAGE_ERROR);
   }
   if (!commandName || commandName === '--help' || commandName === '-h') {
     const data = hostedSiteHelpData(manifest, site);
     if (!data) {
-      throw new CommanderCompatibleError(
-        `error: unknown command '${site}'\n`,
-        EXIT_CODES.USAGE_ERROR,
-        formatRootHelp(HOSTED_ROOT_HELP),
-      );
+      throw new CommanderCompatibleError(`error: unknown command '${site}'\n`, EXIT_CODES.USAGE_ERROR);
     }
     await writeHostedHelp(stdout, args, data, renderHostedSiteHelp(manifest, site));
     return;
@@ -439,11 +433,7 @@ async function dispatchHosted(
     if (!normalized.literal && hasTerminalBeforeSeparator(args.slice(1), token => token === '--help' || token === '-h')) {
       const data = hostedSiteHelpData(manifest, site);
       if (!data) {
-        throw new CommanderCompatibleError(
-          `error: unknown command '${site}'\n`,
-          EXIT_CODES.USAGE_ERROR,
-          formatRootHelp(HOSTED_ROOT_HELP),
-        );
+        throw new CommanderCompatibleError(`error: unknown command '${site}'\n`, EXIT_CODES.USAGE_ERROR);
       }
       await writeHostedHelp(stdout, args, data, renderHostedSiteHelp(manifest, site));
       return;
