@@ -673,6 +673,9 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
     .description('Make any website your CLI. Zero setup. AI-powered.');
   configureRootCommandSurface(program);
   registerSiteCommands(program, createLocalSiteMemoryBackend());
+  const siteCmd = program.commands.find(command => command.name() === 'site')!;
+  // Snapshot before applyRootSubcommandSummaries() rewrites .description() to a child-name listing.
+  const originalSiteDescription = siteCmd.description();
 
   // ── Built-in: list ────────────────────────────────────────────────────────
 
@@ -2218,6 +2221,7 @@ cli({
   installCommanderNamespaceStructuredHelp(pluginCmd, { globalCommand: program, description: originalPluginDescription });
   installCommanderNamespaceStructuredHelp(adapterCmd, { globalCommand: program, description: originalAdapterDescription });
   installCommanderNamespaceStructuredHelp(profileCmd, { globalCommand: program, description: originalProfileDescription });
+  installCommanderNamespaceStructuredHelp(siteCmd, { globalCommand: program, description: originalSiteDescription });
   program.configureHelp({
     visibleCommands: (command) => command.commands.filter(child => command !== program || !adapterNameSet.has(child.name())),
   });
