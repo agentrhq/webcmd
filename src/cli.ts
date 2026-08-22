@@ -55,7 +55,7 @@ import type { BrowserWindowMode } from './runtime.js';
 import { configureRootCommandSurface } from './root-command-surface.js';
 import { validateRawBrowserSession } from './hosted/browser-args.js';
 import { LocalBrowserSessionStore, requireSessionIdShape, type BrowserSessionListRow } from './browser/sessions.js';
-import { PLUGINS_DIR } from './discovery.js';
+import { getAdapterLoadFailures, PLUGINS_DIR } from './discovery.js';
 import { unknownRootCommandMessage, unknownSubcommandHelp, unknownSubcommandMessage } from './command-suggest.js';
 import { loadBrowserRunSource } from './browser/run/input.js';
 import { BrowserRunError } from './browser/run/types.js';
@@ -1764,18 +1764,21 @@ cli({
 
         const records = readOverrideRecords();
         const reconcile = new Set((await import('./plugin.js')).findOverridesNeedingReconcile().map(({ commandKey }) => commandKey));
+        const failures = new Map(getAdapterLoadFailures().map(failure => [failure.file, failure.error]));
         const adapters: Array<{
           command: string;
           kind: 'user' | 'override';
           plugin: string | null;
           reconciliationNeeded: boolean;
           orphaned: boolean;
+          loadError: string | null;
         }> = [];
         for (const site of userSites) {
           const files = await fs.promises.readdir(path.join(USER_CLIS, site));
           for (const file of files.filter((entry) => entry.endsWith('.js')).sort()) {
             const command = `${site}/${file.slice(0, -3)}`;
             const record = records[command];
+            const loadError = failures.get(path.join(USER_CLIS, site, file)) ?? null;
             adapters.push(record
               ? {
                   command,
@@ -1783,15 +1786,16 @@ cli({
                   plugin: record.plugin,
                   reconciliationNeeded: reconcile.has(command),
                   orphaned: !fs.existsSync(path.join(pluginsDir, record.plugin)),
+                  loadError,
                 }
-              : { command, kind: 'user', plugin: null, reconciliationNeeded: false, orphaned: false });
+              : { command, kind: 'user', plugin: null, reconciliationNeeded: false, orphaned: false, loadError });
           }
         }
         if (fmt !== 'table') {
           renderOutput(adapters, {
             fmt,
             fmtExplicit: outputFormatIsExplicit(adapterStatusCmd),
-            columns: ['command', 'kind', 'plugin', 'reconciliationNeeded', 'orphaned'],
+            columns: ['command', 'kind', 'plugin', 'reconciliationNeeded', 'orphaned', 'loadError'],
             title: `${CLI_COMMAND}/adapter-status`,
             source: `${CLI_COMMAND} adapter status`,
           });
@@ -1801,12 +1805,13 @@ cli({
         for (const site of userSites) {
           console.log(`  ${site}`);
           for (const adapter of adapters.filter((item) => item.command.startsWith(`${site}/`))) {
+            const failure = adapter.loadError ? ` (failed to load: ${adapter.loadError})` : '';
             if (adapter.kind === 'user') {
-              console.log(`    user adapter: ${adapter.command}`);
+              console.log(`    user adapter: ${adapter.command}${failure}`);
             } else if (adapter.orphaned) {
-              console.log(`    orphaned override: ${adapter.command} (plugin ${adapter.plugin} is not installed)`);
+              console.log(`    orphaned override: ${adapter.command} (plugin ${adapter.plugin} is not installed)${failure}`);
             } else {
-              console.log(`    override: ${adapter.command} (plugin ${adapter.plugin}${adapter.reconciliationNeeded ? ', upstream changed since fork' : ''})`);
+              console.log(`    override: ${adapter.command} (plugin ${adapter.plugin}${adapter.reconciliationNeeded ? ', upstream changed since fork' : ''})${failure}`);
             }
           }
         }

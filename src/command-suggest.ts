@@ -13,7 +13,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Command } from 'commander';
 import { CLI_COMMAND } from './brand.js';
-import { missingPluginGuidance, PLUGINS_DIR, USER_CLIS_DIR } from './discovery.js';
+import { getAdapterLoadFailures, missingPluginGuidance, PLUGINS_DIR, USER_CLIS_DIR } from './discovery.js';
 
 /**
  * High-priority overrides: intent that edit distance cannot infer.
@@ -136,6 +136,11 @@ export function unknownRootCommandMessage(
 
   const suggestions = suggestCommands(name, commandCandidates(program));
   if (suggestions.length > 0) return `Unknown command "${name}".\n${formatSuggestions(suggestions)}`;
+
+  // A recorded load failure names the file and the real cause, so it beats the
+  // generic "installed but registered nothing" text below. Only fall back to
+  // that when discovery caught nothing to report.
+  if (getAdapterLoadFailures().some(failure => failure.site === name)) return missingPluginGuidance(name);
 
   const installedDir = installedDirFor(name, installDirs);
   if (installedDir) {
