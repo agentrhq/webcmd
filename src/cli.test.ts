@@ -159,7 +159,7 @@ describe('site-memory and local adapter authoring', () => {
 
     expect(browserInit.helpInformation()).toContain('Create a new private adapter: webcmd browser init <site>/<command>');
     const adapterHelp = adapter.helpInformation();
-    expect(adapterHelp).toMatch(/Override installed command: webcmd adapter override\s+<site>\/<command>/);
+    expect(adapterHelp).toMatch(/Override installed command: webcmd adapter\s+override\s+<site>\/<command>/);
     expect(adapterHelp).toMatch(/Locate local source: webcmd adapter path\s+<site>\/<command>/);
   });
 
@@ -1241,7 +1241,7 @@ name: 'search',
         usage: 'webcmd browser bind [options]',
         positionals: [],
       });
-      expect(bind.command_options.map((option: any) => option.name)).toEqual(['page', 'verbose']);
+      expect(bind.command_options.map((option: any) => option.name)).toEqual(['page', 'verbose', 'format', 'json']);
       expect(data.structured_help).toMatchObject({
         formats: ['yaml', 'json'],
         usage: 'webcmd browser --help -f yaml',
@@ -1314,7 +1314,7 @@ name: 'search',
         usage: 'webcmd plugin update [name] [options]',
         positionals: [{ name: 'name' }],
       });
-      expect(update.command_options.map((option: any) => option.name)).toEqual(['all', 'force']);
+      expect(update.command_options.map((option: any) => option.name)).toEqual(['all', 'force', 'format', 'json']);
     } finally {
       process.argv = argv;
     }
@@ -1402,7 +1402,7 @@ name: 'search',
         usage: 'webcmd adapter reset [site] [options]',
         positionals: [{ name: 'site' }],
       });
-      expect(reset.command_options.map((option: any) => option.name)).toEqual(['all']);
+      expect(reset.command_options.map((option: any) => option.name)).toEqual(['all', 'format', 'json']);
     } finally {
       process.argv = argv;
     }

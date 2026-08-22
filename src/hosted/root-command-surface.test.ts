@@ -661,11 +661,12 @@ describe('hosted root preflight call order', () => {
     expect(stdout.text()).toBe(local.stdout);
     if (name === 'help') {
       expect(stderr.text()).toBe(local.stderr);
-      expect(local.stdout).toHaveLength(181);
+      expect(local.stdout).toHaveLength(371);
     } else if (name === 'leaf version is unknown') {
       expect(stderr.text()).toBe([
         "error: unknown option '-V'",
         "error: unknown option '-V'",
+        'help: valid flags for `webcmd completion`: -f, --format, --json',
         '',
       ].join('\n'));
     } else {
