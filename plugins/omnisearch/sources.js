@@ -205,7 +205,10 @@ export async function redditSearch(query, limit) {
   }, { source: 'Reddit' });
   const json = await res.json();
   const children = Array.isArray(json?.data?.children) ? json.data.children : [];
-  return children.slice(0, limit).map((child) => {
+  return children
+    .filter((child) => child?.data && typeof child.data === 'object')
+    .slice(0, limit)
+    .map((child) => {
     const d = child?.data ?? {};
     const createdAt = new Date(d.created_utc ? Number(d.created_utc) * 1000 : NaN);
     return {

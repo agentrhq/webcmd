@@ -119,6 +119,36 @@ describe('redditSearch', () => {
     expect(rows[0].createdAt).toBe('');
   });
 
+  it('drops null or data-less children before normalization', async () => {
+    const { redditSearch } = await import('../sources.js');
+    stubFetch(() => ({
+      data: {
+        children: [
+          null,
+          { kind: 't3' },           // no data field
+          { kind: 't3', data: null }, // data is null not object
+          {
+            kind: 't3',
+            data: {
+              title: 'Valid post',
+              author: 'op',
+              score: 5,
+              num_comments: 1,
+              created_utc: 1700000000,
+              url: 'https://example.com/valid',
+              selftext: '',
+              permalink: '/r/test/comments/valid/',
+            },
+          },
+        ],
+      },
+    }));
+    const rows = await redditSearch('test', 10);
+    // Only the valid entry should appear
+    expect(rows).toHaveLength(1);
+    expect(rows[0].title).toBe('Valid post');
+  });
+
   it('hits the correct Reddit search endpoint', async () => {
     const { redditSearch } = await import('../sources.js');
     const calls = [];
