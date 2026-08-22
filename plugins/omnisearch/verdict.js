@@ -7,7 +7,7 @@
  */
 import { cli, Strategy } from '@agentrhq/webcmd/registry';
 import { ArgumentError, CommandExecutionError, EmptyResultError } from '@agentrhq/webcmd/errors';
-import { hnSearch, lobstersSearch, stackoverflowSearch, githubSearch, arxivSearch, devtoSearch } from './sources.js';
+import { hnSearch, lobstersSearch, stackoverflowSearch, githubSearch, arxivSearch, devtoSearch, redditSearch } from './sources.js';
 
 function requireQuery(value) {
   const s = String(value ?? '').trim();
@@ -41,6 +41,7 @@ cli({
       () => arxivSearch(topic, perSource),
       () => devtoSearch(topic, perSource),
       () => lobstersSearch(topic, perSource),
+      () => redditSearch(topic, perSource),
     ];
 
     let results;
