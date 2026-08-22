@@ -1,5 +1,5 @@
 <img width="1280" height="640" alt="Webcmd — stop paying agents to rediscover the web" src="docs/readme-hero.png" />
-
+//*
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@agentrhq/webcmd">
