@@ -38,6 +38,20 @@ describe('rejectMisplacedSessionSelectorArgv', () => {
     expect(rejectMisplacedSessionSelectorArgv(['--session', 'session_a', 'browser', 'run']))
       .toEqual(['--session', 'session_a', 'browser', 'run']);
   });
+
+  it('rewrites --session into the positional for `session close` instead of erroring', () => {
+    expect(rejectMisplacedSessionSelectorArgv(['session', 'close', '--session', 'session_a']))
+      .toEqual(['session', 'close', 'session_a']);
+    expect(rejectMisplacedSessionSelectorArgv(['session', 'close', '--session=session_a', '--force']))
+      .toEqual(['session', 'close', 'session_a', '--force']);
+    expect(rejectMisplacedSessionSelectorArgv(['--profile', 'work', 'session', 'close', '--session', 'session_a']))
+      .toEqual(['--profile', 'work', 'session', 'close', 'session_a']);
+  });
+
+  it('drops a valueless --session on `session close` so the command reports both accepted forms', () => {
+    expect(rejectMisplacedSessionSelectorArgv(['session', 'close', '--session']))
+      .toEqual(['session', 'close']);
+  });
 });
 
 import { escapeLeadingDashPositional } from './cli-argv-preprocess.js';
