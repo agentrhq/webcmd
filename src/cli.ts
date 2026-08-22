@@ -10,7 +10,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as readline from 'node:readline/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { Command, CommanderError, Option } from 'commander';
+import { Command, Option } from 'commander';
 import { findPackageRoot, getBuiltEntryCandidates } from './package-paths.js';
 import { type CliCommand, getRegistry } from './registry.js';
 // Side-effect import: registers client-owned `web fetch` in the core registry
@@ -19,15 +19,16 @@ import './fetch/command.js';
 import { commandListPresentation, filterCommandsByTag, toPresentableCommand } from './command-presentation.js';
 import { configureCompletionCommandSurface, configureListCommandSurface, configurePluginInstallSurface, configurePluginListSurface, configurePluginSearchSurface } from './builtin-command-surface.js';
 import { formatPluginSearchEmptyCopy, presentPluginSearch } from './plugin-search-presentation.js';
-import { addOutputFormatOption, applyUnknownOptionContract, CommanderStructuralError, JSON_FORMAT_ALIAS_HELP, outputFormatIsExplicit, resolveCommandOutputFormat } from './command-surface.js';
-import { render as renderOutput, formatErrorEnvelope, errorEnvelopeFormat, requestedFormatFromArgv } from './output.js';
+import { addOutputFormatOption, applyUnknownOptionContract, JSON_FORMAT_ALIAS_HELP, outputFormatIsExplicit, resolveCommandOutputFormat } from './command-surface.js';
+import { render as renderOutput } from './output.js';
+import { handleProgramParseError } from './cli-error-report.js';
 import { PKG_VERSION } from './version.js';
 import { printCompletionScript } from './completion.js';
 import { loadExternalClis, executeExternalCli, installExternalCli, registerExternalCli, isBinaryInstalled, formatExternalCliLabel } from './external.js';
 import { addWebcmdSkills, listWebcmdSkills, removeWebcmdSkills, updateWebcmdSkill, type WebcmdSkillAddResult } from './skills.js';
 import { registerAllCommands } from './commanderAdapter.js';
 import { buildRootHelpPresentation, classifyAdapter, commanderCommandHelpData, installCommanderNamespaceStructuredHelp, installRootPresentationHelp, installStructuredHelp, leadingPositionalFromUsage, rootHelpData, type RootAdapterGroups } from './help.js';
-import { EXIT_CODES, getErrorMessage, toEnvelope, BrowserConnectError, CliError, ArgumentError } from './errors.js';
+import { EXIT_CODES, getErrorMessage, BrowserConnectError, CliError, ArgumentError } from './errors.js';
 import { TargetError, type TargetErrorCode } from './browser/target-errors.js';
 import { resolveTargetJs, getTextResolvedJs, getValueResolvedJs, getAttributesResolvedJs, selectResolvedJs, isAutocompleteResolvedJs, type ResolveOptions, type TargetMatchLevel } from './browser/target-resolver.js';
 import { buildFindJs, buildSemanticFindJs, isFindError, type FindResult, type FindError, type SemanticFindOptions } from './browser/find.js';
@@ -2272,36 +2273,7 @@ export async function runCli(BUILTIN_CLIS: string, USER_CLIS: string): Promise<v
   }
 }
 
-const COMMANDER_DISPLAY_CODES = new Set([
-  'commander.help',
-  'commander.helpDisplayed',
-  'commander.version',
-]);
-
-export function handleProgramParseError(err: unknown, stderr: NodeJS.WritableStream = process.stderr): void {
-  if (err instanceof CommanderStructuralError) {
-    stderr.write(err.output);
-    process.exitCode = err.exitCode;
-    return;
-  }
-  if (err instanceof CommanderError && COMMANDER_DISPLAY_CODES.has(err.code)) {
-    process.exitCode = err.exitCode;
-    return;
-  }
-  reportCliError(err, stderr);
-}
-
-/** Render a thrown error as the shared envelope and set the exit code it carries. */
-export function reportCliError(err: unknown, stderr: NodeJS.WritableStream = process.stderr): void {
-  const envelope = toEnvelope(err);
-  if (process.env.WEBCMD_DEBUG && err instanceof Error && err.stack) {
-    envelope.error.stack = err.stack;
-  }
-  stderr.write(formatErrorEnvelope(envelope, {
-    fmt: errorEnvelopeFormat(requestedFormatFromArgv(process.argv.slice(2))),
-  }));
-  process.exitCode = envelope.error.exitCode;
-}
+export { handleProgramParseError, reportCliError } from './cli-error-report.js';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 

@@ -25,7 +25,7 @@ import { CliError, ConfigError, EXIT_CODES, toEnvelope } from '../errors.js';
 import { getRequestedHelpFormat, renderStructuredHelp } from '../help.js';
 import { enableVerbose } from '../logger.js';
 import { findPackageRoot } from '../package-paths.js';
-import { errorEnvelopeFormat, formatErrorEnvelope, requestedFormatFromArgv, render as renderOutput } from '../output.js';
+import { errorEnvelopeFormat, formatErrorEnvelope, requestedFormatFromArgv, requestedMachineFormat, render as renderOutput } from '../output.js';
 import { StreamWriteError, writeToStream } from '../stream-write.js';
 import { PKG_VERSION } from '../version.js';
 import { getCompletionScriptFast } from '../completion-fast.js';
@@ -138,6 +138,13 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
       return { handled: true, exitCode: EXIT_CODES.USAGE_ERROR };
     }
     if (err instanceof CommanderStructuralError) {
+      // Usage errors carry their own envelope; honour -f/--format and --json the
+      // same way the local CLI does instead of falling back to UNKNOWN/exit 1.
+      const usageFormat = requestedMachineFormat(argv);
+      if (usageFormat && err.envelope) {
+        await writeToStream(stderr, formatErrorEnvelope(err.envelope, { fmt: usageFormat }));
+        return { handled: true, exitCode: err.exitCode };
+      }
       await writeToStream(stderr, err.output);
       if (err.appendErrorEnvelope) {
         await writeToStream(stderr, formatErrorEnvelope(toEnvelope(err), {
@@ -448,7 +455,14 @@ async function dispatchHosted(
       await writeHostedHelp(stdout, args, data, renderHostedSiteHelp(manifest, site));
       return;
     }
-    throw new CommanderCompatibleError(`error: unknown command '${commandName}'\n`, EXIT_CODES.GENERIC_ERROR, undefined, true);
+    // Same usage-error contract as the local CLI: exit 2 plus the valid
+    // subcommands for the site, not a trailing UNKNOWN/exit-1 envelope.
+    const known = hostedCommands(manifest).filter(entry => entry.site === site).map(entry => entry.name);
+    const help = known.length > 0 ? `help: valid subcommands for \`webcmd ${site}\`: ${known.join(', ')}\n` : '';
+    throw new CommanderCompatibleError(
+      `error: unknown command '${commandName}'\n${help}`,
+      EXIT_CODES.USAGE_ERROR,
+    );
   }
   if (isLocalOnlyHostedCommand(command)) {
     throw new ConfigError(
@@ -461,7 +475,9 @@ async function dispatchHosted(
     parsed = parseHostedInvocation(command, args.slice(2));
   } catch (error) {
     if (error instanceof CommanderStructuralError) {
-      throw new CommanderStructuralError(error.output, error.exitCode, true);
+      // A usage error carries its own envelope; only the legacy fallback needs
+      // the UNKNOWN envelope appended after the human bytes.
+      throw new CommanderStructuralError(error.output, error.exitCode, !error.envelope, error.envelope);
     }
     throw error;
   }
@@ -1378,7 +1394,17 @@ function parseHostedCompletionSurface(
     });
   }
   if (shell === undefined) {
-    throw new CommanderStructuralError("error: missing required argument 'shell'\n", 1, true);
+    // Hand-written mirror of the local `webcmd completion` usage error, which
+    // Commander raises there but not here (the shell arg is optional in this
+    // parse). Same bytes, same code, same exit status.
+    const message = "missing required argument 'shell'";
+    const help = 'usage: webcmd completion [options] <shell>';
+    throw new CommanderStructuralError(
+      `error: ${message}\nhelp: ${help}\n`,
+      EXIT_CODES.USAGE_ERROR,
+      false,
+      { ok: false, error: { code: 'MISSING_ARGUMENT', message, help, exitCode: EXIT_CODES.USAGE_ERROR } },
+    );
   }
   return { kind: 'run', shell };
 }

@@ -2,6 +2,8 @@ import { Command } from 'commander';
 import { cli, Strategy, type CommandArgs } from '../registry.js';
 import { registerCommandToProgram } from '../commanderAdapter.js';
 import { configureRootCommandSurface } from '../root-command-surface.js';
+import { applyUnknownOptionContract } from '../command-surface.js';
+import { handleProgramParseError } from '../cli-error-report.js';
 import { ArgumentError } from '../errors.js';
 import type { WebFetchOptions, WebFetchResult } from './client.js';
 
@@ -28,7 +30,14 @@ export async function runWebFetchCommand(argv: string[]): Promise<void> {
   const program = configureRootCommandSurface(new Command('webcmd'))
     .option('--workspace <id>', 'Hosted workspace id/slug for the request');
   registerCommandToProgram(program.command('web'), webFetchCommand);
-  await program.parseAsync(argv, { from: 'user' });
+  // Same structural-error contract as runCli: this fast path skips cli.ts, but
+  // a usage mistake here must still exit 2 with the shared envelope.
+  applyUnknownOptionContract(program);
+  try {
+    await program.parseAsync(argv, { from: 'user' });
+  } catch (err) {
+    handleProgramParseError(err);
+  }
 }
 
 function clientOptionsFromKwargs(kwargs: CommandArgs): WebFetchOptions {
