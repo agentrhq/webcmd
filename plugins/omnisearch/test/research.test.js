@@ -149,6 +149,33 @@ describe('redditSearch', () => {
     expect(rows[0].title).toBe('Valid post');
   });
 
+  it('excludes children with array-shaped data that would displace valid results', async () => {
+    const { redditSearch } = await import('../sources.js');
+    stubFetch(() => ({
+      data: {
+        children: [
+          { kind: 't3', data: [] },   // array passes typeof 'object' — must be rejected
+          {
+            kind: 't3',
+            data: {
+              title: 'Real result',
+              author: 'op',
+              score: 10,
+              num_comments: 2,
+              created_utc: 1700000000,
+              url: 'https://example.com/real',
+              selftext: '',
+              permalink: '/r/test/comments/real/',
+            },
+          },
+        ],
+      },
+    }));
+    const rows = await redditSearch('test', 1);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].title).toBe('Real result');
+  });
+
   it('hits the correct Reddit search endpoint', async () => {
     const { redditSearch } = await import('../sources.js');
     const calls = [];

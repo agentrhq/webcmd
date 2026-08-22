@@ -206,7 +206,7 @@ export async function redditSearch(query, limit) {
   const json = await res.json();
   const children = Array.isArray(json?.data?.children) ? json.data.children : [];
   return children
-    .filter((child) => child?.data && typeof child.data === 'object')
+    .filter((child) => child?.data && typeof child.data === 'object' && !Array.isArray(child.data))
     .slice(0, limit)
     .map((child) => {
     const d = child?.data ?? {};
