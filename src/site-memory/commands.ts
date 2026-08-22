@@ -66,30 +66,51 @@ Authoring:
   list.action(async (name, opts: { output?: string; format?: string }) => {
     await emitListing(list, await backend.list(name), opts, stdout, ['path', 'updatedAt', 'byteSize', 'sha256']);
   });
+  /** Write commands print nothing by default; a format flag turns that into a result object. */
+  const emitWriteResult = async (command: Command, payload: Record<string, unknown>): Promise<void> => {
+    if (!outputFormatIsExplicit(command)) return;
+    const fmt = resolveCommandOutputFormat(command, (command.opts() as { format?: string }).format);
+    if (fmt === null) return;
+    await renderOutput(payload, { fmt, fmtExplicit: true, stdout });
+  };
+
   const note = site.command('note').description('Read and write site notes');
-  note.command('add').argument('<site>').requiredOption('--text <markdown>').option('--author <author>')
-    .action((name, opts: { text: string; author?: string }) => backend.note(name, opts.text, opts.author));
+  const noteAdd = addOutputFormatOption(note.command('add').argument('<site>').requiredOption('--text <markdown>').option('--author <author>'), 'json');
+  noteAdd.action(async (name, opts: { text: string; author?: string }) => {
+    await backend.note(name, opts.text, opts.author);
+    await emitWriteResult(noteAdd, { ok: true, action: 'note add', site: name });
+  });
   const noteList = addOutputFormatOption(note.command('list').argument('<site>').option('-o, --output <path>'), 'json');
   noteList.action(async (name, opts: { output?: string; format?: string }) => {
     await emitListing(noteList, await backend.show(name, 'notes'), opts, stdout);
   });
   const endpoint = site.command('endpoint').description('Maintain verified endpoints');
-  endpoint.command('set').argument('<site>').argument('<name>').requiredOption('--url <url>').requiredOption('--method <method>')
-    .option('--params <json>').option('--rows-path <path>').option('--fields <fields>').option('--notes <text>')
-    .action((siteName, name, opts: { url: string; method: string; params?: string; rowsPath?: string; fields?: string; notes?: string }) => backend.endpoint(siteName, name, {
+  const endpointSet = addOutputFormatOption(endpoint.command('set').argument('<site>').argument('<name>').requiredOption('--url <url>').requiredOption('--method <method>')
+    .option('--params <json>').option('--rows-path <path>').option('--fields <fields>').option('--notes <text>'), 'json');
+  endpointSet.action(async (siteName, name, opts: { url: string; method: string; params?: string; rowsPath?: string; fields?: string; notes?: string }) => {
+    await backend.endpoint(siteName, name, {
       url: opts.url, method: opts.method,
       ...(opts.params ? { params: parseJsonObject(opts.params) } : {}),
       ...(opts.rowsPath ? { rowsPath: opts.rowsPath } : {}),
       ...(opts.fields ? { sampleFields: opts.fields.split(',').map(value => value.trim()).filter(Boolean) } : {}),
       ...(opts.notes ? { notes: opts.notes } : {}),
-    }));
-  endpoint.command('stale').argument('<site>').argument('<name>').action((siteName, name) => backend.stale(siteName, name));
+    });
+    await emitWriteResult(endpointSet, { ok: true, action: 'endpoint set', site: siteName, endpoint: name, url: opts.url, method: opts.method });
+  });
+  const endpointStale = addOutputFormatOption(endpoint.command('stale').argument('<site>').argument('<name>'), 'json');
+  endpointStale.action(async (siteName, name) => {
+    await backend.stale(siteName, name);
+    await emitWriteResult(endpointStale, { ok: true, action: 'endpoint stale', site: siteName, endpoint: name });
+  });
   const endpointList = addOutputFormatOption(endpoint.command('list').argument('<site>').option('-o, --output <path>'), 'json');
   endpointList.action(async (name, opts: { output?: string; format?: string }) => {
     await emitListing(endpointList, await backend.show(name, 'endpoints'), opts, stdout);
   });
-  site.command('field-map').command('add').argument('<site>').argument('<key>').requiredOption('--meaning <meaning>').requiredOption('--source <source>').option('--force')
-    .action((siteName, key, opts: { meaning: string; source: string; force?: boolean }) => backend.fieldMap(siteName, key, opts.meaning, opts.source, opts.force === true));
+  const fieldMapAdd = addOutputFormatOption(site.command('field-map').command('add').argument('<site>').argument('<key>').requiredOption('--meaning <meaning>').requiredOption('--source <source>').option('--force'), 'json');
+  fieldMapAdd.action(async (siteName, key, opts: { meaning: string; source: string; force?: boolean }) => {
+    await backend.fieldMap(siteName, key, opts.meaning, opts.source, opts.force === true);
+    await emitWriteResult(fieldMapAdd, { ok: true, action: 'field-map add', site: siteName, key });
+  });
   const fixture = site.command('fixture').description('Read and write verify fixtures');
   const get = addOutputFormatOption(fixture.command('get').argument('<site-command>').option('--output <path>'), 'json');
   get.action(async (key, opts: { output?: string; format?: string }) => {
@@ -109,22 +130,24 @@ Authoring:
     if (fmt === null) return;
     await renderOutput(parseFixtureBody(body), { fmt, fmtExplicit: true, stdout });
   });
-  fixture.command('put').argument('<site-command>').argument('[path]').option('--stdin', 'Read the fixture from stdin')
-    .action(async (key, file: string | undefined, opts: { stdin?: boolean }) => {
-      const { site: siteName, command } = parseSiteCommand(key);
-      await backend.putFixture(siteName, command, await readSitePutSource(
-        { path: file, stdin: opts.stdin === true },
-        { readStdin: io.readStdin, usage: 'webcmd site fixture put <site/cmd>' },
-      ));
-    });
-  site.command('sample').command('add').argument('<site-command>').argument('[path]').option('--stdin', 'Read the sample from stdin')
-    .action(async (key, file: string | undefined, opts: { stdin?: boolean }) => {
-      const { site: siteName, command } = parseSiteCommand(key);
-      await backend.sample(siteName, command, await readSitePutSource(
-        { path: file, stdin: opts.stdin === true },
-        { readStdin: io.readStdin, usage: 'webcmd site sample add <site/cmd>' },
-      ));
-    });
+  const fixturePut = addOutputFormatOption(fixture.command('put').argument('<site-command>').argument('[path]').option('--stdin', 'Read the fixture from stdin'), 'json');
+  fixturePut.action(async (key, file: string | undefined, opts: { stdin?: boolean }) => {
+    const { site: siteName, command } = parseSiteCommand(key);
+    await backend.putFixture(siteName, command, await readSitePutSource(
+      { path: file, stdin: opts.stdin === true },
+      { readStdin: io.readStdin, usage: 'webcmd site fixture put <site/cmd>' },
+    ));
+    await emitWriteResult(fixturePut, { ok: true, action: 'fixture put', site: siteName, command });
+  });
+  const sampleAdd = addOutputFormatOption(site.command('sample').command('add').argument('<site-command>').argument('[path]').option('--stdin', 'Read the sample from stdin'), 'json');
+  sampleAdd.action(async (key, file: string | undefined, opts: { stdin?: boolean }) => {
+    const { site: siteName, command } = parseSiteCommand(key);
+    await backend.sample(siteName, command, await readSitePutSource(
+      { path: file, stdin: opts.stdin === true },
+      { readStdin: io.readStdin, usage: 'webcmd site sample add <site/cmd>' },
+    ));
+    await emitWriteResult(sampleAdd, { ok: true, action: 'sample add', site: siteName, command });
+  });
 }
 
 export function createLocalSiteMemoryBackend(options: LocalStoreOptions = {}): SiteMemoryBackend {
