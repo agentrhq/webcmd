@@ -1,5 +1,5 @@
 import { Command, CommanderError } from 'commander';
-import { ArgumentError, CliError, EXIT_CODES } from './errors.js';
+import { ArgumentError, CliError, EXIT_CODES, type ErrorEnvelope } from './errors.js';
 import type { Arg, CliCommand, CommandArgs } from './registry.js';
 
 /** Canonical output format names accepted by the shared renderer. */
@@ -54,11 +54,27 @@ export class CommanderStructuralError extends Error {
     readonly output: string,
     readonly exitCode: number,
     readonly appendErrorEnvelope = false,
+    /** Machine-readable form of the same failure, when it is a usage mistake. */
+    readonly envelope?: ErrorEnvelope,
   ) {
     super(output.trimEnd());
     this.name = 'CommanderStructuralError';
   }
 }
+
+/**
+ * Commander structural failure codes that are user usage mistakes, mapped onto
+ * the machine-readable `error.code` they report. Everything listed here exits
+ * with EXIT_CODES.USAGE_ERROR so a typo is distinguishable from a runtime fault.
+ */
+export const USAGE_ERROR_CODES: Readonly<Record<string, string>> = {
+  'commander.unknownCommand': 'UNKNOWN_COMMAND',
+  'commander.unknownOption': 'UNKNOWN_OPTION',
+  'commander.missingArgument': 'MISSING_ARGUMENT',
+  'commander.missingMandatoryOptionValue': 'MISSING_OPTION',
+  'commander.excessArguments': 'EXCESS_ARGUMENTS',
+  'commander.invalidArgument': 'INVALID_ARGUMENT',
+};
 
 export function visibleCommandFlags(command: Command): string[] {
   const flags: string[] = [];
@@ -82,12 +98,33 @@ export function commandInvocationPath(command: Command): string {
   return names.join(' ');
 }
 
-export function formatUnknownOptionError(err: CommanderError, command: Command): string {
-  const flags = visibleCommandFlags(command);
+function visibleSubcommandNames(command: Command): string[] {
+  try {
+    return command.createHelp().visibleCommands(command).map(child => child.name());
+  } catch {
+    return command.commands.map(child => child.name());
+  }
+}
+
+/** The `help:` body offered alongside a structural `error:` line — no prefix, no newline. */
+export function structuralHelpText(code: string, command: Command): string | undefined {
   const path = commandInvocationPath(command);
-  const help = flags.length > 0 ? `help: valid flags for \`${path}\`: ${flags.join(', ')}\n` : '';
+  if (code === 'commander.unknownOption') {
+    const flags = visibleCommandFlags(command);
+    return flags.length > 0 ? `valid flags for \`${path}\`: ${flags.join(', ')}` : undefined;
+  }
+  if (code === 'commander.unknownCommand') {
+    const names = visibleSubcommandNames(command);
+    return names.length > 0 ? `valid subcommands for \`${path}\`: ${names.join(', ')}` : undefined;
+  }
+  return `usage: ${path} ${command.usage()}`.trimEnd();
+}
+
+/** Human-readable rendering of one Commander structural failure. */
+export function formatStructuralError(err: CommanderError, command: Command): string {
+  const help = structuralHelpText(err.code, command);
   const message = err.message.replace(/^error:\s*/i, '');
-  return `error: ${message}\n${help}`;
+  return `error: ${message}\n${help ? `help: ${help}\n` : ''}`;
 }
 
 export function structuralErrorFromCommander(
@@ -96,25 +133,56 @@ export function structuralErrorFromCommander(
   capturedStderr = '',
   opts: { appendErrorEnvelope?: boolean; includeCapturedStderrForUnknownOption?: boolean } = {},
 ): CommanderStructuralError {
-  if (error.code === 'commander.unknownOption') {
-    const output = `${opts.includeCapturedStderrForUnknownOption ? capturedStderr : ''}${formatUnknownOptionError(error, command)}`;
-    return new CommanderStructuralError(output, EXIT_CODES.USAGE_ERROR);
+  const code = USAGE_ERROR_CODES[error.code];
+  if (!code) {
+    return new CommanderStructuralError(
+      capturedStderr || `${error.message}\n`,
+      error.exitCode,
+      opts.appendErrorEnvelope === true,
+    );
   }
+  const prefix = error.code === 'commander.unknownOption' && opts.includeCapturedStderrForUnknownOption
+    ? capturedStderr
+    : '';
+  const help = structuralHelpText(error.code, command);
+  const envelope: ErrorEnvelope = {
+    ok: false,
+    error: {
+      code,
+      message: error.message.replace(/^error:\s*/i, ''),
+      ...(help ? { help } : {}),
+      exitCode: EXIT_CODES.USAGE_ERROR,
+    },
+  };
   return new CommanderStructuralError(
-    capturedStderr || `${error.message}\n`,
-    error.exitCode,
-    opts.appendErrorEnvelope === true,
+    `${prefix}${formatStructuralError(error, command)}`,
+    EXIT_CODES.USAGE_ERROR,
+    // `appendErrorEnvelope` is the legacy hosted fallback that tacks an
+    // UNKNOWN/exit-1 envelope onto the human bytes. A usage error carries its
+    // own envelope, so that fallback must not fire on top of it.
+    false,
+    envelope,
   );
 }
 
-/** Walk argv to the leaf command Commander would have been parsing. */
+/**
+ * Route every Commander structural failure through the shared envelope path.
+ *
+ * Commander's default `outputError` writes to stderr *before* `exitOverride`
+ * throws, so capturing `writeErr` here is what keeps the caller from printing
+ * the same line a second time. Output we do not own is replayed verbatim.
+ */
 export function applyUnknownOptionContract(command: Command): void {
-  command.exitOverride((err) => {
-    if (err.code === 'commander.unknownOption') {
-      throw structuralErrorFromCommander(err, command);
-    }
-    throw err;
-  });
+  let captured = '';
+  command
+    .configureOutput({ writeErr: (value: string) => { captured += value; } })
+    .exitOverride((err) => {
+      const replay = captured;
+      captured = '';
+      if (USAGE_ERROR_CODES[err.code]) throw structuralErrorFromCommander(err, command);
+      if (replay) process.stderr.write(replay);
+      throw err;
+    });
   for (const child of command.commands) applyUnknownOptionContract(child);
 }
 
