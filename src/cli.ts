@@ -606,6 +606,12 @@ async function requireKnownProfileId(command?: Command): Promise<string> {
   return profileId;
 }
 
+/** True for "this Session does not exist here" errors, from either the durable store or the runtime. */
+function isSessionMissingError(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  return code === 'SESSION_NOT_FOUND' || code === 'session_not_found';
+}
+
 function formatHandoff(row: BrowserSessionListRow): string {
   return row.handoff ? `${row.handoff.site} until ${row.handoff.expiresAt}` : '';
 }
@@ -914,33 +920,52 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
   const sessionCloseCmd = addOutputFormatOption(sessionCmd
     .command('close')
     .description('Close a browser Session runtime without deleting its durable record')
-    .argument('<session-id>', 'Existing opaque Session ID from `webcmd session create`')
+    .argument('[session-id]', 'Existing opaque Session ID from `webcmd session create` (or pass the root `--session <id>` selector)')
     .option('--force', 'Close even while the Session is busy or paused for handoff'), 'yaml');
-  sessionCloseCmd.action(async (sessionId: string, opts: { format?: string; force?: boolean }, command) => {
+  sessionCloseCmd.action(async (positionalSessionId: string | undefined, opts: { format?: string; force?: boolean }, command) => {
       const fmt = resolveCommandOutputFormat(command, opts.format);
       if (fmt === null) return;
       const profileId = getSelectedProfileId(command);
+      const rootSelector = getCommandOption(command, 'session');
+      const sessionId = positionalSessionId ?? (typeof rootSelector === 'string' ? rootSelector : undefined);
+      if (!sessionId) {
+        throw new ArgumentError(
+          'Missing Session ID.',
+          `Use \`${CLI_COMMAND} session close <session-id>\` or \`${CLI_COMMAND} --session <session-id> session close\`.`,
+        );
+      }
       requireSessionIdShape(sessionId);
-      const status = await fetchDaemonStatus({ contextId: profileId });
-      if (!status || (status.runtimeConnected && !isDaemonStale(status, PKG_VERSION))) {
-        try {
-          const data = await sendCommand('session-close', {
-            contextId: profileId,
-            session: sessionId,
-            force: opts.force === true,
-          });
+      try {
+        const status = await fetchDaemonStatus({ contextId: profileId });
+        if (!status || (status.runtimeConnected && !isDaemonStale(status, PKG_VERSION))) {
+          try {
+            const data = await sendCommand('session-close', {
+              contextId: profileId,
+              session: sessionId,
+              force: opts.force === true,
+            });
+            await renderOutput(data, { fmt, fmtExplicit: outputFormatIsExplicit(command) });
+            return;
+          } catch (error) {
+            if (status || opts.force === true) throw error;
+          }
+        }
+        if (opts.force === true) {
+          const data = await sendCommand('session-close', { contextId: profileId, session: sessionId, force: true });
           await renderOutput(data, { fmt, fmtExplicit: outputFormatIsExplicit(command) });
           return;
-        } catch (error) {
-          if (status || opts.force === true) throw error;
         }
-      }
-      if (opts.force === true) {
-        const data = await sendCommand('session-close', { contextId: profileId, session: sessionId, force: true });
-        await renderOutput(data, { fmt, fmtExplicit: outputFormatIsExplicit(command) });
+        new LocalBrowserSessionStore().require(profileId, sessionId);
+      } catch (error) {
+        // Closing an already-closed / reaped / never-existed Session is a no-op,
+        // not a failure: cleanup must stay idempotent for unattended agents.
+        if (!isSessionMissingError(error)) throw error;
+        await renderOutput(
+          { ok: true, closed: false, alreadyClosed: true, session: sessionId },
+          { fmt, fmtExplicit: outputFormatIsExplicit(command) },
+        );
         return;
       }
-      new LocalBrowserSessionStore().require(profileId, sessionId);
       await renderOutput({ closed: false, alreadyIdle: true, session: sessionId }, { fmt, fmtExplicit: outputFormatIsExplicit(command) });
     });
 

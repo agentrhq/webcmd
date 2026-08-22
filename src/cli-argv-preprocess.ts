@@ -104,6 +104,17 @@ export function rejectMisplacedSessionSelectorArgv(argv: readonly string[]): str
         ...result.slice(0, index),
         ...result.slice(index + (token === '--session' && sessionId !== '<session-id>' ? 2 : 1)),
       ];
+      // `session close` takes the id as a positional, so `--session` here is not
+      // misplaced — rewrite it into the positional form instead of erroring with
+      // a "corrected" command that would then fail on a missing argument.
+      if (result[commandIndex] === 'session' && result[commandIndex + 1] === 'close') {
+        if (sessionId === '<session-id>') return withoutMisplaced;
+        return [
+          ...withoutMisplaced.slice(0, commandIndex + 2),
+          sessionId,
+          ...withoutMisplaced.slice(commandIndex + 2),
+        ];
+      }
       throw new BrowserSessionArgvError(
         `SESSION_SELECTOR_POSITION: --session must appear before the command. Use: webcmd --session ${sessionId} ${withoutMisplaced.join(' ')}`,
       );

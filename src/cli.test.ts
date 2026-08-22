@@ -2512,14 +2512,33 @@ describe('browser Session lifecycle commands', () => {
     });
   });
 
-  it('uses positional close syntax and profile guidance when a Session is missing', async () => {
+  it('closes a missing Session idempotently instead of failing', async () => {
     mockSendCommand.mockRejectedValueOnce(new Error('daemon unavailable'));
 
-    await expect(createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'close', 'session_missing']))
-      .rejects.toMatchObject({
-        code: 'SESSION_NOT_FOUND',
-        hint: expect.stringContaining('webcmd session close <session-id>'),
-      });
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'close', 'session_missing', '-f', 'json']);
+
+    expect(JSON.parse(consoleLogSpy.mock.calls.flat().join('\n'))).toMatchObject({
+      ok: true,
+      closed: false,
+      alreadyClosed: true,
+      session: 'session_missing',
+    });
+  });
+
+  it('accepts the Session ID from the root --session selector', async () => {
+    mockSendCommand.mockRejectedValueOnce(new Error('daemon unavailable'));
+
+    await createProgram('', '').parseAsync(['node', 'webcmd', '--session', 'session_missing', 'session', 'close', '-f', 'json']);
+
+    expect(JSON.parse(consoleLogSpy.mock.calls.flat().join('\n'))).toMatchObject({
+      alreadyClosed: true,
+      session: 'session_missing',
+    });
+  });
+
+  it('rejects a malformed Session selector as a usage error', async () => {
+    await expect(createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'close', 'badid']))
+      .rejects.toMatchObject({ code: 'INVALID_SESSION_SELECTOR', exitCode: 2 });
   });
 
   it.each([
