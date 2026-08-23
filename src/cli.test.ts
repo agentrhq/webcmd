@@ -69,6 +69,7 @@ vi.mock('node:child_process', async () => {
   };
 });
 
+import { handleProgramParseError } from './cli-error-report.js';
 import { createProgram, findPackageRoot, loadAntigravityServe, normalizeVerifyRows, renderVerifyPreview, resolveBrowserVerifyInvocation, resolveSitemapAvailabilityForUrl, selectFreshByTimestamp } from './cli.js';
 
 const realHome = process.env.HOME;
@@ -1184,15 +1185,25 @@ name: 'search',
     const errors: string[] = [];
     const spy = vi.spyOn(console, 'error').mockImplementation((msg: unknown) => { errors.push(String(msg)); });
     const previousExitCode = process.exitCode;
+    // A structural failure is thrown now, not printed from inside the parser;
+    // handleProgramParseError turns it into bytes exactly as runCli does.
+    const run = (argv: string[]): string => {
+      let output = '';
+      try {
+        createProgram('', '').parse(argv, { from: 'user' });
+      } catch (err) {
+        handleProgramParseError(err, { write: (value: string) => { output += value; return true; } } as never);
+      }
+      return `${output}${errors.join('\n')}`;
+    };
     try {
-      createProgram('', '').parse(['browser', 'fork', 'hackernews/top'], { from: 'user' });
-      expect(errors.join('\n')).toContain('webcmd adapter override <site>/<command>');
+      expect(run(['browser', 'fork', 'hackernews/top'])).toContain('webcmd adapter override <site>/<command>');
       expect(process.exitCode).toBe(EXIT_CODES.USAGE_ERROR);
 
       errors.length = 0;
-      createProgram('', '').parse(['browser', 'nonsense'], { from: 'user' });
-      expect(errors.join('\n')).toContain("error: unknown command 'nonsense'");
-      expect(errors.join('\n')).toContain('Valid webcmd browser commands:');
+      const nonsense = run(['browser', 'nonsense']);
+      expect(nonsense).toContain("error: unknown command 'nonsense'");
+      expect(nonsense).toContain('help: valid subcommands for `webcmd browser`:');
     } finally {
       spy.mockRestore();
       process.exitCode = previousExitCode;

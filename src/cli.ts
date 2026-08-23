@@ -19,7 +19,7 @@ import './fetch/command.js';
 import { commandListPresentation, filterCommandsByTag, toPresentableCommand } from './command-presentation.js';
 import { configureCompletionCommandSurface, configureListCommandSurface, configurePluginInstallSurface, configurePluginListSurface, configurePluginSearchSurface } from './builtin-command-surface.js';
 import { formatPluginSearchEmptyCopy, presentPluginSearch } from './plugin-search-presentation.js';
-import { addOutputFormatOption, applyUnknownOptionContract, JSON_FORMAT_ALIAS_HELP, outputFormatIsExplicit, resolveCommandOutputFormat } from './command-surface.js';
+import { addOutputFormatOption, applyUnknownOptionContract, CommanderStructuralError, JSON_FORMAT_ALIAS_HELP, outputFormatIsExplicit, resolveCommandOutputFormat } from './command-surface.js';
 import { render as renderOutput } from './output.js';
 import { handleProgramParseError } from './cli-error-report.js';
 import { PKG_VERSION } from './version.js';
@@ -56,7 +56,7 @@ import { configureRootCommandSurface } from './root-command-surface.js';
 import { validateRawBrowserSession } from './hosted/browser-args.js';
 import { LocalBrowserSessionStore, requireSessionIdShape, type BrowserSessionListRow } from './browser/sessions.js';
 import { PLUGINS_DIR } from './discovery.js';
-import { unknownRootCommandMessage, unknownSubcommandMessage } from './command-suggest.js';
+import { unknownRootCommandMessage, unknownSubcommandHelp, unknownSubcommandMessage } from './command-suggest.js';
 import { loadBrowserRunSource } from './browser/run/input.js';
 import { BrowserRunError } from './browser/run/types.js';
 import { classifyCommandOrigin, formatCommandOrigin } from './command-origin.js';
@@ -2226,8 +2226,21 @@ cli({
   for (const namespace of program.commands) {
     if (namespace.commands.length === 0 || !SUGGEST_NAMESPACES.has(namespace.name())) continue;
     namespace.on('command:*', (operands: string[]) => {
-      console.error(unknownSubcommandMessage(namespace, operands[0]!));
-      process.exitCode = EXIT_CODES.USAGE_ERROR;
+      // Throw rather than print: handleProgramParseError owns the choice between
+      // human bytes and the machine envelope, so `--json` / `-f yaml` reach this
+      // failure the same way they reach every other usage error.
+      const name = operands[0]!;
+      const output = `${unknownSubcommandMessage(namespace, name)}\n`;
+      const help = unknownSubcommandHelp(namespace);
+      throw new CommanderStructuralError(output, EXIT_CODES.USAGE_ERROR, false, {
+        ok: false,
+        error: {
+          code: 'UNKNOWN_COMMAND',
+          message: `unknown command '${name}'`,
+          ...(help ? { help } : {}),
+          exitCode: EXIT_CODES.USAGE_ERROR,
+        },
+      });
     });
   }
 

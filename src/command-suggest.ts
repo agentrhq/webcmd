@@ -164,7 +164,21 @@ export function unknownSubcommandMessage(namespace: Command, name: string): stri
       if (suggestions.length > 0) lines.push(formatSuggestions(suggestions));
     }
   }
-  const valid = [...new Set(namespace.commands.map(child => child.name()))].sort();
-  if (valid.length > 0) lines.push(`Valid ${CLI_COMMAND} ${nsPath} commands: ${valid.join(', ')}`);
+  const help = unknownSubcommandHelp(namespace);
+  if (help) lines.push(`help: ${help}`);
   return lines.join('\n');
+}
+
+/**
+ * The `help:` body for an unknown subcommand, in the one wording the rest of the
+ * CLI uses for this failure (see `structuralHelpText` in command-surface.ts).
+ *
+ * Kept identical on purpose: the suggestion handler and Commander's own
+ * structural path both report "unknown subcommand", and an agent should not
+ * have to learn two spellings of the same sentence.
+ */
+export function unknownSubcommandHelp(namespace: Command): string | undefined {
+  const valid = [...new Set(namespace.commands.map(child => child.name()))].sort();
+  if (valid.length === 0) return undefined;
+  return `valid subcommands for \`${CLI_COMMAND} ${namespace.name()}\`: ${valid.join(', ')}`;
 }

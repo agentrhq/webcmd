@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { handleProgramParseError } from './cli-error-report.js';
 import { createProgram } from './cli.js';
 import { editDistance, unknownRootCommandMessage, unknownSubcommandMessage } from './command-suggest.js';
 
@@ -67,13 +68,13 @@ describe('unknown namespace subcommand', () => {
 
     expect(message).toContain("error: unknown command 'list'");
     expect(message).toContain('Did you mean: webcmd adapter status');
-    expect(message).toContain('Valid webcmd adapter commands: override, path, reset, source, status');
+    expect(message).toContain('help: valid subcommands for `webcmd adapter`: override, path, reset, source, status');
   });
 
   it('lists valid subcommands even when nothing is close enough to suggest', () => {
     const message = unknownSubcommandMessage(namespaceOf(createProgram('', ''), 'plugin'), 'zzzqqqwww');
 
-    expect(message).toContain('Valid webcmd plugin commands: catalog, create, install, list, search, uninstall, update');
+    expect(message).toContain('help: valid subcommands for `webcmd plugin`: catalog, create, install, list, search, uninstall, update');
   });
 
   it('names the replacement for a retired subcommand', () => {
@@ -97,7 +98,9 @@ describe('error paths write nothing to stdout', () => {
     });
     const stderr = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
-      await program.parseAsync(argv, { from: 'user' });
+      // Mirror runCli: a structural failure is thrown and rendered by
+      // handleProgramParseError, never printed from inside the parser.
+      await program.parseAsync(argv, { from: 'user' }).catch(handleProgramParseError);
       return { stdout, exitCode: process.exitCode };
     } finally {
       process.exitCode = previousExitCode;
