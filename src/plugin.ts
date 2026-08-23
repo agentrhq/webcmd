@@ -871,7 +871,28 @@ function publishMonorepoPlugins(
 export function installPlugin(source: string, options: { all?: boolean } = {}): string | string[] {
   const parsed = parseSource(source);
   if (!parsed) {
-    throw new Error(
+    throw new InvalidPluginSourceError(source);
+  }
+  return installParsedPlugin(parsed, source, options);
+}
+
+/** A bare token like `openfda` — a plugin NAME, not a source. Worth a catalog lookup. */
+export function looksLikePluginName(source: string): boolean {
+  return /^[a-z0-9][a-z0-9-]*$/i.test(source);
+}
+
+/**
+ * Raised when `plugin install` is handed something that is not a source.
+ *
+ * Agents reliably type the plugin name here, because that is what `plugin
+ * search` shows them first. The format list alone left them guessing; the CLI
+ * layer catches this and resolves the real installSource from the catalog.
+ */
+export class InvalidPluginSourceError extends Error {
+  readonly source: string;
+
+  constructor(source: string) {
+    super(
       `Invalid plugin source: "${source}"\n` +
       `Supported formats:\n` +
       `  github:user/repo\n` +
@@ -883,8 +904,16 @@ export function installPlugin(source: string, options: { all?: boolean } = {}): 
       `  file:///absolute/path\n` +
       `  /absolute/path`
     );
+    this.name = 'InvalidPluginSourceError';
+    this.source = source;
   }
+}
 
+function installParsedPlugin(
+  parsed: NonNullable<ReturnType<typeof parseSource>>,
+  source: string,
+  options: { all?: boolean } = {},
+): string | string[] {
   const { name: repoName, subPlugin } = parsed;
 
   if (parsed.type === 'local') {

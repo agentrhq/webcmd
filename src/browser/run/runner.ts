@@ -57,7 +57,12 @@ const PLAYWRIGHT_CLIENT_SOURCE = fs.readFileSync(
 
 const GENERIC_TIMEOUT_HINT = 'Split the task into a smaller run or increase --timeout.';
 export const DOWNLOAD_WAIT_TIMEOUT_HINT = 'A timed-out download wait is not a license to invent file contents. If a download event fired, use download.saveAs(suggestedFilename()). If none fired, report that gap. Do not rebuild the file from page logic.';
-export const POPUP_WAIT_TIMEOUT_HINT = 'A missing popup is not recovered with page.goto on the current page. Open a tracked tab with context.newPage(), then goto the destination URL on that new page. Cap waitForEvent(\'popup\') with a short timeout.';
+export const POPUP_WAIT_TIMEOUT_HINT = [
+  'No popup or tab was created.',
+  'Chrome blocks top-level data: navigation, so window.open("data:...") opens nothing — it still returns a Window object, so page code that checks the return value looks like it succeeded.',
+  'Recovery is the same either way: open a tracked tab with context.newPage(), then goto the destination URL on that new page. Do not page.goto on the opener.',
+  "Cap waitForEvent('popup') with a short timeout instead of the default.",
+].join(' ');
 const NO_CAPTURE_HINT = 'The program completed without captured evidence; return structured data, console.log concise evidence, or call writeArtifact(filename, bytes) to save files.';
 const NODE_SANDBOX_HINT = 'Node require/fs are not available inside browser run. Use Playwright page/context/browser APIs, page.request for HTTP, or writeArtifact(filename, bytes) for files.';
 

@@ -945,6 +945,16 @@ afterAll(async () => {
     });
   });
 
+  it('names the data: URL block in the popup hint', () => {
+    // Chrome refuses top-level data: navigation, so window.open('data:...')
+    // creates no target and no popup event ever fires — while still returning a
+    // Window object, which is why page code looks like it worked. An agent that
+    // is not told this retries the same click.
+    expect(POPUP_WAIT_TIMEOUT_HINT).toContain('data:');
+    expect(POPUP_WAIT_TIMEOUT_HINT).toContain('context.newPage()');
+    expect(POPUP_WAIT_TIMEOUT_HINT).not.toMatch(/page\.goto on the current page/);
+  });
+
   it('cancels an in-flight run through its abort signal', async () => {
     const controller = new AbortController();
     const pending = run(`await page.waitForEvent('popup');`, {

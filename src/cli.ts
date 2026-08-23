@@ -1499,6 +1499,8 @@ cli({
         });
       } catch (err) {
         console.error(`Error: ${getErrorMessage(err)}`);
+        const resolved = await installSourceSuggestion(err, source);
+        if (resolved) console.error(resolved);
         process.exitCode = EXIT_CODES.GENERIC_ERROR;
       }
     });
@@ -2424,6 +2426,31 @@ cli({
   }
 
   return program;
+}
+
+/**
+ * Turn "Invalid plugin source" into the command that actually installs it.
+ *
+ * `plugin search` reports a name and an installSource; agents pass the name,
+ * because that is the memorable half. Rather than reprint the format list and
+ * leave them to guess, look the name up and hand back the exact source. A
+ * catalog lookup needs the network, so any failure degrades to the search hint
+ * — never to a worse error than the one already printed.
+ */
+async function installSourceSuggestion(err: unknown, source: string): Promise<string | undefined> {
+  const { InvalidPluginSourceError, looksLikePluginName } = await import('./plugin.js');
+  if (!(err instanceof InvalidPluginSourceError) || !looksLikePluginName(source)) return undefined;
+  try {
+    const { readCatalog, searchCatalogPlugins } = await import('./plugin-catalog.js');
+    const { plugins } = await searchCatalogPlugins(readCatalog(), { query: source });
+    const exact = plugins.filter(plugin => plugin.name.toLowerCase() === source.toLowerCase());
+    if (exact.length === 1 && exact[0]!.installSource) {
+      return `help: "${source}" is in the catalog. Install it with:\n  ${CLI_COMMAND} plugin install ${exact[0]!.installSource}`;
+    }
+  } catch {
+    // Catalog unreachable: fall through to the generic hint.
+  }
+  return `help: "${source}" looks like a plugin name, not a source. Find its installSource with:\n  ${CLI_COMMAND} plugin search ${source}`;
 }
 
 export async function loadAntigravityServe(pluginsDir: string = PLUGINS_DIR): Promise<{

@@ -1274,7 +1274,7 @@ name: 'search',
     expect(help).toContain("await page.goto('data:text/html,");
     expect(help).toContain("await download.saveAs(download.suggestedFilename())");
     expect(help).toContain("await page.locator('input[type=file]').setInputFiles('/tmp/upload.pdf')");
-    expect(help).toContain("const popupPromise = context.waitForEvent('page')");
+    expect(help).toContain("const popupPromise = context.waitForEvent('page', { timeout: 5000 })");
     expect(help).toContain('Node require/fs are not available inside browser run');
   });
 
