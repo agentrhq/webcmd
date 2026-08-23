@@ -98,12 +98,23 @@ export function commandInvocationPath(command: Command): string {
   return names.join(' ');
 }
 
+/**
+ * Subcommand names for a `help:` line, in the one shape both modes emit.
+ *
+ * Sorted and without Commander's auto-generated `help` command: hosted mode
+ * builds this list from the manifest and has neither declaration order nor a
+ * `help` entry, so an unsorted local list drifted from the hosted one for no
+ * reason a caller could act on. What legitimately still differs is commands
+ * hosted mode cannot offer at all (LOCAL strategy).
+ */
 function visibleSubcommandNames(command: Command): string[] {
+  let names: string[];
   try {
-    return command.createHelp().visibleCommands(command).map(child => child.name());
+    names = command.createHelp().visibleCommands(command).map(child => child.name());
   } catch {
-    return command.commands.map(child => child.name());
+    names = command.commands.map(child => child.name());
   }
+  return [...new Set(names)].filter(name => name !== 'help').sort();
 }
 
 /** The `help:` body offered alongside a structural `error:` line — no prefix, no newline. */

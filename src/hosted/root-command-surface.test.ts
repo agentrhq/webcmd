@@ -545,8 +545,10 @@ describe('hosted root preflight call order', () => {
     if (argv.join(' ') === 'list --help') {
       expect(stderr.text()).toBe(local.stderr);
     } else if (argv.join(' ') === 'list --unknown') {
+      // Hosted used to replay Commander's captured stderr on top of the
+      // formatted line and print `error:` twice. It matches local now.
+      expect(stderr.text()).toBe(local.stderr);
       expect(stderr.text()).toBe([
-        "error: unknown option '--unknown'",
         "error: unknown option '--unknown'",
         'help: valid flags for `webcmd list`: --tag, -f, --format, --json',
         '',
@@ -656,8 +658,8 @@ describe('hosted root preflight call order', () => {
       expect(stderr.text()).toBe(local.stderr);
       expect(local.stdout).toHaveLength(371);
     } else if (name === 'leaf version is unknown') {
+      expect(stderr.text()).toBe(local.stderr);
       expect(stderr.text()).toBe([
-        "error: unknown option '-V'",
         "error: unknown option '-V'",
         'help: valid flags for `webcmd completion`: -f, --format, --json',
         '',
@@ -791,7 +793,7 @@ describe('hosted root preflight call order', () => {
     expect(local).toMatchObject({
       exitCode: 2,
       stdout: '',
-      stderr: "error: unknown command 'bogus'\nhelp: valid subcommands for `webcmd github`: whoami, help\n",
+      stderr: "error: unknown command 'bogus'\nhelp: valid subcommands for `webcmd github`: whoami\n",
     });
     expect(hosted).toEqual({ handled: true, exitCode: local.exitCode });
     expect(stdout.text()).toBe(local.stdout);

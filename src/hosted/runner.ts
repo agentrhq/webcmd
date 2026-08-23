@@ -447,7 +447,9 @@ async function dispatchHosted(
     }
     // Same usage-error contract as the local CLI: exit 2 plus the valid
     // subcommands for the site, not a trailing UNKNOWN/exit-1 envelope.
-    const known = hostedCommands(manifest).filter(entry => entry.site === site).map(entry => entry.name);
+    // Same shape as the local `help:` line (see visibleSubcommandNames): sorted,
+    // no `help` entry. Commands hosted mode cannot run are genuinely absent.
+    const known = [...new Set(hostedCommands(manifest).filter(entry => entry.site === site).map(entry => entry.name))].sort();
     const help = known.length > 0 ? `help: valid subcommands for \`webcmd ${site}\`: ${known.join(', ')}\n` : '';
     throw new CommanderCompatibleError(
       `error: unknown command '${commandName}'\n${help}`,
@@ -1185,9 +1187,11 @@ function parseHostedListSurface(argv: readonly string[], literal: boolean): Pars
   } catch (error) {
     if (!(error instanceof CommanderError)) throw error;
     if (error.code === 'commander.helpDisplayed') return { kind: 'help', output: stdout };
+    // No includeCapturedStderrForUnknownOption: structuralErrorFromCommander
+    // now formats the `error:` line itself, so replaying Commander's captured
+    // stderr on top printed the same line twice in hosted mode only.
     throw structuralErrorFromCommander(error, resolveCommandFromArgv(root, ['list', ...argv]), stderr, {
       appendErrorEnvelope: true,
-      includeCapturedStderrForUnknownOption: true,
     });
   }
   if (!actionRan) throw new CommanderStructuralError("error: command 'list' did not run\n", 1);
@@ -1380,7 +1384,6 @@ function parseHostedCompletionSurface(
     if (error.code === 'commander.helpDisplayed') return { kind: 'help', output: stdout };
     throw structuralErrorFromCommander(error, resolveCommandFromArgv(root, ['completion', ...argv]), stderr, {
       appendErrorEnvelope: true,
-      includeCapturedStderrForUnknownOption: true,
     });
   }
   if (shell === undefined) {
