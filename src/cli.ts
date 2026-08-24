@@ -54,7 +54,7 @@ import type { BrowserDownloadWaitResult, IPage, ScreenshotOptions } from './type
 import type { BrowserWindowMode } from './runtime.js';
 import { configureRootCommandSurface } from './root-command-surface.js';
 import { validateRawBrowserSession } from './hosted/browser-args.js';
-import { LocalBrowserSessionStore, requireSessionIdShape, type BrowserSessionListRow } from './browser/sessions.js';
+import { LocalBrowserSessionStore, SessionNotFoundError, requireSessionIdShape, type BrowserSessionListRow } from './browser/sessions.js';
 import { getAdapterLoadFailures, PLUGINS_DIR } from './discovery.js';
 import { unknownRootCommandMessage, unknownSubcommandHelp, unknownSubcommandMessage } from './command-suggest.js';
 import { loadBrowserRunSource } from './browser/run/input.js';
@@ -988,6 +988,13 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
         // Closing an already-closed / reaped / never-existed Session is a no-op,
         // not a failure: cleanup must stay idempotent for unattended agents.
         if (!isSessionMissingError(error)) throw error;
+        // A Session that exists under another Profile is the one case that must
+        // not report success: the Session stays open, so "alreadyClosed" tells
+        // an unattended agent its cleanup ran when nothing was closed.
+        const owner = new LocalBrowserSessionStore().findOwner(sessionId);
+        if (owner !== undefined && owner !== profileId) {
+          throw new SessionNotFoundError(sessionId, profileId, owner);
+        }
         await renderOutput(
           { ok: true, closed: false, alreadyClosed: true, session: sessionId },
           { fmt, fmtExplicit: outputFormatIsExplicit(command) },

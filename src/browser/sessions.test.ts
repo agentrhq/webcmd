@@ -74,6 +74,14 @@ describe('LocalBrowserSessionStore', () => {
     }));
   });
 
+  it('findOwner names the owning profile without scoping to a selected one', () => {
+    const store = new LocalBrowserSessionStore({ baseDir: tempDir(), idFactory: () => 'session_a' });
+    const created = store.create('profile_work');
+
+    expect(store.findOwner(created.id)).toBe('profile_work');
+    expect(store.findOwner('session_missing')).toBeUndefined();
+  });
+
   it('keeps the generic hint when no profile owns the session', () => {
     const store = new LocalBrowserSessionStore({ baseDir: tempDir() });
 

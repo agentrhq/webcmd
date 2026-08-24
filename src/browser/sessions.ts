@@ -83,6 +83,11 @@ export class LocalBrowserSessionStore {
     return { ...record };
   }
 
+  /** Profile that owns this Session ID, regardless of which one is selected. */
+  findOwner(sessionId: string): string | undefined {
+    return findOwnerProfileId(this.load(), sessionId);
+  }
+
   find(profileId: string, sessionId: string): BrowserSessionRecord | undefined {
     requireSessionIdShape(sessionId);
     const state = this.load();
