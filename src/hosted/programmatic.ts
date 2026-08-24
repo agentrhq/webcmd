@@ -32,6 +32,10 @@ export interface HostedProgrammaticOptions {
 
 export interface HostedProgrammaticResult {
   exitCode: number;
+  /** Canonical command resolved from trusted hosted metadata; never copied from argv. */
+  resolvedCommand?: string;
+  /** Manifest-declared access class paired with `resolvedCommand`. */
+  accessClass?: 'read' | 'write';
   stdout: string;
   stderr: string;
   truncated: boolean;
@@ -61,6 +65,7 @@ export async function runHostedProgrammatic(
   const stderr = createCaptureStream(options.stderrLimitBytes ?? DEFAULT_OUTPUT_LIMIT_BYTES);
   const files = createVirtualFileMap(options.files ?? []);
   const outputs = createVirtualOutputSink();
+  let trustedResolution: { resolvedCommand: string; accessClass: 'read' | 'write' } | undefined;
 
   // Passing `config` explicitly is what disables credential migration in
   // runHostedCli (`migrate: opts.config === undefined`), so this never writes
@@ -85,6 +90,7 @@ export async function runHostedProgrammatic(
     ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
     ...(options.now ? { now: options.now } : {}),
     ...(options.enableServerWebFetch === true ? { enableServerWebFetch: true } : {}),
+    onTrustedCommandResolution: resolution => { trustedResolution = resolution; },
   });
 
   const out = stdout.result();
@@ -92,6 +98,7 @@ export async function runHostedProgrammatic(
 
   return {
     exitCode: run.exitCode,
+    ...(trustedResolution ?? {}),
     stdout: out.text,
     stderr: err.text,
     truncated: out.truncated || err.truncated,

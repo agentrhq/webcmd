@@ -85,6 +85,8 @@ export interface HostedRunnerOptions {
   now?: () => number;
   /** Explicitly grants the hosted runner public-network-only web fetch authority. */
   enableServerWebFetch?: boolean;
+  /** @internal Receives sanitized manifest resolution metadata for embedders. */
+  onTrustedCommandResolution?: (resolution: TrustedCommandResolution) => void;
   /** Supplies `--stdin` content without reading `process.stdin`. */
   stdin?: string;
   /** Cancels the invocation; derived from the inbound HTTP request by the MCP path. */
@@ -107,6 +109,11 @@ interface HostedDispatchIo {
 export interface HostedRunResult {
   handled: boolean;
   exitCode: number;
+}
+
+interface TrustedCommandResolution {
+  resolvedCommand: string;
+  accessClass: 'read' | 'write';
 }
 
 class CommanderCompatibleError extends Error {
@@ -181,6 +188,7 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
       io,
       opts.enableServerWebFetch === true,
       opts.signal,
+      opts.onTrustedCommandResolution,
     );
     return { handled: true, exitCode: EXIT_CODES.SUCCESS };
   } catch (caught) {
@@ -242,6 +250,7 @@ async function dispatchHosted(
   io: HostedDispatchIo = { fileIo: realHostedFileIo },
   enableServerWebFetch = false,
   signal?: AbortSignal,
+  onResolvedCommand?: (resolution: TrustedCommandResolution) => void,
 ): Promise<void> {
   const normalized = parseHostedRootCommandSurface(argv);
   if (normalized.kind === 'help') {
@@ -528,6 +537,7 @@ async function dispatchHosted(
       LOCAL_ONLY_COMMAND_HELP,
     );
   }
+  onResolvedCommand?.(trustedCommandResolution(command));
   let parsed: ReturnType<typeof parseHostedInvocation>;
   try {
     parsed = parseHostedInvocation(command, args.slice(2));
@@ -1614,6 +1624,22 @@ function errorExitCode(err: unknown): number {
     return (err as { exitCode: number }).exitCode;
   }
   return EXIT_CODES.GENERIC_ERROR;
+}
+
+const TRUSTED_AUDIT_COMMAND = /^[A-Za-z0-9][A-Za-z0-9._/-]*(?: [A-Za-z0-9][A-Za-z0-9._/-]*)*$/;
+
+function trustedCommandResolution(command: HostedCommand): TrustedCommandResolution {
+  if (
+    command.command.length > 256
+    || !TRUSTED_AUDIT_COMMAND.test(command.command)
+    || (command.access !== 'read' && command.access !== 'write')
+  ) {
+    throw new HostedClientError(
+      'HOSTED_CONTRACT_MISMATCH',
+      'Webcmd Cloud manifest contains invalid command audit metadata.',
+    );
+  }
+  return { resolvedCommand: command.command, accessClass: command.access };
 }
 
 interface InstalledHostedContractIdentity {

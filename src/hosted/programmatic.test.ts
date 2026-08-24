@@ -86,6 +86,7 @@ describe('runHostedProgrammatic', () => {
       enableServerWebFetch: true,
     });
     expect(result).toMatchObject({ exitCode: 0, stderr: '' });
+    expect(result).toMatchObject({ resolvedCommand: 'web/fetch', accessClass: 'read' });
     expect(result.stdout).toContain('# Fetched content');
     expect(result.stdout).toContain('Source: https://93.184.216.34/article');
     expect(result.stdout).toContain('public body');
@@ -192,7 +193,7 @@ describe('runHostedProgrammatic', () => {
 
   it('treats shell metacharacters as literal argv', async () => {
     const bodies: string[] = [];
-    await runHostedProgrammatic({
+    const result = await runHostedProgrammatic({
       argv: ['github', 'search', '--query', 'a; rm -rf / && echo $(whoami)'],
       apiBaseUrl: 'http://127.0.0.1:8787',
       accessToken: 't',
@@ -220,6 +221,42 @@ describe('runHostedProgrammatic', () => {
     const executeBody = bodies.find((b) => b.includes('"command"'));
     expect(executeBody).toBeDefined();
     expect(JSON.parse(executeBody!).args.query).toBe('a; rm -rf / && echo $(whoami)');
+    expect(result).toMatchObject({ resolvedCommand: 'github search', accessClass: 'read' });
+    expect(result.resolvedCommand).not.toContain('rm -rf');
+  });
+
+  it('omits resolution metadata for an unresolved command path', async () => {
+    const result = await runHostedProgrammatic({
+      argv: ['missing', 'command'],
+      apiBaseUrl: 'http://127.0.0.1:8787',
+      accessToken: 't',
+      fetchImpl: fakeCloud(),
+    });
+    expect(result).not.toHaveProperty('resolvedCommand');
+    expect(result).not.toHaveProperty('accessClass');
+  });
+
+  it.each([
+    ['command', 'github/search\nforged'],
+    ['access', 'read\nadmin'],
+  ])('rejects control-bearing manifest %s without exposing trusted resolution metadata', async (field, value) => {
+    const command = {
+      site: 'github', name: 'search', command: 'github/search',
+      description: 'Search', access: 'read', strategy: 'PUBLIC', browser: false,
+      args: [{ name: 'query', type: 'string', required: true }], columns: [],
+      [field]: value,
+    };
+    const result = await runHostedProgrammatic({
+      argv: ['github', 'search', '--query', 'safe'],
+      apiBaseUrl: 'http://127.0.0.1:8787',
+      accessToken: 't',
+      fetchImpl: fakeCloud((url) => new Response(JSON.stringify(
+        url.endsWith('/v1/manifest') ? { ...manifest, commands: [command] } : { ok: true },
+      ), { status: 200, headers: { 'content-type': 'application/json' } })),
+    });
+    expect(result.exitCode).not.toBe(0);
+    expect(result).not.toHaveProperty('resolvedCommand');
+    expect(result).not.toHaveProperty('accessClass');
   });
 
   it('reads no ambient stdin, env, or home directory', async () => {
