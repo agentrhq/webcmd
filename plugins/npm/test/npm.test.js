@@ -166,32 +166,35 @@ test('npm package throws EmptyResultError on 404', () =>
 // ---------------------------------------------------------------------------
 // npm versions
 // ---------------------------------------------------------------------------
-test('npm versions returns rows newest first', async () => {
-    const req = fakeRequest(REGISTRY_PAYLOAD);
-    const rows = await versionsNpm({ name: 'exlib', limit: 10 }, req);
-    assert.equal(rows.length, 2);
-    assert.equal(rows[0].version, '2.1.0');
-    assert.equal(rows[0].publishedAt, '2026-06-15');
-    assert.equal(rows[0].isLatest, true);
-    assert.ok(rows[0].url.includes('2.1.0'));
-    assert.equal(rows[1].version, '2.0.0');
-    assert.equal(rows[1].isLatest, false);
-});
+test('npm versions returns rows newest first', () =>
+    withFetch(REGISTRY_PAYLOAD, async () => {
+        const rows = await versionsNpm({ name: 'exlib', limit: 10 });
+        assert.equal(rows.length, 2);
+        assert.equal(rows[0].version, '2.1.0');
+        assert.equal(rows[0].publishedAt, '2026-06-15');
+        assert.equal(rows[0].isLatest, true);
+        assert.ok(rows[0].url.includes('2.1.0'));
+        assert.equal(rows[1].version, '2.0.0');
+        assert.equal(rows[1].isLatest, false);
+    }),
+);
 
-test('npm versions strips created/modified bookkeeping keys', async () => {
-    const req = fakeRequest(REGISTRY_PAYLOAD);
-    const rows = await versionsNpm({ name: 'exlib', limit: 50 }, req);
-    assert.ok(rows.every((r) => r.version !== 'created' && r.version !== 'modified'));
-});
+test('npm versions strips created/modified bookkeeping keys', () =>
+    withFetch(REGISTRY_PAYLOAD, async () => {
+        const rows = await versionsNpm({ name: 'exlib', limit: 50 });
+        assert.ok(rows.every((r) => r.version !== 'created' && r.version !== 'modified'));
+    }),
+);
 
-test('npm versions respects --limit', async () => {
-    const req = fakeRequest(REGISTRY_PAYLOAD);
-    const rows = await versionsNpm({ name: 'exlib', limit: 1 }, req);
-    assert.equal(rows.length, 1);
-    assert.equal(rows[0].version, '2.1.0');
-});
+test('npm versions respects --limit', () =>
+    withFetch(REGISTRY_PAYLOAD, async () => {
+        const rows = await versionsNpm({ name: 'exlib', limit: 1 });
+        assert.equal(rows.length, 1);
+        assert.equal(rows[0].version, '2.1.0');
+    }),
+);
 
-test('npm versions sorts correctly when two versions share the same date', async () => {
+test('npm versions sorts correctly when two versions share the same date', () => {
     // Regression: sort must use the full ISO timestamp, not the truncated
     // date-only string, so same-day releases still come out newest-first.
     const sameDayPayload = {
@@ -210,26 +213,62 @@ test('npm versions sorts correctly when two versions share the same date', async
             '0.0.1-ghost': '2026-06-15T06:00:00.000Z',  // time-only, no body.versions entry
         },
     };
-    const req = fakeRequest(sameDayPayload);
-    const rows = await versionsNpm({ name: 'exlib', limit: 10 }, req);
-    // ghost entry must be excluded
-    assert.equal(rows.length, 2);
-    // 2.1.1 published at 14:00 must come before 2.1.0 published at 08:00
-    assert.equal(rows[0].version, '2.1.1');
-    assert.equal(rows[1].version, '2.1.0');
-    // Both format to the same date string
-    assert.equal(rows[0].publishedAt, '2026-06-15');
-    assert.equal(rows[1].publishedAt, '2026-06-15');
-    // ghost must not appear at all
-    assert.ok(rows.every((r) => r.version !== '0.0.1-ghost'));
+    return withFetch(sameDayPayload, async () => {
+        const rows = await versionsNpm({ name: 'exlib', limit: 10 });
+        // ghost entry must be excluded
+        assert.equal(rows.length, 2);
+        // 2.1.1 published at 14:00 must come before 2.1.0 published at 08:00
+        assert.equal(rows[0].version, '2.1.1');
+        assert.equal(rows[1].version, '2.1.0');
+        // Both format to the same date string
+        assert.equal(rows[0].publishedAt, '2026-06-15');
+        assert.equal(rows[1].publishedAt, '2026-06-15');
+        // ghost must not appear at all
+        assert.ok(rows.every((r) => r.version !== '0.0.1-ghost'));
+    });
 });
 
-test('npm versions rejects out-of-range limit', async () => {
-    await assert.rejects(
-        () => versionsNpm({ name: 'exlib', limit: 51 }, fakeRequest(REGISTRY_PAYLOAD)),
-        /50/,
-    );
+test('npm versions filters out prereleases by default and includes them with flag', () => {
+    const prereleasePayload = {
+        name: 'exlib',
+        'dist-tags': { latest: '2.1.0' },
+        versions: {
+            '2.0.0': { description: 'v2.0.0' },
+            '2.1.0': { description: 'v2.1.0' },
+            '2.2.0-beta.0': { description: 'v2.2.0-beta.0' },
+        },
+        time: {
+            created:        '2025-01-01T00:00:00.000Z',
+            modified:       '2026-07-01T00:00:00.000Z',
+            '2.0.0':        '2025-03-10T08:00:00.000Z',
+            '2.1.0':        '2026-06-15T12:00:00.000Z',
+            '2.2.0-beta.0': '2026-07-01T00:00:00.000Z',
+        },
+    };
+    return withFetch(prereleasePayload, async () => {
+        // By default, prerelease (2.2.0-beta.0) is filtered out
+        const defaultRows = await versionsNpm({ name: 'exlib', limit: 10 });
+        assert.equal(defaultRows.length, 2);
+        assert.equal(defaultRows[0].version, '2.1.0');
+        assert.equal(defaultRows[1].version, '2.0.0');
+
+        // With prereleases: true flag, prereleases are returned
+        const allRows = await versionsNpm({ name: 'exlib', limit: 10, prereleases: true });
+        assert.equal(allRows.length, 3);
+        assert.equal(allRows[0].version, '2.2.0-beta.0');
+        assert.equal(allRows[1].version, '2.1.0');
+        assert.equal(allRows[2].version, '2.0.0');
+    });
 });
+
+test('npm versions rejects out-of-range limit', () =>
+    withFetch(REGISTRY_PAYLOAD, async () => {
+        await assert.rejects(
+            () => versionsNpm({ name: 'exlib', limit: 51 }),
+            /50/,
+        );
+    }),
+);
 
 // ---------------------------------------------------------------------------
 // npm downloads

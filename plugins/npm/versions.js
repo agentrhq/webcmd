@@ -6,11 +6,11 @@ import { cli, Strategy } from '@agentrhq/webcmd/registry';
 import { EmptyResultError } from '@agentrhq/webcmd/errors';
 import { NPM_REGISTRY, npmFetch, requireBoundedInt, requirePackageName } from './utils.js';
 
-export async function versionsNpm(args, request = fetch) {
+export async function versionsNpm(args) {
     const name = requirePackageName(args.name);
     const limit = requireBoundedInt(args.limit ?? 10, 10, 50);
     const url = `${NPM_REGISTRY}/${name.split('/').map(encodeURIComponent).join('/')}`;
-    const body = await npmFetch(url, `npm versions ${name}`, request);
+    const body = await npmFetch(url, `npm versions ${name}`);
 
     const timeMap = body?.time && typeof body.time === 'object' ? body.time : {};
     const versionsMap = body?.versions && typeof body.versions === 'object' ? body.versions : {};
@@ -22,6 +22,8 @@ export async function versionsNpm(args, request = fetch) {
         // only keep versions that actually exist in body.versions — time-only
         // keys (e.g. unpublished entries) have no real release and must be omitted
         .filter(([version, publishedAt]) => version in versionsMap && typeof publishedAt === 'string')
+        // filter out prereleases by default (they contain a hyphen, e.g. 19.0.0-rc.0)
+        .filter(([version]) => args.prereleases || !version.includes('-'))
         // sort on the raw full ISO timestamp BEFORE formatting so that two
         // versions published on the same calendar date still sort correctly
         .sort(([, left], [, right]) => String(right ?? '').localeCompare(String(left ?? '')))
@@ -50,6 +52,7 @@ cli({
     args: [
         { name: 'name', positional: true, required: true, help: 'npm package name (e.g. "react", "@vercel/og")' },
         { name: 'limit', type: 'int', default: 10, help: 'Maximum versions to return (1-50)' },
+        { name: 'prereleases', type: 'boolean', default: false, help: 'Include prerelease and build versions (e.g. alpha, beta, rc, canary)' },
     ],
     columns: ['version', 'publishedAt', 'isLatest', 'url'],
     func: (args) => versionsNpm(args),
