@@ -192,36 +192,3 @@ export async function blueskyPosts(handle, limit) {
     };
   });
 }
-
-// --- Reddit (public JSON search API, no auth) ---
-export async function redditSearch(query, limit) {
-  const url = new URL('https://www.reddit.com/search.json');
-  url.searchParams.set('q', query);
-  url.searchParams.set('sort', 'relevance');
-  url.searchParams.set('type', 'link');
-  url.searchParams.set('limit', String(Math.min(limit, 100)));
-  const res = await get(url, {
-    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; OmniSearch/0.1; +https://github.com/agentrhq/webcmd)' },
-    signal: AbortSignal.timeout(10_000),
-  }, { source: 'Reddit' });
-  const json = await res.json();
-  const children = Array.isArray(json?.data?.children) ? json.data.children : [];
-  return children
-    .filter((child) => child?.data && typeof child.data === 'object' && !Array.isArray(child.data))
-    .slice(0, limit)
-    .map((child) => {
-    const d = child?.data ?? {};
-    const createdAt = new Date(d.created_utc ? Number(d.created_utc) * 1000 : NaN);
-    return {
-      platform: 'reddit',
-      title: String(d.title ?? '').trim(),
-      author: String(d.author ?? ''),
-      score: d.score ?? 0,
-      commentCount: d.num_comments ?? 0,
-      createdAt: Number.isNaN(createdAt.getTime()) ? '' : createdAt.toISOString(),
-      url: d.url ? String(d.url) : `https://www.reddit.com${d.permalink ?? ''}`,
-      text: String(d.selftext ?? '').slice(0, 200),
-    };
-  });
-}
-
