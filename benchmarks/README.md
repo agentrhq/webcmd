@@ -1,8 +1,7 @@
-# BU Bench: Browser Agent Accuracy and Efficiency
+# BU Bench V1: Engineering a Leaner Browser Agent
 
 Webcmd had the highest accuracy, lowest API-equivalent cost, and fewest agent
-turns in this controlled 100-task comparison. It did this while using almost
-the same number of tokens as dev-browser, the lowest-token run.
+turns in this controlled 100-task comparison.
 
 ## Results
 
