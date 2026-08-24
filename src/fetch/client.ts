@@ -2,7 +2,7 @@ import { ProxyAgent } from 'undici';
 import { Impit } from 'impit';
 import { CliError, TimeoutError } from '../errors.js';
 import { extractFetchedContent, type ExtractFetchedContentResult } from './extract.js';
-import { createSafeProxy, type SafeProxy } from './safe-proxy.js';
+import { createSafeProxy, isSafeFetchHostname, normalizeFetchHostname, type SafeProxy } from './safe-proxy.js';
 import { isChallengeResponse, isJavaScriptShell } from './classify.js';
 
 export interface WebFetchOptions { url: string; timeoutSeconds: number; maxChars: number; allowPrivate: boolean; raw?: boolean; signal?: AbortSignal; }
@@ -59,6 +59,7 @@ function truncate(content: string, limit: number, raw = false): { content: strin
 
 export async function webFetch(options: WebFetchOptions, dependencies: WebFetchDependencies = {}): Promise<WebFetchResult> {
   if (options.signal?.aborted) throw options.signal.reason ?? new Error('The operation was aborted.');
+  assertSafeFetchUrl(options.url, options.allowPrivate);
   const deadline = Date.now() + options.timeoutSeconds * 1000;
   const proxy = await (dependencies.createSafeProxy ?? createSafeProxy)({ allowPrivate: options.allowPrivate });
   const remaining = () => { const ms = deadline - Date.now(); if (ms <= 0) throw new TimeoutError('web fetch', options.timeoutSeconds); return ms; };
@@ -74,7 +75,7 @@ export async function webFetch(options: WebFetchOptions, dependencies: WebFetchD
         const transport = browser
           ? (url: string) => impit!.fetch(url, { redirect: 'manual', timeout: remaining(), ...(options.signal ? { signal: options.signal } : {}) })
           : (url: string) => plainFetch(url, { redirect: 'manual', dispatcher: new ProxyAgent(proxy.url), signal: requestSignal(options.signal, timeout) });
-        const { response, finalUrl } = await fetchRedirects(transport, options.url, deadline, options.timeoutSeconds, options.signal);
+        const { response, finalUrl } = await fetchRedirects(transport, options.url, deadline, options.timeoutSeconds, options.allowPrivate, options.signal);
         const policyError = proxy.policyError();
         if (policyError) throw new CliError('FETCH_UNSAFE_ADDRESS', policyError.message);
         const body = await readBody(response, deadline, options.timeoutSeconds, options.signal);
@@ -125,11 +126,13 @@ async function fetchRedirects(
   requestedUrl: string,
   deadline: number,
   timeoutSeconds: number,
+  allowPrivate: boolean,
   signal?: AbortSignal,
 ): Promise<{ response: ResponseLike; finalUrl: string }> {
   let current = requestedUrl;
   for (let redirects = 0; ; redirects += 1) {
     if (signal?.aborted) throw signal.reason ?? new Error('The operation was aborted.');
+    assertSafeFetchUrl(current, allowPrivate);
     const response = await beforeDeadline(fetcher(current), deadline, timeoutSeconds, signal);
     const location = response.headers.get('location');
     if (!REDIRECT_STATUSES.has(response.status) || !location) return { response, finalUrl: response.url || current };
@@ -140,6 +143,14 @@ async function fetchRedirects(
       throw new CliError('FETCH_UNSAFE_REDIRECT', `Unsafe fetch redirect protocol: ${next.protocol}`);
     }
     current = next.href;
+  }
+}
+
+function assertSafeFetchUrl(value: string, allowPrivate: boolean): void {
+  if (allowPrivate) return;
+  const hostname = normalizeFetchHostname(new URL(value).hostname);
+  if (!isSafeFetchHostname(hostname)) {
+    throw new CliError('FETCH_UNSAFE_ADDRESS', `Unsafe fetch destination: ${hostname}`);
   }
 }
 

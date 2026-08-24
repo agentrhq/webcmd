@@ -6,6 +6,23 @@ import type { Duplex } from 'node:stream';
 export interface SafeProxy { url: string; close(): Promise<void>; policyError(): Error | undefined; }
 export interface SafeProxyOptions { allowPrivate?: boolean; lookup?: typeof dnsLookup; }
 
+const BLOCKED_FETCH_HOSTS = new Set(['localhost', 'ip6-localhost', 'instance-data']);
+const BLOCKED_FETCH_HOST_SUFFIXES = ['.internal', '.local', '.localhost'];
+
+export function normalizeFetchHostname(hostname: string): string {
+  return hostname.replace(/^\[|\]$/g, '').toLowerCase().replace(/\.+$/, '');
+}
+
+export function isSafeFetchHostname(hostname: string): boolean {
+  const normalized = normalizeFetchHostname(hostname);
+  if (
+    normalized === ''
+    || BLOCKED_FETCH_HOSTS.has(normalized)
+    || BLOCKED_FETCH_HOST_SUFFIXES.some(suffix => normalized.endsWith(suffix))
+  ) return false;
+  return net.isIP(normalized) === 0 || isSafeAddress(normalized);
+}
+
 export function isSafeAddress(address: string): boolean {
   const unscoped = address.split('%', 1)[0]!;
   if (net.isIPv4(unscoped)) return isSafeIpv4(unscoped.split('.').map(Number));
@@ -87,19 +104,22 @@ function embeddedIpv4(words: number[]): number[] | undefined {
 }
 
 function unbracketHost(host: string): string {
-  return host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
+  return normalizeFetchHostname(host);
 }
 
 async function resolve(host: string, lookup: typeof dnsLookup, allowPrivate: boolean): Promise<string> {
-  if (net.isIP(host)) {
-    if (!allowPrivate && !isSafeAddress(host)) throw new Error(`Unsafe fetch destination: ${host}`);
-    return host;
+  const normalizedHost = normalizeFetchHostname(host);
+  if (!allowPrivate && !isSafeFetchHostname(normalizedHost)) {
+    throw new Error(`Unsafe fetch destination: ${normalizedHost}`);
+  }
+  if (net.isIP(normalizedHost)) {
+    return normalizedHost;
   }
   const addresses = await new Promise<Array<{ address: string; family: number }>>((resolveLookup, reject) => {
-    lookup(host, { all: true, verbatim: true }, (error, result) => error ? reject(error) : resolveLookup(result));
+    lookup(normalizedHost, { all: true, verbatim: true }, (error, result) => error ? reject(error) : resolveLookup(result));
   });
   if (!addresses.length || (!allowPrivate && addresses.some(({ address }) => !isSafeAddress(address)))) {
-    throw new Error(`Unsafe fetch destination: ${host}`);
+    throw new Error(`Unsafe fetch destination: ${normalizedHost}`);
   }
   return addresses[0]!.address;
 }

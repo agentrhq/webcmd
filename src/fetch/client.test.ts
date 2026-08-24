@@ -39,6 +39,35 @@ describe('webFetch', () => {
     expect(result).toMatchObject({ tier: 'plain', content: 'ok' });
     expect(createImpit).not.toHaveBeenCalled();
   });
+  it.each([
+    ['http://metadata.google.internal/computeMetadata/v1/', 'metadata.google.internal'],
+    ['http://MeTaDaTa.GoOgLe.InTeRnAl./computeMetadata/v1/', 'metadata.google.internal'],
+    ['http://metadata.azure.internal/metadata/instance', 'metadata.azure.internal'],
+    ['http://instance-data/latest/meta-data/', 'instance-data'],
+  ])('rejects metadata hostname %s before creating a proxy or fetching', async (url, normalizedHost) => {
+    const plainFetch = vi.fn();
+    const createSafeProxy = vi.fn();
+    await expect(webFetch({ url, timeoutSeconds: 5, maxChars: 0, allowPrivate: false }, {
+      plainFetch,
+      createImpit: vi.fn(),
+      createSafeProxy,
+    })).rejects.toMatchObject({
+      code: 'FETCH_UNSAFE_ADDRESS',
+      message: `Unsafe fetch destination: ${normalizedHost}`,
+    });
+    expect(createSafeProxy).not.toHaveBeenCalled();
+    expect(plainFetch).not.toHaveBeenCalled();
+  });
+  it('does not overblock an ordinary public hostname containing metadata', async () => {
+    const plainFetch = vi.fn().mockResolvedValue(response('public metadata docs'));
+    const result = await webFetch({ url: 'https://metadata.example.com/docs', timeoutSeconds: 5, maxChars: 0, allowPrivate: false }, {
+      plainFetch,
+      createImpit: vi.fn(),
+      createSafeProxy: async () => safeProxy(),
+    });
+    expect(result.content).toBe('public metadata docs');
+    expect(plainFetch).toHaveBeenCalledOnce();
+  });
   it('follows public redirects manually through the same safe proxy', async () => {
     const plainFetch = vi.fn()
       .mockResolvedValueOnce(response('', 302, { location: '/final' }))

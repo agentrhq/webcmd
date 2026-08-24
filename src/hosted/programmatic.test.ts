@@ -106,6 +106,22 @@ describe('runHostedProgrammatic', () => {
     expect(publicFetch).not.toHaveBeenCalled();
   });
 
+  it('returns a stable unsafe-address failure for a normalized metadata hostname without public fetch', async () => {
+    const publicFetch = vi.spyOn(globalThis, 'fetch');
+    const result = await runHostedProgrammatic({
+      argv: ['web', 'fetch', '--url', 'http://MeTaDaTa.GoOgLe.InTeRnAl./computeMetadata/v1/'],
+      apiBaseUrl: 'http://127.0.0.1:8787',
+      accessToken: 'oauth-access-token',
+      fetchImpl: fakeCloud(),
+      enableServerWebFetch: true,
+    });
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain('code: FETCH_UNSAFE_ADDRESS');
+    expect(result.stderr).toContain('Unsafe fetch destination: metadata.google.internal');
+    expect(result).toMatchObject({ resolvedCommand: 'web/fetch', accessClass: 'read' });
+    expect(publicFetch).not.toHaveBeenCalled();
+  });
+
   it('propagates caller cancellation through hosted web fetch as exit 130', async () => {
     const controller = new AbortController();
     let started!: () => void;
