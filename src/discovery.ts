@@ -38,8 +38,50 @@ export const USER_WEBCMD_DIR = getUserWebcmdDir();
 export const USER_CLIS_DIR = getUserClisDir();
 /** Plugins directory: ~/.webcmd/plugins/ */
 export const PLUGINS_DIR = getPluginsDir();
-/** Matches files that register commands via cli() or lifecycle hooks */
-const PLUGIN_MODULE_PATTERN = /\b(?:cli|registerSiteAuthCommands|onStartup|onBeforeExecute|onAfterExecute)\s*\(/;
+/**
+ * Adapter files that failed to import, so run-time errors can name the real
+ * cause instead of claiming the site is not installed.
+ */
+const loadFailures: Array<{ site: string; file: string; error: string }> = [];
+
+export function getAdapterLoadFailures(): ReadonlyArray<{ site: string; file: string; error: string }> {
+  return loadFailures;
+}
+
+/**
+ * Gate discovery on the runtime IMPORT, not on call syntax.
+ *
+ * A file can only register anything by importing the runtime, so this catches
+ * every authoring style — cli(), registerSiteAuthCommands(), hooks — instead of
+ * the old `\bcli\s*\(` source regex, which missed real calls it didn't enumerate
+ * and matched comments and strings that were not calls at all. Helper modules
+ * that never import the runtime are still skipped, so their side effects do not
+ * run at startup.
+ */
+const RUNTIME_IMPORT_PATTERN = new RegExp(
+  `${PACKAGE_NAME}/(?:registry|plugin-runtime|hooks)|/(?:registry|registry-api|plugin-runtime|hooks)\\.[jt]s['"\`]`,
+);
+
+async function importsRuntime(filePath: string): Promise<boolean> {
+  try {
+    return RUNTIME_IMPORT_PATTERN.test(await fs.promises.readFile(filePath, 'utf-8'));
+  } catch (err) {
+    log.warn(`Failed to inspect module ${filePath}: ${getErrorMessage(err)}`);
+    return false;
+  }
+}
+
+/** Import an adapter file, recording (and warning about) any load failure. */
+async function loadAdapterModule(site: string, filePath: string): Promise<void> {
+  if (!(await importsRuntime(filePath))) return;
+  try {
+    await runWithDiscoverySource(filePath, () => import(pathToFileURL(filePath).href));
+  } catch (err) {
+    const error = getErrorMessage(err);
+    loadFailures.push({ site, file: filePath, error });
+    log.warn(`Failed to load adapter ${filePath}: ${error}`);
+  }
+}
 
 function parseStrategy(rawStrategy: string | undefined, fallback: Strategy = Strategy.COOKIE): Strategy {
   if (!rawStrategy) return fallback;
@@ -260,10 +302,7 @@ async function discoverClisFromFs(dir: string): Promise<void> {
           return;
         }
         if (file.endsWith('.js') && !file.endsWith('.d.js') && !file.endsWith('.test.js')) {
-          if (!(await isCliModule(filePath))) return;
-          await runWithDiscoverySource(filePath, () => import(pathToFileURL(filePath).href)).catch((err) => {
-            log.warn(`Failed to load module ${filePath}: ${getErrorMessage(err)}`);
-          });
+          await loadAdapterModule(site, filePath);
         }
       }));
     });
@@ -286,6 +325,15 @@ export async function discoverPlugins(pluginsDir: string = PLUGINS_DIR): Promise
 }
 
 export function missingPluginGuidance(site: string): string {
+  const failures = loadFailures.filter(failure => failure.site === site);
+  if (failures.length > 0) {
+    return [
+      `Site "${site}" has adapter files that failed to load:`,
+      ...failures.map(failure => `  ${failure.file}\n    ${failure.error}`),
+      `Fix the file, then re-run. Adapters call cli({ ... }) from '${PACKAGE_NAME}/registry'`,
+      `and must declare access: 'read' | 'write' and func.`,
+    ].join('\n');
+  }
   return [
     `Site "${site}" is not installed.`,
     `Search: ${CLI_COMMAND} plugin search ${site}`,
@@ -306,10 +354,7 @@ async function discoverPluginDir(dir: string, site: string): Promise<void> {
       return;
     }
     if (file.endsWith('.js') && !file.endsWith('.d.js')) {
-      if (!(await isCliModule(filePath))) return;
-      await runWithDiscoverySource(filePath, () => import(pathToFileURL(filePath).href)).catch((err) => {
-        log.warn(`Plugin ${site}/${file}: ${getErrorMessage(err)}`);
-      });
+      await loadAdapterModule(site, filePath);
     } else if (
       file.endsWith('.ts') && !file.endsWith('.d.ts') && !file.endsWith('.test.ts')
     ) {
@@ -324,16 +369,6 @@ async function discoverPluginDir(dir: string, site: string): Promise<void> {
       );
     }
   }));
-}
-
-async function isCliModule(filePath: string): Promise<boolean> {
-  try {
-    const source = await fs.promises.readFile(filePath, 'utf-8');
-    return PLUGIN_MODULE_PATTERN.test(source);
-  } catch (err) {
-    log.warn(`Failed to inspect module ${filePath}: ${getErrorMessage(err)}`);
-    return false;
-  }
 }
 
 async function isDiscoverablePluginDir(entry: fs.Dirent, pluginDir: string): Promise<boolean> {

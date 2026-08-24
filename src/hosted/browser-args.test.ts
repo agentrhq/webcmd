@@ -60,6 +60,15 @@ describe('hosted browser argument surface', () => {
     expect(() => parse(['--session', 'session_work', 'browser', 'run', '--tab', 'page-123'])).toThrow(CommanderStructuralError);
   });
 
+  it('accepts --json as a harmless browser run output alias', () => {
+    expect(parse(['--session', 'session_work', 'browser', 'run', '--file', 'job.js', '--json']))
+      .toMatchObject({
+        commandName: 'run',
+        session: 'session_work',
+        options: { file: 'job.js' },
+      });
+  });
+
   it('parses snapshot inspection options', () => {
     expect(parse(['--session', 'session_work', 'browser', 'snapshot', '--snapshot-mode', 'read', '--max-output', '1000']))
       .toMatchObject({

@@ -46,13 +46,25 @@ describe('web fetch command', () => {
   it('accepts hosted root options without importing execution', async () => {
     await runWebFetchCommand(['--profile', 'work', '--workspace', 'test', 'web', 'fetch', '--url', 'https://example.com']);
 
-    expect(mockWebFetch).toHaveBeenCalledWith({ url: 'https://example.com', timeoutSeconds: 30, maxChars: 50_000, allowPrivate: false });
+    expect(mockWebFetch).toHaveBeenCalledWith({ url: 'https://example.com', timeoutSeconds: 30, maxChars: 50_000, allowPrivate: false, raw: false });
   });
 
   it('uses Commander coercion for canonical fetch options', async () => {
     await program().parseAsync(['web', 'fetch', '--url=https://example.com', '--timeout=9', '--max-chars=1200', '--allow-private=false', '--format=json'], { from: 'user' });
 
-    expect(mockWebFetch).toHaveBeenCalledWith({ url: 'https://example.com', timeoutSeconds: 9, maxChars: 1200, allowPrivate: false });
+    expect(mockWebFetch).toHaveBeenCalledWith({ url: 'https://example.com', timeoutSeconds: 9, maxChars: 1200, allowPrivate: false, raw: false });
+  });
+
+  it('passes --raw through to the client and reports raw metadata in markdown', async () => {
+    await program().parseAsync(['web', 'fetch', '--url=https://example.com', '--raw'], { from: 'user' });
+    expect(mockWebFetch).toHaveBeenCalledWith({ url: 'https://example.com', timeoutSeconds: 30, maxChars: 50_000, allowPrivate: false, raw: true });
+    expect(webFetchCommand.args.find(arg => arg.name === 'raw')?.help).toMatch(/raw HTML/i);
+    expect(webFetchCommand.example).toContain('--raw');
+
+    const rawResult = { ...plainResult, contentType: 'text/html', content: '<html></html>', bytes: 13, truncated: true };
+    expect(formatWebFetchMarkdown(rawResult)).toContain('Bytes: 13');
+    expect(formatWebFetchMarkdown(rawResult)).toContain('Truncated: true');
+    expect(formatWebFetchMarkdown(plainResult)).not.toContain('Bytes:');
   });
 
   it('shows help without requiring a URL', async () => {

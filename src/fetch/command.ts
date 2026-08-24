@@ -2,6 +2,8 @@ import { Command } from 'commander';
 import { cli, Strategy, type CommandArgs } from '../registry.js';
 import { registerCommandToProgram } from '../commanderAdapter.js';
 import { configureRootCommandSurface } from '../root-command-surface.js';
+import { applyUnknownOptionContract } from '../command-surface.js';
+import { handleProgramParseError } from '../cli-error-report.js';
 import { ArgumentError } from '../errors.js';
 import type { WebFetchOptions, WebFetchResult } from './client.js';
 
@@ -9,12 +11,14 @@ export const webFetchCommand = cli({
   site: 'web', name: 'fetch', access: 'read', strategy: Strategy.PUBLIC, browser: false,
   clientOwned: true,
   description: 'Fetch a URL with local HTTP clients. Use after a blocked, 403, or Cloudflare response; never opens a browser.', defaultFormat: 'md',
+  example: 'webcmd web fetch --url https://example.com --raw -f json',
   renderMarkdown: data => (isWebFetchResult(data) ? formatWebFetchMarkdown(data) : undefined),
   args: [
     { name: 'url', type: 'string', required: true, help: 'HTTP or HTTPS URL to fetch' },
     { name: 'timeout', type: 'int', default: 30, help: 'Total fetch budget in seconds' },
     { name: 'max-chars', type: 'int', default: 50_000, help: 'Maximum extracted characters; 0 disables truncation' },
     { name: 'allow-private', type: 'boolean', default: false, help: 'Allow private and loopback destinations' },
+    { name: 'raw', type: 'boolean', default: false, help: 'Return the raw HTML response body instead of extracted article text; use this for CSS selector discovery, meta tags, and inline script payloads' },
   ],
   validateArgs: validateWebFetchArgs,
   func: async (kwargs) => {
@@ -28,7 +32,14 @@ export async function runWebFetchCommand(argv: string[]): Promise<void> {
   const program = configureRootCommandSurface(new Command('webcmd'))
     .option('--workspace <id>', 'Hosted workspace id/slug for the request');
   registerCommandToProgram(program.command('web'), webFetchCommand);
-  await program.parseAsync(argv, { from: 'user' });
+  // Same structural-error contract as runCli: this fast path skips cli.ts, but
+  // a usage mistake here must still exit 2 with the shared envelope.
+  applyUnknownOptionContract(program);
+  try {
+    await program.parseAsync(argv, { from: 'user' });
+  } catch (err) {
+    handleProgramParseError(err);
+  }
 }
 
 function clientOptionsFromKwargs(kwargs: CommandArgs): WebFetchOptions {
@@ -37,6 +48,7 @@ function clientOptionsFromKwargs(kwargs: CommandArgs): WebFetchOptions {
     timeoutSeconds: Number(kwargs.timeout ?? 30),
     maxChars: Number(kwargs['max-chars'] ?? 50000),
     allowPrivate: kwargs['allow-private'] === true,
+    raw: kwargs.raw === true,
   };
 }
 
@@ -54,5 +66,5 @@ function isWebFetchResult(data: unknown): data is WebFetchResult {
 }
 
 export function formatWebFetchMarkdown(result: WebFetchResult): string {
-  return [`# ${result.title || 'Fetched content'}`, '', `Source: ${result.requestedUrl}`, `Final URL: ${result.finalUrl}`, `Content type: ${result.contentType || 'unknown'}`, `Extraction: ${result.extractionSource}`, '', result.content].join('\n');
+  return [`# ${result.title || 'Fetched content'}`, '', `Source: ${result.requestedUrl}`, `Final URL: ${result.finalUrl}`, `Content type: ${result.contentType || 'unknown'}`, `Extraction: ${result.extractionSource}`, ...(result.bytes === undefined ? [] : [`Bytes: ${result.bytes}`, `Truncated: ${result.truncated}`]), '', result.content].join('\n');
 }

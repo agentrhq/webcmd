@@ -114,6 +114,16 @@ afterAll(async () => {
     expect(output).not.toHaveProperty('snapshotDiff');
   });
 
+  it('warns when a successful run captures no result, logs, page diff, or artifacts', async () => {
+    const output = await run('await Promise.resolve();', { snapshotDiff: false });
+
+    expect(output.result).toBeNull();
+    expect(output.warnings).toContainEqual(expect.objectContaining({
+      code: 'BROWSER_RUN_NO_CAPTURE',
+      message: expect.stringContaining('return structured data'),
+    }));
+  });
+
   it('clears a cached snapshot baseline when snapshotDiff is disabled', async () => {
     const snapshotBaselineStore = new MemorySnapshotBaselineStore();
     await run(`
@@ -897,6 +907,15 @@ afterAll(async () => {
     });
   });
 
+  it('returns a typed hint for Node-only require/fs attempts in the sandbox', async () => {
+    const error = await runError("const fs = require('fs'); return fs.readFileSync('/tmp/x', 'utf8');");
+
+    expect(error).toMatchObject({
+      code: 'BROWSER_RUN_API_UNSUPPORTED',
+      hint: expect.stringContaining('Node require/fs are not available'),
+    });
+  });
+
   it('cancels an in-flight protocol wait without closing browser state', async () => {
     await expect(run(`
       await page.waitForEvent('popup');
@@ -924,6 +943,16 @@ afterAll(async () => {
       code: 'BROWSER_RUN_TIMEOUT',
       hint: POPUP_WAIT_TIMEOUT_HINT,
     });
+  });
+
+  it('names the data: URL block in the popup hint', () => {
+    // Chrome refuses top-level data: navigation, so window.open('data:...')
+    // creates no target and no popup event ever fires — while still returning a
+    // Window object, which is why page code looks like it worked. An agent that
+    // is not told this retries the same click.
+    expect(POPUP_WAIT_TIMEOUT_HINT).toContain('data:');
+    expect(POPUP_WAIT_TIMEOUT_HINT).toContain('context.newPage()');
+    expect(POPUP_WAIT_TIMEOUT_HINT).not.toMatch(/page\.goto on the current page/);
   });
 
   it('cancels an in-flight run through its abort signal', async () => {

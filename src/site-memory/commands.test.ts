@@ -27,6 +27,14 @@ function program(store: SiteMemoryBackend, io?: { readStdin?: () => Promise<stri
 }
 
 describe('site memory format flags', () => {
+  it('documents the site argument grammar in site-memory help', () => {
+    const help = program(backend()).commands.find(command => command.name() === 'site')!.helpInformation();
+
+    expect(help).toContain('webcmd site <group> <verb> <site>');
+    expect(help).toContain('Right: webcmd site field-map add example.com price');
+    expect(help).toContain("Agent tip: use '--help -f yaml'");
+  });
+
   it('accepts -f json on site fixture get', async () => {
     const store = backend();
     await program(store).parseAsync(['site', 'fixture', 'get', 'quotes-toscrape/list', '-f', 'json'], { from: 'user' });
@@ -42,6 +50,23 @@ describe('site memory format flags', () => {
     const store = backend();
     await program(store).parseAsync(argv, { from: 'user' });
     expect(vi.mocked(store.show).mock.calls.length + vi.mocked(store.list).mock.calls.length).toBeGreaterThan(0);
+  });
+
+  it.each([
+    { argv: ['site', 'note', 'add', 'quotes-toscrape', '--text', 'hi'], expected: { ok: true, action: 'note add', site: 'quotes-toscrape' } },
+    { argv: ['site', 'endpoint', 'stale', 'quotes-toscrape', 'listing'], expected: { ok: true, action: 'endpoint stale', site: 'quotes-toscrape', endpoint: 'listing' } },
+    { argv: ['site', 'field-map', 'add', 'quotes-toscrape', 'q', '--meaning', 'quote', '--source', 'dom'], expected: { ok: true, action: 'field-map add', site: 'quotes-toscrape', key: 'q' } },
+  ])('renders a structured result for write command $argv.1 $argv.2', async ({ argv, expected }) => {
+    const logged: unknown[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation((value: unknown) => { logged.push(value); });
+    try {
+      await program(backend()).parseAsync(argv, { from: 'user' });
+      expect(logged).toEqual([]);
+      await program(backend()).parseAsync([...argv, '--json'], { from: 'user' });
+      expect(JSON.parse(String(logged[0]))).toEqual(expected);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('rejects unknown flags with the valid set including --format and --json', async () => {
@@ -71,6 +96,44 @@ describe('site fixture put --stdin', () => {
     await program(store, { readStdin: async () => '{"ok":true}' })
       .parseAsync(['site', 'sample', 'add', 'quotes-toscrape/list', '-'], { from: 'user' });
     expect(store.sample).toHaveBeenCalledWith('quotes-toscrape', 'list', '{"ok":true}');
+  });
+});
+
+describe('site command help coverage', () => {
+  function walk(command: Command): Command[] {
+    return command.commands
+      .filter(child => child.name() !== 'help')
+      .flatMap(child => [child, ...walk(child)]);
+  }
+
+  const site = program(backend()).commands.find(command => command.name() === 'site')!;
+
+  it('gives every command in the site tree a description', () => {
+    const missing = walk(site).filter(command => command.description().trim() === '');
+    expect(missing.map(command => command.name())).toEqual([]);
+  });
+
+  it('gives every site option and positional a help string', () => {
+    const missing: string[] = [];
+    for (const command of walk(site)) {
+      for (const option of command.options) {
+        if (!option.description) missing.push(`${command.name()} ${option.flags}`);
+      }
+      for (const arg of command.registeredArguments) {
+        if (!arg.description) missing.push(`${command.name()} <${arg.name()}>`);
+      }
+    }
+    expect(missing).toEqual([]);
+  });
+
+  it('documents --text and the site-before-flags order on site note add', () => {
+    const help = site.commands.find(command => command.name() === 'note')!
+      .commands.find(command => command.name() === 'add')!
+      .helpInformation();
+
+    expect(help).toContain('--text <markdown>');
+    expect(help).toMatch(/Usage: .*note add \[options\] <site>/);
+    expect(help).toContain('Example: webcmd site note add example.com --text');
   });
 });
 

@@ -133,3 +133,49 @@ describe('management commands E2E', () => {
     expect(code).toBe(2);
   });
 });
+
+describe('session close E2E', () => {
+  const NEVER_EXISTED = 'session_00000000-0000-0000-0000-000000000000';
+
+  it('accepts the root --session selector and the command it used to suggest', async () => {
+    // Old behaviour: this errored with SESSION_SELECTOR_POSITION and suggested
+    // `webcmd --session <id> session close`, which then failed on the missing
+    // positional. Both spellings must now work.
+    const viaFlag = await runManagementCli(['session', 'close', '--session', NEVER_EXISTED]);
+    expect(viaFlag.stderr).not.toMatch(/SESSION_SELECTOR_POSITION|missing required argument/);
+    expect(viaFlag.code).toBe(0);
+
+    const viaRootSelector = await runManagementCli(['--session', NEVER_EXISTED, 'session', 'close']);
+    expect(viaRootSelector.stderr).not.toMatch(/missing required argument/);
+    expect(viaRootSelector.code).toBe(0);
+  });
+
+  it('is idempotent for an unknown Session ID', async () => {
+    const { stdout, code } = await runManagementCli(['session', 'close', NEVER_EXISTED, '-f', 'json']);
+    expect(code).toBe(0);
+    expect(parseJsonOutput(stdout)).toMatchObject({ ok: true, closed: false, alreadyClosed: true, session: NEVER_EXISTED });
+  });
+
+  it('closes a real Session twice without failing', async () => {
+    const created = await runManagementCli(['session', 'create', '-f', 'json']);
+    expect(created.code).toBe(0);
+    const sessionId = parseJsonOutput(created.stdout).id as string;
+    for (const attempt of [1, 2]) {
+      const { code } = await runManagementCli(['session', 'close', sessionId]);
+      expect(code, `close attempt ${attempt}`).toBe(0);
+    }
+  });
+
+  it('still rejects a malformed selector as a usage error', async () => {
+    const { code, stderr, stdout } = await runManagementCli(['session', 'close', 'badid']);
+    expect(code).toBe(2);
+    expect(stdout + stderr).toContain('INVALID_SESSION_SELECTOR');
+  });
+
+  it('names both accepted forms when no Session ID is given', async () => {
+    const { code, stdout, stderr } = await runManagementCli(['session', 'close']);
+    expect(code).toBe(2);
+    expect(stdout + stderr).toContain('session close <session-id>');
+    expect(stdout + stderr).toContain('--session <session-id> session close');
+  });
+});

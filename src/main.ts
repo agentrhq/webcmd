@@ -145,7 +145,7 @@ if (getCompIdx !== -1) {
 const { discoverClis, discoverPlugins, ensureUserCliCompatShims, ensureUserAdapters, PLUGINS_DIR } = await import('./discovery.js');
 const { getCompletions } = await import('./completion.js');
 const { runCli } = await import('./cli.js');
-const { emitHook } = await import('./hooks.js');
+const { emitHook, shouldEmitStartupHook, shouldRunStartupSideEffects } = await import('./hooks.js');
 const { installNodeNetwork } = await import('./node-network.js');
 const { registerUpdateNoticeOnExit, checkForUpdateBackground } = await import('./update-check.js');
 
@@ -158,22 +158,25 @@ installNodeNetwork();
 //    overrides, and registerCommand is last-write-wins, so loading it after
 //    plugins is what makes an override actually take effect.
 const skipUserDiscovery = argv[0] === 'convention-audit';
+const runStartupSideEffects = shouldRunStartupSideEffects(argv);
 if (skipUserDiscovery) {
   await discoverClis(BUILTIN_CLIS);
 } else {
   const [, ,] = await Promise.all([
-    ensureUserCliCompatShims(),
-    ensureUserAdapters(),
+    runStartupSideEffects ? ensureUserCliCompatShims() : Promise.resolve(),
+    runStartupSideEffects ? ensureUserAdapters() : Promise.resolve(),
     discoverClis(BUILTIN_CLIS),
   ]);
   await discoverPlugins(PLUGINS_DIR);
   await discoverClis(USER_CLIS);
 }
 
-// Register exit hook: notice appears after command output (same as npm/gh/yarn)
-registerUpdateNoticeOnExit();
-// Kick off background fetch for next run (non-blocking)
-checkForUpdateBackground();
+if (runStartupSideEffects) {
+  // Register exit hook: notice appears after command output (same as npm/gh/yarn)
+  registerUpdateNoticeOnExit();
+  // Kick off background fetch for next run (non-blocking)
+  checkForUpdateBackground();
+}
 
 // ── Fallback completion: manifest unavailable, use full registry ─────────
 if (getCompIdx !== -1) {
@@ -210,6 +213,8 @@ try {
   throw err;
 }
 
-await emitHook('onStartup', { command: '__startup__', args: {} });
+if (shouldEmitStartupHook(argv)) {
+  await emitHook('onStartup', { command: '__startup__', args: {} });
+}
 await runCli(BUILTIN_CLIS, USER_CLIS);
 }

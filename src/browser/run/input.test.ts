@@ -49,6 +49,7 @@ describe('loadBrowserRunSource', () => {
       fakeIo({ stdin: ' \n\t' }),
     )).rejects.toMatchObject({
       code: 'BROWSER_RUN_INVALID_INPUT',
+      hint: expect.stringContaining('return structured data'),
     });
   });
 

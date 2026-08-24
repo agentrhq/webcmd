@@ -2336,3 +2336,24 @@ describe('listPlugins override reporting', () => {
     });
   });
 });
+
+describe('invalid plugin source', () => {
+  it('flags a bare plugin name so the CLI can resolve its installSource', () => {
+    expect(pluginModule.looksLikePluginName('openfda')).toBe(true);
+    expect(pluginModule.looksLikePluginName('rest-countries')).toBe(true);
+    // Anything with a scheme, slash or space is a malformed source, not a name.
+    expect(pluginModule.looksLikePluginName('github:user/repo')).toBe(false);
+    expect(pluginModule.looksLikePluginName('/abs/path')).toBe(false);
+    expect(pluginModule.looksLikePluginName('some junk')).toBe(false);
+  });
+
+  it('raises InvalidPluginSourceError carrying the source', () => {
+    expect(() => pluginModule.installPlugin('openfda')).toThrow(pluginModule.InvalidPluginSourceError);
+    try {
+      pluginModule.installPlugin('openfda');
+    } catch (err) {
+      expect((err as pluginModule.InvalidPluginSourceError).source).toBe('openfda');
+      expect((err as Error).message).toContain('Invalid plugin source: "openfda"');
+    }
+  });
+});

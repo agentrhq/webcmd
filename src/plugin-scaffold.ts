@@ -155,6 +155,10 @@ webcmd plugin install <installSource-from-search>
 
 ## Development
 
+Use \`webcmd browser init <site>/<command>\` for private local adapter iteration.
+Use \`webcmd adapter override <site>/<command>\` to patch an installed command.
+Use this plugin scaffold when you are ready to publish or raise a PR.
+
 \`\`\`bash
 # Install locally for development (symlinked, changes reflect immediately)
 webcmd plugin install file://${targetDir}

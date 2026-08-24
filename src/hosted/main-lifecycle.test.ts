@@ -121,7 +121,7 @@ describe('hosted CLI process lifecycle', () => {
       'Install using the installSource returned by search.',
       '',
     ].join('\n'));
-    expect(result.stdout).toContain('Local-only commands:');
+    expect(result.stdout).toBe('');
     await expect(readFile(fixture.discoverySentinel, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
   }, 20_000);
 
@@ -215,6 +215,19 @@ describe('hosted CLI process lifecycle', () => {
     expect(JSON.parse(local.stdout)).toMatchObject({ content: expect.stringContaining('fixture content') });
     expect(fixture.requests).toEqual([]);
     await expect(readFile(fixture.discoverySentinel, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+  }, 20_000);
+
+  it.each([
+    { name: 'json alias', formatArgs: ['--json'] },
+    { name: 'format option', formatArgs: ['-f', 'json'] },
+  ])('fires plugin onStartup before local command execution with $name', async ({ formatArgs }) => {
+    const fixture = await createLocalStartupPluginFixture();
+
+    const result = await runCli(['startup', 'state', ...formatArgs], fixture.env);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(JSON.parse(result.stdout)).toEqual({ value: 'ready' });
   }, 20_000);
 });
 
@@ -342,6 +355,44 @@ async function createHostedFixture(outcome: 'success' | 'failure' | 'browser'): 
     requests,
     runStarted,
     releaseRun,
+    env: {
+      ...process.env,
+      HOME: root,
+      USERPROFILE: root,
+      WEBCMD_CONFIG_DIR: configDir,
+      WEBCMD_NO_UPDATE_CHECK: '1',
+    },
+  };
+}
+
+async function createLocalStartupPluginFixture(): Promise<{ root: string; env: NodeJS.ProcessEnv }> {
+  const root = await mkdtemp(path.join(tmpdir(), 'webcmd-local-startup-'));
+  tempRoots.push(root);
+  const configDir = path.join(root, 'config');
+  const pluginDir = path.join(root, '.webcmd', 'plugins', 'startup');
+  await mkdir(configDir, { recursive: true });
+  await mkdir(pluginDir, { recursive: true });
+  await writeFile(path.join(configDir, 'config.json'), '{"mode":"local"}\n');
+  await writeFile(path.join(pluginDir, 'state.js'), [
+    "import { cli, onStartup, Strategy } from '@agentrhq/webcmd/registry';",
+    "let value = 'cold';",
+    "onStartup(() => { value = 'ready'; });",
+    'cli({',
+    "  site: 'startup',",
+    "  name: 'state',",
+    "  description: 'Show startup hook state',",
+    "  access: 'read',",
+    '  strategy: Strategy.PUBLIC,',
+    '  browser: false,',
+    '  args: [],',
+    "  columns: ['value'],",
+    '  func: async () => ({ value }),',
+    '});',
+    '',
+  ].join('\n'));
+
+  return {
+    root,
     env: {
       ...process.env,
       HOME: root,
