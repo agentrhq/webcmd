@@ -125,6 +125,24 @@ Beyond website adapters, Webcmd can work through authenticated browser sessions,
 This list is illustrative; availability comes from installed plugins. Ask your
 agent to search and install the relevant plugin when a site is not installed.
 
+## Benchmarks
+
+On the 100-task BU Bench, Webcmd recorded the highest accuracy, lowest
+API-equivalent cost, and fewest agent turns under the same Pi controller,
+model, judge, and CloakBrowser engine.
+
+| Tool | Accuracy ↑ | Total tokens ↓ | Cost ↓ | Agent turns ↓ |
+| --- | ---: | ---: | ---: | ---: |
+| **Webcmd** | **67%** | 3.194M | **$25.20** | **969** |
+| browser-use | 66% | 3.546M | $29.44 | 1,465 |
+| Playwright CLI | 55% | 5.052M | $43.69 | 2,034 |
+| dev-browser | 55% | **3.191M** | $26.00 | 1,504 |
+| agent-browser | 47% | 5.842M | $55.41 | 2,550 |
+
+Each passed task contributes one percentage point. Cost estimates cover the
+controller only; judge usage is excluded. See the [benchmark report](./benchmarks/README.md)
+for category results, methodology, architectural analysis, and reproduction steps.
+
 ## Learn More
 
 Webcmd Cloud can run supported commands and browser sessions on hosted infrastructure. It is in active development and is not yet stable.

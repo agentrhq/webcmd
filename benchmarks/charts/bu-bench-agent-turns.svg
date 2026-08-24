@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="252" viewBox="0 0 760 252" role="img" aria-labelledby="title desc">
+  <title id="title">BU Bench agent turns</title>
+  <desc id="desc">Webcmd used 969 turns, browser-use 1,465, dev-browser 1,504, Playwright CLI 2,034, and agent-browser 2,550.</desc>
+  <style>
+    text { font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; fill: #111827; }
+    .title { font-size: 17px; font-weight: 700; }
+    .note { font-size: 12px; fill: #64748b; }
+    .label { font-size: 13px; fill: #475569; }
+    .webcmd-label { font-weight: 700; fill: #1d4ed8; }
+    .value { font-size: 13px; font-weight: 700; }
+    .track { fill: #e2e8f0; }
+    .bar { fill: #94a3b8; }
+    .webcmd { fill: #2563eb; }
+  </style>
+  <rect width="760" height="252" fill="#ffffff"/>
+  <text class="title" x="24" y="27">Agent turns ↓</text>
+  <text class="note" x="736" y="27" text-anchor="end">Lower is better</text>
+
+  <text class="label webcmd-label" x="24" y="82">Webcmd</text>
+  <rect class="track" x="150" y="68" width="460" height="18" rx="3"/>
+  <rect class="webcmd" x="150" y="68" width="171.5" height="18" rx="3"/>
+  <text class="value" x="628" y="82">969</text>
+
+  <text class="label" x="24" y="112">browser-use</text>
+  <rect class="track" x="150" y="98" width="460" height="18" rx="3"/>
+  <rect class="bar" x="150" y="98" width="259.3" height="18" rx="3"/>
+  <text class="value" x="628" y="112">1,465</text>
+
+  <text class="label" x="24" y="142">dev-browser</text>
+  <rect class="track" x="150" y="128" width="460" height="18" rx="3"/>
+  <rect class="bar" x="150" y="128" width="266.2" height="18" rx="3"/>
+  <text class="value" x="628" y="142">1,504</text>
+
+  <text class="label" x="24" y="172">Playwright CLI</text>
+  <rect class="track" x="150" y="158" width="460" height="18" rx="3"/>
+  <rect class="bar" x="150" y="158" width="360" height="18" rx="3"/>
+  <text class="value" x="628" y="172">2,034</text>
+
+  <text class="label" x="24" y="202">agent-browser</text>
+  <rect class="track" x="150" y="188" width="460" height="18" rx="3"/>
+  <rect class="bar" x="150" y="188" width="451.2" height="18" rx="3"/>
+  <text class="value" x="628" y="202">2,550</text>
+
+  <text class="note" x="150" y="232">0</text>
+  <text class="note" x="380" y="232" text-anchor="middle">1,300</text>
+  <text class="note" x="610" y="232" text-anchor="end">2,600 turns</text>
+</svg>

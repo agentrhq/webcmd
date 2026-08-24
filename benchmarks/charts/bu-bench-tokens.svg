@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="252" viewBox="0 0 760 252" role="img" aria-labelledby="title desc">
+  <title id="title">BU Bench total controller tokens</title>
+  <desc id="desc">dev-browser used 3.191 million tokens, Webcmd 3.194 million, browser-use 3.546 million, Playwright CLI 5.052 million, and agent-browser 5.842 million.</desc>
+  <style>
+    text { font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; fill: #111827; }
+    .title { font-size: 17px; font-weight: 700; }
+    .note { font-size: 12px; fill: #64748b; }
+    .label { font-size: 13px; fill: #475569; }
+    .webcmd-label { font-weight: 700; fill: #1d4ed8; }
+    .value { font-size: 13px; font-weight: 700; }
+    .track { fill: #e2e8f0; }
+    .bar { fill: #94a3b8; }
+    .webcmd { fill: #2563eb; }
+  </style>
+  <rect width="760" height="252" fill="#ffffff"/>
+  <text class="title" x="24" y="27">Total tokens ↓</text>
+  <text class="note" x="736" y="27" text-anchor="end">Lower is better · controller only</text>
+
+  <text class="label" x="24" y="82">dev-browser</text>
+  <rect class="track" x="150" y="68" width="460" height="18" rx="3"/>
+  <rect class="bar" x="150" y="68" width="244.6" height="18" rx="3"/>
+  <text class="value" x="628" y="82">3.191M</text>
+
+  <text class="label webcmd-label" x="24" y="112">Webcmd</text>
+  <rect class="track" x="150" y="98" width="460" height="18" rx="3"/>
+  <rect class="webcmd" x="150" y="98" width="244.9" height="18" rx="3"/>
+  <text class="value" x="628" y="112">3.194M</text>
+
+  <text class="label" x="24" y="142">browser-use</text>
+  <rect class="track" x="150" y="128" width="460" height="18" rx="3"/>
+  <rect class="bar" x="150" y="128" width="271.9" height="18" rx="3"/>
+  <text class="value" x="628" y="142">3.546M</text>
+
+  <text class="label" x="24" y="172">Playwright CLI</text>
+  <rect class="track" x="150" y="158" width="460" height="18" rx="3"/>
+  <rect class="bar" x="150" y="158" width="387.3" height="18" rx="3"/>
+  <text class="value" x="628" y="172">5.052M</text>
+
+  <text class="label" x="24" y="202">agent-browser</text>
+  <rect class="track" x="150" y="188" width="460" height="18" rx="3"/>
+  <rect class="bar" x="150" y="188" width="447.9" height="18" rx="3"/>
+  <text class="value" x="628" y="202">5.842M</text>
+
+  <text class="note" x="150" y="232">0</text>
+  <text class="note" x="380" y="232" text-anchor="middle">3M</text>
+  <text class="note" x="610" y="232" text-anchor="end">6M tokens</text>
+</svg>

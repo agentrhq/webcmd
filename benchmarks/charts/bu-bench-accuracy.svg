@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="252" viewBox="0 0 760 252" role="img" aria-labelledby="title desc">
+  <title id="title">BU Bench accuracy</title>
+  <desc id="desc">Webcmd leads with 67 percent, followed by browser-use at 66 percent, Playwright CLI and dev-browser at 55 percent, and agent-browser at 47 percent.</desc>
+  <style>
+    text { font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; fill: #111827; }
+    .title { font-size: 17px; font-weight: 700; }
+    .note { font-size: 12px; fill: #64748b; }
+    .label { font-size: 13px; fill: #475569; }
+    .webcmd-label { font-weight: 700; fill: #1d4ed8; }
+    .value { font-size: 13px; font-weight: 700; }
+    .track { fill: #e2e8f0; }
+    .bar { fill: #94a3b8; }
+    .webcmd { fill: #2563eb; }
+  </style>
+  <rect width="760" height="252" fill="#ffffff"/>
+  <text class="title" x="24" y="27">Accuracy ↑</text>
+  <text class="note" x="736" y="27" text-anchor="end">Higher is better · 100 tasks</text>
+
+  <text class="label webcmd-label" x="24" y="82">Webcmd</text>
+  <rect class="track" x="150" y="68" width="460" height="18" rx="3"/>
+  <rect class="webcmd" x="150" y="68" width="308.2" height="18" rx="3"/>
+  <text class="value" x="628" y="82">67%</text>
+
+  <text class="label" x="24" y="112">browser-use</text>
+  <rect class="track" x="150" y="98" width="460" height="18" rx="3"/>
+  <rect class="bar" x="150" y="98" width="303.6" height="18" rx="3"/>
+  <text class="value" x="628" y="112">66%</text>
+
+  <text class="label" x="24" y="142">Playwright CLI</text>
+  <rect class="track" x="150" y="128" width="460" height="18" rx="3"/>
+  <rect class="bar" x="150" y="128" width="253" height="18" rx="3"/>
+  <text class="value" x="628" y="142">55%</text>
+
+  <text class="label" x="24" y="172">dev-browser</text>
+  <rect class="track" x="150" y="158" width="460" height="18" rx="3"/>
+  <rect class="bar" x="150" y="158" width="253" height="18" rx="3"/>
+  <text class="value" x="628" y="172">55%</text>
+
+  <text class="label" x="24" y="202">agent-browser</text>
+  <rect class="track" x="150" y="188" width="460" height="18" rx="3"/>
+  <rect class="bar" x="150" y="188" width="216.2" height="18" rx="3"/>
+  <text class="value" x="628" y="202">47%</text>
+
+  <text class="note" x="150" y="232">0%</text>
+  <text class="note" x="380" y="232" text-anchor="middle">50%</text>
+  <text class="note" x="610" y="232" text-anchor="end">100%</text>
+</svg>
