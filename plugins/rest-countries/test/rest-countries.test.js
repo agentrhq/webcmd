@@ -30,6 +30,37 @@ describe('rest-countries country adapter', () => {
         await expect(cmd.func({ name: 'no-country-by-this-name' })).rejects.toThrow(EmptyResultError);
     });
 
+    it('maps a v3.1 deprecation envelope to CommandExecutionError, not EmptyResultError', async () => {
+        const retiredResponse = () => new Response(JSON.stringify({
+            success: false,
+            data: null,
+            errors: [{ message: 'This API version has been deprecated. Please visit https://restcountries.com/docs/countries/legacy-api-deprecation to migrate to our new version (v5).' }],
+        }), { status: 200 });
+        vi.stubGlobal('fetch', vi.fn().mockImplementation(retiredResponse));
+        let error;
+        try {
+            await cmd.func({ name: 'japan' });
+            throw new Error('expected retired API response to throw');
+        } catch (err) {
+            error = err;
+        }
+        expect(error).toMatchObject({
+            name: 'CommandExecutionError',
+            hint: expect.stringMatching(/webcmd adapter path rest-countries\/country/),
+        });
+        expect(error.hint).not.toMatch(/utils\.js base URL|curl another country API/i);
+        expect(error).not.toBeInstanceOf(EmptyResultError);
+    });
+
+    it('does not label every success:false envelope as retired', async () => {
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+            success: false,
+            errors: [{ message: 'temporary upstream failure' }],
+        }), { status: 200 })));
+
+        await expect(cmd.func({ name: 'japan' })).rejects.not.toThrow(/retired REST Countries/i);
+    });
+
     it('round-trips cca3 from row into restcountries.com alpha URL', async () => {
         vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify([
             {

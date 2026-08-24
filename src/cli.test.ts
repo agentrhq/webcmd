@@ -69,6 +69,7 @@ vi.mock('node:child_process', async () => {
   };
 });
 
+import { handleProgramParseError } from './cli-error-report.js';
 import { createProgram, findPackageRoot, loadAntigravityServe, normalizeVerifyRows, renderVerifyPreview, resolveBrowserVerifyInvocation, resolveSitemapAvailabilityForUrl, selectFreshByTimestamp } from './cli.js';
 
 const realHome = process.env.HOME;
@@ -151,6 +152,18 @@ describe('plugin update reconciliation reporting', () => {
 });
 
 describe('site-memory and local adapter authoring', () => {
+  it('keeps adapter help pointed at create vs override commands', () => {
+    const program = createProgram('', '');
+    const browserInit = program.commands.find(cmd => cmd.name() === 'browser')!
+      .commands.find(cmd => cmd.name() === 'init')!;
+    const adapter = program.commands.find(cmd => cmd.name() === 'adapter')!;
+
+    expect(browserInit.helpInformation()).toContain('Create a new private adapter: webcmd browser init <site>/<command>');
+    const adapterHelp = adapter.helpInformation();
+    expect(adapterHelp).toMatch(/Override installed command: webcmd adapter\s+override\s+<site>\/<command>/);
+    expect(adapterHelp).toMatch(/Locate local source: webcmd adapter path\s+<site>\/<command>/);
+  });
+
   it('writes site-memory reads only when --output is requested', async () => {
     const output = path.join(isolatedCliTestHome, 'memory.json');
     const program = createProgram('', '');
@@ -163,6 +176,20 @@ describe('site-memory and local adapter authoring', () => {
   it('rejects unresolved local adapter source paths', async () => {
     await expect(createProgram('', '').parseAsync(['node', 'webcmd', 'adapter', 'path', 'missing/search']))
       .rejects.toThrow(/Adapter source is unavailable/);
+  });
+
+  it('accepts adapter path as two tokens', async () => {
+    const key = 'split-source/search';
+    const source = path.join(isolatedCliTestHome, 'split-search.js');
+    fs.writeFileSync(source, 'export default {};');
+    getRegistry().set(key, {
+      site: 'split-source', name: 'search', access: 'read', description: 'split', args: [], source,
+    } as never);
+    try {
+      await createProgram('', '').parseAsync(['node', 'webcmd', 'adapter', 'path', 'split-source', 'search']);
+    } finally {
+      getRegistry().delete(key);
+    }
   });
 
   it('rejects local adapter source writes while directing users to the source path', async () => {
@@ -321,9 +348,9 @@ describe('override reporting surfaces', () => {
     await createProgram('', userClis, pluginsDir)
       .parseAsync(['node', 'webcmd', 'adapter', 'status', '--format', 'json']);
     expect(JSON.parse(stdoutSpy.mock.calls.flat().join('\n'))).toEqual([
-      { command: 'linkedin/search', kind: 'override', plugin: 'linkedin', reconciliationNeeded: true, orphaned: false },
-      { command: 'local/run', kind: 'user', plugin: null, reconciliationNeeded: false, orphaned: false },
-      { command: 'old/search', kind: 'override', plugin: 'old', reconciliationNeeded: false, orphaned: true },
+      { command: 'linkedin/search', kind: 'override', plugin: 'linkedin', reconciliationNeeded: true, orphaned: false, loadError: null },
+      { command: 'local/run', kind: 'user', plugin: null, reconciliationNeeded: false, orphaned: false, loadError: null },
+      { command: 'old/search', kind: 'override', plugin: 'old', reconciliationNeeded: false, orphaned: true, loadError: null },
     ]);
   });
 
@@ -647,6 +674,27 @@ describe('createProgram root help descriptions', () => {
       stderr.mockRestore();
       install.mockRestore();
       search.mockRestore();
+    }
+  });
+
+  it('suggests canonical discovery commands for unambiguous root noun mistakes', async () => {
+    const stderr = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const previousExitCode = process.exitCode;
+    const program = createProgram('', '');
+    program.outputHelp = vi.fn();
+
+    try {
+      await program.parseAsync(['catalog'], { from: 'user' });
+
+      expect(stderr.mock.calls.map(([line]) => line).join('\n')).toContain([
+        'Unknown command "catalog".',
+        'Did you mean: webcmd plugin catalog list',
+      ].join('\n'));
+      expect(program.outputHelp).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(2);
+    } finally {
+      process.exitCode = previousExitCode;
+      stderr.mockRestore();
     }
   });
 
@@ -1137,14 +1185,25 @@ name: 'search',
     const errors: string[] = [];
     const spy = vi.spyOn(console, 'error').mockImplementation((msg: unknown) => { errors.push(String(msg)); });
     const previousExitCode = process.exitCode;
+    // A structural failure is thrown now, not printed from inside the parser;
+    // handleProgramParseError turns it into bytes exactly as runCli does.
+    const run = (argv: string[]): string => {
+      let output = '';
+      try {
+        createProgram('', '').parse(argv, { from: 'user' });
+      } catch (err) {
+        handleProgramParseError(err, { write: (value: string) => { output += value; return true; } } as never);
+      }
+      return `${output}${errors.join('\n')}`;
+    };
     try {
-      createProgram('', '').parse(['browser', 'fork', 'hackernews/top'], { from: 'user' });
-      expect(errors.join('\n')).toContain('webcmd adapter override <site>/<command>');
+      expect(run(['browser', 'fork', 'hackernews/top'])).toContain('webcmd adapter override <site>/<command>');
       expect(process.exitCode).toBe(EXIT_CODES.USAGE_ERROR);
 
       errors.length = 0;
-      createProgram('', '').parse(['browser', 'nonsense'], { from: 'user' });
-      expect(errors.join('\n')).toBe("error: unknown command 'nonsense'");
+      const nonsense = run(['browser', 'nonsense']);
+      expect(nonsense).toContain("error: unknown command 'nonsense'");
+      expect(nonsense).toContain('help: valid subcommands for `webcmd browser`:');
     } finally {
       spy.mockRestore();
       process.exitCode = previousExitCode;
@@ -1194,7 +1253,7 @@ name: 'search',
         usage: 'webcmd browser bind [options]',
         positionals: [],
       });
-      expect(bind.command_options.map((option: any) => option.name)).toEqual(['page', 'verbose']);
+      expect(bind.command_options.map((option: any) => option.name)).toEqual(['page', 'verbose', 'format', 'json']);
       expect(data.structured_help).toMatchObject({
         formats: ['yaml', 'json'],
         usage: 'webcmd browser --help -f yaml',
@@ -1202,6 +1261,21 @@ name: 'search',
     } finally {
       process.argv = argv;
     }
+  });
+
+  it('shows agent examples and the --json alias on browser run help', () => {
+    const program = createProgram('', '');
+    const browser = program.commands.find(cmd => cmd.name() === 'browser')!;
+    const run = browser.commands.find(cmd => cmd.name() === 'run')!;
+    const help = run.helpInformation();
+
+    expect(help).toContain('--json');
+    expect(help).toContain("await page.goto('https://example.com')");
+    expect(help).toContain("await page.goto('data:text/html,");
+    expect(help).toContain("await download.saveAs(download.suggestedFilename())");
+    expect(help).toContain("await page.locator('input[type=file]').setInputFiles('/tmp/upload.pdf')");
+    expect(help).toContain("const popupPromise = context.waitForEvent('page', { timeout: 5000 })");
+    expect(help).toContain('Node require/fs are not available inside browser run');
   });
 
   it('renders daemon namespace structured help with leaves and global options', () => {
@@ -1252,7 +1326,7 @@ name: 'search',
         usage: 'webcmd plugin update [name] [options]',
         positionals: [{ name: 'name' }],
       });
-      expect(update.command_options.map((option: any) => option.name)).toEqual(['all', 'force']);
+      expect(update.command_options.map((option: any) => option.name)).toEqual(['all', 'force', 'format', 'json']);
     } finally {
       process.argv = argv;
     }
@@ -1340,7 +1414,7 @@ name: 'search',
         usage: 'webcmd adapter reset [site] [options]',
         positionals: [{ name: 'site' }],
       });
-      expect(reset.command_options.map((option: any) => option.name)).toEqual(['all']);
+      expect(reset.command_options.map((option: any) => option.name)).toEqual(['all', 'format', 'json']);
     } finally {
       process.argv = argv;
     }
@@ -2323,6 +2397,21 @@ describe('browser raw session commands', () => {
     }
   });
 
+  it('accepts --json on browser run without changing the JSON daemon request', async () => {
+    const sourcePath = path.join(os.tmpdir(), `webcmd-run-${Date.now()}.js`);
+    fs.writeFileSync(sourcePath, 'return 42;', 'utf8');
+    try {
+      const program = createProgram('', '');
+      await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'run', '--file', sourcePath, '--json']);
+
+      expect(mockSendCommand).toHaveBeenCalledWith('run', {
+        session: 'session_test', surface: 'browser', source: 'return 42;', snapshotMode: 'act',
+      });
+    } finally {
+      fs.rmSync(sourcePath, { force: true });
+    }
+  });
+
   it('closes the named session through the daemon', async () => {
     const program = createProgram('', '');
     await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'close']);
@@ -2433,6 +2522,35 @@ describe('browser Session lifecycle commands', () => {
       alreadyIdle: true,
       session: 'session_idle',
     });
+  });
+
+  it('closes a missing Session idempotently instead of failing', async () => {
+    mockSendCommand.mockRejectedValueOnce(new Error('daemon unavailable'));
+
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'close', 'session_missing', '-f', 'json']);
+
+    expect(JSON.parse(consoleLogSpy.mock.calls.flat().join('\n'))).toMatchObject({
+      ok: true,
+      closed: false,
+      alreadyClosed: true,
+      session: 'session_missing',
+    });
+  });
+
+  it('accepts the Session ID from the root --session selector', async () => {
+    mockSendCommand.mockRejectedValueOnce(new Error('daemon unavailable'));
+
+    await createProgram('', '').parseAsync(['node', 'webcmd', '--session', 'session_missing', 'session', 'close', '-f', 'json']);
+
+    expect(JSON.parse(consoleLogSpy.mock.calls.flat().join('\n'))).toMatchObject({
+      alreadyClosed: true,
+      session: 'session_missing',
+    });
+  });
+
+  it('rejects a malformed Session selector as a usage error', async () => {
+    await expect(createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'close', 'badid']))
+      .rejects.toMatchObject({ code: 'INVALID_SESSION_SELECTOR', exitCode: 2 });
   });
 
   it.each([

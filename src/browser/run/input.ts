@@ -33,7 +33,7 @@ function validateSource(source: string): string {
     throw new BrowserRunError(
       'BROWSER_RUN_INVALID_INPUT',
       'Browser run source must not be empty.',
-      'Pass JavaScript through --stdin or --file <path>.',
+      'Pass JavaScript through --stdin or --file <path>; return structured data, console.log concise evidence, or call writeArtifact(filename, bytes).',
     );
   }
   const bytes = Buffer.byteLength(source, 'utf8');

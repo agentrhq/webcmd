@@ -86,6 +86,8 @@ describe('createPluginScaffold', () => {
     expect(readme).toContain(`webcmd plugin install file://${dir}`);
     expect(readme).toContain('webcmd plugin search test-readme -f json');
     expect(readme).toContain('webcmd plugin install <installSource-from-search>');
+    expect(readme).toContain('Use `webcmd browser init <site>/<command>` for private local adapter iteration.');
+    expect(readme).toContain('Use `webcmd adapter override <site>/<command>` to patch an installed command.');
   });
 
   it('rejects invalid names', () => {

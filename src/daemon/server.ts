@@ -4,6 +4,7 @@ import type { BrowserRuntimeCommand, BrowserRuntimeResult } from '../browser/pro
 import type { BrowserRuntimeProvider } from '../browser/runtime/provider.js';
 import { buildCommandTimeoutFailure, getResponseCorsHeaders } from '../daemon-utils.js';
 import { getSessionLeaseKey, isSessionLeaseCommand, type SessionLease, SessionLeaseRegistry } from '../session-lease.js';
+import { CliError } from '../errors.js';
 import type { BrowserSessionRecord } from '../browser/sessions.js';
 
 const MAX_BODY = 1024 * 1024;
@@ -469,7 +470,13 @@ export function createDaemonServer(provider: BrowserRuntimeProvider, opts: Daemo
         if (!result.ok) pushLog('warn', `Command ${body.id} failed: ${result.error ?? result.errorCode ?? 'unknown error'}`);
         if (!responseAborted) jsonResponse(res, result.ok ? 200 : result.errorCode === 'command_result_unknown' ? 408 : 400, result);
       } catch (err) {
-        jsonResponse(res, 400, { ok: false, error: err instanceof Error ? err.message : 'Invalid request' });
+        // Keep the machine-readable code: clients (e.g. `session close`)
+        // branch on it, and dropping it leaves them only a message to match.
+        jsonResponse(res, 400, {
+          ok: false,
+          errorCode: err instanceof CliError ? err.code : undefined,
+          error: err instanceof Error ? err.message : 'Invalid request',
+        });
       }
       return;
     }

@@ -5,10 +5,10 @@ import { extractFetchedContent, type ExtractFetchedContentResult } from './extra
 import { createSafeProxy, type SafeProxy } from './safe-proxy.js';
 import { isChallengeResponse, isJavaScriptShell } from './classify.js';
 
-export interface WebFetchOptions { url: string; timeoutSeconds: number; maxChars: number; allowPrivate: boolean; }
+export interface WebFetchOptions { url: string; timeoutSeconds: number; maxChars: number; allowPrivate: boolean; raw?: boolean; }
 export interface WebFetchResult {
   status: number; requestedUrl: string; finalUrl: string; contentType: string; tier: 'plain' | 'impit'; profile?: 'chrome' | 'firefox';
-  title: string; extractionSource: ExtractFetchedContentResult['source']; truncated: boolean; content: string;
+  title: string; extractionSource: ExtractFetchedContentResult['source']; truncated: boolean; content: string; bytes?: number;
 }
 type ResponseLike = Pick<Response, 'status' | 'headers' | 'url'> & { body?: ReadableStream<Uint8Array> | null; bytes?: () => Promise<Uint8Array>; };
 type FetchLike = (url: string, options?: Record<string, unknown>) => Promise<ResponseLike>;
@@ -42,9 +42,10 @@ async function readBody(response: ResponseLike, deadline: number, timeoutSeconds
   while (true) { const { done, value } = await beforeDeadline(reader.read(), deadline, timeoutSeconds, () => { void reader.cancel(); }); if (done) break; size += value.byteLength; if (size > MAX_BODY_BYTES) { await reader.cancel(); throw new CliError('FETCH_BODY_TOO_LARGE', 'Fetched body exceeds 10 MiB'); } chunks.push(value); }
   return new TextDecoder().decode(Buffer.concat(chunks));
 }
-function truncate(content: string, limit: number): { content: string; truncated: boolean } {
+function truncate(content: string, limit: number, raw = false): { content: string; truncated: boolean } {
   if (!limit || content.length <= limit) return { content, truncated: false };
-  const end = Math.max(content.lastIndexOf('\n\n', limit), content.lastIndexOf('\n#', limit), 0) || limit;
+  // Raw bodies are cut at the exact limit: markup has no paragraph boundaries worth snapping to.
+  const end = raw ? limit : Math.max(content.lastIndexOf('\n\n', limit), content.lastIndexOf('\n#', limit), 0) || limit;
   return { content: `${content.slice(0, end)}\n\n[webcmd: truncated at ${limit} characters; rerun with --max-chars 0]`, truncated: true };
 }
 
@@ -72,9 +73,11 @@ export async function webFetch(options: WebFetchOptions, dependencies: WebFetchD
           if (browser === 'firefox') throw new CliError('FETCH_BLOCKED', 'The site blocked non-browser fetches.', BROWSER_WORKFLOW);
           continue;
         }
-        const extracted = extractFetchedContent({ body, contentType: response.headers.get('content-type') ?? '', url: options.url });
-        const clipped = truncate(extracted.content, options.maxChars);
-        return { status: response.status, requestedUrl: options.url, finalUrl: response.url || options.url, contentType: response.headers.get('content-type') ?? '', tier: browser ? 'impit' : 'plain', ...(browser && { profile: browser }), title: extracted.title, extractionSource: extracted.source, truncated: clipped.truncated, content: clipped.content };
+        const extracted = options.raw
+          ? { title: '', content: body, source: 'raw' as const }
+          : extractFetchedContent({ body, contentType: response.headers.get('content-type') ?? '', url: options.url });
+        const clipped = truncate(extracted.content, options.maxChars, options.raw === true);
+        return { status: response.status, requestedUrl: options.url, finalUrl: response.url || options.url, contentType: response.headers.get('content-type') ?? '', tier: browser ? 'impit' : 'plain', ...(browser && { profile: browser }), title: extracted.title, extractionSource: extracted.source, truncated: clipped.truncated, content: clipped.content, ...(options.raw && { bytes: Buffer.byteLength(body) }) };
       } catch (error) {
         const policyError = proxy.policyError();
         if (policyError) throw new CliError('FETCH_UNSAFE_ADDRESS', policyError.message);

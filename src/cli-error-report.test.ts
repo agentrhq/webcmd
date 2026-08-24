@@ -115,3 +115,125 @@ describe('handleProgramParseError', () => {
     expect(process.exitCode).toBe(2);
   });
 });
+
+/**
+ * One envelope, one exit code, one stderr line for every usage mistake.
+ * Each case below is a real `webcmd` invocation that used to render
+ * differently: see fix/cli-usage-error-envelope.
+ */
+describe('usage error contract', () => {
+  const previousExitCode = process.exitCode;
+  const previousArgv = process.argv;
+  afterEach(() => {
+    process.exitCode = previousExitCode;
+    process.argv = previousArgv;
+    vi.restoreAllMocks();
+  });
+
+  /** Run argv through the local CLI exactly as runCli does, capturing all stderr. */
+  async function runLocal(argv: string[]): Promise<{ stderr: string; exitCode: number }> {
+    process.argv = ['node', 'webcmd', ...argv];
+    process.exitCode = undefined;
+    let stderr = '';
+    const write = vi.spyOn(process.stderr, 'write').mockImplementation(((chunk: string) => {
+      stderr += String(chunk);
+      return true;
+    }) as typeof process.stderr.write);
+    vi.spyOn(console, 'error').mockImplementation((...values: unknown[]) => {
+      stderr += `${values.map(String).join(' ')}\n`;
+    });
+    const program = createProgram('', '');
+    applyUnknownOptionContract(program);
+    try {
+      await program.parseAsync(argv, { from: 'user' });
+    } catch (err) {
+      handleProgramParseError(err);
+    } finally {
+      write.mockRestore();
+    }
+    return { stderr, exitCode: Number(process.exitCode ?? 0) };
+  }
+
+  function errorLines(stderr: string): string[] {
+    return stderr.split('\n').filter(line => line.startsWith('error: '));
+  }
+
+  const usageCases = [
+    { name: 'unknown subcommand', argv: ['adapter', 'list', 'rest'], code: 'UNKNOWN_COMMAND', help: /valid subcommands for `webcmd adapter`/ },
+    { name: 'unknown option', argv: ['adapter', 'path', 'x/y', '-q'], code: 'UNKNOWN_OPTION', help: undefined },
+    { name: 'excess arguments', argv: ['list', 'extra'], code: 'EXCESS_ARGUMENTS', help: /usage: webcmd list/ },
+  ];
+
+  it.each(usageCases)('$name exits 2 with one stderr line and no envelope for humans', async ({ argv, help }) => {
+    const { stderr, exitCode } = await runLocal(argv);
+    expect(exitCode).toBe(EXIT_CODES.USAGE_ERROR);
+    expect(errorLines(stderr)).toHaveLength(1);
+    expect(stderr).not.toContain('ok: false');
+    if (help) expect(stderr).toMatch(help);
+  });
+
+  it.each(usageCases)('$name renders a JSON envelope under --json', async ({ argv, code }) => {
+    const { stderr, exitCode } = await runLocal([...argv, '--json']);
+    expect(exitCode).toBe(EXIT_CODES.USAGE_ERROR);
+    expect(JSON.parse(stderr)).toMatchObject({
+      ok: false,
+      error: { code, exitCode: EXIT_CODES.USAGE_ERROR },
+    });
+  });
+
+  it('renders a YAML envelope for -f yaml', async () => {
+    const { stderr } = await runLocal(['adapter', 'list', 'rest', '-f', 'yaml']);
+    expect(yaml.load(stderr)).toMatchObject({ ok: false, error: { code: 'UNKNOWN_COMMAND', exitCode: 2 } });
+  });
+
+  it('keeps --help a display exit, not a usage error', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const { stderr, exitCode } = await runLocal(['adapter', '--help']);
+    expect(exitCode).toBe(0);
+    expect(stderr).toBe('');
+  });
+});
+
+describe('web fetch fast path usage errors', () => {
+  const previousExitCode = process.exitCode;
+  const previousArgv = process.argv;
+  afterEach(() => {
+    process.exitCode = previousExitCode;
+    process.argv = previousArgv;
+    vi.restoreAllMocks();
+  });
+
+  async function runFetch(argv: string[]): Promise<{ stderr: string; exitCode: number }> {
+    const { runWebFetchCommand } = await import('./fetch/command.js');
+    process.argv = ['node', 'webcmd', ...argv];
+    process.exitCode = undefined;
+    let stderr = '';
+    const write = vi.spyOn(process.stderr, 'write').mockImplementation(((chunk: string) => {
+      stderr += String(chunk);
+      return true;
+    }) as typeof process.stderr.write);
+    try {
+      await runWebFetchCommand(argv);
+    } finally {
+      write.mockRestore();
+    }
+    return { stderr, exitCode: Number(process.exitCode ?? 0) };
+  }
+
+  it('reports a missing required option once, as a usage error', async () => {
+    const { stderr, exitCode } = await runFetch(['web', 'fetch']);
+    expect(exitCode).toBe(EXIT_CODES.USAGE_ERROR);
+    expect(stderr.split('\n').filter(line => line.startsWith('error: '))).toHaveLength(1);
+    expect(stderr).toContain("error: required option '--url <value>' not specified");
+    expect(stderr).toContain('help: usage: webcmd web fetch');
+  });
+
+  it('honours --json on a missing required option', async () => {
+    const { stderr, exitCode } = await runFetch(['web', 'fetch', '--json']);
+    expect(exitCode).toBe(EXIT_CODES.USAGE_ERROR);
+    expect(JSON.parse(stderr)).toMatchObject({
+      ok: false,
+      error: { code: 'MISSING_OPTION', exitCode: EXIT_CODES.USAGE_ERROR },
+    });
+  });
+});

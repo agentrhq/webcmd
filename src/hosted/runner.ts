@@ -20,11 +20,12 @@ import {
   HOSTED_ROOT_HELP,
   LOCAL_ONLY_COMMAND_HELP,
 } from '../completion-shared.js';
+import { splitAdapterCommandKey } from '../adapter-source.js';
 import { CliError, ConfigError, EXIT_CODES, InterruptedError, toEnvelope } from '../errors.js';
 import { getRequestedHelpFormat, renderStructuredHelp } from '../help.js';
 import { enableVerbose } from '../logger.js';
 import { findPackageRoot } from '../package-paths.js';
-import { errorEnvelopeFormat, formatErrorEnvelope, requestedFormatFromArgv, render as renderOutput } from '../output.js';
+import { errorEnvelopeFormat, formatErrorEnvelope, requestedFormatFromArgv, requestedMachineFormat, render as renderOutput } from '../output.js';
 import { StreamWriteError, writeToStream } from '../stream-write.js';
 import { PKG_VERSION } from '../version.js';
 import { getCompletionScriptFast } from '../completion-fast.js';
@@ -110,6 +111,7 @@ class CommanderCompatibleError extends Error {
     readonly output: string,
     readonly exitCode: number,
     readonly stdoutOutput?: string,
+    readonly appendErrorEnvelope = false,
   ) {
     super(output.trimEnd());
   }
@@ -184,11 +186,28 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
       return { handled: true, exitCode: EXIT_CODES.USAGE_ERROR };
     }
     if (err instanceof CommanderStructuralError) {
+      // Usage errors carry their own envelope; honour -f/--format and --json the
+      // same way the local CLI does instead of falling back to UNKNOWN/exit 1.
+      const usageFormat = requestedMachineFormat(argv);
+      if (usageFormat && err.envelope) {
+        await writeToStream(stderr, formatErrorEnvelope(err.envelope, { fmt: usageFormat }));
+        return { handled: true, exitCode: err.exitCode };
+      }
       await writeToStream(stderr, err.output);
+      if (err.appendErrorEnvelope) {
+        await writeToStream(stderr, formatErrorEnvelope(toEnvelope(err), {
+          fmt: errorEnvelopeFormat(requestedFormatFromArgv(argv)),
+        }));
+      }
       return { handled: true, exitCode: err.exitCode };
     }
     if (err instanceof CommanderCompatibleError) {
       await writeToStream(stderr, err.output);
+      if (err.appendErrorEnvelope) {
+        await writeToStream(stderr, formatErrorEnvelope(toEnvelope(err), {
+          fmt: errorEnvelopeFormat(requestedFormatFromArgv(argv)),
+        }));
+      }
       if (err.stdoutOutput) await writeToStream(stdout, err.stdoutOutput);
       return { handled: true, exitCode: err.exitCode };
     }
@@ -244,10 +263,6 @@ async function dispatchHosted(
     }
     const script = getCompletionScriptFast(parsed.shell);
     if (script === undefined) {
-      // Run the canonical local Commander action for this rare error path so
-      // hosted mode preserves even the historical public stack bytes.
-      const { createProgram } = await import('../cli.js');
-      await createProgram('', '').parseAsync(argv, { from: 'user' });
       throw new CliError('UNSUPPORTED_SHELL', `Unsupported shell: ${parsed.shell}. Supported: bash, zsh, fish`);
     }
     await writeToStream(stdout, script);
@@ -466,20 +481,14 @@ async function dispatchHosted(
       await writeToStream(stdout, formatRootHelp(HOSTED_ROOT_HELP));
       return;
     }
-    throw new CommanderCompatibleError(
-      `${missingPluginGuidance(site)}\n`,
-      EXIT_CODES.USAGE_ERROR,
-      formatRootHelp(HOSTED_ROOT_HELP),
-    );
+    // No help on stdout: an error path that emits a well-formed document to
+    // stdout reads as success to anything parsing it.
+    throw new CommanderCompatibleError(`${missingPluginGuidance(site)}\n`, EXIT_CODES.USAGE_ERROR);
   }
   if (!commandName || commandName === '--help' || commandName === '-h') {
     const data = hostedSiteHelpData(manifest, site);
     if (!data) {
-      throw new CommanderCompatibleError(
-        `error: unknown command '${site}'\n`,
-        EXIT_CODES.USAGE_ERROR,
-        formatRootHelp(HOSTED_ROOT_HELP),
-      );
+      throw new CommanderCompatibleError(`error: unknown command '${site}'\n`, EXIT_CODES.USAGE_ERROR);
     }
     await writeHostedHelp(stdout, args, data, renderHostedSiteHelp(manifest, site));
     return;
@@ -490,16 +499,21 @@ async function dispatchHosted(
     if (!normalized.literal && hasTerminalBeforeSeparator(args.slice(1), token => token === '--help' || token === '-h')) {
       const data = hostedSiteHelpData(manifest, site);
       if (!data) {
-        throw new CommanderCompatibleError(
-          `error: unknown command '${site}'\n`,
-          EXIT_CODES.USAGE_ERROR,
-          formatRootHelp(HOSTED_ROOT_HELP),
-        );
+        throw new CommanderCompatibleError(`error: unknown command '${site}'\n`, EXIT_CODES.USAGE_ERROR);
       }
       await writeHostedHelp(stdout, args, data, renderHostedSiteHelp(manifest, site));
       return;
     }
-    throw new CommanderCompatibleError(`error: unknown command '${commandName}'\n`, EXIT_CODES.GENERIC_ERROR);
+    // Same usage-error contract as the local CLI: exit 2 plus the valid
+    // subcommands for the site, not a trailing UNKNOWN/exit-1 envelope.
+    // Same shape as the local `help:` line (see visibleSubcommandNames): sorted,
+    // no `help` entry. Commands hosted mode cannot run are genuinely absent.
+    const known = [...new Set(hostedCommands(manifest).filter(entry => entry.site === site).map(entry => entry.name))].sort();
+    const help = known.length > 0 ? `help: valid subcommands for \`webcmd ${site}\`: ${known.join(', ')}\n` : '';
+    throw new CommanderCompatibleError(
+      `error: unknown command '${commandName}'\n${help}`,
+      EXIT_CODES.USAGE_ERROR,
+    );
   }
   if (isLocalOnlyHostedCommand(command)) {
     throw new ConfigError(
@@ -507,7 +521,17 @@ async function dispatchHosted(
       LOCAL_ONLY_COMMAND_HELP,
     );
   }
-  const parsed = parseHostedInvocation(command, args.slice(2));
+  let parsed: ReturnType<typeof parseHostedInvocation>;
+  try {
+    parsed = parseHostedInvocation(command, args.slice(2));
+  } catch (error) {
+    if (error instanceof CommanderStructuralError) {
+      // A usage error carries its own envelope; only the legacy fallback needs
+      // the UNKNOWN envelope appended after the human bytes.
+      throw new CommanderStructuralError(error.output, error.exitCode, !error.envelope, error.envelope);
+    }
+    throw error;
+  }
   if (parsed.help) {
     await writeHostedHelp(stdout, args, hostedCommandHelpData(command), renderHostedCommandHelp(command));
     return;
@@ -617,6 +641,11 @@ type HostedAdapterSourceCommand =
   | { kind: 'path'; commandKey: string }
   | { kind: 'override'; commandKey: string };
 
+function joinAdapterCommandKey(commandKey: string, commandName?: string): string {
+  const key = splitAdapterCommandKey(commandKey, commandName);
+  return key ? `${key.site}/${key.command}` : commandKey;
+}
+
 async function runHostedAdapterSourceSurface(
   argv: readonly string[],
   literal: boolean,
@@ -634,9 +663,17 @@ async function runHostedAdapterSourceSurface(
   });
   const adapter = root.command('adapter');
   const source = adapter.command('source');
-  source.command('get').argument('<command>').option('-o, --output <path>').action((commandKey, opts: { output?: string }) => { parsed = { kind: 'get', commandKey, output: opts.output }; });
-  source.command('put').argument('<command>').argument('<path>').action((commandKey, filePath) => { parsed = { kind: 'put', commandKey, path: filePath }; });
-  adapter.command('path').argument('<command>').action(commandKey => { parsed = { kind: 'path', commandKey }; });
+  source.command('get').argument('<command>').argument('[name]').option('-o, --output <path>').action((commandKey, name: string | undefined, opts: { output?: string }) => {
+    parsed = { kind: 'get', commandKey: joinAdapterCommandKey(commandKey, name), output: opts.output };
+  });
+  source.command('put').argument('<command>').argument('<path-or-name>').argument('[path]').action((commandKey, pathOrName: string, maybePath?: string) => {
+    parsed = maybePath
+      ? { kind: 'put', commandKey: joinAdapterCommandKey(commandKey, pathOrName), path: maybePath }
+      : { kind: 'put', commandKey, path: pathOrName };
+  });
+  adapter.command('path').argument('<command>').argument('[name]').action((commandKey, name?: string) => {
+    parsed = { kind: 'path', commandKey: joinAdapterCommandKey(commandKey, name) };
+  });
   adapter.command('override')
     .description('Fork an installed adapter command into a private copy you can modify')
     .argument('<command>', 'Command to override, as <site>/<command>')
@@ -687,9 +724,11 @@ async function runHostedAdapterSourceSurface(
 }
 
 function parseAdapterCommandKey(value: string): { site: string; command: string } {
-  const [site, command, extra] = value.split('/');
-  if (!isSafePathSegment(site) || !isSafePathSegment(command) || extra) throw new ConfigError('Adapter command must use site/command format.');
-  return { site, command };
+  const parsed = splitAdapterCommandKey(value);
+  if (!parsed || !isSafePathSegment(parsed.site) || !isSafePathSegment(parsed.command)) {
+    throw new ConfigError('Adapter command must use site/command format.');
+  }
+  return parsed;
 }
 
 function hostedAdapterDestination(homeDir: string, site: string, command: string): string {
@@ -1258,7 +1297,12 @@ function parseHostedListSurface(argv: readonly string[], literal: boolean): Pars
   } catch (error) {
     if (!(error instanceof CommanderError)) throw error;
     if (error.code === 'commander.helpDisplayed') return { kind: 'help', output: stdout };
-    throw structuralErrorFromCommander(error, resolveCommandFromArgv(root, ['list', ...argv]), stderr);
+    // No includeCapturedStderrForUnknownOption: structuralErrorFromCommander
+    // now formats the `error:` line itself, so replaying Commander's captured
+    // stderr on top printed the same line twice in hosted mode only.
+    throw structuralErrorFromCommander(error, resolveCommandFromArgv(root, ['list', ...argv]), stderr, {
+      appendErrorEnvelope: true,
+    });
   }
   if (!actionRan) throw new CommanderStructuralError("error: command 'list' did not run\n", 1);
   return { kind: 'run', format: parsedFormat, formatExplicit, ...(parsedTag !== undefined ? { tag: parsedTag } : {}) };
@@ -1448,10 +1492,22 @@ function parseHostedCompletionSurface(
   } catch (error) {
     if (!(error instanceof CommanderError)) throw error;
     if (error.code === 'commander.helpDisplayed') return { kind: 'help', output: stdout };
-    throw structuralErrorFromCommander(error, resolveCommandFromArgv(root, ['completion', ...argv]), stderr);
+    throw structuralErrorFromCommander(error, resolveCommandFromArgv(root, ['completion', ...argv]), stderr, {
+      appendErrorEnvelope: true,
+    });
   }
   if (shell === undefined) {
-    throw new CommanderStructuralError("error: missing required argument 'shell'\n", 1);
+    // Hand-written mirror of the local `webcmd completion` usage error, which
+    // Commander raises there but not here (the shell arg is optional in this
+    // parse). Same bytes, same code, same exit status.
+    const message = "missing required argument 'shell'";
+    const help = 'usage: webcmd completion [options] <shell>';
+    throw new CommanderStructuralError(
+      `error: ${message}\nhelp: ${help}\n`,
+      EXIT_CODES.USAGE_ERROR,
+      false,
+      { ok: false, error: { code: 'MISSING_ARGUMENT', message, help, exitCode: EXIT_CODES.USAGE_ERROR } },
+    );
   }
   return { kind: 'run', shell };
 }
@@ -1469,7 +1525,7 @@ function parseUnknownSiteRootOptions(
     if (token === '--profile') {
       const value = argv[i + 1];
       if (value === undefined) {
-        throw new CommanderStructuralError("error: option '--profile <name>' argument missing\n", 1);
+        throw new CommanderStructuralError("error: option '--profile <name>' argument missing\n", 1, true);
       }
       profile = value;
       i += 1;
@@ -1585,6 +1641,7 @@ function readInstalledHostedContractIdentity(): InstalledHostedContractIdentity 
 
 function hostedCommandName(argv: readonly string[]): string | undefined {
   const positionals: string[] = [];
+  const builtinCommands = new Set(['adapter', 'browser', 'completion', 'daemon', 'doctor', 'list', 'plugin', 'profile', 'session', 'setup', 'site', 'skills', 'update', 'web']);
   const valueOptions = new Set(['--profile', '-f', '--format', '--trace']);
   for (let i = 0; i < argv.length && positionals.length < 2; i += 1) {
     const token = argv[i]!;
@@ -1595,6 +1652,7 @@ function hostedCommandName(argv: readonly string[]): string | undefined {
     if (token.startsWith('-')) continue;
     positionals.push(token);
   }
+  if (positionals[0] && builtinCommands.has(positionals[0])) return positionals[0];
   if (positionals.length < 2) return positionals[0];
   return `${positionals[0]}/${positionals[1]}`;
 }

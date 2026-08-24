@@ -4,8 +4,13 @@
 
 import { DAEMON_HEADER_NAME } from './brand.js';
 
+function configuredDaemonPort(value: string | undefined): number {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 && parsed <= 65535 ? parsed : 9777;
+}
+
 /** Default daemon port for HTTP communication with the browser runtime. */
-export const DEFAULT_DAEMON_PORT = 9777;
+export const DEFAULT_DAEMON_PORT = configuredDaemonPort(process.env.WEBCMD_DAEMON_PORT);
 
 export { DAEMON_HEADER_NAME };
 

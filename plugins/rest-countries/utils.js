@@ -1,8 +1,7 @@
 // Shared helpers for the REST Countries adapter (https://restcountries.com).
 //
-// REST Countries is a free public country-metadata API, no API key required.
-// We hit v3.1 only. The `fields=` query param is mandatory in v3.1 to keep
-// payloads small; we always specify the agent-useful projection.
+// REST Countries v3.1 is retired (HTTP 200 deprecation JSON). restCountriesFetch
+// must not treat that envelope as an empty country list.
 import { ArgumentError, CommandExecutionError, EmptyResultError } from '@agentrhq/webcmd/errors';
 
 export const REST_COUNTRIES_BASE = 'https://restcountries.com/v3.1';
@@ -76,7 +75,21 @@ export async function restCountriesFetch(url, label) {
     catch (err) {
         throw new CommandExecutionError(`${label} returned malformed JSON: ${err?.message ?? err}`);
     }
+    if (isRetiredRestCountriesBody(body)) {
+        const key = String(label).trim().replace(/\s+/g, '/');
+        throw new CommandExecutionError(
+            `${label} hit the retired REST Countries v3.1 API`,
+            `The response is a deprecation envelope, not an empty result. Load the webcmd-autofix skill, run \`webcmd adapter path ${key}\`, patch the adapter, and retry with --trace retain-on-failure.`,
+        );
+    }
     return body;
+}
+
+function isRetiredRestCountriesBody(body) {
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return false;
+    const errors = body.errors;
+    if (!Array.isArray(errors)) return false;
+    return errors.some((entry) => typeof entry?.message === 'string' && /deprecated/i.test(entry.message));
 }
 
 /** Convert REST Countries' `{cur: {name, symbol}}` map to a comma-joined list. */

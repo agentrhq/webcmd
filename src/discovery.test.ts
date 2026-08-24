@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { discoverClis, discoverPlugins } from './discovery.js';
+import { discoverClis, discoverPlugins, getAdapterLoadFailures, missingPluginGuidance } from './discovery.js';
 import { getRegistry } from './registry.js';
 import { classifyCommandOrigin } from './command-origin.js';
 
@@ -118,5 +118,91 @@ describe('discovery attributes source through the real cli() path', () => {
 
     expect(getRegistry().get('base-module/run')).toBeUndefined();
     expect(getRegistry().get('base-source/run')).toBeUndefined();
+  });
+});
+
+describe('adapter load failures are surfaced, not silently swallowed', () => {
+  let tempHome: string;
+  const registryApiUrl = new URL('./registry-api.ts', import.meta.url).href;
+
+  beforeEach(async () => {
+    getRegistry().clear();
+    tempHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'webcmd-loadfail-'));
+  });
+
+  afterEach(async () => {
+    await fs.promises.rm(tempHome, { recursive: true, force: true });
+  });
+
+  async function writeAdapter(site: string, source: string): Promise<string> {
+    const siteDir = path.join(tempHome, 'clis', site);
+    await fs.promises.mkdir(siteDir, { recursive: true });
+    const modulePath = path.join(siteDir, 'list.js');
+    await fs.promises.writeFile(modulePath, source);
+    return modulePath;
+  }
+
+  it('registers an adapter that authors with cli() from the public registry export', async () => {
+    await writeAdapter('quotes', `
+      import { cli } from '${registryApiUrl}';
+      cli({ site: 'quotes', name: 'list', description: 'List quotes', access: 'read',
+            browser: false, args: [], func: async () => [] });
+    `);
+
+    await discoverClis(path.join(tempHome, 'clis'));
+
+    expect(getRegistry().get('quotes/list')).toBeDefined();
+    expect(getAdapterLoadFailures().filter(f => f.site === 'quotes')).toEqual([]);
+  });
+
+  it('does not register from a file whose only "cli(" is a comment', async () => {
+    await writeAdapter('inert', '// cli(\nexport const nothing = 1;\n');
+
+    await discoverClis(path.join(tempHome, 'clis'));
+
+    expect([...getRegistry().keys()].filter(key => key.startsWith('inert/'))).toEqual([]);
+    expect(getAdapterLoadFailures().filter(f => f.site === 'inert')).toEqual([]);
+  });
+
+  it('names the real cause when a module throws on load, and leads with it at run time', async () => {
+    const modulePath = await writeAdapter('broken', `
+      import { cli } from '${registryApiUrl}';
+      cli({ site: 'broken', name: 'list', description: 'x', browser: false, args: [], func: async () => [] });
+    `);
+
+    await discoverClis(path.join(tempHome, 'clis'));
+
+    const failure = getAdapterLoadFailures().find(f => f.file === modulePath);
+    expect(failure?.error).toContain('must declare access');
+    const guidance = missingPluginGuidance('broken');
+    expect(guidance.split('\n')[0]).toContain('failed to load');
+    expect(guidance).not.toContain('is not installed');
+    expect(guidance).toContain(modulePath);
+    expect(guidance).toContain('must declare access');
+  });
+
+  it('reports the missing export when an adapter imports registerCommand', async () => {
+    const modulePath = await writeAdapter('legacy', `
+      import { registerCommand } from '${registryApiUrl}';
+      registerCommand({ site: 'legacy', name: 'list', description: 'x', args: [], run: async () => [] });
+    `);
+
+    await discoverClis(path.join(tempHome, 'clis'));
+
+    expect(getRegistry().get('legacy/list')).toBeUndefined();
+    const failure = getAdapterLoadFailures().find(f => f.file === modulePath);
+    expect(failure?.error).toMatch(/registerCommand/);
+  });
+
+  it('agrees with adapter status: every failed file is reported by absolute path', async () => {
+    const modulePath = await writeAdapter('unavailable', `
+      import { cli } from '${registryApiUrl}';
+      cli({ site: 'unavailable', name: 'list', description: 'x', browser: false, args: [], func: async () => [] });
+    `);
+
+    await discoverClis(path.join(tempHome, 'clis'));
+
+    expect(getAdapterLoadFailures().map(f => f.file)).toContain(modulePath);
+    expect(getRegistry().get('unavailable/list')).toBeUndefined();
   });
 });
