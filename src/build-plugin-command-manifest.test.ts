@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import yaml from 'js-yaml';
 import type { ManifestEntry } from './manifest-types.js';
+import { satisfiesRange } from './plugin-manifest.js';
 
 const roots: string[] = [];
 
@@ -213,14 +214,11 @@ describe('plugin command manifest', () => {
   });
 
   it('requires the plugin-runtime release for LinkedIn', () => {
-    // The floor must match the webcmd version that actually ships
-    // plugin-runtime, not a hardcoded literal that drifts from package.json.
-    const { version } = JSON.parse(fs.readFileSync('package.json', 'utf8')) as { version: string };
-    const expectedRange = `>=${version}`;
-
     const packageManifest = JSON.parse(fs.readFileSync('plugins/linkedin/package.json', 'utf8')) as {
       peerDependencies?: Record<string, string>;
     };
+    const expectedRange = packageManifest.peerDependencies?.['@agentrhq/webcmd'];
+    if (!expectedRange) throw new Error('LinkedIn must declare a @agentrhq/webcmd peer range');
     const pluginManifest = JSON.parse(fs.readFileSync('plugins/linkedin/webcmd-plugin.json', 'utf8')) as {
       webcmd?: string;
     };
@@ -228,9 +226,10 @@ describe('plugin command manifest', () => {
       plugins?: Record<string, { webcmd?: string }>;
     };
 
-    expect(packageManifest.peerDependencies?.['@agentrhq/webcmd']).toBe(expectedRange);
     expect(pluginManifest.webcmd).toBe(expectedRange);
     expect(rootManifest.plugins?.linkedin?.webcmd).toBe(expectedRange);
+    expect(satisfiesRange('0.7.4', expectedRange)).toBe(true);
+    expect(satisfiesRange('0.7.3', expectedRange)).toBe(false);
   });
 
   it.each([
