@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
-import { access, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { access, lstat, mkdir, mkdtemp, opendir, readFile, readlink, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,6 +12,8 @@ import { startDifferentialBackend, type DifferentialBackend } from './__fixtures
 const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const cliEntry = path.join(repoRoot, 'dist', 'src', 'main.js');
+const packageRoot = path.join(repoRoot, 'dist');
+const checkoutFingerprintExclusions = new Set(['.git', '.superpowers', 'coverage', 'dist', 'node_modules']);
 const sourceText = 'export const fixture = true;\n';
 const sourceFile: HostedVirtualFile = { path: 'source.js', content: new TextEncoder().encode(sourceText) };
 
@@ -111,8 +114,10 @@ describe('programmatic runner isolation', () => {
     expect(JSON.parse(execute?.body ?? '{}')).toMatchObject({ args: { query } });
   });
 
-  it('keeps writer command output virtual and leaves the host cwd empty', async () => {
+  it('keeps writer output virtual without changing the checkout or built package roots', async () => {
     const scratch = await mkdtemp(path.join(tmpdir(), 'webcmd-isolation-'));
+    const checkoutBefore = await fingerprintTree(repoRoot, checkoutFingerprintExclusions);
+    const packageBefore = await fingerprintTree(packageRoot);
     const before = process.cwd();
     process.chdir(scratch);
     try {
@@ -126,6 +131,8 @@ describe('programmatic runner isolation', () => {
       ]);
       expect(source.outputFiles).toEqual([{ path: 'adapter.js', content: new TextEncoder().encode('export default {};\n') }]);
       expect(await readdir(scratch)).toEqual([]);
+      expect(await fingerprintTree(repoRoot, checkoutFingerprintExclusions)).toBe(checkoutBefore);
+      expect(await fingerprintTree(packageRoot)).toBe(packageBefore);
     } finally {
       process.chdir(before);
       await rm(scratch, { recursive: true, force: true });
@@ -262,3 +269,24 @@ describe('programmatic runner isolation', () => {
     });
   });
 });
+
+async function fingerprintTree(root: string, excludedTopLevel = new Set<string>()): Promise<string> {
+  const hash = createHash('sha256');
+  async function visit(directory: string, relativeDirectory: string): Promise<void> {
+    const entries = [];
+    for await (const entry of await opendir(directory)) entries.push(entry);
+    entries.sort((left, right) => left.name.localeCompare(right.name));
+    for (const entry of entries) {
+      if (!relativeDirectory && excludedTopLevel.has(entry.name)) continue;
+      const relative = path.posix.join(relativeDirectory, entry.name);
+      const absolute = path.join(directory, entry.name);
+      const metadata = await lstat(absolute);
+      hash.update(`${relative}\0${metadata.mode}\0${metadata.size}\0`);
+      if (metadata.isDirectory()) await visit(absolute, relative);
+      else if (metadata.isSymbolicLink()) hash.update(await readlink(absolute));
+      else if (metadata.isFile()) hash.update(await readFile(absolute));
+    }
+  }
+  await visit(root, '');
+  return hash.digest('hex');
+}
