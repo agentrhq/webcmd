@@ -17192,6 +17192,40 @@
     "sourceFile": "plugins/npm/search.js"
   },
   {
+    "site": "npm",
+    "name": "versions",
+    "description": "List published versions of an npm package, newest first",
+    "access": "read",
+    "domain": "registry.npmjs.org",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "name",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "npm package name (e.g. \"react\", \"@vercel/og\")"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Maximum versions to return (1-50)"
+      }
+    ],
+    "columns": [
+      "version",
+      "publishedAt",
+      "isLatest",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "plugins/npm/versions.js",
+    "sourceFile": "plugins/npm/versions.js"
+  },
+  {
     "site": "nuget",
     "name": "package",
     "description": "Full NuGet package version history (catalogEntry per release)",

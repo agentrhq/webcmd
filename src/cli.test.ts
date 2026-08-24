@@ -2524,6 +2524,33 @@ describe('browser Session lifecycle commands', () => {
     });
   });
 
+  it('names the owning Profile instead of reporting a cross-Profile close as done', async () => {
+    // Idempotent close must not swallow a Session that plainly exists next
+    // door: reporting alreadyClosed there leaves the Session open while the
+    // agent believes cleanup ran.
+    mockSendCommand.mockRejectedValueOnce(new Error('daemon unavailable'));
+    const baseDir = path.join(isolatedCliTestHome, '.webcmd');
+    fs.mkdirSync(baseDir, { recursive: true });
+    fs.writeFileSync(path.join(baseDir, 'browser-sessions.json'), JSON.stringify({
+      version: 1,
+      sessions: [{
+        id: 'session_owned',
+        profileId: 'work',
+        kind: 'explicit',
+        createdAt: '2026-08-11T00:00:00.000Z',
+        updatedAt: '2026-08-11T00:00:00.000Z',
+        lastUsedAt: '2026-08-11T00:00:00.000Z',
+      }],
+    }), { mode: 0o600 });
+
+    await expect(
+      createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'close', 'session_owned', '-f', 'json']),
+    ).rejects.toMatchObject({
+      code: 'SESSION_NOT_FOUND',
+      ownerProfileId: 'work',
+    });
+  });
+
   it('closes a missing Session idempotently instead of failing', async () => {
     mockSendCommand.mockRejectedValueOnce(new Error('daemon unavailable'));
 

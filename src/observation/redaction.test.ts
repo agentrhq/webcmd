@@ -1,7 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { redactHeaders, redactUrl, redactValue } from './redaction.js';
+import { redactHeaders, redactText, redactUrl, redactValue } from './redaction.js';
 
 describe('observation redaction', () => {
+    it('redacts Basic/Negotiate/NTLM auth credentials in raw text, not just Bearer', () => {
+      expect(redactText('Authorization: Basic dXNlcjpwYXNzd29yZA=='))
+        .toBe('Authorization: Basic [REDACTED]');
+      expect(redactText('curl -H "Authorization: Basic dXNlcjpwYXNzd29yZA==" https://api.example.com'))
+        .toBe('curl -H "Authorization: Basic [REDACTED]" https://api.example.com');
+      expect(redactText('Authorization: Bearer abc.def.ghi'))
+        .toBe('Authorization: Bearer [REDACTED]');
+      expect(redactText('WWW-Authenticate: NTLM TlRMTVNTUAAB'))
+        .toBe('WWW-Authenticate: NTLM [REDACTED]');
+    });
+
   it('redacts sensitive headers by default', () => {
     expect(redactHeaders({
       authorization: 'Bearer secret-token',

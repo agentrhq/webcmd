@@ -44,7 +44,12 @@ export function redactHeaders(headers: Record<string, unknown> | undefined, opts
 export function redactText(text: string, opts: RedactionOptions = {}): string {
   const max = opts.maxStringLength ?? 50_000;
   let out = text
-    .replace(/Bearer\s+[A-Za-z0-9\-._~+/]+=*/gi, 'Bearer [REDACTED]')
+    // HTTP auth schemes carry an opaque credential as their second token (RFC 7235).
+    // Bearer was the only scheme redacted here; Basic/Negotiate/NTLM leaked their
+    // credential verbatim into observation artifacts whenever it appeared in raw
+    // text (page content, titles, rendered command output) rather than in a
+    // structured headers object routed through redactHeaders.
+    .replace(/\b(Bearer|Basic|Negotiate|NTLM)\s+[A-Za-z0-9\-._~+/]+=*/gi, (_match, scheme: string) => `${scheme} [REDACTED]`)
     .replace(/(["'])(password|passwd|pwd|token|secret|api_key|apikey|access_token|session_id)\1\s*:\s*(["'])(.*?)\3/gi, '$1$2$1:$3[REDACTED]$3')
     .replace(/(token|secret|password|api_key|apikey|access_token|session_id)[=:]\s*['"]?[^'"\s,;}&]+['"]?/gi, '$1=[REDACTED]')
     .replace(/(cookie[=:]\s*)[^\n;]{3,}/gi, '$1[REDACTED]')
