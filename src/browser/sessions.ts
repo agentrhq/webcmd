@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { CONFIG_DIR_NAME, ENV_PREFIX } from '../brand.js';
+import { CLI_COMMAND, CONFIG_DIR_NAME, ENV_PREFIX } from '../brand.js';
 import { CliError, ConfigError, EXIT_CODES } from '../errors.js';
 
 export interface BrowserSessionRecord {
@@ -30,13 +30,24 @@ type StateFile = { version: 1; sessions: BrowserSessionRecord[] };
 const SESSION_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 export class SessionNotFoundError extends CliError {
-  constructor(sessionId: string, profileId: string) {
+  /** Profile that actually owns the Session, when the ID exists under a different one. */
+  readonly ownerProfileId?: string;
+
+  constructor(sessionId: string, profileId: string, ownerProfileId?: string) {
+    // A Session ID is only ever looked up inside the selected Profile, so a
+    // caller that omits `--profile` sees "not found" for a Session that does
+    // exist. Naming the owner turns a dead end into a one-step retry.
     super(
       'SESSION_NOT_FOUND',
-      `Session not found: ${sessionId}`,
-      `Run \`webcmd --profile ${profileId} session list\` to choose an existing Session.`,
+      ownerProfileId
+        ? `Session not found in Profile ${profileId}: ${sessionId}`
+        : `Session not found: ${sessionId}`,
+      ownerProfileId
+        ? `Session ${sessionId} belongs to Profile ${ownerProfileId}. Re-run the same command with \`--profile ${ownerProfileId}\`, for example \`${CLI_COMMAND} --profile ${ownerProfileId} session close ${sessionId}\`.`
+        : `Run \`${CLI_COMMAND} --profile ${profileId} session list\` to choose an existing Session, then \`${CLI_COMMAND} session close <session-id>\`. If it belongs to another Profile, pass \`--profile <name>\`.`,
       EXIT_CODES.EMPTY_RESULT,
     );
+    this.ownerProfileId = ownerProfileId;
   }
 }
 
@@ -72,6 +83,11 @@ export class LocalBrowserSessionStore {
     return { ...record };
   }
 
+  /** Profile that owns this Session ID, regardless of which one is selected. */
+  findOwner(sessionId: string): string | undefined {
+    return findOwnerProfileId(this.load(), sessionId);
+  }
+
   find(profileId: string, sessionId: string): BrowserSessionRecord | undefined {
     requireSessionIdShape(sessionId);
     const state = this.load();
@@ -84,7 +100,7 @@ export class LocalBrowserSessionStore {
     requireSessionIdShape(id);
     const state = this.load();
     const record = state.sessions.find((row) => row.id === id && row.profileId === profileId);
-    if (!record) throw new SessionNotFoundError(id, profileId);
+    if (!record) throw new SessionNotFoundError(id, profileId, findOwnerProfileId(state, id));
     this.touchRecord(state, record);
     return { ...record };
   }
@@ -176,7 +192,7 @@ export class LocalBrowserSessionStore {
   private requireMutable(state: StateFile, profileId: string, sessionId: string): BrowserSessionRecord {
     requireSessionIdShape(sessionId);
     const record = state.sessions.find((row) => row.id === sessionId && row.profileId === profileId);
-    if (!record) throw new SessionNotFoundError(sessionId, profileId);
+    if (!record) throw new SessionNotFoundError(sessionId, profileId, findOwnerProfileId(state, sessionId));
     return record;
   }
 
@@ -223,6 +239,13 @@ export class LocalBrowserSessionStore {
   private statePath(): string {
     return path.join(this.baseDir, 'browser-sessions.json');
   }
+}
+
+// Every Profile's Sessions share one state file, so the owning Profile of a
+// Session that missed the scoped lookup is already in hand — no daemon or
+// provider round trip is needed to name it.
+function findOwnerProfileId(state: StateFile, sessionId: string): string | undefined {
+  return state.sessions.find((row) => row.id === sessionId)?.profileId;
 }
 
 function validateState(value: unknown): StateFile {

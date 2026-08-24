@@ -20539,6 +20539,43 @@
   },
   {
     "site": "reddit",
+    "name": "draft-comment",
+    "description": "Draft a comment on a Reddit post without submitting it",
+    "access": "write",
+    "example": "webcmd reddit draft-comment <post-id-or-url> <text> --window foreground",
+    "domain": "reddit.com",
+    "strategy": "ui",
+    "browser": true,
+    "args": [
+      {
+        "name": "post-id",
+        "type": "string",
+        "required": true,
+        "positional": true,
+        "help": "Post ID (e.g. 1abc123), t3 fullname, or Reddit post URL"
+      },
+      {
+        "name": "text",
+        "type": "string",
+        "required": true,
+        "positional": true,
+        "help": "Comment text to leave in the composer"
+      }
+    ],
+    "columns": [
+      "status",
+      "message",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "plugins/reddit/draft-comment.js",
+    "sourceFile": "plugins/reddit/draft-comment.js",
+    "navigateBefore": false,
+    "siteSession": "persistent",
+    "freshPage": true
+  },
+  {
+    "site": "reddit",
     "name": "frontpage",
     "description": "Reddit Frontpage / r/all",
     "access": "read",

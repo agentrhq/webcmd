@@ -47,6 +47,52 @@ describe('LocalBrowserSessionStore', () => {
     expect(() => store.find('profile_work', 'work')).toThrowError(expect.objectContaining({ code: 'INVALID_SESSION_SELECTOR' }));
   });
 
+  it('names the owning profile when the session exists under a different one', () => {
+    // A cleanup command that omits `--profile` looks up a real Session ID in
+    // the wrong Profile. A bare "not found" sent agents into retrying the same
+    // command; naming the owner and the retry shape ends that loop.
+    const store = new LocalBrowserSessionStore({ baseDir: tempDir(), idFactory: () => 'session_a' });
+    const created = store.create('profile_work');
+
+    expect(() => store.require('profile_personal', created.id)).toThrowError(expect.objectContaining({
+      code: 'SESSION_NOT_FOUND',
+      ownerProfileId: 'profile_work',
+      message: `Session not found in Profile profile_personal: ${created.id}`,
+      hint: `Session ${created.id} belongs to Profile profile_work. Re-run the same command with \`--profile profile_work\`, for example \`webcmd --profile profile_work session close ${created.id}\`.`,
+    }));
+  });
+
+  it('names the owning profile on mutating lookups too', () => {
+    // `remove`/`touch`/handoff updates resolve the record through a separate
+    // lookup, so the close path must not fall back to the anonymous message.
+    const store = new LocalBrowserSessionStore({ baseDir: tempDir(), idFactory: () => 'session_a' });
+    const created = store.create('profile_work');
+
+    expect(() => store.remove('profile_personal', created.id)).toThrowError(expect.objectContaining({
+      code: 'SESSION_NOT_FOUND',
+      ownerProfileId: 'profile_work',
+    }));
+  });
+
+  it('findOwner names the owning profile without scoping to a selected one', () => {
+    const store = new LocalBrowserSessionStore({ baseDir: tempDir(), idFactory: () => 'session_a' });
+    const created = store.create('profile_work');
+
+    expect(store.findOwner(created.id)).toBe('profile_work');
+    expect(store.findOwner('session_missing')).toBeUndefined();
+  });
+
+  it('keeps the generic hint when no profile owns the session', () => {
+    const store = new LocalBrowserSessionStore({ baseDir: tempDir() });
+
+    expect(() => store.require('profile_work', 'session_missing')).toThrowError(expect.objectContaining({
+      code: 'SESSION_NOT_FOUND',
+      ownerProfileId: undefined,
+      message: 'Session not found: session_missing',
+      hint: 'Run `webcmd --profile profile_work session list` to choose an existing Session, then `webcmd session close <session-id>`. If it belongs to another Profile, pass `--profile <name>`.',
+    }));
+  });
+
   it('resolves one lazy adapter-default per profile without list side effects', () => {
     const store = new LocalBrowserSessionStore({
       baseDir: tempDir(),

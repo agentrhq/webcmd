@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.7.5](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.4...webcmd-v0.7.5) (2026-08-24)
+
+### Improvements
+- Standardized output formatting across built-in command leaves. `-f/--format` and `--json` are now consistently accepted, and action commands return structured results when a machine-readable format is requested.
+- Expanded `browser run` guidance with examples for navigation, uploads, downloads, popups, data URLs, and sandbox limits. Empty runs now warn when they capture no result, logs, artifacts, or snapshot changes, and Node-only `require`/`fs` attempts return actionable guidance.
+- Clarified that `webcmd plugin search` searches the installable plugin catalog—not the web. Results now include catalog metadata, and empty results suggest an appropriate `webcmd web fetch` command for web research.
+- `webcmd plugin install <name>` now resolves exact catalog matches to their real `installSource`, or directs you to `webcmd plugin search` when no exact match is available.
+- Reduced startup noise for help and machine-readable built-in output by suppressing maintenance, update, and compatibility-shim messages on those paths. Plugin startup hooks still run during actual plugin command execution.
+- Added `WEBCMD_DAEMON_PORT` support for configuring the daemon port, with invalid values falling back to port 9777.
+- Updated agent guidance to use `webcmd web fetch --url <url>` before browser escalation or non-Webcmd HTTP clients. Browser fallback remains gated on `FETCH_BLOCKED` or `FETCH_REQUIRES_BROWSER`.
+- Refreshed the Pi BU Bench report and reproducibility instructions. The benchmark harness now also supports browser-use, agent-browser, and playwright-cli against dedicated CloakBrowser sessions.
+
+### Fixes
+- Standardized common CLI usage failures—including unknown commands or options, missing arguments or required options, excess arguments, and invalid arguments—to exit with code 2. Explicit JSON or YAML requests now receive one structured error envelope; human output receives one error with relevant help.
+- Unknown commands now suggest nearby registered commands and canonical alternatives, such as `webcmd adapters` → `webcmd adapter` and `webcmd fetch` → `webcmd web fetch`. Unknown namespace subcommands also list valid choices without writing misleading help output to stdout.
+- Fixed duplicate usage-error output in hosted mode and aligned hosted subcommand lists with local CLI behavior.
+- `session close` now accepts either `webcmd session close <session-id>` or the root `--session <session-id>` selector. Closing an unknown or already-closed Session is idempotent, while malformed IDs still return a usage error.
+- Cross-Profile Session lookups now identify the owning Profile and provide an exact retry command. Cross-Profile closes are no longer incorrectly reported as already completed, and `session list` displays its Profile scope.
+- Download wait timeouts no longer encourage callers to invent file contents. They now recommend saving the actual download event with `download.saveAs(download.suggestedFilename())`, or reporting that no event occurred.
+- Popup and new-tab waits now use a short default timeout and provide safer recovery guidance using `context.newPage()` rather than navigating the opener. Diagnostics also explain that Chrome blocks top-level `data:` popups even when `window.open()` returns a Window object.
+- Raw observation text now redacts Basic, Negotiate, and NTLM authorization credentials in addition to Bearer tokens.
+
+### Adapters
+- Added `webcmd reddit draft-comment`, which opens a Reddit post and inserts text into a fresh, persistent visible composer without submitting the comment.
+- Added `--raw` to `webcmd web fetch` for retrieving the original response body, supporting CSS selector discovery, meta tags, and inline script inspection. Raw output reports byte length and explicit truncation metadata while preserving existing fetch safety and challenge handling.
+- Improved adapter repair guidance for `EMPTY_RESULT`, selector failures, and related errors. JSON error envelopes now direct users to `webcmd adapter path <site>/<command>`, the `webcmd-autofix` skill, and `--trace retain-on-failure` instead of suggesting login or an unrelated API.
+- `webcmd adapter path` now accepts either `site/command` or two positional tokens, such as `webcmd adapter path quotes list`.
+- Hardened the REST Countries adapter’s handling of retired v3.1 responses. Deprecation envelopes are now reported as command execution failures with adapter-repair guidance rather than empty results.
+- Improved local adapter discovery by detecting runtime imports instead of matching call-like source text. Adapter load failures now surface their file and cause, and `adapter status` reports failed files. `cli()` is the supported adapter-authoring entry point.
+- Clarified adapter authoring workflows across `browser init`, `adapter override`, `adapter path`, plugin scaffolds, and site-memory commands, including when to create a private adapter versus override an installed command.
+- Added descriptions, argument and option guidance, examples, grammar notes, and structured YAML/JSON help throughout the `webcmd site` command tree.
+
+### Contributors
+[@Agnik47](https://github.com/Agnik47) | [@ankitranjan7](https://github.com/ankitranjan7) | [@arzaanxeng](https://github.com/arzaanxeng) | [@beubax](https://github.com/beubax) | [@rishabhraj36](https://github.com/rishabhraj36)
+
 ## [0.7.4](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.3...webcmd-v0.7.4) (2026-08-19)
 
 

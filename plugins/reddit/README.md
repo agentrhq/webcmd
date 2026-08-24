@@ -13,6 +13,7 @@ webcmd plugin install github:agentrhq/webcmd/reddit
 | Command | Description |
 | --- | --- |
 | `webcmd reddit comment` | Post a comment on a Reddit post |
+| `webcmd reddit draft-comment` | Draft a comment on a Reddit post without submitting it |
 | `webcmd reddit frontpage` | Reddit Frontpage / r/all |
 | `webcmd reddit home` | Reddit personalized home feed (Best, requires login) |
 | `webcmd reddit hot` | Reddit hot posts |

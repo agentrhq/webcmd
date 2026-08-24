@@ -10,7 +10,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as readline from 'node:readline/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { Command, CommanderError, Option } from 'commander';
+import { Command, Option } from 'commander';
 import { findPackageRoot, getBuiltEntryCandidates } from './package-paths.js';
 import { type CliCommand, getRegistry } from './registry.js';
 // Side-effect import: registers client-owned `web fetch` in the core registry
@@ -19,15 +19,16 @@ import './fetch/command.js';
 import { commandListPresentation, filterCommandsByTag, toPresentableCommand } from './command-presentation.js';
 import { configureCompletionCommandSurface, configureListCommandSurface, configurePluginInstallSurface, configurePluginListSurface, configurePluginSearchSurface } from './builtin-command-surface.js';
 import { formatPluginSearchEmptyCopy, presentPluginSearch } from './plugin-search-presentation.js';
-import { addOutputFormatOption, applyUnknownOptionContract, CommanderStructuralError, outputFormatIsExplicit, resolveCommandOutputFormat } from './command-surface.js';
-import { render as renderOutput, formatErrorEnvelope, errorEnvelopeFormat, requestedFormatFromArgv } from './output.js';
+import { addOutputFormatOption, applyUnknownOptionContract, CommanderStructuralError, ensureOutputFormatOptions, JSON_FORMAT_ALIAS_HELP, outputFormatIsExplicit, resolveCommandOutputFormat } from './command-surface.js';
+import { render as renderOutput } from './output.js';
+import { handleProgramParseError } from './cli-error-report.js';
 import { PKG_VERSION } from './version.js';
 import { printCompletionScript } from './completion.js';
 import { loadExternalClis, executeExternalCli, installExternalCli, registerExternalCli, isBinaryInstalled, formatExternalCliLabel } from './external.js';
 import { addWebcmdSkills, listWebcmdSkills, removeWebcmdSkills, updateWebcmdSkill, type WebcmdSkillAddResult } from './skills.js';
 import { registerAllCommands } from './commanderAdapter.js';
-import { buildRootHelpPresentation, classifyAdapter, installCommanderNamespaceStructuredHelp, installRootPresentationHelp, leadingPositionalFromUsage, rootHelpData, type RootAdapterGroups } from './help.js';
-import { EXIT_CODES, getErrorMessage, toEnvelope, BrowserConnectError, CliError, ArgumentError } from './errors.js';
+import { buildRootHelpPresentation, classifyAdapter, commanderCommandHelpData, installCommanderNamespaceStructuredHelp, installRootPresentationHelp, installStructuredHelp, leadingPositionalFromUsage, rootHelpData, type RootAdapterGroups } from './help.js';
+import { EXIT_CODES, getErrorMessage, BrowserConnectError, CliError, ArgumentError } from './errors.js';
 import { TargetError, type TargetErrorCode } from './browser/target-errors.js';
 import { resolveTargetJs, getTextResolvedJs, getValueResolvedJs, getAttributesResolvedJs, selectResolvedJs, isAutocompleteResolvedJs, type ResolveOptions, type TargetMatchLevel } from './browser/target-resolver.js';
 import { buildFindJs, buildSemanticFindJs, isFindError, type FindResult, type FindError, type SemanticFindOptions } from './browser/find.js';
@@ -39,7 +40,7 @@ import { parseFilter, shapeMatchesFilter } from './browser/shape-filter.js';
 import { buildHtmlTreeJs, type HtmlTreeResult } from './browser/html-tree.js';
 import { buildExtractHtmlJs, runExtractFromHtml } from './browser/extract.js';
 import { analyzeSite, type PageSignals } from './browser/analyze.js';
-import { browserOptionValueParser } from './browser/command-catalog.js';
+import { BROWSER_RUN_HELP_TEXT, browserOptionValueParser } from './browser/command-catalog.js';
 import { registerAuthCommands } from './commands/auth.js';
 import { daemonRestart, daemonStatus, daemonStop } from './commands/daemon.js';
 import { enableVerbose, isVerbose, log } from './logger.js';
@@ -53,8 +54,9 @@ import type { BrowserDownloadWaitResult, IPage, ScreenshotOptions } from './type
 import type { BrowserWindowMode } from './runtime.js';
 import { configureRootCommandSurface } from './root-command-surface.js';
 import { validateRawBrowserSession } from './hosted/browser-args.js';
-import { LocalBrowserSessionStore, requireSessionIdShape, type BrowserSessionListRow } from './browser/sessions.js';
-import { missingPluginGuidance, PLUGINS_DIR } from './discovery.js';
+import { LocalBrowserSessionStore, SessionNotFoundError, requireSessionIdShape, type BrowserSessionListRow } from './browser/sessions.js';
+import { getAdapterLoadFailures, PLUGINS_DIR } from './discovery.js';
+import { unknownRootCommandMessage, unknownSubcommandHelp, unknownSubcommandMessage } from './command-suggest.js';
 import { loadBrowserRunSource } from './browser/run/input.js';
 import { BrowserRunError } from './browser/run/types.js';
 import { classifyCommandOrigin, formatCommandOrigin } from './command-origin.js';
@@ -186,6 +188,11 @@ async function handleSkillLinkCommand(action: () => WebcmdSkillAddResult | Promi
     if (err instanceof CliError && err.hint) console.error(`Hint: ${err.hint}`);
     process.exitCode = err instanceof CliError ? err.exitCode : EXIT_CODES.GENERIC_ERROR;
   }
+}
+
+/** The skills commands predate `-f/--format`; honour both spellings. */
+function wantsJsonEnvelope(opts: { json?: boolean; format?: string }): boolean {
+  return opts.json === true || opts.format === 'json';
 }
 
 function handleSkillRemoveCommand(customPath: string | undefined, json: boolean): void {
@@ -590,6 +597,12 @@ async function requireKnownProfileId(command?: Command): Promise<string> {
   return profileId;
 }
 
+/** True for "this Session does not exist here" errors, from either the durable store or the runtime. */
+function isSessionMissingError(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  return code === 'SESSION_NOT_FOUND' || code === 'session_not_found';
+}
+
 function formatHandoff(row: BrowserSessionListRow): string {
   return row.handoff ? `${row.handoff.site} until ${row.handoff.expiresAt}` : '';
 }
@@ -614,7 +627,8 @@ function applyVerbose(opts: { verbose?: boolean }): void {
  * there would advertise diagnostics that do not exist.
  */
 function withBrowserVerbose(command: Command): Command {
-  return command.option('-v, --verbose', 'Debug output', false);
+  // These leaves have always emitted JSON, so `json` stays their default format.
+  return addOutputFormatOption(command.option('-v, --verbose', 'Debug output', false), 'json');
 }
 
 function formatChildCommandSummary(command: Command): string {
@@ -631,17 +645,47 @@ function applyRootSubcommandSummaries(program: Command): void {
   }
 }
 
-async function handleAdapterOverride(commandKey: string): Promise<void> {
+/**
+ * Emit an action command's result in the requested format.
+ *
+ * With no `-f/--format`/`--json` the human lines are printed unchanged; with one,
+ * the command renders a structured payload instead so agents get a parseable
+ * result from `install`, `create`, `use`, … not just prose.
+ */
+async function emitActionResult(
+  command: Command,
+  payload: Record<string, unknown>,
+  human: () => void,
+): Promise<void> {
+  if (!outputFormatIsExplicit(command)) {
+    human();
+    return;
+  }
+  const fmt = resolveCommandOutputFormat(command, (command.opts() as { format?: string }).format);
+  if (fmt === null) return;
+  await renderOutput(payload, { fmt, fmtExplicit: true });
+}
+
+async function handleAdapterOverride(commandKey: string, _opts: unknown, command: Command): Promise<void> {
   const { createAdapterOverride } = await import('./adapter-override.js');
   try {
     const result = createAdapterOverride(commandKey);
-    console.log(`✅ Override created for ${result.commandKey}`);
-    console.log(`     yours: ${result.overridePath}`);
-    console.log(`     base:  ${result.basePath}`);
-    console.log();
-    console.log(`  Your copy now takes precedence over plugin "${result.plugin}".`);
-    console.log(`  "${CLI_COMMAND} plugin update" keeps updating the plugin copy, not your override,`);
-    console.log('  and will tell you when the upstream file changes so you can merge.');
+    await emitActionResult(command, {
+      ok: true,
+      action: 'override',
+      command: result.commandKey,
+      plugin: result.plugin,
+      overridePath: result.overridePath,
+      basePath: result.basePath,
+    }, () => {
+      console.log(`✅ Override created for ${result.commandKey}`);
+      console.log(`     yours: ${result.overridePath}`);
+      console.log(`     base:  ${result.basePath}`);
+      console.log();
+      console.log(`  Your copy now takes precedence over plugin "${result.plugin}".`);
+      console.log(`  "${CLI_COMMAND} plugin update" keeps updating the plugin copy, not your override,`);
+      console.log('  and will tell you when the upstream file changes so you can merge.');
+    });
   } catch (err) {
     console.error(`Error: ${getErrorMessage(err)}`);
     process.exitCode = EXIT_CODES.GENERIC_ERROR;
@@ -657,6 +701,9 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
     .description('Make any website your CLI. Zero setup. AI-powered.');
   configureRootCommandSurface(program);
   registerSiteCommands(program, createLocalSiteMemoryBackend());
+  const siteCmd = program.commands.find(command => command.name() === 'site')!;
+  // Snapshot before applyRootSubcommandSummaries() rewrites .description() to a child-name listing.
+  const originalSiteDescription = siteCmd.description();
 
   // ── Built-in: list ────────────────────────────────────────────────────────
 
@@ -780,7 +827,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
           scope: resolved.scope,
           customPath: resolved.path,
         });
-      }, opts.json, 'added');
+      }, wantsJsonEnvelope(opts), 'added');
     });
 
   skillsCmd
@@ -795,7 +842,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
         provider: opts.provider,
         scope: opts.scope,
         customPath: opts.path,
-      }), opts.json, 'updated');
+      }), wantsJsonEnvelope(opts), 'updated');
     });
 
   skillsCmd
@@ -803,7 +850,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
     .description('Remove bundled Webcmd skill symlinks from supported locations')
     .option('--path <path>', 'Also remove links from a custom agent skills directory')
     .option('--json', 'Output a JSON envelope', false)
-    .action((opts) => handleSkillRemoveCommand(opts.path, opts.json));
+    .action((opts) => handleSkillRemoveCommand(opts.path, wantsJsonEnvelope(opts)));
 
   program
     .command('update')
@@ -892,39 +939,68 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
         console.log(`No browser Sessions found for Profile ${profileId}.`);
         return;
       }
-      await renderOutput(output, { fmt, fmtExplicit: outputFormatIsExplicit(command), columns: ['id', 'kind', 'runtimeState', 'handoff'] });
+      // `profileId` is a column because these rows are scoped to the selected
+      // Profile. Without it the table reads as every Session on the machine,
+      // which is what led agents to act on Sessions from unrelated Profiles.
+      await renderOutput(output, { fmt, fmtExplicit: outputFormatIsExplicit(command), columns: ['id', 'profileId', 'kind', 'runtimeState', 'handoff'] });
     });
 
   const sessionCloseCmd = addOutputFormatOption(sessionCmd
     .command('close')
     .description('Close a browser Session runtime without deleting its durable record')
-    .argument('<session-id>', 'Existing opaque Session ID from `webcmd session create`')
+    .argument('[session-id]', 'Existing opaque Session ID from `webcmd session create` (or pass the root `--session <id>` selector)')
     .option('--force', 'Close even while the Session is busy or paused for handoff'), 'yaml');
-  sessionCloseCmd.action(async (sessionId: string, opts: { format?: string; force?: boolean }, command) => {
+  sessionCloseCmd.action(async (positionalSessionId: string | undefined, opts: { format?: string; force?: boolean }, command) => {
       const fmt = resolveCommandOutputFormat(command, opts.format);
       if (fmt === null) return;
       const profileId = getSelectedProfileId(command);
+      const rootSelector = getCommandOption(command, 'session');
+      const sessionId = positionalSessionId ?? (typeof rootSelector === 'string' ? rootSelector : undefined);
+      if (!sessionId) {
+        throw new ArgumentError(
+          'Missing Session ID.',
+          `Use \`${CLI_COMMAND} session close <session-id>\` or \`${CLI_COMMAND} --session <session-id> session close\`.`,
+        );
+      }
       requireSessionIdShape(sessionId);
-      const status = await fetchDaemonStatus({ contextId: profileId });
-      if (!status || (status.runtimeConnected && !isDaemonStale(status, PKG_VERSION))) {
-        try {
-          const data = await sendCommand('session-close', {
-            contextId: profileId,
-            session: sessionId,
-            force: opts.force === true,
-          });
+      try {
+        const status = await fetchDaemonStatus({ contextId: profileId });
+        if (!status || (status.runtimeConnected && !isDaemonStale(status, PKG_VERSION))) {
+          try {
+            const data = await sendCommand('session-close', {
+              contextId: profileId,
+              session: sessionId,
+              force: opts.force === true,
+            });
+            await renderOutput(data, { fmt, fmtExplicit: outputFormatIsExplicit(command) });
+            return;
+          } catch (error) {
+            if (status || opts.force === true) throw error;
+          }
+        }
+        if (opts.force === true) {
+          const data = await sendCommand('session-close', { contextId: profileId, session: sessionId, force: true });
           await renderOutput(data, { fmt, fmtExplicit: outputFormatIsExplicit(command) });
           return;
-        } catch (error) {
-          if (status || opts.force === true) throw error;
         }
-      }
-      if (opts.force === true) {
-        const data = await sendCommand('session-close', { contextId: profileId, session: sessionId, force: true });
-        await renderOutput(data, { fmt, fmtExplicit: outputFormatIsExplicit(command) });
+        new LocalBrowserSessionStore().require(profileId, sessionId);
+      } catch (error) {
+        // Closing an already-closed / reaped / never-existed Session is a no-op,
+        // not a failure: cleanup must stay idempotent for unattended agents.
+        if (!isSessionMissingError(error)) throw error;
+        // A Session that exists under another Profile is the one case that must
+        // not report success: the Session stays open, so "alreadyClosed" tells
+        // an unattended agent its cleanup ran when nothing was closed.
+        const owner = new LocalBrowserSessionStore().findOwner(sessionId);
+        if (owner !== undefined && owner !== profileId) {
+          throw new SessionNotFoundError(sessionId, profileId, owner);
+        }
+        await renderOutput(
+          { ok: true, closed: false, alreadyClosed: true, session: sessionId },
+          { fmt, fmtExplicit: outputFormatIsExplicit(command) },
+        );
         return;
       }
-      new LocalBrowserSessionStore().require(profileId, sessionId);
       await renderOutput({ closed: false, alreadyIdle: true, session: sessionId }, { fmt, fmtExplicit: outputFormatIsExplicit(command) });
     });
 
@@ -938,27 +1014,19 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
     .description('Run Playwright programs against an explicit browser Session');
   const originalBrowserDescription = browser.description();
 
-  // Retired browser subcommands. `fork` was a duplicate of `adapter override`
-  // that never appeared in the docs; commander's bare "unknown command" leaves
-  // the caller with no way to find the replacement, so name it.
-  const RETIRED_BROWSER_SUBCOMMANDS: Record<string, string> = {
-    fork: `${CLI_COMMAND} adapter override <site>/<command>`,
-  };
-  browser.on('command:*', (operands: string[]) => {
-    const name = operands[0]!;
-    const replacement = RETIRED_BROWSER_SUBCOMMANDS[name];
-    console.error(replacement
-      ? `error: '${CLI_COMMAND} browser ${name}' was removed. Use: ${replacement}`
-      : `error: unknown command '${name}'`);
-    process.exitCode = EXIT_CODES.USAGE_ERROR;
-  });
+  // Unknown `browser` subcommands (including the retired `fork`) are handled by
+  // the shared namespace handler installed at the end of createProgram.
 
   // ── Init (adapter scaffolding) ──
 
   browser.command('init')
     .argument('<name>', 'Adapter name in site/command format (e.g. hn/top)')
-    .description('Generate adapter scaffold in ~/.webcmd/clis/')
-    .action(async (name: string) => {
+    .description(`Generate adapter scaffold in ~/.webcmd/clis/
+
+Create a new private adapter: ${CLI_COMMAND} browser init <site>/<command>
+Override an installed command: ${CLI_COMMAND} adapter override <site>/<command>
+Test either local adapter: ${CLI_COMMAND} browser verify <site>/<command>`)
+    .action(async (name: string, _opts: unknown, initCmd: Command) => {
       try {
         const parts = name.split('/');
         if (parts.length !== 2 || !parts[0] || !parts[1]) {
@@ -980,7 +1048,9 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
         const filePath = path.join(dir, `${command}.js`);
 
         if (fs.existsSync(filePath)) {
-          console.log(`Adapter already exists: ${filePath}`);
+          await emitActionResult(initCmd, {
+            ok: true, action: 'init', adapter: name, path: filePath, created: false,
+          }, () => console.log(`Adapter already exists: ${filePath}`));
           return;
         }
 
@@ -1011,9 +1081,13 @@ cli({
 `;
         fs.mkdirSync(dir, { recursive: true });
         fs.writeFileSync(filePath, template, 'utf-8');
-        console.log(`Created: ${filePath}`);
-        console.log('First time on this site? Run: webcmd session create, then webcmd --session <session-id> browser run --stdin');
-        console.log(`Edit the file to implement your adapter, then run: webcmd browser verify ${name}`);
+        await emitActionResult(initCmd, {
+          ok: true, action: 'init', adapter: name, path: filePath, created: true,
+        }, () => {
+          console.log(`Created: ${filePath}`);
+          console.log('First time on this site? Run: webcmd session create, then webcmd --session <session-id> browser run --stdin');
+          console.log(`Edit the file to implement your adapter, then run: webcmd browser verify ${name}`);
+        });
       } catch (err) {
         console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
         process.exitCode = EXIT_CODES.GENERIC_ERROR;
@@ -1262,25 +1336,28 @@ cli({
       const runId = generateRunId();
       const commandName = `browser/${command.name()}`;
       let releaseRun = true;
+      const fmt = resolveCommandOutputFormat(command, (opts as { format?: string }).format);
+      if (fmt === null) return;
+      const emit = (payload: unknown) => renderOutput(payload, { fmt, fmtExplicit: true });
       try {
         const session = getBrowserSession(command);
         const routing = profileRouteParams(getBrowserProfileSelection(command));
         const result = await runWithDaemonRunContext({ runId, command: commandName }, () => fn(session, routing, opts));
-        console.log(JSON.stringify(result, null, 2));
+        await emit(result);
       } catch (error) {
         if (isUnknownOutcomeError(error)) releaseRun = false;
         if (error instanceof BrowserCommandError && error.code) {
-          console.log(JSON.stringify({
+          await emit({
             error: {
               code: error.code,
               message: error.message,
               ...(error.hint ? { hint: error.hint } : {}),
               ...(error.details !== undefined ? { details: error.details } : {}),
             },
-          }, null, 2));
+          });
         } else if (error instanceof CliError) {
           const payload = { error: { code: error.code, message: error.message, ...(error.hint ? { hint: error.hint } : {}) } };
-          console.log(JSON.stringify(payload, null, 2));
+          await emit(payload);
           process.stderr.write(`${error.code}: ${error.message}\n`);
           if (error.hint) process.stderr.write(`${error.hint}\n`);
           process.exitCode = error.exitCode;
@@ -1412,23 +1489,28 @@ cli({
   const originalPluginDescription = pluginCmd.description();
 
   configurePluginInstallSurface(pluginCmd.command('install'))
-    .action(async (source: string, opts: { all?: boolean }) => {
+    .action(async (source: string, opts: { all?: boolean }, command: Command) => {
       const { installPlugin } = await import('./plugin.js');
       const { discoverPlugins } = await import('./discovery.js');
       try {
         const result = installPlugin(source, { all: opts.all === true });
         await discoverPlugins();
-        if (Array.isArray(result)) {
-          if (result.length === 0) {
-            console.log('No plugins were installed (all skipped or incompatible).');
+        const plugins = Array.isArray(result) ? result : [result];
+        await emitActionResult(command, { ok: true, action: 'install', source, plugins }, () => {
+          if (Array.isArray(result)) {
+            if (result.length === 0) {
+              console.log('No plugins were installed (all skipped or incompatible).');
+            } else {
+              console.log(`\u2705 Installed ${result.length} plugin(s) from monorepo: ${result.join(', ')}`);
+            }
           } else {
-            console.log(`\u2705 Installed ${result.length} plugin(s) from monorepo: ${result.join(', ')}`);
+            console.log(`\u2705 Plugin "${result}" installed successfully. Commands are ready to use.`);
           }
-        } else {
-          console.log(`\u2705 Plugin "${result}" installed successfully. Commands are ready to use.`);
-        }
+        });
       } catch (err) {
         console.error(`Error: ${getErrorMessage(err)}`);
+        const resolved = await installSourceSuggestion(err, source);
+        if (resolved) console.error(resolved);
         process.exitCode = EXIT_CODES.GENERIC_ERROR;
       }
     });
@@ -1437,11 +1519,13 @@ cli({
     .command('uninstall')
     .description('Uninstall a plugin')
     .argument('<name>', 'Plugin name')
-    .action(async (name: string) => {
+    .action(async (name: string, _opts: unknown, command: Command) => {
       const { uninstallPlugin } = await import('./plugin.js');
       try {
         uninstallPlugin(name);
-        console.log(`✅ Plugin "${name}" uninstalled.`);
+        await emitActionResult(command, { ok: true, action: 'uninstall', plugin: name }, () => {
+          console.log(`✅ Plugin "${name}" uninstalled.`);
+        });
       } catch (err) {
         console.error(`Error: ${getErrorMessage(err)}`);
         process.exitCode = EXIT_CODES.GENERIC_ERROR;
@@ -1454,7 +1538,7 @@ cli({
     .argument('[name]', 'Plugin name (required unless --all is passed)')
     .option('--all', 'Update all installed plugins')
     .option('--force', 'Discard uncommitted changes in this plugin\'s files')
-    .action(async (name: string | undefined, opts: { all?: boolean; force?: boolean }) => {
+    .action(async (name: string | undefined, opts: { all?: boolean; force?: boolean }, command: Command) => {
       if (!name && !opts.all) {
         console.error('Error: Please specify a plugin name or use the --all flag.');
         process.exitCode = EXIT_CODES.USAGE_ERROR;
@@ -1472,6 +1556,21 @@ cli({
         const results = updateAllPlugins({ force: opts.force === true });
         if (results.length > 0) {
           await discoverPlugins();
+        }
+
+        if (outputFormatIsExplicit(command)) {
+          const failed = results.filter((result) => !result.success);
+          if (failed.length > 0) process.exitCode = EXIT_CODES.GENERIC_ERROR;
+          await emitActionResult(command, {
+            ok: failed.length === 0,
+            action: 'update',
+            plugins: results.map((result) => ({
+              name: result.name,
+              ok: result.success,
+              ...(result.success ? {} : { error: String(result.error) }),
+            })),
+          }, () => undefined);
+          return;
         }
 
         let hasErrors = false;
@@ -1507,8 +1606,14 @@ cli({
       try {
         const updatedPlugins = updatePlugin(name!, { force: opts.force === true });
         await discoverPlugins();
-        console.log(`✅ Plugin "${name}" updated successfully.`);
-        printReconcileReport(findOverridesNeedingReconcile(updatedPlugins));
+        await emitActionResult(command, {
+          ok: true,
+          action: 'update',
+          plugins: updatedPlugins.map((plugin) => ({ name: plugin, ok: true })),
+        }, () => {
+          console.log(`✅ Plugin "${name}" updated successfully.`);
+          printReconcileReport(findOverridesNeedingReconcile(updatedPlugins));
+        });
       } catch (err) {
         console.error(`Error: ${getErrorMessage(err)}`);
         process.exitCode = EXIT_CODES.GENERIC_ERROR;
@@ -1698,7 +1803,7 @@ cli({
       description?: string;
       authorName?: string;
       authorHandle?: string;
-    }) => {
+    }, command: Command) => {
       const { createPluginScaffold } = await import('./plugin-scaffold.js');
       try {
         let authorName = opts.authorName?.trim();
@@ -1721,17 +1826,25 @@ cli({
             handle: authorHandle ?? '',
           },
         });
-        console.log(`✅ Plugin scaffold created at ${result.dir}`);
-        console.log();
-        console.log('  Files created:');
-        for (const f of result.files) {
-          console.log(`    ${f}`);
-        }
-        console.log();
-        console.log('  Next steps:');
-        console.log(`    cd ${result.dir}`);
-        console.log(`    ${CLI_COMMAND} plugin install file://${result.dir}`);
-        console.log(`    ${CLI_COMMAND} ${name} hello`);
+        await emitActionResult(command, {
+          ok: true,
+          action: 'create',
+          plugin: name,
+          dir: result.dir,
+          files: result.files,
+        }, () => {
+          console.log(`✅ Plugin scaffold created at ${result.dir}`);
+          console.log();
+          console.log('  Files created:');
+          for (const f of result.files) {
+            console.log(`    ${f}`);
+          }
+          console.log();
+          console.log('  Next steps:');
+          console.log(`    cd ${result.dir}`);
+          console.log(`    ${CLI_COMMAND} plugin install file://${result.dir}`);
+          console.log(`    ${CLI_COMMAND} ${name} hello`);
+        });
       } catch (err) {
         console.error(`Error: ${getErrorMessage(err)}`);
         process.exitCode = EXIT_CODES.GENERIC_ERROR;
@@ -1739,7 +1852,8 @@ cli({
     });
 
   // ── Built-in: adapter management ─────────────────────────────────────────
-  const adapterCmd = program.command('adapter').description('Manage CLI adapters');
+  const adapterCmd = program.command('adapter')
+    .description('Manage CLI adapters');
   // Snapshot before applyRootSubcommandSummaries() rewrites .description() to a child-name listing.
   const originalAdapterDescription = adapterCmd.description();
 
@@ -1765,18 +1879,21 @@ cli({
 
         const records = readOverrideRecords();
         const reconcile = new Set((await import('./plugin.js')).findOverridesNeedingReconcile().map(({ commandKey }) => commandKey));
+        const failures = new Map(getAdapterLoadFailures().map(failure => [failure.file, failure.error]));
         const adapters: Array<{
           command: string;
           kind: 'user' | 'override';
           plugin: string | null;
           reconciliationNeeded: boolean;
           orphaned: boolean;
+          loadError: string | null;
         }> = [];
         for (const site of userSites) {
           const files = await fs.promises.readdir(path.join(USER_CLIS, site));
           for (const file of files.filter((entry) => entry.endsWith('.js')).sort()) {
             const command = `${site}/${file.slice(0, -3)}`;
             const record = records[command];
+            const loadError = failures.get(path.join(USER_CLIS, site, file)) ?? null;
             adapters.push(record
               ? {
                   command,
@@ -1784,15 +1901,16 @@ cli({
                   plugin: record.plugin,
                   reconciliationNeeded: reconcile.has(command),
                   orphaned: !fs.existsSync(path.join(pluginsDir, record.plugin)),
+                  loadError,
                 }
-              : { command, kind: 'user', plugin: null, reconciliationNeeded: false, orphaned: false });
+              : { command, kind: 'user', plugin: null, reconciliationNeeded: false, orphaned: false, loadError });
           }
         }
         if (fmt !== 'table') {
           renderOutput(adapters, {
             fmt,
             fmtExplicit: outputFormatIsExplicit(adapterStatusCmd),
-            columns: ['command', 'kind', 'plugin', 'reconciliationNeeded', 'orphaned'],
+            columns: ['command', 'kind', 'plugin', 'reconciliationNeeded', 'orphaned', 'loadError'],
             title: `${CLI_COMMAND}/adapter-status`,
             source: `${CLI_COMMAND} adapter status`,
           });
@@ -1802,12 +1920,13 @@ cli({
         for (const site of userSites) {
           console.log(`  ${site}`);
           for (const adapter of adapters.filter((item) => item.command.startsWith(`${site}/`))) {
+            const failure = adapter.loadError ? ` (failed to load: ${adapter.loadError})` : '';
             if (adapter.kind === 'user') {
-              console.log(`    user adapter: ${adapter.command}`);
+              console.log(`    user adapter: ${adapter.command}${failure}`);
             } else if (adapter.orphaned) {
-              console.log(`    orphaned override: ${adapter.command} (plugin ${adapter.plugin} is not installed)`);
+              console.log(`    orphaned override: ${adapter.command} (plugin ${adapter.plugin} is not installed)${failure}`);
             } else {
-              console.log(`    override: ${adapter.command} (plugin ${adapter.plugin}${adapter.reconciliationNeeded ? ', upstream changed since fork' : ''})`);
+              console.log(`    override: ${adapter.command} (plugin ${adapter.plugin}${adapter.reconciliationNeeded ? ', upstream changed since fork' : ''})${failure}`);
             }
           }
         }
@@ -1827,7 +1946,7 @@ cli({
     .description('Remove a local adapter override')
     .argument('[site]', 'Site name (e.g. twitter, youtube)')
     .option('--all', 'Reset all local overrides')
-    .action(async (site: string | undefined, opts: { all?: boolean }) => {
+    .action(async (site: string | undefined, opts: { all?: boolean }, command: Command) => {
       if (opts.all) {
         let userClisListed = false;
         try {
@@ -1836,7 +1955,9 @@ cli({
           const dirs = userEntries.filter(e => e.isDirectory() && e.name !== '.base');
           readOverrideRecords();
           if (dirs.length === 0) {
-            console.log('No local sites to reset.');
+            await emitActionResult(command, { ok: true, action: 'reset', all: true, sites: [], records: 0 }, () => {
+              console.log('No local sites to reset.');
+            });
             return;
           }
           let removedRecords = 0;
@@ -1844,10 +1965,21 @@ cli({
             fs.rmSync(path.join(USER_CLIS, dir.name), { recursive: true, force: true });
             removedRecords += removeOverrideRecords(dir.name).length;
           }
-          console.log(`✅ Removed ${dirs.length} local adapter override(s) and ${removedRecords} provenance record(s).`);
+          await emitActionResult(command, {
+            ok: true,
+            action: 'reset',
+            all: true,
+            sites: dirs.map((dir) => dir.name),
+            records: removedRecords,
+          }, () => {
+            console.log(`✅ Removed ${dirs.length} local adapter override(s) and ${removedRecords} provenance record(s).`);
+          });
         } catch (err) {
-          if (!userClisListed && (err as NodeJS.ErrnoException).code === 'ENOENT') console.log('No local sites to reset.');
-          else {
+          if (!userClisListed && (err as NodeJS.ErrnoException).code === 'ENOENT') {
+            await emitActionResult(command, { ok: true, action: 'reset', all: true, sites: [], records: 0 }, () => {
+              console.log('No local sites to reset.');
+            });
+          } else {
             console.error(`Error: ${getErrorMessage(err)}`);
             process.exitCode = EXIT_CODES.GENERIC_ERROR;
           }
@@ -1871,12 +2003,20 @@ cli({
 
       fs.rmSync(userSiteDir, { recursive: true, force: true });
       const removedRecords = removeOverrideRecords(site).length;
-      console.log(`✅ Removed local adapter override "${site}" and ${removedRecords} provenance record(s).`);
+      await emitActionResult(command, {
+        ok: true,
+        action: 'reset',
+        all: false,
+        sites: [site],
+        records: removedRecords,
+      }, () => {
+        console.log(`✅ Removed local adapter override "${site}" and ${removedRecords} provenance record(s).`);
+      });
     });
 
   adapterCmd
     .command('override')
-    .description('Fork an installed plugin command into ~/.webcmd/clis so you can modify it')
+    .description(`Override installed command: ${CLI_COMMAND} adapter override <site>/<command>`)
     .argument('<command>', 'Command to override, as <site>/<command>')
     .action(handleAdapterOverride);
 
@@ -1894,21 +2034,30 @@ cli({
     if (!source) throw new ArgumentError(`Adapter source is unavailable for ${key}.`);
     return source;
   };
-  const reportLocalAdapterPath = (commandKey: string, commandName?: string): void => console.log(localAdapterPath(commandKey, commandName));
+  const reportLocalAdapterPath = async (command: Command, commandKey: string, commandName?: string): Promise<void> => {
+    const parsed = splitAdapterCommandKey(commandKey, commandName);
+    const source = localAdapterPath(commandKey, commandName);
+    await emitActionResult(command, {
+      ok: true,
+      command: parsed ? `${parsed.site}/${parsed.command}` : commandKey,
+      path: source,
+    }, () => console.log(source));
+  };
   const adapterSourceCmd = adapterCmd.command('source').description('Inspect local adapter source paths; hosted mode reads or writes source');
-  adapterSourceCmd.command('get').description('Print local source path; --output is hosted-only').argument('<command>').argument('[name]').option('-o, --output <path>').action((commandKey: string, commandName: string | undefined, options: { output?: string }) => {
+  adapterSourceCmd.command('get').description('Print local source path; --output is hosted-only').argument('<command>').argument('[name]').option('-o, --output <path>').action(async (commandKey: string, commandName: string | undefined, options: { output?: string }, command: Command) => {
     const parsed = splitAdapterCommandKey(commandKey, commandName);
     const key = parsed ? `${parsed.site}/${parsed.command}` : commandKey;
     if (options.output) throw new ArgumentError(`Local adapter source get does not support --output. Use webcmd adapter path ${key} and edit that file.`);
-    reportLocalAdapterPath(commandKey, commandName);
+    await reportLocalAdapterPath(command, commandKey, commandName);
   });
   adapterSourceCmd.command('put').description('Hosted-only source write; local users edit the adapter path').argument('<command>').argument('<path>').action((commandKey: string) => {
     throw new ArgumentError(`Local adapter source put is unavailable. Use webcmd adapter path ${commandKey} and edit that file.`);
   });
   adapterCmd.command('path')
+    .description(`Locate local source: ${CLI_COMMAND} adapter path <site>/<command>`)
     .argument('<command>', 'site/command, or site when followed by the command name')
     .argument('[name]', 'command name when passed as a second token')
-    .action((commandKey: string, commandName?: string) => reportLocalAdapterPath(commandKey, commandName));
+    .action((commandKey: string, commandName: string | undefined, _opts: unknown, command: Command) => reportLocalAdapterPath(command, commandKey, commandName));
 
   // ── Built-in: browser profile selection ──────────────────────────────────
   const PROFILE_LIST_COLUMNS = ['contextId', 'alias', 'default', 'connected', 'runtimeVersion'];
@@ -2000,11 +2149,19 @@ cli({
     .command('create')
     .description('Create a Cloak profile alias')
     .argument('<alias>', 'Local alias, e.g. work or personal')
-    .action((alias: string) => {
+    .action(async (alias: string, _opts: unknown, command: Command) => {
       const result = createProfile(alias);
-      console.log(result.created
-        ? `Profile ${result.alias} created (contextId: ${result.contextId}).`
-        : `Profile ${result.alias} already exists (contextId: ${result.contextId}).`);
+      await emitActionResult(command, {
+        ok: true,
+        action: 'create',
+        alias: result.alias,
+        contextId: result.contextId,
+        created: result.created,
+      }, () => {
+        console.log(result.created
+          ? `Profile ${result.alias} created (contextId: ${result.contextId}).`
+          : `Profile ${result.alias} already exists (contextId: ${result.contextId}).`);
+      });
     });
 
   profileCmd
@@ -2012,10 +2169,12 @@ cli({
     .description('Assign a local alias to an available Cloak profile')
     .argument('<contextId>', 'Profile contextId from webcmd profile list')
     .argument('<alias>', 'Local alias, e.g. work or personal')
-    .action((contextId: string, alias: string) => {
+    .action(async (contextId: string, alias: string, _opts: unknown, command: Command) => {
       try {
         renameProfile(contextId, alias);
-        console.log(`Profile ${contextId} is now aliased as ${alias}.`);
+        await emitActionResult(command, { ok: true, action: 'rename', contextId, alias }, () => {
+          console.log(`Profile ${contextId} is now aliased as ${alias}.`);
+        });
       } catch (err) {
         console.error(`Error: ${getErrorMessage(err)}`);
         process.exitCode = EXIT_CODES.USAGE_ERROR;
@@ -2026,14 +2185,21 @@ cli({
     .command('use')
     .description('Set the default Cloak profile for future commands')
     .argument('<profile>', 'Profile alias or contextId from webcmd profile list')
-    .action(async (profile: string) => {
+    .action(async (profile: string, _opts: unknown, command: Command) => {
       const status = await fetchDaemonStatus();
       const config = loadProfileConfig();
       const connected = status && !isDaemonStale(status, PKG_VERSION) && Array.isArray(status.profiles)
         ? status.profiles
         : [];
       const next = setDefaultProfile(profile, profileListRows(config, connected));
-      console.log(`Default Cloak profile: ${next.defaultContextId ?? profile}`);
+      await emitActionResult(command, {
+        ok: true,
+        action: 'use',
+        profile,
+        defaultContextId: next.defaultContextId ?? profile,
+      }, () => {
+        console.log(`Default Cloak profile: ${next.defaultContextId ?? profile}`);
+      });
     });
 
   // ── Built-in: daemon ──────────────────────────────────────────────────────
@@ -2051,11 +2217,19 @@ cli({
   daemonCmd
     .command('stop')
     .description('Stop the daemon')
-    .action(async () => { await daemonStop(); });
+    .action(async (_opts: unknown, command: Command) => {
+      await daemonStop();
+      // daemonStop/daemonRestart report progress on stderr, so the structured
+      // envelope is additive: stdout stays empty without a format flag.
+      await emitActionResult(command, { ok: !process.exitCode, action: 'stop' }, () => undefined);
+    });
   daemonCmd
     .command('restart')
     .description('Restart the daemon')
-    .action(async () => { await daemonRestart(); });
+    .action(async (_opts: unknown, command: Command) => {
+      await daemonRestart();
+      await emitActionResult(command, { ok: !process.exitCode, action: 'restart' }, () => undefined);
+    });
 
   // ── External CLIs ─────────────────────────────────────────────────────────
 
@@ -2069,14 +2243,20 @@ cli({
     .command('install')
     .description('Install an external CLI')
     .argument('<name>', 'Name of the external CLI')
-    .action((name: string) => {
+    .action(async (name: string, _opts: unknown, command: Command) => {
       const ext = externalClis.find(e => e.name === name);
       if (!ext) {
         console.error(`External CLI '${name}' not found in registry.`);
         process.exitCode = EXIT_CODES.USAGE_ERROR;
         return;
       }
-      installExternalCli(ext);
+      const installed = installExternalCli(ext);
+      await emitActionResult(command, {
+        ok: installed,
+        action: 'install',
+        cli: ext.name,
+        binary: ext.binary,
+      }, () => undefined);
     });
 
   externalCmd
@@ -2086,8 +2266,14 @@ cli({
     .option('--binary <bin>', 'Binary name if different from name')
     .option('--install <cmd>', 'Auto-install command')
     .option('--desc <text>', 'Description')
-    .action((name, opts) => {
+    .action(async (name: string, opts: { binary?: string; install?: string; desc?: string }, command: Command) => {
       registerExternalCli(name, { binary: opts.binary, install: opts.install, description: opts.desc });
+      await emitActionResult(command, {
+        ok: true,
+        action: 'register',
+        cli: name,
+        binary: opts.binary ?? name,
+      }, () => undefined);
     });
 
   const externalListCmd = addOutputFormatOption(externalCmd
@@ -2164,6 +2350,11 @@ cli({
   const siteNames = registerAllCommands(program, siteGroups);
   applyRootSubcommandSummaries(program);
 
+  // Every leaf in the finished tree speaks the same output-format grammar,
+  // whether or not its own registration remembered to ask for it. Must run
+  // before help presentation is captured below.
+  ensureOutputFormatOptions(program);
+
   // ── Help-text grouping: External CLIs / App adapters / Site adapters ──
   // Classification derives from each adapter's `domain` field — see classifyAdapter.
   // External CLIs are taken from the externalClis registry (passthrough binaries).
@@ -2185,11 +2376,17 @@ cli({
   const adapterGroups: RootAdapterGroups = { external: externalHelpEntries, apps, sites };
   const adapterNameSet = new Set<string>([...externalNames, ...siteNames]);
   installCommanderNamespaceStructuredHelp(browser, { globalCommand: program, description: originalBrowserDescription });
+  installStructuredHelp(
+    runCommand,
+    () => commanderCommandHelpData(browser, runCommand, { globalCommand: program }),
+    BROWSER_RUN_HELP_TEXT,
+  );
   installCommanderNamespaceStructuredHelp(authCmd, { globalCommand: program, description: 'Inspect website login status' });
   installCommanderNamespaceStructuredHelp(daemonCmd, { globalCommand: program, description: originalDaemonDescription });
   installCommanderNamespaceStructuredHelp(pluginCmd, { globalCommand: program, description: originalPluginDescription });
   installCommanderNamespaceStructuredHelp(adapterCmd, { globalCommand: program, description: originalAdapterDescription });
   installCommanderNamespaceStructuredHelp(profileCmd, { globalCommand: program, description: originalProfileDescription });
+  installCommanderNamespaceStructuredHelp(siteCmd, { globalCommand: program, description: originalSiteDescription });
   program.configureHelp({
     visibleCommands: (command) => command.commands.filter(child => command !== program || !adapterNameSet.has(child.name())),
   });
@@ -2203,14 +2400,67 @@ cli({
   // Security: do NOT auto-discover and register arbitrary system binaries.
   // Only explicitly registered external CLIs are allowed.
 
+  // Error output goes to stderr only. `outputHelp()` used to dump the whole root
+  // help to stdout here, which with `--json` in argv looked like a successful
+  // JSON response to anything parsing stdout.
   program.on('command:*', (operands: string[]) => {
-    const binary = operands[0]!;
-    console.error(missingPluginGuidance(binary));
-    program.outputHelp();
+    console.error(unknownRootCommandMessage(program, operands[0]!));
     process.exitCode = EXIT_CODES.USAGE_ERROR;
   });
 
+  // Same treatment one level down, for the built-in namespaces. Site adapter
+  // groups are left on Commander's own suggestion path so hosted mode, which
+  // has no Command tree to match against, stays byte-compatible with local.
+  const SUGGEST_NAMESPACES = new Set([
+    'adapter', 'plugin', 'session', 'profile', 'daemon', 'external', 'browser', 'site', 'auth', 'skills',
+  ]);
+  for (const namespace of program.commands) {
+    if (namespace.commands.length === 0 || !SUGGEST_NAMESPACES.has(namespace.name())) continue;
+    namespace.on('command:*', (operands: string[]) => {
+      // Throw rather than print: handleProgramParseError owns the choice between
+      // human bytes and the machine envelope, so `--json` / `-f yaml` reach this
+      // failure the same way they reach every other usage error.
+      const name = operands[0]!;
+      const output = `${unknownSubcommandMessage(namespace, name)}\n`;
+      const help = unknownSubcommandHelp(namespace);
+      throw new CommanderStructuralError(output, EXIT_CODES.USAGE_ERROR, false, {
+        ok: false,
+        error: {
+          code: 'UNKNOWN_COMMAND',
+          message: `unknown command '${name}'`,
+          ...(help ? { help } : {}),
+          exitCode: EXIT_CODES.USAGE_ERROR,
+        },
+      });
+    });
+  }
+
   return program;
+}
+
+/**
+ * Turn "Invalid plugin source" into the command that actually installs it.
+ *
+ * `plugin search` reports a name and an installSource; agents pass the name,
+ * because that is the memorable half. Rather than reprint the format list and
+ * leave them to guess, look the name up and hand back the exact source. A
+ * catalog lookup needs the network, so any failure degrades to the search hint
+ * — never to a worse error than the one already printed.
+ */
+async function installSourceSuggestion(err: unknown, source: string): Promise<string | undefined> {
+  const { InvalidPluginSourceError, looksLikePluginName } = await import('./plugin.js');
+  if (!(err instanceof InvalidPluginSourceError) || !looksLikePluginName(source)) return undefined;
+  try {
+    const { readCatalog, searchCatalogPlugins } = await import('./plugin-catalog.js');
+    const { plugins } = await searchCatalogPlugins(readCatalog(), { query: source });
+    const exact = plugins.filter(plugin => plugin.name.toLowerCase() === source.toLowerCase());
+    if (exact.length === 1 && exact[0]!.installSource) {
+      return `help: "${source}" is in the catalog. Install it with:\n  ${CLI_COMMAND} plugin install ${exact[0]!.installSource}`;
+    }
+  } catch {
+    // Catalog unreachable: fall through to the generic hint.
+  }
+  return `help: "${source}" looks like a plugin name, not a source. Find its installSource with:\n  ${CLI_COMMAND} plugin search ${source}`;
 }
 
 export async function loadAntigravityServe(pluginsDir: string = PLUGINS_DIR): Promise<{
@@ -2238,36 +2488,7 @@ export async function runCli(BUILTIN_CLIS: string, USER_CLIS: string): Promise<v
   }
 }
 
-const COMMANDER_DISPLAY_CODES = new Set([
-  'commander.help',
-  'commander.helpDisplayed',
-  'commander.version',
-]);
-
-export function handleProgramParseError(err: unknown, stderr: NodeJS.WritableStream = process.stderr): void {
-  if (err instanceof CommanderStructuralError) {
-    stderr.write(err.output);
-    process.exitCode = err.exitCode;
-    return;
-  }
-  if (err instanceof CommanderError && COMMANDER_DISPLAY_CODES.has(err.code)) {
-    process.exitCode = err.exitCode;
-    return;
-  }
-  reportCliError(err, stderr);
-}
-
-/** Render a thrown error as the shared envelope and set the exit code it carries. */
-export function reportCliError(err: unknown, stderr: NodeJS.WritableStream = process.stderr): void {
-  const envelope = toEnvelope(err);
-  if (process.env.WEBCMD_DEBUG && err instanceof Error && err.stack) {
-    envelope.error.stack = err.stack;
-  }
-  stderr.write(formatErrorEnvelope(envelope, {
-    fmt: errorEnvelopeFormat(requestedFormatFromArgv(process.argv.slice(2))),
-  }));
-  process.exitCode = envelope.error.exitCode;
-}
+export { handleProgramParseError, reportCliError } from './cli-error-report.js';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 

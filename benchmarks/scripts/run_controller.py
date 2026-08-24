@@ -20,12 +20,14 @@ from urllib.parse import unquote
 
 from agent_browser_runtime import start_agent_browser_runtime
 from axi_runtime import start_axi_runtime
+from browser_use_runtime import start_browser_use_runtime
 from dev_browser_runtime import start_dev_browser_runtime
 from libretto_runtime import start_libretto_runtime
+from playwright_cli_runtime import start_playwright_cli_runtime
 
 
 Controller = Literal["codex", "claude", "pi"]
-Tool = Literal["webcmd", "chrome-devtools-axi", "agent-browser", "dev-browser", "libretto"]
+Tool = Literal["webcmd", "chrome-devtools-axi", "agent-browser", "dev-browser", "libretto", "browser-use", "playwright-cli"]
 Termination = Literal["completed", "timeout", "controller_error", "missing_final_answer", "tool_policy_violation"]
 FINAL_ANSWER_RE = re.compile(r"^FINAL ANSWER:[ \t]*(\S[^\r\n]*)$", re.MULTILINE)
 ESSENTIAL_ENV_KEYS = {
@@ -52,6 +54,8 @@ TOOL_ENV_PREFIXES = {
     "agent-browser": (),
     "dev-browser": (),
     "libretto": (),
+    "browser-use": (),
+    "playwright-cli": (),
 }
 EVALUATION_ENV_KEYS = {
     "DATASET_DECRYPTION_KEY", "DATASET_PATH", "EVIDENCE_PATH", "EXPECTED_ANSWER", "GOOGLE_API_KEY",
@@ -80,9 +84,15 @@ WEBCMD_BROWSER_SKILL = Path.home() / ".codex/skills/webcmd-browser"
 WEBCMD_BROWSER_SKILL_FILE = WEBCMD_BROWSER_SKILL / "SKILL.md"
 WEBCMD_BROWSER_SKILL_ROOT = WEBCMD_BROWSER_SKILL.resolve()
 DEV_BROWSER_SKILL = Path.home() / ".codex/skills/dev-browser"
+BROWSER_USE_SKILL = Path.home() / ".codex/skills/browser-use"
+AGENT_BROWSER_SKILL = Path.home() / ".codex/skills/agent-browser"
+PLAYWRIGHT_CLI_SKILL = Path.home() / ".codex/skills/playwright-cli"
 PI_SETUP_SKILL_FILES = {
     "webcmd": frozenset({WEBCMD_BROWSER_SKILL_FILE.resolve()}),
     "dev-browser": frozenset({(DEV_BROWSER_SKILL / "SKILL.md").resolve()}),
+    "browser-use": frozenset({(BROWSER_USE_SKILL / "SKILL.md").resolve()}),
+    "agent-browser": frozenset({(AGENT_BROWSER_SKILL / "SKILL.md").resolve()}),
+    "playwright-cli": frozenset({(PLAYWRIGHT_CLI_SKILL / "SKILL.md").resolve()}),
 }
 GPT_5_6_SOL_PRICES_PER_MILLION = {
     "input": 5.0,
@@ -249,8 +259,16 @@ def _build_prompt(tool: Tool, session: str, shots_dir: Path, task: str) -> str:
 - Do not use `batch`, `close`, connection/profile flags, or multiple agent-browser commands in one shell invocation.
 - Never pass a URL to `agent-browser read`; use `agent-browser open URL` and then `agent-browser read` so all page traffic stays inside CloakBrowser.
 - Do not use Web search, browser MCPs, Playwright, Puppeteer, curl, wget, raw HTTP, or any non-agent-browser automation tool.
-- Use the `$agent-browser` skill for agent-browser usage guidance.
+- Use the `$agent-browser` skill for agent-browser usage guidance. Load current CLI instructions with `agent-browser skills get core` before the first browser command.
 - The agent-browser session and its dedicated CloakBrowser connection are already configured in the environment; do not start, connect, configure, or close another browser."""
+    elif tool == "playwright-cli":
+        tool_rules = """- Use only `playwright-cli` for browser interaction.
+- Use one `playwright-cli` command per shell invocation; use no substitutions, redirections, pipes, or other executables.
+- Do not use `attach`, `detach`, `close`, `close-all`, `kill-all`, `install`, `install-browser`, `show`, connection/profile/browser flags, or multiple playwright-cli commands in one shell invocation.
+- Prefer `playwright-cli goto URL` and `playwright-cli snapshot` on the already attached session. Do not start Playwright's own Chromium.
+- Do not use Web search, browser MCPs, Puppeteer, curl, wget, raw HTTP, or any non-playwright-cli automation tool.
+- Use the `$playwright-cli` skill for playwright-cli usage guidance.
+- The playwright-cli session and its dedicated CloakBrowser connection are already configured in the environment; do not start, connect, configure, or close another browser."""
     elif tool == "dev-browser":
         tool_rules = f"""- Use only `dev-browser` for browser interaction.
 - Invoke `dev-browser` with one quoted heredoc per shell command. The heredoc body must contain only the sandboxed JavaScript described by the `$dev-browser` skill.
@@ -265,6 +283,16 @@ def _build_prompt(tool: Tool, session: str, shots_dir: Path, task: str) -> str:
 - Do not use shell commands, Web Search, other MCP servers or tools, Playwright outside `browser_exec`, Puppeteer, curl, wget, or raw HTTP.
 - The Libretto provider is already pinned to this task's dedicated CloakBrowser; open it with `browser_open` and do not configure another browser.
 - Reuse the session ID returned by `browser_open` and close it with `browser_close` when the task is complete."""
+    elif tool == "browser-use":
+        tool_rules = f"""- Use only `browser-use` for browser interaction.
+- Invoke `browser-use` with one quoted heredoc per shell command. The heredoc body must contain only the Python helpers described by the `$browser-use` skill.
+- Do not pass `--cdp-url`, `--connect`, `--profile`, `--headed`, `auth`, `--doctor`, `--update`, `mac-approve`, `cloud`, or any other connection or cloud option.
+- Do not prefix the command with environment assignments. Do not call `start_remote_daemon`, `stop_remote_daemon`, or `auth login`.
+- Use no substitutions, pipes, extra redirections, or other executables.
+- Do not use Web search, browser MCPs, Playwright, Puppeteer, curl, wget, raw HTTP, or any non-browser-use automation tool.
+- Use the `$browser-use` skill for browser-use usage guidance.
+- The browser-use command is already pinned to this task's dedicated CloakBrowser connection; do not start, connect, configure, or close another browser.
+- Save screenshots with `capture_screenshot("{first_shot}")`, then `step_002.png`, and so on in the same directory."""
     else:
         tool_rules = f"""- Use only `webcmd` raw-browser commands for task execution. Do not use Web Search, browser MCPs, external Playwright, Puppeteer, curl, wget, raw HTTP, adapters, fetch commands, plugins, or any non-Webcmd automation tool.
 - Use the `$webcmd-browser` skill for browser guidance. Do not load any other Webcmd skill. This benchmark's raw-browser route is already selected. Skip adapter and plugin discovery, the top-level Webcmd router, `webcmd doctor`, and the skill's Session lifecycle steps.
@@ -274,6 +302,9 @@ def _build_prompt(tool: Tool, session: str, shots_dir: Path, task: str) -> str:
     if tool == "dev-browser":
         screenshot_rules = f"""- Save screenshots after meaningful page transitions and at the final state with `saveScreenshot`.
 - Name screenshots `{session}-step_001.png`, then `{session}-step_002.png`, `{session}-step_003.png`, and so on without overwriting. The harness collects them automatically."""
+    elif tool == "browser-use":
+        screenshot_rules = f"""- Save screenshots after meaningful page transitions and at the final state with `capture_screenshot`.
+- Name screenshots `{first_shot}`, then step_002.png, step_003.png, and so on without overwriting."""
     elif tool == "libretto":
         screenshot_rules = """- Call `browser_snapshot` with `screenshot: true` after meaningful page transitions and at the final state.
 - The harness collects those native Libretto screenshot results automatically."""
@@ -359,6 +390,30 @@ def _controller_command(
         elif pi_tool == "dev-browser":
             command.extend(
                 ["--tool", pi_tool, "--skill-path", str(DEV_BROWSER_SKILL)]
+            )
+        elif pi_tool == "agent-browser":
+            if not (runtime_env or {}).get("AGENT_BROWSER_CDP"):
+                raise ValueError(
+                    "Pi agent-browser requires a task-private AGENT_BROWSER_CDP"
+                )
+            command.extend(
+                ["--tool", pi_tool, "--skill-path", str(AGENT_BROWSER_SKILL)]
+            )
+        elif pi_tool == "playwright-cli":
+            if not (runtime_env or {}).get("PLAYWRIGHT_CLI_SESSION"):
+                raise ValueError(
+                    "Pi playwright-cli requires a task-private PLAYWRIGHT_CLI_SESSION"
+                )
+            command.extend(
+                ["--tool", pi_tool, "--skill-path", str(PLAYWRIGHT_CLI_SKILL)]
+            )
+        elif pi_tool == "browser-use":
+            if not (runtime_env or {}).get("BU_CDP_URL"):
+                raise ValueError(
+                    "Pi browser-use requires a task-private BU_CDP_URL"
+                )
+            command.extend(
+                ["--tool", pi_tool, "--skill-path", str(BROWSER_USE_SKILL)]
             )
         elif pi_tool == "libretto":
             if not (runtime_env or {}).get("LIBRETTO_CDP_URL"):
@@ -643,8 +698,13 @@ def _parse_events(
                 steps.append(_short(f"tool: {name} {_short(arguments)}"))
             elif (
                 name == "read"
-                and _pi_setup_skill_read_allowed(
-                    tool, arguments.get("path")
+                and (
+                    _pi_setup_skill_read_allowed(
+                        tool, arguments.get("path")
+                    )
+                    or _pi_agent_browser_screenshot_read_allowed(
+                        tool, arguments.get("path")
+                    )
                 )
             ):
                 steps.append(_short(f"setup_tool: {name} {_short(arguments)}"))
@@ -866,7 +926,7 @@ def _is_unterminated_allowed_command(tool: Tool, command: str) -> bool:
         if not words:
             return False
         executable = Path(words[0].strip("'\"")).name
-        if tool in {"webcmd", "agent-browser"}:
+        if tool in {"webcmd", "agent-browser", "browser-use", "playwright-cli"}:
             return executable == tool
         if tool == "chrome-devtools-axi":
             return (
@@ -891,12 +951,32 @@ def _dev_browser_segment_allowed(segment: list[str]) -> bool:
     return False
 
 
+def _browser_use_segment_allowed(segment: list[str]) -> bool:
+    return bool(segment) and segment == ["browser-use"]
+
+
 def _dev_browser_skill_read_allowed(command: str) -> bool:
     segments = _shell_segments(command)
     if segments is None or len(segments) != 1:
         return False
     segment = segments[0]
     skill = (Path.home() / ".codex/skills/dev-browser/SKILL.md").resolve()
+    try:
+        target = Path(segment[-1]).expanduser().resolve()
+    except (IndexError, OSError):
+        return False
+    return target == skill and segment[:-1] in (
+        ["cat"],
+        ["sed", "-n", "1,240p"],
+    )
+
+
+def _browser_use_skill_read_allowed(command: str) -> bool:
+    segments = _shell_segments(command)
+    if segments is None or len(segments) != 1:
+        return False
+    segment = segments[0]
+    skill = (BROWSER_USE_SKILL / "SKILL.md").resolve()
     try:
         target = Path(segment[-1]).expanduser().resolve()
     except (IndexError, OSError):
@@ -945,6 +1025,22 @@ def _pi_setup_skill_read_allowed(tool: Tool | None, value: object) -> bool:
     except OSError:
         return False
     return target in PI_SETUP_SKILL_FILES.get(selected_tool, frozenset())
+
+
+def _pi_agent_browser_screenshot_read_allowed(
+    tool: Tool | None, value: object
+) -> bool:
+    if tool not in {"agent-browser", "playwright-cli"}:
+        return False
+    try:
+        target = Path(str(value or "")).expanduser().resolve()
+    except OSError:
+        return False
+    return (
+        target.suffix.lower() == ".png"
+        and target.is_file()
+        and "shots" in target.parts
+    )
 
 
 def _webcmd_skill_read_allowed(command: str) -> bool:
@@ -998,6 +1094,38 @@ def _dev_browser_command_allowed(command: str) -> bool:
     except ValueError:
         return False
     return _dev_browser_segment_allowed(segment)
+
+
+def _browser_use_command_allowed(command: str) -> bool:
+    inner = _unwrap_single_shell_command(command)
+    if inner is None:
+        return False
+    if _browser_use_skill_read_allowed(inner):
+        return True
+    lines = inner.splitlines()
+    if len(lines) < 3:
+        segments = _shell_segments(inner)
+        return (
+            segments is not None
+            and len(segments) == 1
+            and _browser_use_segment_allowed(segments[0])
+        )
+    match = re.fullmatch(
+        r"[ \t]*(?P<header>browser-use(?:[ \t]+.*?)?)[ \t]+"
+        r"<<[ \t]*(?P<quote>['\"])(?P<label>[A-Za-z_][A-Za-z0-9_]*)"
+        r"(?P=quote)[ \t]*",
+        lines[0],
+    )
+    if match is None or lines[-1].rstrip("\r") != match.group("label"):
+        return False
+    header = match.group("header")
+    if _has_unescaped_dollar(header):
+        return False
+    try:
+        segment = shlex.split(header, posix=True)
+    except ValueError:
+        return False
+    return _browser_use_segment_allowed(segment)
 
 
 def _webcmd_run_heredoc_allowed(command: str) -> bool:
@@ -1114,6 +1242,31 @@ def _webcmd_segment_allowed(segment: list[str]) -> bool:
     )
 
 
+def _playwright_cli_segment_allowed(segment: list[str]) -> bool:
+    executable = Path(segment[0].strip("'\"")).name
+    if executable != "playwright-cli" or len(segment) < 2:
+        return False
+    arguments = segment[1:]
+    forbidden_options = {
+        "--browser", "--cdp", "--config", "--endpoint", "--extension",
+        "--persistent", "--profile", "--session", "-s",
+    }
+    if any(
+        argument in forbidden_options
+        or argument.startswith("-s=")
+        or any(argument.startswith(f"{option}=") for option in forbidden_options)
+        for argument in arguments
+    ):
+        return False
+    positional = [argument for argument in arguments if not argument.startswith("-")]
+    if not positional:
+        return False
+    return positional[0] not in {
+        "attach", "close", "close-all", "delete-data", "detach", "install",
+        "install-browser", "kill-all", "mcp", "show",
+    }
+
+
 def _segment_allowed(tool: Tool, segment: list[str]) -> bool:
     executable = Path(segment[0].strip("'\"")).name
     if executable in {"sh", "bash", "zsh"} and len(segment) == 3 and segment[1] in {"-c", "-lc"}:
@@ -1143,8 +1296,12 @@ def _segment_allowed(tool: Tool, segment: list[str]) -> bool:
             "batch", "close", "connect", "doctor", "install", "mcp", "plugin",
             "upgrade",
         }
+    if tool == "playwright-cli":
+        return _playwright_cli_segment_allowed(segment)
     if tool == "dev-browser":
         return _dev_browser_segment_allowed(segment)
+    if tool == "browser-use":
+        return _browser_use_segment_allowed(segment)
     if tool == "webcmd":
         return _webcmd_segment_allowed(segment)
     if executable == tool:
@@ -1178,6 +1335,10 @@ def _policy_violation(
             if not _dev_browser_command_allowed(command):
                 return True
             continue
+        if tool == "browser-use":
+            if not _browser_use_command_allowed(command):
+                return True
+            continue
         if tool == "webcmd" and _webcmd_run_heredoc_allowed(command):
             continue
         if tool == "webcmd" and _webcmd_skill_read_allowed(command):
@@ -1189,7 +1350,7 @@ def _policy_violation(
             continue
         if (
             segments is None
-            or (tool == "agent-browser" and len(segments) != 1)
+            or (tool in {"agent-browser", "playwright-cli"} and len(segments) != 1)
             or any(not _segment_allowed(tool, segment) for segment in segments)
         ):
             return True
@@ -1413,10 +1574,14 @@ async def run_controller(controller: Controller, model: str, tool: Tool, task: s
         browser_runtime = await start_axi_runtime(session, work_dir, _subprocess_env(tool=tool))
     elif tool == "agent-browser":
         browser_runtime = await start_agent_browser_runtime(session, work_dir, _subprocess_env(tool=tool))
+    elif tool == "playwright-cli":
+        browser_runtime = await start_playwright_cli_runtime(session, work_dir, _subprocess_env(tool=tool))
     elif tool == "dev-browser":
         browser_runtime = await start_dev_browser_runtime(session, work_dir, _subprocess_env(tool=tool))
     elif tool == "libretto":
         browser_runtime = await start_libretto_runtime(session, work_dir, _subprocess_env(tool=tool))
+    elif tool == "browser-use":
+        browser_runtime = await start_browser_use_runtime(session, work_dir, _subprocess_env(tool=tool))
     merged_tool_env = {**(browser_runtime.env if browser_runtime else {}), **(tool_env or {})}
     if tool == "webcmd":
         merged_tool_env = await asyncio.to_thread(

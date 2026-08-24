@@ -34,7 +34,7 @@ function browserRun(session: string, source: string, options: Parameters<typeof 
 
 async function createSession(options: Parameters<typeof runCli>[1] = {}) {
   const result = await runCli(['session', 'create', '-f', 'json'], isolatedOptions(options));
-  expect(result.code).toBe(0);
+  expect(result.code, `${result.stdout}\n${result.stderr}`).toBe(0);
   return JSON.parse(result.stdout).id as string;
 }
 
@@ -42,6 +42,8 @@ beforeAll(async () => {
   sharedConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-cloak-suite-'));
   sharedProfile = `cloak-suite-${Date.now()}`;
   sourceDirs.push(sharedConfigDir);
+  const created = await runCli(['profile', 'create', sharedProfile], isolatedOptions({ timeout: 120_000 }));
+  expect(created.code, `${created.stdout}\n${created.stderr}`).toBe(0);
   server = http.createServer((req, res) => {
     if (req.url === '/cookie') {
       res.setHeader('Set-Cookie', 'webcmd_smoke=ok; Path=/');
@@ -111,6 +113,7 @@ describe('Cloak runtime e2e', () => {
         WEBCMD_PROFILE: profile,
       },
     });
+    expect((await run(['profile', 'create', profile])).code).toBe(0);
     const waitForStoppedDaemon = async () => {
       let status = await run(['daemon', 'status']);
       for (let attempt = 0; attempt < 20 && !status.stdout.includes('Daemon: not running'); attempt += 1) {

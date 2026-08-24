@@ -46,3 +46,5 @@ benchmarks/.pytest_cache/
 benchmarks/pytest-cache-files-*
 benchmarks/datasets/*.json
 !benchmarks/datasets/Stealth_Webcmd.json
+benchmarks/.playwright-cli/
+benchmarks/.playwright/

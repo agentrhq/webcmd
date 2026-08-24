@@ -166,8 +166,8 @@ test('npm package throws EmptyResultError on 404', () =>
 // ---------------------------------------------------------------------------
 // npm versions
 // ---------------------------------------------------------------------------
-test('npm versions returns rows newest first', () =>
-    withFetch(REGISTRY_PAYLOAD, async () => {
+test('npm versions returns rows newest first', async () => {
+    await withFetch(REGISTRY_PAYLOAD, async () => {
         const rows = await versionsNpm({ name: 'exlib', limit: 10 });
         assert.equal(rows.length, 2);
         assert.equal(rows[0].version, '2.1.0');
@@ -176,25 +176,66 @@ test('npm versions returns rows newest first', () =>
         assert.ok(rows[0].url.includes('2.1.0'));
         assert.equal(rows[1].version, '2.0.0');
         assert.equal(rows[1].isLatest, false);
-    }),
-);
+    });
+});
 
-test('npm versions strips created/modified bookkeeping keys', () =>
-    withFetch(REGISTRY_PAYLOAD, async () => {
+test('npm versions strips created/modified bookkeeping keys', async () => {
+    await withFetch(REGISTRY_PAYLOAD, async () => {
         const rows = await versionsNpm({ name: 'exlib', limit: 50 });
         assert.ok(rows.every((r) => r.version !== 'created' && r.version !== 'modified'));
-    }),
-);
+    });
+});
 
-test('npm versions respects --limit', () =>
-    withFetch(REGISTRY_PAYLOAD, async () => {
+test('npm versions respects --limit', async () => {
+    await withFetch(REGISTRY_PAYLOAD, async () => {
         const rows = await versionsNpm({ name: 'exlib', limit: 1 });
         assert.equal(rows.length, 1);
         assert.equal(rows[0].version, '2.1.0');
-    }),
-);
+    });
+});
 
-test('npm versions sorts correctly when two versions share the same date', () => {
+test('npm versions filters prereleases before applying the default limit', () => {
+    const payload = {
+        name: 'react-like',
+        'dist-tags': { latest: '18.3.1' },
+        versions: {
+            '18.3.1': {},
+            '19.0.0-canary-0001': {},
+            '19.0.0-canary-0002': {},
+            '19.0.0-canary-0003': {},
+            '19.0.0-canary-0004': {},
+            '19.0.0-canary-0005': {},
+            '19.0.0-canary-0006': {},
+            '19.0.0-canary-0007': {},
+            '19.0.0-canary-0008': {},
+            '19.0.0-canary-0009': {},
+            '19.0.0-canary-0010': {},
+        },
+        time: {
+            created: '2024-01-01T00:00:00.000Z',
+            modified: '2026-06-11T00:00:00.000Z',
+            '18.3.1': '2025-01-01T00:00:00.000Z',
+            '19.0.0-canary-0001': '2026-06-01T00:00:00.000Z',
+            '19.0.0-canary-0002': '2026-06-02T00:00:00.000Z',
+            '19.0.0-canary-0003': '2026-06-03T00:00:00.000Z',
+            '19.0.0-canary-0004': '2026-06-04T00:00:00.000Z',
+            '19.0.0-canary-0005': '2026-06-05T00:00:00.000Z',
+            '19.0.0-canary-0006': '2026-06-06T00:00:00.000Z',
+            '19.0.0-canary-0007': '2026-06-07T00:00:00.000Z',
+            '19.0.0-canary-0008': '2026-06-08T00:00:00.000Z',
+            '19.0.0-canary-0009': '2026-06-09T00:00:00.000Z',
+            '19.0.0-canary-0010': '2026-06-10T00:00:00.000Z',
+        },
+    };
+
+    return withFetch(payload, async () => {
+        const rows = await versionsNpm({ name: 'react-like' });
+        assert.deepEqual(rows.map((row) => row.version), ['18.3.1']);
+        assert.equal(rows[0].isLatest, true);
+    });
+});
+
+test('npm versions sorts correctly when two versions share the same date', async () => {
     // Regression: sort must use the full ISO timestamp, not the truncated
     // date-only string, so same-day releases still come out newest-first.
     const sameDayPayload = {
@@ -213,7 +254,7 @@ test('npm versions sorts correctly when two versions share the same date', () =>
             '0.0.1-ghost': '2026-06-15T06:00:00.000Z',  // time-only, no body.versions entry
         },
     };
-    return withFetch(sameDayPayload, async () => {
+    await withFetch(sameDayPayload, async () => {
         const rows = await versionsNpm({ name: 'exlib', limit: 10 });
         // ghost entry must be excluded
         assert.equal(rows.length, 2);
@@ -228,7 +269,7 @@ test('npm versions sorts correctly when two versions share the same date', () =>
     });
 });
 
-test('npm versions filters out prereleases by default and includes them with flag', () => {
+test('npm versions filters out prereleases by default and includes them with flag', async () => {
     const prereleasePayload = {
         name: 'exlib',
         'dist-tags': { latest: '2.1.0' },
@@ -245,7 +286,7 @@ test('npm versions filters out prereleases by default and includes them with fla
             '2.2.0-beta.0': '2026-07-01T00:00:00.000Z',
         },
     };
-    return withFetch(prereleasePayload, async () => {
+    await withFetch(prereleasePayload, async () => {
         // By default, prerelease (2.2.0-beta.0) is filtered out
         const defaultRows = await versionsNpm({ name: 'exlib', limit: 10 });
         assert.equal(defaultRows.length, 2);
@@ -261,15 +302,12 @@ test('npm versions filters out prereleases by default and includes them with fla
     });
 });
 
-test('npm versions rejects out-of-range limit', () =>
-    withFetch(REGISTRY_PAYLOAD, async () => {
-        await assert.rejects(
-            () => versionsNpm({ name: 'exlib', limit: 51 }),
-            /50/,
-        );
-    }),
-);
-
+test('npm versions rejects out-of-range limit', async () => {
+    await assert.rejects(
+        () => versionsNpm({ name: 'exlib', limit: 51 }),
+        /50/,
+    );
+});
 // ---------------------------------------------------------------------------
 // npm downloads
 // ---------------------------------------------------------------------------

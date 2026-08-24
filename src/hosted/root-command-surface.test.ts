@@ -2,7 +2,7 @@ import { Writable } from 'node:stream';
 import { Command, CommanderError } from 'commander';
 import { describe, expect, it, vi } from 'vitest';
 import { createProgram } from '../cli.js';
-import { applyUnknownOptionContract, CommanderStructuralError } from '../command-surface.js';
+import { applyUnknownOptionContract, CommanderStructuralError, USAGE_ERROR_CODES } from '../command-surface.js';
 import { formatRootHelp } from '../command-presentation.js';
 import { HOSTED_ROOT_HELP } from '../completion-shared.js';
 import { CliError } from '../errors.js';
@@ -114,7 +114,9 @@ async function runActualLocalRoot(argv: string[]): Promise<LocalRootResult> {
     return { exitCode: Number(process.exitCode ?? 0), stdout, stderr };
   } catch (error) {
     if (error instanceof CommanderStructuralError) {
-      return { exitCode: error.exitCode, stdout, stderr: error.output, errorCode: 'commander.unknownOption' };
+      const commanderCode = Object.entries(USAGE_ERROR_CODES)
+        .find(([, code]) => code === error.envelope?.error.code)?.[0] ?? 'commander.unknownOption';
+      return { exitCode: error.exitCode, stdout, stderr: error.output, errorCode: commanderCode };
     }
     if (error instanceof CommanderError) {
       return { exitCode: error.exitCode, stdout, stderr, errorCode: error.code };
@@ -493,7 +495,7 @@ describe('hosted root preflight call order', () => {
 
     expect(result).toEqual({ handled: true, exitCode: 2 });
     expect(stderr.text()).toBe(MISSING_SITE_GUIDANCE);
-    expect(stdout.text()).toBe(formatRootHelp(HOSTED_ROOT_HELP));
+    expect(stdout.text()).toBe('');
   });
 
   it('preserves the literal separator when list receives a help-shaped excess argument', async () => {
@@ -508,23 +510,17 @@ describe('hosted root preflight call order', () => {
       fetchImpl: async () => manifestResponse(),
     });
 
+    // Usage errors are exit 2 and carry a `help:` line instead of a trailing
+    // UNKNOWN/exit-1 envelope. See fix/cli-usage-error-envelope.
     expect(local).toMatchObject({
-      exitCode: 1,
+      exitCode: 2,
       stdout: '',
-      stderr: "error: too many arguments for 'list'. Expected 0 arguments but got 1.\n",
+      stderr: "error: too many arguments for 'list'. Expected 0 arguments but got 1.\nhelp: usage: webcmd list [options]\n",
       errorCode: 'commander.excessArguments',
     });
     expect(hosted).toEqual({ handled: true, exitCode: local.exitCode });
     expect(stdout.text()).toBe(local.stdout);
-    expect(stderr.text()).toBe([
-      local.stderr.trimEnd(),
-      'ok: false',
-      'error:',
-      "  code: UNKNOWN",
-      "  message: 'error: too many arguments for ''list''. Expected 0 arguments but got 1.'",
-      '  exitCode: 1',
-      '',
-    ].join('\n'));
+    expect(stderr.text()).toBe(local.stderr);
   });
 
   it.each([
@@ -549,12 +545,17 @@ describe('hosted root preflight call order', () => {
     if (argv.join(' ') === 'list --help') {
       expect(stderr.text()).toBe(local.stderr);
     } else if (argv.join(' ') === 'list --unknown') {
+      // Hosted used to replay Commander's captured stderr on top of the
+      // formatted line and print `error:` twice. It matches local now.
+      expect(stderr.text()).toBe(local.stderr);
       expect(stderr.text()).toBe([
-        "error: unknown option '--unknown'",
         "error: unknown option '--unknown'",
         'help: valid flags for `webcmd list`: --tag, -f, --format, --json',
         '',
       ].join('\n'));
+    } else if (argv.join(' ') === 'list extra') {
+      // Excess arguments are a usage error: same bytes as local, no UNKNOWN envelope.
+      expect(stderr.text()).toBe(local.stderr);
     } else {
       expect(stderr.text()).toContain('ok: false\nerror:\n  code: UNKNOWN\n');
     }
@@ -573,23 +574,17 @@ describe('hosted root preflight call order', () => {
       fetchImpl,
     });
 
+    // Usage errors are exit 2 and carry a `help:` line instead of a trailing
+    // UNKNOWN/exit-1 envelope. See fix/cli-usage-error-envelope.
     expect(local).toMatchObject({
-      exitCode: 1,
+      exitCode: 2,
       stdout: '',
-      stderr: "error: missing required argument 'shell'\n",
+      stderr: "error: missing required argument 'shell'\nhelp: usage: webcmd completion [options] <shell>\n",
       errorCode: 'commander.missingArgument',
     });
     expect(hosted).toEqual({ handled: true, exitCode: local.exitCode });
     expect(stdout.text()).toBe(local.stdout);
-    expect(stderr.text()).toBe([
-      local.stderr.trimEnd(),
-      'ok: false',
-      'error:',
-      "  code: UNKNOWN",
-      "  message: 'error: missing required argument ''shell'''",
-      '  exitCode: 1',
-      '',
-    ].join('\n'));
+    expect(stderr.text()).toBe(local.stderr);
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
@@ -661,16 +656,17 @@ describe('hosted root preflight call order', () => {
     expect(stdout.text()).toBe(local.stdout);
     if (name === 'help') {
       expect(stderr.text()).toBe(local.stderr);
-      expect(local.stdout).toHaveLength(181);
+      expect(local.stdout).toHaveLength(371);
     } else if (name === 'leaf version is unknown') {
+      expect(stderr.text()).toBe(local.stderr);
       expect(stderr.text()).toBe([
         "error: unknown option '-V'",
-        "error: unknown option '-V'",
+        'help: valid flags for `webcmd completion`: -f, --format, --json',
         '',
       ].join('\n'));
     } else {
-      expect(stderr.text()).toContain(local.stderr);
-      expect(stderr.text()).toContain('ok: false\nerror:\n  code: UNKNOWN\n');
+      // Usage errors: hosted reproduces the local bytes exactly, no UNKNOWN envelope.
+      expect(stderr.text()).toBe(local.stderr);
     }
     expect(fetchImpl).not.toHaveBeenCalled();
   });
@@ -766,9 +762,10 @@ describe('hosted root preflight call order', () => {
       expect(local.stdout).not.toBe('');
       expect(local.stderr).toBe('');
     } else {
-      expect(stdout.text()).toBe(formatRootHelp(HOSTED_ROOT_HELP));
+      // Unknown site is an error path: stderr only, nothing on stdout.
+      expect(stdout.text()).toBe('');
       expect(stderr.text()).toBe(MISSING_SITE_GUIDANCE);
-      expect(local.stdout).not.toBe('');
+      expect(local.stdout).toBe('');
       expect(local.stderr).toBe(MISSING_SITE_GUIDANCE);
     }
     expect(fetchImpl).toHaveBeenCalledTimes(1);
@@ -791,10 +788,16 @@ describe('hosted root preflight call order', () => {
       fetchImpl,
     });
 
-    expect(local).toMatchObject({ exitCode: 1, stdout: '', stderr: "error: unknown command 'bogus'\n" });
+    // Unknown subcommand is a usage error: exit 2, one line plus the valid
+    // subcommands, no trailing UNKNOWN envelope. See fix/cli-usage-error-envelope.
+    expect(local).toMatchObject({
+      exitCode: 2,
+      stdout: '',
+      stderr: "error: unknown command 'bogus'\nhelp: valid subcommands for `webcmd github`: whoami\n",
+    });
     expect(hosted).toEqual({ handled: true, exitCode: local.exitCode });
     expect(stdout.text()).toBe(local.stdout);
-    expect(stderr.text()).toContain(`${local.stderr}ok: false\nerror:\n  code: UNKNOWN\n`);
+    expect(stderr.text()).toBe("error: unknown command 'bogus'\nhelp: valid subcommands for `webcmd github`: whoami\n");
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(String(fetchImpl.mock.calls[0]![0])).toBe('https://api.example.com/v1/manifest');
   });
@@ -817,9 +820,9 @@ describe('hosted root preflight call order', () => {
     });
 
     expect(local).toMatchObject({ exitCode: 2, stderr: MISSING_SITE_GUIDANCE });
-    expect(local.stdout).not.toBe('');
+    expect(local.stdout).toBe('');
     expect(hosted).toEqual({ handled: true, exitCode: local.exitCode });
-    expect(stdout.text()).toBe(formatRootHelp(HOSTED_ROOT_HELP));
+    expect(stdout.text()).toBe(local.stdout);
     expect(stderr.text()).toBe(local.stderr);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(String(fetchImpl.mock.calls[0]![0])).toBe('https://api.example.com/v1/manifest');

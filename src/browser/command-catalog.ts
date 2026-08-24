@@ -6,6 +6,40 @@ import type {
   HostedSessionPolicy,
 } from '../hosted/contract.js';
 
+export const BROWSER_RUN_HELP_TEXT = `
+Examples:
+  Navigate and extract:
+    await page.goto('https://example.com');
+    return await page.title();
+
+  Use a data URL for tiny fixtures:
+    await page.goto('data:text/html,<button>Save</button>');
+
+  Capture a download:
+    const downloadPromise = page.waitForEvent('download');
+    await page.getByRole('link', { name: 'Download' }).click();
+    const download = await downloadPromise;
+    await download.saveAs(download.suggestedFilename());
+
+  Upload a file:
+    await page.locator('input[type=file]').setInputFiles('/tmp/upload.pdf');
+
+  Track popups and new pages:
+    const popupPromise = context.waitForEvent('page', { timeout: 5000 });
+    await page.getByRole('link', { name: 'Open' }).click();
+    const popup = await popupPromise;
+    await popup.waitForLoadState();
+
+  Chrome blocks top-level data: navigation, so window.open('data:...') creates no
+  tab and no popup event ever fires. Open one yourself instead:
+    const receipt = await context.newPage();
+    await receipt.goto(receiptUrl);
+
+Sandbox:
+  Node require/fs are not available inside browser run. Return structured data,
+  console.log concise evidence, or call writeArtifact(filename, bytes) to save files.
+`;
+
 type ArgumentMetadata = {
   required?: boolean;
   default?: unknown;

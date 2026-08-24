@@ -110,6 +110,19 @@ export function requestedFormatFromArgv(argv: readonly string[]): string | undef
   return format;
 }
 
+/**
+ * Machine format explicitly requested on the command line, if any.
+ *
+ * Structural failures render as an envelope only when the caller asked for a
+ * machine format; humans keep the short `error:`/`help:` lines.
+ */
+export function requestedMachineFormat(argv: readonly string[]): 'json' | 'yaml' | undefined {
+  const requested = requestedFormatFromArgv(argv)?.trim().toLowerCase();
+  if (requested === 'json') return 'json';
+  if (requested === 'yaml' || requested === 'yml') return 'yaml';
+  return undefined;
+}
+
 /** Serialize the local error envelope without writing to process-global stderr. */
 export function formatErrorEnvelope(envelope: ErrorEnvelope, opts: ErrorRenderOptions = {}): string {
   const repaired = withAdapterRepairHelp(envelope, opts.cmdName);

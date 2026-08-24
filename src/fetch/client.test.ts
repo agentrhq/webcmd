@@ -5,6 +5,33 @@ import { webFetch } from './client.js';
 function response(body: string, status = 200, headers: Record<string, string> = { 'content-type': 'text/plain' }) { return new Response(body, { status, headers }); }
 const safeProxy = (close = vi.fn().mockResolvedValue(undefined), policyError: () => Error | undefined = () => undefined) => ({ url: 'http://proxy', close, policyError });
 describe('webFetch', () => {
+  const html = '<html><head><title>T</title></head><body><article><p>Article body that readability keeps.</p></article><script>var a=1;</script></body></html>';
+  it('returns the unprocessed body with metadata when raw is set', async () => {
+    const plainFetch = vi.fn().mockResolvedValue(response(html, 200, { 'content-type': 'text/html; charset=utf-8' }));
+    const result = await webFetch({ url: 'https://example.com', timeoutSeconds: 5, maxChars: 0, allowPrivate: false, raw: true }, { plainFetch, createImpit: vi.fn(), createSafeProxy: async () => safeProxy() });
+    expect(result).toMatchObject({ status: 200, finalUrl: 'https://example.com', contentType: 'text/html; charset=utf-8', extractionSource: 'raw', truncated: false, bytes: Buffer.byteLength(html) });
+    expect(result.content).toBe(html);
+  });
+  it('extracts and omits raw metadata without the raw flag', async () => {
+    const plainFetch = vi.fn().mockResolvedValue(response(html, 200, { 'content-type': 'text/html; charset=utf-8' }));
+    const result = await webFetch({ url: 'https://example.com', timeoutSeconds: 5, maxChars: 0, allowPrivate: false }, { plainFetch, createImpit: vi.fn(), createSafeProxy: async () => safeProxy() });
+    expect(result.content).not.toContain('<script>');
+    expect(result.content).toContain('Article body');
+    expect(result.bytes).toBeUndefined();
+  });
+  it('reports raw truncation instead of cutting silently', async () => {
+    const plainFetch = vi.fn().mockResolvedValue(response(html, 200, { 'content-type': 'text/html' }));
+    const result = await webFetch({ url: 'https://example.com', timeoutSeconds: 5, maxChars: 20, allowPrivate: false, raw: true }, { plainFetch, createImpit: vi.fn(), createSafeProxy: async () => safeProxy() });
+    expect(result.truncated).toBe(true);
+    expect(result.content).toBe(`${html.slice(0, 20)}\n\n[webcmd: truncated at 20 characters; rerun with --max-chars 0]`);
+  });
+  it('still blocks a challenge response when raw is set', async () => {
+    await expect(webFetch({ url: 'https://example.com', timeoutSeconds: 5, maxChars: 0, allowPrivate: false, raw: true }, {
+      plainFetch: vi.fn().mockImplementation(async () => response('challenge', 403, { server: 'cloudflare', 'content-type': 'text/html' })),
+      createImpit: vi.fn(() => ({ fetch: vi.fn().mockImplementation(async () => response('challenge', 403, { server: 'cloudflare', 'content-type': 'text/html' })) })),
+      createSafeProxy: async () => safeProxy(),
+    })).rejects.toMatchObject({ code: 'FETCH_BLOCKED' });
+  });
   it('uses healthy plain responses without escalation', async () => {
     const plainFetch = vi.fn().mockResolvedValue(response('ok'));
     const createImpit = vi.fn();

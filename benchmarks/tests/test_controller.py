@@ -359,8 +359,24 @@ def test_agent_browser_prompt_uses_installed_skill_and_dedicated_cloak(tmp_path)
     assert "Do not use `batch`" in prompt
     assert "one `agent-browser` command per shell invocation" in prompt
     assert "Never pass a URL to `agent-browser read`" in prompt
+    assert "agent-browser skills get core" in prompt
     assert "Webcmd" not in prompt
     assert "chrome-devtools-axi" not in prompt
+    assert str(tmp_path / "shots" / "step_001.png") in prompt
+
+
+def test_playwright_cli_prompt_uses_installed_skill_and_dedicated_cloak(tmp_path):
+    prompt = _build_prompt(
+        "playwright-cli", "session-1", tmp_path / "shots", "Find the answer"
+    )
+
+    assert "`$playwright-cli` skill" in prompt
+    assert "only `playwright-cli`" in prompt
+    assert "dedicated CloakBrowser" in prompt
+    assert "one `playwright-cli` command per shell invocation" in prompt
+    assert "Do not use `attach`" in prompt
+    assert "`close`" in prompt
+    assert "Webcmd" not in prompt
     assert str(tmp_path / "shots" / "step_001.png") in prompt
 
 
@@ -400,6 +416,25 @@ def test_libretto_prompt_uses_only_native_tools_on_dedicated_cloak(tmp_path):
     assert "shell commands" in prompt
     assert "$libretto" not in prompt
     assert str(tmp_path / "shots") not in prompt
+
+
+def test_browser_use_prompt_uses_installed_skill_quoted_python_and_cloak(
+    tmp_path,
+):
+    prompt = _build_prompt(
+        "browser-use", "session-1", tmp_path / "shots", "Find the answer"
+    )
+
+    assert "`$browser-use` skill" in prompt
+    assert "only `browser-use`" in prompt
+    assert "quoted heredoc" in prompt
+    assert "dedicated CloakBrowser" in prompt
+    assert "capture_screenshot" in prompt
+    assert str(tmp_path / "shots" / "step_001.png") in prompt
+    assert "start_remote_daemon" in prompt
+    assert "auth login" in prompt
+    assert "Webcmd" not in prompt
+    assert "dev-browser" not in prompt
 
 
 def test_codex_and_claude_events_normalize_to_steps_and_final_text():
@@ -953,6 +988,145 @@ def test_pi_dev_browser_skill_read_is_setup_not_a_foreign_tool():
     )
 
 
+def test_pi_browser_use_skill_read_is_setup_not_a_foreign_tool():
+    event = {
+        "type": "tool_execution_start",
+        "toolName": "read",
+        "args": {
+            "path": str(Path.home() / ".codex/skills/browser-use/SKILL.md")
+        },
+    }
+
+    parsed = _parse_events(
+        "pi", [json.dumps(event)], tool="browser-use"
+    )
+
+    assert parsed.tool_calls == 0
+    assert parsed.steps_count == 0
+    assert not _policy_violation(
+        "browser-use", parsed.commands, parsed.event_types
+    )
+
+
+def test_pi_agent_browser_skill_read_is_setup_not_a_foreign_tool():
+    event = {
+        "type": "tool_execution_start",
+        "toolName": "read",
+        "args": {
+            "path": str(Path.home() / ".codex/skills/agent-browser/SKILL.md")
+        },
+    }
+
+    parsed = _parse_events(
+        "pi", [json.dumps(event)], tool="agent-browser"
+    )
+
+    assert parsed.tool_calls == 0
+    assert parsed.steps_count == 0
+    assert not _policy_violation(
+        "agent-browser", parsed.commands, parsed.event_types
+    )
+
+
+def test_pi_playwright_cli_skill_read_is_setup_not_a_foreign_tool():
+    event = {
+        "type": "tool_execution_start",
+        "toolName": "read",
+        "args": {
+            "path": str(Path.home() / ".codex/skills/playwright-cli/SKILL.md")
+        },
+    }
+
+    parsed = _parse_events(
+        "pi", [json.dumps(event)], tool="playwright-cli"
+    )
+
+    assert parsed.tool_calls == 0
+    assert parsed.steps_count == 0
+    assert not _policy_violation(
+        "playwright-cli", parsed.commands, parsed.event_types
+    )
+
+
+def test_pi_playwright_cli_may_read_a_local_screenshot(tmp_path):
+    screenshot = tmp_path / "shots" / "step_002.png"
+    screenshot.parent.mkdir()
+    screenshot.write_bytes(b"\x89PNG\r\n\x1a\n")
+    event = {
+        "type": "tool_execution_start",
+        "toolName": "read",
+        "args": {"path": str(screenshot)},
+    }
+
+    parsed = _parse_events(
+        "pi", [json.dumps(event)], tool="playwright-cli"
+    )
+
+    assert "mcp_tool_call" not in parsed.event_types
+    assert not _policy_violation(
+        "playwright-cli", parsed.commands, parsed.event_types
+    )
+
+
+def test_pi_agent_browser_may_read_a_local_screenshot(tmp_path):
+    screenshot = tmp_path / "shots" / "step_002.png"
+    screenshot.parent.mkdir()
+    screenshot.write_bytes(b"\x89PNG\r\n\x1a\n")
+    event = {
+        "type": "tool_execution_start",
+        "toolName": "read",
+        "args": {"path": str(screenshot)},
+    }
+
+    parsed = _parse_events(
+        "pi", [json.dumps(event)], tool="agent-browser"
+    )
+
+    assert parsed.tool_calls == 0
+    assert parsed.steps_count == 0
+    assert "mcp_tool_call" not in parsed.event_types
+    assert not _policy_violation(
+        "agent-browser", parsed.commands, parsed.event_types
+    )
+
+
+def test_pi_agent_browser_screenshot_read_still_rejects_other_files(tmp_path):
+    other = tmp_path / "notes.txt"
+    other.write_text("secret")
+    event = {
+        "type": "tool_execution_start",
+        "toolName": "read",
+        "args": {"path": str(other)},
+    }
+
+    parsed = _parse_events(
+        "pi", [json.dumps(event)], tool="agent-browser"
+    )
+
+    assert _policy_violation(
+        "agent-browser", parsed.commands, parsed.event_types
+    )
+
+
+def test_pi_browser_use_screenshot_read_stays_a_foreign_tool(tmp_path):
+    screenshot = tmp_path / "shots" / "step_002.png"
+    screenshot.parent.mkdir()
+    screenshot.write_bytes(b"\x89PNG\r\n\x1a\n")
+    event = {
+        "type": "tool_execution_start",
+        "toolName": "read",
+        "args": {"path": str(screenshot)},
+    }
+
+    parsed = _parse_events(
+        "pi", [json.dumps(event)], tool="browser-use"
+    )
+
+    assert _policy_violation(
+        "browser-use", parsed.commands, parsed.event_types
+    )
+
+
 def test_claude_result_usage_is_used_when_messages_have_no_usage():
     event = {
         "type": "result",
@@ -1058,7 +1232,22 @@ def test_agent_browser_environment_preserves_only_private_runtime_configuration(
     assert "WEBCMD_API_KEY" not in env
 
 
-def test_environment_excludes_evaluation_metadata_even_under_allowed_prefixes(monkeypatch):
+def test_playwright_cli_environment_preserves_only_private_runtime_configuration(monkeypatch):
+    monkeypatch.setenv("PATH", "/bin")
+    monkeypatch.setenv("OPENAI_API_KEY", "controller-secret")
+    monkeypatch.setenv("PLAYWRIGHT_CLI_SESSION", "host-session")
+    monkeypatch.setenv("PLAYWRIGHT_API_KEY", "competing-secret")
+    monkeypatch.setenv("WEBCMD_API_KEY", "competing-tool-secret")
+
+    env = _child_env("codex", "playwright-cli", {
+        "PLAYWRIGHT_CLI_SESSION": "task-session",
+        "PLAYWRIGHT_CLI_CDP": "http://127.0.0.1:1234",
+    })
+
+    assert env["PLAYWRIGHT_CLI_SESSION"] == "task-session"
+    assert env["PLAYWRIGHT_CLI_CDP"] == "http://127.0.0.1:1234"
+    assert "PLAYWRIGHT_API_KEY" not in env
+    assert "WEBCMD_API_KEY" not in env
     monkeypatch.setenv("GOOGLE_API_KEY", "judge-secret")
     monkeypatch.setenv("JUDGE_MODEL", "judge-model")
     monkeypatch.setenv("DATASET_DECRYPTION_KEY", "dataset-secret")
@@ -1177,6 +1366,45 @@ def test_policy_allows_only_axi_invoked_through_npx():
 )
 def test_policy_allows_one_direct_agent_browser_command(command):
     assert not _policy_violation("agent-browser", [command], [])
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "playwright-cli goto https://example.com",
+        "playwright-cli snapshot",
+        "playwright-cli click e15",
+        "playwright-cli type 'hello'",
+        "playwright-cli screenshot --filename=/tmp/step_001.png",
+        "playwright-cli --raw snapshot",
+        "/usr/local/bin/playwright-cli fill e5 user@example.com",
+        "/bin/zsh -lc 'playwright-cli snapshot'",
+    ],
+)
+def test_policy_allows_one_direct_playwright_cli_command(command):
+    assert not _policy_violation("playwright-cli", [command], [])
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "playwright-cli attach --cdp=http://127.0.0.1:9222",
+        "playwright-cli attach --cdp=chrome",
+        "playwright-cli close",
+        "playwright-cli close-all",
+        "playwright-cli kill-all",
+        "playwright-cli install-browser",
+        "playwright-cli install --skills",
+        "playwright-cli open --browser=firefox https://example.com",
+        "playwright-cli --cdp=http://127.0.0.1:9222 snapshot",
+        "playwright-cli -s=other snapshot",
+        "npx playwright-cli snapshot",
+        "playwright-cli snapshot && playwright-cli click e1",
+        "playwright-cli snapshot > page.txt",
+    ],
+)
+def test_policy_rejects_playwright_cli_leaving_cloak_or_wrapping(command):
+    assert _policy_violation("playwright-cli", [command], [])
 
 
 @pytest.mark.parametrize(
@@ -1331,6 +1559,43 @@ def test_policy_rejects_dev_browser_connection_overrides_unsafe_heredocs_and_oth
     command,
 ):
     assert _policy_violation("dev-browser", [command], [])
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "browser-use <<'PY'\n"
+        'new_tab("https://example.com")\n'
+        "print(page_info())\n"
+        "PY",
+        "/bin/zsh -lc 'browser-use <<\"PY\"\n"
+        "print(page_info())\n"
+        "PY'",
+        f"/bin/zsh -lc \"sed -n '1,240p' {Path.home()}/.codex/skills/browser-use/SKILL.md\"",
+        f"/bin/zsh -lc 'cat {Path.home()}/.codex/skills/browser-use/SKILL.md'",
+    ],
+)
+def test_policy_allows_browser_use_quoted_python_heredoc_and_skill_read(command):
+    assert not _policy_violation("browser-use", [command], [])
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "browser-use --cdp-url http://127.0.0.1:9222 <<'PY'\nprint(page_info())\nPY",
+        "browser-use --connect <<'PY'\nprint(page_info())\nPY",
+        "browser-use --profile Default <<'PY'\nprint(page_info())\nPY",
+        "browser-use auth login",
+        "browser-use --doctor",
+        "BU_CDP_URL=http://127.0.0.1:9 browser-use <<'PY'\nprint(1)\nPY",
+        "browser-use <<PY\nprint(page_info())\nPY",
+        "curl https://example.com",
+    ],
+)
+def test_policy_rejects_browser_use_cloud_connection_overrides_and_other_tools(
+    command,
+):
+    assert _policy_violation("browser-use", [command], [])
 
 
 @pytest.mark.parametrize(
@@ -1718,6 +1983,75 @@ def test_pi_libretto_command_uses_direct_tools_without_a_skill_path():
         "libretto",
     ]
     assert "--skill-path" not in command
+    assert stdin == b"prompt"
+
+
+def test_pi_browser_use_command_mounts_only_the_browser_use_skill():
+    command, stdin = _controller_command(
+        "pi",
+        "openai/gpt-5.6-sol",
+        "prompt",
+        tool="browser-use",
+        runtime_env={"BU_CDP_URL": "http://127.0.0.1:43210"},
+    )
+
+    assert command == [
+        "node",
+        str(run_controller.PI_CONTROLLER),
+        "--model",
+        "openai/gpt-5.6-sol",
+        "--tool",
+        "browser-use",
+        "--skill-path",
+        str(Path.home() / ".codex/skills/browser-use"),
+    ]
+    assert str(WEBCMD_BROWSER_SKILL) not in command
+    assert stdin == b"prompt"
+
+
+def test_pi_agent_browser_command_mounts_only_the_agent_browser_skill():
+    command, stdin = _controller_command(
+        "pi",
+        "openai/gpt-5.6-sol",
+        "prompt",
+        tool="agent-browser",
+        runtime_env={"AGENT_BROWSER_CDP": "http://127.0.0.1:43210"},
+    )
+
+    assert command == [
+        "node",
+        str(run_controller.PI_CONTROLLER),
+        "--model",
+        "openai/gpt-5.6-sol",
+        "--tool",
+        "agent-browser",
+        "--skill-path",
+        str(Path.home() / ".codex/skills/agent-browser"),
+    ]
+    assert str(WEBCMD_BROWSER_SKILL) not in command
+    assert stdin == b"prompt"
+
+
+def test_pi_playwright_cli_command_mounts_only_the_playwright_cli_skill():
+    command, stdin = _controller_command(
+        "pi",
+        "openai/gpt-5.6-sol",
+        "prompt",
+        tool="playwright-cli",
+        runtime_env={"PLAYWRIGHT_CLI_SESSION": "task-session"},
+    )
+
+    assert command == [
+        "node",
+        str(run_controller.PI_CONTROLLER),
+        "--model",
+        "openai/gpt-5.6-sol",
+        "--tool",
+        "playwright-cli",
+        "--skill-path",
+        str(Path.home() / ".codex/skills/playwright-cli"),
+    ]
+    assert str(WEBCMD_BROWSER_SKILL) not in command
     assert stdin == b"prompt"
 
 
@@ -2191,6 +2525,42 @@ def test_agent_browser_execution_passes_private_runtime_env_and_closes_runtime(t
     assert captured["closed"] is True
 
 
+def test_playwright_cli_execution_passes_private_runtime_env_and_closes_runtime(tmp_path, monkeypatch):
+    command_event = json.dumps({"type": "item.completed", "item": {"type": "command_execution", "command": "playwright-cli snapshot", "aggregated_output": "page"}})
+    answer_event = json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "FINAL ANSWER: 42"}})
+    captured = {}
+
+    class Runtime:
+        env = {
+            "PLAYWRIGHT_CLI_SESSION": "task-session",
+            "PLAYWRIGHT_CLI_CDP": "http://127.0.0.1:43210",
+        }
+
+        async def close(self):
+            captured["closed"] = True
+
+    async def fake_start(session, work_dir, base_env):
+        captured["session"] = session
+        return Runtime()
+
+    original_create = asyncio.create_subprocess_exec
+
+    async def create_process(*args, **kwargs):
+        captured["controller_env"] = kwargs["env"]
+        return await original_create(*args, **kwargs)
+
+    _fake_controller(monkeypatch, f"print({command_event!r}); print({answer_event!r})")
+    monkeypatch.setattr(run_controller, "start_playwright_cli_runtime", fake_start)
+    monkeypatch.setattr(run_controller.asyncio, "create_subprocess_exec", create_process)
+
+    evidence = asyncio.run(execute_controller("codex", "gpt-5", "playwright-cli", "task", tmp_path / "attempt", 5))
+
+    assert evidence.termination == "completed"
+    assert captured["controller_env"]["PLAYWRIGHT_CLI_SESSION"] == "task-session"
+    assert captured["controller_env"]["PLAYWRIGHT_CLI_CDP"] == "http://127.0.0.1:43210"
+    assert captured["closed"] is True
+
+
 def test_agent_browser_runtime_closes_if_controller_process_cannot_start(tmp_path, monkeypatch):
     class Runtime:
         env = {}
@@ -2424,6 +2794,107 @@ def test_libretto_runtime_closes_if_controller_process_cannot_start(
                 "codex",
                 "gpt-5",
                 "libretto",
+                "task",
+                tmp_path / "attempt",
+                5,
+            )
+        )
+
+    assert runtime.closed is True
+
+
+def test_browser_use_execution_passes_cloak_cdp_and_closes_runtime(
+    tmp_path, monkeypatch
+):
+    command = "browser-use <<'PY'\nprint(page_info())\nPY"
+    command_event = json.dumps(
+        {
+            "type": "item.completed",
+            "item": {
+                "type": "command_execution",
+                "command": command,
+                "aggregated_output": "{}",
+            },
+        }
+    )
+    answer_event = json.dumps(
+        {
+            "type": "item.completed",
+            "item": {"type": "agent_message", "text": "FINAL ANSWER: 42"},
+        }
+    )
+    captured = {}
+
+    class Runtime:
+        env = {
+            "BU_CDP_URL": "http://127.0.0.1:43210",
+            "BU_NAME": "task-session",
+            "BH_HOME": "/tmp/bh",
+            "BH_RECORD": "0",
+        }
+
+        async def close(self):
+            captured["closed"] = True
+
+    async def fake_start(session, work_dir, base_env):
+        captured["session"] = session
+        return Runtime()
+
+    original_create = asyncio.create_subprocess_exec
+
+    async def create_process(*args, **kwargs):
+        captured["controller_env"] = kwargs["env"]
+        return await original_create(*args, **kwargs)
+
+    _fake_controller(
+        monkeypatch, f"print({command_event!r}); print({answer_event!r})"
+    )
+    monkeypatch.setattr(run_controller, "start_browser_use_runtime", fake_start)
+    monkeypatch.setattr(
+        run_controller.asyncio, "create_subprocess_exec", create_process
+    )
+
+    evidence = asyncio.run(
+        execute_controller(
+            "codex", "gpt-5", "browser-use", "task", tmp_path / "attempt", 5
+        )
+    )
+
+    assert evidence.termination == "completed"
+    assert captured["controller_env"]["BU_CDP_URL"] == "http://127.0.0.1:43210"
+    assert "BROWSER_USE_API_KEY" not in captured["controller_env"]
+    assert captured["closed"] is True
+
+
+def test_browser_use_runtime_closes_if_controller_process_cannot_start(
+    tmp_path, monkeypatch
+):
+    class Runtime:
+        env = {"BU_CDP_URL": "http://127.0.0.1:43210"}
+        closed = False
+
+        async def close(self):
+            self.closed = True
+
+    runtime = Runtime()
+
+    async def fake_start(*args):
+        return runtime
+
+    async def fail_to_start(*args, **kwargs):
+        raise RuntimeError("controller spawn failed")
+
+    monkeypatch.setattr(run_controller, "start_browser_use_runtime", fake_start)
+    monkeypatch.setattr(
+        run_controller.asyncio, "create_subprocess_exec", fail_to_start
+    )
+
+    with pytest.raises(RuntimeError, match="controller spawn failed"):
+        asyncio.run(
+            execute_controller(
+                "codex",
+                "gpt-5",
+                "browser-use",
                 "task",
                 tmp_path / "attempt",
                 5,
