@@ -91,6 +91,25 @@ test("Pi sidecar accepts agent-browser as a benchmark tool before starting a ses
   assert.match(result.stderr, /Unsupported Pi thinking level: ultra/);
 });
 
+test("Pi sidecar accepts playwright-cli as a benchmark tool before starting a session", () => {
+  const result = spawnSync(
+    process.execPath,
+    [
+      controller,
+      "--model",
+      "openai/gpt-5.6-sol",
+      "--tool",
+      "playwright-cli",
+      "--thinking",
+      "ultra",
+    ],
+    { encoding: "utf8" },
+  );
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Unsupported Pi thinking level: ultra/);
+});
+
 test("Pi sidecar accepts browser-use as a benchmark tool before starting a session", () => {
   const result = spawnSync(
     process.execPath,

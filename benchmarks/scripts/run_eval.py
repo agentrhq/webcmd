@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
@@ -19,7 +20,9 @@ from agent_browser_runtime import AGENT_BROWSER_COMMAND
 from axi_runtime import AXI_COMMAND, cloakbrowser_version
 from dev_browser_runtime import dev_browser_version
 from judge import judge_execution
+from playwright_cli_runtime import PLAYWRIGHT_CLI_COMMAND
 from run_controller import (
+    ExecutionEvidence,
     LIBRETTO_MCP,
     PI_CONTROLLER,
     _subprocess_env,
@@ -49,6 +52,12 @@ STEALTH_CATEGORY_BY_TASK_ID = {
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    raw = sys.argv[1:] if argv is None else argv
+    if any(argument == "--rejudge" or argument.startswith("--rejudge=") for argument in raw):
+        parser = argparse.ArgumentParser(description="Rejudge an existing browser benchmark run")
+        parser.add_argument("--rejudge", type=Path, required=True)
+        parser.add_argument("--rejudge-status", default="tool_policy_violation")
+        return parser.parse_args(raw)
     parser = argparse.ArgumentParser(description="Run browser tools on browser benchmarks")
     parser.add_argument("--controller", required=True, choices=("codex", "claude", "pi"))
     parser.add_argument("--model", required=True)
@@ -66,6 +75,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "dev-browser",
             "libretto",
             "browser-use",
+            "playwright-cli",
         ),
         default="webcmd",
     )
@@ -74,7 +84,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--task-timeout", type=int, default=1800)
     parser.add_argument("--stealth-view", choices=("raw", "official"), default="raw")
     parser.add_argument("--output-dir", type=Path, default=PROJECT_DIR / "results")
-    args = parser.parse_args(argv)
+    args = parser.parse_args(raw)
     if args.judge_model is None:
         args.judge_model = {
             "google": "gemini-2.5-flash",
@@ -99,9 +109,10 @@ def validate_args(args: argparse.Namespace) -> None:
         "libretto",
         "browser-use",
         "agent-browser",
+        "playwright-cli",
     }:
         raise ValueError(
-            "Pi currently supports only Webcmd, dev-browser, Libretto, browser-use, or agent-browser"
+            "Pi currently supports only Webcmd, dev-browser, Libretto, browser-use, agent-browser, or playwright-cli"
         )
     if args.tools == "libretto" and args.controller not in {"codex", "pi"}:
         raise ValueError(
@@ -175,6 +186,9 @@ def preflight(controller: str, tools: list[str], judge_provider: str = "google",
         elif tool == "agent-browser":
             versions[tool] = _check([*AGENT_BROWSER_COMMAND, "--version"], tool_env)
             versions["cloakbrowser"] = cloakbrowser_version()
+        elif tool == "playwright-cli":
+            versions[tool] = _check([*PLAYWRIGHT_CLI_COMMAND, "--version"], tool_env)
+            versions["cloakbrowser"] = cloakbrowser_version()
         elif tool == "dev-browser":
             versions[tool] = dev_browser_version(tool_env)
             versions["cloakbrowser"] = cloakbrowser_version()
@@ -214,6 +228,7 @@ def build_manifest(*, run_id: str, benchmark: str, tasks: list[dict], controller
             "dev-browser",
             "libretto",
             "browser-use",
+            "playwright-cli",
         }:
             tool_manifest[tool]["browser"] = {"name": "cloakbrowser", "version": versions["cloakbrowser"]}
     return {
@@ -549,8 +564,100 @@ async def run_benchmark(args: argparse.Namespace) -> Path:
     return run_dir
 
 
+def _transcript_steps(path: Path) -> list[str]:
+    steps = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        payload = json.loads(line)
+        steps.append(str(payload.get("step") or ""))
+    return steps
+
+
+def evidence_from_attempt(attempt_dir: Path, result: dict) -> ExecutionEvidence:
+    evidence = result.get("evidence") or {}
+    transcript = attempt_dir / str(evidence.get("transcript") or "transcript.jsonl")
+    screenshots = [
+        attempt_dir / name
+        for name in evidence.get("screenshots") or []
+        if (attempt_dir / name).is_file()
+    ]
+    return ExecutionEvidence(
+        final_answer=str(result.get("final_answer") or ""),
+        steps=_transcript_steps(transcript),
+        screenshot_paths=screenshots,
+        controller_exit_code=0,
+        termination="completed",
+    )
+
+
+def _task_for_result(tasks: list[dict], result: dict) -> dict:
+    task_id = str(result["task_id"])
+    for task in tasks:
+        if str(task["task_id"]) == task_id:
+            return task
+    raise ValueError(f"dataset is missing task {task_id}")
+
+
+async def rejudge_run(
+    run_dir: Path, status: str = "tool_policy_violation"
+) -> dict:
+    run_dir = run_dir.expanduser().resolve()
+    manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    judge = manifest["judge"]
+    benchmark = manifest["benchmark"]
+    tools = list(manifest["tools"])
+    tasks = load_tasks(benchmark)
+    summary_path = run_dir / "summary.json"
+    backup_path = run_dir / "summary.pre-rejudge.json"
+    if summary_path.exists() and not backup_path.exists():
+        backup_path.write_text(summary_path.read_text(encoding="utf-8"), encoding="utf-8")
+
+    results = []
+    for result_path in sorted(run_dir.glob("tasks/*/*/result.json")):
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+        if result.get("status") != status:
+            results.append(result)
+            continue
+        task = _task_for_result(tasks, result)
+        evidence = evidence_from_attempt(result_path.parent, result)
+        print(f"Rejudging {result['task_id']} ({result.get('category')})", flush=True)
+        try:
+            judgement_model = await judge_execution(
+                task["confirmed_task"],
+                task.get("answer"),
+                evidence,
+                judge["model"],
+                provider=judge["provider"],
+                benchmark=benchmark,
+            )
+            judgement = _redact(
+                judgement_model.model_dump(), (task["confirmed_task"],)
+            )
+            judgement = _redact_hidden_answer(judgement, task.get("answer"))
+            result = {
+                **result,
+                "status": "completed",
+                "score": 1 if judgement_model.verdict else 0,
+                "judgement": judgement,
+            }
+        except Exception:
+            result = {**result, "status": "judge_error", "score": None, "judgement": None}
+        _write_json(result_path, result)
+        results.append(result)
+
+    summary = build_summary(results, tools)
+    _write_json(summary_path, summary)
+    print(json.dumps(summary, indent=2))
+    print(f"Results: {run_dir}")
+    return summary
+
+
 def main() -> None:
     args = parse_args()
+    if getattr(args, "rejudge", None) is not None:
+        asyncio.run(rejudge_run(args.rejudge, status=args.rejudge_status))
+        return
     asyncio.run(run_benchmark(args))
 
 
