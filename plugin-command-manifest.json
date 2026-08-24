@@ -17192,6 +17192,47 @@
     "sourceFile": "plugins/npm/search.js"
   },
   {
+    "site": "npm",
+    "name": "versions",
+    "description": "List published versions of an npm package, newest first",
+    "access": "read",
+    "domain": "registry.npmjs.org",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "name",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "npm package name (e.g. \"react\", \"@vercel/og\")"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Maximum versions to return (1-50)"
+      },
+      {
+        "name": "prereleases",
+        "type": "boolean",
+        "default": false,
+        "required": false,
+        "help": "Include prerelease and build versions (e.g. alpha, beta, rc, canary)"
+      }
+    ],
+    "columns": [
+      "version",
+      "publishedAt",
+      "isLatest",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "plugins/npm/versions.js",
+    "sourceFile": "plugins/npm/versions.js"
+  },
+  {
     "site": "nuget",
     "name": "package",
     "description": "Full NuGet package version history (catalogEntry per release)",
@@ -17606,6 +17647,50 @@
     "type": "js",
     "modulePath": "plugins/omnisearch/lobsters.js",
     "sourceFile": "plugins/omnisearch/lobsters.js"
+  },
+  {
+    "site": "omnisearch",
+    "name": "packages",
+    "description": "Search across 6 major package registries simultaneously (npm, Crates.io, NuGet, RubyGems, Packagist, Maven Central)",
+    "access": "read",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "query",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Library name or search keyword"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Maximum total results to return"
+      },
+      {
+        "name": "registries",
+        "type": "str",
+        "default": "npm,crates,nuget,rubygems,packagist,maven",
+        "required": false,
+        "help": "Comma-separated registries to query (default: all)"
+      }
+    ],
+    "columns": [
+      "registry",
+      "name",
+      "version",
+      "description",
+      "url"
+    ],
+    "tags": [
+      "search"
+    ],
+    "type": "js",
+    "modulePath": "plugins/omnisearch/packages.js",
+    "sourceFile": "plugins/omnisearch/packages.js"
   },
   {
     "site": "omnisearch",
