@@ -6,18 +6,6 @@ the same number of tokens as dev-browser, the lowest-token run.
 
 ## Results
 
-| Tool | Accuracy ↑ | Total tokens ↓ | Cost ↓ | Agent turns ↓ |
-| --- | ---: | ---: | ---: | ---: |
-| **Webcmd** | **67%** | 3,193,816 | **$25.20** | **969** |
-| browser-use | 66% | 3,546,443 | $29.44 | 1,465 |
-| Playwright CLI | 55% | 5,051,931 | $43.69 | 2,034 |
-| dev-browser | 55% | **3,190,822** | $26.00 | 1,504 |
-| agent-browser | 47% | 5,842,027 | $55.41 | 2,550 |
-
-Accuracy is the number of tasks passed out of 100. Total tokens include
-non-cached controller input and controller output. Cost is an API-equivalent
-estimate for the controller; it does not include the judge.
-
 ### Accuracy
 
 ![Accuracy: Webcmd 67%, browser-use 66%, Playwright CLI and dev-browser 55%, agent-browser 47%](charts/bu-bench-accuracy.svg)
