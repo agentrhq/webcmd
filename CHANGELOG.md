@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.5...webcmd-v0.8.0) (2026-08-24)
+
+
+### Features
+
+* **hosted:** add programmatic runner and MCP skill distribution ([#434](https://github.com/agentrhq/webcmd/issues/434)) ([357d6e2](https://github.com/agentrhq/webcmd/commit/357d6e280879af1099f5f3a84f20c59db2d23c98))
+
 ## [0.7.5](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.4...webcmd-v0.7.5) (2026-08-24)
 
 ### Improvements
