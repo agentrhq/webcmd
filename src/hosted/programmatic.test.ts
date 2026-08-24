@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runHostedProgrammatic } from './programmatic.js';
 
 const manifest = {
@@ -29,6 +29,8 @@ function fakeCloud(handler?: (url: string, init?: RequestInit) => Response): typ
 }
 
 describe('runHostedProgrammatic', () => {
+  afterEach(() => vi.restoreAllMocks());
+
   it('returns captured stdout and a zero exit code', async () => {
     const result = await runHostedProgrammatic({
       argv: ['list', '-f', 'json'],
@@ -40,9 +42,91 @@ describe('runHostedProgrammatic', () => {
     expect(result.stderr).toBe('');
     expect(result.truncated).toBe(false);
     expect(result.stdoutByteSize).toBe(Buffer.byteLength(result.stdout));
+    expect(JSON.parse(result.stdout)).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ command: 'web/fetch' }),
+    ]));
+  });
+
+  it('advertises server-safe web fetch only when explicitly enabled', async () => {
+    const result = await runHostedProgrammatic({
+      argv: ['list', '-f', 'json'],
+      apiBaseUrl: 'http://127.0.0.1:8787',
+      accessToken: 'oauth-access-token',
+      fetchImpl: fakeCloud(),
+      enableServerWebFetch: true,
+    });
     expect(JSON.parse(result.stdout)).toEqual(expect.arrayContaining([
       expect.objectContaining({ command: 'web/fetch', clientOwned: true }),
     ]));
+  });
+
+  it('does not execute web fetch without the explicit public-network capability', async () => {
+    const publicFetch = vi.spyOn(globalThis, 'fetch');
+    const result = await runHostedProgrammatic({
+      argv: ['web', 'fetch', '--url', 'https://93.184.216.34/'],
+      apiBaseUrl: 'http://127.0.0.1:8787',
+      accessToken: 'oauth-access-token',
+      fetchImpl: fakeCloud(),
+    });
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain('Site "web" is not installed.');
+    expect(publicFetch).not.toHaveBeenCalled();
+  });
+
+  it('uses the authoritative hosted parser and markdown renderer for server-safe web fetch', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('public body', {
+      status: 200,
+      headers: { 'content-type': 'text/plain' },
+    }));
+    const result = await runHostedProgrammatic({
+      argv: ['web', 'fetch', '--url', 'https://93.184.216.34/article', '--raw'],
+      apiBaseUrl: 'http://127.0.0.1:8787',
+      accessToken: 'oauth-access-token',
+      fetchImpl: fakeCloud(),
+      enableServerWebFetch: true,
+    });
+    expect(result).toMatchObject({ exitCode: 0, stderr: '' });
+    expect(result.stdout).toContain('# Fetched content');
+    expect(result.stdout).toContain('Source: https://93.184.216.34/article');
+    expect(result.stdout).toContain('public body');
+  });
+
+  it('rejects --allow-private before any public fetch', async () => {
+    const publicFetch = vi.spyOn(globalThis, 'fetch');
+    const result = await runHostedProgrammatic({
+      argv: ['web', 'fetch', '--url', 'http://127.0.0.1/secret', '--allow-private'],
+      apiBaseUrl: 'http://127.0.0.1:8787',
+      accessToken: 'oauth-access-token',
+      fetchImpl: fakeCloud(),
+      enableServerWebFetch: true,
+    });
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain('--allow-private is not available in hosted mode');
+    expect(publicFetch).not.toHaveBeenCalled();
+  });
+
+  it('propagates caller cancellation through hosted web fetch as exit 130', async () => {
+    const controller = new AbortController();
+    let started!: () => void;
+    const requestStarted = new Promise<void>(resolve => { started = resolve; });
+    vi.spyOn(globalThis, 'fetch').mockImplementation((_url, init) => new Promise((_resolve, reject) => {
+      const signal = init?.signal as AbortSignal;
+      started();
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+    }));
+    const pending = runHostedProgrammatic({
+      argv: ['web', 'fetch', '--url', 'https://93.184.216.34/'],
+      apiBaseUrl: 'http://127.0.0.1:8787',
+      accessToken: 'oauth-access-token',
+      fetchImpl: fakeCloud(),
+      enableServerWebFetch: true,
+      signal: controller.signal,
+    });
+    await requestStarted;
+    controller.abort(new Error('request disconnected'));
+    const result = await pending;
+    expect(result.exitCode).toBe(130);
+    expect(result.stderr).toContain('INTERRUPTED');
   });
 
   it('presents the access token as a bearer credential', async () => {

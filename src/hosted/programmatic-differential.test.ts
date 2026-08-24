@@ -52,7 +52,7 @@ async function runInstalled(argv: string[]): Promise<{ exitCode: number; stdout:
 }
 
 function runProgrammatic(argv: string[], files?: readonly HostedVirtualFile[]) {
-  return runHostedProgrammatic({ argv, apiBaseUrl: backend.url, accessToken: 'fixture-token', ...(files ? { files } : {}) });
+  return runHostedProgrammatic({ argv, apiBaseUrl: backend.url, accessToken: 'fixture-token', enableServerWebFetch: true, ...(files ? { files } : {}) });
 }
 
 const FIXTURES: { name: string; argv: string[]; files?: readonly HostedVirtualFile[] }[] = [

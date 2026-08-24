@@ -21,7 +21,7 @@ import {
   LOCAL_ONLY_COMMAND_HELP,
 } from '../completion-shared.js';
 import { splitAdapterCommandKey } from '../adapter-source.js';
-import { CliError, ConfigError, EXIT_CODES, InterruptedError, toEnvelope } from '../errors.js';
+import { ArgumentError, CliError, ConfigError, EXIT_CODES, InterruptedError, toEnvelope } from '../errors.js';
 import { getRequestedHelpFormat, renderStructuredHelp } from '../help.js';
 import { enableVerbose } from '../logger.js';
 import { findPackageRoot } from '../package-paths.js';
@@ -35,6 +35,7 @@ import { BrowserRunError } from '../browser/run/types.js';
 import { CLI_COMMAND } from '../brand.js';
 import { formatPluginSearchEmptyCopy, presentPluginSearch } from '../plugin-search-presentation.js';
 import { missingPluginGuidance } from '../discovery.js';
+import { webFetchCommand } from '../fetch/command.js';
 import { HostedClient, HostedClientError, resolveWorkspace } from './client.js';
 import { createVirtualHostedFileIo, realHostedFileIo, type HostedFileIo } from './file-io.js';
 import { HOSTED_SESSION_PROTOCOL_VERSION } from './types.js';
@@ -82,6 +83,8 @@ export interface HostedRunnerOptions {
   stdout?: NodeJS.WritableStream;
   stderr?: NodeJS.WritableStream;
   now?: () => number;
+  /** Explicitly grants the hosted runner public-network-only web fetch authority. */
+  enableServerWebFetch?: boolean;
   /** Supplies `--stdin` content without reading `process.stdin`. */
   stdin?: string;
   /** Cancels the invocation; derived from the inbound HTTP request by the MCP path. */
@@ -176,6 +179,8 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
       opts.now ?? Date.now,
       opts.homeDir ?? opts.env?.HOME ?? homedir(),
       io,
+      opts.enableServerWebFetch === true,
+      opts.signal,
     );
     return { handled: true, exitCode: EXIT_CODES.SUCCESS };
   } catch (caught) {
@@ -235,6 +240,8 @@ async function dispatchHosted(
   now: () => number,
   homeDir: string,
   io: HostedDispatchIo = { fileIo: realHostedFileIo },
+  enableServerWebFetch = false,
+  signal?: AbortSignal,
 ): Promise<void> {
   const normalized = parseHostedRootCommandSurface(argv);
   if (normalized.kind === 'help') {
@@ -250,7 +257,7 @@ async function dispatchHosted(
     return;
   }
   if (normalized.kind === 'completion') {
-    const manifest = await getPresentationManifest(client);
+    const manifest = await getPresentationManifest(client, enableServerWebFetch);
     await writeToStream(stdout, hostedCompletions(manifest, normalized.argv).join('\n') + '\n');
     return;
   }
@@ -315,7 +322,7 @@ async function dispatchHosted(
       await writeToStream(stdout, parsed.output);
       return;
     }
-    const manifest = await getPresentationManifest(client);
+    const manifest = await getPresentationManifest(client, enableServerWebFetch);
     await renderHostedList(manifest, parsed.format, parsed.formatExplicit, stdout, parsed.tag);
     return;
   }
@@ -466,7 +473,7 @@ async function dispatchHosted(
 
   // The API manifest is tenant-scoped. Only the core client-owned presentation
   // entry is merged; package and local plugin commands stay out.
-  const manifest = await getPresentationManifest(client);
+  const manifest = await getPresentationManifest(client, enableServerWebFetch);
 
   const site = args[0]!;
   const commandName = args[1];
@@ -537,7 +544,34 @@ async function dispatchHosted(
     return;
   }
   if (command.clientOwned) {
-    throw new Error(`Internal invariant: client-owned command ${command.command} reached hosted dispatch.`);
+    if (command.command !== 'web/fetch' || !enableServerWebFetch) {
+      throw new Error(`Internal invariant: client-owned command ${command.command} reached hosted dispatch.`);
+    }
+    if (parsed.optionSources['allow-private'] === 'cli') {
+      throw new ArgumentError('--allow-private is not available in hosted mode');
+    }
+    enableVerbose(parsed.verbose);
+    const startTime = now();
+    const { webFetch } = await import('../fetch/client.js');
+    const result = await webFetch({
+      url: String(parsed.args.url),
+      timeoutSeconds: Number(parsed.args.timeout ?? 30),
+      maxChars: Number(parsed.args['max-chars'] ?? 50_000),
+      allowPrivate: false,
+      raw: parsed.args.raw === true,
+      ...(signal ? { signal } : {}),
+    });
+    await renderOutput(result, {
+      fmt: parsed.format,
+      fmtExplicit: parsed.formatExplicit,
+      columns: command.columns,
+      title: command.command,
+      elapsed: (now() - startTime) / 1000,
+      source: command.command,
+      ...(webFetchCommand.renderMarkdown ? { markdown: webFetchCommand.renderMarkdown } : {}),
+      stdout,
+    });
+    return;
   }
   // Hosted dispatch parsed `-v` but never acted on it, so the flag that local
   // mode honours was a silent no-op here (#174). Applying it before the request
@@ -1605,10 +1639,10 @@ function validateManifestContractIdentity(manifest: HostedManifest): void {
   }
 }
 
-async function getPresentationManifest(client: HostedClient): Promise<HostedManifest> {
+async function getPresentationManifest(client: HostedClient, enableServerWebFetch: boolean): Promise<HostedManifest> {
   const manifest = await client.getManifest();
   validateManifestContractIdentity(manifest);
-  return withClientOwnedCommands(manifest);
+  return withClientOwnedCommands(manifest, enableServerWebFetch);
 }
 
 function hostedContractCompatibilityLine(version: string): string | undefined {

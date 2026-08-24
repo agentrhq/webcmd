@@ -532,6 +532,7 @@ describe('runHostedCli', () => {
       config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
       stdout: stdout.stream,
       fetchImpl,
+      enableServerWebFetch: true,
     });
 
     expect(result).toEqual({ handled: true, exitCode: 0 });

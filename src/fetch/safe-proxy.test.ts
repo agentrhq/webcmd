@@ -10,10 +10,20 @@ import { createSafeProxy, isSafeAddress } from './safe-proxy.js';
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 
 describe('isSafeAddress', () => {
-  it.each(['127.0.0.1', '10.0.0.1', '172.16.0.1', '192.168.1.1', '169.254.169.254', '0.0.0.0', '::1', '::', 'fe80::1', '::ffff:127.0.0.1'])('rejects private address %s', address => {
+  it.each([
+    '127.0.0.1', '10.0.0.1', '172.16.0.1', '192.168.1.1', '169.254.169.254', '0.0.0.0',
+    '::1', '::', 'fe80::1', '::ffff:127.0.0.1', '::ffff:7f00:1',
+    '0:0:0:0:0:ffff:7f00:1', '::127.0.0.1', '::ffff:0:7f00:1',
+    '64:ff9b::7f00:1',
+  ])('rejects private address %s', address => {
     expect(isSafeAddress(address)).toBe(false);
   });
-  it('allows public IPv4 addresses', () => expect(isSafeAddress('93.184.216.34')).toBe(true));
+  it.each(['93.184.216.34', '192.0.3.1', '198.51.1.1', '203.0.114.1'])('allows public IPv4 address %s', address => {
+    expect(isSafeAddress(address)).toBe(true);
+  });
+  it.each(['::ffff:5db8:d822', '2001:4860:4860::8888'])('allows public IPv6 address %s', address => {
+    expect(isSafeAddress(address)).toBe(true);
+  });
 });
 
 describe('createSafeProxy close', () => {
@@ -161,6 +171,24 @@ describe('createSafeProxy policy errors', () => {
   it('leaves the policy slot empty when private addresses are allowed', async () => {
     const proxy = await createSafeProxy({ allowPrivate: true });
     expect(proxy.policyError()).toBeUndefined();
+    await proxy.close();
+  });
+
+  it.each([
+    '127.0.0.1',
+    '169.254.169.254',
+    '::ffff:7f00:1',
+    '0:0:0:0:0:ffff:7f00:1',
+    '::ffff:a9fe:a9fe',
+  ])('rejects a private or metadata DNS answer %s', async address => {
+    const proxy = await createSafeProxy({
+      lookup: ((_host: string, _options: unknown, callback: (error: Error | null, result: unknown) => void) => {
+        callback(null, [{ address, family: 6 }]);
+      }) as never,
+    });
+    await expect(fetch('http://example.test/', { dispatcher: new (await import('undici')).ProxyAgent(proxy.url) } as never))
+      .rejects.toThrow('fetch failed');
+    expect(proxy.policyError()?.message).toBe('Unsafe fetch destination: example.test');
     await proxy.close();
   });
 });

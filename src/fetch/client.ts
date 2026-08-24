@@ -5,7 +5,7 @@ import { extractFetchedContent, type ExtractFetchedContentResult } from './extra
 import { createSafeProxy, type SafeProxy } from './safe-proxy.js';
 import { isChallengeResponse, isJavaScriptShell } from './classify.js';
 
-export interface WebFetchOptions { url: string; timeoutSeconds: number; maxChars: number; allowPrivate: boolean; raw?: boolean; }
+export interface WebFetchOptions { url: string; timeoutSeconds: number; maxChars: number; allowPrivate: boolean; raw?: boolean; signal?: AbortSignal; }
 export interface WebFetchResult {
   status: number; requestedUrl: string; finalUrl: string; contentType: string; tier: 'plain' | 'impit'; profile?: 'chrome' | 'firefox';
   title: string; extractionSource: ExtractFetchedContentResult['source']; truncated: boolean; content: string; bytes?: number;
@@ -22,24 +22,32 @@ const MAX_BODY_BYTES = 10 * 1024 * 1024;
 const BROWSER_WORKFLOW = 'Create a browser Session with `webcmd --profile work session create`, then navigate with `webcmd --profile work --session <session-id> browser run --stdin`.';
 
 function headersOf(response: ResponseLike): Record<string, string> { return Object.fromEntries(response.headers.entries()); }
-function beforeDeadline<T>(promise: Promise<T>, deadline: number, timeoutSeconds: number, cancel?: () => void): Promise<T> {
+function beforeDeadline<T>(promise: Promise<T>, deadline: number, timeoutSeconds: number, signal?: AbortSignal, cancel?: () => void): Promise<T> {
   const ms = deadline - Date.now();
   if (ms <= 0) { cancel?.(); return Promise.reject(new TimeoutError('web fetch', timeoutSeconds)); }
+  if (signal?.aborted) { cancel?.(); return Promise.reject(signal.reason ?? new Error('The operation was aborted.')); }
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => { cancel?.(); reject(new TimeoutError('web fetch', timeoutSeconds)); }, ms);
-    promise.then(value => { clearTimeout(timer); resolve(value); }, error => { clearTimeout(timer); reject(error); });
+    const onAbort = () => { clearTimeout(timer); cancel?.(); reject(signal?.reason ?? new Error('The operation was aborted.')); };
+    signal?.addEventListener('abort', onAbort, { once: true });
+    const settle = <R>(callback: (value: R) => void, value: R) => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      callback(value);
+    };
+    promise.then(value => settle(resolve, value), error => settle(reject, error));
   });
 }
-async function readBody(response: ResponseLike, deadline: number, timeoutSeconds: number): Promise<string> {
+async function readBody(response: ResponseLike, deadline: number, timeoutSeconds: number, signal?: AbortSignal): Promise<string> {
   if (!response.body && response.bytes) {
-    const bytes = await beforeDeadline(response.bytes(), deadline, timeoutSeconds);
+    const bytes = await beforeDeadline(response.bytes(), deadline, timeoutSeconds, signal);
     if (bytes.byteLength > MAX_BODY_BYTES) throw new CliError('FETCH_BODY_TOO_LARGE', 'Fetched body exceeds 10 MiB');
     return new TextDecoder().decode(bytes);
   }
   const reader = response.body?.getReader();
   if (!reader) return '';
   const chunks: Uint8Array[] = []; let size = 0;
-  while (true) { const { done, value } = await beforeDeadline(reader.read(), deadline, timeoutSeconds, () => { void reader.cancel(); }); if (done) break; size += value.byteLength; if (size > MAX_BODY_BYTES) { await reader.cancel(); throw new CliError('FETCH_BODY_TOO_LARGE', 'Fetched body exceeds 10 MiB'); } chunks.push(value); }
+  while (true) { const { done, value } = await beforeDeadline(reader.read(), deadline, timeoutSeconds, signal, () => { void reader.cancel(); }); if (done) break; size += value.byteLength; if (size > MAX_BODY_BYTES) { await reader.cancel(); throw new CliError('FETCH_BODY_TOO_LARGE', 'Fetched body exceeds 10 MiB'); } chunks.push(value); }
   return new TextDecoder().decode(Buffer.concat(chunks));
 }
 function truncate(content: string, limit: number, raw = false): { content: string; truncated: boolean } {
@@ -50,6 +58,7 @@ function truncate(content: string, limit: number, raw = false): { content: strin
 }
 
 export async function webFetch(options: WebFetchOptions, dependencies: WebFetchDependencies = {}): Promise<WebFetchResult> {
+  if (options.signal?.aborted) throw options.signal.reason ?? new Error('The operation was aborted.');
   const deadline = Date.now() + options.timeoutSeconds * 1000;
   const proxy = await (dependencies.createSafeProxy ?? createSafeProxy)({ allowPrivate: options.allowPrivate });
   const remaining = () => { const ms = deadline - Date.now(); if (ms <= 0) throw new TimeoutError('web fetch', options.timeoutSeconds); return ms; };
@@ -61,12 +70,14 @@ export async function webFetch(options: WebFetchOptions, dependencies: WebFetchD
     for (const browser of ladder) {
       try {
         const timeout = remaining();
-        const response = browser
-          ? await createImpit({ browser, proxyUrl: proxy.url, timeout }).fetch(options.url, { redirect: 'manual', timeout: remaining() })
-          : await plainFetch(options.url, { redirect: 'manual', dispatcher: new ProxyAgent(proxy.url), signal: AbortSignal.timeout(timeout) });
+        const impit = browser ? createImpit({ browser, proxyUrl: proxy.url, timeout }) : undefined;
+        const transport = browser
+          ? (url: string) => impit!.fetch(url, { redirect: 'manual', timeout: remaining(), ...(options.signal ? { signal: options.signal } : {}) })
+          : (url: string) => plainFetch(url, { redirect: 'manual', dispatcher: new ProxyAgent(proxy.url), signal: requestSignal(options.signal, timeout) });
+        const { response, finalUrl } = await fetchRedirects(transport, options.url, deadline, options.timeoutSeconds, options.signal);
         const policyError = proxy.policyError();
         if (policyError) throw new CliError('FETCH_UNSAFE_ADDRESS', policyError.message);
-        const body = await readBody(response, deadline, options.timeoutSeconds);
+        const body = await readBody(response, deadline, options.timeoutSeconds, options.signal);
         if (proxy.policyError()) throw new CliError('FETCH_UNSAFE_ADDRESS', proxy.policyError()!.message);
         if (isJavaScriptShell(body)) throw new CliError('FETCH_REQUIRES_BROWSER', 'This page requires browser rendering.', BROWSER_WORKFLOW);
         if (isChallengeResponse(response.status, headersOf(response), body)) {
@@ -75,25 +86,26 @@ export async function webFetch(options: WebFetchOptions, dependencies: WebFetchD
         }
         const extracted = options.raw
           ? { title: '', content: body, source: 'raw' as const }
-          : extractFetchedContent({ body, contentType: response.headers.get('content-type') ?? '', url: options.url });
+          : extractFetchedContent({ body, contentType: response.headers.get('content-type') ?? '', url: finalUrl });
         const clipped = truncate(extracted.content, options.maxChars, options.raw === true);
-        return { status: response.status, requestedUrl: options.url, finalUrl: response.url || options.url, contentType: response.headers.get('content-type') ?? '', tier: browser ? 'impit' : 'plain', ...(browser && { profile: browser }), title: extracted.title, extractionSource: extracted.source, truncated: clipped.truncated, content: clipped.content, ...(options.raw && { bytes: Buffer.byteLength(body) }) };
+        return { status: response.status, requestedUrl: options.url, finalUrl, contentType: response.headers.get('content-type') ?? '', tier: browser ? 'impit' : 'plain', ...(browser && { profile: browser }), title: extracted.title, extractionSource: extracted.source, truncated: clipped.truncated, content: clipped.content, ...(options.raw && { bytes: Buffer.byteLength(body) }) };
       } catch (error) {
         const policyError = proxy.policyError();
         if (policyError) throw new CliError('FETCH_UNSAFE_ADDRESS', policyError.message);
-        const mapped = asFetchError(error, options.timeoutSeconds, deadline);
+        const mapped = asFetchError(error, options.timeoutSeconds, deadline, options.signal);
         if (mapped instanceof CliError) throw mapped;
         lastTransport = mapped;
       }
     }
     throw lastTransport;
   } catch (error) {
-    throw asFetchError(error, options.timeoutSeconds, deadline);
+    throw asFetchError(error, options.timeoutSeconds, deadline, options.signal);
   } finally { await proxy.close(); }
 }
 
 /** An aborted fetch surfaces as a DOMException; agents need the structured timeout instead. */
-function asFetchError(error: unknown, timeoutSeconds: number, deadline: number): unknown {
+function asFetchError(error: unknown, timeoutSeconds: number, deadline: number, signal?: AbortSignal): unknown {
+  if (signal?.aborted) return signal.reason ?? error;
   if (error instanceof CliError) return error;
   const name = (error as { name?: string } | null)?.name;
   if (name === 'TimeoutError' || name === 'AbortError') return new TimeoutError('web fetch', timeoutSeconds);
@@ -103,4 +115,35 @@ function asFetchError(error: unknown, timeoutSeconds: number, deadline: number):
   // connection or DNS failure is never mislabelled.
   if (Date.now() >= deadline) return new TimeoutError('web fetch', timeoutSeconds);
   return error;
+}
+
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+const MAX_REDIRECTS = 5;
+
+async function fetchRedirects(
+  fetcher: (url: string) => Promise<ResponseLike>,
+  requestedUrl: string,
+  deadline: number,
+  timeoutSeconds: number,
+  signal?: AbortSignal,
+): Promise<{ response: ResponseLike; finalUrl: string }> {
+  let current = requestedUrl;
+  for (let redirects = 0; ; redirects += 1) {
+    if (signal?.aborted) throw signal.reason ?? new Error('The operation was aborted.');
+    const response = await beforeDeadline(fetcher(current), deadline, timeoutSeconds, signal);
+    const location = response.headers.get('location');
+    if (!REDIRECT_STATUSES.has(response.status) || !location) return { response, finalUrl: response.url || current };
+    if (redirects >= MAX_REDIRECTS) throw new CliError('FETCH_TOO_MANY_REDIRECTS', `Web fetch exceeded ${MAX_REDIRECTS} redirects`);
+    await response.body?.cancel();
+    const next = new URL(location, current);
+    if (next.protocol !== 'http:' && next.protocol !== 'https:') {
+      throw new CliError('FETCH_UNSAFE_REDIRECT', `Unsafe fetch redirect protocol: ${next.protocol}`);
+    }
+    current = next.href;
+  }
+}
+
+function requestSignal(caller: AbortSignal | undefined, timeout: number): AbortSignal {
+  const deadline = AbortSignal.timeout(timeout);
+  return caller ? AbortSignal.any([caller, deadline]) : deadline;
 }

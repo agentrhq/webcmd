@@ -222,6 +222,7 @@ describe('hosted manifest helpers', () => {
     await runHostedCli(['--get-completions', '--cursor', '1'], {
       config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
       stdout: stdout.stream,
+      enableServerWebFetch: true,
       fetchImpl: async () => new Response(JSON.stringify({ ok: true, manifest }), { status: 200 }),
     });
 
@@ -231,6 +232,7 @@ describe('hosted manifest helpers', () => {
     await runHostedCli(['web', '--help'], {
       config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
       stdout: siteHelp.stream,
+      enableServerWebFetch: true,
       fetchImpl: async () => new Response(JSON.stringify({ ok: true, manifest }), { status: 200 }),
     });
     expect(siteHelp.text()).toContain('fetch');
@@ -239,6 +241,7 @@ describe('hosted manifest helpers', () => {
     await runHostedCli(['--get-completions', '--cursor', '2', 'web'], {
       config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
       stdout: completion.stream,
+      enableServerWebFetch: true,
       fetchImpl: async () => new Response(JSON.stringify({ ok: true, manifest }), { status: 200 }),
     });
     expect(completion.text().trim()).toBe('fetch');
@@ -247,6 +250,7 @@ describe('hosted manifest helpers', () => {
     await runHostedCli(['list', '-f', 'json'], {
       config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
       stdout: list.stream,
+      enableServerWebFetch: true,
       fetchImpl: async () => new Response(JSON.stringify({ ok: true, manifest }), { status: 200 }),
     });
     expect(JSON.parse(list.text())).toEqual(expect.arrayContaining([

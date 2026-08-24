@@ -7,19 +7,87 @@ export interface SafeProxy { url: string; close(): Promise<void>; policyError():
 export interface SafeProxyOptions { allowPrivate?: boolean; lookup?: typeof dnsLookup; }
 
 export function isSafeAddress(address: string): boolean {
-  if (net.isIPv4(address)) {
-    const [a, b] = address.split('.').map(Number);
-    return a !== 0 && a !== 10 && a !== 127 && !(a === 100 && b >= 64 && b <= 127)
-      && !(a === 169 && b === 254) && !(a === 172 && b >= 16 && b <= 31) && !(a === 192 && b === 168)
-      && a < 224;
+  const unscoped = address.split('%', 1)[0]!;
+  if (net.isIPv4(unscoped)) return isSafeIpv4(unscoped.split('.').map(Number));
+  if (!net.isIPv6(unscoped)) return false;
+  const words = parseIpv6Words(unscoped);
+  if (!words) return false;
+
+  const embedded = embeddedIpv4(words);
+  if (embedded) return isSafeIpv4(embedded);
+
+  // Server-side fetch is public-network-only. Global unicast is 2000::/3;
+  // everything else (unspecified, loopback, link-local, ULA, multicast,
+  // documentation, and future special-use space) fails closed.
+  if (words[0]! < 0x2000 || words[0]! > 0x3fff) return false;
+  if (words[0] === 0x2001 && words[1] === 0x0db8) return false;
+
+  // 6to4 carries an IPv4 destination in words 1-2. Do not let an alternate
+  // IPv6 spelling turn a private/metadata IPv4 destination into public egress.
+  if (words[0] === 0x2002 && !isSafeIpv4(wordsToIpv4(words[1]!, words[2]!))) return false;
+  return true;
+}
+
+function isSafeIpv4(bytes: number[]): boolean {
+  if (bytes.length !== 4 || bytes.some(byte => !Number.isInteger(byte) || byte < 0 || byte > 255)) return false;
+  const [a, b, c] = bytes as [number, number, number, number];
+  return a !== 0 && a !== 10 && a !== 127
+    && !(a === 100 && b >= 64 && b <= 127)
+    && !(a === 169 && b === 254)
+    && !(a === 172 && b >= 16 && b <= 31)
+    && !(a === 192 && b === 0 && (c === 0 || c === 2))
+    && !(a === 192 && b === 88 && c === 99)
+    && !(a === 192 && b === 168)
+    && !(a === 198 && (b === 18 || b === 19))
+    && !(a === 198 && b === 51 && c === 100)
+    && !(a === 203 && b === 0 && c === 113)
+    && a < 224;
+}
+
+function parseIpv6Words(address: string): number[] | undefined {
+  let normalized = address.toLowerCase();
+  const dotted = normalized.match(/(^|:)(\d+\.\d+\.\d+\.\d+)$/);
+  if (dotted) {
+    const bytes = dotted[2]!.split('.').map(Number);
+    if (!isValidIpv4(bytes)) return undefined;
+    normalized = `${normalized.slice(0, dotted.index! + dotted[1]!.length)}${((bytes[0]! << 8) | bytes[1]!).toString(16)}:${((bytes[2]! << 8) | bytes[3]!).toString(16)}`;
   }
-  if (!net.isIPv6(address)) return false;
-  const normalized = address.toLowerCase();
-  const mapped = normalized.match(/(?:^|:)ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  if (mapped) return isSafeAddress(mapped[1]!);
-  if (normalized === '::' || normalized === '::1') return false;
-  const first = Number.parseInt(normalized.split(':')[0] || '0', 16);
-  return !(first >= 0xfc00 && first <= 0xfdff) && !(first >= 0xfe80 && first <= 0xfebf) && !(first >= 0xff00);
+  if (normalized.split('::').length > 2) return undefined;
+  const [leftText, rightText] = normalized.split('::');
+  const left = leftText ? leftText.split(':').map(parseHexWord) : [];
+  const right = rightText ? rightText.split(':').map(parseHexWord) : [];
+  if ([...left, ...right].some(word => word === undefined)) return undefined;
+  const missing = 8 - left.length - right.length;
+  if ((normalized.includes('::') && missing < 1) || (!normalized.includes('::') && missing !== 0)) return undefined;
+  return [...left, ...Array.from({ length: missing }, () => 0), ...right] as number[];
+}
+
+function parseHexWord(value: string): number | undefined {
+  if (!/^[0-9a-f]{1,4}$/.test(value)) return undefined;
+  return Number.parseInt(value, 16);
+}
+
+function isValidIpv4(bytes: number[]): boolean {
+  return bytes.length === 4 && bytes.every(byte => Number.isInteger(byte) && byte >= 0 && byte <= 255);
+}
+
+function wordsToIpv4(high: number, low: number): number[] {
+  return [high >>> 8, high & 0xff, low >>> 8, low & 0xff];
+}
+
+function embeddedIpv4(words: number[]): number[] | undefined {
+  const last = wordsToIpv4(words[6]!, words[7]!);
+  const zero = (end: number) => words.slice(0, end).every(word => word === 0);
+  if (zero(6)) return last; // IPv4-compatible, including ::127.0.0.1
+  if (zero(5) && words[5] === 0xffff) return last; // IPv4-mapped
+  if (zero(4) && words[4] === 0xffff && words[5] === 0) return last; // IPv4-translated
+  if (words[0] === 0x64 && words[1] === 0xff9b && words.slice(2, 6).every(word => word === 0)) return last; // NAT64 well-known
+  if (words[0] === 0x64 && words[1] === 0xff9b && words[2] === 1) return last; // NAT64 local-use
+  return undefined;
+}
+
+function unbracketHost(host: string): string {
+  return host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
 }
 
 async function resolve(host: string, lookup: typeof dnsLookup, allowPrivate: boolean): Promise<string> {
@@ -64,7 +132,8 @@ export async function createSafeProxy(options: SafeProxyOptions = {}): Promise<S
     response.on('error', () => { upstream?.destroy(); request.destroy(); });
     try {
       const target = new URL(request.url ?? '');
-      const address = await resolve(target.hostname, lookup, allowPrivate);
+      const targetHost = unbracketHost(target.hostname);
+      const address = await resolve(targetHost, lookup, allowPrivate);
       if (closing) { response.destroy(); return; }
       upstream = http.request({ host: address, port: Number(target.port) || 80, method: request.method, path: `${target.pathname}${target.search}`, headers: { ...request.headers, host: target.host } }, upstreamResponse => {
         response.writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
@@ -85,7 +154,9 @@ export async function createSafeProxy(options: SafeProxyOptions = {}): Promise<S
     client.on('error', () => upstream?.destroy());
     client.on('close', () => upstream?.destroy());
     try {
-      const [host, portText] = (request.url ?? '').replace(/^\[/, '').replace(']', '').split(':');
+      const authority = new URL(`http://${request.url ?? ''}`);
+      const host = unbracketHost(authority.hostname);
+      const portText = authority.port;
       if (!host) throw new Error('Invalid CONNECT target');
       const address = await resolve(host, lookup, allowPrivate);
       if (closing) { client.destroy(); return; }

@@ -32,13 +32,13 @@ const clientOwnedCommands: HostedCommand[] = [{
   clientOwned: true,
 }];
 
-export function withClientOwnedCommands(manifest: HostedManifest): HostedManifest {
+export function withClientOwnedCommands(manifest: HostedManifest, enabled = true): HostedManifest {
   const localCommandNames = new Set(clientOwnedCommands.map(command => command.command));
   return {
     ...manifest,
     commands: [
       ...manifest.commands.filter(command => !localCommandNames.has(command.command)),
-      ...clientOwnedCommands,
+      ...(enabled ? clientOwnedCommands : []),
     ],
   };
 }

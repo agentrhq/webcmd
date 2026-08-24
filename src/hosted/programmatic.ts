@@ -26,6 +26,8 @@ export interface HostedProgrammaticOptions {
   stderrLimitBytes?: number;
   fetchImpl?: typeof fetch;
   now?: () => number;
+  /** Opts into Webcmd's public-network-only hosted web/fetch implementation. */
+  enableServerWebFetch?: boolean;
 }
 
 export interface HostedProgrammaticResult {
@@ -82,6 +84,7 @@ export async function runHostedProgrammatic(
     ...(options.signal ? { signal: options.signal } : {}),
     ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
     ...(options.now ? { now: options.now } : {}),
+    ...(options.enableServerWebFetch === true ? { enableServerWebFetch: true } : {}),
   });
 
   const out = stdout.result();
