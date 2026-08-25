@@ -95,11 +95,13 @@ const SEARCH_PAYLOAD = {
 // Helpers
 // ---------------------------------------------------------------------------
 function fakeRequest(payload, { ok = true, status = 200 } = {}) {
-    const req = async (url, _opts) => {
+    const req = async (url, opts) => {
         req.calls.push(String(url));
+        req.opts.push(opts);
         return { ok, status, json: async () => payload };
     };
     req.calls = [];
+    req.opts = [];
     return req;
 }
 
@@ -369,5 +371,18 @@ test('all npm commands are browser-free', () => {
         const cmd = registry.get(name);
         assert.ok(cmd, `command ${name} not registered`);
         assert.equal(cmd.browser, false, `${name} should not require a browser`);
+    }
+});
+
+test('npm commands pass a 10-second timeout AbortSignal to fetch requests', async () => {
+    const req = fakeRequest(REGISTRY_PAYLOAD);
+    const original = globalThis.fetch;
+    globalThis.fetch = req;
+    try {
+        await versionsNpm({ name: 'exlib' });
+        assert.equal(req.opts.length, 1);
+        assert.ok(req.opts[0].signal instanceof AbortSignal);
+    } finally {
+        globalThis.fetch = original;
     }
 });

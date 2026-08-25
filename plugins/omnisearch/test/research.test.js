@@ -274,4 +274,25 @@ describe('omnisearch research — limit enforcement', () => {
     const rows = await command.func({ query: 'webcmd', limit: 5, sources: 'hn' });
     expect(rows.map((row) => row.title)).toEqual(['One', 'Two', 'Three', 'Four', 'Five']);
   });
+
+  it('passes a 10-second timeout AbortSignal to all fetch requests', async () => {
+    let passedSignals = [];
+    vi.stubGlobal('fetch', async (url, init) => {
+      passedSignals.push(init?.signal);
+      return new Response(JSON.stringify(hnResponse([])), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+
+    const command = getRegistry().get('omnisearch/research');
+    try {
+      await command.func({ query: 'test', limit: 1, sources: 'hn' });
+    } catch (err) {
+      // Ignore EmptyResultError if empty results returned
+    }
+
+    expect(passedSignals.length).toBeGreaterThan(0);
+    expect(passedSignals[0]).toBeInstanceOf(AbortSignal);
+  });
 });

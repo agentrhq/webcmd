@@ -196,4 +196,20 @@ describe('omnisearch packages integration', () => {
     expect(command).toBeDefined();
     expect(command.browser).toBe(false);
   });
+
+  it('passes a 10-second timeout AbortSignal to fetch', async () => {
+    let passedSignal = null;
+    vi.stubGlobal('fetch', async (url, init) => {
+      passedSignal = init?.signal;
+      return new Response(JSON.stringify(NPM_PAYLOAD), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+
+    const command = getRegistry().get('omnisearch/packages');
+    await command.func({ query: 'lodash', limit: 1, registries: 'npm' });
+
+    expect(passedSignal).toBeInstanceOf(AbortSignal);
+  });
 });

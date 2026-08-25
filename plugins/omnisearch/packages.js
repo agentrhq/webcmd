@@ -13,6 +13,7 @@ async function get(url, init, { source } = {}) {
   let res;
   try {
     res = await fetch(url, {
+      signal: AbortSignal.timeout(10_000),
       ...init,
       headers: {
         'user-agent': UA,
@@ -165,12 +166,12 @@ cli({
       .filter(Boolean);
 
     const fetchers = {
-      npm: () => npmSearch(query, perRegistry),
-      crates: () => cratesSearch(query, perRegistry),
-      nuget: () => nugetSearch(query, perRegistry),
-      rubygems: () => rubygemsSearch(query, perRegistry),
-      packagist: () => packagistSearch(query, perRegistry),
-      maven: () => mavenSearch(query, perRegistry),
+      npm: (lim) => npmSearch(query, lim),
+      crates: (lim) => cratesSearch(query, lim),
+      nuget: (lim) => nugetSearch(query, lim),
+      rubygems: (lim) => rubygemsSearch(query, lim),
+      packagist: (lim) => packagistSearch(query, lim),
+      maven: (lim) => mavenSearch(query, lim),
     };
 
     const selected = wanted.length ? wanted.filter((s) => fetchers[s]) : Object.keys(fetchers);
@@ -179,7 +180,7 @@ cli({
     let rows = [];
     try {
       // Failure isolation: one rate-limited or erroring registry must not wipe out the others.
-      const outcomes = await Promise.allSettled(selected.map((key) => fetchers[key]()));
+      const outcomes = await Promise.allSettled(selected.map((key) => fetchers[key](perRegistry)));
       rows = outcomes
         .filter((o) => o.status === 'fulfilled')
         .flatMap((o) => o.value);

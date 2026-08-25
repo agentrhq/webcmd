@@ -10,7 +10,10 @@ import { CommandExecutionError } from '@agentrhq/webcmd/errors';
 async function get(url, init, { source } = {}) {
   let res;
   try {
-    res = await fetch(url, init);
+    res = await fetch(url, {
+      signal: AbortSignal.timeout(10_000),
+      ...init,
+    });
   } catch (err) {
     throw new CommandExecutionError(
       `OmniSearch: ${source} request failed: ${err instanceof Error ? err.message : String(err)}`,
