@@ -19,11 +19,11 @@
 
   <rect width="1240" height="530" fill="#f1efe7"/>
   <text class="meta-label" x="48" y="44">Benchmark:</text>
-  <text class="meta-value" x="130" y="44">BU Bench V1 from browser-use</text>
-  <text class="meta-label" x="350" y="44">Harness:</text>
-  <text class="meta-value" x="419" y="44">Pi</text>
+  <text class="meta-value" x="127" y="44">BU Bench V1 from browser-use</text>
+  <text class="meta-label" x="360" y="44">Harness:</text>
+  <text class="meta-value" x="423" y="44">Pi</text>
   <text class="meta-label" x="460" y="44">Model:</text>
-  <text class="meta-value" x="514" y="44">GPT-5.6 Sol</text>
+  <text class="meta-value" x="508" y="44">GPT-5.6 Sol</text>
   <text class="headline" x="48" y="94">Accuracy up.</text>
   <text class="headline accent" x="328" y="94">Cost down.</text>
   <text class="headline" x="570" y="94">Time down.</text>
