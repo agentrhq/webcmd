@@ -17,101 +17,65 @@ afterEach(() => {
 });
 
 describe('LocalBrowserSessionStore', () => {
-  it('creates unique explicit sessions and persists them', () => {
+  it('creates readable IDs that are unique within each profile', () => {
     const baseDir = tempDir();
+    const suffixes = ['k7', 'k7', '8n', 'k7'];
     const store = new LocalBrowserSessionStore({
       baseDir,
-      now: () => new Date('2026-08-11T00:00:00.000Z'),
-      idFactory: () => 'session_11111111-1111-4111-8111-111111111111',
+      suffixFactory: () => suffixes.shift()!,
     });
 
-    const created = store.create('profile_work');
+    expect(store.create('profile-a', 'Work Project').id).toBe('work-project-k7');
+    expect(store.create('profile-a', 'Work Project').id).toBe('work-project-8n');
+    expect(store.create('profile-b', 'Work Project').id).toBe('work-project-k7');
+    expect(store.resolveAdapterDefault('profile-a').id).toBe('adapter-default');
+  });
 
-    expect(created).toMatchObject({
-      id: 'session_11111111-1111-4111-8111-111111111111',
-      profileId: 'profile_work',
-      kind: 'explicit',
-      createdAt: '2026-08-11T00:00:00.000Z',
-      updatedAt: '2026-08-11T00:00:00.000Z',
-      lastUsedAt: '2026-08-11T00:00:00.000Z',
+  it('fails after ten readable ID collisions', () => {
+    const baseDir = tempDir();
+    fs.writeFileSync(path.join(baseDir, 'browser-sessions.json'), `${JSON.stringify({
+      version: 2,
+      sessions: [sessionRecord('work-project-k7', 'explicit', '2026-08-11T00:00:00.000Z')],
+    })}\n`, { mode: 0o600 });
+    const store = new LocalBrowserSessionStore({
+      baseDir,
+      suffixFactory: () => 'k7',
     });
-    expect(store.create('profile_work').id).not.toBe(created.id);
-    expect(new LocalBrowserSessionStore({ baseDir }).find('profile_work', created.id)?.id).toBe(created.id);
+
+    expect(() => store.create('work', 'Work Project')).toThrowError(
+      expect.objectContaining({ code: 'SESSION_ID_GENERATION_FAILED' }),
+    );
   });
 
-  it('scopes lookup by profile and validates opaque ids', () => {
-    const store = new LocalBrowserSessionStore({ baseDir: tempDir(), idFactory: () => 'session_a' });
-    const created = store.create('profile_work');
+  it('scopes lookups by profile and validates readable IDs', () => {
+    const store = new LocalBrowserSessionStore({ baseDir: tempDir(), suffixFactory: () => 'k7' });
+    const created = store.create('profile-work', 'Work');
 
-    expect(() => store.require('profile_other', created.id)).toThrowError(expect.objectContaining({ code: 'SESSION_NOT_FOUND' }));
-    expect(() => store.find('profile_work', 'work')).toThrowError(expect.objectContaining({ code: 'INVALID_SESSION_SELECTOR' }));
-  });
-
-  it('names the owning profile when the session exists under a different one', () => {
-    // A cleanup command that omits `--profile` looks up a real Session ID in
-    // the wrong Profile. A bare "not found" sent agents into retrying the same
-    // command; naming the owner and the retry shape ends that loop.
-    const store = new LocalBrowserSessionStore({ baseDir: tempDir(), idFactory: () => 'session_a' });
-    const created = store.create('profile_work');
-
-    expect(() => store.require('profile_personal', created.id)).toThrowError(expect.objectContaining({
+    expect(() => store.require('profile-other', created.id)).toThrowError(expect.objectContaining({
       code: 'SESSION_NOT_FOUND',
-      ownerProfileId: 'profile_work',
-      message: `Session not found in Profile profile_personal: ${created.id}`,
-      hint: `Session ${created.id} belongs to Profile profile_work. Re-run the same command with \`--profile profile_work\`, for example \`webcmd --profile profile_work session close ${created.id}\`.`,
     }));
-  });
-
-  it('names the owning profile on mutating lookups too', () => {
-    // `remove`/`touch`/handoff updates resolve the record through a separate
-    // lookup, so the close path must not fall back to the anonymous message.
-    const store = new LocalBrowserSessionStore({ baseDir: tempDir(), idFactory: () => 'session_a' });
-    const created = store.create('profile_work');
-
-    expect(() => store.remove('profile_personal', created.id)).toThrowError(expect.objectContaining({
-      code: 'SESSION_NOT_FOUND',
-      ownerProfileId: 'profile_work',
-    }));
-  });
-
-  it('findOwner names the owning profile without scoping to a selected one', () => {
-    const store = new LocalBrowserSessionStore({ baseDir: tempDir(), idFactory: () => 'session_a' });
-    const created = store.create('profile_work');
-
-    expect(store.findOwner(created.id)).toBe('profile_work');
-    expect(store.findOwner('session_missing')).toBeUndefined();
-  });
-
-  it('keeps the generic hint when no profile owns the session', () => {
-    const store = new LocalBrowserSessionStore({ baseDir: tempDir() });
-
-    expect(() => store.require('profile_work', 'session_missing')).toThrowError(expect.objectContaining({
-      code: 'SESSION_NOT_FOUND',
-      ownerProfileId: undefined,
-      message: 'Session not found: session_missing',
-      hint: 'Run `webcmd --profile profile_work session list` to choose an existing Session, then `webcmd session close <session-id>`. If it belongs to another Profile, pass `--profile <name>`.',
-    }));
+    expect(() => store.find('profile-work', 'work')).toThrowError(expect.objectContaining({ code: 'INVALID_SESSION_SELECTOR' }));
   });
 
   it('resolves one lazy adapter-default per profile without list side effects', () => {
     const store = new LocalBrowserSessionStore({
       baseDir: tempDir(),
-      idFactory: () => 'session_default',
+      suffixFactory: () => 'k7',
     });
 
-    expect(store.list('profile_work')).toEqual([]);
-    const adapterDefault = store.resolveAdapterDefault('profile_work');
+    expect(store.list('profile-work')).toEqual([]);
+    const adapterDefault = store.resolveAdapterDefault('profile-work');
 
-    expect(adapterDefault.kind).toBe('adapter-default');
-    expect(store.resolveAdapterDefault('profile_work').id).toBe(adapterDefault.id);
-    expect(store.list('profile_work')).toHaveLength(1);
+    expect(adapterDefault).toMatchObject({ id: 'adapter-default', kind: 'adapter-default' });
+    expect(store.resolveAdapterDefault('profile-work').id).toBe('adapter-default');
+    expect(store.list('profile-work')).toHaveLength(1);
   });
 
   it('writes state atomically with private file mode', () => {
     const baseDir = tempDir();
-    const store = new LocalBrowserSessionStore({ baseDir, idFactory: () => 'session_private' });
+    const store = new LocalBrowserSessionStore({ baseDir, suffixFactory: () => 'k7' });
 
-    store.create('profile_work');
+    store.create('profile-work', 'Private');
 
     const statePath = path.join(baseDir, 'browser-sessions.json');
     expect(fs.existsSync(statePath)).toBe(true);
@@ -119,11 +83,37 @@ describe('LocalBrowserSessionStore', () => {
     expect(fs.readdirSync(baseDir).filter((name) => name.includes('.tmp'))).toEqual([]);
   });
 
+  it('discards version-1 state into an empty version-2 state without a backup', () => {
+    const baseDir = tempDir();
+    fs.writeFileSync(path.join(baseDir, 'browser-sessions.json'), `${JSON.stringify({
+      version: 1,
+      sessions: [sessionRecord('old-k7', 'explicit', '2026-08-11T00:00:00.000Z')],
+    })}\n`, { mode: 0o600 });
+
+    expect(new LocalBrowserSessionStore({ baseDir }).list('work')).toEqual([]);
+    expect(JSON.parse(fs.readFileSync(path.join(baseDir, 'browser-sessions.json'), 'utf8'))).toEqual({
+      version: 2,
+      sessions: [],
+    });
+    expect(fs.readdirSync(baseDir)).toEqual(['browser-sessions.json']);
+  });
+
   it('fails closed on malformed persisted JSON', () => {
     const baseDir = tempDir();
     fs.writeFileSync(path.join(baseDir, 'browser-sessions.json'), '{not json', { mode: 0o600 });
 
-    expect(() => new LocalBrowserSessionStore({ baseDir }).list('profile_work'))
+    expect(() => new LocalBrowserSessionStore({ baseDir }).list('profile-work'))
+      .toThrowError(expect.objectContaining({ code: 'CONFIG' }));
+  });
+
+  it.each([
+    sessionRecord('adapter-default', 'explicit', '2026-08-11T00:00:00.000Z'),
+    sessionRecord('work-k7', 'adapter-default', '2026-08-11T00:00:00.000Z'),
+  ])('rejects persisted rows that violate the kind/ID invariant', (record) => {
+    const baseDir = tempDir();
+    fs.writeFileSync(path.join(baseDir, 'browser-sessions.json'), `${JSON.stringify({ version: 2, sessions: [record] })}\n`, { mode: 0o600 });
+
+    expect(() => new LocalBrowserSessionStore({ baseDir }).list('work'))
       .toThrowError(expect.objectContaining({ code: 'CONFIG' }));
   });
 
@@ -132,9 +122,9 @@ describe('LocalBrowserSessionStore', () => {
     const store = new LocalBrowserSessionStore({
       baseDir: tempDir(),
       now: () => now,
-      idFactory: () => 'session_a',
+      suffixFactory: () => 'k7',
     });
-    const session = store.create('work');
+    const session = store.create('work', 'Work');
     store.markHandoff('work', session.id, {
       site: 'github',
       expiresAt: '2026-08-11T00:15:00.000Z',
@@ -153,13 +143,14 @@ describe('LocalBrowserSessionStore', () => {
   it('prunes explicit Sessions idle for 30 days while preserving adapter defaults and handoffs', () => {
     const baseDir = tempDir();
     fs.writeFileSync(path.join(baseDir, 'browser-sessions.json'), `${JSON.stringify({
-      version: 1,
+      version: 2,
       sessions: [
-        sessionRecord('session_old', 'explicit', '2026-07-11T23:59:59.000Z'),
-        sessionRecord('session_boundary', 'explicit', '2026-07-12T00:00:01.000Z'),
-        sessionRecord('session_handoff', 'explicit', '2026-07-01T00:00:00.000Z', { site: 'github', expiresAt: '2026-08-12T00:15:00.000Z' }),
-        sessionRecord('session_expired_handoff', 'explicit', '2026-07-01T00:00:00.000Z', { site: 'github', expiresAt: '2026-08-10T00:15:00.000Z' }),
-        sessionRecord('session_default', 'adapter-default', '2026-07-01T00:00:00.000Z'),
+        sessionRecord('old-k7', 'explicit', '2026-07-11T23:59:59.000Z'),
+        sessionRecord('boundary-k7', 'explicit', '2026-07-12T00:00:00.000Z'),
+        sessionRecord('recent-k7', 'explicit', '2026-07-12T00:00:01.000Z'),
+        sessionRecord('handoff-k7', 'explicit', '2026-07-01T00:00:00.000Z', { site: 'github', expiresAt: '2026-08-12T00:15:00.000Z' }),
+        sessionRecord('expired-handoff-k7', 'explicit', '2026-07-01T00:00:00.000Z', { site: 'github', expiresAt: '2026-08-10T00:15:00.000Z' }),
+        sessionRecord('adapter-default', 'adapter-default', '2026-07-01T00:00:00.000Z'),
       ],
     })}\n`, { mode: 0o600 });
 
@@ -168,32 +159,32 @@ describe('LocalBrowserSessionStore', () => {
       now: () => new Date('2026-08-11T00:00:00.000Z'),
     }).list('work');
 
-    expect(rows.map((row) => row.id)).toEqual(['session_boundary', 'session_default', 'session_handoff']);
+    expect(rows.map((row) => row.id)).toEqual(['recent-k7', 'adapter-default', 'handoff-k7']);
   });
 
   it('retains active Sessions and limits newest-first listings', () => {
     const baseDir = tempDir();
     fs.writeFileSync(path.join(baseDir, 'browser-sessions.json'), `${JSON.stringify({
-      version: 1,
+      version: 2,
       sessions: [
-        sessionRecord('session_active', 'explicit', '2026-07-01T00:00:00.000Z'),
-        sessionRecord('session_newest', 'explicit', '2026-08-10T00:00:00.000Z'),
-        sessionRecord('session_middle', 'explicit', '2026-08-09T00:00:00.000Z'),
+        sessionRecord('active-k7', 'explicit', '2026-07-01T00:00:00.000Z'),
+        sessionRecord('newest-k7', 'explicit', '2026-08-10T00:00:00.000Z'),
+        sessionRecord('middle-k7', 'explicit', '2026-08-09T00:00:00.000Z'),
       ],
     })}\n`, { mode: 0o600 });
 
     const rows = new LocalBrowserSessionStore({
       baseDir,
       now: () => new Date('2026-08-11T00:00:00.000Z'),
-      isActive: session => session.id === 'session_active',
+      isActive: session => session.id === 'active-k7',
     }).list('work', 2);
 
-    expect(rows.map((row) => row.id)).toEqual(['session_newest', 'session_middle']);
+    expect(rows.map((row) => row.id)).toEqual(['newest-k7', 'middle-k7']);
     expect(new LocalBrowserSessionStore({
       baseDir,
       now: () => new Date('2026-08-11T00:00:00.000Z'),
-      isActive: session => session.id === 'session_active',
-    }).find('work', 'session_active')).toBeDefined();
+      isActive: session => session.id === 'active-k7',
+    }).find('work', 'active-k7')).toBeDefined();
   });
 });
 

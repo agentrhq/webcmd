@@ -1,9 +1,17 @@
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
 import { CLI_COMMAND, CONFIG_DIR_NAME, ENV_PREFIX } from '../brand.js';
 import { CliError, ConfigError, EXIT_CODES } from '../errors.js';
+import {
+  ADAPTER_DEFAULT_SESSION_ID,
+  generateSessionSuffix,
+  requireSessionIdShape,
+  requireSessionName,
+  SESSION_GENERATION_ATTEMPTS,
+  SessionIdGenerationError,
+} from './session-identifiers.js';
 
 export interface BrowserSessionRecord {
   id: string;
@@ -22,42 +30,20 @@ export interface BrowserSessionListRow extends BrowserSessionRecord {
 export interface LocalBrowserSessionStoreOptions {
   baseDir?: string;
   now?: () => Date;
-  idFactory?: () => string;
+  suffixFactory?: () => string;
   isActive?: (record: BrowserSessionRecord) => boolean;
 }
 
-type StateFile = { version: 1; sessions: BrowserSessionRecord[] };
+type StateFile = { version: 2; sessions: BrowserSessionRecord[] };
 const SESSION_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 export class SessionNotFoundError extends CliError {
-  /** Profile that actually owns the Session, when the ID exists under a different one. */
-  readonly ownerProfileId?: string;
-
-  constructor(sessionId: string, profileId: string, ownerProfileId?: string) {
-    // A Session ID is only ever looked up inside the selected Profile, so a
-    // caller that omits `--profile` sees "not found" for a Session that does
-    // exist. Naming the owner turns a dead end into a one-step retry.
+  constructor(sessionId: string, profileId: string) {
     super(
       'SESSION_NOT_FOUND',
-      ownerProfileId
-        ? `Session not found in Profile ${profileId}: ${sessionId}`
-        : `Session not found: ${sessionId}`,
-      ownerProfileId
-        ? `Session ${sessionId} belongs to Profile ${ownerProfileId}. Re-run the same command with \`--profile ${ownerProfileId}\`, for example \`${CLI_COMMAND} --profile ${ownerProfileId} session close ${sessionId}\`.`
-        : `Run \`${CLI_COMMAND} --profile ${profileId} session list\` to choose an existing Session, then \`${CLI_COMMAND} session close <session-id>\`. If it belongs to another Profile, pass \`--profile <name>\`.`,
+      `Session not found: ${sessionId}`,
+      `Run \`${CLI_COMMAND} --profile ${profileId} session list\` to choose an existing readable Session ID, then \`${CLI_COMMAND} session close <session-id>\`.`,
       EXIT_CODES.EMPTY_RESULT,
-    );
-    this.ownerProfileId = ownerProfileId;
-  }
-}
-
-export class InvalidSessionSelectorError extends CliError {
-  constructor(sessionId: string) {
-    super(
-      'INVALID_SESSION_SELECTOR',
-      `Session selector must be an opaque Session ID: ${sessionId}`,
-      'Run `webcmd session create` and pass the returned `session_...` ID.',
-      EXIT_CODES.USAGE_ERROR,
     );
   }
 }
@@ -65,33 +51,27 @@ export class InvalidSessionSelectorError extends CliError {
 export class LocalBrowserSessionStore {
   private readonly baseDir: string;
   private readonly now: () => Date;
-  private readonly idFactory: () => string;
+  private readonly suffixFactory: () => string;
   private readonly isActive: (record: BrowserSessionRecord) => boolean;
 
   constructor(opts: LocalBrowserSessionStoreOptions = {}) {
     this.baseDir = opts.baseDir ?? getWebcmdConfigDir();
     this.now = opts.now ?? (() => new Date());
-    this.idFactory = opts.idFactory ?? (() => `session_${randomUUID()}`);
+    this.suffixFactory = opts.suffixFactory ?? generateSessionSuffix;
     this.isActive = opts.isActive ?? (() => false);
   }
 
-  create(profileId: string): BrowserSessionRecord {
+  create(profileId: string, name: string): BrowserSessionRecord {
     const state = this.load();
-    const record = this.newRecord(profileId, 'explicit', state.sessions);
+    const record = this.newExplicitRecord(profileId, name, state.sessions);
     state.sessions.push(record);
     this.save(state);
     return { ...record };
   }
 
-  /** Profile that owns this Session ID, regardless of which one is selected. */
-  findOwner(sessionId: string): string | undefined {
-    return findOwnerProfileId(this.load(), sessionId);
-  }
-
   find(profileId: string, sessionId: string): BrowserSessionRecord | undefined {
     requireSessionIdShape(sessionId);
-    const state = this.load();
-    const record = state.sessions.find((row) => row.id === sessionId && row.profileId === profileId);
+    const record = this.load().sessions.find((row) => row.id === sessionId && row.profileId === profileId);
     return record ? { ...record } : undefined;
   }
 
@@ -100,19 +80,27 @@ export class LocalBrowserSessionStore {
     requireSessionIdShape(id);
     const state = this.load();
     const record = state.sessions.find((row) => row.id === id && row.profileId === profileId);
-    if (!record) throw new SessionNotFoundError(id, profileId, findOwnerProfileId(state, id));
+    if (!record) throw new SessionNotFoundError(id, profileId);
     this.touchRecord(state, record);
     return { ...record };
   }
 
   resolveAdapterDefault(profileId: string): BrowserSessionRecord {
     const state = this.load();
-    const existing = state.sessions.find((row) => row.profileId === profileId && row.kind === 'adapter-default');
+    const existing = state.sessions.find((row) => row.profileId === profileId && row.id === ADAPTER_DEFAULT_SESSION_ID);
     if (existing) {
       this.touchRecord(state, existing);
       return { ...existing };
     }
-    const record = this.newRecord(profileId, 'adapter-default', state.sessions);
+    const timestamp = this.now().toISOString();
+    const record: BrowserSessionRecord = {
+      id: ADAPTER_DEFAULT_SESSION_ID,
+      profileId,
+      kind: 'adapter-default',
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      lastUsedAt: timestamp,
+    };
     state.sessions.push(record);
     this.save(state);
     return { ...record };
@@ -160,26 +148,17 @@ export class LocalBrowserSessionStore {
     return { ...record };
   }
 
-  private newRecord(
-    profileId: string,
-    kind: BrowserSessionRecord['kind'],
-    existing: BrowserSessionRecord[],
-  ): BrowserSessionRecord {
-    const timestamp = this.now().toISOString();
-    const id = this.uniqueId(existing);
-    return { id, profileId, kind, createdAt: timestamp, updatedAt: timestamp, lastUsedAt: timestamp };
-  }
-
-  private uniqueId(existing: BrowserSessionRecord[]): string {
-    const used = new Set(existing.map((row) => row.id));
-    const first = this.idFactory();
-    if (!used.has(first)) {
-      requireSessionIdShape(first);
-      return first;
+  private newExplicitRecord(profileId: string, name: string, existing: BrowserSessionRecord[]): BrowserSessionRecord {
+    const base = requireSessionName(name);
+    const used = new Set(existing.filter((row) => row.profileId === profileId).map((row) => row.id));
+    for (let attempt = 0; attempt < SESSION_GENERATION_ATTEMPTS; attempt += 1) {
+      const id = `${base}-${this.suffixFactory()}`;
+      if (used.has(id)) continue;
+      requireSessionIdShape(id);
+      const timestamp = this.now().toISOString();
+      return { id, profileId, kind: 'explicit', createdAt: timestamp, updatedAt: timestamp, lastUsedAt: timestamp };
     }
-    let candidate = `session_${randomUUID()}`;
-    while (used.has(candidate)) candidate = `session_${randomUUID()}`;
-    return candidate;
+    throw new SessionIdGenerationError(name);
   }
 
   private touchRecord(state: StateFile, record: BrowserSessionRecord): void {
@@ -192,18 +171,23 @@ export class LocalBrowserSessionStore {
   private requireMutable(state: StateFile, profileId: string, sessionId: string): BrowserSessionRecord {
     requireSessionIdShape(sessionId);
     const record = state.sessions.find((row) => row.id === sessionId && row.profileId === profileId);
-    if (!record) throw new SessionNotFoundError(sessionId, profileId, findOwnerProfileId(state, sessionId));
+    if (!record) throw new SessionNotFoundError(sessionId, profileId);
     return record;
   }
 
   private load(): StateFile {
     const file = this.statePath();
-    if (!fs.existsSync(file)) return { version: 1, sessions: [] };
+    if (!fs.existsSync(file)) return { version: 2, sessions: [] };
     let parsed: unknown;
     try {
       parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
     } catch (error) {
       throw new ConfigError(`Could not read browser sessions: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    if (isVersionOneState(parsed)) {
+      const state: StateFile = { version: 2, sessions: [] };
+      this.save(state);
+      return state;
     }
     const state = validateState(parsed);
     const now = this.now().getTime();
@@ -214,7 +198,7 @@ export class LocalBrowserSessionStore {
         changed = true;
       }
     }
-    const retained = state.sessions.filter((record) => {
+    state.sessions = state.sessions.filter((record) => {
       const expired = record.kind === 'explicit'
         && !record.handoff
         && !this.isActive(record)
@@ -222,7 +206,6 @@ export class LocalBrowserSessionStore {
       if (expired) changed = true;
       return !expired;
     });
-    state.sessions = retained;
     if (changed) this.save(state);
     return state;
   }
@@ -241,31 +224,35 @@ export class LocalBrowserSessionStore {
   }
 }
 
-// Every Profile's Sessions share one state file, so the owning Profile of a
-// Session that missed the scoped lookup is already in hand — no daemon or
-// provider round trip is needed to name it.
-function findOwnerProfileId(state: StateFile, sessionId: string): string | undefined {
-  return state.sessions.find((row) => row.id === sessionId)?.profileId;
+function isVersionOneState(value: unknown): value is { version: 1 } {
+  return Boolean(value) && typeof value === 'object' && (value as { version?: unknown }).version === 1;
 }
 
 function validateState(value: unknown): StateFile {
   if (!value || typeof value !== 'object') throw new ConfigError('browser-sessions.json must contain an object.');
   const state = value as { version?: unknown; sessions?: unknown };
-  if (state.version !== 1 || !Array.isArray(state.sessions)) {
+  if (state.version !== 2 || !Array.isArray(state.sessions)) {
     throw new ConfigError('browser-sessions.json has an unsupported schema.');
   }
   const adapterDefaults = new Set<string>();
   const sessions = state.sessions.map((row) => validateRecord(row, adapterDefaults));
-  return { version: 1, sessions };
+  return { version: 2, sessions };
 }
 
 function validateRecord(value: unknown, adapterDefaults: Set<string>): BrowserSessionRecord {
   if (!value || typeof value !== 'object') throw new ConfigError('browser-sessions.json contains an invalid Session record.');
   const row = value as Partial<BrowserSessionRecord>;
   if (typeof row.id !== 'string') throw new ConfigError('browser-sessions.json contains a Session without an id.');
-  requireSessionIdShape(row.id);
+  try {
+    requireSessionIdShape(row.id);
+  } catch {
+    throw new ConfigError('browser-sessions.json contains a Session with an invalid readable id.');
+  }
   if (typeof row.profileId !== 'string' || !row.profileId.trim()) throw new ConfigError('browser-sessions.json contains a Session without a profileId.');
   if (row.kind !== 'explicit' && row.kind !== 'adapter-default') throw new ConfigError('browser-sessions.json contains an invalid Session kind.');
+  if ((row.kind === 'adapter-default') !== (row.id === ADAPTER_DEFAULT_SESSION_ID)) {
+    throw new ConfigError('browser-sessions.json contains a Session with an invalid kind/id combination.');
+  }
   const createdAt = row.createdAt;
   const updatedAt = row.updatedAt;
   const lastUsedAt = row.lastUsedAt;
@@ -279,9 +266,8 @@ function validateRecord(value: unknown, adapterDefaults: Set<string>): BrowserSe
     throw new ConfigError('browser-sessions.json contains an invalid lastUsedAt.');
   }
   if (row.kind === 'adapter-default') {
-    const key = row.profileId;
-    if (adapterDefaults.has(key)) throw new ConfigError(`browser-sessions.json contains multiple adapter-default Sessions for ${key}.`);
-    adapterDefaults.add(key);
+    if (adapterDefaults.has(row.profileId)) throw new ConfigError(`browser-sessions.json contains multiple adapter-default Sessions for ${row.profileId}.`);
+    adapterDefaults.add(row.profileId);
   }
   const handoff = row.handoff;
   if (handoff && (
@@ -301,10 +287,6 @@ function validateRecord(value: unknown, adapterDefaults: Set<string>): BrowserSe
     lastUsedAt,
     ...(handoff ? { handoff } : {}),
   };
-}
-
-export function requireSessionIdShape(sessionId: string): void {
-  if (!/^session_[A-Za-z0-9_-]+$/u.test(sessionId)) throw new InvalidSessionSelectorError(sessionId);
 }
 
 function getWebcmdConfigDir(): string {
