@@ -2,12 +2,12 @@
   <title id="title">BU Bench V1 accuracy, API cost, and agent turns per completed task</title>
   <desc id="desc">webcmd leads with 67 percent accuracy, 25.5 cents per completed task, and 9.8 agent turns per completed task.</desc>
   <style>
-    .meta-label { font-family: "Courier New", ui-monospace, monospace; font-size: 12px; font-weight: 500; letter-spacing: 0.04em; fill: #151719; }
-    .meta-value { font-family: "Courier New", ui-monospace, monospace; font-size: 12px; font-weight: 500; letter-spacing: 0.04em; fill: #167eae; }
+    .meta-label { font-family: "Courier New", ui-monospace, monospace; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; fill: #151719; }
+    .meta-value { font-family: "Courier New", ui-monospace, monospace; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; fill: #167eae; }
     .headline { font-family: Georgia, "Times New Roman", serif; font-size: 40px; font-weight: 500; letter-spacing: -0.025em; }
     .accent { fill: #167eae; font-style: italic; }
     .panel-title { font-family: Georgia, "Times New Roman", serif; font-size: 24px; font-weight: 500; }
-    .note { font-family: "Courier New", ui-monospace, monospace; font-size: 11px; font-weight: 500; letter-spacing: 0.08em; fill: #62676b; }
+    .note { font-family: "Courier New", ui-monospace, monospace; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; fill: #62676b; }
     .label { font-family: Helvetica, Arial, sans-serif; font-size: 15px; font-weight: 400; fill: #51585d; }
     .webcmd-label { font-weight: 500; fill: #167eae; }
     .value { font-family: "Courier New", ui-monospace, monospace; font-size: 14px; font-weight: 500; }
@@ -29,7 +29,7 @@
   <text class="headline" x="570" y="94">Time down.</text>
   <line class="hairline" x1="48" y1="122" x2="1192" y2="122"/>
 
-  <text class="panel-title" x="48" y="164">Tool</text>
+  <text class="panel-title" x="48" y="164">CLI</text>
   <text class="panel-title" x="210" y="164">Accuracy</text>
   <text class="note" x="210" y="184">HIGHER IS BETTER</text>
   <text class="panel-title" x="545" y="164">API cost / task</text>
