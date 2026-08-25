@@ -33,4 +33,16 @@ describe('session identifiers', () => {
       expect.objectContaining({ code: 'INVALID_SESSION_SELECTOR' }),
     );
   });
+
+  it.each([
+    'work--k7',
+    'a--zz',
+    'work-project--k7',
+    '-work-k7',
+    'work-k7-',
+  ])('rejects malformed selector segments: %s', (sessionId) => {
+    expect(() => requireSessionIdShape(sessionId)).toThrowError(
+      expect.objectContaining({ code: 'INVALID_SESSION_SELECTOR' }),
+    );
+  });
 });

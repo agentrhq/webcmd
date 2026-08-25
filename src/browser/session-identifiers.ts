@@ -54,7 +54,7 @@ export function requireSessionName(input: string): string {
 }
 
 export function requireSessionIdShape(sessionId: string): void {
-  if (sessionId !== ADAPTER_DEFAULT_SESSION_ID && !/^[a-z0-9][a-z0-9-]{0,59}-[23456789abcdefghijkmnpqrstuvwxyz]{2}$/u.test(sessionId)) {
+  if (sessionId !== ADAPTER_DEFAULT_SESSION_ID && !/^(?=.{4,63}$)[a-z0-9]+(?:-[a-z0-9]+)*-[2-9a-km-np-z]{2}$/u.test(sessionId)) {
     throw new InvalidSessionSelectorError(sessionId);
   }
 }
