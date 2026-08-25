@@ -61,17 +61,23 @@ export function resolveWorkspace(argv: readonly string[], env: NodeJS.ProcessEnv
 export class HostedClientError extends CliError {
   readonly execution?: HostedExecution;
   readonly trace?: HostedTraceReceipt;
+  readonly details?: Record<string, unknown>;
 
   constructor(
     code: string,
     message: string,
     help?: string,
     exitCode: ExitCode = EXIT_CODES.GENERIC_ERROR,
-    metadata: { execution?: HostedExecution; trace?: HostedTraceReceipt } = {},
+    metadata: {
+      execution?: HostedExecution;
+      trace?: HostedTraceReceipt;
+      details?: Record<string, unknown>;
+    } = {},
   ) {
     super(code, message, help, exitCode);
     this.execution = metadata.execution;
     this.trace = metadata.trace;
+    this.details = metadata.details;
     if (metadata.trace) attachTraceReceipt(this, metadata.trace);
   }
 }
@@ -378,17 +384,7 @@ export class HostedClient {
       const text = await response.text();
       const body = text ? parseJson(text) : {};
       if (!isHostedError(body)) throw protocolError('Webcmd Cloud returned an invalid artifact download failure.');
-      const error = body.error;
-      throw new HostedClientError(
-        error.code,
-        error.message,
-        error.help,
-        normalizeExitCode(error.exitCode, response.status === 401 ? EXIT_CODES.NOPERM : EXIT_CODES.GENERIC_ERROR),
-        {
-          ...(body.execution ? { execution: body.execution } : {}),
-          ...(body.trace ? { trace: body.trace } : {}),
-        },
-      );
+      throw hostedFailure(body, response.status === 401 ? EXIT_CODES.NOPERM : EXIT_CODES.GENERIC_ERROR);
     }
     return new Uint8Array(await response.arrayBuffer());
   }
@@ -465,20 +461,7 @@ export class HostedClient {
       if (body.execution && !isValidExecutedFailure(body, executionExpectation)) {
         throw protocolError('Webcmd Cloud returned an invalid executed failure response.');
       }
-      const error = body.error;
-      throw new HostedClientError(
-        error.code,
-        error.message,
-        error.help,
-        normalizeExitCode(
-          error.exitCode,
-          response.status === 401 ? EXIT_CODES.NOPERM : EXIT_CODES.GENERIC_ERROR,
-        ),
-        {
-          ...(body.execution ? { execution: body.execution } : {}),
-          ...(body.trace ? { trace: body.trace } : {}),
-        },
-      );
+      throw hostedFailure(body, response.status === 401 ? EXIT_CODES.NOPERM : EXIT_CODES.GENERIC_ERROR);
     }
     if (!response.ok) throw protocolError('Webcmd Cloud returned a success envelope with an HTTP error status.');
     return body;
@@ -523,13 +506,7 @@ export class HostedClient {
     if (response.ok) return text;
     const body = text ? parseJson(text) : {};
     if (!isHostedError(body)) throw protocolError('Webcmd Cloud returned an invalid raw response failure.');
-    throw new HostedClientError(
-      body.error.code,
-      body.error.message,
-      body.error.help,
-      normalizeExitCode(body.error.exitCode, response.status === 401 ? EXIT_CODES.NOPERM : EXIT_CODES.GENERIC_ERROR),
-      { ...(body.execution ? { execution: body.execution } : {}), ...(body.trace ? { trace: body.trace } : {}) },
-    );
+    throw hostedFailure(body, response.status === 401 ? EXIT_CODES.NOPERM : EXIT_CODES.GENERIC_ERROR);
   }
 }
 
@@ -612,11 +589,12 @@ function isHostedAdapterOverrideResponse(value: unknown): value is {
 
 function isHostedError(value: unknown): value is HostedErrorResponse {
   if (!hasOnlyKeys(value, ['ok', 'error', 'execution', 'trace']) || value.ok !== false || !isRecord(value.error)) return false;
-  if (!hasOnlyKeys(value.error, ['code', 'message', 'help', 'exitCode'])) return false;
+  if (!hasOnlyKeys(value.error, ['code', 'message', 'help', 'exitCode', 'details'])) return false;
   if (typeof value.error.code !== 'string' || typeof value.error.message !== 'string') return false;
   if (value.error.exitCode !== undefined
     && (typeof value.error.exitCode !== 'number' || !isAllowedExitCode(value.error.exitCode))) return false;
   if (value.error.help !== undefined && typeof value.error.help !== 'string') return false;
+  if (value.error.details !== undefined && !isRecord(value.error.details)) return false;
   if (value.execution !== undefined && !isHostedExecution(value.execution)) return false;
   if (value.trace !== undefined && !isHostedTraceReceipt(value.trace)) return false;
   if (value.execution?.status === 'succeeded') return false;
@@ -1050,6 +1028,20 @@ function normalizeExitCode(value: number | undefined, fallback: ExitCode): ExitC
 
 function protocolError(message: string): HostedClientError {
   return new HostedClientError('HOSTED_PROTOCOL', message);
+}
+
+function hostedFailure(body: HostedErrorResponse, fallback: ExitCode): HostedClientError {
+  return new HostedClientError(
+    body.error.code,
+    body.error.message,
+    body.error.help,
+    normalizeExitCode(body.error.exitCode, fallback),
+    {
+      ...(body.execution ? { execution: body.execution } : {}),
+      ...(body.trace ? { trace: body.trace } : {}),
+      ...(body.error.details ? { details: body.error.details } : {}),
+    },
+  );
 }
 
 type HostedTraceMode = 'off' | 'on' | 'retain-on-failure';

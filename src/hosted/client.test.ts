@@ -880,6 +880,80 @@ describe('HostedClient', () => {
     } satisfies Partial<HostedClientError>);
   });
 
+  it('keeps the original hosted error code when failure details are a nested object', async () => {
+    const details = {
+      warnings: [{ code: 'PAGE_STALE', message: 'The assigned page changed.' }],
+      timings: { program_ms: 12 },
+    };
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: false,
+        error: {
+          code: 'BROWSER_RUN_TIMEOUT',
+          message: 'The browser program timed out.',
+          help: 'Retry with a shorter program.',
+          exitCode: 75,
+          details,
+        },
+        execution: { id: 'exec_timeout', command: 'github/whoami', status: 'timed_out' },
+      }), { status: 504 }),
+    });
+
+    await expect(client.execute({ command: 'github/whoami', args: {} })).rejects.toMatchObject({
+      code: 'BROWSER_RUN_TIMEOUT',
+      details,
+    } satisfies Partial<HostedClientError>);
+  });
+
+  it('preserves object details on artifact-download failures', async () => {
+    const details = { artifactId: 'artifact_out', reason: 'expired' };
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: false,
+        error: {
+          code: 'ARTIFACT_NOT_FOUND',
+          message: 'The artifact is gone.',
+          exitCode: 66,
+          details,
+        },
+      }), { status: 404 }),
+    });
+
+    await expect(client.downloadExecutionArtifact({
+      executionId: 'exec_files',
+      artifactId: 'artifact_out',
+    })).rejects.toMatchObject({
+      code: 'ARTIFACT_NOT_FOUND',
+      details,
+    } satisfies Partial<HostedClientError>);
+  });
+
+  it('preserves object details on raw-text request failures', async () => {
+    const details = { site: 'github', path: 'notes.md' };
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: false,
+        error: {
+          code: 'SITE_MEMORY_NOT_FOUND',
+          message: 'Missing notes.',
+          exitCode: 66,
+          details,
+        },
+      }), { status: 404 }),
+    });
+
+    await expect(client.readSiteMemory('github', 'notes.md')).rejects.toMatchObject({
+      code: 'SITE_MEMORY_NOT_FOUND',
+      details,
+    } satisfies Partial<HostedClientError>);
+  });
+
   it.each(['success', 'failure'].flatMap(phase => invalidTraceUrlCases.map(testCase => ({
     phase,
     ...testCase,
@@ -1073,6 +1147,38 @@ describe('HostedClient', () => {
         execution: {
           id: 'exec_good', command: 'github/whoami', status: 'succeeded', internalPath: '/srv/private/token.json',
         },
+      },
+    },
+    {
+      name: 'array error details',
+      status: 500,
+      body: {
+        ok: false,
+        error: { code: 'UNKNOWN', message: 'failed', exitCode: 1, details: ['secret'] },
+      },
+    },
+    {
+      name: 'string error details',
+      status: 500,
+      body: {
+        ok: false,
+        error: { code: 'UNKNOWN', message: 'failed', exitCode: 1, details: 'secret' },
+      },
+    },
+    {
+      name: 'number error details',
+      status: 500,
+      body: {
+        ok: false,
+        error: { code: 'UNKNOWN', message: 'failed', exitCode: 1, details: 12 },
+      },
+    },
+    {
+      name: 'null error details',
+      status: 500,
+      body: {
+        ok: false,
+        error: { code: 'UNKNOWN', message: 'failed', exitCode: 1, details: null },
       },
     },
   ])('rejects malformed $name as HOSTED_PROTOCOL', async ({ status, body }) => {

@@ -358,6 +358,7 @@ export interface HostedErrorResponse {
     message: string;
     help?: string;
     exitCode?: number;
+    details?: Record<string, unknown>;
   };
   execution?: HostedExecution;
   trace?: HostedTraceReceipt;
