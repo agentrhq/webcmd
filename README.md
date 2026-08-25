@@ -127,21 +127,18 @@ agent to search and install the relevant plugin when a site is not installed.
 
 ## Benchmarks
 
-On the 100-task BU Bench, Webcmd recorded the highest accuracy, lowest
-API-equivalent cost, and fewest agent turns under the same Pi controller,
-model, judge, and CloakBrowser engine.
+On [BU Bench V1](https://github.com/browser-use/benchmark#bu-bench-v1), a
+100-task browser automation benchmark, Webcmd recorded the highest accuracy and
+lowest estimated controller cost per completed task in this comparison.
 
-| Tool | Accuracy ↑ | Total tokens ↓ | Cost ↓ | Agent turns ↓ |
-| --- | ---: | ---: | ---: | ---: |
-| **Webcmd** | **67%** | 3.194M | **$25.20** | **969** |
-| browser-use | 66% | 3.546M | $29.44 | 1,465 |
-| Playwright CLI | 55% | 5.052M | $43.69 | 2,034 |
-| dev-browser | 55% | **3.191M** | $26.00 | 1,504 |
-| agent-browser | 47% | 5.842M | $55.41 | 2,550 |
+![BU Bench V1 comparison: Webcmd leads accuracy at 67% and cost per completed task at $0.255](./benchmarks/charts/bu-bench-readme.png)
 
-Each passed task contributes one percentage point. Cost estimates cover the
-controller only; judge usage is excluded. See the [benchmark report](./benchmarks/README.md)
-for category results, methodology, architectural analysis, and reproduction steps.
+All tools used the same Pi controller, controller model, Codex `gpt-5.4` judge,
+and CloakBrowser engine. This is a stronger judge than the original BU Bench
+setup, whose [current runner uses Gemini 2.5 Flash](https://github.com/browser-use/benchmark/blob/main/run_eval.py#L37-L38).
+Accuracy is passed tasks out of 100. Cost per task averages over completed tasks
+and excludes judge usage. See the [benchmark report](./benchmarks/README.md) for
+category results, methodology, architectural analysis, and reproduction steps.
 
 ## Learn More
 

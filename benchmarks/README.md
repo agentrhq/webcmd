@@ -1,9 +1,13 @@
 # BU Bench V1: Engineering a Leaner Browser Agent
 
-Webcmd had the highest accuracy, lowest API-equivalent cost, and fewest agent
-turns in this controlled 100-task comparison.
+Webcmd had the highest accuracy, lowest API-equivalent cost per task, and fewest
+agent turns per task in this controlled 100-task comparison.
 
 ## Results
+
+Accuracy counts passed tasks out of 100. Cost and agent turns are averages over
+completed tasks: 99 for Webcmd, browser-use, Playwright CLI, and dev-browser,
+and 100 for agent-browser.
 
 ### Accuracy
 
@@ -52,9 +56,9 @@ targeted evidence they found. We reran the research tasks to confirm the gain,
 then reran the form-filling tasks to make sure this choice did not introduce a
 regression. The final system finished within 0.1% of the lowest-token run.
 
-### API-equivalent cost
+### API-equivalent cost per task
 
-![API-equivalent cost: Webcmd $25.20, dev-browser $26.00, browser-use $29.44, Playwright CLI $43.69, agent-browser $55.41](charts/bu-bench-cost.svg)
+![API-equivalent cost per completed task: Webcmd $0.255, dev-browser $0.263, browser-use $0.297, Playwright CLI $0.441, agent-browser $0.554](charts/bu-bench-cost.svg)
 
 We found that the total token count did not tell the full cost story. Webcmd used
 slightly more tokens than dev-browser, but repeated input can be cached while
@@ -66,18 +70,19 @@ Snapshot pruning and the code-based executor helped reuse more input context
 across turns while producing less output. Webcmd generated 190,044 output tokens
 versus dev-browser's 247,416—23% fewer—and recorded 8.96M cached input reads. In
 the benchmark's GPT-5.6 pricing model, output costs 6× non-cached input and 60×
-cached input. This gave Webcmd the lowest estimated cost, at $25.20, despite the
-0.09% difference in total tokens.
+cached input. This gave Webcmd the lowest estimated cost, at $0.255 per
+completed task ($25.20 across 99 tasks), despite the 0.09% difference in total
+tokens.
 
-### Agent turns
+### Agent turns per task
 
-![Agent turns: Webcmd 969, browser-use 1,465, dev-browser 1,504, Playwright CLI 2,034, agent-browser 2,550](charts/bu-bench-agent-turns.svg)
+![Agent turns per completed task: Webcmd 9.8, browser-use 14.8, dev-browser 15.2, Playwright CLI 20.5, agent-browser 25.5](charts/bu-bench-agent-turns.svg)
 
-Webcmd completed the suite in 969 turns, 34% fewer than the next-best result.
-Controlling a browser one command at a time turns even a predictable workflow
-into a long sequence of click, wait, inspect, and decide. The model must process
-each result before it can issue the next command, which adds round trips and
-increases the chance that an earlier observation becomes stale.
+Webcmd averaged 9.8 turns per completed task, 34% fewer than browser-use at
+14.8. Controlling a browser one command at a time turns even a predictable
+workflow into a long sequence of click, wait, inspect, and decide. The model
+must process each result before it can issue the next command, which adds round
+trips and increases the chance that an earlier observation becomes stale.
 
 `browser run` replaces that sequence with one Playwright-style JavaScript
 program. A program can combine locators, navigation, waits, input, clicks,
@@ -88,8 +93,8 @@ while the page and browser session remain available for the next run. This keeps
 execution isolated without making the agent rebuild browser state.
 
 The result is fewer model-to-browser round trips and fewer repeated snapshots.
-Together with automatic diffs for interactive work, this brought the final turn
-count down to 969, compared with 1,465 for browser-use.
+Together with automatic diffs for interactive work, this brought the average to
+9.8 turns per task, compared with 14.8 for browser-use.
 
 ## Category results
 
@@ -114,9 +119,9 @@ browser-use on OM2W2.
 | Harness | Pi `0.80.6` |
 | Controller model | `openai-codex/gpt-5.6-sol` |
 | Reasoning effort | `low` |
-| Benchmark | `BU_Bench_V1` |
+| Benchmark | [BU Bench V1](https://github.com/browser-use/benchmark#bu-bench-v1) |
 | Tasks | 100: 20 each from BrowseComp, GAIA, InteractionTests, OM2W2, and WebBenchREAD |
-| Judge | Codex `gpt-5.4` |
+| Judge | Codex `gpt-5.4`; the [original runner uses Gemini 2.5 Flash](https://github.com/browser-use/benchmark/blob/main/run_eval.py#L37-L38) |
 | Judge rubric | [Completion-based browser-agent rubric](references/judge-contract.md) |
 | Task timeout | 1,800 seconds |
 | Execution | One tool per run; tasks executed sequentially |
@@ -130,6 +135,10 @@ shared `benchmark` Profile. The harness records the dataset hash, component
 versions, configuration, evidence for each task, and aggregate metrics in every
 run manifest. The complete Webcmd run is available in
 [`agentrhq/evals-run`](https://github.com/agentrhq/evals-run).
+
+We deliberately used Codex `gpt-5.4`, a stronger judge than the original BU
+Bench's Gemini 2.5 Flash setup. Every tool in this comparison was judged with
+the same model and rubric.
 
 The published figures are end-to-end results from one complete run per tool.
 They show the combined system rather than the standalone effect of any one
