@@ -132,7 +132,7 @@ On [BU Bench V1](https://github.com/browser-use/benchmark#bu-bench-v1), a
 lowest estimated controller cost per completed task, and fewest agent turns per
 completed task in this comparison.
 
-![BU Bench V1 comparison: webcmd leads accuracy at 67%, cost per completed task at $0.255, and agent turns per completed task at 9.8](./benchmarks/charts/bu-bench-readme.png)
+![BU Bench V1 comparison: webcmd leads accuracy at 67%, cost per completed task at $0.255, and agent turns per completed task at 9.8](./benchmarks/charts/bu-bench-readme.svg)
 
 All tools used the same Pi controller, controller model, Codex `gpt-5.4` judge,
 and CloakBrowser engine. This is a stronger judge than the original BU Bench
