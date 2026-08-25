@@ -105,7 +105,7 @@ export async function checkConnectivity(opts?: { timeout?: number }): Promise<Co
     // A first-use download can exceed doctor's deliberately short live-probe deadline.
     await ensureBinary();
     setDaemonCommandTimeoutSeconds(timeoutSeconds);
-    const session = await sendCommand('session-create', {}) as { id?: unknown };
+    const session = await sendCommand('session-create', { sessionName: 'Doctor Probe' }) as { id?: unknown };
     if (typeof session.id !== 'string') throw new Error('Doctor could not create a browser Session.');
     sessionId = session.id;
     const bridge = new BrowserBridge();

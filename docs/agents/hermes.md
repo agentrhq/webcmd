@@ -52,7 +52,7 @@ Hermes' web surface spans three toolsets:
 
 **Hermes toggles toolsets, not individual tools.** There is no way to drop `web_extract` while keeping `web_search`, so leave the `web` toolset on and steer the agent with instructions instead. Add this to your Hermes system prompt or project instructions:
 
-> Use Webcmd (`webcmd list`, then `webcmd session create -f json` and `webcmd --session <session-id> browser ...` via the `terminal` toolset) for anything on the open web: fetching, authenticated third-party sites, multi-step automation. Prefer it over `web_extract`. Use the `browser_*` tools only for the app being edited — localhost dev server, console and network triage, visual checks. Keep using `web_search` and `x_search` to find URLs.
+> Use Webcmd (`webcmd list`, then `webcmd --profile work session create "Work Project"` and `webcmd --profile work --session work-project-k7 browser tabs` via the `terminal` toolset) for anything on the open web: fetching, authenticated third-party sites, multi-step automation. Prefer it over `web_extract`. Use the `browser_*` tools only for the app being edited — localhost dev server, console and network triage, visual checks. Keep using `web_search` and `x_search` to find URLs.
 
 Also check the `computer_use` toolset. It drives the whole desktop rather than a browser, so it overlaps with Webcmd whenever it is aimed at a website. Disable it if the user does not need desktop control.
 
@@ -85,7 +85,7 @@ Do not disable the `terminal` toolset — that is how Hermes runs `webcmd`.
 | Search disappeared after disabling `web` | Expected: `web_search` and `web_extract` share one toolset. Re-enable `web` and steer the agent with instructions instead. |
 | `x_search` appeared on its own | Expected: it auto-registers when `XAI_API_KEY` or Grok OAuth is configured. Leave it — it is search. |
 | `webcmd` not found in Hermes terminal | Confirm `webcmd` is on the host PATH that Hermes' `terminal` toolset uses; non-interactive shells may skip shell init files. |
-| Browser Session idles or loses its window | Keep the same Session ID; the next `webcmd --session <session-id> browser ...` command reopens it. Use `webcmd session create -f json`, `webcmd session list`, and `webcmd session close <session-id>` for lifecycle. |
+| Browser Session idles or loses its window | Keep its immutable, Profile-scoped ID; `webcmd --profile work --session work-project-k7 browser tabs` reopens it. Start with `webcmd --profile work session create "Work Project"`; use `webcmd --profile work session list` and `webcmd --profile work session close work-project-k7` for lifecycle. Adapter commands without `--session` reuse `adapter-default`; raw browser commands require an explicit readable selector. |
 
 ## See also
 

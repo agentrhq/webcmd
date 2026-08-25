@@ -45,8 +45,8 @@ Common Session codes:
 
 | Code | Meaning | Next step |
 | --- | --- | --- |
-| `SESSION_REQUIRED` | A raw browser command needs a root Session selector. | Run `webcmd session create -f json`, then retry as `webcmd --session <session-id> browser ...`. |
-| `INVALID_SESSION_SELECTOR` | The selector is not an opaque Webcmd Session ID. | Use an ID returned by `webcmd session create` or `webcmd session list`. |
+| `SESSION_REQUIRED` | A raw browser command needs a root Session selector. | Run `webcmd --profile work session create "Work Project"`, then retry as `webcmd --profile work --session work-project-k7 browser tabs`. |
+| `INVALID_SESSION_SELECTOR` | The selector is not a readable Webcmd Session ID. | Use the immutable, Profile-scoped ID returned by `webcmd session create <name>` or `webcmd session list`. |
 | `SESSION_SELECTOR_POSITION` | `--session` was placed after the command name. | Move it before the command: `webcmd --session <session-id> browser ...`. |
 | `SESSION_NOT_FOUND` | The selected Session is missing for the current Profile. | When the ID belongs to another Profile the hint names it — retry with `webcmd --profile <owner> session close <session-id>`. Otherwise run `webcmd session list -f json`; create a new Session if needed. |
 | `INVALID_SESSION_LIMIT` | `session list --limit` is outside 1-100. | Retry with a limit from 1 to 100. |

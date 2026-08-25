@@ -12,8 +12,12 @@ Use a bounded session to inspect current state, then request only the smallest
 relevant hosted memory: site orientation, one matching page, one matching
 workflow, and pitfalls only when blocked.
 
-    { "argv": ["--session", "session_abc", "browser", "snapshot", "--snapshot-mode", "tree", "-f", "json"] }
+    { "argv": ["--profile", "work", "session", "create", "Work Project", "-f", "json"] }
+    { "argv": ["--profile", "work", "--session", "work-project-k7", "browser", "snapshot", "--snapshot-mode", "tree", "-f", "json"] }
     { "argv": ["site", "memory", "show", "example", "-f", "json"] }
+
+The returned readable Session ID is immutable and Profile-scoped. Raw browser
+commands require it explicitly.
 
 Prefer an adapter named by the workflow. If it is unavailable or fails, use the
 fallback browser path. After every state-changing action refresh the snapshot

@@ -38,17 +38,20 @@ For local, multi-step browser exploration, agents can send one sandboxed
 Playwright-style program to an explicit browser session:
 
 ```bash
-webcmd session create -f json
-webcmd --session session_abc browser run --file explore.js
+webcmd --profile work session create "Work Project" -f json
+# id: work-project-k7
+webcmd --profile work --session work-project-k7 browser tabs
+webcmd --profile work --session work-project-k7 browser run --file explore.js
 printf 'return await page.title();' \
-  | webcmd --session session_abc browser run --stdin
-webcmd session close session_abc
+  | webcmd --profile work --session work-project-k7 browser run --stdin
+webcmd --profile work session close work-project-k7
 ```
 
 Profiles are cookie jars; Sessions are independent browser windows within a
-profile, so parallel agents should create separate Sessions. Adapter commands
-use an adapter-default Session unless `--session` intentionally routes them to
-an explicit one.
+profile, so Session IDs are immutable, Profile-scoped, and safe to reuse for
+that Session's lifetime. Parallel agents should create separate Sessions.
+Adapter commands without `--session` reuse the Profile's `adapter-default`
+Session. Raw browser commands require an explicit readable Session ID.
 
 ## Demo
 

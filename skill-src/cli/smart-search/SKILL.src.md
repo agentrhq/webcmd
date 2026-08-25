@@ -43,26 +43,25 @@ webcmd web fetch --url <url>
 
 Run `webcmd web fetch` before browser work or non-Webcmd HTTP clients. Only `FETCH_BLOCKED` or `FETCH_REQUIRES_BROWSER` permits browser fallback; otherwise report the returned failure rather than retrying the URL. If a URL was already fetched outside Webcmd and got non-2xx, 403, blocked, or Cloudflare, that does not change the order: run `webcmd web fetch --url <url>` once before any browser escalation.
 
-For browser fallback, create one Session, navigate the failed URL, inspect it, reuse that Session for allowed fallbacks, then close it. Local browser commands use Cloak; hosted browser commands use Webcmd Cloud and Browser Use. `web fetch` remains local in both modes.
+For browser fallback, create one Session, navigate the failed URL, inspect it, reuse that Session for allowed fallbacks, then close it. The returned readable ID is immutable and Profile-scoped. Local browser commands use Cloak; hosted browser commands use Webcmd Cloud and Browser Use. `web fetch` remains local in both modes.
 
 ```bash
-webcmd --profile work session create
-# Copy the returned full ID:
-# session_7d8f2c10-4a11-4f3e-9c22-1b6de0a91f45
+webcmd --profile work session create "Work Project"
+# id: work-project-k7
+webcmd --profile work --session work-project-k7 browser tabs
 
 webcmd --profile work \
-  --session session_7d8f2c10-4a11-4f3e-9c22-1b6de0a91f45 \
+  --session work-project-k7 \
   browser run --stdin <<'JS'
 await page.goto('https://example.com');
 return { url: page.url(), title: await page.title() };
 JS
 
 webcmd --profile work \
-  --session session_7d8f2c10-4a11-4f3e-9c22-1b6de0a91f45 \
+  --session work-project-k7 \
   browser snapshot --snapshot-mode read
 
-webcmd --profile work session close \
-  session_7d8f2c10-4a11-4f3e-9c22-1b6de0a91f45
+webcmd --profile work session close work-project-k7
 ```
 
 If the fetch is rate-limited, login-gated, geo-gated, or returns unusable extracted text, report that state rather than retrying the same URL.
@@ -164,4 +163,6 @@ what won.
   a supplied URL through `webcmd web fetch`; the explicit external non-2xx,
   403, and Cloudflare wording improves discoverability rather than adding new
   runtime behavior.
+- 2026-08-25: Raw browser fallback now starts from a required human-readable
+  Session name and reuses the returned immutable, Profile-scoped ID.
 -->

@@ -13,7 +13,11 @@ record only task-relevant structure actually observed. Current browser evidence
 wins over remembered state.
 
     { "argv": ["site", "memory", "show", "example", "-f", "json"] }
-    { "argv": ["--session", "session_abc", "browser", "snapshot", "--snapshot-mode", "tree", "-f", "json"] }
+    { "argv": ["--profile", "work", "session", "create", "Work Project", "-f", "json"] }
+    { "argv": ["--profile", "work", "--session", "work-project-k7", "browser", "snapshot", "--snapshot-mode", "tree", "-f", "json"] }
+
+The returned readable Session ID is immutable and Profile-scoped. Raw browser
+commands require it explicitly.
 
 Use stable ids for pages, actions, and workflows. Mark unverified paths `draft`
 or `stale`; never call them verified. Do not record secrets, private messages,

@@ -61,23 +61,24 @@ npx tsx src/main.ts <command>
 
 ## Sessions
 
-Profiles are cookie jars and authentication scope. Sessions are browser workspaces/windows within a profile. Create one for each parallel raw-browser agent, then route every raw command through the opaque ID:
+Profiles are cookie jars and authentication scope. Sessions are browser workspaces/windows within a Profile. Their readable IDs are immutable and Profile-scoped. Create one for each parallel raw-browser agent, then route every raw command through its returned ID:
 
 ```bash
-webcmd session create -f json
 webcmd profile create work
-webcmd --profile work session create -f json
-webcmd --session session_abc browser snapshot --snapshot-mode act
-webcmd --session session_abc browser run --stdin
-webcmd session list
-webcmd session close session_abc
+webcmd --profile work session create "Work Project" -f json
+# id: work-project-k7
+webcmd --profile work --session work-project-k7 browser tabs
+webcmd --profile work --session work-project-k7 browser snapshot --snapshot-mode act
+webcmd --profile work --session work-project-k7 browser run --stdin
+webcmd --profile work session list
+webcmd --profile work session close work-project-k7
 ```
 
 Create a named profile before using it. If `--profile <name> session create` returns
 `PROFILE_NOT_FOUND`, run `webcmd profile create <name>` and retry.
 
 `webcmd session close <session-id>` is blocked while that Session has a live human handoff.
-Adapter commands may omit `--session` and use the selected profile's adapter-default session. Pass `--session <session-id>` to route one into an explicit session. Raw browser commands never omit it; the retired positional session form is invalid.
+Adapter commands without `--session` reuse the selected Profile's `adapter-default` Session. Pass `--session <session-id>` to route one into an explicit Session. Raw browser commands always require an explicit readable selector.
 
 Structured Session failures are runtime state, not adapter breakage. `SESSION_REQUIRED`
 means add a root `--session <session-id>` selector before `browser`; `SESSION_BUSY`
@@ -296,4 +297,6 @@ what won.
   `FETCH_REQUIRES_BROWSER`.
 - 2026-08-20: Review rejected saying `web fetch` always performs a
   TLS-impersonating retry; it may do so only when it detects a challenge.
+- 2026-08-25: Session lifecycle guidance now starts from a readable name and
+  distinguishes explicit raw-browser IDs from adapter `adapter-default` reuse.
 -->

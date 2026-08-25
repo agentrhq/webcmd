@@ -59,8 +59,8 @@ Deny `webfetch` so OpenCode cannot fall back to it while Webcmd is its browser s
 | Skills not loading in OpenCode | Run `webcmd skills add` with the `agents` provider, restart OpenCode, and check `/skills`. |
 | OpenCode still uses `webfetch` | Confirm `permission.webfetch` is `deny` in the active config, then restart OpenCode. |
 | `websearch` is missing entirely | It registers only with the OpenCode provider or `OPENCODE_ENABLE_EXA=1`. Not a Webcmd problem. |
-| `webcmd browser` errors | Read `webcmd-usage` and `webcmd-browser` skills; create a session and pass its ID as root `--session`. |
-| Browser Session idles or loses its window | Keep the same Session ID; the next `webcmd --session <session-id> browser ...` command reopens it. Use `webcmd session create -f json`, `webcmd session list`, and `webcmd session close <session-id>` for lifecycle. |
+| `webcmd browser` errors | Read `webcmd-usage` and `webcmd-browser`; create a named Session and pass its readable ID as root `--session`. |
+| Browser Session idles or loses its window | Keep its immutable, Profile-scoped ID; `webcmd --profile work --session work-project-k7 browser tabs` reopens it. Start with `webcmd --profile work session create "Work Project"`; use `webcmd --profile work session list` and `webcmd --profile work session close work-project-k7` for lifecycle. Adapter commands without `--session` reuse `adapter-default`; raw browser commands require an explicit readable selector. |
 
 ## See also
 

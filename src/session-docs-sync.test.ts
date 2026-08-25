@@ -62,10 +62,10 @@ describe('Session documentation sync', () => {
 
     for (const guide of guides) {
       const text = fs.readFileSync(guide, 'utf8');
-      expect(text, path.relative(ROOT, guide)).toContain('webcmd session create');
-      expect(text, path.relative(ROOT, guide)).toContain('webcmd --session <session-id>');
-      expect(text, path.relative(ROOT, guide)).toContain('webcmd session list');
-      expect(text, path.relative(ROOT, guide)).toContain('webcmd session close <session-id>');
+      expect(text, path.relative(ROOT, guide)).toContain('webcmd --profile work session create "Work Project"');
+      expect(text, path.relative(ROOT, guide)).toContain('webcmd --profile work --session work-project-k7');
+      expect(text, path.relative(ROOT, guide)).toContain('webcmd --profile work session list');
+      expect(text, path.relative(ROOT, guide)).toContain('webcmd --profile work session close work-project-k7');
     }
   });
 });

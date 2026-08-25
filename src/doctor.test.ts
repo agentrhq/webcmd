@@ -94,7 +94,7 @@ describe('doctor report rendering', () => {
     });
     mockClose.mockResolvedValue(undefined);
     mockSendCommand.mockImplementation(async (action: string) => {
-      if (action === 'session-create') return { id: 'session_doctor_11111111' };
+      if (action === 'session-create') return { id: 'doctor-probe-k7' };
       if (action === 'session-close') return { closed: true };
       throw new Error(`Unexpected doctor command: ${action}`);
     });
@@ -338,12 +338,12 @@ describe('doctor report rendering', () => {
     ]));
   });
 
-  it('uses a temporary opaque Session for live connectivity checks', async () => {
+  it('uses a temporary named Session for live connectivity checks', async () => {
     let timeoutSeen: number | undefined;
     const closeWindow = vi.fn().mockResolvedValue(undefined);
     mockConnect.mockImplementationOnce(async (opts?: { timeout?: number; session?: string; surface?: string }) => {
       timeoutSeen = opts?.timeout;
-      expect(opts?.session).toBe('session_doctor_11111111');
+      expect(opts?.session).toBe('doctor-probe-k7');
       expect(opts?.surface).toBe('browser');
       return {
         evaluate: vi.fn().mockResolvedValue(2),
@@ -356,9 +356,9 @@ describe('doctor report rendering', () => {
 
     expect(timeoutSeen).toBe(8);
     expect(closeWindow).toHaveBeenCalledTimes(1);
-    expect(mockSendCommand).toHaveBeenNthCalledWith(1, 'session-create', {});
+    expect(mockSendCommand).toHaveBeenNthCalledWith(1, 'session-create', { sessionName: 'Doctor Probe' });
     expect(mockSendCommand).toHaveBeenLastCalledWith('session-close', {
-      session: 'session_doctor_11111111',
+      session: 'doctor-probe-k7',
       surface: 'browser',
       force: true,
       discard: true,
@@ -382,9 +382,9 @@ describe('doctor report rendering', () => {
     finishInstall();
     await expect(connectivity).resolves.toMatchObject({ ok: true });
     expect(mockSetDaemonCommandTimeoutSeconds).toHaveBeenNthCalledWith(1, 8);
-    expect(mockSendCommand).toHaveBeenNthCalledWith(1, 'session-create', {});
+    expect(mockSendCommand).toHaveBeenNthCalledWith(1, 'session-create', { sessionName: 'Doctor Probe' });
     expect(mockSendCommand).toHaveBeenLastCalledWith('session-close', {
-      session: 'session_doctor_11111111',
+      session: 'doctor-probe-k7',
       surface: 'browser',
       force: true,
       discard: true,
