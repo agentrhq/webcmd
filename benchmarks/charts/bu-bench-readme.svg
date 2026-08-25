@@ -8,9 +8,9 @@
     .accent { fill: #167eae; font-style: italic; }
     .panel-title { font-family: Georgia, "Times New Roman", serif; font-size: 24px; font-weight: 500; }
     .note { font-family: "Courier New", ui-monospace, monospace; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; fill: #62676b; }
-    .label { font-family: Helvetica, Arial, sans-serif; font-size: 15px; font-weight: 400; fill: #51585d; }
-    .webcmd-label { font-weight: 500; fill: #167eae; }
-    .value { font-family: "Courier New", ui-monospace, monospace; font-size: 14px; font-weight: 500; }
+    .label { font-family: Helvetica, Arial, sans-serif; font-size: 15px; font-weight: 700; fill: #51585d; }
+    .webcmd-label { font-weight: 700; fill: #167eae; }
+    .value { font-family: "Courier New", ui-monospace, monospace; font-size: 14px; font-weight: 700; }
     .track { fill: #e8e4d9; }
     .bar { fill: #62676b; }
     .webcmd { fill: #167eae; }
