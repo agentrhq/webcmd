@@ -15,6 +15,7 @@ import { HOSTED_ROOT_HELP } from '../completion-shared.js';
 import { PKG_VERSION } from '../version.js';
 import { makeHostedConfig, makeLocalConfig } from './config.js';
 import { createCaptureStream } from './capture-stream.js';
+import { HostedClient } from './client.js';
 import { runHostedCli } from './runner.js';
 import { createVirtualFileMap, createVirtualOutputSink } from './virtual-files.js';
 
@@ -910,7 +911,7 @@ describe('runHostedCli', () => {
     ['plugin search'],
     ['profile list'],
     ['list'],
-    ['session create'],
+    ['session create Work-Project'],
     ['session list'],
     ['session close session_abc'],
   ])('rejects an unknown hosted %s format without an API call', async (argvCommand) => {
@@ -931,6 +932,48 @@ describe('runHostedCli', () => {
     expect(stderr.text()).toContain('error: Unknown output format "xml"');
     expect(stdout.text()).toBe('');
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('treats a missing hosted Session create name as a structural usage error without an API call', async () => {
+    const stdout = sink();
+    const stderr = sink();
+    const fetchImpl = vi.fn<typeof fetch>();
+
+    const result = await runHostedCli(['session', 'create'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      fetchImpl,
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 2 });
+    expect(stdout.text()).toBe('');
+    expect(stderr.text()).toContain("error: missing required argument 'name'");
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('forwards the raw hosted Session create name and Profile to the client', async () => {
+    const stdout = sink();
+    const createdSession = {
+      id: 'session_work', kind: 'explicit', profileId: 'profile_work', runtimeState: 'idle', handoff: null,
+      createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:01:00.000Z', lastUsedAt: '2026-01-01T00:02:00.000Z',
+      liveViewUrl: 'https://api.example.com/account/live/session_work',
+    } as const;
+    const createBrowserSession = vi.spyOn(HostedClient.prototype, 'createBrowserSession').mockResolvedValue({ ok: true, session: createdSession });
+    try {
+      const result = await runHostedCli(['--profile', 'work', 'session', 'create', 'Work Project'], {
+        config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+        stdout: stdout.stream,
+        fetchImpl: async (url) => String(url).endsWith('/v1/manifest')
+          ? manifestResponse()
+          : new Response(JSON.stringify({ ok: false, error: { code: 'UNEXPECTED', message: String(url), exitCode: 1 } })),
+      });
+
+      expect(result).toEqual({ handled: true, exitCode: 0 });
+      expect(createBrowserSession).toHaveBeenCalledExactlyOnceWith('Work Project', 'work');
+    } finally {
+      createBrowserSession.mockRestore();
+    }
   });
 
   it('normalizes hosted list output format aliases and case', async () => {
@@ -1011,7 +1054,7 @@ describe('runHostedCli', () => {
 
     const outputs: string[] = [];
     for (const argv of [
-      ['--profile', 'work', 'session', 'create', '-f', 'json'],
+      ['--profile', 'work', 'session', 'create', 'Work Project', '-f', 'json'],
       ['--profile', 'work', 'session', 'list', '-f', 'json'],
       ['--profile', 'work', 'session', 'close', session.id, '--force', '-f', 'json'],
     ]) {
@@ -1032,7 +1075,7 @@ describe('runHostedCli', () => {
 
     expect(requests).toEqual([
       { url: 'https://api.example.com/v1/manifest', method: 'GET' },
-      { url: 'https://api.example.com/v1/sessions', method: 'POST', body: { profile: 'work' } },
+      { url: 'https://api.example.com/v1/sessions', method: 'POST', body: { name: 'Work Project', profile: 'work' } },
       { url: 'https://api.example.com/v1/manifest', method: 'GET' },
       { url: 'https://api.example.com/v1/sessions?profile=work&limit=20', method: 'GET' },
       { url: 'https://api.example.com/v1/manifest', method: 'GET' },
@@ -1060,7 +1103,7 @@ describe('runHostedCli', () => {
     });
 
     const create = sink();
-    await runHostedCli(['session', 'create', '-f', 'JSON'], {
+    await runHostedCli(['session', 'create', 'Work Project', '-f', 'JSON'], {
       config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }), stdout: create.stream, fetchImpl,
     });
     expect(JSON.parse(create.text())).toMatchObject({ id: session.id });

@@ -144,10 +144,10 @@ export class HostedClient {
     return { ok: true, deleted: true };
   }
 
-  async createBrowserSession(profile?: string): Promise<HostedBrowserSessionResponse> {
+  async createBrowserSession(name: string, profile?: string): Promise<HostedBrowserSessionResponse> {
     const body = await this.request('/v1/sessions', {
       method: 'POST',
-      body: JSON.stringify(profile !== undefined ? { profile } : {}),
+      body: JSON.stringify(profile !== undefined ? { name, profile } : { name }),
     });
     if (!isHostedBrowserSessionResponse(body)) {
       throw protocolError('Webcmd Cloud returned an invalid browser session response.');

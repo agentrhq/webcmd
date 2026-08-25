@@ -103,7 +103,13 @@ export async function startDifferentialBackend(): Promise<DifferentialBackend> {
       if (method === 'GET' && path === '/v1/profiles') return json(response, { ok: true, profiles: [] });
       if (method === 'DELETE' && path === '/v1/profiles/profile_fixture') return json(response, { ok: true, deleted: true });
       if (method === 'GET' && path === '/v1/sessions') return json(response, { ok: true, sessions: [] });
-      if (method === 'POST' && path === '/v1/sessions') return json(response, { ok: true, session: { ...session, liveViewUrl: 'https://cloud.example.test/account/live/fixture-token' } });
+      if (method === 'POST' && path === '/v1/sessions') {
+        const requestBody = JSON.parse(body) as { name?: unknown };
+        if (typeof requestBody.name !== 'string') {
+          return json(response, { ok: false, error: { code: 'INVALID_SESSION_NAME', message: 'Session name is required.', exitCode: 2 } }, 422);
+        }
+        return json(response, { ok: true, session: { ...session, liveViewUrl: 'https://cloud.example.test/account/live/fixture-token' } });
+      }
       if (method === 'POST' && path === '/v1/sessions/session_fixture/close') return json(response, { ok: true, closed: true, alreadyIdle: false, session: 'session_fixture' });
       if (method === 'POST' && path === '/v1/browser/session_fixture/commands') {
         const invocation = JSON.parse(body) as { action?: string };

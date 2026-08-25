@@ -161,7 +161,7 @@ describe('HostedClient', () => {
       },
     });
 
-    await expect(client.createBrowserSession()).resolves.toEqual({ ok: true, session: createdSession });
+    await expect(client.createBrowserSession('Work Project', 'work')).resolves.toEqual({ ok: true, session: createdSession });
     await expect(client.listBrowserSessions('default', 20)).resolves.toEqual({ ok: true, sessions: [session] });
     await expect(client.closeBrowserSession('session_wire')).resolves.toEqual({
       ok: true,
@@ -169,8 +169,13 @@ describe('HostedClient', () => {
       alreadyIdle: false,
       session: 'session_wire',
     });
-    expect(requests.map(({ url, method, liveViewCapability }) => ({ url, method, liveViewCapability }))).toEqual([
-      { url: 'https://api.example.com/v1/sessions', method: 'POST', liveViewCapability: 'hosted-live-view-v1' },
+    expect(requests[0]).toEqual({
+      url: 'https://api.example.com/v1/sessions',
+      method: 'POST',
+      body: '{"name":"Work Project","profile":"work"}',
+      liveViewCapability: 'hosted-live-view-v1',
+    });
+    expect(requests.slice(1).map(({ url, method, liveViewCapability }) => ({ url, method, liveViewCapability }))).toEqual([
       { url: 'https://api.example.com/v1/sessions?profile=default&limit=20', method: 'GET', liveViewCapability: 'hosted-live-view-v1' },
       { url: 'https://api.example.com/v1/sessions/session_wire/close', method: 'POST', liveViewCapability: 'hosted-live-view-v1' },
     ]);
@@ -210,7 +215,7 @@ describe('HostedClient', () => {
       },
     });
 
-    await expect(client.createBrowserSession()).rejects.toMatchObject({ code: 'HOSTED_PROTOCOL' });
+    await expect(client.createBrowserSession('Work Project')).rejects.toMatchObject({ code: 'HOSTED_PROTOCOL' });
     await expect(client.listBrowserSessions()).rejects.toMatchObject({ code: 'HOSTED_PROTOCOL' });
     await expect(client.prepareExecution({
       command: 'github/whoami', profile: 'work', session: 'session_work', executionScope: 'profile',

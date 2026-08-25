@@ -814,7 +814,9 @@ async function hostedAdapterSourceMetadata(client: HostedClient, key: string): P
 
 type ParsedHostedSessionSurface =
   | { kind: 'help'; output: string }
-  | { kind: 'run'; command: 'create' | 'list' | 'close'; format: string; formatExplicit: boolean; session?: string; force?: boolean; limit?: number };
+  | { kind: 'run'; command: 'create'; name: string; format: string; formatExplicit: boolean }
+  | { kind: 'run'; command: 'list'; format: string; formatExplicit: boolean; limit: number }
+  | { kind: 'run'; command: 'close'; format: string; formatExplicit: boolean; session: string; force: boolean };
 
 function parseHostedSessionSurface(argv: readonly string[], literal: boolean): ParsedHostedSessionSurface {
   let stdout = '';
@@ -829,15 +831,18 @@ function parseHostedSessionSurface(argv: readonly string[], literal: boolean): P
   root.exitOverride().configureOutput(output);
   session.exitOverride().configureOutput(output);
   const configure = (command: Command, format: string): Command => addOutputFormatOption(command, format);
-  const setParsed = (command: 'create' | 'list' | 'close', surface: Command, format: string, extras: Omit<Exclude<ParsedHostedSessionSurface, { kind: 'help' }>, 'kind' | 'command' | 'format' | 'formatExplicit'> = {}): void => {
-    parsed = { kind: 'run', command, format: validateHostedFormat(String(requestedOutputFormat(surface, format))), formatExplicit: outputFormatIsExplicit(surface), ...extras };
-  };
-  const create = configure(session.command('create'), 'yaml');
-  create.action((options: { format: string }) => setParsed('create', create, options.format));
+  const create = configure(session.command('create').argument('<name>'), 'yaml');
+  create.action((name: string, options: { format: string }) => {
+    parsed = { kind: 'run', command: 'create', name, format: validateHostedFormat(String(requestedOutputFormat(create, options.format))), formatExplicit: outputFormatIsExplicit(create) };
+  });
   const list = configure(session.command('list').option('--limit <number>', 'Maximum Sessions to return (1-100)', parseHostedSessionListLimit, 20), 'table');
-  list.action((options: { format: string; limit: number }) => setParsed('list', list, options.format, { limit: options.limit }));
+  list.action((options: { format: string; limit: number }) => {
+    parsed = { kind: 'run', command: 'list', format: validateHostedFormat(String(requestedOutputFormat(list, options.format))), formatExplicit: outputFormatIsExplicit(list), limit: options.limit };
+  });
   const close = configure(session.command('close').argument('<session-id>').option('--force', 'Close even while the Session is busy or paused for handoff'), 'yaml');
-  close.action((sessionId: string, options: { format: string; force?: boolean }) => setParsed('close', close, options.format, { session: sessionId, force: options.force === true }));
+  close.action((sessionId: string, options: { format: string; force?: boolean }) => {
+    parsed = { kind: 'run', command: 'close', format: validateHostedFormat(String(requestedOutputFormat(close, options.format))), formatExplicit: outputFormatIsExplicit(close), session: sessionId, force: options.force === true };
+  });
   try {
     root.parse(literal ? ['--', 'session', ...argv] : ['session', ...argv], { from: 'user' });
   } catch (error) {
@@ -856,7 +861,7 @@ async function dispatchHostedSession(
   profile?: string,
 ): Promise<void> {
   if (parsed.command === 'create') {
-    await renderOutput(sessionCreateOutput((await client.createBrowserSession(profile)).session), { fmt: parsed.format, fmtExplicit: parsed.formatExplicit, columns: ['id', 'kind', 'runtimeState'], stdout });
+    await renderOutput(sessionCreateOutput((await client.createBrowserSession(parsed.name, profile)).session), { fmt: parsed.format, fmtExplicit: parsed.formatExplicit, columns: ['id', 'kind', 'runtimeState'], stdout });
     return;
   }
   if (parsed.command === 'list') {
