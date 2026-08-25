@@ -2499,7 +2499,7 @@ describe('runHostedCli', () => {
       const stderr = sink();
       const fetchImpl = vi.fn<typeof fetch>();
 
-      const result = await runHostedCli(['--session', 'session_work', 'browser', ...parts, '--help'], {
+      const result = await runHostedCli(['--session', 'work-k7', 'browser', ...parts, '--help'], {
         config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
         stdout: stdout.stream,
         stderr: stderr.stream,
@@ -2531,7 +2531,7 @@ describe('runHostedCli', () => {
           : contract.command === 'run'
             ? ['--file', uploadFile]
             : [];
-        const result = await runHostedCli(['--session', 'session_work', 'browser', ...contract.command.split('/'), ...positionals, ...options], {
+        const result = await runHostedCli(['--session', 'work-k7', 'browser', ...contract.command.split('/'), ...positionals, ...options], {
           config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
           stdout: sink().stream,
           stderr: sink().stream,
@@ -2540,7 +2540,7 @@ describe('runHostedCli', () => {
             const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined;
             requests.push({ pathname: parsedUrl.pathname, ...(body ? { body } : {}) });
             if (parsedUrl.pathname === '/v1/manifest') return manifestResponse();
-            if (parsedUrl.pathname === '/v1/browser/session_work/commands') {
+            if (parsedUrl.pathname === '/v1/browser/work-k7/commands') {
               return new Response(JSON.stringify({
                 ok: true,
                 result: {},
@@ -2548,7 +2548,7 @@ describe('runHostedCli', () => {
                 trace: null,
                 run: {
                   executionId: `exec_${contract.command.replaceAll('/', '_')}`,
-                  session: 'session_work',
+                  session: 'work-k7',
                   profile: { id: 'profile_default', displayName: 'default' },
                 },
                 execution: { id: `exec_${contract.command.replaceAll('/', '_')}`, status: 'succeeded' },
@@ -2567,7 +2567,7 @@ describe('runHostedCli', () => {
         });
         expect({
           command: contract.command,
-          action: requests.find(request => request.pathname === '/v1/browser/session_work/commands')?.body,
+          action: requests.find(request => request.pathname === '/v1/browser/work-k7/commands')?.body,
         }).toMatchObject({
           command: contract.command,
           action: { command: `browser/${contract.command}`, action: contract.action },
@@ -2581,7 +2581,7 @@ describe('runHostedCli', () => {
   it('dispatches hosted browser verify with its local verification options', async () => {
     const requests: Array<{ url: string; body?: Record<string, unknown> }> = [];
     const result = await runHostedCli([
-      '--session', 'session_work', 'browser', 'verify', 'hn/top',
+      '--session', 'work-k7', 'browser', 'verify', 'hn/top',
       '--no-fixture', '--write-fixture', '--update-fixture', '--strict-memory',
       '--seed-args', '{"limit":3}', '--trace', 'retain-on-failure', '--max-top-level-keys', '20',
     ], {
@@ -2597,7 +2597,7 @@ describe('runHostedCli', () => {
           result: {},
           columns: [],
           trace: null,
-          run: { executionId: 'exec_browser_verify', session: 'session_work', profile: { id: 'profile_default', displayName: 'default' } },
+          run: { executionId: 'exec_browser_verify', session: 'work-k7', profile: { id: 'profile_default', displayName: 'default' } },
           execution: { id: 'exec_browser_verify', status: 'succeeded' },
         }), { status: 200 });
       },
@@ -2622,7 +2622,7 @@ describe('runHostedCli', () => {
 
   it('dispatches hosted browser verify with a numeric default maxTopLevelKeys', async () => {
     const requests: Array<{ body?: Record<string, unknown> }> = [];
-    const result = await runHostedCli(['--session', 'session_work', 'browser', 'verify', 'hn/top'], {
+    const result = await runHostedCli(['--session', 'work-k7', 'browser', 'verify', 'hn/top'], {
       config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
       stdout: sink().stream,
       stderr: sink().stream,
@@ -2635,7 +2635,7 @@ describe('runHostedCli', () => {
           result: {},
           columns: [],
           trace: null,
-          run: { executionId: 'exec_browser_verify', session: 'session_work', profile: { id: 'profile_default', displayName: 'default' } },
+          run: { executionId: 'exec_browser_verify', session: 'work-k7', profile: { id: 'profile_default', displayName: 'default' } },
           execution: { id: 'exec_browser_verify', status: 'succeeded' },
         }), { status: 200 });
       },
@@ -2651,7 +2651,7 @@ describe('runHostedCli', () => {
     await writeFile(sourcePath, 'return 42;');
     const requests: Array<{ url: string; body?: Record<string, unknown> }> = [];
     try {
-      const result = await runHostedCli(['--session', 'session_work', 'browser', 'run', '--file', sourcePath, '--snapshot-mode', 'tree', '--no-snapshot-diff'], {
+      const result = await runHostedCli(['--session', 'work-k7', 'browser', 'run', '--file', sourcePath, '--snapshot-mode', 'tree', '--no-snapshot-diff'], {
         config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
         stdout: sink().stream,
         stderr: sink().stream,
@@ -2664,7 +2664,7 @@ describe('runHostedCli', () => {
             result: {},
             columns: [],
             trace: null,
-            run: { executionId: 'exec_browser_run', session: 'session_work', profile: { id: 'profile_default', displayName: 'default' } },
+            run: { executionId: 'exec_browser_run', session: 'work-k7', profile: { id: 'profile_default', displayName: 'default' } },
             execution: { id: 'exec_browser_run', status: 'succeeded' },
           }), { status: 200 });
         },
@@ -2684,7 +2684,7 @@ describe('runHostedCli', () => {
 
   it('forwards browser snapshot mode to hosted browser actions', async () => {
     const requests: Array<{ url: string; body?: Record<string, unknown> }> = [];
-    const result = await runHostedCli(['--session', 'session_work', 'browser', 'snapshot', '--snapshot-mode', 'read', '--ref', 'l7', '--max-output', '1000'], {
+    const result = await runHostedCli(['--session', 'work-k7', 'browser', 'snapshot', '--snapshot-mode', 'read', '--ref', 'l7', '--max-output', '1000'], {
       config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
       stdout: sink().stream,
       stderr: sink().stream,
@@ -2694,7 +2694,7 @@ describe('runHostedCli', () => {
         if (String(url).endsWith('/v1/manifest')) return manifestResponse();
         return new Response(JSON.stringify({
           ok: true,
-          run: { executionId: 'exec_browser_snapshot', session: 'session_work', profile: { id: 'profile_default', displayName: 'default' } },
+          run: { executionId: 'exec_browser_snapshot', session: 'work-k7', profile: { id: 'profile_default', displayName: 'default' } },
           result: { ok: true, tree: '<page />', page: { url: 'https://example.test', title: 'Example' }, warnings: [], limits: { snapshotTruncated: false } },
         }), { status: 200 });
       },
@@ -2709,7 +2709,7 @@ describe('runHostedCli', () => {
 
   it('prints hosted snapshot trees', async () => {
     const stdout = sink();
-    const result = await runHostedCli(['--session', 'session_work', 'browser', 'snapshot'], {
+    const result = await runHostedCli(['--session', 'work-k7', 'browser', 'snapshot'], {
       config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
       stdout: stdout.stream,
       stderr: sink().stream,
@@ -2717,7 +2717,7 @@ describe('runHostedCli', () => {
         ? manifestResponse()
         : new Response(JSON.stringify({
             ok: true,
-            run: { executionId: 'exec_browser_snapshot', session: 'session_work', profile: { id: 'profile_default', displayName: 'default' } },
+            run: { executionId: 'exec_browser_snapshot', session: 'work-k7', profile: { id: 'profile_default', displayName: 'default' } },
             result: { ok: true, tree: '<page />', page: { url: 'https://example.test', title: 'Example' }, warnings: [], limits: { snapshotTruncated: false } },
           }), { status: 200 }),
     });

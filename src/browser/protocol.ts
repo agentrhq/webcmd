@@ -37,6 +37,8 @@ export interface BrowserRuntimeCommand {
   page?: string;
   code?: string;
   session?: string;
+  /** Raw human Session name. Normalized only by the local Session store. */
+  sessionName?: string;
   sessionId?: string;
   sessionKind?: 'explicit' | 'adapter-default';
   surface?: BrowserSurface;

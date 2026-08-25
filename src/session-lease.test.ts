@@ -346,4 +346,26 @@ describe('SessionLeaseRegistry', () => {
     expect(leases.releaseByRunId('run_111_1_1')).toBe(2);
     expect(leases.list(() => false)).toEqual([]);
   });
+
+  it('fences stale work when a readable Session ID is recreated', () => {
+    const leases = registry();
+    const recreatedKey = getSessionLeaseKey('work', 'work-project-k7');
+    const oldRun = 'run_111_1_1';
+    const newRun = 'run_222_2_2';
+
+    expect(acquire(leases, oldRun, recreatedKey).acquired).toBe(true);
+    expect(leases.releaseByRunId(oldRun)).toBe(1);
+    expect(acquire(leases, newRun, recreatedKey).acquired).toBe(true);
+    expect(leases.heartbeat(recreatedKey, oldRun)).toBe(false);
+    expect(leases.releaseByRunId(oldRun)).toBe(0);
+    expect(leases.list(() => false)).toEqual([
+      expect.objectContaining({ key: recreatedKey, runId: newRun }),
+    ]);
+
+    setDaemonRunContext({ runId: oldRun, command: 'old Session work' });
+    setDaemonRunContext({ runId: newRun, command: 'new Session work' });
+    clearDaemonRunContext(oldRun);
+    expect(getDaemonRunContext()).toMatchObject({ runId: newRun });
+    clearDaemonRunContext(newRun);
+  });
 });

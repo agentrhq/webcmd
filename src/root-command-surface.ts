@@ -5,7 +5,7 @@ import { PKG_VERSION } from './version.js';
 export const ROOT_PROFILE_FLAGS = '--profile <name>';
 export const ROOT_PROFILE_DESCRIPTION = 'Chrome profile/context alias for browser runtime commands';
 export const ROOT_SESSION_FLAGS = '--session <session-id>';
-export const ROOT_SESSION_DESCRIPTION = 'Existing opaque Session ID from `webcmd session create`';
+export const ROOT_SESSION_DESCRIPTION = 'Existing readable Session ID from `webcmd session create <name>`';
 export const ROOT_SESSION_SELECTOR_POSITION = 'root';
 export const COMPLETION_SENTINEL = '--get-completions';
 
