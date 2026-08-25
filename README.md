@@ -129,16 +129,18 @@ agent to search and install the relevant plugin when a site is not installed.
 
 On [BU Bench V1](https://github.com/browser-use/benchmark#bu-bench-v1), a
 100-task browser automation benchmark, Webcmd recorded the highest accuracy and
-lowest estimated controller cost per completed task in this comparison.
+lowest estimated controller cost per completed task, and fewest agent turns per
+completed task in this comparison.
 
-![BU Bench V1 comparison: Webcmd leads accuracy at 67% and cost per completed task at $0.255](./benchmarks/charts/bu-bench-readme.png)
+![BU Bench V1 comparison: webcmd leads accuracy at 67%, cost per completed task at $0.255, and agent turns per completed task at 9.8](./benchmarks/charts/bu-bench-readme.png)
 
 All tools used the same Pi controller, controller model, Codex `gpt-5.4` judge,
 and CloakBrowser engine. This is a stronger judge than the original BU Bench
 setup, whose [current runner uses Gemini 2.5 Flash](https://github.com/browser-use/benchmark/blob/main/run_eval.py#L37-L38).
-Accuracy is passed tasks out of 100. Cost per task averages over completed tasks
-and excludes judge usage. See the [benchmark report](./benchmarks/README.md) for
-category results, methodology, architectural analysis, and reproduction steps.
+Accuracy is passed tasks out of 100. Cost and agent turns are averaged over
+completed tasks; cost excludes judge usage. See the
+[benchmark report](./benchmarks/README.md) for category results, methodology,
+architectural analysis, and reproduction steps.
 
 ## Learn More
 

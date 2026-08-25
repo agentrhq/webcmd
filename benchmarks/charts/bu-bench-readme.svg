@@ -1,89 +1,109 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="600" viewBox="0 0 1240 600" fill="#151719" role="img" aria-labelledby="title desc">
-  <title id="title">BU Bench V1 accuracy and API cost per completed task</title>
-  <desc id="desc">Webcmd leads accuracy at 67 percent and API-equivalent controller cost at 25.5 cents per completed task.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="530" viewBox="0 0 1240 530" fill="#151719" role="img" aria-labelledby="title desc">
+  <title id="title">BU Bench V1 accuracy, API cost, and agent turns per completed task</title>
+  <desc id="desc">webcmd leads with 67 percent accuracy, 25.5 cents per completed task, and 9.8 agent turns per completed task.</desc>
   <style>
     .eyebrow { font-family: "Courier New", ui-monospace, monospace; font-size: 13px; font-weight: 500; letter-spacing: 0.12em; fill: #62676b; }
     .headline { font-family: Georgia, "Times New Roman", serif; font-size: 40px; font-weight: 500; letter-spacing: -0.025em; }
-    .accent { fill: #167eae; font-style: italic; }
-    .panel-title { font-family: Georgia, "Times New Roman", serif; font-size: 27px; font-weight: 500; }
-    .note { font-family: "Courier New", ui-monospace, monospace; font-size: 12px; font-weight: 500; letter-spacing: 0.08em; fill: #62676b; }
+    .accent { fill: #56c5ff; font-style: italic; }
+    .panel-title { font-family: Georgia, "Times New Roman", serif; font-size: 24px; font-weight: 500; }
+    .note { font-family: "Courier New", ui-monospace, monospace; font-size: 11px; font-weight: 500; letter-spacing: 0.08em; fill: #62676b; }
     .label { font-family: Helvetica, Arial, sans-serif; font-size: 15px; font-weight: 400; fill: #51585d; }
     .webcmd-label { font-weight: 500; fill: #167eae; }
-    .value { font-family: "Courier New", ui-monospace, monospace; font-size: 15px; font-weight: 500; }
+    .value { font-family: "Courier New", ui-monospace, monospace; font-size: 14px; font-weight: 500; }
     .track { fill: #e8e4d9; }
     .bar { fill: #62676b; }
     .webcmd { fill: #56c5ff; }
-    .hairline { stroke: rgba(21, 23, 25, 0.18); stroke-width: 1; }
+    .hairline { stroke: #c3c0b8; stroke-width: 1; }
   </style>
 
-  <rect width="1240" height="600" fill="#f1efe7"/>
-  <text class="eyebrow" x="48" y="44">BU BENCH V1 / 100 TASKS</text>
+  <rect width="1240" height="530" fill="#f1efe7"/>
+  <text class="eyebrow" x="48" y="44">BU BENCH V1 FROM BROWSER-USE</text>
   <text class="headline" x="48" y="94">Accuracy up.</text>
   <text class="headline accent" x="328" y="94">Cost per task down.</text>
-  <line class="hairline" x1="48" y1="122" x2="1192" y2="122" stroke="#c3c0b8"/>
+  <line class="hairline" x1="48" y1="122" x2="1192" y2="122"/>
 
-  <text class="panel-title" x="48" y="164">Accuracy</text>
-  <text class="note" x="592" y="164" text-anchor="end">HIGHER IS BETTER</text>
-  <text class="panel-title" x="648" y="164">API cost / task</text>
-  <text class="note" x="1192" y="164" text-anchor="end">LOWER IS BETTER</text>
-  <line class="hairline" x1="620" y1="144" x2="620" y2="512" stroke="#c3c0b8"/>
+  <text class="note" x="48" y="164">TOOL</text>
+  <text class="panel-title" x="210" y="164">Accuracy</text>
+  <text class="note" x="210" y="184">HIGHER IS BETTER</text>
+  <text class="panel-title" x="545" y="164">API cost / task</text>
+  <text class="note" x="545" y="184">LOWER IS BETTER</text>
+  <text class="panel-title" x="880" y="164">Agent turns / task</text>
+  <text class="note" x="880" y="184">LOWER IS BETTER</text>
 
-  <text class="label webcmd-label" x="48" y="220" style="fill:#167eae;font-weight:500">Webcmd</text>
-  <rect class="track" x="176" y="204" width="300" height="18" fill="#e8e4d9"/>
-  <rect class="webcmd" x="176" y="204" width="201" height="18" fill="#56c5ff"/>
-  <text class="value" x="592" y="220" text-anchor="end">67%</text>
+  <line class="hairline" x1="194" y1="144" x2="194" y2="494"/>
+  <line class="hairline" x1="529" y1="144" x2="529" y2="494"/>
+  <line class="hairline" x1="864" y1="144" x2="864" y2="494"/>
 
+  <text class="label webcmd-label" x="48" y="220">webcmd</text>
   <text class="label" x="48" y="276">browser-use</text>
-  <rect class="track" x="176" y="260" width="300" height="18" fill="#e8e4d9"/>
-  <rect class="bar" x="176" y="260" width="198" height="18" fill="#62676b"/>
-  <text class="value" x="592" y="276" text-anchor="end">66%</text>
-
-  <text class="label" x="48" y="332">Playwright CLI</text>
-  <rect class="track" x="176" y="316" width="300" height="18" fill="#e8e4d9"/>
-  <rect class="bar" x="176" y="316" width="165" height="18" fill="#62676b"/>
-  <text class="value" x="592" y="332" text-anchor="end">55%</text>
-
+  <text class="label" x="48" y="332">playwright-cli</text>
   <text class="label" x="48" y="388">dev-browser</text>
-  <rect class="track" x="176" y="372" width="300" height="18" fill="#e8e4d9"/>
-  <rect class="bar" x="176" y="372" width="165" height="18" fill="#62676b"/>
-  <text class="value" x="592" y="388" text-anchor="end">55%</text>
-
   <text class="label" x="48" y="444">agent-browser</text>
-  <rect class="track" x="176" y="428" width="300" height="18" fill="#e8e4d9"/>
-  <rect class="bar" x="176" y="428" width="141" height="18" fill="#62676b"/>
-  <text class="value" x="592" y="444" text-anchor="end">47%</text>
 
-  <text class="label webcmd-label" x="648" y="220" style="fill:#167eae;font-weight:500">Webcmd</text>
-  <rect class="track" x="776" y="204" width="300" height="18" fill="#e8e4d9"/>
-  <rect class="webcmd" x="776" y="204" width="127.5" height="18" fill="#56c5ff"/>
-  <text class="value" x="1192" y="220" text-anchor="end">$0.255</text>
+  <rect class="track" x="210" y="204" width="230" height="18" fill="#e8e4d9"/>
+  <rect class="webcmd" x="210" y="204" width="154.1" height="18" fill="#56c5ff"/>
+  <text class="value" x="510" y="220" text-anchor="end">67%</text>
 
-  <text class="label" x="648" y="276">dev-browser</text>
-  <rect class="track" x="776" y="260" width="300" height="18" fill="#e8e4d9"/>
-  <rect class="bar" x="776" y="260" width="131.5" height="18" fill="#62676b"/>
-  <text class="value" x="1192" y="276" text-anchor="end">$0.263</text>
+  <rect class="track" x="210" y="260" width="230" height="18" fill="#e8e4d9"/>
+  <rect class="bar" x="210" y="260" width="151.8" height="18" fill="#62676b"/>
+  <text class="value" x="510" y="276" text-anchor="end">66%</text>
 
-  <text class="label" x="648" y="332">browser-use</text>
-  <rect class="track" x="776" y="316" width="300" height="18" fill="#e8e4d9"/>
-  <rect class="bar" x="776" y="316" width="148.5" height="18" fill="#62676b"/>
-  <text class="value" x="1192" y="332" text-anchor="end">$0.297</text>
+  <rect class="track" x="210" y="316" width="230" height="18" fill="#e8e4d9"/>
+  <rect class="bar" x="210" y="316" width="126.5" height="18" fill="#62676b"/>
+  <text class="value" x="510" y="332" text-anchor="end">55%</text>
 
-  <text class="label" x="648" y="388">Playwright CLI</text>
-  <rect class="track" x="776" y="372" width="300" height="18" fill="#e8e4d9"/>
-  <rect class="bar" x="776" y="372" width="220.5" height="18" fill="#62676b"/>
-  <text class="value" x="1192" y="388" text-anchor="end">$0.441</text>
+  <rect class="track" x="210" y="372" width="230" height="18" fill="#e8e4d9"/>
+  <rect class="bar" x="210" y="372" width="126.5" height="18" fill="#62676b"/>
+  <text class="value" x="510" y="388" text-anchor="end">55%</text>
 
-  <text class="label" x="648" y="444">agent-browser</text>
-  <rect class="track" x="776" y="428" width="300" height="18" fill="#e8e4d9"/>
-  <rect class="bar" x="776" y="428" width="277" height="18" fill="#62676b"/>
-  <text class="value" x="1192" y="444" text-anchor="end">$0.554</text>
+  <rect class="track" x="210" y="428" width="230" height="18" fill="#e8e4d9"/>
+  <rect class="bar" x="210" y="428" width="108.1" height="18" fill="#62676b"/>
+  <text class="value" x="510" y="444" text-anchor="end">47%</text>
 
-  <text class="note" x="176" y="486">0%</text>
-  <text class="note" x="476" y="486" text-anchor="end">100%</text>
-  <text class="note" x="776" y="486">$0</text>
-  <text class="note" x="1076" y="486" text-anchor="end">$0.60</text>
+  <rect class="track" x="545" y="204" width="230" height="18" fill="#e8e4d9"/>
+  <rect class="webcmd" x="545" y="204" width="58.7" height="18" fill="#56c5ff"/>
+  <text class="value" x="845" y="220" text-anchor="end">$0.255</text>
 
-  <line class="hairline" x1="48" y1="520" x2="1192" y2="520" stroke="#c3c0b8"/>
-  <text class="note" x="48" y="558">ACCURACY = PASSED TASKS / 100</text>
-  <text class="note" x="1192" y="558" text-anchor="end">COST = CONTROLLER COST / COMPLETED TASKS · JUDGE EXCLUDED</text>
+  <rect class="track" x="545" y="260" width="230" height="18" fill="#e8e4d9"/>
+  <rect class="bar" x="545" y="260" width="68.3" height="18" fill="#62676b"/>
+  <text class="value" x="845" y="276" text-anchor="end">$0.297</text>
+
+  <rect class="track" x="545" y="316" width="230" height="18" fill="#e8e4d9"/>
+  <rect class="bar" x="545" y="316" width="101.4" height="18" fill="#62676b"/>
+  <text class="value" x="845" y="332" text-anchor="end">$0.441</text>
+
+  <rect class="track" x="545" y="372" width="230" height="18" fill="#e8e4d9"/>
+  <rect class="bar" x="545" y="372" width="60.5" height="18" fill="#62676b"/>
+  <text class="value" x="845" y="388" text-anchor="end">$0.263</text>
+
+  <rect class="track" x="545" y="428" width="230" height="18" fill="#e8e4d9"/>
+  <rect class="bar" x="545" y="428" width="127.4" height="18" fill="#62676b"/>
+  <text class="value" x="845" y="444" text-anchor="end">$0.554</text>
+
+  <rect class="track" x="880" y="204" width="230" height="18" fill="#e8e4d9"/>
+  <rect class="webcmd" x="880" y="204" width="75.1" height="18" fill="#56c5ff"/>
+  <text class="value" x="1192" y="220" text-anchor="end">9.8</text>
+
+  <rect class="track" x="880" y="260" width="230" height="18" fill="#e8e4d9"/>
+  <rect class="bar" x="880" y="260" width="113.5" height="18" fill="#62676b"/>
+  <text class="value" x="1192" y="276" text-anchor="end">14.8</text>
+
+  <rect class="track" x="880" y="316" width="230" height="18" fill="#e8e4d9"/>
+  <rect class="bar" x="880" y="316" width="157.2" height="18" fill="#62676b"/>
+  <text class="value" x="1192" y="332" text-anchor="end">20.5</text>
+
+  <rect class="track" x="880" y="372" width="230" height="18" fill="#e8e4d9"/>
+  <rect class="bar" x="880" y="372" width="116.5" height="18" fill="#62676b"/>
+  <text class="value" x="1192" y="388" text-anchor="end">15.2</text>
+
+  <rect class="track" x="880" y="428" width="230" height="18" fill="#e8e4d9"/>
+  <rect class="bar" x="880" y="428" width="195.5" height="18" fill="#62676b"/>
+  <text class="value" x="1192" y="444" text-anchor="end">25.5</text>
+
+  <text class="note" x="210" y="486">0%</text>
+  <text class="note" x="440" y="486" text-anchor="end">100%</text>
+  <text class="note" x="545" y="486">$0</text>
+  <text class="note" x="775" y="486" text-anchor="end">$1</text>
+  <text class="note" x="880" y="486">0</text>
+  <text class="note" x="1110" y="486" text-anchor="end">30</text>
 </svg>
