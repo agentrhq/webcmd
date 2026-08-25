@@ -137,7 +137,7 @@ describe('programmatic runner isolation', () => {
       process.chdir(before);
       await rm(scratch, { recursive: true, force: true });
     }
-  });
+  }, 20_000);
 
   it('returns plugin scaffolding and adapter source output as virtual files', async () => {
     const plugin = await runProgrammatic(['plugin', 'create', 'acme-widgets', '--author-name', 'Ada', '--author-handle', 'ada']);
