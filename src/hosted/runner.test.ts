@@ -2971,4 +2971,28 @@ describe('hosted artifact download', () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  it('renders structured JSON when -f json is set', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'webcmd-artifact-dl-json-'));
+    const output = path.join(dir, 'saved.csv');
+    const stdout = sink();
+    try {
+      const result = await runHostedCli([
+        'artifact', 'download',
+        'https://api.example.com/v1/executions/exec_1/artifacts/trace_a',
+        '--output', output,
+        '-f', 'json',
+      ], {
+        config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+        stdout: stdout.stream,
+        stderr: sink().stream,
+        fetchImpl: async () => new Response(Buffer.from('csv-bytes'), { status: 200 }),
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(JSON.parse(stdout.text())).toEqual({ output, bytes: 9 });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });

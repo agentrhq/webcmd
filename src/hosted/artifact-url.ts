@@ -19,16 +19,28 @@ export function parseExecutionArtifactDownloadUrl(
     throw new ArgumentError('Download URL origin must exactly match the configured Webcmd Cloud API.');
   }
   if (parsed.search || parsed.hash) {
-    throw new ArgumentError('Download URL path must match /v1/executions/<execution-id>/artifacts/<artifact-id>.');
+    throw new ArgumentError('Download URL path must match the configured execution-artifact download route.');
   }
-  const match = /^\/v1\/executions\/([^/]+)\/artifacts\/([^/]+)$/.exec(parsed.pathname);
+  const prefix = api.pathname.replace(/\/+$/, '');
+  const expected = `${prefix}/v1/executions/`;
+  if (!parsed.pathname.startsWith(expected)) {
+    throw new ArgumentError('Download URL path must match the configured execution-artifact download route.');
+  }
+  const rest = parsed.pathname.slice(prefix.length);
+  const match = /^\/v1\/executions\/([^/]+)\/artifacts\/([^/]+)$/.exec(rest);
   if (!match) {
-    throw new ArgumentError('Download URL path must match /v1/executions/<execution-id>/artifacts/<artifact-id>.');
+    throw new ArgumentError('Download URL path must match the configured execution-artifact download route.');
   }
-  const executionId = decodeURIComponent(match[1]!);
-  const artifactId = decodeURIComponent(match[2]!);
+  let executionId: string;
+  let artifactId: string;
+  try {
+    executionId = decodeURIComponent(match[1]!);
+    artifactId = decodeURIComponent(match[2]!);
+  } catch {
+    throw new ArgumentError('Download URL path must match the configured execution-artifact download route.');
+  }
   if (!executionId || !artifactId || executionId.includes('/') || artifactId.includes('/')) {
-    throw new ArgumentError('Download URL path must match /v1/executions/<execution-id>/artifacts/<artifact-id>.');
+    throw new ArgumentError('Download URL path must match the configured execution-artifact download route.');
   }
   return { executionId, artifactId };
 }
