@@ -60,7 +60,8 @@ export type HostedSessionPolicy =
   | 'create-or-reuse'
   | 'require-existing'
   | 'close-existing'
-  | 'local-only';
+  | 'local-only'
+  | 'sessionless';
 
 export interface HostedBrowserCommandContract {
   command: string;
@@ -137,6 +138,7 @@ const KNOWN_SESSION_POLICIES = new Set<HostedSessionPolicy>([
   'require-existing',
   'close-existing',
   'local-only',
+  'sessionless',
 ]);
 
 function sharedContractOptions(): {

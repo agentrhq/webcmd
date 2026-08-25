@@ -2522,7 +2522,7 @@ describe('runHostedCli', () => {
     await writeFile(uploadFile, 'hello browser upload');
     try {
       for (const contract of browserCommandCatalog.filter(command => (
-        command.sessionPolicy !== 'local-only'
+        command.sessionPolicy !== 'local-only' && command.sessionPolicy !== 'sessionless'
       ))) {
         const requests: Array<{ pathname: string; body?: Record<string, unknown> }> = [];
         const positionals = sampleBrowserPositionals(contract);
@@ -2581,7 +2581,7 @@ describe('runHostedCli', () => {
   it('dispatches hosted browser verify with its local verification options', async () => {
     const requests: Array<{ url: string; body?: Record<string, unknown> }> = [];
     const result = await runHostedCli([
-      '--session', 'session_work', 'browser', 'verify', 'hn/top',
+      'browser', 'verify', 'hn/top',
       '--no-fixture', '--write-fixture', '--update-fixture', '--strict-memory',
       '--seed-args', '{"limit":3}', '--trace', 'retain-on-failure', '--max-top-level-keys', '20',
     ], {
@@ -2597,7 +2597,7 @@ describe('runHostedCli', () => {
           result: {},
           columns: [],
           trace: null,
-          run: { executionId: 'exec_browser_verify', session: 'session_work', profile: { id: 'profile_default', displayName: 'default' } },
+          run: { executionId: 'exec_browser_verify', profile: { id: 'profile_default', displayName: 'default' } },
           execution: { id: 'exec_browser_verify', status: 'succeeded' },
         }), { status: 200 });
       },
@@ -2622,7 +2622,7 @@ describe('runHostedCli', () => {
 
   it('dispatches hosted browser verify with a numeric default maxTopLevelKeys', async () => {
     const requests: Array<{ body?: Record<string, unknown> }> = [];
-    const result = await runHostedCli(['--session', 'session_work', 'browser', 'verify', 'hn/top'], {
+    const result = await runHostedCli(['browser', 'verify', 'hn/top'], {
       config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
       stdout: sink().stream,
       stderr: sink().stream,
@@ -2635,7 +2635,7 @@ describe('runHostedCli', () => {
           result: {},
           columns: [],
           trace: null,
-          run: { executionId: 'exec_browser_verify', session: 'session_work', profile: { id: 'profile_default', displayName: 'default' } },
+          run: { executionId: 'exec_browser_verify', profile: { id: 'profile_default', displayName: 'default' } },
           execution: { id: 'exec_browser_verify', status: 'succeeded' },
         }), { status: 200 });
       },
@@ -2750,8 +2750,52 @@ describe('runHostedCli', () => {
     expect(stderr.text()).toMatch(/Browser sessions are root selectors/i);
   });
 
+  it.each(['init', 'verify'] as const)('sends hosted browser %s without a Session to the authoring route', async (leaf) => {
+    const requests: Array<{ pathname: string; body?: Record<string, unknown> }> = [];
+    const result = await runHostedCli(['browser', leaf, 'quotes/list'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: sink().stream,
+      stderr: sink().stream,
+      fetchImpl: async (url, init) => {
+        const parsedUrl = new URL(String(url));
+        const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined;
+        requests.push({ pathname: parsedUrl.pathname, ...(body ? { body } : {}) });
+        if (parsedUrl.pathname === '/v1/manifest') return manifestResponse();
+        if (parsedUrl.pathname === '/v1/browser/authoring/commands') {
+          return new Response(JSON.stringify({
+            ok: true,
+            result: {},
+            columns: [],
+            trace: null,
+            run: {
+              executionId: `exec_browser_${leaf}`,
+              profile: { id: 'profile_default', displayName: 'default' },
+            },
+            execution: { id: `exec_browser_${leaf}`, status: 'succeeded' },
+          }), { status: 200 });
+        }
+        return new Response(JSON.stringify({
+          ok: false,
+          error: { code: 'UNEXPECTED', message: parsedUrl.pathname, exitCode: 1 },
+        }), { status: 500 });
+      },
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 0 });
+    expect(requests.map(request => request.pathname)).toEqual(['/v1/manifest', '/v1/browser/authoring/commands']);
+    expect(requests[1]?.body).toMatchObject({
+      command: `browser/${leaf}`,
+      action: leaf,
+      args: { name: 'quotes/list' },
+    });
+    expect(JSON.stringify(requests[1]?.body)).not.toMatch(/session/i);
+  });
+
   it.each([
     { argv: ['browser', 'tabs'], code: 'SESSION_REQUIRED' },
+    { argv: ['browser', 'snapshot'], code: 'SESSION_REQUIRED' },
+    { argv: ['browser', 'close'], code: 'SESSION_REQUIRED' },
+    { argv: ['browser', 'bind', '--page', 'page-123'], code: 'SESSION_REQUIRED' },
     { argv: ['--session', 'work', 'browser', 'tabs'], code: 'INVALID_SESSION_SELECTOR' },
   ])('rejects an unusable raw selector before hosted transport: $code', async ({ argv, code }) => {
     const stderr = sink();

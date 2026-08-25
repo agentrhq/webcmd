@@ -40,8 +40,8 @@ describe('browserCommandCatalog', () => {
 
   it('exposes hosted adapter init and verify with the local verification flags', () => {
     const commands = new Map(browserCommandCatalog.map(command => [command.command, command]));
-    expect(commands.get('init')).toMatchObject({ action: 'init', sessionPolicy: 'create-or-reuse' });
-    expect(commands.get('verify')).toMatchObject({ action: 'verify', sessionPolicy: 'create-or-reuse' });
+    expect(commands.get('init')).toMatchObject({ action: 'init', sessionPolicy: 'sessionless' });
+    expect(commands.get('verify')).toMatchObject({ action: 'verify', sessionPolicy: 'sessionless' });
     expect(commands.get('verify')?.options).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'noFixture' }),
       expect.objectContaining({ name: 'writeFixture' }),

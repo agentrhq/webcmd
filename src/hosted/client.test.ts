@@ -1367,6 +1367,76 @@ describe('HostedClient', () => {
     ]);
   });
 
+  it('runs sessionless authoring through the dedicated authoring endpoint', async () => {
+    const requests: Array<{ url: string; body?: unknown }> = [];
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'wcmd_live_test',
+      fetchImpl: async (url, init) => {
+        requests.push({
+          url: String(url),
+          body: init?.body ? JSON.parse(String(init.body)) as unknown : undefined,
+        });
+        return new Response(JSON.stringify({
+          ok: true,
+          result: [{ created: true, adapter: 'quotes/list' }],
+          columns: ['created', 'adapter'],
+          trace: null,
+          run: {
+            executionId: 'exec_1',
+            profile: { id: 'profile_default', displayName: 'default' },
+          },
+          execution: { id: 'exec_1', status: 'succeeded' },
+        }), { status: 200 });
+      },
+    });
+
+    await expect(client.executeAuthoringCommand({
+      command: 'browser/init',
+      action: 'init',
+      args: { name: 'quotes/list' },
+    })).resolves.toMatchObject({
+      result: [{ created: true, adapter: 'quotes/list' }],
+      execution: { id: 'exec_1', status: 'succeeded' },
+    });
+    expect(requests).toEqual([
+      {
+        url: 'https://api.example.com/v1/browser/authoring/commands',
+        body: {
+          command: 'browser/init',
+          action: 'init',
+          args: { name: 'quotes/list' },
+        },
+      },
+    ]);
+    expect(JSON.stringify(requests[0]?.body)).not.toMatch(/session/i);
+  });
+
+  it('rejects an authoring success that invents a Session token', async () => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'wcmd_live_test',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        result: {},
+        columns: [],
+        trace: null,
+        run: {
+          executionId: 'exec_1',
+          session: 'session_hidden',
+          profile: { id: 'profile_default', displayName: 'default' },
+        },
+        execution: { id: 'exec_1', status: 'succeeded' },
+      }), { status: 200 }),
+    });
+
+    await expect(client.executeAuthoringCommand({
+      command: 'browser/verify',
+      action: 'verify',
+      args: { name: 'quotes/list' },
+    })).rejects.toMatchObject({ code: 'HOSTED_PROTOCOL' });
+  });
+
   it('accepts compact hosted snapshot responses', async () => {
     const client = new HostedClient({
       apiBaseUrl: 'https://api.example.com',

@@ -9,6 +9,7 @@ import type {
   HostedBrowserSessionCloseResponse,
   HostedBrowserSessionResponse,
   HostedBrowserSessionsResponse,
+  HostedAuthoringCommandResponse,
   HostedBrowserRunActionInput,
   HostedBrowserRunActionResponse,
   HostedBrowserSnapshotActionResponse,
@@ -445,6 +446,17 @@ export class HostedClient {
     });
     if (!isHostedBrowserRunActionResponse(body, session) && !(input.action === 'snapshot' && isHostedBrowserSnapshotActionResponse(body, session))) {
       throw protocolError('Webcmd Cloud returned an invalid browser action response.');
+    }
+    return body;
+  }
+
+  async executeAuthoringCommand(input: HostedBrowserRunActionInput): Promise<HostedAuthoringCommandResponse> {
+    const body = await this.request('/v1/browser/authoring/commands', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+    if (!isHostedAuthoringCommandResponse(body)) {
+      throw protocolError('Webcmd Cloud returned an invalid authoring response.');
     }
     return body;
   }
@@ -950,6 +962,26 @@ function isHostedBrowserActionResponse(value: unknown): value is HostedBrowserAc
   if (!hasExactKeys(value, ['ok', 'result', 'columns', 'trace']) || value.ok !== true) return false;
   if (!Array.isArray(value.columns) || !value.columns.every(column => typeof column === 'string')) return false;
   return value.trace === null || isHostedBrowserActionTrace(value.trace);
+}
+
+function isHostedAuthoringCommandResponse(value: unknown): value is HostedAuthoringCommandResponse {
+  if (!hasExactKeys(value, ['ok', 'result', 'columns', 'trace', 'run', 'execution']) || value.ok !== true) return false;
+  if (!Array.isArray(value.columns) || !value.columns.every(column => typeof column === 'string')) return false;
+  if (value.trace !== null && !isHostedBrowserActionTrace(value.trace)) return false;
+  if (!isHostedAuthoringRunPayload(value.run)) return false;
+  return hasExactKeys(value.execution, ['id', 'status'])
+    && typeof value.execution.id === 'string'
+    && value.execution.id === value.run.executionId
+    && (value.execution.status === 'succeeded' || value.execution.status === 'failed' || value.execution.status === 'timed_out');
+}
+
+function isHostedAuthoringRunPayload(value: unknown): value is HostedAuthoringCommandResponse['run'] {
+  if (!hasOnlyKeys(value, ['executionId', 'profile', 'liveViewUrl', 'expiresAt'])) return false;
+  if (typeof value.executionId !== 'string') return false;
+  if (!hasExactKeys(value.profile, ['id', 'displayName'])) return false;
+  if (typeof value.profile.id !== 'string' || typeof value.profile.displayName !== 'string') return false;
+  if (value.liveViewUrl !== undefined && typeof value.liveViewUrl !== 'string') return false;
+  return value.expiresAt === undefined || typeof value.expiresAt === 'string';
 }
 
 function isHostedBrowserRunActionResponse(value: unknown, requestedSession: string): value is HostedBrowserRunActionResponse {

@@ -58,6 +58,7 @@ import { resolveHostedApiKey, type HostedCredentialStore } from './credentials.j
 import { parseHostedRootCommandSurface } from '../root-command-surface.js';
 import { registerSiteCommands, type SiteMemoryBackend } from '../site-memory/commands.js';
 import type {
+  HostedAuthoringCommandResponse,
   HostedBrowserActionName,
   HostedBrowserRunActionResponse,
   HostedBrowserSnapshotActionResponse,
@@ -952,7 +953,7 @@ async function executeHostedPreparedCommand(input: {
 }
 
 interface ParsedHostedBrowserInvocation {
-  session: string;
+  session?: string;
   command: string;
   action: HostedBrowserActionName;
   args: Record<string, unknown>;
@@ -970,14 +971,17 @@ async function dispatchHostedBrowser(
   const args = invocation.action === 'set-file-input'
     ? await materializeHostedBrowserUploadArgs(invocation.args, io.fileIo)
     : invocation.args;
-  const response = await client.runBrowserAction(invocation.session, {
+  const request = {
     command: invocation.command,
     action: invocation.action,
     args,
     ...(invocation.profile !== undefined ? { profile: invocation.profile } : {}),
     ...(invocation.windowMode !== undefined ? { windowMode: invocation.windowMode } : {}),
-    trace: 'off',
-  });
+    trace: 'off' as const,
+  };
+  const response = invocation.session === undefined
+    ? await client.executeAuthoringCommand(request)
+    : await client.runBrowserAction(invocation.session, request);
   await renderHostedBrowserResponse(stdout, invocation, response, io);
 }
 
@@ -1050,9 +1054,10 @@ async function parseHostedBrowserInvocation(
 
   const windowMode = structure.window === undefined ? undefined : parseWindowMode(structure.window);
   const parsed = parseBrowserLeaf(structure.commandName, structure.positionals, structure.options);
+  const sessionless = hostedBrowserCommandsByPath.get(parsed.commandName)?.sessionPolicy === 'sessionless';
   const browserArgs = await materializeBrowserRunSource(parsed.commandName, parsed.args, io);
   return {
-    session: validateRawBrowserSession(structure.session, profile),
+    ...(sessionless ? {} : { session: validateRawBrowserSession(structure.session, profile) }),
     command: `browser/${parsed.commandName}`,
     action: parsed.action,
     args: browserArgs,
@@ -1248,7 +1253,7 @@ function withoutKeys(input: Record<string, unknown>, keys: readonly string[]): R
 async function renderHostedBrowserResponse(
   stdout: NodeJS.WritableStream,
   invocation: ParsedHostedBrowserInvocation,
-  response: HostedBrowserRunActionResponse | HostedBrowserSnapshotActionResponse,
+  response: HostedBrowserRunActionResponse | HostedBrowserSnapshotActionResponse | HostedAuthoringCommandResponse,
   io: HostedDispatchIo,
 ): Promise<void> {
   const result = response.result;
