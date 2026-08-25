@@ -1055,6 +1055,14 @@ async function parseHostedBrowserInvocation(
   const windowMode = structure.window === undefined ? undefined : parseWindowMode(structure.window);
   const parsed = parseBrowserLeaf(structure.commandName, structure.positionals, structure.options);
   const sessionless = hostedBrowserCommandsByPath.get(parsed.commandName)?.sessionPolicy === 'sessionless';
+  if (sessionless && (session !== undefined || structure.session)) {
+    throw new CliError(
+      'SESSION_NOT_ALLOWED',
+      'browser init and browser verify do not take --session.',
+      'Use: webcmd browser init <site>/<command> or webcmd browser verify <site>/<command>',
+      EXIT_CODES.USAGE_ERROR,
+    );
+  }
   const browserArgs = await materializeBrowserRunSource(parsed.commandName, parsed.args, io);
   return {
     ...(sessionless ? {} : { session: validateRawBrowserSession(structure.session, profile) }),

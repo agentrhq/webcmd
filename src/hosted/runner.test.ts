@@ -2791,6 +2791,19 @@ describe('runHostedCli', () => {
     expect(JSON.stringify(requests[1]?.body)).not.toMatch(/session/i);
   });
 
+  it('rejects --session on sessionless init', async () => {
+    const stderr = sink();
+    const fetchImpl = vi.fn<typeof fetch>();
+    const result = await runHostedCli(['--session', 'session_work', 'browser', 'init', 'quotes/list'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stderr: stderr.stream,
+      fetchImpl,
+    });
+    expect(result.exitCode).toBe(2);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(stderr.text()).toContain('SESSION_NOT_ALLOWED');
+  });
+
   it.each([
     { argv: ['browser', 'tabs'], code: 'SESSION_REQUIRED' },
     { argv: ['browser', 'snapshot'], code: 'SESSION_REQUIRED' },

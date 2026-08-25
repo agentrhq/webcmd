@@ -178,12 +178,12 @@ export const browserCommandCatalog: readonly HostedBrowserCommandContract[] = [
   command('tabs', 'List pages in the existing browser session', 'tabs', [], [
     verboseFlag(),
   ], 'require-existing'),
-  command('init', 'Generate an adapter scaffold', 'init', [adapterNamePositional], [], 'sessionless'),
+  command('init', 'Generate an adapter scaffold. Does not take --session.', 'init', [adapterNamePositional], [], 'sessionless'),
   command('bind', 'Bind this session to an existing page', 'bind', [], [
     option('page', 'Stable page id returned by tabs', { required: true }),
     verboseFlag(),
   ], 'require-existing'),
-  command('verify', 'Verify an adapter against its fixture', 'verify', [adapterNamePositional], [
+  command('verify', 'Verify an adapter against its fixture. Does not take --session.', 'verify', [adapterNamePositional], [
     flag('noFixture', 'Run without comparing a fixture'),
     flag('writeFixture', 'Write the observed result as the fixture'),
     flag('updateFixture', 'Replace an existing fixture with the observed result'),
