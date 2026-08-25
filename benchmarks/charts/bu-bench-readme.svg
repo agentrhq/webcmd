@@ -2,7 +2,8 @@
   <title id="title">BU Bench V1 accuracy, API cost, and agent turns per completed task</title>
   <desc id="desc">webcmd leads with 67 percent accuracy, 25.5 cents per completed task, and 9.8 agent turns per completed task.</desc>
   <style>
-    .eyebrow { font-family: "Courier New", ui-monospace, monospace; font-size: 13px; font-weight: 500; letter-spacing: 0.12em; fill: #62676b; }
+    .meta-label { font-family: "Courier New", ui-monospace, monospace; font-size: 12px; font-weight: 500; letter-spacing: 0.04em; fill: #151719; }
+    .meta-value { font-family: "Courier New", ui-monospace, monospace; font-size: 12px; font-weight: 500; letter-spacing: 0.04em; fill: #167eae; }
     .headline { font-family: Georgia, "Times New Roman", serif; font-size: 40px; font-weight: 500; letter-spacing: -0.025em; }
     .accent { fill: #167eae; font-style: italic; }
     .panel-title { font-family: Georgia, "Times New Roman", serif; font-size: 24px; font-weight: 500; }
@@ -17,9 +18,15 @@
   </style>
 
   <rect width="1240" height="530" fill="#f1efe7"/>
-  <text class="eyebrow" x="48" y="44">BU BENCH V1 FROM BROWSER-USE</text>
+  <text class="meta-label" x="48" y="44">Benchmark:</text>
+  <text class="meta-value" x="135" y="44">BU Bench V1 from browser-use</text>
+  <text class="meta-label" x="430" y="44">Harness:</text>
+  <text class="meta-value" x="510" y="44">Pi</text>
+  <text class="meta-label" x="600" y="44">Model:</text>
+  <text class="meta-value" x="660" y="44">GPT-5.6 Sol</text>
   <text class="headline" x="48" y="94">Accuracy up.</text>
-  <text class="headline accent" x="328" y="94">Cost per task down.</text>
+  <text class="headline accent" x="328" y="94">Cost down.</text>
+  <text class="headline" x="570" y="94">Time down.</text>
   <line class="hairline" x1="48" y1="122" x2="1192" y2="122"/>
 
   <text class="panel-title" x="48" y="164">Tool</text>
