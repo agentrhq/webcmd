@@ -36,6 +36,7 @@ import { CLI_COMMAND } from '../brand.js';
 import { formatPluginSearchEmptyCopy, presentPluginSearch } from '../plugin-search-presentation.js';
 import { missingPluginGuidance } from '../discovery.js';
 import { webFetchCommand } from '../fetch/command.js';
+import { runHostedArtifactDownload } from './artifact-download.js';
 import { HostedClient, HostedClientError, resolveWorkspace } from './client.js';
 import { createVirtualHostedFileIo, realHostedFileIo, type HostedFileIo } from './file-io.js';
 import { HOSTED_SESSION_PROTOCOL_VERSION } from './types.js';
@@ -312,6 +313,11 @@ async function dispatchHosted(
     const manifest = await client.getManifest();
     validateManifestContractIdentity(manifest);
     await dispatchHostedBrowser(invocation, client, stdout, io);
+    return;
+  }
+
+  if (args[0] === 'artifact') {
+    await runHostedArtifactDownload(args.slice(1), client, stdout, io.fileIo);
     return;
   }
 
@@ -1701,7 +1707,7 @@ function readInstalledHostedContractIdentity(): InstalledHostedContractIdentity 
 
 function hostedCommandName(argv: readonly string[]): string | undefined {
   const positionals: string[] = [];
-  const builtinCommands = new Set(['adapter', 'browser', 'completion', 'daemon', 'doctor', 'list', 'plugin', 'profile', 'session', 'setup', 'site', 'skills', 'update', 'web']);
+  const builtinCommands = new Set(['adapter', 'artifact', 'browser', 'completion', 'daemon', 'doctor', 'list', 'plugin', 'profile', 'session', 'setup', 'site', 'skills', 'update', 'web']);
   const valueOptions = new Set(['--profile', '-f', '--format', '--trace']);
   for (let i = 0; i < argv.length && positionals.length < 2; i += 1) {
     const token = argv[i]!;

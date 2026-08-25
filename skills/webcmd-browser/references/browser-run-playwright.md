@@ -107,9 +107,18 @@ came from `writeArtifact`, `saveAs`, or `screenshot`:
 
 Locally the bytes land at `~/.webcmd/cache/browser-run/<artifactId>/<filename>` (under
 `$WEBCMD_CACHE_DIR/browser-run` when that is set), readable once `run` has returned. Hosted
-runs use the same receipt shape with a `cloud-artifact://` locator backed by the execution's
-trace artifact store. The receipt never carries the bytes themselves, so return the receipt —
+runs use the same receipt shape with a `cloud-artifact://` locator plus an authenticated
+HTTPS `downloadUrl`. The receipt never carries the bytes themselves, so return the receipt —
 or just read it off `artifacts` — rather than trying to return file contents through `result`.
+
+Download a hosted artifact later with:
+
+```text
+webcmd artifact download <download-url> --output <local-path>
+```
+
+`--output` is required. Webcmd supplies hosted authentication. Ordinary `curl` is neither
+required nor automatically authenticated; the URL alone does not grant access.
 
 ## Errors
 

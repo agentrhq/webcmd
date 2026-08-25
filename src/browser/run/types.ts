@@ -25,6 +25,7 @@ export interface BrowserRunArtifactReceipt {
   contentType: string;
   byteSize: number;
   locator: string;
+  downloadUrl?: string;
 }
 
 export interface BrowserRunArtifactSink {

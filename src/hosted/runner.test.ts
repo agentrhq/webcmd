@@ -2881,3 +2881,94 @@ describe('runHostedCli injected I/O', () => {
     });
   });
 });
+
+describe('hosted artifact download', () => {
+  it('rejects a foreign origin before sending a request', async () => {
+    const requests: string[] = [];
+    const stderr = sink();
+    const result = await runHostedCli([
+      'artifact', 'download',
+      'https://evil.example/v1/executions/exec_1/artifacts/trace_a',
+      '--output', '/tmp/out.bin',
+    ], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: sink().stream,
+      stderr: stderr.stream,
+      fetchImpl: async (url) => {
+        requests.push(String(url));
+        return new Response('nope');
+      },
+    });
+
+    expect(result.exitCode).not.toBe(0);
+    expect(requests).toEqual([]);
+  });
+
+  it('rejects a malformed path before sending a request', async () => {
+    const requests: string[] = [];
+    const result = await runHostedCli([
+      'artifact', 'download',
+      'https://api.example.com/v1/artifacts/trace_a',
+      '--output', '/tmp/out.bin',
+    ], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: sink().stream,
+      stderr: sink().stream,
+      fetchImpl: async (url) => {
+        requests.push(String(url));
+        return new Response('nope');
+      },
+    });
+
+    expect(result.exitCode).not.toBe(0);
+    expect(requests).toEqual([]);
+  });
+
+  it('requires --output', async () => {
+    const requests: string[] = [];
+    const result = await runHostedCli([
+      'artifact', 'download',
+      'https://api.example.com/v1/executions/exec_1/artifacts/trace_a',
+    ], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: sink().stream,
+      stderr: sink().stream,
+      fetchImpl: async (url) => {
+        requests.push(String(url));
+        return new Response('nope');
+      },
+    });
+
+    expect(result.exitCode).not.toBe(0);
+    expect(requests).toEqual([]);
+  });
+
+  it('downloads bytes to --output and reports the local path', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'webcmd-artifact-dl-'));
+    const output = path.join(dir, 'saved.csv');
+    const stdout = sink();
+    const requests: string[] = [];
+    try {
+      const result = await runHostedCli([
+        'artifact', 'download',
+        'https://api.example.com/v1/executions/exec_1/artifacts/trace_a',
+        '--output', output,
+      ], {
+        config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+        stdout: stdout.stream,
+        stderr: sink().stream,
+        fetchImpl: async (url) => {
+          requests.push(String(url));
+          return new Response(Buffer.from('csv-bytes'), { status: 200 });
+        },
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(requests).toEqual(['https://api.example.com/v1/executions/exec_1/artifacts/trace_a']);
+      await expect(readFile(output, 'utf8')).resolves.toBe('csv-bytes');
+      expect(stdout.text()).toContain(output);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});

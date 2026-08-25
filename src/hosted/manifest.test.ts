@@ -226,7 +226,7 @@ describe('hosted manifest helpers', () => {
       fetchImpl: async () => new Response(JSON.stringify({ ok: true, manifest }), { status: 200 }),
     });
 
-    expect(stdout.text().trim().split('\n')).toEqual(['browser', 'completion', 'github', 'list', 'profile', 'setup', 'web']);
+    expect(stdout.text().trim().split('\n')).toEqual(['artifact', 'browser', 'completion', 'github', 'list', 'profile', 'setup', 'web']);
 
     const siteHelp = sink();
     await runHostedCli(['web', '--help'], {
