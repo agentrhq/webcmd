@@ -5,6 +5,7 @@ import { SlabNetworkCapture } from './network.js';
 import { log } from '../../../logger.js';
 import { CliError, EXIT_CODES } from '../../../errors.js';
 import { isClosedContextError } from '../../run/types.js';
+import { humanizePage } from '../../humanizer/page.js';
 import { attachSlabProfile, type AttachedSlabProfile } from './attachment.js';
 
 const TARGET_PAGE_MATCH_TIMEOUT_MS = 1_000;
@@ -1131,6 +1132,7 @@ export class SlabSessionManager {
       entry.leaseKey = input.leaseKey ?? (entry.leaseKey.startsWith('unowned\u0000') ? `page\u0000${entry.pageId}` : entry.leaseKey);
     }
     session.pages.set(entry.leaseKey, entry);
+    humanizePage(page);
     this.cancelProfileIdle(runtime);
     this.refreshIdleTimer(runtime, session, entry.leaseKey, entry);
     if (!wasOwned) for (const listener of this.sessionPageListeners.get(session) ?? []) listener(page);

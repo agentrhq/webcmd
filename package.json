@@ -104,7 +104,6 @@
   "dependencies": {
     "@mozilla/readability": "^0.6.0",
     "cli-table3": "^0.6.5",
-    "cloakbrowser": "0.4.5",
     "commander": "^14.0.3",
     "impit": "0.14.3",
     "js-yaml": "^4.3.0",

@@ -19,6 +19,36 @@ function fakeAttachedProfile() {
     const page: any = {
       url: vi.fn(() => url),
       title: vi.fn().mockResolvedValue('Page'),
+      context: vi.fn(() => context),
+      mainFrame: vi.fn(() => { throw new Error('no frames'); }),
+      click: vi.fn(),
+      dblclick: vi.fn(),
+      hover: vi.fn(),
+      type: vi.fn(),
+      fill: vi.fn(),
+      check: vi.fn(),
+      uncheck: vi.fn(),
+      selectOption: vi.fn(),
+      press: vi.fn(),
+      isChecked: vi.fn(),
+      $: vi.fn(),
+      $$: vi.fn(),
+      waitForSelector: vi.fn(),
+      mouse: {
+        move: vi.fn().mockResolvedValue(undefined),
+        click: vi.fn(),
+        dblclick: vi.fn(),
+        wheel: vi.fn(),
+        down: vi.fn(),
+        up: vi.fn(),
+      },
+      keyboard: {
+        type: vi.fn(),
+        down: vi.fn(),
+        up: vi.fn(),
+        press: vi.fn(),
+        insertText: vi.fn(),
+      },
       goto: vi.fn().mockResolvedValue(undefined),
       bringToFront: vi.fn().mockResolvedValue(undefined),
       evaluate: vi.fn().mockResolvedValue(undefined),
@@ -129,6 +159,9 @@ describe('SlabSessionManager ownership', () => {
     expect(manager.pageIdFor(attached.humanBlank)).toBeUndefined();
     expect(manager.pageIdFor(attached.humanPage)).toBeUndefined();
     expect(manager.pageIdFor(lease.page)).toBe(lease.pageId);
+    expect((lease.page as any)._original).toEqual(expect.any(Object));
+    expect((attached.humanBlank as any)._original).toBeUndefined();
+    expect((attached.humanPage as any)._original).toBeUndefined();
 
     await manager.shutdown();
     await manager.shutdown();
