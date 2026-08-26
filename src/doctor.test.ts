@@ -143,16 +143,16 @@ describe('doctor report rendering', () => {
     expect(text).toContain('[MISSING] Runtime: SLAB not connected');
   });
 
-  it('renders OK when the connected Cloak runtime version is unknown', () => {
+  it('renders OK when the connected SLAB runtime version is unknown', () => {
     const text = strip(renderBrowserDoctorReport({
       daemonRunning: true,
       runtimeConnected: true,
-      runtimeName: 'Cloak',
+      runtimeName: 'SLAB',
       issues: [],
     }));
 
-    expect(text).toContain('[OK] Runtime: Cloak connected (version unknown)');
-    expect(text).not.toContain('Cloak runtime is connected but did not report a version.');
+    expect(text).toContain('[OK] Runtime: SLAB connected (version unknown)');
+    expect(text).not.toContain('SLAB runtime is connected but did not report a version.');
     expect(text).toContain('Everything looks good!');
   });
 
@@ -160,24 +160,24 @@ describe('doctor report rendering', () => {
     const text = strip(renderBrowserDoctorReport({
       daemonRunning: true,
       runtimeConnected: true,
-      runtimeName: 'Cloak',
-      binary: { installed: true, path: '/home/test/.cloakbrowser/chromium-1.0.0/chrome', override: false },
+      runtimeName: 'SLAB',
+      binary: { installed: true, path: '/Applications/SLAB.app', override: false },
       issues: [],
     }));
 
-    expect(text).toContain('[OK] Browser binary: installed at /home/test/.cloakbrowser/chromium-1.0.0/chrome');
+    expect(text).toContain('[OK] Browser binary: installed at /Applications/SLAB.app');
   });
 
   it('renders the browser binary status line as MISSING when not installed', () => {
     const text = strip(renderBrowserDoctorReport({
       daemonRunning: true,
       runtimeConnected: true,
-      runtimeName: 'Cloak',
-      binary: { installed: false, path: '/home/test/.cloakbrowser/chromium-1.0.0/chrome', override: false },
-      issues: ['CloakBrowser Chromium is not installed and could not be downloaded at ...'],
+      runtimeName: 'SLAB',
+      binary: { installed: false, path: '/Applications/SLAB.app', override: false },
+      issues: ['SLAB.app is not installed.'],
     }));
 
-    expect(text).toContain('[MISSING] Browser binary: not installed (/home/test/.cloakbrowser/chromium-1.0.0/chrome)');
+    expect(text).toContain('[MISSING] Browser binary: not installed (/Applications/SLAB.app)');
   });
 
   it('renders connectivity OK when live test succeeds', () => {
@@ -212,13 +212,13 @@ describe('doctor report rendering', () => {
       daemonRunning: true,
       runtimeConnected: true,
       runtimeFlaky: true,
-      runtimeName: 'Cloak',
+      runtimeName: 'SLAB',
       connectivity: { ok: true, durationMs: 1234 },
-      issues: ['Cloak runtime connection is unstable.'],
+      issues: ['SLAB runtime connection is unstable.'],
     }));
 
-    expect(text).toContain('[WARN] Runtime: Cloak unstable');
-    expect(text).toContain('Cloak runtime connection is unstable.');
+    expect(text).toContain('[WARN] Runtime: SLAB unstable');
+    expect(text).toContain('SLAB runtime connection is unstable.');
   });
 
   it('renders unstable daemon state when live connectivity and status disagree', () => {
@@ -335,7 +335,7 @@ describe('doctor report rendering', () => {
         closeWindow,
       };
     });
-    mockGetDaemonHealth.mockResolvedValueOnce({ state: 'ready', status: { runtimeConnected: true, runtimeName: 'Cloak' } });
+    mockGetDaemonHealth.mockResolvedValueOnce({ state: 'ready', status: { runtimeConnected: true, runtimeName: 'SLAB' } });
 
     await runBrowserDoctor();
 
@@ -352,12 +352,12 @@ describe('doctor report rendering', () => {
     expect(mockSetDaemonCommandTimeoutSeconds).toHaveBeenLastCalledWith(null);
   });
 
-  it('does not report an issue when the connected Cloak runtime does not report a version', async () => {
+  it('does not report an issue when the connected SLAB runtime does not report a version', async () => {
     const status = {
       state: 'ready' as const,
       status: {
         runtimeConnected: true,
-        runtimeName: 'Cloak',
+        runtimeName: 'SLAB',
         runtimeVersion: undefined,
       },
     };

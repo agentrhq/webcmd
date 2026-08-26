@@ -18,6 +18,46 @@ afterEach(async () => {
 });
 
 describe('webcmd setup', () => {
+  it('reports a running preliminary SLAB app in local setup status without invoking installation', async () => {
+    const messages: string[] = [];
+    const slabStatus = vi.fn(async () => 'preliminary-running' as const);
+
+    const code = await runHostedSetup({
+      argv: ['--status'],
+      isTTY: false,
+      existsSync: () => true,
+      readFileSync: (() => JSON.stringify({ mode: 'local', updatedAt: '2026-08-27T00:00:00.000Z' })) as never,
+      slabStatus,
+      write: message => { messages.push(message); },
+    });
+
+    expect(code).toBe(0);
+    expect(messages.join('')).toBe('{"configured":true,"mode":"local","slab":"preliminary-running"}\n');
+    expect(slabStatus).toHaveBeenCalledOnce();
+  });
+
+  it('does not probe SLAB for hosted setup status', async () => {
+    const messages: string[] = [];
+    const slabStatus = vi.fn(async () => 'not-installed' as const);
+
+    const code = await runHostedSetup({
+      argv: ['--status'],
+      isTTY: false,
+      existsSync: () => true,
+      readFileSync: (() => JSON.stringify({
+        mode: 'hosted',
+        updatedAt: '2026-08-27T00:00:00.000Z',
+        hosted: { apiBaseUrl: 'https://api.webcmd.dev', apiKeyRef: 'wcmd_cred_test' },
+      })) as never,
+      slabStatus,
+      write: message => { messages.push(message); },
+    });
+
+    expect(code).toBe(0);
+    expect(messages.join('')).toBe('{"configured":true,"mode":"hosted"}\n');
+    expect(slabStatus).not.toHaveBeenCalled();
+  });
+
   it('writes local mode from interactive answer', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-'));
     const answers = ['local'];

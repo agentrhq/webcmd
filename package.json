@@ -77,7 +77,6 @@
     "test:plugin": "vitest run --project plugin",
     "test:all": "vitest run",
     "test:e2e": "vitest run --project e2e-fixed-port --project e2e",
-    "gate:cloak-sessions": "WEBCMD_LIVE_CLOAK=1 vitest run --project e2e tests/e2e/cloak-session-concurrency.test.ts",
     "check-community-plugins": "tsx scripts/sync-community-plugins.ts --check",
     "advise:listing-id-pairing": "node scripts/check-listing-id-pairing.mjs",
     "check:package-bin": "node scripts/check-package-bin.mjs",

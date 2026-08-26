@@ -1,5 +1,6 @@
 import { createInterface } from 'node:readline/promises';
 import { stdin as defaultInput, stdout as defaultOutput } from 'node:process';
+import * as fs from 'node:fs';
 import { CLI_COMMAND } from '../brand.js';
 import { ArgumentError, toEnvelope } from '../errors.js';
 import { formatErrorEnvelope } from '../output.js';
@@ -7,6 +8,8 @@ import { writeToStream } from '../stream-write.js';
 import { HostedClient } from './client.js';
 import {
   defaultHostedApiBaseUrl,
+  getConfigPath,
+  loadWebcmdConfig,
   makeLocalConfig,
   saveWebcmdConfig,
   type ConfigIo,
@@ -27,17 +30,19 @@ export interface SetupIo extends ConfigIo, HostedCredentialIo {
   write?: (message: string) => void | Promise<void>;
   argv?: readonly string[];
   isTTY?: boolean;
+  slabStatus?: () => Promise<'preliminary-running' | 'installed-running' | 'installed-not-running' | 'not-installed'>;
 }
 
 type SetupMode = 'local' | 'hosted';
 
-const SETUP_USAGE = `usage: ${CLI_COMMAND} setup --mode <local|hosted> [--api-key <key>]`;
+const SETUP_USAGE = `usage: ${CLI_COMMAND} setup [--status] [--mode <local|hosted> [--api-key <key>]]`;
 const SETUP_EXAMPLE = `example: ${CLI_COMMAND} setup --mode local`;
 const SETUP_HELP = [
   `${CLI_COMMAND} setup`,
   '',
   'Configure local or hosted mode.',
   '',
+  '  --status                Show the configured mode and local SLAB status',
   '  --mode <local|hosted>   Required when stdin is not a TTY',
   '  --api-key <key>         Required for --mode hosted when stdin is not a TTY',
   '  -h, --help',
@@ -64,6 +69,19 @@ export async function runHostedSetup(io: SetupIo = {}): Promise<number> {
     const parsed = parseSetupArgs(io.argv ?? []);
     if (parsed.help) {
       await write(SETUP_HELP);
+      return 0;
+    }
+
+    if (parsed.status) {
+      const config = loadWebcmdConfig(io);
+      const status: { configured: boolean; mode: SetupMode; slab?: string } = {
+        configured: (io.existsSync ?? fs.existsSync)(getConfigPath(io)),
+        mode: config.mode,
+      };
+      if (config.mode === 'local') {
+        status.slab = await (io.slabStatus ?? localSlabStatus)();
+      }
+      await write(`${JSON.stringify(status)}\n`);
       return 0;
     }
 
@@ -156,12 +174,17 @@ function canPrompt(io: SetupIo): boolean {
   return process.stdin.isTTY === true && process.stdout.isTTY === true;
 }
 
-function parseSetupArgs(argv: readonly string[]): { help?: true; mode?: SetupMode; apiKey?: string } {
+function parseSetupArgs(argv: readonly string[]): { help?: true; status?: true; mode?: SetupMode; apiKey?: string } {
   let mode: SetupMode | undefined;
   let apiKey: string | undefined;
+  let status = false;
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i]!;
     if (token === '--help' || token === '-h') return { help: true };
+    if (token === '--status') {
+      status = true;
+      continue;
+    }
 
     if (token === '--mode' || token.startsWith('--mode=')) {
       const value = token.startsWith('--mode=') ? token.slice('--mode='.length) : argv[++i];
@@ -189,10 +212,18 @@ function parseSetupArgs(argv: readonly string[]): { help?: true; mode?: SetupMod
 
     throw new ArgumentError(
       `unknown flag ${token} for \`setup\``,
-      `valid flags for \`setup\`: --mode, --api-key, --help\n${SETUP_USAGE}`,
+      `valid flags for \`setup\`: --status, --mode, --api-key, --help\n${SETUP_USAGE}`,
     );
   }
-  return { mode, apiKey };
+  if (status && (mode || apiKey)) {
+    throw new ArgumentError('--status cannot be combined with setup options.', SETUP_USAGE);
+  }
+  return { ...(status ? { status: true as const } : {}), mode, apiKey };
+}
+
+async function localSlabStatus(): Promise<'preliminary-running' | 'installed-running' | 'installed-not-running' | 'not-installed'> {
+  const { inspectSlabStatus } = await import('../slab/status.js');
+  return inspectSlabStatus();
 }
 
 function hostedAccountLabel(body: unknown): string | undefined {

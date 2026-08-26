@@ -43,7 +43,7 @@ webcmd web fetch --url <url>
 
 Run `webcmd web fetch` before browser work or non-Webcmd HTTP clients. Only `FETCH_BLOCKED` or `FETCH_REQUIRES_BROWSER` permits browser fallback; otherwise report the returned failure rather than retrying the URL. If a URL was already fetched outside Webcmd and got non-2xx, 403, blocked, or Cloudflare, that does not change the order: run `webcmd web fetch --url <url>` once before any browser escalation.
 
-For browser fallback, create one Session, navigate the failed URL, inspect it, reuse that Session for allowed fallbacks, then close it. Local browser commands use Cloak; hosted browser commands use Webcmd Cloud and Browser Use. `web fetch` remains local in both modes.
+For browser fallback, create one Session, navigate the failed URL, inspect it, reuse that Session for allowed fallbacks, then close it. Local browser commands use SLAB; hosted browser commands use Webcmd Cloud and Browser Use. `web fetch` remains local in both modes.
 
 ```bash
 webcmd --profile work session create

@@ -1438,12 +1438,12 @@ name: 'search',
       expect(data.commands.map((cmd: any) => cmd.name)).toEqual(['create', 'list', 'rename', 'use']);
       const list = data.commands.find((cmd: any) => cmd.name === 'list');
       expect(list).toMatchObject({
-        description: 'List Chrome and Chromium profiles available through the Cloak runtime',
+        description: 'List SLAB profiles available through the local runtime',
       });
       const rename = data.commands.find((cmd: any) => cmd.name === 'rename');
       expect(rename).toMatchObject({
         usage: 'webcmd profile rename <contextId> <alias> [options]',
-        description: 'Assign a local alias to an available Cloak profile',
+        description: 'Assign a local alias to an available SLAB profile',
         positionals: [
           { name: 'contextId', required: true },
           { name: 'alias', required: true },
@@ -1451,7 +1451,7 @@ name: 'search',
       });
       const use = data.commands.find((cmd: any) => cmd.name === 'use');
       expect(use).toMatchObject({
-        description: 'Set the default Cloak profile for future commands',
+        description: 'Set the default SLAB profile for future commands',
       });
     } finally {
       process.argv = argv;
@@ -1988,7 +1988,7 @@ describe('profile list', () => {
     const output = stdoutSpy.mock.calls.flat().join('\n');
     expect(output).toContain('stale');
     expect(output).toContain('webcmd daemon restart');
-    expect(output).not.toContain('No Cloak profiles available');
+    expect(output).not.toContain('No SLAB profiles available');
   });
 
   it('uses runtime profile wording when current daemon status has no profiles', async () => {
@@ -2012,7 +2012,7 @@ describe('profile list', () => {
     await program.parseAsync(['node', 'webcmd', 'profile', 'list']);
 
     const output = stdoutSpy.mock.calls.flat().join('\n');
-    expect(output).toContain('No Cloak runtime profiles are active');
+    expect(output).toContain('No SLAB runtime profiles are active');
     expect(output).toContain('Run a browser-backed command or webcmd <site> login to create one');
     expect(output).not.toContain(`Browser ${'Bridge'}`);
     expect(output).not.toContain(`Webcmd ${'extension'}`);
@@ -2167,7 +2167,7 @@ describe('structured output for data-returning built-ins', () => {
 
     await createProgram('', '').parseAsync(['node', 'webcmd', 'profile', 'use', 'ctx_live']);
 
-    expect(stdout()).toContain('Default Cloak profile: ctx_live');
+    expect(stdout()).toContain('Default SLAB profile: ctx_live');
   });
 
   it('sets the default from a saved alias when the daemon is down', async () => {
@@ -2180,7 +2180,7 @@ describe('structured output for data-returning built-ins', () => {
 
     await createProgram('', '').parseAsync(['node', 'webcmd', 'profile', 'use', 'work']);
 
-    expect(stdout()).toContain('Default Cloak profile: ctx_work');
+    expect(stdout()).toContain('Default SLAB profile: ctx_work');
   });
 
   it('fails structured profile list with DAEMON_UNAVAILABLE instead of an empty array', async () => {

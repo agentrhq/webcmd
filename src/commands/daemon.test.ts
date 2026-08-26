@@ -319,7 +319,7 @@ describe('daemonRestart', () => {
     await daemonRestart();
 
     expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining(`Daemon started on port 9777 (v${PKG_VERSION})`));
-    expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('Cloak runtime has not connected yet'));
+    expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('SLAB runtime has not connected yet'));
   });
 
   it('reports failure when the daemon cannot stop', async () => {

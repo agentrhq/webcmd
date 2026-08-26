@@ -1,4 +1,4 @@
-import type { ConnectOverCDPTransport } from 'playwright-core';
+import type { Browser, BrowserContext, ConnectOverCDPTransport } from 'playwright-core';
 import { describe, expect, it, vi } from 'vitest';
 import { SlabCredential } from '../../../slab/protocol.js';
 import { attachSlabProfile } from './attachment.js';
@@ -39,6 +39,26 @@ describe('attachSlabProfile', () => {
     expect(connectTransport).toHaveBeenCalledWith({ ...lease.transport, timeoutMs: 123 });
     expect(connectOverCDP).toHaveBeenCalledWith(cdpTransport, { timeout: 123 });
     expect(result.context).toBe(context);
+  });
+
+  it('creates a launch-aware control bridge when a caller does not provide one', async () => {
+    const lease = attachment();
+    const bridge = {
+      attach: vi.fn().mockResolvedValue(lease),
+      release: vi.fn().mockResolvedValue(undefined),
+    };
+    const connectBridge = vi.fn().mockResolvedValue(bridge);
+    const context = {} as BrowserContext;
+    const browser = { contexts: () => [context], version: () => '1' } as unknown as Browser;
+
+    await attachSlabProfile('default', {
+      connectBridge,
+      connectTransport: vi.fn().mockResolvedValue({ close: vi.fn() }),
+      connectOverCDP: vi.fn().mockResolvedValue(browser),
+    });
+
+    expect(connectBridge).toHaveBeenCalledOnce();
+    expect(bridge.attach).toHaveBeenCalledWith('default');
   });
 
   it('closes the transport and releases the lease when Playwright setup fails', async () => {

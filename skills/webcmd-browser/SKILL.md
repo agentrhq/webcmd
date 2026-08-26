@@ -40,7 +40,7 @@ Until `doctor` is green, browser commands may fail. Registry and plugin discover
 - `webcmd --session <session-id> browser bind --page <page-id>` explicitly attaches the session to an existing page.
 - If the user manually signs in or changes the visible tab, re-bind or inspect with a fresh snapshot before continuing.
 
-For a `FETCH_BLOCKED` or `FETCH_REQUIRES_BROWSER` fallback, use one Session for the browser portion, preserve its complete opaque ID, and close it in cleanup. Local browser commands use Cloak; hosted browser commands use Webcmd Cloud and Browser Use. `web fetch` remains local in both modes and never opens a browser.
+For a `FETCH_BLOCKED` or `FETCH_REQUIRES_BROWSER` fallback, use one Session for the browser portion, preserve its complete opaque ID, and close it in cleanup. Local browser commands use SLAB; hosted browser commands use Webcmd Cloud and Browser Use. `web fetch` remains local in both modes and never opens a browser.
 
 ```bash
 webcmd profile create work

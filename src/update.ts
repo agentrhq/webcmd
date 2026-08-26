@@ -25,7 +25,7 @@ export function buildUpgradeCommand(spec: string = `${PACKAGE_NAME}@latest`): Up
 }
 
 /**
- * Notice for the separately-shipped Cloak runtime/extension, which `npm install -g`
+ * Notice for the separately-shipped SLAB runtime, which `npm install -g`
  * does NOT update. Returns the notice text when a newer runtime is known, else
  * undefined. Currently dormant until update-check URLs are enabled upstream.
  */

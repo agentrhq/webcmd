@@ -1,9 +1,11 @@
 import { verify } from 'node:crypto';
 
-// Trust anchor for the signed SLAB release manifest. Left `undefined` so
-// verification is fail-closed until a real production key is set: the installer
-// refuses any manifest until this holds the operator's own Ed25519 public key.
-export const SLAB_RELEASE_PUBLIC_KEY: string | undefined = undefined;
+// Trust anchor for the signed SLAB release manifest. This public key is safe to
+// embed; the matching private key stays in the official release environment.
+export const SLAB_RELEASE_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAoMo7Cbb1CRk2csqvdxMrR3SLBhQ9a8RHeDTRnChTeSQ=
+-----END PUBLIC KEY-----
+`;
 
 export interface SlabReleaseManifest {
   url: string;

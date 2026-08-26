@@ -1,5 +1,8 @@
+import { join } from 'node:path';
+
 export interface SlabInstallation {
   platform: NodeJS.Platform;
+  appPath: string;
   executablePath: string;
   version?: string;
 }
@@ -13,11 +16,12 @@ export interface SlabInstallationIo {
 export function findSlabInstallation(io: SlabInstallationIo): SlabInstallation | null {
   if (io.platform !== 'darwin') return null;
 
-  for (const executablePath of [
-    '/Applications/SLAB.app/Contents/MacOS/SLAB',
-    `${io.homeDir}/Applications/SLAB.app/Contents/MacOS/SLAB`,
+  for (const appPath of [
+    '/Applications/SLAB.app',
+    join(io.homeDir, 'Applications', 'SLAB.app'),
   ]) {
-    if (io.existsSync(executablePath)) return { platform: io.platform, executablePath };
+    const executablePath = join(appPath, 'Contents', 'MacOS', 'SLAB');
+    if (io.existsSync(executablePath)) return { platform: io.platform, appPath, executablePath };
   }
 
   return null;
@@ -25,4 +29,8 @@ export function findSlabInstallation(io: SlabInstallationIo): SlabInstallation |
 
 export function isSlabInstalled(io: SlabInstallationIo): boolean {
   return findSlabInstallation(io) !== null;
+}
+
+export function slabControlEndpoint(homeDir: string): string {
+  return join(homeDir, '.slab', 'run', 'slab-bridge.sock');
 }

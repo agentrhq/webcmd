@@ -186,7 +186,7 @@ cli({
             throw new CommandExecutionError('Skyscanner flight extraction returned an unreadable response');
         }
         if (result.blocked) {
-            throw new AuthRequiredError(HOST, 'Skyscanner requires browser verification. Open this route in CloakBrowser, solve the CAPTCHA, then rerun the command.');
+            throw new AuthRequiredError(HOST, 'Skyscanner requires browser verification. Open this route in SLAB, solve the CAPTCHA, then rerun the command.');
         }
         const rows = Array.isArray(result.rows) ? result.rows : [];
         if (!rows.length) {

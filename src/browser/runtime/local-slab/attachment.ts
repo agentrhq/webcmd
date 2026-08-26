@@ -1,6 +1,7 @@
 import { chromium, type Browser, type BrowserContext, type ConnectOverCDPTransport } from 'playwright-core';
 import { CdpIpcTransport } from '../../../slab/cdp-ipc-transport.js';
 import type { SlabAttachResult } from '../../../slab/protocol.js';
+import { connectSlabControlBridge, type SlabControlBridge } from '../../../slab/control-bridge.js';
 
 export interface AttachedSlabProfile {
   profileId: string;
@@ -13,21 +14,18 @@ export interface AttachedSlabProfile {
 
 export type SlabAttachment = SlabAttachResult;
 
-export interface SlabBridge {
-  attach(profileId: string): Promise<SlabAttachment>;
-  release(connectionId: string): Promise<void>;
-}
+export type SlabBridge = SlabControlBridge;
 
 export interface AttachSlabProfileOptions {
   bridge?: SlabBridge;
+  connectBridge?: () => Promise<SlabBridge>;
   connectOverCDP?: typeof chromium.connectOverCDP;
   connectTransport?: typeof CdpIpcTransport.connect;
   attachTimeoutMs?: number;
 }
 
 export async function attachSlabProfile(profileId: string, options: AttachSlabProfileOptions = {}): Promise<AttachedSlabProfile> {
-  const bridge = options.bridge;
-  if (!bridge) throw new Error('SLAB control client is not available.');
+  const bridge = options.bridge ?? await (options.connectBridge ?? connectSlabControlBridge)();
   const attachment = await bridge.attach(profileId);
   const attachTimeoutMs = options.attachTimeoutMs ?? 30_000;
   let transport: ConnectOverCDPTransport | undefined;
