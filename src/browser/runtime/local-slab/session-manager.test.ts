@@ -183,6 +183,8 @@ describe('SlabSessionManager ownership', () => {
     expect(lease?.page).toBe(attached.humanPage);
     expect(manager.pageIdFor(attached.humanBlank)).toBeUndefined();
     expect(manager.pageIdFor(attached.humanPage)).toBe(lease?.pageId);
+    expect((attached.humanPage as any)._original).toEqual(expect.any(Object));
+    expect((attached.humanBlank as any)._original).toBeUndefined();
   });
 
   it('reports every detached session operation without reopening or closing SLAB', async () => {
