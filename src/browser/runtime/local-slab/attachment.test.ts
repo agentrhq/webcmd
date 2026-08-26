@@ -1,0 +1,55 @@
+import type { ConnectOverCDPTransport } from 'playwright-core';
+import { describe, expect, it, vi } from 'vitest';
+import { SlabCredential } from '../../../slab/protocol.js';
+import { attachSlabProfile } from './attachment.js';
+
+function attachment() {
+  return {
+    connectionId: 'connection-1',
+    profile: { id: 'default', displayName: 'Default' },
+    transport: {
+      kind: 'cdp-ipc' as const,
+      endpoint: '/tmp/slab-attachment.sock',
+      credential: new SlabCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
+    },
+  };
+}
+
+function transport(): ConnectOverCDPTransport {
+  return { open: vi.fn(), send: vi.fn(), close: vi.fn() };
+}
+
+describe('attachSlabProfile', () => {
+  it('connects Playwright through the authenticated IPC transport', async () => {
+    const lease = attachment();
+    const cdpTransport = transport();
+    const context = {} as any;
+    const browser = { contexts: vi.fn(() => [context]), version: vi.fn(() => '152.0') } as any;
+    const bridge = { attach: vi.fn().mockResolvedValue(lease), release: vi.fn().mockResolvedValue(null) };
+    const connectTransport = vi.fn().mockResolvedValue(cdpTransport);
+    const connectOverCDP = vi.fn().mockResolvedValue(browser);
+
+    const result = await attachSlabProfile('default', {
+      bridge,
+      connectTransport,
+      connectOverCDP,
+      attachTimeoutMs: 123,
+    });
+
+    expect(connectTransport).toHaveBeenCalledWith({ ...lease.transport, timeoutMs: 123 });
+    expect(connectOverCDP).toHaveBeenCalledWith(cdpTransport, { timeout: 123 });
+    expect(result.context).toBe(context);
+  });
+
+  it('closes the transport and releases the lease when Playwright setup fails', async () => {
+    const lease = attachment();
+    const cdpTransport = transport();
+    const bridge = { attach: vi.fn().mockResolvedValue(lease), release: vi.fn().mockResolvedValue(null) };
+    const connectTransport = vi.fn().mockResolvedValue(cdpTransport);
+    const connectOverCDP = vi.fn().mockRejectedValue(new Error('Playwright refused the connection'));
+
+    await expect(attachSlabProfile('default', { bridge, connectTransport, connectOverCDP })).rejects.toThrow('Playwright refused');
+    expect(cdpTransport.close).toHaveBeenCalledOnce();
+    expect(bridge.release).toHaveBeenCalledWith('connection-1');
+  });
+});

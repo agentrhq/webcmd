@@ -1,4 +1,6 @@
-import { chromium, type Browser, type BrowserContext } from 'playwright-core';
+import { chromium, type Browser, type BrowserContext, type ConnectOverCDPTransport } from 'playwright-core';
+import { CdpIpcTransport } from '../../../slab/cdp-ipc-transport.js';
+import type { SlabAttachResult } from '../../../slab/protocol.js';
 
 export interface AttachedSlabProfile {
   profileId: string;
@@ -8,13 +10,7 @@ export interface AttachedSlabProfile {
   release(): Promise<void>;
 }
 
-export interface SlabAttachment {
-  connectionId: string;
-  profile: { id: string; displayName: string };
-  cdpUrl: string;
-  bearerToken: string;
-  expiresAt: string;
-}
+export type SlabAttachment = SlabAttachResult;
 
 export interface SlabBridge {
   attach(profileId: string): Promise<SlabAttachment>;
@@ -24,16 +20,19 @@ export interface SlabBridge {
 export interface AttachSlabProfileOptions {
   bridge?: SlabBridge;
   connectOverCDP?: typeof chromium.connectOverCDP;
+  connectTransport?: typeof CdpIpcTransport.connect;
+  attachTimeoutMs?: number;
 }
 
 export async function attachSlabProfile(profileId: string, options: AttachSlabProfileOptions = {}): Promise<AttachedSlabProfile> {
   const bridge = options.bridge;
   if (!bridge) throw new Error('SLAB control client is not available.');
   const attachment = await bridge.attach(profileId);
+  const attachTimeoutMs = options.attachTimeoutMs ?? 30_000;
+  let transport: ConnectOverCDPTransport | undefined;
   try {
-    const browser = await (options.connectOverCDP ?? chromium.connectOverCDP.bind(chromium))(attachment.cdpUrl, {
-      headers: { Authorization: `Bearer ${attachment.bearerToken}` },
-    });
+    transport = await (options.connectTransport ?? CdpIpcTransport.connect)({ ...attachment.transport, timeoutMs: attachTimeoutMs });
+    const browser = await (options.connectOverCDP ?? chromium.connectOverCDP.bind(chromium))(transport, { timeout: attachTimeoutMs });
     const context = browser.contexts()[0];
     if (!context) throw new Error('SLAB attachment returned no persistent browser context.');
     return {
@@ -44,6 +43,7 @@ export async function attachSlabProfile(profileId: string, options: AttachSlabPr
       release: () => bridge.release(attachment.connectionId),
     };
   } catch (error) {
+    transport?.close();
     await bridge.release(attachment.connectionId).catch(() => {});
     throw error;
   }
