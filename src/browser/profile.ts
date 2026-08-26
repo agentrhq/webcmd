@@ -3,7 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { CLI_COMMAND, CONFIG_DIR_NAME, ENV_PREFIX } from '../brand.js';
 import { ArgumentError, CliError, EXIT_CODES } from '../errors.js';
-import { normalizeProfileId, resolveCloakProfileDir } from './runtime/local-cloak/profiles.js';
+import { normalizeProfileId, resolveSlabProfileDir } from './runtime/local-slab/profiles.js';
 
 export const DEFAULT_CONTEXT_ID = 'default';
 
@@ -121,7 +121,7 @@ export function createProfile(alias: string): { contextId: string; alias: string
   }
   config.aliases[name] = contextId;
   saveProfileConfig(config);
-  fs.mkdirSync(resolveCloakProfileDir(contextId), { recursive: true });
+  fs.mkdirSync(resolveSlabProfileDir(contextId), { recursive: true });
   return { contextId, alias: name, created: true };
 }
 
@@ -173,7 +173,7 @@ export function setDefaultProfile(profile: string, rows: ProfileListRow[]): Prof
     const usage = `usage: ${CLI_COMMAND} profile use <alias|contextId>`;
     if (labels.length === 0) {
       throw new ArgumentError(
-        `No profile matches "${name}". No Cloak profiles are available.`,
+        `No profile matches "${name}". No SLAB profiles are available.`,
         `${usage}\nRun ${CLI_COMMAND} profile list, or create one with a browser-backed command.`,
       );
     }
