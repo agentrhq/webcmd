@@ -10,7 +10,7 @@ import {
 import { redactText, redactUrl } from '../../../observation/redaction.js';
 import { articleHtmlToMarkdown } from '../../../download/article-download.js';
 import { waitForDownload } from './downloads.js';
-import type { SlabSessionManager } from './session-manager.js';
+import { SlabAttachmentLostError, type SlabSessionManager } from './session-manager.js';
 import type { BrowserContext, Frame, Page as PlaywrightPage } from 'playwright-core';
 import { runBrowserProgram } from '../../run/runner.js';
 import { BROWSER_RUN_MAX_SOURCE_BYTES } from '../../run/types.js';
@@ -478,12 +478,12 @@ export async function dispatchSlabAction(manager: SlabSessionManager, command: B
         return { id: command.id, ok: true, data: frames, page: lease.pageId };
       }
       case 'bind':
-        if (!command.page && command.index == null) {
+        if (!command.page && !command.targetId && command.index == null) {
           return {
             id: command.id,
             ok: false,
             errorCode: 'invalid_request',
-            error: 'Bind requires --page or --index for a SLAB runtime tab',
+            error: 'Bind requires --page, --target-id, or --index for a SLAB runtime tab',
             errorHint: 'Run `webcmd --session <session-id> browser tab list`, then retry with `webcmd --session <session-id> browser bind --page <page-id>`.',
           };
         }
@@ -500,6 +500,7 @@ export async function dispatchSlabAction(manager: SlabSessionManager, command: B
             idleTimeout: command.idleTimeout,
             windowMode: command.windowMode,
             pageId: command.page,
+            targetId: command.targetId,
             index: command.index,
           });
           if (!lease) {
@@ -530,6 +531,9 @@ export async function dispatchSlabAction(manager: SlabSessionManager, command: B
   } catch (err) {
     if (err instanceof SlabActionError) {
       return { id: command.id, ok: false, errorCode: err.errorCode, error: err.message, ...(err.page && { page: err.page }), ...(err.errorHint && { errorHint: err.errorHint }) };
+    }
+    if (err instanceof SlabAttachmentLostError) {
+      return { id: command.id, ok: false, errorCode: 'slab_attachment_lost', error: err.message };
     }
     if (
       err instanceof Error

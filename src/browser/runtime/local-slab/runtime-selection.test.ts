@@ -105,6 +105,7 @@ function fakeAttachedProfile() {
     browserVersion: '146.0',
     context,
     browser,
+    closeTransport: vi.fn(),
     release: vi.fn().mockResolvedValue(undefined),
   };
 }

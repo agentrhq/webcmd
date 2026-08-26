@@ -52,4 +52,22 @@ describe('attachSlabProfile', () => {
     expect(cdpTransport.close).toHaveBeenCalledOnce();
     expect(bridge.release).toHaveBeenCalledWith('connection-1');
   });
+
+  it('closes its local transport before releasing the native lease', async () => {
+    const lease = attachment();
+    const cdpTransport = transport();
+    const context = {} as any;
+    const browser = { contexts: vi.fn(() => [context]), version: vi.fn(() => '152.0') } as any;
+    const bridge = { attach: vi.fn().mockResolvedValue(lease), release: vi.fn().mockResolvedValue(null) };
+    const result = await attachSlabProfile('default', {
+      bridge,
+      connectTransport: vi.fn().mockResolvedValue(cdpTransport),
+      connectOverCDP: vi.fn().mockResolvedValue(browser),
+    });
+
+    await result.release();
+
+    expect(cdpTransport.close).toHaveBeenCalledOnce();
+    expect(bridge.release).toHaveBeenCalledWith('connection-1');
+  });
 });

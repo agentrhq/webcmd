@@ -122,6 +122,15 @@ export class SessionWindowConflictError extends CliError {
   }
 }
 
+export class SlabAttachmentLostError extends Error {
+  readonly code = 'SLAB_ATTACHMENT_LOST';
+
+  constructor() {
+    super('SLAB attachment was lost. Start a new browser session before retrying.');
+    this.name = 'SlabAttachmentLostError';
+  }
+}
+
 export interface SlabSessionManagerOptions {
   baseDir?: string;
   attachProfile?: AttachSlabProfile;
@@ -162,6 +171,7 @@ export class SlabSessionManager {
   private readonly attachProfile: AttachSlabProfile;
   private readonly hasActiveHandoff: (profileId: string) => boolean;
   private readonly profiles = new Map<string, ProfileRuntime>();
+  private readonly detachedSessions = new Map<string, Set<string>>();
   private readonly profileLaunches = new Map<string, Promise<ProfileRuntime>>();
   private readonly profileLifecycleQueues = new Map<string, Promise<void>>();
   private readonly profileActivities = new Map<string, number>();
@@ -230,6 +240,7 @@ export class SlabSessionManager {
     const profileId = normalizeProfileId(input.profileId);
     const session = requireSession(input.session);
     const sessionId = requireSessionId(input);
+    this.assertSessionAttached(profileId, sessionId);
     const surface = normalizeSurface(input.surface);
     const leaseKey = resolveLeaseKey(input);
     const freshPage = input.freshPage === true;
@@ -274,6 +285,7 @@ export class SlabSessionManager {
   async findPage(input: SessionKeyInput): Promise<SlabPageLease | null> {
     const profileId = normalizeProfileId(input.profileId);
     const sessionId = requireSessionId(input);
+    this.assertSessionAttached(profileId, sessionId);
     const leaseKey = resolveLeaseKey(input);
     const runtime = this.profiles.get(profileId);
     const sessionRuntime = runtime?.sessions.get(sessionId);
@@ -289,6 +301,7 @@ export class SlabSessionManager {
   async findPageById(pageId: string, opts: Pick<SessionKeyInput, 'profileId' | 'session' | 'sessionId' | 'surface' | 'idleTimeout'>): Promise<SlabPageLease | null> {
     const expectedProfileId = normalizeProfileId(opts.profileId);
     const sessionId = requireSessionId(opts);
+    this.assertSessionAttached(expectedProfileId, sessionId);
     const expectedSurface = opts.surface ? normalizeSurface(opts.surface) : undefined;
     for (const [profileId, runtime] of this.profiles.entries()) {
       if (expectedProfileId !== profileId) continue;
@@ -339,6 +352,7 @@ export class SlabSessionManager {
   async browserRunScope(input: SessionKeyInput, page: PlaywrightPage): Promise<BrowserRunSessionScope> {
     const profileId = normalizeProfileId(input.profileId);
     const sessionId = requireSessionId(input);
+    this.assertSessionAttached(profileId, sessionId);
     const runtime = this.profiles.get(profileId);
     const sessionRuntime = runtime?.sessions.get(sessionId);
     const entry = runtime && [...runtime.targetPages.values()].find(candidate => candidate.page === page);
@@ -490,60 +504,32 @@ export class SlabSessionManager {
     return true;
   }
 
-  async bindPage(input: SessionKeyInput & { pageId?: string; index?: number }): Promise<SlabPageLease | null> {
+  async bindPage(input: SessionKeyInput & { pageId?: string; targetId?: string; index?: number }): Promise<SlabPageLease | null> {
     const profileId = normalizeProfileId(input.profileId);
     const session = requireSession(input.session);
     const sessionId = requireSessionId(input);
+    this.assertSessionAttached(profileId, sessionId);
     const surface = normalizeSurface(input.surface);
     const runtime = this.profiles.get(profileId);
     if (!runtime) return null;
     const existingSession = runtime.sessions.get(sessionId);
-    let match = input.pageId
-      ? this.findEntryByPageId(runtime, input.pageId)
-      : existingSession && this.openEntries(existingSession)[input.index ?? -1];
-    if (!match && input.index !== undefined) {
-      const candidates: PlaywrightPage[] = [];
-      for (const candidate of runtime.context.pages()) {
-        if (pageIsClosed(candidate) || candidate === runtime.parkingPage) continue;
-        if (await this.targetIdForPage(runtime, candidate) === runtime.anchorTargetId) continue;
-        candidates.push(candidate);
-      }
-      const page = candidates[input.index];
-      if (page) {
-        const targetId = await this.targetIdForPage(runtime, page);
-        const entry = runtime.targetPages.get(targetId) ?? {
-          page,
-          pageId: nextPageId(),
-          targetId,
-          leaseKey: `unowned\u0000${targetId}`,
-          session: '',
-          surface,
-        };
-        if (!runtime.targetPages.has(targetId)) {
-          runtime.targetPages.set(targetId, entry);
-          this.attachPageLifecycle(runtime, entry);
-        }
-        match = [entry.leaseKey, entry];
-      }
-    }
-    if (!match) return null;
-
-    const entry = match[1];
-    if (entry.sessionId && entry.sessionId !== sessionId) {
-      throw new SessionWindowConflictError(entry.pageId, sessionId, entry.sessionId);
-    }
     const sessionRuntime = existingSession ?? this.getSessionRuntime(runtime, sessionId);
-    await this.assertBindableWindow(runtime, sessionRuntime, entry);
-    const sourceSession = entry.sessionId ? runtime.sessions.get(entry.sessionId) : undefined;
-    const sourceKey = entry.leaseKey;
+    const targetId = input.targetId?.trim();
+    const existingEntry = input.pageId
+      ? this.findEntryByPageId(runtime, input.pageId)?.[1]
+      : targetId
+        ? runtime.targetPages.get(targetId)
+        : existingSession && this.openEntries(existingSession)[input.index ?? -1]?.[1];
+    const page = existingEntry?.page ?? (targetId ? this.pendingTargetPages.get(runtime)?.get(targetId) : undefined);
+    if (!page || pageIsClosed(page)) return null;
     const canonicalKey = resolveLeaseKey(input);
     const currentCanonical = sessionRuntime.pages.get(canonicalKey);
 
     if (input.windowMode !== 'background') {
-      await entry.page.bringToFront?.().catch(() => {});
+      await page.bringToFront?.().catch(() => {});
     }
 
-    if (currentCanonical && currentCanonical !== entry && !pageIsClosed(currentCanonical.page)) {
+    if (currentCanonical && currentCanonical.page !== page && !pageIsClosed(currentCanonical.page)) {
       const preservedKey = `${canonicalKey}\u0000${currentCanonical.pageId}`;
       sessionRuntime.pages.delete(canonicalKey);
       currentCanonical.leaseKey = preservedKey;
@@ -551,18 +537,18 @@ export class SlabSessionManager {
       this.refreshIdleTimer(runtime, sessionRuntime, preservedKey, currentCanonical);
     }
 
-    sourceSession?.pages.delete(sourceKey);
-    entry.sessionId = sessionId;
-    entry.leaseKey = canonicalKey;
-    entry.session = session;
-    entry.surface = surface;
-    entry.siteSession = input.siteSession;
-    entry.idleTimeout = input.idleTimeout;
-    sessionRuntime.pages.set(canonicalKey, entry);
-    this.refreshIdleTimer(runtime, sessionRuntime, canonicalKey, entry);
-    this.selectEntry(sessionRuntime, entry);
+    const owned = await this.registerOwnedPage(runtime, sessionRuntime, page, {
+      leaseKey: canonicalKey,
+      session,
+      surface,
+      siteSession: input.siteSession,
+      sessionKind: input.sessionKind,
+      adapterSite: input.adapterSite,
+      idleTimeout: input.idleTimeout,
+    });
+    this.selectEntry(sessionRuntime, owned);
     runtime.lastSeenAt = Date.now();
-    return { profileId, leaseKey: canonicalKey, context: runtime.context, page: entry.page, pageId: entry.pageId };
+    return { profileId, leaseKey: canonicalKey, context: runtime.context, page: owned.page, pageId: owned.pageId };
   }
 
   async closePage(input: Pick<SessionKeyInput, 'profileId' | 'session' | 'sessionId' | 'surface'> & { pageId?: string; index?: number }): Promise<string | null> {
@@ -656,6 +642,7 @@ export class SlabSessionManager {
       await this.closeRuntime(runtime).catch(() => {});
     })));
     this.profiles.clear();
+    this.detachedSessions.clear();
     this.profileLaunches.clear();
     this.profileActivities.clear();
   }
@@ -730,7 +717,10 @@ export class SlabSessionManager {
 
   private invalidateProfileRuntime(profileId: string, runtime: ProfileRuntime): void {
     if (this.profiles.get(profileId) === runtime) this.profiles.delete(profileId);
-    void this.releaseRuntime(runtime, false).catch(error => {
+    const detached = this.detachedSessions.get(profileId) ?? new Set<string>();
+    for (const sessionId of runtime.sessions.keys()) detached.add(sessionId);
+    if (detached.size > 0) this.detachedSessions.set(profileId, detached);
+    void this.releaseRuntime(runtime, false, false).catch(error => {
       log.warn(`SLAB Profile ${profileId} release failed: ${errorMessage(error)}`);
     });
     this.cleanupRuntime(runtime);
@@ -847,7 +837,7 @@ export class SlabSessionManager {
     await this.releaseRuntime(runtime, true);
   }
 
-  private async releaseRuntime(runtime: ProfileRuntime, closePages: boolean): Promise<void> {
+  private async releaseRuntime(runtime: ProfileRuntime, closePages: boolean, releaseNative = true): Promise<void> {
     if (runtime.releasePromise) return runtime.releasePromise;
     runtime.releasePromise = (async () => {
       this.cancelProfileIdle(runtime);
@@ -868,7 +858,8 @@ export class SlabSessionManager {
           ...pages.map(page => this.detachPageCdp(page)),
           runtime.cdp?.detach().catch(() => {}),
         ]);
-        await runtime.attachment.release();
+        if (releaseNative) await runtime.attachment.release();
+        else runtime.attachment.closeTransport();
       } finally {
         this.cleanupRuntime(runtime);
       }
@@ -895,6 +886,10 @@ export class SlabSessionManager {
 
   private assertRunning(): void {
     if (this.shuttingDown) throw daemonShuttingDownError();
+  }
+
+  private assertSessionAttached(profileId: string, sessionId: string): void {
+    if (this.detachedSessions.get(profileId)?.has(sessionId)) throw new SlabAttachmentLostError();
   }
 
   private async withPageCreationLock<T>(profileId: string, operation: () => Promise<T>): Promise<T> {
@@ -929,7 +924,7 @@ export class SlabSessionManager {
     windowMode?: BrowserWindowMode,
   ): Promise<PlaywrightPage> {
     const openerEntry = this.openEntries(session)[0]?.[1];
-    if (!openerEntry) return await this.findReusableLaunchPage(runtime, session.id) ?? this.createWindowPage(runtime, windowMode);
+    if (!openerEntry) return this.createWindowPage(runtime, windowMode);
     await this.assertOwnedWindow(runtime, session.id, openerEntry);
     const opener = openerEntry.page;
     const openerWindowId = await this.windowIdForTarget(runtime, openerEntry.targetId, opener);
@@ -944,19 +939,6 @@ export class SlabSessionManager {
     const page = await openedPage;
     if (page) return page;
     return this.createWindowPage(runtime, windowMode);
-  }
-
-  private async findReusableLaunchPage(runtime: ProfileRuntime, sessionId: string): Promise<PlaywrightPage | undefined> {
-    for (const page of runtime.context.pages()) {
-      if (pageIsClosed(page) || page === runtime.parkingPage || page.url() !== 'about:blank') continue;
-      const targetId = await this.targetIdForPage(runtime, page).catch(() => undefined);
-      if (!targetId || targetId === runtime.anchorTargetId || runtime.targetPages.has(targetId)) continue;
-      const windowId = await this.windowIdForTarget(runtime, targetId, page).catch(() => undefined);
-      if (windowId === undefined) continue;
-      const owner = runtime.windowOwners.get(windowId);
-      if (owner === undefined || owner === sessionId) return page;
-    }
-    return undefined;
   }
 
   private async waitForContextPageForSession(
@@ -999,6 +981,7 @@ export class SlabSessionManager {
     windowMode: BrowserWindowMode | undefined,
     attempt = 0,
   ): Promise<{ runtime: ProfileRuntime; session: SessionRuntime; page: PlaywrightPage }> {
+    this.assertSessionAttached(profileId, sessionId);
     const runtime = await this.getProfileRuntime(profileId, windowMode);
     const session = this.getSessionRuntime(runtime, sessionId);
     let page: PlaywrightPage;
@@ -1193,23 +1176,6 @@ export class SlabSessionManager {
     if (!runtime.sessions.get(sessionId)?.windowIds.has(actual)) {
       throw new SessionWindowConflictError(entry.pageId, sessionId, owner);
     }
-  }
-
-  private async assertBindableWindow(runtime: ProfileRuntime, session: SessionRuntime, entry: PageEntry): Promise<void> {
-    if (entry.sessionId) {
-      if (entry.sessionId !== session.id) {
-        throw new SessionWindowConflictError(entry.pageId, session.id, entry.sessionId);
-      }
-      await this.assertOwnedWindow(runtime, session.id, entry);
-      return;
-    }
-    const actual = await this.windowIdForTarget(runtime, entry.targetId, entry.page);
-    const owner = runtime.windowOwners.get(actual);
-    if (owner !== undefined && owner !== session.id) {
-      throw new SessionWindowConflictError(entry.pageId, session.id, owner);
-    }
-    runtime.windowOwners.set(actual, session.id);
-    session.windowIds.add(actual);
   }
 
   private openEntries(runtime: SessionRuntime): [string, PageEntry][] {

@@ -7,6 +7,7 @@ export interface AttachedSlabProfile {
   browserVersion: string;
   context: BrowserContext;
   browser: Browser;
+  closeTransport(): void;
   release(): Promise<void>;
 }
 
@@ -35,12 +36,17 @@ export async function attachSlabProfile(profileId: string, options: AttachSlabPr
     const browser = await (options.connectOverCDP ?? chromium.connectOverCDP.bind(chromium))(transport, { timeout: attachTimeoutMs });
     const context = browser.contexts()[0];
     if (!context) throw new Error('SLAB attachment returned no persistent browser context.');
+    const connectedTransport = transport;
     return {
       profileId: attachment.profile.id,
       browserVersion: browser.version(),
       context,
       browser,
-      release: () => bridge.release(attachment.connectionId),
+      closeTransport: () => connectedTransport.close(),
+      release: async () => {
+        connectedTransport.close();
+        await bridge.release(attachment.connectionId);
+      },
     };
   } catch (error) {
     transport?.close();
