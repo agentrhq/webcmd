@@ -484,7 +484,7 @@ export async function dispatchSlabAction(manager: SlabSessionManager, command: B
             ok: false,
             errorCode: 'invalid_request',
             error: 'Bind requires --page, --target-id, or --index for a SLAB runtime tab',
-            errorHint: 'Run `webcmd --session <session-id> browser tab list`, then retry with `webcmd --session <session-id> browser bind --page <page-id>`.',
+            errorHint: 'Run `webcmd --session <session-id> browser tab list`, then retry with `webcmd --session <session-id> browser bind --page <page-id>` or `--target-id <target-id>`.',
           };
         }
         {
@@ -509,7 +509,7 @@ export async function dispatchSlabAction(manager: SlabSessionManager, command: B
               ok: false,
               errorCode: 'bound_tab_not_found',
               error: 'SLAB tab not found for bind target',
-              errorHint: 'Run `webcmd --session <session-id> browser tab list` and choose a current SLAB tab id or index.',
+              errorHint: 'Run `webcmd --session <session-id> browser tab list` and choose a current SLAB tab id or index, or provide a known CDP target id with `--target-id`.',
             };
           }
           return {

@@ -139,14 +139,12 @@ describe('SlabSessionManager ownership', () => {
     expect(attached.attachment.release).toHaveBeenCalledOnce();
   });
 
-  it('registers only an explicitly acquired observed target', async () => {
+  it('registers only an explicitly acquired attachment-time target', async () => {
     const attached = fakeAttachedProfile();
     const manager = new SlabSessionManager({ attachProfile: vi.fn().mockResolvedValue(attached.attachment) });
     const input = { profileId: 'default', session: 'agent', sessionId: 'agent', surface: 'browser' as const };
     await manager.getPage(input);
 
-    attached.emitPage(attached.humanPage);
-    await flushPageEvent();
     const lease = await manager.bindPage({ ...input, targetId: attached.targetIdFor(attached.humanPage) });
 
     expect(lease?.page).toBe(attached.humanPage);
@@ -154,32 +152,38 @@ describe('SlabSessionManager ownership', () => {
     expect(manager.pageIdFor(attached.humanPage)).toBe(lease?.pageId);
   });
 
-  it('reports a detached lease without reopening or closing SLAB', async () => {
+  it('reports every detached session operation without reopening or closing SLAB', async () => {
     const attached = fakeAttachedProfile();
     const attachProfile = vi.fn().mockResolvedValue(attached.attachment);
     const manager = new SlabSessionManager({ attachProfile });
-    const command = {
-      id: 'navigate-after-loss',
-      action: 'navigate' as const,
+    const input = {
       profileId: 'default',
       session: 'agent',
       sessionId: 'agent',
       surface: 'browser' as const,
-      url: 'https://example.com/',
     };
-    await manager.getPage(command);
+    await manager.getPage(input);
 
     attached.emitClose();
     await flushPageEvent();
-    const result = await dispatchSlabAction(manager, command);
+    for (const command of [
+      { ...input, id: 'tabs-after-loss', action: 'tabs' as const, op: 'list' as const },
+      { ...input, id: 'select-after-loss', action: 'tabs' as const, op: 'select' as const, index: 0 },
+      { ...input, id: 'close-after-loss', action: 'tabs' as const, op: 'close' as const, index: 0 },
+      { ...input, id: 'release-after-loss', action: 'close-window' as const },
+    ]) {
+      await expect(dispatchSlabAction(manager, command)).resolves.toMatchObject({
+        ok: false,
+        errorCode: 'slab_attachment_lost',
+      });
+    }
 
-    expect(result).toMatchObject({ ok: false, errorCode: 'slab_attachment_lost' });
     expect(attachProfile).toHaveBeenCalledOnce();
     expect(attached.browser.close).not.toHaveBeenCalled();
     expect(attached.attachment.closeTransport).toHaveBeenCalledOnce();
     expect(attached.attachment.release).not.toHaveBeenCalled();
 
-    await expect(manager.getPage({ ...command, session: 'replacement', sessionId: 'replacement' }))
+    await expect(manager.getPage({ ...input, session: 'replacement', sessionId: 'replacement' }))
       .resolves.toMatchObject({ profileId: 'default' });
     expect(attachProfile).toHaveBeenCalledTimes(2);
   });

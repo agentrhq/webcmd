@@ -382,6 +382,7 @@ export class SlabSessionManager {
   async listPages(input: Pick<SessionKeyInput, 'profileId' | 'session' | 'sessionId' | 'surface'>): Promise<SlabTabInfo[]> {
     const profileId = normalizeProfileId(input.profileId);
     const sessionId = requireSessionId(input);
+    this.assertSessionAttached(profileId, sessionId);
     const surface = input.surface ? normalizeSurface(input.surface) : undefined;
     const runtime = this.profiles.get(profileId);
     if (!runtime) return [];
@@ -471,6 +472,7 @@ export class SlabSessionManager {
   async selectPage(input: Pick<SessionKeyInput, 'profileId' | 'session' | 'sessionId' | 'surface' | 'windowMode'> & { pageId?: string; index?: number }): Promise<SlabPageLease | null> {
     const profileId = normalizeProfileId(input.profileId);
     const sessionId = requireSessionId(input);
+    this.assertSessionAttached(profileId, sessionId);
     const runtime = this.profiles.get(profileId);
     if (!runtime) return null;
     const sessionRuntime = runtime.sessions.get(sessionId);
@@ -520,7 +522,7 @@ export class SlabSessionManager {
       : targetId
         ? runtime.targetPages.get(targetId)
         : existingSession && this.openEntries(existingSession)[input.index ?? -1]?.[1];
-    const page = existingEntry?.page ?? (targetId ? this.pendingTargetPages.get(runtime)?.get(targetId) : undefined);
+    const page = existingEntry?.page ?? (targetId ? await this.findPageByTargetId(runtime, targetId) : undefined);
     if (!page || pageIsClosed(page)) return null;
     const canonicalKey = resolveLeaseKey(input);
     const currentCanonical = sessionRuntime.pages.get(canonicalKey);
@@ -554,6 +556,7 @@ export class SlabSessionManager {
   async closePage(input: Pick<SessionKeyInput, 'profileId' | 'session' | 'sessionId' | 'surface'> & { pageId?: string; index?: number }): Promise<string | null> {
     const profileId = normalizeProfileId(input.profileId);
     const sessionId = requireSessionId(input);
+    this.assertSessionAttached(profileId, sessionId);
     const runtime = this.profiles.get(profileId);
     if (!runtime) return null;
     const sessionRuntime = runtime.sessions.get(sessionId);
@@ -571,6 +574,7 @@ export class SlabSessionManager {
   async release(input: SessionKeyInput): Promise<void> {
     const profileId = normalizeProfileId(input.profileId);
     const sessionId = requireSessionId(input);
+    this.assertSessionAttached(profileId, sessionId);
     const runtime = this.profiles.get(profileId);
     if (!runtime) return;
     const sessionRuntime = runtime.sessions.get(sessionId);
@@ -1025,6 +1029,19 @@ export class SlabSessionManager {
       }, TARGET_PAGE_MATCH_TIMEOUT_MS);
       this.targetPageWaiters.get(runtime)!.set(targetId, { resolve, reject, timer });
     });
+  }
+
+  private async findPageByTargetId(runtime: ProfileRuntime, targetId: string): Promise<PlaywrightPage | undefined> {
+    const pending = this.pendingTargetPages.get(runtime)?.get(targetId);
+    if (pending && !pageIsClosed(pending)) return pending;
+
+    // Resolve only the caller-supplied identity. This never makes visible pages
+    // owned unless bindPage subsequently registers the exact matching target.
+    for (const page of runtime.context.pages()) {
+      if (pageIsClosed(page)) continue;
+      if (await this.targetIdForPage(runtime, page).catch(() => undefined) === targetId) return page;
+    }
+    return undefined;
   }
 
   private async handleContextPage(runtime: ProfileRuntime, page: PlaywrightPage): Promise<void> {

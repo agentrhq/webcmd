@@ -69,5 +69,6 @@ describe('attachSlabProfile', () => {
 
     expect(cdpTransport.close).toHaveBeenCalledOnce();
     expect(bridge.release).toHaveBeenCalledWith('connection-1');
+    expect(vi.mocked(cdpTransport.close).mock.invocationCallOrder[0]).toBeLessThan(bridge.release.mock.invocationCallOrder[0]!);
   });
 });
