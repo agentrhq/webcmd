@@ -263,6 +263,59 @@ describe('SlabBridgeClient', () => {
     await expect(client.hello()).rejects.toThrow();
   });
 
+  it('rejects extra result fields and destroys the control socket', async () => {
+    let socketRef: Socket | undefined;
+    const harness = await listen((socket) => {
+      socketRef = socket;
+      collectRequests(socket, harness.requests, (req) => {
+        if (req.method === 'attach') {
+          socket.write(`${JSON.stringify({
+            id: req.id,
+            ok: true,
+            result: {
+              connectionId: '00000000-0000-4000-8000-000000000000',
+              profile: { id: 'default', displayName: 'Default' },
+              transport: {
+                kind: 'cdp-ipc',
+                endpoint: '/tmp/x.sock',
+                credential: CREDENTIAL,
+              },
+              extra: true,
+            },
+          })}\n`);
+          return;
+        }
+        socket.write(`${JSON.stringify({
+          id: req.id,
+          ok: true,
+          result: {
+            protocolVersion: 1,
+            browserVersion: '1',
+            browserPid: 1,
+            profiles: [],
+            extra: true,
+          },
+        })}\n`);
+      });
+    });
+    const client = await SlabBridgeClient.connect(harness.endpoint);
+    await expect(client.hello()).rejects.toThrow(/unknown|field/i);
+    await new Promise<void>((resolve, reject) => {
+      if (!socketRef) {
+        reject(new Error('missing server socket'));
+        return;
+      }
+      if (socketRef.destroyed) {
+        resolve();
+        return;
+      }
+      socketRef.once('close', () => resolve());
+      setTimeout(() => reject(new Error('socket stayed open')), 100);
+    });
+    expect(socketRef?.destroyed || socketRef?.readableEnded).toBeTruthy();
+    await expect(client.attach('default')).rejects.toThrow();
+  });
+
   it('maps stable protocol errors without leaking credentials or raw responses', async () => {
     const codes = [
       'INVALID_REQUEST',

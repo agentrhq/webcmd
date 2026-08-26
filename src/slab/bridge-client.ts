@@ -37,6 +37,13 @@ interface PendingRequest {
   timer?: ReturnType<typeof setTimeout>;
 }
 
+function parseResultForMethod(method: string, result: unknown): unknown {
+  if (method === 'hello') return parseHelloResult(result);
+  if (method === 'attach') return parseAttachResult(result);
+  if (method === 'release') return parseReleaseResult(result);
+  throw new Error('SLAB control response has unknown fields');
+}
+
 export class SlabBridgeClient {
   private readonly socket: Socket;
   private readonly decoder = new StringDecoder('utf8');
@@ -73,7 +80,7 @@ export class SlabBridgeClient {
     return this.request('hello', {
       protocolVersion: { min: SLAB_PROTOCOL_VERSION, max: SLAB_PROTOCOL_VERSION },
       clientVersion: this.clientVersion,
-    }).then(parseHelloResult);
+    }) as Promise<SlabHelloResult>;
   }
 
   attach(profile: string | { id: string }): Promise<SlabAttachResult> {
@@ -81,14 +88,14 @@ export class SlabBridgeClient {
     return this.request('attach', {
       protocolVersion: { min: SLAB_PROTOCOL_VERSION, max: SLAB_PROTOCOL_VERSION },
       profileId,
-    }).then(parseAttachResult);
+    }) as Promise<SlabAttachResult>;
   }
 
   release(connectionId: string): Promise<null> {
     return this.request('release', {
       protocolVersion: { min: SLAB_PROTOCOL_VERSION, max: SLAB_PROTOCOL_VERSION },
       connectionId,
-    }).then(parseReleaseResult);
+    }) as Promise<null>;
   }
 
   async close(): Promise<void> {
@@ -157,12 +164,20 @@ export class SlabBridgeClient {
       this.failOpen(kind);
       return;
     }
-    this.finish(response.id);
     if (!response.ok) {
+      this.finish(response.id);
       pending.reject(new SlabProtocolError(response.error.code));
       return;
     }
-    pending.resolve(response.result);
+    let result: unknown;
+    try {
+      result = parseResultForMethod(pending.method, response.result);
+    } catch (error) {
+      this.failOpen(error instanceof Error ? error.message.replace(/^SLAB control /, '') : 'response has unknown fields');
+      return;
+    }
+    this.finish(response.id);
+    pending.resolve(result);
   }
 
   private finish(id: string): void {
