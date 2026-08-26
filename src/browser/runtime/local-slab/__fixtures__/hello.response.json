@@ -1,0 +1,20 @@
+{
+  "request": {
+    "id": "hello-1",
+    "method": "hello",
+    "params": {
+      "protocolVersion": { "min": 1, "max": 1 },
+      "clientVersion": "webcmd/0.7.3"
+    }
+  },
+  "response": {
+    "id": "hello-1",
+    "ok": true,
+    "result": {
+      "protocolVersion": 1,
+      "browserVersion": "152.0.7977.65",
+      "browserPid": 1234,
+      "profiles": [{ "id": "default", "displayName": "Default" }]
+    }
+  }
+}
