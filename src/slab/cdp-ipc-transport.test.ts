@@ -74,6 +74,13 @@ function collectFrames(socket: Socket, frames: unknown[]): void {
   });
 }
 
+function blockFor(milliseconds: number): void {
+  const deadline = performance.now() + milliseconds;
+  while (performance.now() < deadline) {
+    // Keep the connection callback pending long enough to consume its budget.
+  }
+}
+
 async function connectAuthenticated(harness: Harness, timeoutMs = 100): Promise<ConnectOverCDPTransport> {
   const transportPromise = CdpIpcTransport.connect({ endpoint: harness.endpoint, credential: CREDENTIAL, timeoutMs });
   await expect.poll(() => harness.frames.length).toBe(1);
@@ -153,6 +160,15 @@ describe('CdpIpcTransport', () => {
   it('rejects when authentication times out', async () => {
     const harness = await listen();
     const connection = CdpIpcTransport.connect({ endpoint: harness.endpoint, credential: CREDENTIAL, timeoutMs: 10 });
+    await expect(connection).rejects.toThrow(/timeout/i);
+  });
+
+  it('uses one timeout budget for connection and authentication', async () => {
+    const harness = await listen(() => blockFor(40));
+    const connection = CdpIpcTransport.connect({ endpoint: harness.endpoint, credential: CREDENTIAL, timeoutMs: 100 });
+    await expect.poll(() => harness.frames.length).toBe(1);
+    setTimeout(() => harness.socket().write(frame({ type: 'authenticated' })), 80);
+
     await expect(connection).rejects.toThrow(/timeout/i);
   });
 

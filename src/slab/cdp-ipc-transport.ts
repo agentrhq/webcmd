@@ -38,7 +38,7 @@ export class CdpIpcTransport implements ConnectOverCDPTransport {
   private authenticated = false;
   private resolveAuthentication?: () => void;
   private rejectAuthentication?: (error: Error) => void;
-  private authenticationTimer?: ReturnType<typeof setTimeout>;
+  private timeoutTimer?: ReturnType<typeof setTimeout>;
 
   private constructor(private readonly socket: Socket) {
     socket.on('data', (chunk) => this.onData(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
@@ -51,43 +51,48 @@ export class CdpIpcTransport implements ConnectOverCDPTransport {
       const socket = createConnection({ path: options.endpoint });
       const transport = new CdpIpcTransport(socket);
       const timeoutMs = options.timeoutMs ?? 30_000;
+      const deadline = timeoutMs > 0 ? Date.now() + timeoutMs : undefined;
       let settled = false;
 
       const finishReject = (error: Error) => {
         if (settled) return;
         settled = true;
-        if (transport.authenticationTimer) clearTimeout(transport.authenticationTimer);
+        if (transport.timeoutTimer) clearTimeout(transport.timeoutTimer);
         reject(error);
       };
       const finishResolve = () => {
         if (settled) return;
         settled = true;
-        if (transport.authenticationTimer) clearTimeout(transport.authenticationTimer);
+        if (transport.timeoutTimer) clearTimeout(transport.timeoutTimer);
         resolve(transport);
       };
       const onConnectError = (error: Error) => finishReject(error);
+      const scheduleTimeout = (reason: string) => {
+        if (deadline === undefined) return;
+        const remainingMs = deadline - Date.now();
+        if (remainingMs <= 0) {
+          transport.fail(reason);
+          return;
+        }
+        transport.timeoutTimer = setTimeout(() => transport.fail(reason), remainingMs);
+      };
 
       transport.rejectAuthentication = finishReject;
       socket.once('error', onConnectError);
       socket.once('connect', () => {
         if (settled) return;
         socket.off('error', onConnectError);
+        if (transport.timeoutTimer) clearTimeout(transport.timeoutTimer);
         transport.resolveAuthentication = finishResolve;
         transport.rejectAuthentication = finishReject;
-        if (timeoutMs > 0) {
-          transport.authenticationTimer = setTimeout(() => transport.fail('authentication timeout'), timeoutMs);
-        }
+        scheduleTimeout('authentication timeout');
         try {
           socket.write(encodeFrame({ type: 'authenticate', credential: options.credential.reveal() }));
         } catch (error) {
           transport.fail(error instanceof Error ? error.message.replace(/^SLAB CDP IPC /, '') : 'authentication failed');
         }
       });
-      if (timeoutMs > 0) {
-        const connectTimer = setTimeout(() => transport.fail('connection timeout'), timeoutMs);
-        socket.once('connect', () => clearTimeout(connectTimer));
-        socket.once('error', () => clearTimeout(connectTimer));
-      }
+      scheduleTimeout('connection timeout');
     });
   }
 
@@ -180,7 +185,7 @@ export class CdpIpcTransport implements ConnectOverCDPTransport {
       const resolve = this.resolveAuthentication;
       this.resolveAuthentication = undefined;
       this.rejectAuthentication = undefined;
-      if (this.authenticationTimer) clearTimeout(this.authenticationTimer);
+      if (this.timeoutTimer) clearTimeout(this.timeoutTimer);
       resolve?.();
       return;
     }
@@ -191,7 +196,7 @@ export class CdpIpcTransport implements ConnectOverCDPTransport {
   private fail(reason: string): void {
     if (this.state === 'closed') return;
     this.state = 'closed';
-    if (this.authenticationTimer) clearTimeout(this.authenticationTimer);
+    if (this.timeoutTimer) clearTimeout(this.timeoutTimer);
     const reject = this.rejectAuthentication;
     this.resolveAuthentication = undefined;
     this.rejectAuthentication = undefined;
