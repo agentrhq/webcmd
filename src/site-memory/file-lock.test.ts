@@ -67,6 +67,34 @@ describe('site memory file lock', () => {
     await expect(readFile(lockPathFor(target), 'utf8')).resolves.toContain('held');
   });
 
+  it('does not break a live same-host lock just because it is older than staleMs', async () => {
+    const target = await tempTarget();
+    const lockPath = lockPathFor(target);
+    await writeFile(lockPath, `${JSON.stringify({ pid: process.pid, host: hostname(), token: 'still-working' })}\n`);
+    const past = new Date(Date.now() - 60_000);
+    await utimes(lockPath, past, past);
+
+    // Same bug as the header comment describes: a legitimate critical section that
+    // outlives staleMs must never be conceded to a second writer while it's still running.
+    await expect(withFileLock(target, async () => 'written', { staleMs: 1_000, timeoutMs: 50 }))
+      .rejects.toMatchObject({ code: 'SITE_MEMORY_BUSY' });
+    await expect(readFile(lockPath, 'utf8')).resolves.toContain('still-working');
+  });
+
+  it('heartbeats the mtime of a lock held across a critical section longer than staleMs', async () => {
+    const target = await tempTarget();
+    const lockPath = lockPathFor(target);
+
+    await withFileLock(target, async () => {
+      await new Promise((resolve) => { setTimeout(resolve, 120); });
+      // A concurrent second acquirer must not be able to break this lock mid-flight.
+      await expect(withFileLock(target, async () => 'written', { staleMs: 30, timeoutMs: 20 }))
+        .rejects.toMatchObject({ code: 'SITE_MEMORY_BUSY' });
+    }, { staleMs: 30, timeoutMs: 1_000 });
+
+    await expect(exists(lockPath)).resolves.toBe(false);
+  });
+
   it('does not delete a lock that was broken and taken over by someone else', async () => {
     const target = await tempTarget();
     const lockPath = lockPathFor(target);
