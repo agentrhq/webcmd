@@ -124,6 +124,13 @@ interface TrustedCommandResolution {
   accessClass: 'read' | 'write';
 }
 
+interface DeferredExternalSession {
+  error: BrowserSessionArgvError;
+  site: string;
+  args: string[];
+  configs: ExternalCliConfig[];
+}
+
 /** Carries an external CLI's own exit code out of dispatch. Not an error. */
 class ExternalExitSignal {
   constructor(readonly exitCode: number) {}
@@ -162,12 +169,7 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
 
   try {
     argv = rejectPositionalBrowserSessionArgv(argv);
-    let deferredExternalSession: {
-      error: BrowserSessionArgvError;
-      site: string;
-      args: string[];
-      configs: ExternalCliConfig[];
-    } | undefined;
+    let deferredExternalSession: DeferredExternalSession | undefined;
     try {
       argv = rejectMisplacedSessionSelectorArgv(argv);
     } catch (error) {
@@ -199,17 +201,6 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
       fetchImpl: opts.fetchImpl,
       ...(opts.signal ? { signal: opts.signal } : {}),
     });
-    if (deferredExternalSession) {
-      const manifest = await getPresentationManifest(client, opts.enableServerWebFetch === true);
-      if (manifest.commands.some(command => command.site === deferredExternalSession.site)) {
-        throw deferredExternalSession.error;
-      }
-      throw new ExternalExitSignal(opts.externals!.run(
-        deferredExternalSession.site,
-        deferredExternalSession.args,
-        deferredExternalSession.configs,
-      ));
-    }
     const usesVirtualFileIo = opts.files !== undefined || opts.outputs !== undefined;
     const virtualFiles = opts.files ?? createVirtualFileMap([]);
     const virtualOutputs = opts.outputs ?? createVirtualOutputSink();
@@ -233,6 +224,7 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
       opts.signal,
       opts.onTrustedCommandResolution,
       opts.externals,
+      deferredExternalSession,
     );
     return { handled: true, exitCode: EXIT_CODES.SUCCESS };
   } catch (caught) {
@@ -302,6 +294,7 @@ async function dispatchHosted(
     list(): ExternalCliConfig[];
     run(name: string, args: string[], configs: ExternalCliConfig[]): number;
   },
+  deferredExternalSession?: DeferredExternalSession,
 ): Promise<void> {
   const normalized = parseHostedRootCommandSurface(argv);
   if (normalized.kind === 'help') {
@@ -543,15 +536,20 @@ async function dispatchHosted(
   const site = args[0]!;
   const commandName = args[1];
   const siteExists = manifest.commands.some(command => command.site === site);
+  if (siteExists && deferredExternalSession) throw deferredExternalSession.error;
   if (!siteExists) {
     // Externals are local binaries, not adapters: registry lookup, PATH check,
     // spawn. Nothing reaches Cloud. This runs before parseUnknownSiteRootOptions
     // so `webcmd gh --version` forwards --version to gh, matching the local
     // passThroughOptions() behavior instead of printing the webcmd version.
     if (externals) {
-      const externalConfigs = externals.list();
+      const externalConfigs = deferredExternalSession?.configs ?? externals.list();
       if (externalConfigs.some(config => config.name === site)) {
-        throw new ExternalExitSignal(externals.run(site, args.slice(1), externalConfigs));
+        throw new ExternalExitSignal(externals.run(
+          site,
+          deferredExternalSession?.args ?? args.slice(1),
+          externalConfigs,
+        ));
       }
     }
     const unknownRoot = parseUnknownSiteRootOptions(args, normalized.literal);

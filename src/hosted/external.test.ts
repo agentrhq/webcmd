@@ -46,6 +46,7 @@ function manifestResponse(): Response {
 const registry: ExternalCliConfig[] = [
   { name: 'gh', binary: 'gh', description: 'GitHub CLI' },
   { name: 'github', binary: 'gh-shadow', description: 'Shadows a hosted site name' },
+  { name: 'profile', binary: 'profile-shadow', description: 'Shadows a Webcmd root command' },
 ];
 
 type RunFn = (name: string, args: string[], configs: ExternalCliConfig[]) => number;
@@ -145,6 +146,18 @@ describe('hosted external CLI execution', () => {
     expect(h.fetchImpl).toHaveBeenCalledTimes(1);
     expect(String(h.fetchImpl.mock.calls[0]![0])).toBe('https://api.example.com/v1/manifest');
     expect(h.stderr.text()).toContain('SESSION_SELECTOR_POSITION');
+  });
+
+  it('keeps a Webcmd root command ahead of a same-name external candidate', async () => {
+    const run = vi.fn<RunFn>(() => 0);
+    const h = harness(run);
+
+    const result = await runHostedCli(['profile', 'list', '--session=child-session'], h.opts);
+
+    expect(result).toEqual({ handled: true, exitCode: 2 });
+    expect(run).not.toHaveBeenCalled();
+    expect(h.fetchImpl).not.toHaveBeenCalled();
+    expect(h.stderr.text()).toContain("unknown option '--session=child-session'");
   });
 
   it('lets a hosted site win over an external of the same name', async () => {
