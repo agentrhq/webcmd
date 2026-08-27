@@ -1643,8 +1643,10 @@ function hostedCompletions(manifest: HostedManifest, argv: string[], hasLocalCli
       words.push(rest[i]!);
     }
   }
+  const commands = hostedCommands(manifest)
+    .filter(command => hasLocalClientCommandHandlers || !isLocalClientRootCommand(command.site));
   return getCommandCompletionCandidates(
-    hostedCommands(manifest),
+    commands,
     words,
     Number.isFinite(cursor) ? cursor! : words.length,
     getHostedBuiltinCommands(hasLocalClientCommandHandlers).filter(command => command !== 'web'),

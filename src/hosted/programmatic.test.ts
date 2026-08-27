@@ -53,7 +53,36 @@ describe('runHostedProgrammatic', () => {
     });
 
     expect(result).toMatchObject({ exitCode: 0, stderr: '' });
-    expect(result.stdout.split('\n')).not.toEqual(expect.arrayContaining(['skills', 'update']));
+    const completions = result.stdout.split('\n');
+    expect(completions).not.toContain('skills');
+    expect(completions).not.toContain('update');
+  });
+
+  it('does not offer manifest sites that collide with client-owned commands', async () => {
+    const result = await runHostedProgrammatic({
+      argv: ['--get-completions', '--cursor', '0'],
+      apiBaseUrl: 'http://127.0.0.1:8787',
+      accessToken: 'oauth-access-token',
+      fetchImpl: fakeCloud(() => new Response(JSON.stringify({
+        ...manifest,
+        commands: ['skills', 'update'].map(site => ({
+          site,
+          name: 'status',
+          command: `${site}/status`,
+          description: `Show ${site} status`,
+          access: 'read',
+          strategy: 'PUBLIC',
+          browser: false,
+          args: [],
+          columns: [],
+        })),
+      }), { status: 200, headers: { 'content-type': 'application/json' } })),
+    });
+
+    expect(result).toMatchObject({ exitCode: 0, stderr: '' });
+    const completions = result.stdout.split('\n');
+    expect(completions).not.toContain('skills');
+    expect(completions).not.toContain('update');
   });
 
   it.each(['skills', 'update'])('rejects %s help instead of returning generic root help', async (command) => {
