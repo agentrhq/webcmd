@@ -76,7 +76,7 @@ function presentHostedListCommand(command: HostedCommand): PresentableCommand {
 
 export function hostedListRows(manifest: HostedManifest, structured: boolean): Record<string, unknown>[] {
   const commands = hostedInventoryCommands(manifest);
-  const commandsByName = new Map(commands.map((command) => [command.command, command]));
+  const commandsByName = new Map(commands.map((command) => [`${command.site}/${command.name}`, command]));
   return commandListRows(commands.map(presentHostedCommand), structured).map((row) => {
     const command = commandsByName.get(String(row.command))!;
     return {

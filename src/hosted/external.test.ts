@@ -193,7 +193,7 @@ describe('hosted external CLI execution', () => {
     expect(h.stderr.text()).toContain('SESSION_SELECTOR_POSITION');
   });
 
-  it('keeps a local-only Webcmd root ahead of external fallback', async () => {
+  it('keeps an unadvertised hosted core command ahead of external fallback', async () => {
     const run = vi.fn<RunFn>(() => 0);
     const h = harness(run);
 
@@ -201,20 +201,21 @@ describe('hosted external CLI execution', () => {
 
     expect(result).toEqual({ handled: true, exitCode: 78 });
     expect(run).not.toHaveBeenCalled();
-    expect(h.stderr.text()).toContain('webcmd validate is local-only');
+    expect(h.stderr.text()).toContain('webcmd validate is not available from this Webcmd Cloud endpoint');
+    expect(h.fetchImpl).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps bare validate identical and side-effect free with or without a same-name external', async () => {
+  it('keeps bare validate capability-gated with or without a same-name external', async () => {
     const variants = [ownershipHarness(false), ownershipHarness(true)];
     const results = [];
     for (const variant of variants) {
       results.push(await runHostedCli(['validate'], variant.opts));
       expect(variant.stdout.text()).toBe('');
-      expect(variant.stderr.text()).toContain('webcmd validate is local-only');
+      expect(variant.stderr.text()).toContain('webcmd validate is not available from this Webcmd Cloud endpoint');
       expect(variant.list).not.toHaveBeenCalled();
       expect(variant.run).not.toHaveBeenCalled();
-      expect(variant.getCredential).not.toHaveBeenCalled();
-      expect(variant.fetchImpl).not.toHaveBeenCalled();
+      expect(variant.getCredential).toHaveBeenCalledTimes(1);
+      expect(variant.fetchImpl).toHaveBeenCalledTimes(1);
     }
 
     expect(results).toEqual([
