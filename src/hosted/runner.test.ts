@@ -3559,6 +3559,39 @@ describe('runHostedCli injected I/O', () => {
     });
   });
 
+  it('does not turn an aborted root-help manifest request into fallback success', async () => {
+    const controller = new AbortController();
+    const stdout = createCaptureStream(64 * 1024);
+    const stderr = createCaptureStream(64 * 1024);
+    let fetchStartedResolve!: () => void;
+    const fetchStarted = new Promise<void>((resolve) => { fetchStartedResolve = resolve; });
+    const fetchImpl = vi.fn<typeof fetch>((_url, init) => new Promise((_resolve, reject) => {
+      fetchStartedResolve();
+      init?.signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+    }));
+
+    const run = runHostedCli(['--help'], {
+      config: hostedConfig,
+      env: {},
+      homeDir: '/nonexistent',
+      signal: controller.signal,
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      fetchImpl,
+    });
+    await fetchStarted;
+    controller.abort();
+
+    const result = await run;
+    expect(result).toEqual({ handled: true, exitCode: 130 });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(stdout.result().text).toBe('');
+    expect(yaml.load(stderr.result().text)).toMatchObject({
+      ok: false,
+      error: { code: 'INTERRUPTED', exitCode: 130 },
+    });
+  });
+
   it('handles an already-aborted invocation before issuing a request', async () => {
     const controller = new AbortController();
     controller.abort();

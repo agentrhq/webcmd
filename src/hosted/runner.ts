@@ -354,7 +354,8 @@ async function dispatchHosted(
     let coreCommands: readonly HostedCoreCommandId[] | undefined;
     try {
       coreCommands = (await getManifest()).metadata.coreCommands;
-    } catch {
+    } catch (error) {
+      if (signal?.aborted || error instanceof InterruptedError) throw error;
       // Root help remains usable while offline, logged out, or paired with an incompatible Cloud.
     }
     const help = formatRootHelp(getHostedRootHelp(coreCommands, hasLocalClientCommandHandlers));
