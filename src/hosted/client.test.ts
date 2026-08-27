@@ -809,7 +809,13 @@ describe('HostedClient', () => {
   });
 
   it('prepares, uploads, runs, and downloads execution artifacts with raw byte bodies', async () => {
-    const requests: Array<{ url: string; method: string; body?: unknown; filename?: string | null }> = [];
+    const requests: Array<{
+      url: string;
+      method: string;
+      body?: unknown;
+      filename?: string | null;
+      capabilities?: string | null;
+    }> = [];
     const bytes = new Uint8Array(Buffer.from('hello cloud'));
     const client = new HostedClient({
       apiBaseUrl: 'https://api.example.com',
@@ -821,6 +827,7 @@ describe('HostedClient', () => {
           method: init?.method ?? 'GET',
           body: init?.body,
           filename: new Headers(init?.headers).get('x-webcmd-filename'),
+          capabilities: new Headers(init?.headers).get('x-webcmd-client-capabilities'),
         });
         if (requestUrl.endsWith('/v1/executions')) {
           return new Response(JSON.stringify({
@@ -908,6 +915,7 @@ describe('HostedClient', () => {
       body: new Uint8Array(Buffer.from('png')),
     });
     expect(JSON.parse(String(requests[2]?.body))).toMatchObject({ session: 'session_a' });
+    expect(requests[3]?.capabilities).toBe('hosted-live-view-v1, hosted-core-commands-v1');
   });
 
   it('preserves execution and trace metadata from hosted failure envelopes', async () => {

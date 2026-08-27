@@ -372,16 +372,9 @@ export class HostedClient {
     executionId: string;
     artifactId: string;
   }): Promise<Uint8Array> {
-    const response = await this.fetchImpl(
-      `${this.apiBaseUrl}/v1/executions/${encodeURIComponent(input.executionId)}/artifacts/${encodeURIComponent(input.artifactId)}`,
-      {
-        ...(this.signal ? { signal: this.signal } : {}),
-        headers: {
-          accept: 'application/octet-stream',
-          authorization: `Bearer ${this.apiKey}`,
-          ...(this.workspace ? { 'x-webcmd-workspace': this.workspace } : {}),
-        },
-      },
+    const response = await this.authenticatedFetch(
+      `/v1/executions/${encodeURIComponent(input.executionId)}/artifacts/${encodeURIComponent(input.artifactId)}`,
+      { headers: { accept: 'application/octet-stream' } },
     );
     if (!response.ok) {
       const text = await response.text();
