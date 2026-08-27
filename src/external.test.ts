@@ -82,13 +82,33 @@ describe('formatExternalCliLabel', () => {
 });
 
 describe('isBinaryInstalled', () => {
-  it('recognizes an existing explicit executable path without PATH lookup', () => {
+  beforeEach(() => {
+    mockExecFileSync.mockReset();
     mockExecFileSync.mockImplementation(() => {
       throw new Error('PATH lookup must not run');
     });
+  });
 
+  it('recognizes an existing explicit executable path without PATH lookup', () => {
     expect(isBinaryInstalled(process.execPath)).toBe(true);
     expect(mockExecFileSync).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['forward slash', '/'],
+    ['backslash', '\\'],
+  ])('recognizes an existing relative path qualified with a $0', (_name, separator) => {
+    const directory = fs.mkdtempSync('.webcmd-external-binary-');
+    const binary = `${directory}${separator}fixture`;
+    try {
+      fs.writeFileSync(binary, '');
+
+      expect(isBinaryInstalled(binary)).toBe(true);
+      expect(mockExecFileSync).not.toHaveBeenCalled();
+    } finally {
+      fs.rmSync(directory, { recursive: true, force: true });
+      fs.rmSync(binary, { force: true });
+    }
   });
 });
 

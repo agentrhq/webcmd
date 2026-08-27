@@ -75,7 +75,7 @@ export function loadExternalClis(): ExternalCliConfig[] {
 }
 
 export function isBinaryInstalled(binary: string): boolean {
-  if (path.isAbsolute(binary) || binary.includes(path.sep)) return fs.existsSync(binary);
+  if (path.isAbsolute(binary) || binary.includes('/') || binary.includes('\\')) return fs.existsSync(binary);
   try {
     const isWindows = os.platform() === 'win32';
     execFileSync(isWindows ? 'where' : 'which', [binary], { stdio: 'ignore' });
