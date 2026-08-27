@@ -119,6 +119,34 @@ describe('hosted external CLI execution', () => {
     expect(String(init?.body ?? '')).not.toContain('external-only-value');
   });
 
+  it.each([
+    { name: 'split', tail: ['--session', 'child-session'] },
+    { name: 'equals', tail: ['--session=child-session'] },
+  ])('forwards a child-owned $name session flag to the external', async ({ tail }) => {
+    const run = vi.fn<RunFn>(() => 0);
+    const h = harness(run);
+
+    const result = await runHostedCli(['gh', 'issue', 'list', ...tail], h.opts);
+
+    expect(result).toEqual({ handled: true, exitCode: 0 });
+    expect(run).toHaveBeenCalledWith('gh', ['issue', 'list', ...tail], registry);
+    expect(h.fetchImpl).toHaveBeenCalledTimes(1);
+    expect(h.stderr.text()).toBe('');
+  });
+
+  it('applies session validation when a hosted site shadows the registered external', async () => {
+    const run = vi.fn<RunFn>(() => 0);
+    const h = harness(run);
+
+    const result = await runHostedCli(['github', 'whoami', '--session=child-session'], h.opts);
+
+    expect(result).toEqual({ handled: true, exitCode: 2 });
+    expect(run).not.toHaveBeenCalled();
+    expect(h.fetchImpl).toHaveBeenCalledTimes(1);
+    expect(String(h.fetchImpl.mock.calls[0]![0])).toBe('https://api.example.com/v1/manifest');
+    expect(h.stderr.text()).toContain('SESSION_SELECTOR_POSITION');
+  });
+
   it('lets a hosted site win over an external of the same name', async () => {
     const run = vi.fn<RunFn>(() => 0);
     const h = harness(run);

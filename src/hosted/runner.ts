@@ -161,7 +161,24 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
   const stderr = opts.stderr ?? process.stderr;
 
   try {
-    argv = rejectMisplacedSessionSelectorArgv(rejectPositionalBrowserSessionArgv(argv));
+    argv = rejectPositionalBrowserSessionArgv(argv);
+    let deferredExternalSession: {
+      error: BrowserSessionArgvError;
+      site: string;
+      args: string[];
+      configs: ExternalCliConfig[];
+    } | undefined;
+    try {
+      argv = rejectMisplacedSessionSelectorArgv(argv);
+    } catch (error) {
+      if (!(error instanceof BrowserSessionArgvError) || !opts.externals) throw error;
+      const root = parseHostedRootCommandSurface(argv);
+      if (root.kind !== 'dispatch') throw error;
+      const [site, ...args] = root.argv;
+      const configs = opts.externals.list();
+      if (!site || !configs.some(config => config.name === site)) throw error;
+      deferredExternalSession = { error, site, args, configs };
+    }
     const credential = await resolveHostedApiKey(config, {
       credentialStore: opts.credentialStore,
       env: opts.env,
@@ -182,6 +199,17 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
       fetchImpl: opts.fetchImpl,
       ...(opts.signal ? { signal: opts.signal } : {}),
     });
+    if (deferredExternalSession) {
+      const manifest = await getPresentationManifest(client, opts.enableServerWebFetch === true);
+      if (manifest.commands.some(command => command.site === deferredExternalSession.site)) {
+        throw deferredExternalSession.error;
+      }
+      throw new ExternalExitSignal(opts.externals!.run(
+        deferredExternalSession.site,
+        deferredExternalSession.args,
+        deferredExternalSession.configs,
+      ));
+    }
     const usesVirtualFileIo = opts.files !== undefined || opts.outputs !== undefined;
     const virtualFiles = opts.files ?? createVirtualFileMap([]);
     const virtualOutputs = opts.outputs ?? createVirtualOutputSink();
