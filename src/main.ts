@@ -75,7 +75,7 @@ if (!fastPathHandled) {
   if (argv[0] === 'setup') {
     const { runHostedSetup } = await import('./hosted/setup.js');
     process.exitCode = await runHostedSetup({ argv: argv.slice(1) });
-  } else if (argv[0] === 'skills' || argv[0] === 'update') {
+  } else if (argv[0] === 'skills' || argv[0] === 'update' || argv[0] === 'external') {
     const { createProgram } = await import('./cli.js');
     await createProgram(BUILTIN_CLIS, USER_CLIS).parseAsync(argv, { from: 'user' });
   } else if (isWebFetch(argv)) {
@@ -85,9 +85,13 @@ if (!fastPathHandled) {
     const { shouldUseHostedMode } = await import('./hosted/config.js');
     if (shouldUseHostedMode()) {
       const { runHostedCli } = await import('./hosted/runner.js');
+      const { executeExternalCli, loadExternalClis } = await import('./external.js');
       // The installed CLI already owns local web/fetch transport authority.
       // Programmatic embedders remain opt-in and default to no network access.
-      const result = await runHostedCli(argv, { enableServerWebFetch: true });
+      const result = await runHostedCli(argv, {
+        enableServerWebFetch: true,
+        externals: { list: loadExternalClis, run: executeExternalCli },
+      });
       process.exitCode = result.exitCode;
     } else {
       const { installDaemonRunSignalCancellation } = await import('./signal-cancel.js');

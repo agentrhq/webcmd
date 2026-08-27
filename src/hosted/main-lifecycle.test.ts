@@ -152,6 +152,42 @@ describe('hosted CLI process lifecycle', () => {
     expect(fixture.requests).toEqual([]);
   }, 20_000);
 
+  it('runs external list locally without contacting Cloud when hosted mode is configured', async () => {
+    const fixture = await createHostedFixture('success');
+
+    const result = await runCli(['external', 'list', '-f', 'json'], fixture.env);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(JSON.parse(result.stdout)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'gh', binary: 'gh' }),
+    ]));
+    expect(fixture.requests).toEqual([]);
+    await expect(readFile(fixture.discoverySentinel, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+  }, 20_000);
+
+  it('runs a registered external with its child arguments and exit code in hosted mode', async () => {
+    const fixture = await createHostedFixture('success');
+    const registryPath = path.join(fixture.root, '.webcmd', 'external-clis.yaml');
+    await writeFile(registryPath, JSON.stringify([{
+      name: 'fixture-node',
+      binary: process.execPath,
+    }]));
+
+    const result = await runCli([
+      'fixture-node',
+      '-e',
+      'process.stdout.write(`external:${process.argv[1]}`); process.exit(3)',
+      'child-value',
+    ], fixture.env);
+
+    expect(result.status).toBe(3);
+    expect(result.stdout).toBe('external:child-value');
+    expect(result.stderr).toBe('');
+    expect(fixture.requests).toEqual(['GET /v1/manifest']);
+    await expect(readFile(fixture.discoverySentinel, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+  }, 20_000);
+
   it('keeps hosted auth on Cloud without local discovery', async () => {
     const fixture = await createHostedFixture('success');
 

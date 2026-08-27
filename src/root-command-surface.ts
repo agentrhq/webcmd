@@ -26,7 +26,7 @@ export type HostedRootCommandSurface =
   | { kind: 'help'; exitCode: number }
   | { kind: 'version'; output: string }
   | { kind: 'completion'; argv: string[] }
-  | { kind: 'dispatch'; argv: string[]; profile?: string; session?: string; literal: boolean };
+  | { kind: 'dispatch'; argv: string[]; profile?: string; session?: string; workspace?: string; literal: boolean };
 
 /**
  * Parse only the root command surface without registering or discovering local
@@ -89,7 +89,7 @@ export function parseHostedRootCommandSurface(argv: readonly string[]): HostedRo
     throw structuralErrorFromCommander(error, root, stderr);
   }
 
-  const { profile, session } = root.opts<{ profile?: string; session?: string }>();
+  const { profile, session, workspace } = root.opts<{ profile?: string; session?: string; workspace?: string }>();
   if (boundary.commandIndex === undefined && boundary.separatorIndex === undefined) return { kind: 'help', exitCode: 1 };
   const literal = boundary.separatorIndex !== undefined;
   const parsedArgv = boundary.commandIndex !== undefined
@@ -101,6 +101,7 @@ export function parseHostedRootCommandSurface(argv: readonly string[]): HostedRo
     argv: parsedArgv,
     ...(profile !== undefined ? { profile } : {}),
     ...(session !== undefined ? { session } : {}),
+    ...(workspace !== undefined ? { workspace } : {}),
     literal,
   };
 }

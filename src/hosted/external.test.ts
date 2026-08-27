@@ -101,6 +101,24 @@ describe('hosted external CLI execution', () => {
     expect(String(h.fetchImpl.mock.calls[0]![0])).toBe('https://api.example.com/v1/manifest');
   });
 
+  it('keeps an external suffix workspace flag out of Cloud request metadata', async () => {
+    const run = vi.fn<RunFn>(() => 0);
+    const h = harness(run);
+
+    await runHostedCli(['gh', 'issue', 'list', '--workspace', 'external-only-value'], h.opts);
+
+    expect(run).toHaveBeenCalledWith(
+      'gh',
+      ['issue', 'list', '--workspace', 'external-only-value'],
+      registry,
+    );
+    expect(h.fetchImpl).toHaveBeenCalledTimes(1);
+    const [url, init] = h.fetchImpl.mock.calls[0]!;
+    expect(String(url)).toBe('https://api.example.com/v1/manifest');
+    expect(new Headers(init?.headers).get('x-webcmd-workspace')).toBeNull();
+    expect(String(init?.body ?? '')).not.toContain('external-only-value');
+  });
+
   it('lets a hosted site win over an external of the same name', async () => {
     const run = vi.fn<RunFn>(() => 0);
     const h = harness(run);

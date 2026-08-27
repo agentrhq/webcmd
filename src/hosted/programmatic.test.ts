@@ -1,5 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runHostedProgrammatic } from './programmatic.js';
+import { PKG_VERSION } from '../version.js';
+
+const externalDefaults = vi.hoisted(() => ({
+  list: vi.fn(() => [{ name: 'gh', binary: 'gh' }]),
+  run: vi.fn(() => 0),
+}));
+
+vi.mock('../external.js', () => ({
+  loadExternalClis: externalDefaults.list,
+  executeExternalCli: externalDefaults.run,
+}));
 
 const manifest = {
   userId: 'u1',
@@ -179,6 +190,24 @@ describe('runHostedProgrammatic', () => {
     });
     expect(urls.every((url) => url.startsWith('http://127.0.0.1:8787/v1/'))).toBe(true);
     expect(urls.some((url) => url.includes('/mcp'))).toBe(false);
+  });
+
+  it('does not load or execute local externals from the programmatic runner', async () => {
+    externalDefaults.list.mockClear();
+    externalDefaults.run.mockClear();
+
+    const result = await runHostedProgrammatic({
+      argv: ['gh', '--version'],
+      apiBaseUrl: 'http://127.0.0.1:8787',
+      accessToken: 't',
+      fetchImpl: fakeCloud(),
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe(`${PKG_VERSION}\n`);
+    expect(result.stderr).toBe('');
+    expect(externalDefaults.list).not.toHaveBeenCalled();
+    expect(externalDefaults.run).not.toHaveBeenCalled();
   });
 
   it('truncates oversized stdout without failing the invocation', async () => {

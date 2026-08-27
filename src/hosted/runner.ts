@@ -35,7 +35,7 @@ import { BrowserRunError } from '../browser/run/types.js';
 import { CLI_COMMAND } from '../brand.js';
 import { formatPluginSearchEmptyCopy, presentPluginSearch } from '../plugin-search-presentation.js';
 import { missingPluginGuidance } from '../discovery.js';
-import { executeExternalCli, loadExternalClis, type ExternalCliConfig } from '../external.js';
+import type { ExternalCliConfig } from '../external.js';
 import { webFetchCommand } from '../fetch/command.js';
 import { runHostedArtifactDownload } from './artifact-download.js';
 import { HostedClient, HostedClientError, resolveWorkspace } from './client.js';
@@ -98,7 +98,7 @@ export interface HostedRunnerOptions {
   files?: VirtualFileMap;
   /** When set, every file write lands here instead of the filesystem. */
   outputs?: VirtualOutputSink;
-  /** Injection seam for the local external-CLI registry. Defaults to the real registry. */
+  /** Explicitly grants access to the installed client's external registry and executor. */
   externals?: {
     list(): ExternalCliConfig[];
     run(name: string, args: string[], configs: ExternalCliConfig[]): number;
@@ -173,10 +173,12 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
     if (opts.signal?.aborted) {
       throw opts.signal.reason ?? new Error('The operation was aborted.');
     }
+    const rootSurface = parseHostedRootCommandSurface(argv);
     const client = new HostedClient({
       apiBaseUrl: config.hosted.apiBaseUrl,
       apiKey: credential.apiKey,
-      workspace: resolveWorkspace(argv, opts.env ?? process.env),
+      workspace: (rootSurface.kind === 'dispatch' ? rootSurface.workspace : undefined)
+        ?? resolveWorkspace([], opts.env ?? process.env),
       fetchImpl: opts.fetchImpl,
       ...(opts.signal ? { signal: opts.signal } : {}),
     });
@@ -202,7 +204,7 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
       opts.enableServerWebFetch === true,
       opts.signal,
       opts.onTrustedCommandResolution,
-      opts.externals ?? { list: loadExternalClis, run: executeExternalCli },
+      opts.externals,
     );
     return { handled: true, exitCode: EXIT_CODES.SUCCESS };
   } catch (caught) {
@@ -268,10 +270,10 @@ async function dispatchHosted(
   enableServerWebFetch = false,
   signal?: AbortSignal,
   onResolvedCommand?: (resolution: TrustedCommandResolution) => void,
-  externals: {
+  externals?: {
     list(): ExternalCliConfig[];
     run(name: string, args: string[], configs: ExternalCliConfig[]): number;
-  } = { list: loadExternalClis, run: executeExternalCli },
+  },
 ): Promise<void> {
   const normalized = parseHostedRootCommandSurface(argv);
   if (normalized.kind === 'help') {
@@ -518,9 +520,11 @@ async function dispatchHosted(
     // spawn. Nothing reaches Cloud. This runs before parseUnknownSiteRootOptions
     // so `webcmd gh --version` forwards --version to gh, matching the local
     // passThroughOptions() behavior instead of printing the webcmd version.
-    const externalConfigs = externals.list();
-    if (externalConfigs.some(config => config.name === site)) {
-      throw new ExternalExitSignal(externals.run(site, args.slice(1), externalConfigs));
+    if (externals) {
+      const externalConfigs = externals.list();
+      if (externalConfigs.some(config => config.name === site)) {
+        throw new ExternalExitSignal(externals.run(site, args.slice(1), externalConfigs));
+      }
     }
     const unknownRoot = parseUnknownSiteRootOptions(args, normalized.literal);
     if (unknownRoot.version) {
