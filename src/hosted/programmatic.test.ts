@@ -42,6 +42,75 @@ function fakeCloud(handler?: (url: string, init?: RequestInit) => Response): typ
 describe('runHostedProgrammatic', () => {
   afterEach(() => vi.restoreAllMocks());
 
+  it('does not advertise client-owned commands in root help', async () => {
+    const result = await runHostedProgrammatic({
+      argv: ['--help'],
+      apiBaseUrl: 'http://127.0.0.1:8787',
+      accessToken: 'oauth-access-token',
+      fetchImpl: fakeCloud(),
+    });
+
+    expect(result).toMatchObject({ exitCode: 0, stderr: '' });
+    expect(result.stdout).not.toContain('skills');
+    expect(result.stdout).not.toContain('update');
+  });
+
+  it('does not offer client-owned commands in completion', async () => {
+    const result = await runHostedProgrammatic({
+      argv: ['--get-completions', '--cursor', '0'],
+      apiBaseUrl: 'http://127.0.0.1:8787',
+      accessToken: 'oauth-access-token',
+      fetchImpl: fakeCloud(),
+    });
+
+    expect(result).toMatchObject({ exitCode: 0, stderr: '' });
+    const completions = result.stdout.split('\n');
+    expect(completions).not.toContain('skills');
+    expect(completions).not.toContain('update');
+  });
+
+  it('does not offer manifest sites that collide with client-owned commands', async () => {
+    const result = await runHostedProgrammatic({
+      argv: ['--get-completions', '--cursor', '0'],
+      apiBaseUrl: 'http://127.0.0.1:8787',
+      accessToken: 'oauth-access-token',
+      fetchImpl: fakeCloud(() => new Response(JSON.stringify({
+        ...manifest,
+        commands: ['skills', 'update'].map(site => ({
+          site,
+          name: 'status',
+          command: `${site}/status`,
+          description: `Show ${site} status`,
+          access: 'read',
+          strategy: 'PUBLIC',
+          browser: false,
+          args: [],
+          columns: [],
+        })),
+      }), { status: 200, headers: { 'content-type': 'application/json' } })),
+    });
+
+    expect(result).toMatchObject({ exitCode: 0, stderr: '' });
+    const completions = result.stdout.split('\n');
+    expect(completions).not.toContain('skills');
+    expect(completions).not.toContain('update');
+  });
+
+  it.each(['skills', 'update'])('rejects %s help instead of returning generic root help', async (command) => {
+    const fetchImpl = vi.fn(fakeCloud());
+    const result = await runHostedProgrammatic({
+      argv: [command, '--help'],
+      apiBaseUrl: 'http://127.0.0.1:8787',
+      accessToken: 'oauth-access-token',
+      fetchImpl,
+    });
+
+    expect(result.exitCode).toBe(2);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toBe(`error: unknown command '${command}'\n`);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it('returns captured stdout and a zero exit code', async () => {
     const result = await runHostedProgrammatic({
       argv: ['list', '-f', 'json'],

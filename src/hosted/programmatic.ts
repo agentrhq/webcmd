@@ -90,6 +90,7 @@ export async function runHostedProgrammatic(
     ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
     ...(options.now ? { now: options.now } : {}),
     ...(options.enableServerWebFetch === true ? { enableServerWebFetch: true } : {}),
+    hasLocalClientCommandHandlers: false,
     onTrustedCommandResolution: resolution => { trustedResolution = resolution; },
   });
 

@@ -205,6 +205,33 @@ describe('hosted CLI process lifecycle', () => {
     await expect(readFile(fixture.discoverySentinel, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
   }, 20_000);
 
+  it.each([
+    {
+      name: 'profile before skills',
+      argv: ['--profile', 'work', 'skills', '--help'],
+      help: 'Usage: webcmd skills [options] [command]',
+    },
+    {
+      name: 'workspace before update',
+      argv: ['--workspace', 'ws', 'update', '--help'],
+      help: 'update [options]',
+    },
+    {
+      name: 'session before skills',
+      argv: ['--session', 'session_work', 'skills', '--help'],
+      help: 'Usage: webcmd skills [options] [command]',
+    },
+  ])('routes $name to the local client command handler', async ({ argv, help }) => {
+    const fixture = await createHostedFixture('success');
+
+    const result = await runCli(argv, fixture.env);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(help);
+    expect(result.stderr).toBe('');
+    expect(fixture.requests).toEqual([]);
+  }, 20_000);
+
   it('keeps hosted auth on Cloud without local discovery', async () => {
     const fixture = await createHostedFixture('success');
 

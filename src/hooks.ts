@@ -84,7 +84,6 @@ export async function emitHook(name: HookName, ctx: HookContext, result?: unknow
 }
 
 export const WEBCMD_ROOT_COMMANDS: ReadonlySet<string> = new Set([
-  'agent-context',
   'adapter',
   'auth',
   'browser',

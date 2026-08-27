@@ -46,6 +46,8 @@ export const HOSTED_ROOT_HELP: RootHelpPresentation = {
     { name: 'list', description: 'List all available hosted CLI commands' },
     { name: 'profile', description: 'Manage hosted browser profiles' },
     { name: 'setup', description: 'Configure local or hosted mode' },
+    { name: 'skills', description: 'Manage bundled Webcmd skills on this computer' },
+    { name: 'update', description: 'Update the installed Webcmd CLI on this computer' },
     { name: 'web', description: 'Fetch URLs locally without launching a browser. Use after a blocked, 403, or Cloudflare response.' },
   ],
   localOnlyCommands: [
@@ -57,15 +59,31 @@ export const HOSTED_ROOT_HELP: RootHelpPresentation = {
     { name: 'doctor', description: 'Diagnose local browser bridge connectivity' },
     { name: 'external', description: 'Manage local CLI passthrough commands' },
     { name: 'plugin', description: 'Manage plugins installed on this computer' },
-    { name: 'skills', description: 'Manage bundled skills on this computer' },
     { name: 'validate', description: 'Validate local CLI definitions' },
     { name: 'verify', description: 'Validate and smoke-test local adapters' },
   ],
-  localOnlyExplanation: LOCAL_ONLY_COMMAND_HELP,
 };
 
-export const HOSTED_BUILTIN_COMMANDS = HOSTED_ROOT_HELP.commands
-  .map((command) => command.name.split(/\s/, 1)[0]!);
+const LOCAL_CLIENT_ROOT_COMMANDS = new Set(['skills', 'update']);
+
+export function getHostedRootHelp(hasLocalClientCommandHandlers = true): RootHelpPresentation {
+  if (hasLocalClientCommandHandlers) return HOSTED_ROOT_HELP;
+  return {
+    ...HOSTED_ROOT_HELP,
+    commands: HOSTED_ROOT_HELP.commands.filter(command => !LOCAL_CLIENT_ROOT_COMMANDS.has(command.name.split(/\s/, 1)[0]!)),
+  };
+}
+
+export function getHostedBuiltinCommands(hasLocalClientCommandHandlers = true): string[] {
+  return getHostedRootHelp(hasLocalClientCommandHandlers).commands
+    .map((command) => command.name.split(/\s/, 1)[0]!);
+}
+
+export function isLocalClientRootCommand(command: string | undefined): boolean {
+  return command !== undefined && LOCAL_CLIENT_ROOT_COMMANDS.has(command);
+}
+
+export const HOSTED_BUILTIN_COMMANDS = getHostedBuiltinCommands();
 
 // ── Shell script generators ────────────────────────────────────────────────
 

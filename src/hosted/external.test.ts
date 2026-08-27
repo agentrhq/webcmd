@@ -46,6 +46,7 @@ function manifestResponse(): Response {
 const registry: ExternalCliConfig[] = [
   { name: 'gh', binary: 'gh', description: 'GitHub CLI' },
   { name: 'github', binary: 'gh-shadow', description: 'Shadows a hosted site name' },
+  { name: 'agent-context', binary: 'agent-context', description: 'External with a retired Webcmd command name' },
   { name: 'profile', binary: 'profile-shadow', description: 'Shadows a Webcmd root command' },
   { name: 'validate', binary: 'validate-shadow', description: 'Shadows a local-only Webcmd root command' },
 ];
@@ -170,6 +171,17 @@ describe('hosted external CLI execution', () => {
     expect(result).toEqual({ handled: true, exitCode: 78 });
     expect(run).not.toHaveBeenCalled();
     expect(h.stderr.text()).toContain('webcmd validate is local-only');
+  });
+
+  it('runs an external whose name is not a registered Webcmd root', async () => {
+    const run = vi.fn<RunFn>(() => 0);
+    const h = harness(run);
+
+    const result = await runHostedCli(['agent-context', '--json'], h.opts);
+
+    expect(result).toEqual({ handled: true, exitCode: 0 });
+    expect(run).toHaveBeenCalledWith('agent-context', ['--json'], registry);
+    expect(h.stderr.text()).toBe('');
   });
 
   it.each([

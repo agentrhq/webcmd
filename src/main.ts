@@ -77,9 +77,10 @@ if (!fastPathHandled) {
     const { runHostedSetup } = await import('./hosted/setup.js');
     process.exitCode = await runHostedSetup({ argv: argv.slice(1) });
   } else if (
-    argv[0] === 'skills'
-    || argv[0] === 'update'
-    || (rootSurface?.kind === 'dispatch' && rootSurface.argv[0] === 'external')
+    rootSurface?.kind === 'dispatch'
+    && (rootSurface.argv[0] === 'skills'
+      || rootSurface.argv[0] === 'update'
+      || rootSurface.argv[0] === 'external')
   ) {
     const { createProgram } = await import('./cli.js');
     const program = createProgram(BUILTIN_CLIS, USER_CLIS);
@@ -103,6 +104,7 @@ if (!fastPathHandled) {
       // Programmatic embedders remain opt-in and default to no network access.
       const result = await runHostedCli(argv, {
         enableServerWebFetch: true,
+        hasLocalClientCommandHandlers: true,
         externals: { list: loadExternalClis, run: executeExternalCli },
       });
       process.exitCode = result.exitCode;
