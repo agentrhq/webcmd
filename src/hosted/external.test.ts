@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { makeHostedConfig } from './config.js';
 import { runHostedCli } from './runner.js';
 import type { ExternalCliConfig } from '../external.js';
+import type { HostedCredentialStore } from './credentials.js';
 import { PKG_VERSION } from '../version.js';
 
 function sink(): { stream: Writable; text: () => string } {
@@ -150,7 +151,7 @@ describe('hosted external CLI execution', () => {
     expect(h.stderr.text()).toContain('SESSION_SELECTOR_POSITION');
   });
 
-  it('keeps a Webcmd root command ahead of a same-name external candidate', async () => {
+  it('validates a Webcmd root before a same-name external candidate', async () => {
     const run = vi.fn<RunFn>(() => 0);
     const h = harness(run);
 
@@ -159,7 +160,7 @@ describe('hosted external CLI execution', () => {
     expect(result).toEqual({ handled: true, exitCode: 2 });
     expect(run).not.toHaveBeenCalled();
     expect(h.fetchImpl).not.toHaveBeenCalled();
-    expect(h.stderr.text()).toContain("unknown option '--session=child-session'");
+    expect(h.stderr.text()).toContain('SESSION_SELECTOR_POSITION');
   });
 
   it('keeps a local-only Webcmd root ahead of external fallback', async () => {
@@ -171,6 +172,37 @@ describe('hosted external CLI execution', () => {
     expect(result).toEqual({ handled: true, exitCode: 78 });
     expect(run).not.toHaveBeenCalled();
     expect(h.stderr.text()).toContain('webcmd validate is local-only');
+  });
+
+  it('validates a Webcmd root before consulting a same-name external or hosted preflight', async () => {
+    const run = vi.fn<RunFn>(() => 0);
+    const list = vi.fn(() => registry);
+    const getCredential = vi.fn(async () => 'key');
+    const credentialStore: HostedCredentialStore = {
+      get: getCredential,
+      put: vi.fn(async () => undefined),
+      delete: vi.fn(async () => undefined),
+      backend: () => 'os',
+    };
+    const h = harness(run);
+
+    const result = await runHostedCli(['validate', '--session=child-session'], {
+      ...h.opts,
+      config: makeHostedConfig({
+        apiBaseUrl: 'https://api.example.com',
+        apiKeyRef: 'wcmd_validate_collision',
+        credentialBackend: 'os',
+      }),
+      credentialStore,
+      externals: { list, run },
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 2 });
+    expect(h.stderr.text()).toContain('SESSION_SELECTOR_POSITION');
+    expect(list).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
+    expect(getCredential).not.toHaveBeenCalled();
+    expect(h.fetchImpl).not.toHaveBeenCalled();
   });
 
   it('runs an external whose name is not a registered Webcmd root', async () => {

@@ -206,6 +206,44 @@ describe('hosted CLI process lifecycle', () => {
   }, 20_000);
 
   it.each([
+    { name: 'split', tail: ['--session', 'child-session'] },
+    { name: 'equals', tail: ['--session=child-session'] },
+  ])('forwards a child-owned $name session flag to a registered external in local mode', async ({ tail }) => {
+    const fixture = await createLocalExternalFixture('fixture-node');
+
+    const result = await runCli(['fixture-node', fixture.script, ...tail], fixture.env);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe(JSON.stringify(tail));
+    expect(result.stderr).toBe('');
+  }, 20_000);
+
+  it.each([
+    { installed: false, status: 0 },
+    { installed: true, status: 78 },
+  ])('treats optional antigravity as Webcmd-owned only when installed: $installed', async ({ installed, status }) => {
+    const fixture = await createHostedFixture('success');
+    const script = await registerArgvExternal(fixture.root, 'antigravity');
+    if (installed) {
+      const pluginDir = path.join(fixture.root, '.webcmd', 'plugins', 'antigravity');
+      await mkdir(pluginDir, { recursive: true });
+      await writeFile(path.join(pluginDir, 'serve.js'), 'export async function startServe() {}\n');
+    }
+
+    const result = await runCli(['antigravity', script, 'child-value'], fixture.env);
+
+    expect(result.status).toBe(status);
+    expect(fixture.requests).toEqual(['GET /v1/manifest']);
+    if (installed) {
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toContain('webcmd antigravity is local-only');
+    } else {
+      expect(result.stdout).toBe(JSON.stringify(['child-value']));
+      expect(result.stderr).toBe('');
+    }
+  }, 20_000);
+
+  it.each([
     {
       name: 'profile before skills',
       argv: ['--profile', 'work', 'skills', '--help'],
@@ -481,6 +519,42 @@ async function createLocalStartupPluginFixture(): Promise<{ root: string; env: N
       WEBCMD_NO_UPDATE_CHECK: '1',
     },
   };
+}
+
+async function createLocalExternalFixture(name: string): Promise<{
+  root: string;
+  env: NodeJS.ProcessEnv;
+  script: string;
+}> {
+  const root = await mkdtemp(path.join(tmpdir(), 'webcmd-local-external-'));
+  tempRoots.push(root);
+  const configDir = path.join(root, 'config');
+  await mkdir(configDir, { recursive: true });
+  await writeFile(path.join(configDir, 'config.json'), '{"mode":"local"}\n');
+  const script = await registerArgvExternal(root, name);
+  return {
+    root,
+    script,
+    env: {
+      ...process.env,
+      HOME: root,
+      USERPROFILE: root,
+      WEBCMD_CONFIG_DIR: configDir,
+      WEBCMD_NO_UPDATE_CHECK: '1',
+    },
+  };
+}
+
+async function registerArgvExternal(root: string, name: string): Promise<string> {
+  const registryDir = path.join(root, '.webcmd');
+  const script = path.join(root, `${name}-argv.mjs`);
+  await mkdir(registryDir, { recursive: true });
+  await writeFile(path.join(registryDir, 'external-clis.yaml'), JSON.stringify([{
+    name,
+    binary: process.execPath,
+  }]));
+  await writeFile(script, "process.stdout.write(JSON.stringify(process.argv.slice(2)));\n");
+  return script;
 }
 
 function sendChunkedJson(response: import('node:http').ServerResponse, value: unknown, status = 200): void {

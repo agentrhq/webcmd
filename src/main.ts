@@ -106,6 +106,9 @@ if (!fastPathHandled) {
         enableServerWebFetch: true,
         hasLocalClientCommandHandlers: true,
         externals: { list: loadExternalClis, run: executeExternalCli },
+        installedLocalCommandRoots: fs.existsSync(path.join(USER_PLUGINS, 'antigravity', 'serve.js'))
+          ? new Set(['antigravity'])
+          : undefined,
       });
       process.exitCode = result.exitCode;
     } else {
@@ -164,7 +167,7 @@ if (getCompIdx !== -1) {
 // Dynamic imports: these are deferred so the fast path above never pays the cost.
 const { discoverClis, discoverPlugins, ensureUserCliCompatShims, ensureUserAdapters, PLUGINS_DIR } = await import('./discovery.js');
 const { getCompletions } = await import('./completion.js');
-const { runCli } = await import('./cli.js');
+const { createProgram, isExternalRootCommand, runCli } = await import('./cli.js');
 const { emitHook, shouldEmitStartupHook, shouldRunStartupSideEffects } = await import('./hooks.js');
 const { installNodeNetwork } = await import('./node-network.js');
 const { registerUpdateNoticeOnExit, checkForUpdateBackground } = await import('./update-check.js');
@@ -218,8 +221,13 @@ if (getCompIdx !== -1) {
 }
 
 const { rejectMisplacedSessionSelectorArgv, rejectPositionalBrowserSessionArgv, BrowserSessionArgvError, escapeLeadingDashPositional } = await import('./cli-argv-preprocess.js');
+const program = createProgram(BUILTIN_CLIS, USER_CLIS);
 try {
-  let rewritten = rejectMisplacedSessionSelectorArgv(rejectPositionalBrowserSessionArgv(process.argv.slice(2)));
+  let rewritten = rejectPositionalBrowserSessionArgv(process.argv.slice(2));
+  const rootSurface = parseRootSurface(rewritten);
+  if (!(rootSurface?.kind === 'dispatch' && isExternalRootCommand(program, rootSurface.argv[0]))) {
+    rewritten = rejectMisplacedSessionSelectorArgv(rewritten);
+  }
   // Use the metadata that discovery actually registered. The core manifest is
   // intentionally empty, while installed plugins and legacy user CLIs are not.
   const { getRegistry } = await import('./registry.js');
@@ -236,5 +244,5 @@ try {
 if (shouldEmitStartupHook(argv)) {
   await emitHook('onStartup', { command: '__startup__', args: {} });
 }
-await runCli(BUILTIN_CLIS, USER_CLIS);
+await runCli(BUILTIN_CLIS, USER_CLIS, program);
 }

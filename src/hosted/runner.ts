@@ -108,6 +108,8 @@ export interface HostedRunnerOptions {
     list(): ExternalCliConfig[];
     run(name: string, args: string[], configs: ExternalCliConfig[]): number;
   };
+  /** Optional local roots that are owned only when installed on this client. */
+  installedLocalCommandRoots?: ReadonlySet<string>;
 }
 
 interface HostedDispatchIo {
@@ -176,8 +178,9 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
       const root = parseHostedRootCommandSurface(argv);
       if (root.kind !== 'dispatch') throw error;
       const [site, ...args] = root.argv;
+      if (!site || isWebcmdOwnedRoot(site, opts.installedLocalCommandRoots)) throw error;
       const configs = opts.externals.list();
-      if (!site || !configs.some(config => config.name === site)) throw error;
+      if (!configs.some(config => config.name === site)) throw error;
       deferredExternalSession = { error, args, configs };
     }
     const credential = await resolveHostedApiKey(config, {
@@ -224,6 +227,7 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
       opts.signal,
       opts.onTrustedCommandResolution,
       opts.externals,
+      opts.installedLocalCommandRoots,
       deferredExternalSession,
     );
     return { handled: true, exitCode: exitCode ?? EXIT_CODES.SUCCESS };
@@ -292,6 +296,7 @@ async function dispatchHosted(
     list(): ExternalCliConfig[];
     run(name: string, args: string[], configs: ExternalCliConfig[]): number;
   },
+  installedLocalCommandRoots?: ReadonlySet<string>,
   deferredExternalSession?: DeferredExternalSession,
 ): Promise<number | undefined> {
   const rootHelp = getHostedRootHelp(hasLocalClientCommandHandlers);
@@ -547,7 +552,7 @@ async function dispatchHosted(
     if (externals) {
       const externalConfigs = deferredExternalSession?.configs ?? externals.list();
       if (externalConfigs.some(config => config.name === site)) {
-        if (isWebcmdOwnedRoot(site)) {
+        if (isWebcmdOwnedRoot(site, installedLocalCommandRoots)) {
           throw new ConfigError(`${CLI_COMMAND} ${site} is local-only and is not available in hosted mode.`, LOCAL_ONLY_COMMAND_HELP);
         }
         return externals.run(
@@ -1673,10 +1678,10 @@ function parseUnknownSiteRootOptions(
   return { help, version: false, ...(profile !== undefined ? { profile } : {}) };
 }
 
-function isWebcmdOwnedRoot(name: string): boolean {
+function isWebcmdOwnedRoot(name: string, installedLocalCommandRoots?: ReadonlySet<string>): boolean {
   return WEBCMD_ROOT_COMMANDS.has(name)
     || HOSTED_ROOT_HELP.commands.some(command => command.name.split(/\s/, 1)[0] === name)
-    || HOSTED_ROOT_HELP.localOnlyCommands?.some(command => command.name.split(/\s/, 1)[0] === name) === true;
+    || installedLocalCommandRoots?.has(name) === true;
 }
 
 function hasTerminalBeforeSeparator(
