@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.7.8](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.7...webcmd-v0.7.8) (2026-08-27)
+
+### Highlights
+- Browser Sessions now use readable, Profile-scoped IDs. Creating a Session requires a name, which is normalized and given a two-character suffix—for example, `webcmd --profile work session create "Work Project"` may return `work-project-k7`.
+- Raw browser commands require an explicit readable Session selector at the root, such as `webcmd --profile work --session work-project-k7 browser tabs`.
+- Adapter commands without `--session` now consistently reuse the Profile’s fixed `adapter-default` Session.
+- Opaque Session IDs and cross-Profile owner discovery have been removed. Continue using the same Profile and immutable ID throughout a Session’s lifetime.
+
+### Improvements
+- Updated the CLI reference, troubleshooting guidance, agent documentation, and generated skills for the new Session workflow.
+
+### Contributors
+[@rishabhraj36](https://github.com/rishabhraj36)
+
 ## [0.7.7](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.6...webcmd-v0.7.7) (2026-08-26)
 
 ### Improvements
