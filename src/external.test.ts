@@ -24,6 +24,7 @@ vi.mock('node:os', async () => {
 
 import { spawnSync } from 'node:child_process';
 import { executeExternalCli, formatExternalCliLabel, installExternalCli, parseCommand, type ExternalCliConfig } from './external.js';
+import { EXIT_CODES } from './errors.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -151,29 +152,59 @@ describe('executeExternalCli passthrough', () => {
       .mockReturnValueOnce({ error: einval, status: null, signal: null } as unknown as ReturnType<typeof spawnSync>)
       .mockReturnValueOnce({ status: 0, signal: null } as unknown as ReturnType<typeof spawnSync>);
 
-    executeExternalCli('tg', ['send', 'hello world', '--to', 'a"b'], [cli]);
+    const code = executeExternalCli('tg', ['send', 'hello world', '--to', 'a"b'], [cli]);
 
     expect(spawnMock).toHaveBeenCalledTimes(2);
     expect(spawnMock).toHaveBeenNthCalledWith(1, 'tg', ['send', 'hello world', '--to', 'a"b'], { stdio: 'inherit' });
     expect(spawnMock).toHaveBeenNthCalledWith(2, 'tg send "hello world" --to "a""b"', { stdio: 'inherit', shell: true });
-    expect(process.exitCode).toBe(0);
+    expect(code).toBe(0);
   });
 
   it('does not retry through the shell on non-Windows platforms', () => {
     const einval = Object.assign(new Error('spawnSync tg EINVAL'), { code: 'EINVAL' });
     spawnMock.mockReturnValueOnce({ error: einval, status: null, signal: null } as unknown as ReturnType<typeof spawnSync>);
 
-    executeExternalCli('tg', [], [cli]);
+    const code = executeExternalCli('tg', [], [cli]);
 
     expect(spawnMock).toHaveBeenCalledTimes(1);
-    expect(process.exitCode).toBe(1);
+    expect(code).toBe(1);
   });
 
   it('reports a non-zero exit code when the child dies from a signal', () => {
     spawnMock.mockReturnValueOnce({ status: null, signal: 'SIGKILL' } as unknown as ReturnType<typeof spawnSync>);
 
-    executeExternalCli('tg', [], [cli]);
+    const code = executeExternalCli('tg', [], [cli]);
 
-    expect(process.exitCode).toBe(1);
+    expect(code).toBe(1);
+  });
+});
+
+describe('executeExternalCli', () => {
+  const spawnMock = vi.mocked(spawnSync);
+  const nodeBinary: ExternalCliConfig = {
+    name: 'fake-node',
+    binary: process.execPath,
+    description: 'Node itself, used as a guaranteed-present binary',
+  };
+
+  beforeEach(() => {
+    spawnMock.mockReset();
+  });
+
+  it('returns the child exit code on success', () => {
+    spawnMock.mockReturnValueOnce({ status: 0, signal: null } as unknown as ReturnType<typeof spawnSync>);
+    const code = executeExternalCli('fake-node', ['-e', 'process.exit(0)'], [nodeBinary]);
+    expect(code).toBe(EXIT_CODES.SUCCESS);
+  });
+
+  it('returns the child exit code on failure', () => {
+    spawnMock.mockReturnValueOnce({ status: 3, signal: null } as unknown as ReturnType<typeof spawnSync>);
+    const code = executeExternalCli('fake-node', ['-e', 'process.exit(3)'], [nodeBinary]);
+    expect(code).toBe(3);
+  });
+
+  it('throws when the name is not in the registry', () => {
+    expect(() => executeExternalCli('absent', [], [nodeBinary]))
+      .toThrowError("External CLI 'absent' not found in registry.");
   });
 });

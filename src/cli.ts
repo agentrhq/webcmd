@@ -2284,7 +2284,7 @@ cli({
       return process.argv.slice(idx + 1);
     })();
     try {
-      executeExternalCli(name, args, externalClis);
+      process.exitCode = executeExternalCli(name, args, externalClis);
     } catch (err) {
       console.error(`Error: ${getErrorMessage(err)}`);
       process.exitCode = EXIT_CODES.GENERIC_ERROR;
