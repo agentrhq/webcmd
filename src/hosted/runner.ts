@@ -209,8 +209,9 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
       rootSurface.kind === 'dispatch' ? rootSurface.profile : undefined,
       opts.env ?? process.env,
     );
-    const saveConfig = opts.saveConfig
-      ?? ((next: HostedWebcmdConfig) => saveWebcmdConfig(next, { env: opts.env, homeDir: opts.homeDir }));
+    const saveConfig = opts.saveConfig ?? (opts.config === undefined
+      ? (next: HostedWebcmdConfig) => saveWebcmdConfig(next, { env: opts.env, homeDir: opts.homeDir })
+      : undefined);
     if (opts.signal?.aborted) {
       throw opts.signal.reason ?? new Error('The operation was aborted.');
     }
@@ -440,7 +441,7 @@ async function dispatchHosted(
     if (parsed.command === 'create' || parsed.command === 'rename') {
       await requireHostedCoreCommand(getManifest, `profile/${parsed.command}`);
     }
-    if (!config || !saveConfig) throw new Error('Internal invariant: hosted profile persistence is unavailable.');
+    if (!config) throw new Error('Internal invariant: hosted configuration is unavailable.');
     await dispatchHostedProfile(parsed, client, stdout, config, saveConfig);
     return;
   }
@@ -1693,7 +1694,7 @@ async function dispatchHostedProfile(
   client: HostedClient,
   stdout: NodeJS.WritableStream,
   config: HostedWebcmdConfig,
-  saveConfig: (config: HostedWebcmdConfig) => void,
+  saveConfig?: (config: HostedWebcmdConfig) => void,
 ): Promise<void> {
   if (parsed.command === 'create') {
     await renderOutput(await client.createProfile(parsed.name), { fmt: 'yaml', stdout });
@@ -1712,6 +1713,12 @@ async function dispatchHostedProfile(
     return;
   }
   if (parsed.command === 'use') {
+    if (!saveConfig) {
+      throw new ConfigError(
+        'Injected hosted configuration cannot persist a hosted profile preference without saveConfig.',
+        'Pass saveConfig when invoking runHostedCli with an injected config.',
+      );
+    }
     const profile = await requireListedHostedProfile(client, parsed.profile);
     saveConfig(withHostedPreferredProfile(config, profile));
     await renderOutput({ ok: true, action: 'use', profile }, { fmt: 'yaml', stdout });

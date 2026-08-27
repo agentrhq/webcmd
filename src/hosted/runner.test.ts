@@ -921,6 +921,34 @@ describe('runHostedCli', () => {
     }));
   });
 
+  it('does not persist profile use from an injected config without an explicit saver', async () => {
+    const configDir = await mkdtemp(path.join(tmpdir(), 'webcmd-hosted-profile-no-saver-'));
+    const stdout = sink();
+    const stderr = sink();
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
+      ok: true,
+      profiles: [hostedProfile],
+    })));
+    try {
+      const result = await runHostedCli(['profile', 'use', 'work'], {
+        config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+        env: { WEBCMD_CONFIG_DIR: configDir },
+        stdout: stdout.stream,
+        stderr: stderr.stream,
+        fetchImpl,
+      });
+
+      expect(result).toEqual({ handled: true, exitCode: 78 });
+      expect(stdout.text()).toBe('');
+      expect(stderr.text()).toContain('CONFIG');
+      expect(stderr.text()).toContain('cannot persist a hosted profile preference');
+      expect(fetchImpl).not.toHaveBeenCalled();
+      await expect(access(path.join(configDir, 'config.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally {
+      await rm(configDir, { recursive: true, force: true });
+    }
+  });
+
   it('rejects an unknown hosted profile with sorted display names and does not save', async () => {
     const stdout = sink();
     const stderr = sink();
