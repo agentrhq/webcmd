@@ -8721,6 +8721,41 @@
     "sourceFile": "plugins/dockerhub/search.js"
   },
   {
+    "site": "dockerhub",
+    "name": "tags",
+    "description": "List public tags for a Docker Hub repository",
+    "access": "read",
+    "domain": "hub.docker.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "image",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Image name (e.g. \"nginx\", \"library/nginx\", \"bitnami/redis\")"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 25,
+        "required": false,
+        "help": "Maximum tags to return (1-100)"
+      }
+    ],
+    "columns": [
+      "tag",
+      "lastUpdated",
+      "size",
+      "architectures",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "plugins/dockerhub/tags.js",
+    "sourceFile": "plugins/dockerhub/tags.js"
+  },
+  {
     "site": "duckduckgo",
     "name": "search",
     "description": "Search DuckDuckGo",
@@ -17695,7 +17730,7 @@
   {
     "site": "omnisearch",
     "name": "research",
-    "description": "Aggregate results about a topic across all public platforms (Hacker News, Lobsters, Stack Overflow, Dev.to, GitHub, arXiv)",
+    "description": "Aggregate results about a topic across all public platforms (Hacker News, Lobsters, Stack Overflow, Dev.to, GitHub, arXiv, Reddit)",
     "access": "read",
     "strategy": "public",
     "browser": false,
@@ -17717,7 +17752,7 @@
       {
         "name": "sources",
         "type": "str",
-        "default": "hn,lobsters,stackoverflow,devto,github,arxiv",
+        "default": "hn,lobsters,stackoverflow,devto,github,arxiv,reddit",
         "required": false,
         "help": "Comma-separated sources to query (default: all)"
       }
