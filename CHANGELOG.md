@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Hosted mode executes registered external CLIs (`webcmd gh pr list`) on the caller's machine. Nothing is sent to Cloud, and a hosted site always wins over an external of the same name.
+
 ## [0.7.7](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.6...webcmd-v0.7.7) (2026-08-26)
 
 ### Improvements
