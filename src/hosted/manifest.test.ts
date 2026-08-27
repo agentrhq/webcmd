@@ -151,7 +151,6 @@ describe('hosted manifest helpers', () => {
     expect(stdout.text()).toMatch(/profile\s+Manage hosted browser profiles/);
     expect(stdout.text()).toContain('--profile <name>');
     expect(stdout.text()).toContain('Local-only commands:');
-    expect(stdout.text()).toContain('Run `webcmd setup` and choose local mode to use local-only commands.');
   });
 
   it('completes private hosted manifest commands without local discovery', async () => {
@@ -226,7 +225,7 @@ describe('hosted manifest helpers', () => {
       fetchImpl: async () => new Response(JSON.stringify({ ok: true, manifest }), { status: 200 }),
     });
 
-    expect(stdout.text().trim().split('\n')).toEqual(['artifact', 'browser', 'completion', 'github', 'list', 'profile', 'setup', 'web']);
+    expect(stdout.text().trim().split('\n')).toEqual(['artifact', 'browser', 'completion', 'github', 'list', 'profile', 'setup', 'skills', 'update', 'web']);
 
     const siteHelp = sink();
     await runHostedCli(['web', '--help'], {
