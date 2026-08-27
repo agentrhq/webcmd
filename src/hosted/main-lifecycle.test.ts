@@ -77,6 +77,67 @@ describe('hosted CLI process lifecycle', () => {
     await expect(readFile(fixture.discoverySentinel, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
   }, 20_000);
 
+  it('uses exactly one advertised manifest to render hosted root help', async () => {
+    const fixture = await createHostedFixture('success', {
+      coreCommands: ['validate', 'adapter/status'],
+    });
+
+    const result = await runCli(['--help'], fixture.env);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toMatch(/validate\s+Validate hosted CLI definitions/);
+    expect(result.stdout).not.toMatch(/verify\s+Validate/);
+    expect(fixture.requests).toEqual(['GET /v1/manifest']);
+  }, 20_000);
+
+  it.each(['unavailable', 'malformed'] as const)(
+    'falls back to client-owned root help when the manifest is %s',
+    async (manifestOutcome) => {
+      const fixture = await createHostedFixture('success', { manifestOutcome });
+
+      const result = await runCli(['--help'], fixture.env);
+
+      expect(result.status).toBe(0);
+      expect(result.stderr).toBe('');
+      expect(result.stdout).toContain('external');
+      expect(result.stdout).not.toMatch(/validate\s+Validate hosted CLI definitions/);
+      expect(fixture.requests).toEqual(['GET /v1/manifest']);
+    },
+    20_000,
+  );
+
+  it('falls back to client-owned root help when the stored credential is missing', async () => {
+    const fixture = await createHostedFixture('success');
+    await rm(path.join(fixture.root, 'config', 'hosted-credentials.json'), { force: true });
+
+    const result = await runCli(['--help'], fixture.env);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain('external');
+    expect(result.stdout).not.toMatch(/validate\s+Validate hosted CLI definitions/);
+    expect(fixture.requests).toEqual([]);
+  }, 20_000);
+
+  it('gates root and nested completion by the advertised manifest', async () => {
+    const fixture = await createHostedFixture('success', {
+      coreCommands: ['doctor', 'profile/create'],
+    });
+
+    const root = await runCli(['--get-completions', '--cursor', '1'], fixture.env);
+    const profile = await runCli(['--get-completions', '--cursor', '2', 'profile'], fixture.env);
+
+    expect(root.status).toBe(0);
+    expect(root.stderr).toBe('');
+    expect(root.stdout.trim().split('\n')).toEqual(expect.arrayContaining(['doctor']));
+    expect(root.stdout.trim().split('\n')).not.toEqual(expect.arrayContaining(['validate']));
+    expect(profile.status).toBe(0);
+    expect(profile.stderr).toBe('');
+    expect(profile.stdout.trim().split('\n')).toEqual(['create', 'delete', 'list', 'use']);
+    expect(fixture.requests).toEqual(['GET /v1/manifest', 'GET /v1/manifest']);
+  }, 20_000);
+
   it('flushes delayed output and trace bytes, returns success, and never enters local discovery', async () => {
     const fixture = await createHostedFixture('success');
 
@@ -385,7 +446,13 @@ describe('hosted CLI process lifecycle', () => {
   }, 20_000);
 });
 
-async function createHostedFixture(outcome: 'success' | 'failure' | 'browser'): Promise<{
+async function createHostedFixture(
+  outcome: 'success' | 'failure' | 'browser',
+  options: {
+    coreCommands?: string[];
+    manifestOutcome?: 'success' | 'unavailable' | 'malformed';
+  } = {},
+): Promise<{
   root: string;
   env: NodeJS.ProcessEnv;
   discoverySentinel: string;
@@ -415,6 +482,10 @@ async function createHostedFixture(outcome: 'success' | 'failure' | 'browser'): 
   const server = createServer(async (request, response) => {
     requests.push(`${request.method ?? 'GET'} ${request.url ?? '/'}`);
     if (request.url === '/v1/manifest') {
+      if (options.manifestOutcome === 'unavailable') {
+        response.writeHead(503).end('unavailable');
+        return;
+      }
       sendChunkedJson(response, {
         ok: true,
         manifest: {
@@ -424,6 +495,9 @@ async function createHostedFixture(outcome: 'success' | 'failure' | 'browser'): 
             sessionProtocolVersion: 1,
             webcmdPackageVersion: PKG_VERSION,
             generatedAt: '2026-07-14T00:00:00.000Z',
+            ...(options.manifestOutcome === 'malformed'
+              ? { coreCommands: ['unknown-core'] }
+              : options.coreCommands ? { coreCommands: options.coreCommands } : {}),
           },
           commands: [command, authCommand, liveViewCommand],
         },

@@ -2081,7 +2081,151 @@ describe('runHostedCli', () => {
     expect(result).toEqual({ handled: true, exitCode: 0 });
     expect(stdout.text()).toBe(formatRootHelp(HOSTED_ROOT_HELP));
     expect(stderr.text()).toBe('');
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('fetches one manifest and advertises only its hosted core roots in help', async () => {
+    const stdout = sink();
+    const stderr = sink();
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
+      ok: true,
+      manifest: {
+        ...manifest,
+        metadata: { ...manifest.metadata, coreCommands: ['validate', 'doctor'] },
+      },
+    }), { status: 200 }));
+
+    const result = await runHostedCli(['--help'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      fetchImpl,
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 0 });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(stdout.text()).toMatch(/validate\s+Validate hosted CLI definitions/);
+    expect(stdout.text()).toMatch(/doctor\s+Diagnose hosted readiness/);
+    expect(stdout.text()).not.toMatch(/verify\s+Validate/);
+    expect(stdout.text()).not.toMatch(/convention-audit\s+Audit/);
+    expect(stderr.text()).toBe('');
+  });
+
+  it.each([
+    {
+      name: 'unavailable manifest',
+      response: () => new Response('unavailable', { status: 503 }),
+    },
+    {
+      name: 'malformed manifest',
+      response: () => new Response(JSON.stringify({
+        ok: true,
+        manifest: {
+          ...manifest,
+          metadata: { ...manifest.metadata, coreCommands: ['unknown-core'] },
+        },
+      }), { status: 200 }),
+    },
+  ])('falls back to client-owned help on $name', async ({ response }) => {
+    const stdout = sink();
+    const stderr = sink();
+    const fetchImpl = vi.fn<typeof fetch>(async () => response());
+
+    const result = await runHostedCli(['--help'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      fetchImpl,
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 0 });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(stdout.text()).toBe(formatRootHelp(HOSTED_ROOT_HELP));
+    expect(stderr.text()).toBe('');
+  });
+
+  it('falls back to client-owned help when hosted credentials are unavailable', async () => {
+    const stdout = sink();
+    const stderr = sink();
+    const fetchImpl = vi.fn<typeof fetch>();
+
+    const result = await runHostedCli(['--help'], {
+      config: makeHostedConfig({
+        apiBaseUrl: 'https://api.example.com',
+        apiKeyRef: 'missing',
+        credentialBackend: 'file-fallback',
+      }),
+      credentialStore: {
+        backend: () => 'file-fallback',
+        get: async () => null,
+        put: async () => undefined,
+        delete: async () => undefined,
+      },
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      fetchImpl,
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 0 });
     expect(fetchImpl).not.toHaveBeenCalled();
+    expect(stdout.text()).toBe(formatRootHelp(HOSTED_ROOT_HELP));
+    expect(stderr.text()).toBe('');
+  });
+
+  it.each([
+    {
+      name: 'root',
+      argv: ['--get-completions', '--cursor', '1'],
+      coreCommands: ['validate', 'doctor'],
+      included: ['validate', 'doctor'],
+      excluded: ['verify', 'convention-audit'],
+    },
+    {
+      name: 'adapter',
+      argv: ['--get-completions', '--cursor', '2', 'adapter'],
+      coreCommands: ['adapter/status'],
+      included: ['override', 'path', 'source', 'status'],
+      excluded: ['reset'],
+    },
+    {
+      name: 'profile client-owned use',
+      argv: ['--get-completions', '--cursor', '2', 'profile'],
+      coreCommands: [],
+      included: ['delete', 'list', 'use'],
+      excluded: ['create', 'rename'],
+    },
+    {
+      name: 'plugin catalog',
+      argv: ['--get-completions', '--cursor', '2', 'plugin'],
+      coreCommands: ['plugin/catalog/list'],
+      included: ['catalog'],
+      excluded: [],
+    },
+    {
+      name: 'plugin catalog list',
+      argv: ['--get-completions', '--cursor', '3', 'plugin', 'catalog'],
+      coreCommands: ['plugin/catalog/list'],
+      included: ['list'],
+      excluded: [],
+    },
+  ])('gates $name completion by manifest capability', async ({ argv, coreCommands, included, excluded }) => {
+    const stdout = sink();
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
+      ok: true,
+      manifest: { ...manifest, metadata: { ...manifest.metadata, coreCommands } },
+    }), { status: 200 }));
+
+    const result = await runHostedCli(argv, {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      fetchImpl,
+    });
+
+    const candidates = stdout.text().trim().split('\n');
+    expect(result).toEqual({ handled: true, exitCode: 0 });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(candidates).toEqual(expect.arrayContaining(included));
+    for (const name of excluded) expect(candidates).not.toContain(name);
   });
 
   it.each([
@@ -2235,6 +2379,7 @@ describe('runHostedCli', () => {
     const run = runHostedCli(['--help'], {
       config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
       stdout,
+      fetchImpl: async () => new Response('unavailable', { status: 503 }),
     }).then(result => {
       settled = true;
       return result;

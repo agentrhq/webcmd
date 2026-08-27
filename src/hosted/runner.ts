@@ -17,6 +17,7 @@ import { addOutputFormatOption, CommanderStructuralError, MissingRequiredPositio
 import { filterCommandsByTag, formatRootHelp, getCommandCompletionCandidates } from '../command-presentation.js';
 import {
   getHostedBuiltinCommands,
+  getHostedBuiltinSubcommands,
   getHostedRootHelp,
   HOSTED_ROOT_HELP,
   isLocalClientRootCommand,
@@ -193,14 +194,22 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
     const externals = rootName && isWebcmdOwnedRoot(rootName, opts.installedLocalCommandRoots)
       ? undefined
       : opts.externals;
-    const credential = await resolveHostedApiKey(config, {
-      credentialStore: opts.credentialStore,
-      env: opts.env,
-      homeDir: opts.homeDir,
-      platform: opts.platform,
-      randomUUID: opts.randomUUID,
-      migrate: opts.config === undefined,
-    });
+    let credential: Awaited<ReturnType<typeof resolveHostedApiKey>>;
+    try {
+      credential = await resolveHostedApiKey(config, {
+        credentialStore: opts.credentialStore,
+        env: opts.env,
+        homeDir: opts.homeDir,
+        platform: opts.platform,
+        randomUUID: opts.randomUUID,
+        migrate: opts.config === undefined,
+      });
+    } catch (error) {
+      if (rootSurface.kind !== 'help') throw error;
+      const help = formatRootHelp(getHostedRootHelp(undefined, opts.hasLocalClientCommandHandlers !== false));
+      await writeToStream(rootSurface.exitCode === EXIT_CODES.SUCCESS ? stdout : stderr, help);
+      return { handled: true, exitCode: rootSurface.exitCode };
+    }
     const currentConfig = credential.migrated
       ? loadWebcmdConfig({ env: opts.env, homeDir: opts.homeDir })
       : config;
@@ -326,7 +335,6 @@ async function dispatchHosted(
   profileSelection?: HostedProfileSelection,
   saveConfig?: (config: HostedWebcmdConfig) => void,
 ): Promise<number | undefined> {
-  const rootHelp = getHostedRootHelp(hasLocalClientCommandHandlers);
   const normalized = parseHostedRootCommandSurface(argv);
   let manifestPromise: Promise<HostedManifest> | undefined;
   const getManifest = async (): Promise<HostedManifest> => {
@@ -343,7 +351,13 @@ async function dispatchHosted(
     return validatedPreferredProfile;
   };
   if (normalized.kind === 'help') {
-    const help = formatRootHelp(rootHelp);
+    let coreCommands: readonly HostedCoreCommandId[] | undefined;
+    try {
+      coreCommands = (await getManifest()).metadata.coreCommands;
+    } catch {
+      // Root help remains usable while offline, logged out, or paired with an incompatible Cloud.
+    }
+    const help = formatRootHelp(getHostedRootHelp(coreCommands, hasLocalClientCommandHandlers));
     if (normalized.exitCode !== EXIT_CODES.SUCCESS) {
       throw new CommanderCompatibleError(help, normalized.exitCode);
     }
@@ -355,7 +369,7 @@ async function dispatchHosted(
     return;
   }
   if (normalized.kind === 'completion') {
-    const manifest = await getPresentationManifest(client, enableServerWebFetch);
+    const manifest = withClientOwnedCommands(await getManifest(), enableServerWebFetch);
     await writeToStream(stdout, hostedCompletions(manifest, normalized.argv, hasLocalClientCommandHandlers).join('\n') + '\n');
     return;
   }
@@ -635,7 +649,7 @@ async function dispatchHosted(
       return;
     }
     if (unknownRoot.help) {
-      await writeToStream(stdout, formatRootHelp(rootHelp));
+      await writeToStream(stdout, formatRootHelp(getHostedRootHelp(manifest.metadata.coreCommands, hasLocalClientCommandHandlers)));
       return;
     }
     // No help on stdout: an error path that emits a well-formed document to
@@ -1960,12 +1974,21 @@ function hostedCompletions(manifest: HostedManifest, argv: string[], hasLocalCli
   }
   const commands = hostedCommands(manifest)
     .filter(command => hasLocalClientCommandHandlers || !isLocalClientRootCommand(command.site));
-  return getCommandCompletionCandidates(
+  const coreCommands = manifest.metadata.coreCommands;
+  const root = words[0];
+  if (cursor === 2 && (root === 'adapter' || root === 'profile' || root === 'plugin')) {
+    return getHostedBuiltinSubcommands(root, coreCommands);
+  }
+  if (cursor === 3 && root === 'plugin' && words[1] === 'catalog') {
+    return hasHostedCoreCommand(coreCommands, 'plugin/catalog/list') ? ['list'] : [];
+  }
+  return [...new Set(getCommandCompletionCandidates(
     commands,
     words,
     Number.isFinite(cursor) ? cursor! : words.length,
-    getHostedBuiltinCommands(hasLocalClientCommandHandlers).filter(command => command !== 'web'),
-  );
+    getHostedBuiltinCommands(coreCommands, hasLocalClientCommandHandlers)
+      .filter(command => command !== 'web' && command !== root),
+  ))];
 }
 
 function errorExitCode(err: unknown): number {

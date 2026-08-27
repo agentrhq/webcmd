@@ -380,18 +380,18 @@ describe('hosted root command surface', () => {
 
 describe('hosted root preflight call order', () => {
   it.each([
-    { name: 'no args', argv: [], exitCode: 1, stdout: '', stderr: formatRootHelp(HOSTED_ROOT_HELP) },
-    { name: 'profile only', argv: ['--profile', 'work'], exitCode: 1, stdout: '', stderr: formatRootHelp(HOSTED_ROOT_HELP) },
-    { name: 'bare separator', argv: ['--'], exitCode: 1, stdout: '', stderr: formatRootHelp(HOSTED_ROOT_HELP) },
-    { name: 'help', argv: ['--help'], exitCode: 0, stdout: formatRootHelp(HOSTED_ROOT_HELP), stderr: '' },
-    { name: 'help after malformed prefix and site', argv: ['--unknown', 'github', '--help'], exitCode: 0, stdout: formatRootHelp(HOSTED_ROOT_HELP), stderr: '' },
-    { name: 'profile consumes help into implicit help', argv: ['--profile', '--help'], exitCode: 1, stdout: '', stderr: formatRootHelp(HOSTED_ROOT_HELP) },
-    { name: 'version', argv: ['-Vx'], exitCode: 0, stdout: `${PKG_VERSION}\n`, stderr: '' },
-    { name: 'missing profile', argv: ['--profile'], exitCode: 1, stdout: '', stderr: "error: option '--profile <name>' argument missing\n" },
-    { name: 'trailing missing profile beats help', argv: ['--help', 'github', '--profile'], exitCode: 1, stdout: '', stderr: "error: option '--profile <name>' argument missing\n" },
-    { name: 'trailing missing profile beats unknown', argv: ['--unknown', 'github', '--profile'], exitCode: 1, stdout: '', stderr: "error: option '--profile <name>' argument missing\n" },
-    { name: 'unknown option', argv: ['-xV'], exitCode: 2, stdout: '', stderr: "error: unknown option '-xV'\n" },
-  ])('$name terminates before Cloud discovery', async ({ name, argv, exitCode, stdout: expectedStdout, stderr: expectedStderr }) => {
+    { name: 'no args', argv: [], exitCode: 1, stdout: '', stderr: formatRootHelp(HOSTED_ROOT_HELP), requests: 1 },
+    { name: 'profile only', argv: ['--profile', 'work'], exitCode: 1, stdout: '', stderr: formatRootHelp(HOSTED_ROOT_HELP), requests: 1 },
+    { name: 'bare separator', argv: ['--'], exitCode: 1, stdout: '', stderr: formatRootHelp(HOSTED_ROOT_HELP), requests: 1 },
+    { name: 'help', argv: ['--help'], exitCode: 0, stdout: formatRootHelp(HOSTED_ROOT_HELP), stderr: '', requests: 1 },
+    { name: 'help after malformed prefix and site', argv: ['--unknown', 'github', '--help'], exitCode: 0, stdout: formatRootHelp(HOSTED_ROOT_HELP), stderr: '', requests: 1 },
+    { name: 'profile consumes help into implicit help', argv: ['--profile', '--help'], exitCode: 1, stdout: '', stderr: formatRootHelp(HOSTED_ROOT_HELP), requests: 1 },
+    { name: 'version', argv: ['-Vx'], exitCode: 0, stdout: `${PKG_VERSION}\n`, stderr: '', requests: 0 },
+    { name: 'missing profile', argv: ['--profile'], exitCode: 1, stdout: '', stderr: "error: option '--profile <name>' argument missing\n", requests: 0 },
+    { name: 'trailing missing profile beats help', argv: ['--help', 'github', '--profile'], exitCode: 1, stdout: '', stderr: "error: option '--profile <name>' argument missing\n", requests: 0 },
+    { name: 'trailing missing profile beats unknown', argv: ['--unknown', 'github', '--profile'], exitCode: 1, stdout: '', stderr: "error: option '--profile <name>' argument missing\n", requests: 0 },
+    { name: 'unknown option', argv: ['-xV'], exitCode: 2, stdout: '', stderr: "error: unknown option '-xV'\n", requests: 0 },
+  ])('$name performs only its allowed Cloud preflight', async ({ name, argv, exitCode, stdout: expectedStdout, stderr: expectedStderr, requests }) => {
     const stdout = sink();
     const stderr = sink();
     const fetchImpl = vi.fn<typeof fetch>();
@@ -411,7 +411,7 @@ describe('hosted root preflight call order', () => {
     } else {
       expect(stderr.text()).toBe(expectedStderr);
     }
-    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(fetchImpl).toHaveBeenCalledTimes(requests);
   });
 
   it.each([
