@@ -141,6 +141,58 @@ function manifestWithStructuralArguments() {
   };
 }
 
+function manifestWithAuthCommands() {
+  return {
+    ...manifest,
+    commands: [
+      ...manifest.commands,
+      {
+        site: 'auth',
+        name: 'status',
+        command: 'auth/status',
+        description: 'Show login status for sites with auth adapters',
+        access: 'read',
+        strategy: 'PUBLIC',
+        browser: false,
+        args: [
+          { name: 'site', type: 'string', required: false },
+          { name: 'full', type: 'boolean', default: false },
+          { name: 'concurrency', type: 'int', required: false },
+          { name: 'timeout', type: 'int', required: false },
+          {
+            name: 'only',
+            type: 'string',
+            required: false,
+            default: 'all',
+            choices: ['all', 'logged-in', 'not-logged-in', 'unknown', 'error'],
+          },
+        ],
+        columns: ['site', 'status', 'identity', 'checked', 'error'],
+      },
+      {
+        site: 'auth',
+        name: 'refresh',
+        command: 'auth/refresh',
+        description: 'Touch logged-in site sessions to keep browser auth fresh',
+        access: 'write',
+        strategy: 'PUBLIC',
+        browser: false,
+        args: [
+          { name: 'site', type: 'string', required: false },
+          { name: 'all', type: 'boolean', default: false },
+          { name: 'concurrency', type: 'int', required: false },
+          { name: 'timeout', type: 'int', required: false },
+        ],
+        columns: ['site', 'status', 'last_touched_at', 'next_refresh_at', 'error'],
+      },
+    ],
+  };
+}
+
+afterEach(() => {
+  delete process.env.WEBCMD_VERBOSE;
+});
+
 function manifestWithFileCommand() {
   return {
     ...manifest,
@@ -297,6 +349,113 @@ describe('runHostedCli', () => {
     updatedAt: '2026-08-27T00:00:00.000Z',
     lastUsedAt: '2026-08-27T00:00:00.000Z',
   };
+
+  it('rejects an invalid hosted auth status choice with native bytes before execution', async () => {
+    const requests: string[] = [];
+    const stderr = sink();
+
+    const result = await runHostedCli(['auth', 'status', '--only', 'authenticated'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stderr: stderr.stream,
+      fetchImpl: async (url) => {
+        const pathname = new URL(String(url)).pathname;
+        requests.push(pathname);
+        return new Response(JSON.stringify({ ok: true, manifest: manifestWithAuthCommands() }));
+      },
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 2 });
+    expect(requests).not.toContain('/v1/execute');
+    expect(stderr.text()).toBe([
+      "error: option '--only <status>' argument 'authenticated' is invalid. Allowed choices are all, logged-in, not-logged-in, unknown, error.",
+      'help: usage: webcmd auth status [options]',
+      '',
+    ].join('\n'));
+  });
+
+  it('rejects --trace on hosted auth refresh instead of sending a request', async () => {
+    const requests: string[] = [];
+    const stderr = sink();
+
+    const result = await runHostedCli(['auth', 'refresh', '--trace', 'on'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stderr: stderr.stream,
+      fetchImpl: async (url) => {
+        const pathname = new URL(String(url)).pathname;
+        requests.push(pathname);
+        return new Response(JSON.stringify({ ok: true, manifest: manifestWithAuthCommands() }));
+      },
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 2 });
+    expect(requests).not.toContain('/v1/execute');
+    expect(stderr.text()).toBe([
+      "error: unknown option '--trace'",
+      'help: valid flags for `webcmd auth refresh`: --site, --all, --concurrency, --timeout, -v, --verbose, -f, --format, --json',
+      '',
+    ].join('\n'));
+  });
+
+  it.each([
+    { name: 'plain', argv: ['auth', 'status', '--help'], structured: false },
+    { name: 'structured', argv: ['auth', 'status', '--help', '-f', 'json'], structured: true },
+  ])('renders $name hosted auth help without generic trace grammar', async ({ argv, structured }) => {
+    const stdout = sink();
+    const fetchImpl = vi.fn<typeof fetch>();
+
+    const result = await runHostedCli(argv, {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      fetchImpl,
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 0 });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(stdout.text()).not.toContain('--trace');
+    if (structured) {
+      const data = JSON.parse(stdout.text()) as { command_options: Array<{ name: string; choices?: string[] }> };
+      expect(data.command_options.find(option => option.name === 'only')?.choices).toEqual([
+        'all', 'logged-in', 'not-logged-in', 'unknown', 'error',
+      ]);
+    } else {
+      expect(stdout.text()).toContain('--only <status>');
+    }
+  });
+
+  it('keeps valid hosted auth execute bytes while forcing trace off', async () => {
+    const requests: Array<{ pathname: string; body?: unknown }> = [];
+
+    const result = await runHostedCli([
+      'auth', 'status', '--site', 'github', '--full', '--concurrency', '2', '--timeout', '15',
+      '--only', 'logged-in', '-v', '-f', 'json',
+    ], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: sink().stream,
+      stderr: sink().stream,
+      fetchImpl: async (url, init) => {
+        const pathname = new URL(String(url)).pathname;
+        requests.push({
+          pathname,
+          ...(init?.body ? { body: JSON.parse(String(init.body)) as unknown } : {}),
+        });
+        return pathname === '/v1/manifest'
+          ? new Response(JSON.stringify({ ok: true, manifest: manifestWithAuthCommands() }))
+          : executionResponse({ result: [], command: 'auth/status' });
+      },
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 0 });
+    expect(process.env.WEBCMD_VERBOSE).toBe('1');
+    expect(requests.at(-1)).toEqual({
+      pathname: '/v1/execute',
+      body: {
+        command: 'auth/status',
+        args: { site: 'github', full: true, concurrency: 2, timeout: 15, only: 'logged-in' },
+        format: 'json',
+        trace: 'off',
+      },
+    });
+  });
 
   it.each([
     {

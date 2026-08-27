@@ -47,6 +47,7 @@ import { parseHostedCoreCommand, validateHostedFormat, type ParsedHostedCoreComm
 import { createVirtualHostedFileIo, realHostedFileIo, type HostedFileIo } from './file-io.js';
 import { HOSTED_SESSION_PROTOCOL_VERSION } from './types.js';
 import { parseHostedInvocation } from './args.js';
+import { parseHostedAuthCommand, type ParsedHostedAuthCommand } from './auth-command-surface.js';
 import { HostedBrowserHelp, parseHostedBrowserStructure, validateRawBrowserSession } from './browser-args.js';
 import { materializeHostedOutputs, prepareHostedFiles, rewriteHostedOutputResultPaths } from './files.js';
 import {
@@ -359,6 +360,15 @@ async function dispatchHosted(
     return;
   }
   const args = normalized.argv;
+  let hostedAuth: Extract<ParsedHostedAuthCommand, { kind: 'run' }> | undefined;
+  if (args[0] === 'auth' && (!args[1] || args[1] === 'status' || args[1] === 'refresh' || args[1] === '--help' || args[1] === '-h')) {
+    const parsed = parseHostedAuthCommand(args, normalized.literal);
+    if (parsed.kind === 'help') {
+      await writeToStream(stdout, parsed.output);
+      return;
+    }
+    hostedAuth = parsed;
+  }
   if (!hasLocalClientCommandHandlers && isLocalClientRootCommand(args[0])) {
     throw new CommanderCompatibleError(`error: unknown command '${args[0]}'\n`, EXIT_CODES.USAGE_ERROR);
   }
@@ -670,15 +680,19 @@ async function dispatchHosted(
   }
   onResolvedCommand?.(trustedCommandResolution(command));
   let parsed: ReturnType<typeof parseHostedInvocation>;
-  try {
-    parsed = parseHostedInvocation(command, args.slice(2));
-  } catch (error) {
-    if (error instanceof CommanderStructuralError) {
-      // A usage error carries its own envelope; only the legacy fallback needs
-      // the UNKNOWN envelope appended after the human bytes.
-      throw new CommanderStructuralError(error.output, error.exitCode, !error.envelope, error.envelope);
+  if (hostedAuth && hostedAuth.command === command.command) {
+    parsed = hostedAuth;
+  } else {
+    try {
+      parsed = parseHostedInvocation(command, args.slice(2));
+    } catch (error) {
+      if (error instanceof CommanderStructuralError) {
+        // A usage error carries its own envelope; only the legacy fallback needs
+        // the UNKNOWN envelope appended after the human bytes.
+        throw new CommanderStructuralError(error.output, error.exitCode, !error.envelope, error.envelope);
+      }
+      throw error;
     }
-    throw error;
   }
   if (parsed.help) {
     await writeHostedHelp(stdout, args, hostedCommandHelpData(command), renderHostedCommandHelp(command));

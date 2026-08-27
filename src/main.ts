@@ -168,7 +168,7 @@ if (getCompIdx !== -1) {
 const { discoverClis, discoverPlugins, ensureUserCliCompatShims, ensureUserAdapters, PLUGINS_DIR } = await import('./discovery.js');
 const { getCompletions } = await import('./completion.js');
 const { createProgram, isExternalRootCommand, runCli } = await import('./cli.js');
-const { emitHook, shouldEmitStartupHook, shouldRunStartupSideEffects } = await import('./hooks.js');
+const { emitHook, shouldEmitStartupHook, shouldEnsureUserCliCompatShims, shouldRunStartupSideEffects } = await import('./hooks.js');
 const { installNodeNetwork } = await import('./node-network.js');
 const { registerUpdateNoticeOnExit, checkForUpdateBackground } = await import('./update-check.js');
 
@@ -182,11 +182,12 @@ installNodeNetwork();
 //    plugins is what makes an override actually take effect.
 const skipUserDiscovery = argv[0] === 'convention-audit';
 const runStartupSideEffects = shouldRunStartupSideEffects(argv);
+const ensureCompatShims = shouldEnsureUserCliCompatShims(argv);
 if (skipUserDiscovery) {
   await discoverClis(BUILTIN_CLIS);
 } else {
   const [, ,] = await Promise.all([
-    runStartupSideEffects ? ensureUserCliCompatShims() : Promise.resolve(),
+    ensureCompatShims ? ensureUserCliCompatShims() : Promise.resolve(),
     runStartupSideEffects ? ensureUserAdapters() : Promise.resolve(),
     discoverClis(BUILTIN_CLIS),
   ]);

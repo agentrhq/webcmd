@@ -366,6 +366,23 @@ describe('hosted CLI process lifecycle', () => {
     expect(result.stderr).toBe('');
     expect(JSON.parse(result.stdout)).toEqual({ value: 'ready' });
   }, 20_000);
+
+  it('loads a lazy user auth adapter through the package compatibility shim for structured output', async () => {
+    const fixture = await createLocalLazyAuthFixture();
+
+    const result = await runCli(['auth', 'status', '--site', 'auth-fixture', '-f', 'json'], fixture.env);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(JSON.parse(result.stdout)).toEqual([{
+      site: 'auth-fixture',
+      status: 'unknown',
+      logged_in: '',
+      identity: '',
+      checked: 'skipped',
+      error: 'quickCheck not implemented; use --full to run whoami',
+    }]);
+  }, 20_000);
 });
 
 async function createHostedFixture(outcome: 'success' | 'failure' | 'browser'): Promise<{
@@ -544,6 +561,54 @@ async function createLocalStartupPluginFixture(): Promise<{ root: string; env: N
     '',
   ].join('\n'));
 
+  return {
+    root,
+    env: {
+      ...process.env,
+      HOME: root,
+      USERPROFILE: root,
+      WEBCMD_CONFIG_DIR: configDir,
+      WEBCMD_NO_UPDATE_CHECK: '1',
+    },
+  };
+}
+
+async function createLocalLazyAuthFixture(): Promise<{ root: string; env: NodeJS.ProcessEnv }> {
+  const root = await mkdtemp(path.join(tmpdir(), 'webcmd-local-auth-'));
+  tempRoots.push(root);
+  const configDir = path.join(root, 'config');
+  const clisDir = path.join(root, '.webcmd', 'clis');
+  const siteDir = path.join(clisDir, 'auth-fixture');
+  await mkdir(configDir, { recursive: true });
+  await mkdir(siteDir, { recursive: true });
+  await writeFile(path.join(configDir, 'config.json'), '{"mode":"local"}\n');
+  await writeFile(path.join(root, '.webcmd', 'cli-manifest.json'), `${JSON.stringify([{
+    site: 'auth-fixture',
+    name: 'whoami',
+    description: 'Fixture identity',
+    access: 'read',
+    strategy: 'cookie',
+    browser: true,
+    args: [],
+    columns: ['logged_in'],
+    type: 'js',
+    modulePath: 'auth-fixture/whoami.js',
+  }])}\n`);
+  await writeFile(path.join(siteDir, 'whoami.js'), [
+    "import { cli, Strategy } from '@agentrhq/webcmd/registry';",
+    'cli({',
+    "  site: 'auth-fixture',",
+    "  name: 'whoami',",
+    "  description: 'Fixture identity',",
+    "  access: 'read',",
+    '  strategy: Strategy.COOKIE,',
+    '  browser: true,',
+    '  args: [],',
+    "  columns: ['logged_in'],",
+    '  func: async () => ({ logged_in: true }),',
+    '});',
+    '',
+  ].join('\n'));
   return {
     root,
     env: {

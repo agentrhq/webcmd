@@ -14,6 +14,7 @@ import {
   emitHook,
   clearAllHooks,
   shouldEmitStartupHook,
+  shouldEnsureUserCliCompatShims,
   shouldRunStartupSideEffects,
   WEBCMD_ROOT_COMMANDS,
   type HookContext,
@@ -141,6 +142,12 @@ describe('startup hook gating', () => {
 
   it('keeps startup side effects for completion discovery', () => {
     expect(shouldRunStartupSideEffects(['--get-completions', '--cursor', '1'])).toBe(true);
+  });
+
+  it('keeps the user CLI import shim for structured auth execution only', () => {
+    expect(shouldEnsureUserCliCompatShims(['auth', 'status', '--site', 'github', '-f', 'json'])).toBe(true);
+    expect(shouldEnsureUserCliCompatShims(['auth', 'status', '--help', '-f', 'json'])).toBe(false);
+    expect(shouldEnsureUserCliCompatShims(['list', '-f', 'json'])).toBe(false);
   });
 
   it.each([
