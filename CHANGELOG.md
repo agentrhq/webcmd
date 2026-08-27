@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.7...webcmd-v0.8.0) (2026-08-27)
+
+
+### Features
+
+* add readable session identifiers ([#443](https://github.com/agentrhq/webcmd/issues/443)) ([e3be378](https://github.com/agentrhq/webcmd/commit/e3be3788422071595c205f9f471d464527d3b876))
+
 ## [0.7.7](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.6...webcmd-v0.7.7) (2026-08-26)
 
 ### Improvements
