@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Hosted mode can negotiate and run core validation, diagnostics, adapter lifecycle, profile lifecycle, and catalog-list commands advertised by Webcmd Cloud.
+- `@agentrhq/webcmd/adapter-analysis` exposes platform-neutral validation and convention-audit rules for trusted hosted command inventories.
+- `@agentrhq/webcmd/hosted/core-commands` exposes the `hosted-core-commands-v1` capability contract and canonical command IDs.
+- `webcmd profile use` now stores a validated hosted profile preference locally.
+
+### Changed
+
+- Hosted help and completion advertise Cloud-owned core commands only when the authenticated manifest advertises them.
+- Hosted command lists retain excluded commands as `LOCAL` rows and return a local-only error instead of plugin-install guidance.
+- Local auth commands initialize user CLI compatibility shims, and hosted auth uses the same native grammar, flags, choices, and help as local mode.
+
 ## [0.7.8](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.7...webcmd-v0.7.8) (2026-08-27)
 
 ### Highlights
