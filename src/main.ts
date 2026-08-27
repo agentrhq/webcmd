@@ -36,6 +36,7 @@ const USER_PLUGINS = path.join(os.homedir(), CONFIG_DIR_NAME, 'plugins');
 // ── Ultra-fast path: lightweight commands bypass full discovery ──────────
 // These are high-frequency or trivial paths that must not pay the startup tax.
 const argv = process.argv.slice(2);
+const normalizedRootArgv = normalizedRootArgvFor(argv);
 
 if (typeof (globalThis as { Bun?: unknown }).Bun === 'undefined' && !isSupportedNodeVersion(process.version)) {
   process.stderr.write(
@@ -75,10 +76,10 @@ if (!fastPathHandled) {
   if (argv[0] === 'setup') {
     const { runHostedSetup } = await import('./hosted/setup.js');
     process.exitCode = await runHostedSetup({ argv: argv.slice(1) });
-  } else if (argv[0] === 'skills' || argv[0] === 'update') {
+  } else if (normalizedRootArgv?.[0] === 'skills' || normalizedRootArgv?.[0] === 'update') {
     const { createProgram } = await import('./cli.js');
     await createProgram(BUILTIN_CLIS, USER_CLIS).parseAsync(argv, { from: 'user' });
-  } else if (isWebFetch(argv)) {
+  } else if (isWebFetch(normalizedRootArgv)) {
     const { runWebFetchCommand } = await import('./fetch/command.js');
     await runWebFetchCommand(argv);
   } else {
@@ -104,13 +105,17 @@ if (!fastPathHandled) {
   }
 }
 
-function isWebFetch(args: readonly string[]): boolean {
+function normalizedRootArgvFor(args: readonly string[]): string[] | undefined {
   try {
     const parsed = parseHostedRootCommandSurface(args);
-    return parsed.kind === 'dispatch' && parsed.argv[0] === 'web' && parsed.argv[1] === 'fetch';
+    return parsed.kind === 'dispatch' ? parsed.argv : undefined;
   } catch {
-    return false;
+    return undefined;
   }
+}
+
+function isWebFetch(args: readonly string[] | undefined): boolean {
+  return args?.[0] === 'web' && args[1] === 'fetch';
 }
 
 async function runLocalMain(): Promise<void> {

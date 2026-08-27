@@ -86,16 +86,18 @@ describe('runHostedProgrammatic', () => {
   });
 
   it.each(['skills', 'update'])('rejects %s help instead of returning generic root help', async (command) => {
+    const fetchImpl = vi.fn(fakeCloud());
     const result = await runHostedProgrammatic({
       argv: [command, '--help'],
       apiBaseUrl: 'http://127.0.0.1:8787',
       accessToken: 'oauth-access-token',
-      fetchImpl: fakeCloud(),
+      fetchImpl,
     });
 
-    expect(result.exitCode).not.toBe(0);
+    expect(result.exitCode).toBe(2);
     expect(result.stdout).toBe('');
-    expect(result.stderr).not.toContain('Usage:');
+    expect(result.stderr).toBe(`error: unknown command '${command}'\n`);
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it('returns captured stdout and a zero exit code', async () => {
