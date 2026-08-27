@@ -2459,7 +2459,7 @@ describe('runHostedCli', () => {
     expect(end).not.toHaveBeenCalled();
   });
 
-  it('renders hosted list without LOCAL commands', async () => {
+  it('renders hosted list with explicit HOSTED and LOCAL availability', async () => {
     const stdout = sink();
 
     const result = await runHostedCli(['list', '-f', 'json'], {
@@ -2469,8 +2469,43 @@ describe('runHostedCli', () => {
     });
 
     expect(result).toEqual({ handled: true, exitCode: 0 });
-    expect(stdout.text()).toContain('github/whoami');
-    expect(stdout.text()).not.toContain('docker/ps');
+    expect(JSON.parse(stdout.text())).toEqual(expect.arrayContaining([
+      expect.objectContaining({ command: 'github/whoami', availability: 'HOSTED' }),
+      expect.objectContaining({ command: 'docker/ps', availability: 'LOCAL' }),
+    ]));
+  });
+
+  it('explains a LOCAL manifest command without plugin guidance or execution', async () => {
+    const stderr = sink();
+    const requests: string[] = [];
+    const localManifest = {
+      ...manifest,
+      commands: [{
+        site: 'desktop',
+        name: 'open',
+        command: 'desktop/open',
+        description: 'Open a desktop app',
+        access: 'write',
+        strategy: 'LOCAL',
+        browser: false,
+        args: [],
+        columns: [],
+      }],
+    };
+
+    const result = await runHostedCli(['desktop', 'open'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stderr: stderr.stream,
+      fetchImpl: async (url, init) => {
+        requests.push(`${init?.method ?? 'GET'} ${new URL(String(url)).pathname}`);
+        return new Response(JSON.stringify({ ok: true, manifest: localManifest }));
+      },
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 78 });
+    expect(stderr.text()).toContain('Command desktop/open is local-only and is not available in hosted mode.');
+    expect(stderr.text()).not.toContain('plugin search');
+    expect(requests).toEqual(['GET /v1/manifest']);
   });
 
   it('filters hosted structured list rows by an exact case-insensitive tag', async () => {

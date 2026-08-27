@@ -12,6 +12,7 @@ import { Strategy, type CliCommand } from '../registry.js';
 import {
   commandNamesForSite,
   findHostedCommand,
+  hostedListPresentation,
   hostedListRows,
   renderHostedCommandHelp,
   renderHostedSiteHelp,
@@ -112,8 +113,30 @@ describe('hosted manifest helpers', () => {
     ]);
   });
 
-  it('filters LOCAL commands from hosted list rows', () => {
-    expect(hostedListRows(manifest, true).map((row) => row.command)).toEqual(['github/whoami']);
+  it('lists excluded commands as LOCAL without making them completable', () => {
+    expect(hostedListRows(manifest, true)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ command: 'github/whoami', availability: 'HOSTED' }),
+      expect.objectContaining({ command: 'docker/ps', availability: 'LOCAL' }),
+    ]));
+    expect(siteNames(manifest)).toEqual(['github']);
+    expect(commandNamesForSite(manifest, 'docker')).toEqual([]);
+  });
+
+  it('includes availability in hosted table presentation', () => {
+    const presentation = hostedListPresentation(manifest, 'table');
+
+    expect(presentation.columns).toContain('availability');
+    expect(presentation.rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ command: 'github/whoami', availability: 'HOSTED' }),
+      expect.objectContaining({ command: 'docker/ps', availability: 'LOCAL' }),
+    ]));
+  });
+
+  it('keeps duplicate inventory commands collapsed to one row', () => {
+    expect(hostedListRows({
+      ...manifest,
+      commands: [manifest.commands[0]!, { ...manifest.commands[0]! }],
+    }, true)).toHaveLength(1);
   });
 
   it('finds canonical commands and aliases', () => {
@@ -135,7 +158,7 @@ describe('hosted manifest helpers', () => {
 
   it('matches local structured list rows for equal metadata', () => {
     expect(hostedListRows({ ...manifest, commands: [manifest.commands[0]!] }, true))
-      .toEqual([serializeCommand(equivalentLocalCommand)]);
+      .toEqual([{ ...serializeCommand(equivalentLocalCommand), availability: 'HOSTED' }]);
   });
 
   it('describes universal hosted surfaces and accepted local-only commands at the root', async () => {
