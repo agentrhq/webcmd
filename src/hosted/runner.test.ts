@@ -2475,6 +2475,20 @@ describe('runHostedCli', () => {
     ]));
   });
 
+  it('renders default hosted list availability for HOSTED and LOCAL commands', async () => {
+    const stdout = sink();
+
+    const result = await runHostedCli(['list'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      fetchImpl: async () => manifestResponse(),
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 0 });
+    expect(stdout.text()).toContain('whoami [cookie] [HOSTED]');
+    expect(stdout.text()).toContain('ps [local] [LOCAL]');
+  });
+
   it('explains a LOCAL manifest command without plugin guidance or execution', async () => {
     const stderr = sink();
     const requests: string[] = [];

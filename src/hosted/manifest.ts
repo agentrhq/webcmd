@@ -67,6 +67,13 @@ export function presentHostedCommand(command: HostedCommand): PresentableCommand
   return toPresentableCommand(command);
 }
 
+function presentHostedListCommand(command: HostedCommand): PresentableCommand {
+  return {
+    ...presentHostedCommand(command),
+    availability: isLocalOnlyHostedCommand(command) ? 'LOCAL' : 'HOSTED',
+  };
+}
+
 export function hostedListRows(manifest: HostedManifest, structured: boolean): Record<string, unknown>[] {
   const commands = hostedInventoryCommands(manifest);
   const commandsByName = new Map(commands.map((command) => [command.command, command]));
@@ -81,13 +88,10 @@ export function hostedListRows(manifest: HostedManifest, structured: boolean): R
 }
 
 export function hostedListPresentation(manifest: HostedManifest, format: string): CommandListPresentation {
-  const presentation = commandListPresentation(hostedInventoryCommands(manifest).map(presentHostedCommand), format);
+  const presentation = commandListPresentation(hostedInventoryCommands(manifest).map(presentHostedListCommand), format);
   return {
     ...presentation,
     rows: hostedListRows(manifest, presentation.structured),
-    columns: presentation.columns.flatMap((column) => column === 'strategy'
-      ? [column, 'availability']
-      : [column]),
   };
 }
 
