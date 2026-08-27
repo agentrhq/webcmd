@@ -1,11 +1,5 @@
 # Changelog
 
-## Unreleased
-
-### Changed
-
-- **Breaking:** `webcmd doctor` exits 78 (`CONFIG_ERROR`) when a required readiness check fails. It previously always exited 0. The structured report is unchanged and still goes to stdout.
-
 ## [0.7.7](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.6...webcmd-v0.7.7) (2026-08-26)
 
 ### Improvements
