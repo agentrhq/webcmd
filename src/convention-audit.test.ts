@@ -192,6 +192,27 @@ describe('convention audit', () => {
     });
   });
 
+  it('does not treat unrelated assigned object literals as emitted rows', () => {
+    const root = makeProject([
+      { site: 'demo', name: 'search', access: 'read', columns: ['id'], sourceFile: 'demo/search.js' },
+    ], {
+      'demo/search.js': `
+        export async function run(item) {
+          const filters = { id: item.id, query: item.query };
+          const payload = { id: item.id, body: item.body };
+          const geometry = { id: item.id, x: 0, y: 0 };
+          const row = { id: item.id, hidden: item.hidden };
+          return row;
+        }
+      `,
+    });
+
+    const report = runConventionAudit({ projectRoot: root });
+    const violations = report.categories.find((item) => item.rule === 'silent-column-drop')!.violations;
+
+    expect(violations.map((violation) => violation.details?.missing)).toEqual([['hidden']]);
+  });
+
   it('ignores ok:false diagnostic objects when checking emitted rows', () => {
     const root = makeProject([
       { site: 'demo', name: 'search', access: 'read', columns: ['id', 'url'], sourceFile: 'demo/search.js' },

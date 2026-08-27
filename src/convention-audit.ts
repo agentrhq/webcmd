@@ -416,7 +416,7 @@ function extractPotentialRowObjects(source: string): Array<{ text: string; index
     /\breturn\s+(?:\(\s*)?{/g,
     /=>\s*\(\s*{/g,
     /\bmap\s*:\s*{/g,
-    /\b(?:const|let|var)\s+\w+\s*=\s*{/g,
+    /\b(?:const|let|var)\s+row\s*=\s*{/g,
   ];
   for (const trigger of triggers) {
     for (const match of source.matchAll(trigger)) {
