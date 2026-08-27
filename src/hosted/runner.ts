@@ -377,7 +377,13 @@ async function dispatchHosted(
     return;
   }
   const args = normalized.argv;
+  const requestsHelp = !normalized.literal && (args.includes('--help') || args.includes('-h'));
   const requestsNamespaceHelp = !normalized.literal && (args[1] === '--help' || args[1] === '-h');
+  const requireHostedCoreHelp = async (id: HostedCoreCommandId): Promise<readonly HostedCoreCommandId[] | undefined> => {
+    const coreCommands = await getHelpCoreCommands();
+    if (!hasHostedCoreCommand(coreCommands, id)) throw hostedCoreCommandUnavailableError(id);
+    return coreCommands;
+  };
   let hostedAuth: Extract<ParsedHostedAuthCommand, { kind: 'run' }> | undefined;
   if (args[0] === 'auth' && (!args[1] || args[1] === 'status' || args[1] === 'refresh' || args[1] === '--help' || args[1] === '-h')) {
     const parsed = parseHostedAuthCommand(args, normalized.literal);
@@ -410,6 +416,7 @@ async function dispatchHosted(
     );
   }
   if (isHostedCoreRoot(args[0])) {
+    if (requestsHelp) await requireHostedCoreHelp(args[0]);
     const parsed = parseHostedCoreCommand(args, normalized.literal);
     await requireHostedCoreCommand(getManifest, parsed.command);
     const profile = parsed.command === 'verify' || parsed.command === 'doctor'
@@ -445,9 +452,14 @@ async function dispatchHosted(
   }
 
   if (args[0] === 'adapter' && (args[1] === 'source' || args[1] === 'path' || args[1] === 'override' || args[1] === 'status' || args[1] === 'reset' || args[1] === '--help' || args[1] === '-h')) {
-    const coreCommands = requestsNamespaceHelp
-      ? await getHelpCoreCommands()
+    const coreHelp = requestsHelp && (args[1] === 'status' || args[1] === 'reset')
+      ? `adapter/${args[1]}` as HostedCoreCommandId
       : undefined;
+    const coreCommands = coreHelp
+      ? await requireHostedCoreHelp(coreHelp)
+      : requestsNamespaceHelp
+        ? await getHelpCoreCommands()
+        : undefined;
     await runHostedAdapterSurface(args.slice(1), normalized.literal, client, stdout, homeDir, io, getManifest, coreCommands);
     return;
   }
@@ -464,9 +476,14 @@ async function dispatchHosted(
   }
 
   if (args[0] === 'profile') {
-    const coreCommands = requestsNamespaceHelp
-      ? await getHelpCoreCommands()
+    const coreHelp = requestsHelp && (args[1] === 'create' || args[1] === 'rename')
+      ? `profile/${args[1]}` as HostedCoreCommandId
       : undefined;
+    const coreCommands = coreHelp
+      ? await requireHostedCoreHelp(coreHelp)
+      : requestsNamespaceHelp
+        ? await getHelpCoreCommands()
+        : undefined;
     const parsed = parseHostedProfileSurface(args.slice(1), normalized.literal, coreCommands);
     if (parsed.kind === 'help') {
       await writeToStream(stdout, parsed.output);
@@ -495,9 +512,14 @@ async function dispatchHosted(
         'Hosted mode supports: webcmd plugin search, install, list, uninstall, update, and create.',
       );
     }
-    const coreCommands = requestsNamespaceHelp
-      ? await getHelpCoreCommands()
+    const coreHelp = requestsHelp && args[1] === 'catalog' && args[2] === 'list'
+      ? 'plugin/catalog/list' as HostedCoreCommandId
       : undefined;
+    const coreCommands = coreHelp
+      ? await requireHostedCoreHelp(coreHelp)
+      : requestsNamespaceHelp
+        ? await getHelpCoreCommands()
+        : undefined;
     const parsed = parseHostedPluginSurface(args.slice(1), normalized.literal, coreCommands);
     if (parsed.kind === 'help') {
       await writeToStream(stdout, parsed.output);
@@ -809,16 +831,20 @@ function isHostedCoreRoot(value: string | undefined): value is ParsedHostedCoreC
   return value === 'validate' || value === 'verify' || value === 'convention-audit' || value === 'doctor';
 }
 
+function hostedCoreCommandUnavailableError(id: HostedCoreCommandId): ConfigError {
+  return new ConfigError(
+    `${CLI_COMMAND} ${id.replaceAll('/', ' ')} is not available from this Webcmd Cloud endpoint.`,
+    'Upgrade Webcmd Cloud or use a compatible endpoint.',
+  );
+}
+
 async function requireHostedCoreCommand(
   getManifest: () => Promise<HostedManifest>,
   id: HostedCoreCommandId,
 ): Promise<HostedManifest> {
   const manifest = await getManifest();
   if (!hasHostedCoreCommand(manifest.metadata.coreCommands, id)) {
-    throw new ConfigError(
-      `${CLI_COMMAND} ${id.replaceAll('/', ' ')} is not available from this Webcmd Cloud endpoint.`,
-      'Upgrade Webcmd Cloud or use a compatible endpoint.',
-    );
+    throw hostedCoreCommandUnavailableError(id);
   }
   return manifest;
 }

@@ -2294,6 +2294,61 @@ describe('runHostedCli', () => {
   });
 
   it.each([
+    { argv: ['validate', '--help'], command: 'validate' },
+    { argv: ['adapter', 'status', '--help'], command: 'adapter/status' },
+    { argv: ['adapter', 'reset', '--help'], command: 'adapter/reset' },
+    { argv: ['profile', 'create', '--help'], command: 'profile/create' },
+    { argv: ['profile', 'rename', '--help'], command: 'profile/rename' },
+    { argv: ['plugin', 'catalog', 'list', '--help'], command: 'plugin/catalog/list' },
+  ])('rejects unavailable hosted core leaf help for $command', async ({ argv, command }) => {
+    const stdout = sink();
+    const stderr = sink();
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
+      ok: true,
+      manifest: { ...manifest, metadata: { ...manifest.metadata, coreCommands: [] } },
+    }), { status: 200 }));
+
+    const result = await runHostedCli(argv, {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      fetchImpl,
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 78 });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(stdout.text()).toBe('');
+    expect(stderr.text()).toContain(`webcmd ${command.replaceAll('/', ' ')} is not available from this Webcmd Cloud endpoint.`);
+  });
+
+  it.each([
+    { argv: ['validate', '--help'], command: 'validate', usage: 'Usage: webcmd validate' },
+    { argv: ['adapter', 'status', '--help'], command: 'adapter/status', usage: 'Usage: webcmd adapter status' },
+    { argv: ['adapter', 'reset', '--help'], command: 'adapter/reset', usage: 'Usage: webcmd adapter reset' },
+    { argv: ['profile', 'create', '--help'], command: 'profile/create', usage: 'Usage: webcmd profile create' },
+    { argv: ['profile', 'rename', '--help'], command: 'profile/rename', usage: 'Usage: webcmd profile rename' },
+    { argv: ['plugin', 'catalog', 'list', '--help'], command: 'plugin/catalog/list', usage: 'Usage: webcmd plugin catalog list' },
+  ])('shows advertised hosted core leaf help for $command', async ({ argv, command, usage }) => {
+    const stdout = sink();
+    const stderr = sink();
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
+      ok: true,
+      manifest: { ...manifest, metadata: { ...manifest.metadata, coreCommands: [command] } },
+    }), { status: 200 }));
+
+    const result = await runHostedCli(argv, {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      fetchImpl,
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 0 });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(`${stdout.text()}${stderr.text()}`).toContain(usage);
+  });
+
+  it.each([
     { name: 'before command', argv: ['--profile', 'work', 'github', 'whoami', '-f', 'json'], profile: 'work' },
     { name: 'equals form', argv: ['--profile=work', 'github', 'whoami', '-f', 'json'], profile: 'work' },
     { name: 'dash-leading value', argv: ['--profile', '-dash', 'github', 'whoami', '-f', 'json'], profile: '-dash' },
