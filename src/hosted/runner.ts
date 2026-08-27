@@ -35,6 +35,7 @@ import { BrowserRunError } from '../browser/run/types.js';
 import { CLI_COMMAND } from '../brand.js';
 import { formatPluginSearchEmptyCopy, presentPluginSearch } from '../plugin-search-presentation.js';
 import { missingPluginGuidance } from '../discovery.js';
+import { executeExternalCli, loadExternalClis, type ExternalCliConfig } from '../external.js';
 import { webFetchCommand } from '../fetch/command.js';
 import { runHostedArtifactDownload } from './artifact-download.js';
 import { HostedClient, HostedClientError, resolveWorkspace } from './client.js';
@@ -97,6 +98,11 @@ export interface HostedRunnerOptions {
   files?: VirtualFileMap;
   /** When set, every file write lands here instead of the filesystem. */
   outputs?: VirtualOutputSink;
+  /** Injection seam for the local external-CLI registry. Defaults to the real registry. */
+  externals?: {
+    list(): ExternalCliConfig[];
+    run(name: string, args: string[], configs: ExternalCliConfig[]): number;
+  };
 }
 
 interface HostedDispatchIo {
@@ -116,6 +122,11 @@ export interface HostedRunResult {
 interface TrustedCommandResolution {
   resolvedCommand: string;
   accessClass: 'read' | 'write';
+}
+
+/** Carries an external CLI's own exit code out of dispatch. Not an error. */
+class ExternalExitSignal {
+  constructor(readonly exitCode: number) {}
 }
 
 class CommanderCompatibleError extends Error {
@@ -191,10 +202,14 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
       opts.enableServerWebFetch === true,
       opts.signal,
       opts.onTrustedCommandResolution,
+      opts.externals ?? { list: loadExternalClis, run: executeExternalCli },
     );
     return { handled: true, exitCode: EXIT_CODES.SUCCESS };
   } catch (caught) {
     if (caught instanceof StreamWriteError) throw caught;
+    if (caught instanceof ExternalExitSignal) {
+      return { handled: true, exitCode: caught.exitCode };
+    }
     const err = opts.signal?.aborted ? new InterruptedError() : caught;
     if (err instanceof BrowserSessionArgvError) {
       await writeToStream(stderr, `error: ${err.message}\n`);
@@ -253,6 +268,10 @@ async function dispatchHosted(
   enableServerWebFetch = false,
   signal?: AbortSignal,
   onResolvedCommand?: (resolution: TrustedCommandResolution) => void,
+  externals: {
+    list(): ExternalCliConfig[];
+    run(name: string, args: string[], configs: ExternalCliConfig[]): number;
+  } = { list: loadExternalClis, run: executeExternalCli },
 ): Promise<void> {
   const normalized = parseHostedRootCommandSurface(argv);
   if (normalized.kind === 'help') {
@@ -495,6 +514,14 @@ async function dispatchHosted(
   const commandName = args[1];
   const siteExists = manifest.commands.some(command => command.site === site);
   if (!siteExists) {
+    // Externals are local binaries, not adapters: registry lookup, PATH check,
+    // spawn. Nothing reaches Cloud. This runs before parseUnknownSiteRootOptions
+    // so `webcmd gh --version` forwards --version to gh, matching the local
+    // passThroughOptions() behavior instead of printing the webcmd version.
+    const externalConfigs = externals.list();
+    if (externalConfigs.some(config => config.name === site)) {
+      throw new ExternalExitSignal(externals.run(site, args.slice(1), externalConfigs));
+    }
     const unknownRoot = parseUnknownSiteRootOptions(args, normalized.literal);
     if (unknownRoot.version) {
       await writeToStream(stdout, `${PKG_VERSION}\n`);
