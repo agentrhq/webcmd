@@ -281,6 +281,25 @@ describe('hosted CLI process lifecycle', () => {
     await expect(readFile(fixture.discoverySentinel, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
   }, 20_000);
 
+  it('persists profile use through the installed hosted config path', async () => {
+    const fixture = await createHostedFixture('success');
+
+    const result = await runCli(['profile', 'use', 'work'], fixture.env);
+    const saved = JSON.parse(await readFile(path.join(fixture.root, 'config', 'config.json'), 'utf8')) as {
+      hosted: { apiKeyRef?: string; preferredProfile?: string };
+    };
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain('profile: work');
+    expect(fixture.requests).toEqual(['GET /v1/profiles']);
+    expect(saved.hosted).toMatchObject({
+      apiKeyRef: 'wcmd_cred_lifecycle',
+      preferredProfile: 'work',
+    });
+    await expect(readFile(fixture.discoverySentinel, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+  }, 20_000);
+
   it('writes the live view before the prepared browser run completes', async () => {
     const fixture = await createHostedFixture('browser');
     const cli = startCli(['live', 'view', '-f', 'plain'], fixture.env);
@@ -391,6 +410,22 @@ async function createHostedFixture(outcome: 'success' | 'failure' | 'browser'): 
           },
           commands: [command, authCommand, liveViewCommand],
         },
+      });
+      return;
+    }
+    if (request.url === '/v1/profiles' && request.method === 'GET') {
+      sendChunkedJson(response, {
+        ok: true,
+        profiles: [{
+          id: 'profile_work',
+          name: 'work',
+          workspace: null,
+          default: false,
+          status: 'available',
+          createdAt: '2026-08-27T00:00:00.000Z',
+          updatedAt: '2026-08-27T00:00:00.000Z',
+          lastUsedAt: '2026-08-27T00:00:00.000Z',
+        }],
       });
       return;
     }

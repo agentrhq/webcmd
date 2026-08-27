@@ -45,6 +45,7 @@ interface StoredHostedConfigInput {
   apiKeyRef: string;
   credentialBackend: HostedCredentialBackend;
   manifestCache?: HostedManifestCache;
+  preferredProfile?: string;
   now?: Date;
 }
 
@@ -109,6 +110,7 @@ export async function resolveHostedApiKey(
         apiKeyRef: stored.apiKeyRef,
         credentialBackend: stored.credentialBackend,
         ...(config.hosted.manifestCache ? { manifestCache: config.hosted.manifestCache } : {}),
+        ...(config.hosted.preferredProfile ? { preferredProfile: config.hosted.preferredProfile } : {}),
         now: new Date(config.updatedAt),
       }), io);
       return {
@@ -140,6 +142,7 @@ export function makeStoredHostedConfig(input: StoredHostedConfigInput): HostedWe
       apiKeyRef: input.apiKeyRef,
       credentialBackend: input.credentialBackend,
       ...(input.manifestCache ? { manifestCache: input.manifestCache } : {}),
+      ...(input.preferredProfile ? { preferredProfile: input.preferredProfile } : {}),
     },
   };
 }

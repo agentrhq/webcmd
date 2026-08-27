@@ -13,7 +13,7 @@ import { createProgram } from '../cli.js';
 import { formatRootHelp } from '../command-presentation.js';
 import { HOSTED_ROOT_HELP } from '../completion-shared.js';
 import { PKG_VERSION } from '../version.js';
-import { makeHostedConfig, makeLocalConfig } from './config.js';
+import { makeHostedConfig, makeLocalConfig, withHostedPreferredProfile } from './config.js';
 import { createCaptureStream } from './capture-stream.js';
 import { HostedClient } from './client.js';
 import { runHostedCli } from './runner.js';
@@ -895,21 +895,57 @@ describe('runHostedCli', () => {
     expect(stderr.text()).toContain('Run `webcmd setup` and choose local mode to install this plugin.');
   });
 
-  it('renders a JSON error envelope on stderr when -f json is set', async () => {
+  it.each(['work', 'profile_1'])('uses hosted profile %s and saves its display name without a capability request', async (profile) => {
     const stdout = sink();
     const stderr = sink();
-    const result = await runHostedCli(['profile', 'use', 'work', '-f', 'json'], {
+    const requests: Array<{ path: string; method: string }> = [];
+    const saveConfig = vi.fn();
+    const result = await runHostedCli(['profile', 'use', profile], {
       config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
       stdout: stdout.stream,
       stderr: stderr.stream,
+      saveConfig,
+      fetchImpl: async (url, init) => {
+        requests.push({ path: new URL(String(url)).pathname, method: init?.method ?? 'GET' });
+        return new Response(JSON.stringify({ ok: true, profiles: [hostedProfile] }));
+      },
     });
 
-    expect(result).toEqual({ handled: true, exitCode: 78 });
-    expect(stdout.text()).toBe('');
-    expect(JSON.parse(stderr.text())).toMatchObject({
-      ok: false,
-      error: { code: 'CONFIG', message: 'webcmd profile use is not available in hosted mode.' },
+    expect(result).toEqual({ handled: true, exitCode: 0 });
+    expect(stderr.text()).toBe('');
+    expect(yaml.load(stdout.text())).toEqual({ ok: true, action: 'use', profile: 'work' });
+    expect(requests).toEqual([{ path: '/v1/profiles', method: 'GET' }]);
+    expect(saveConfig).toHaveBeenCalledOnce();
+    expect(saveConfig).toHaveBeenCalledWith(expect.objectContaining({
+      hosted: expect.objectContaining({ preferredProfile: 'work' }),
+    }));
+  });
+
+  it('rejects an unknown hosted profile with sorted display names and does not save', async () => {
+    const stdout = sink();
+    const stderr = sink();
+    const saveConfig = vi.fn();
+    const result = await runHostedCli(['profile', 'use', 'missing'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      saveConfig,
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        profiles: [
+          { ...hostedProfile, id: 'profile_z', name: 'zebra' },
+          { ...hostedProfile, id: 'profile_a', name: 'alpha' },
+          { ...hostedProfile, id: 'profile_none', name: null },
+        ],
+      })),
     });
+
+    expect(result).toEqual({ handled: true, exitCode: 66 });
+    expect(stdout.text()).toBe('');
+    expect(stderr.text()).toContain('PROFILE_NOT_FOUND');
+    expect(stderr.text()).toContain('Valid profiles: alpha, zebra');
+    expect(stderr.text()).toContain('usage: webcmd profile use <profile>');
+    expect(saveConfig).not.toHaveBeenCalled();
   });
 
   it.each(['catalog'])('rejects unsupported hosted plugin %s without an API call', async (subcommand) => {
@@ -1429,20 +1465,6 @@ describe('runHostedCli', () => {
     }
   });
 
-  it('rejects local-only profile use in hosted mode without an API call', async () => {
-    const stderr = sink();
-    const fetchImpl = vi.fn<typeof fetch>();
-    const result = await runHostedCli(['profile', 'use', 'value'], {
-      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
-      stderr: stderr.stream,
-      fetchImpl,
-    });
-
-    expect(result).toEqual({ handled: true, exitCode: 78 });
-    expect(stderr.text()).toContain('webcmd profile use is not available in hosted mode.');
-    expect(fetchImpl).not.toHaveBeenCalled();
-  });
-
   it.each(['list', 'rename', 'use'])('leaves profile %s to the existing local command surface', async (command) => {
     const result = await runHostedCli(['profile', command, 'value'], {
       config: makeLocalConfig(),
@@ -1899,6 +1921,86 @@ describe('runHostedCli', () => {
     expect(result).toEqual({ handled: true, exitCode: 0 });
     expect(requests).toHaveLength(2);
     expect(requests[1]?.body?.profile).toBe(profile);
+  });
+
+  it('validates and forwards a saved hosted profile without creating it', async () => {
+    const requests: Array<{ path: string; method: string; body?: Record<string, unknown> }> = [];
+    const result = await runHostedCli(['github', 'whoami', '-f', 'json'], {
+      config: withHostedPreferredProfile(
+        makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+        'work',
+      ),
+      stdout: sink().stream,
+      stderr: sink().stream,
+      fetchImpl: async (url, init) => {
+        const path = new URL(String(url)).pathname;
+        requests.push({
+          path,
+          method: init?.method ?? 'GET',
+          ...(init?.body ? { body: JSON.parse(String(init.body)) as Record<string, unknown> } : {}),
+        });
+        if (path === '/v1/manifest') return manifestResponse();
+        if (path === '/v1/profiles') return new Response(JSON.stringify({ ok: true, profiles: [hostedProfile] }));
+        return executionResponse({ result: [] });
+      },
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 0 });
+    expect(requests.map(request => request.path)).toEqual(['/v1/manifest', '/v1/profiles', '/v1/execute']);
+    expect(requests.at(-1)?.body?.profile).toBe('work');
+    expect(requests).not.toContainEqual(expect.objectContaining({ path: '/v1/profiles', method: 'POST' }));
+  });
+
+  it('fails before execution when the saved hosted profile is stale', async () => {
+    const requests: string[] = [];
+    const stderr = sink();
+    const result = await runHostedCli(['github', 'whoami'], {
+      config: withHostedPreferredProfile(
+        makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+        'work',
+      ),
+      stdout: sink().stream,
+      stderr: stderr.stream,
+      fetchImpl: async (url) => {
+        const path = new URL(String(url)).pathname;
+        requests.push(path);
+        if (path === '/v1/manifest') return manifestResponse();
+        return new Response(JSON.stringify({ ok: true, profiles: [{ ...hostedProfile, name: 'personal' }] }));
+      },
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 66 });
+    expect(requests).toEqual(['/v1/manifest', '/v1/profiles']);
+    expect(stderr.text()).toContain('PROFILE_NOT_FOUND');
+    expect(stderr.text()).toContain('Valid profiles: personal');
+  });
+
+  it.each([
+    { name: 'root flag', argv: ['--profile', 'flag', 'github', 'whoami'], env: {}, expected: 'flag' },
+    { name: 'environment', argv: ['github', 'whoami'], env: { WEBCMD_PROFILE: 'env' }, expected: 'env' },
+  ])('lets $name override the saved hosted profile without validating it', async ({ argv, env, expected }) => {
+    const requests: Array<{ path: string; body?: Record<string, unknown> }> = [];
+    const result = await runHostedCli(argv, {
+      config: withHostedPreferredProfile(
+        makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+        'work',
+      ),
+      env,
+      stdout: sink().stream,
+      stderr: sink().stream,
+      fetchImpl: async (url, init) => {
+        const path = new URL(String(url)).pathname;
+        requests.push({
+          path,
+          ...(init?.body ? { body: JSON.parse(String(init.body)) as Record<string, unknown> } : {}),
+        });
+        return path === '/v1/manifest' ? manifestResponse() : executionResponse({ result: [] });
+      },
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 0 });
+    expect(requests.map(request => request.path)).toEqual(['/v1/manifest', '/v1/execute']);
+    expect(requests.at(-1)?.body?.profile).toBe(expected);
   });
 
   it('does not consume a profile placed after a known leaf command', async () => {

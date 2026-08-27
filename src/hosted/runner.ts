@@ -60,7 +60,16 @@ import {
   renderHostedSiteHelp,
   withClientOwnedCommands,
 } from './manifest.js';
-import { isHostedConfig, loadWebcmdConfig, type WebcmdConfig } from './config.js';
+import {
+  isHostedConfig,
+  loadWebcmdConfig,
+  resolveHostedProfileSelection,
+  saveWebcmdConfig,
+  withHostedPreferredProfile,
+  type HostedProfileSelection,
+  type HostedWebcmdConfig,
+  type WebcmdConfig,
+} from './config.js';
 import { resolveHostedApiKey, type HostedCredentialStore } from './credentials.js';
 import { parseHostedRootCommandSurface } from '../root-command-surface.js';
 import { registerSiteCommands, type SiteMemoryBackend } from '../site-memory/commands.js';
@@ -112,6 +121,8 @@ export interface HostedRunnerOptions {
   };
   /** Optional local roots that are owned only when installed on this client. */
   installedLocalCommandRoots?: ReadonlySet<string>;
+  /** @internal Persists hosted profile preference in runner tests and embedders. */
+  saveConfig?: (config: HostedWebcmdConfig) => void;
 }
 
 interface HostedDispatchIo {
@@ -189,6 +200,17 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
       randomUUID: opts.randomUUID,
       migrate: opts.config === undefined,
     });
+    const currentConfig = credential.migrated
+      ? loadWebcmdConfig({ env: opts.env, homeDir: opts.homeDir })
+      : config;
+    if (!isHostedConfig(currentConfig)) throw new ConfigError('Webcmd hosted configuration could not be reloaded.');
+    const profileSelection = resolveHostedProfileSelection(
+      currentConfig,
+      rootSurface.kind === 'dispatch' ? rootSurface.profile : undefined,
+      opts.env ?? process.env,
+    );
+    const saveConfig = opts.saveConfig
+      ?? ((next: HostedWebcmdConfig) => saveWebcmdConfig(next, { env: opts.env, homeDir: opts.homeDir }));
     if (opts.signal?.aborted) {
       throw opts.signal.reason ?? new Error('The operation was aborted.');
     }
@@ -226,6 +248,9 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
       externals,
       opts.installedLocalCommandRoots,
       deferredExternalSession,
+      currentConfig,
+      profileSelection,
+      saveConfig,
     );
     return { handled: true, exitCode: exitCode ?? EXIT_CODES.SUCCESS };
   } catch (caught) {
@@ -295,6 +320,9 @@ async function dispatchHosted(
   },
   installedLocalCommandRoots?: ReadonlySet<string>,
   deferredExternalSession?: DeferredExternalSession,
+  config?: HostedWebcmdConfig,
+  profileSelection?: HostedProfileSelection,
+  saveConfig?: (config: HostedWebcmdConfig) => void,
 ): Promise<number | undefined> {
   const rootHelp = getHostedRootHelp(hasLocalClientCommandHandlers);
   const normalized = parseHostedRootCommandSurface(argv);
@@ -303,6 +331,14 @@ async function dispatchHosted(
     const manifest = await (manifestPromise ??= client.getManifest());
     validateManifestContractIdentity(manifest);
     return manifest;
+  };
+  let validatedPreferredProfile: Promise<string | undefined> | undefined;
+  const profileForRequest = (override?: string): Promise<string | undefined> => {
+    if (override !== undefined) return Promise.resolve(override);
+    if (!profileSelection) return Promise.resolve(undefined);
+    if (profileSelection.source !== 'preferred') return Promise.resolve(profileSelection.name);
+    validatedPreferredProfile ??= requireListedHostedProfile(client, profileSelection.name);
+    return validatedPreferredProfile;
   };
   if (normalized.kind === 'help') {
     const help = formatRootHelp(rootHelp);
@@ -347,7 +383,10 @@ async function dispatchHosted(
   if (isHostedCoreRoot(args[0])) {
     const parsed = parseHostedCoreCommand(args, normalized.literal);
     await requireHostedCoreCommand(getManifest, parsed.command);
-    return dispatchHostedCoreCommand(parsed, client, stdout, normalized.profile);
+    const profile = parsed.command === 'verify' || parsed.command === 'doctor'
+      ? await profileForRequest()
+      : undefined;
+    return dispatchHostedCoreCommand(parsed, client, stdout, profile);
   }
   if (args[0] === 'session') {
     const parsed = parseHostedSessionSurface(args.slice(1), normalized.literal);
@@ -356,13 +395,13 @@ async function dispatchHosted(
       return;
     }
     await getManifest();
-    await dispatchHostedSession(parsed, client, stdout, normalized.profile);
+    await dispatchHostedSession(parsed, client, stdout, await profileForRequest());
     return;
   }
   if (args[0] === 'browser') {
-    const invocation = await parseHostedBrowserInvocation(args, normalized.profile, normalized.session, io);
+    const invocation = await parseHostedBrowserInvocation(args, profileSelection?.name, normalized.session, io);
     await getManifest();
-    await dispatchHostedBrowser(invocation, client, stdout, io);
+    await dispatchHostedBrowser({ ...invocation, profile: await profileForRequest() }, client, stdout, io);
     return;
   }
 
@@ -393,12 +432,6 @@ async function dispatchHosted(
   }
 
   if (args[0] === 'profile') {
-    if (args[1] === 'use') {
-      throw new ConfigError(
-        `webcmd profile ${args[1]} is not available in hosted mode.`,
-        'Hosted mode supports: webcmd profile list, create, rename, and delete.',
-      );
-    }
     const parsed = parseHostedProfileSurface(args.slice(1), normalized.literal);
     if (parsed.kind === 'help') {
       await writeToStream(stdout, parsed.output);
@@ -407,7 +440,8 @@ async function dispatchHosted(
     if (parsed.command === 'create' || parsed.command === 'rename') {
       await requireHostedCoreCommand(getManifest, `profile/${parsed.command}`);
     }
-    await dispatchHostedProfile(parsed, client, stdout);
+    if (!config || !saveConfig) throw new Error('Internal invariant: hosted profile persistence is unavailable.');
+    await dispatchHostedProfile(parsed, client, stdout, config, saveConfig);
     return;
   }
 
@@ -686,6 +720,7 @@ async function dispatchHosted(
   enableVerbose(parsed.verbose);
 
   const startTime = now();
+  const profile = await profileForRequest(parsed.profile);
   const response = command.browser || hasPresentFileArgument(command, parsed.args)
     ? await executeHostedPreparedCommand({
         client,
@@ -693,7 +728,7 @@ async function dispatchHosted(
         args: parsed.args,
         format: parsed.format,
         trace: parsed.trace,
-        profile: parsed.profile ?? normalized.profile,
+        profile,
         session: normalized.session,
         stderr,
         io,
@@ -703,7 +738,7 @@ async function dispatchHosted(
         args: parsed.args,
         format: parsed.format,
         trace: parsed.trace,
-        profile: parsed.profile ?? normalized.profile,
+        profile,
         session: normalized.session,
       });
   let format: string = parsed.format;
@@ -1588,7 +1623,8 @@ type ParsedHostedProfileSurface =
   | { kind: 'run'; command: 'list'; format: string; formatExplicit: boolean }
   | { kind: 'run'; command: 'delete'; profile: string; format: string; formatExplicit: boolean }
   | { kind: 'run'; command: 'create'; name: string }
-  | { kind: 'run'; command: 'rename'; profile: string; name: string };
+  | { kind: 'run'; command: 'rename'; profile: string; name: string }
+  | { kind: 'run'; command: 'use'; profile: string };
 
 function parseHostedProfileSurface(
   argv: readonly string[],
@@ -1635,6 +1671,9 @@ function parseHostedProfileSurface(
   profile.command('rename').argument('<profile>').argument('<name>').exitOverride().configureOutput(output).action((profileValue: string, name: string) => {
     parsed = { kind: 'run', command: 'rename', profile: profileValue, name };
   });
+  profile.command('use').argument('<profile>').exitOverride().configureOutput(output).action((profileValue: string) => {
+    parsed = { kind: 'run', command: 'use', profile: profileValue };
+  });
 
   try {
     root.parse(literal ? ['--', 'profile', ...argv] : ['profile', ...argv], { from: 'user' });
@@ -1653,6 +1692,8 @@ async function dispatchHostedProfile(
   parsed: Exclude<ParsedHostedProfileSurface, { kind: 'help' }>,
   client: HostedClient,
   stdout: NodeJS.WritableStream,
+  config: HostedWebcmdConfig,
+  saveConfig: (config: HostedWebcmdConfig) => void,
 ): Promise<void> {
   if (parsed.command === 'create') {
     await renderOutput(await client.createProfile(parsed.name), { fmt: 'yaml', stdout });
@@ -1670,10 +1711,29 @@ async function dispatchHostedProfile(
     await renderOutput(await client.renameProfile(profile.id, parsed.name), { fmt: 'yaml', stdout });
     return;
   }
+  if (parsed.command === 'use') {
+    const profile = await requireListedHostedProfile(client, parsed.profile);
+    saveConfig(withHostedPreferredProfile(config, profile));
+    await renderOutput({ ok: true, action: 'use', profile }, { fmt: 'yaml', stdout });
+    return;
+  }
   const result = parsed.command === 'list'
     ? (await client.listProfiles()).profiles
     : await client.deleteProfile(parsed.profile);
   await renderOutput(result, { fmt: parsed.format, fmtExplicit: parsed.formatExplicit, stdout });
+}
+
+async function requireListedHostedProfile(client: HostedClient, name: string): Promise<string> {
+  const profiles = (await client.listProfiles()).profiles;
+  const profile = profiles.find(candidate => candidate.name !== null && (candidate.id === name || candidate.name === name));
+  if (profile?.name) return profile.name;
+  const validNames = profiles.flatMap(candidate => candidate.name ? [candidate.name] : []).sort();
+  throw new HostedClientError(
+    'PROFILE_NOT_FOUND',
+    `No hosted profile matches "${name}". Valid profiles: ${validNames.join(', ') || '(none)'}`,
+    `usage: ${CLI_COMMAND} profile use <profile>\nList profiles: ${CLI_COMMAND} profile list`,
+    EXIT_CODES.EMPTY_RESULT,
+  );
 }
 
 type ParsedHostedPluginSurface =
