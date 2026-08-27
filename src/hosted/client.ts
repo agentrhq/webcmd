@@ -1,4 +1,6 @@
-import { attachTraceReceipt, CliError, EXIT_CODES, type ExitCode } from '../errors.js';
+import type { ConventionAuditReport, ConventionRuleId, ConventionViolation } from '../convention-audit.js';
+import { ArgumentError, attachTraceReceipt, CliError, EXIT_CODES, type ExitCode } from '../errors.js';
+import type { ValidationReport } from '../validate.js';
 import { parseExecutionArtifactDownloadUrl } from './artifact-url.js';
 import { HOSTED_CORE_COMMANDS_CAPABILITY, isHostedCoreCommandId } from './core-commands.js';
 import { log } from '../logger.js';
@@ -30,8 +32,18 @@ import type {
   HostedMarketplaceSearchResult,
   HostedSiteMemoryArtifact,
   HostedAdapterOverrideResponse,
+  HostedAdapterResetRemoval,
   HostedAdapterSourceWriteResponse,
+  HostedAdapterStatusRow,
+  HostedDoctorCheckId,
+  HostedDoctorReport,
+  HostedMarketplaceCatalogResponse,
+  HostedMarketplaceCatalogSource,
+  HostedProfileCreateResponse,
+  HostedProfileRenameResponse,
   HostedTraceReceipt,
+  HostedVerifyReport,
+  HostedVerifySmokeResult,
 } from './types.js';
 
 export interface HostedClientOptions {
@@ -141,6 +153,101 @@ export class HostedClient {
     const body = await this.request('/v1/profiles');
     if (!isHostedProfilesResponse(body)) {
       throw protocolError('Webcmd Cloud returned an invalid profiles response.');
+    }
+    return body;
+  }
+
+  async validateAdapters(target?: string): Promise<ValidationReport> {
+    const params = new URLSearchParams();
+    if (target !== undefined) params.set('target', target);
+    const body = await this.request(`/v1/adapters/validate${params.size ? `?${params}` : ''}`);
+    if (!hasExactKeys(body, ['ok', 'report']) || body.ok !== true || !isValidationReport(body.report)) {
+      throw protocolError('Webcmd Cloud returned an invalid adapter validation response.');
+    }
+    return body.report;
+  }
+
+  async verifyAdapters(input: { target?: string; smoke?: boolean; profile?: string }): Promise<HostedVerifyReport> {
+    const body = await this.request('/v1/adapters/verify', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+    if (!hasExactKeys(body, ['ok', 'report']) || body.ok !== true || !isHostedVerifyReport(body.report)) {
+      throw protocolError('Webcmd Cloud returned an invalid adapter verification response.');
+    }
+    return body.report;
+  }
+
+  async auditAdapterConventions(input: { target?: string; site?: string }): Promise<ConventionAuditReport> {
+    const params = new URLSearchParams();
+    if (input.target !== undefined) params.set('target', input.target);
+    if (input.site !== undefined) params.set('site', input.site);
+    const body = await this.request(`/v1/adapters/convention-audit${params.size ? `?${params}` : ''}`);
+    if (!hasExactKeys(body, ['ok', 'report']) || body.ok !== true || !isConventionAuditReport(body.report)) {
+      throw protocolError('Webcmd Cloud returned an invalid adapter convention audit response.');
+    }
+    return body.report;
+  }
+
+  async getDoctor(profile?: string): Promise<HostedDoctorReport> {
+    const params = new URLSearchParams();
+    if (profile !== undefined) params.set('profile', profile);
+    const body = await this.request(`/v1/doctor${params.size ? `?${params}` : ''}`);
+    if (!hasExactKeys(body, ['ok', 'report']) || body.ok !== true || !isHostedDoctorReport(body.report)) {
+      throw protocolError('Webcmd Cloud returned an invalid doctor response.');
+    }
+    return body.report;
+  }
+
+  async listAdapters(): Promise<HostedAdapterStatusRow[]> {
+    const body = await this.request('/v1/adapters/status');
+    if (!hasExactKeys(body, ['ok', 'adapters']) || body.ok !== true
+      || !Array.isArray(body.adapters) || !body.adapters.every(isHostedAdapterStatusRow)) {
+      throw protocolError('Webcmd Cloud returned an invalid adapter status response.');
+    }
+    return body.adapters;
+  }
+
+  async resetAdapterOverrides(input: { site?: string; all?: boolean }): Promise<HostedAdapterResetRemoval[]> {
+    const site = input.site?.trim();
+    if ((!site && input.all !== true) || (site !== undefined && input.all === true)) {
+      throw new ArgumentError('Specify one adapter site or --all.');
+    }
+    const params = new URLSearchParams(site ? { site } : { all: 'true' });
+    const body = await this.request(`/v1/adapters/overrides?${params}`, { method: 'DELETE' });
+    if (!hasExactKeys(body, ['ok', 'removed']) || body.ok !== true
+      || !Array.isArray(body.removed) || !body.removed.every(isHostedAdapterResetRemoval)) {
+      throw protocolError('Webcmd Cloud returned an invalid adapter reset response.');
+    }
+    return body.removed;
+  }
+
+  async createProfile(name: string): Promise<HostedProfileCreateResponse> {
+    const body = await this.request('/v1/profiles', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }, undefined, 201);
+    if (!isHostedProfileCreateResponse(body)) {
+      throw protocolError('Webcmd Cloud returned an invalid profile creation response.');
+    }
+    return body;
+  }
+
+  async renameProfile(profileId: string, name: string): Promise<HostedProfileRenameResponse> {
+    const body = await this.request(`/v1/profiles/${encodeURIComponent(profileId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name }),
+    });
+    if (!isHostedProfileRenameResponse(body)) {
+      throw protocolError('Webcmd Cloud returned an invalid profile rename response.');
+    }
+    return body;
+  }
+
+  async listMarketplaceCatalog(): Promise<HostedMarketplaceCatalogResponse> {
+    const body = await this.request('/v1/marketplace/catalog');
+    if (!isHostedMarketplaceCatalogResponse(body)) {
+      throw protocolError('Webcmd Cloud returned an invalid marketplace catalog response.');
     }
     return body;
   }
@@ -461,6 +568,7 @@ export class HostedClient {
     path: string,
     init: RequestInit = {},
     executionExpectation?: ExecutionExpectation,
+    expectedStatus?: number,
   ): Promise<unknown> {
     const response = await this.authenticatedFetch(path, init);
     const text = await response.text();
@@ -476,6 +584,9 @@ export class HostedClient {
       throw hostedFailure(body, response.status === 401 ? EXIT_CODES.NOPERM : EXIT_CODES.GENERIC_ERROR);
     }
     if (!response.ok) throw protocolError('Webcmd Cloud returned a success envelope with an HTTP error status.');
+    if (expectedStatus !== undefined && response.status !== expectedStatus) {
+      throw protocolError(`Webcmd Cloud returned HTTP ${response.status}; expected ${expectedStatus}.`);
+    }
     return body;
   }
 
@@ -702,6 +813,168 @@ function isHostedProfilesResponse(value: unknown): value is HostedProfilesRespon
     && value.ok === true
     && Array.isArray(value.profiles)
     && value.profiles.every(isHostedPublicProfile);
+}
+
+function isValidationReport(value: unknown): value is ValidationReport {
+  return hasExactKeys(value, ['ok', 'results', 'errors', 'warnings', 'commands'])
+    && typeof value.ok === 'boolean'
+    && Array.isArray(value.results)
+    && value.results.every(result => hasExactKeys(result, ['label', 'errors', 'warnings'])
+      && typeof result.label === 'string'
+      && Array.isArray(result.errors)
+      && result.errors.every(error => typeof error === 'string')
+      && Array.isArray(result.warnings)
+      && result.warnings.every(warning => typeof warning === 'string'))
+    && isNonNegativeInteger(value.errors)
+    && isNonNegativeInteger(value.warnings)
+    && isNonNegativeInteger(value.commands);
+}
+
+const CONVENTION_RULE_IDS = new Set<ConventionRuleId>([
+  'silent-column-drop',
+  'camelCase-in-columns',
+  'missing-access-metadata',
+  'silent-clamp',
+  'silent-empty-fallback',
+  'silent-sentinel',
+  'write-without-delete-pair',
+]);
+
+function isConventionAuditReport(value: unknown): value is ConventionAuditReport {
+  return hasExactKeys(value, ['ok', 'summary', 'categories'])
+    && typeof value.ok === 'boolean'
+    && hasExactKeys(value.summary, ['commands', 'sites', 'files_scanned', 'violations'])
+    && isNonNegativeInteger(value.summary.commands)
+    && isNonNegativeInteger(value.summary.sites)
+    && isNonNegativeInteger(value.summary.files_scanned)
+    && isNonNegativeInteger(value.summary.violations)
+    && Array.isArray(value.categories)
+    && value.categories.every(category => hasExactKeys(category, ['rule', 'count', 'violations'])
+      && isConventionRuleId(category.rule)
+      && isNonNegativeInteger(category.count)
+      && Array.isArray(category.violations)
+      && category.violations.every(isConventionViolation));
+}
+
+function isConventionViolation(value: unknown): value is ConventionViolation {
+  if (!isRecord(value)) return false;
+  const expected = [
+    'rule', 'site', 'name', 'command', 'message',
+    ...(value.file === undefined ? [] : ['file']),
+    ...(value.line === undefined ? [] : ['line']),
+    ...(value.details === undefined ? [] : ['details']),
+  ];
+  return hasExactKeys(value, expected)
+    && isConventionRuleId(value.rule)
+    && typeof value.site === 'string'
+    && typeof value.name === 'string'
+    && typeof value.command === 'string'
+    && typeof value.message === 'string'
+    && (value.file === undefined || typeof value.file === 'string')
+    && (value.line === undefined || isNonNegativeInteger(value.line))
+    && (value.details === undefined || isRecord(value.details));
+}
+
+function isConventionRuleId(value: unknown): value is ConventionRuleId {
+  return typeof value === 'string' && CONVENTION_RULE_IDS.has(value as ConventionRuleId);
+}
+
+function isHostedVerifyReport(value: unknown): value is HostedVerifyReport {
+  return hasExactKeys(value, ['ok', 'validation', 'smoke'])
+    && typeof value.ok === 'boolean'
+    && isValidationReport(value.validation)
+    && (value.smoke === null || isHostedVerifySmoke(value.smoke));
+}
+
+function isHostedVerifySmoke(value: unknown): value is Exclude<HostedVerifyReport['smoke'], null> {
+  return hasExactKeys(value, ['requested', 'executed', 'ok', 'summary', 'results'])
+    && value.requested === true
+    && typeof value.executed === 'boolean'
+    && typeof value.ok === 'boolean'
+    && typeof value.summary === 'string'
+    && Array.isArray(value.results)
+    && value.results.every(isHostedVerifySmokeResult);
+}
+
+function isHostedVerifySmokeResult(value: unknown): value is HostedVerifySmokeResult {
+  return hasExactKeys(value, ['command', 'status', 'message'])
+    && typeof value.command === 'string'
+    && (value.status === 'passed' || value.status === 'failed' || value.status === 'skipped')
+    && typeof value.message === 'string';
+}
+
+const HOSTED_DOCTOR_CHECK_IDS = new Set<HostedDoctorCheckId>([
+  'api',
+  'workspace',
+  'compatibility',
+  'profile',
+  'browser-provider',
+  'capacity',
+]);
+
+function isHostedDoctorReport(value: unknown): value is HostedDoctorReport {
+  return hasExactKeys(value, ['ok', 'checks'])
+    && typeof value.ok === 'boolean'
+    && Array.isArray(value.checks)
+    && value.checks.every(check => hasExactKeys(check, ['id', 'ok', 'required', 'message'])
+      && typeof check.id === 'string'
+      && HOSTED_DOCTOR_CHECK_IDS.has(check.id as HostedDoctorCheckId)
+      && typeof check.ok === 'boolean'
+      && typeof check.required === 'boolean'
+      && typeof check.message === 'string');
+}
+
+function isHostedAdapterStatusRow(value: unknown): value is HostedAdapterStatusRow {
+  return hasExactKeys(value, ['command', 'kind', 'package', 'reconciliationState', 'loadError'])
+    && typeof value.command === 'string'
+    && (value.kind === 'override' || value.kind === 'user')
+    && typeof value.package === 'string'
+    && (value.reconciliationState === 'current'
+      || value.reconciliationState === 'changed'
+      || value.reconciliationState === 'unknown')
+    && (value.loadError === null || typeof value.loadError === 'string');
+}
+
+function isHostedAdapterResetRemoval(value: unknown): value is HostedAdapterResetRemoval {
+  return hasExactKeys(value, ['packageId', 'package', 'commands'])
+    && typeof value.packageId === 'string'
+    && typeof value.package === 'string'
+    && Array.isArray(value.commands)
+    && value.commands.every(command => typeof command === 'string');
+}
+
+function isHostedProfileCreateResponse(value: unknown): value is HostedProfileCreateResponse {
+  return hasExactKeys(value, ['ok', 'profile', 'created'])
+    && value.ok === true
+    && isHostedPublicProfile(value.profile)
+    && typeof value.created === 'boolean';
+}
+
+function isHostedProfileRenameResponse(value: unknown): value is HostedProfileRenameResponse {
+  return hasExactKeys(value, ['ok', 'profile', 'changed'])
+    && value.ok === true
+    && isHostedPublicProfile(value.profile)
+    && typeof value.changed === 'boolean';
+}
+
+function isHostedMarketplaceCatalogResponse(value: unknown): value is HostedMarketplaceCatalogResponse {
+  return hasExactKeys(value, ['ok', 'sources'])
+    && value.ok === true
+    && Array.isArray(value.sources)
+    && value.sources.every(isHostedMarketplaceCatalogSource);
+}
+
+function isHostedMarketplaceCatalogSource(value: unknown): value is HostedMarketplaceCatalogSource {
+  return hasOnlyKeys(value, ['id', 'repository', 'commit', 'manifestPath', 'status'])
+    && typeof value.id === 'string'
+    && typeof value.repository === 'string'
+    && (value.commit === undefined || typeof value.commit === 'string')
+    && typeof value.manifestPath === 'string'
+    && (value.status === 'empty' || value.status === 'consistent' || value.status === 'mixed');
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
 }
 
 function isHostedBrowserSessionResponse(value: unknown): value is HostedBrowserSessionResponse {

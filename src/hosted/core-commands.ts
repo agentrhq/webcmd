@@ -24,3 +24,16 @@ export function hasHostedCoreCommand(
 ): boolean {
   return ids?.includes(id) ?? false;
 }
+
+export type {
+  HostedAdapterResetRemoval,
+  HostedAdapterStatusRow,
+  HostedDoctorCheckId,
+  HostedDoctorReport,
+  HostedMarketplaceCatalogResponse,
+  HostedMarketplaceCatalogSource,
+  HostedProfileCreateResponse,
+  HostedProfileRenameResponse,
+  HostedVerifyReport,
+  HostedVerifySmokeResult,
+} from './types.js';

@@ -12,6 +12,73 @@ const manifest = {
   commands: [],
 };
 
+const publicProfile = {
+  id: 'profile_1',
+  name: 'work',
+  workspace: 'workspace_1',
+  default: false,
+  status: 'available',
+  createdAt: '2026-08-27T00:00:00.000Z',
+  updatedAt: '2026-08-27T00:00:00.000Z',
+  lastUsedAt: '2026-08-27T00:00:00.000Z',
+} as const;
+
+const validationReport = {
+  ok: true,
+  results: [{ label: 'github/list', errors: [], warnings: [] }],
+  errors: 0,
+  warnings: 0,
+  commands: 1,
+};
+
+const conventionAuditReport = {
+  ok: true,
+  summary: { commands: 1, sites: 1, files_scanned: 1, violations: 0 },
+  categories: [],
+};
+
+const verifyReport = {
+  ok: true,
+  validation: validationReport,
+  smoke: {
+    requested: true,
+    executed: true,
+    ok: true,
+    summary: '1 passed',
+    results: [{ command: 'github/list', status: 'passed', message: 'Passed.' }],
+  },
+};
+
+const doctorReport = {
+  ok: true,
+  checks: [{ id: 'api', ok: true, required: true, message: 'Authenticated.' }],
+};
+
+const adapterStatusRows = [{
+  command: 'github/list',
+  kind: 'override',
+  package: '@user/github',
+  reconciliationState: 'current',
+  loadError: null,
+}];
+
+const adapterResetRemovals = [{
+  packageId: 'package_1',
+  package: '@user/github',
+  commands: ['github/list', 'github/get'],
+}];
+
+const marketplaceCatalog = {
+  ok: true,
+  sources: [{
+    id: 'official',
+    repository: 'https://github.com/agentrhq/webcmd',
+    commit: 'abc123',
+    manifestPath: 'marketplace.json',
+    status: 'consistent',
+  }],
+};
+
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), { status: 200 });
 }
@@ -124,6 +191,163 @@ describe('HostedClient', () => {
   ])('rejects malformed coreCommands metadata: %j', async (coreCommands) => {
     const response = { ok: true, manifest: { ...manifest, metadata: { ...manifest.metadata, coreCommands } } };
     await expect(clientFor(response).getManifest()).rejects.toMatchObject({ code: 'HOSTED_PROTOCOL' });
+  });
+
+  it.each([
+    {
+      name: 'validate adapters',
+      invoke: (client: HostedClient) => client.validateAdapters('github'),
+      request: { path: '/v1/adapters/validate?target=github', method: 'GET' },
+      response: { ok: true, report: validationReport },
+      result: validationReport,
+    },
+    {
+      name: 'verify adapters',
+      invoke: (client: HostedClient) => client.verifyAdapters({ target: 'github/list', smoke: true, profile: 'work' }),
+      request: {
+        path: '/v1/adapters/verify',
+        method: 'POST',
+        body: '{"target":"github/list","smoke":true,"profile":"work"}',
+      },
+      response: { ok: true, report: verifyReport },
+      result: verifyReport,
+    },
+    {
+      name: 'audit adapter conventions',
+      invoke: (client: HostedClient) => client.auditAdapterConventions({ target: 'github/list', site: 'github' }),
+      request: { path: '/v1/adapters/convention-audit?target=github%2Flist&site=github', method: 'GET' },
+      response: { ok: true, report: conventionAuditReport },
+      result: conventionAuditReport,
+    },
+    {
+      name: 'get doctor',
+      invoke: (client: HostedClient) => client.getDoctor('work'),
+      request: { path: '/v1/doctor?profile=work', method: 'GET' },
+      response: { ok: true, report: doctorReport },
+      result: doctorReport,
+    },
+    {
+      name: 'list adapters',
+      invoke: (client: HostedClient) => client.listAdapters(),
+      request: { path: '/v1/adapters/status', method: 'GET' },
+      response: { ok: true, adapters: adapterStatusRows },
+      result: adapterStatusRows,
+    },
+    {
+      name: 'reset one adapter override',
+      invoke: (client: HostedClient) => client.resetAdapterOverrides({ site: 'github' }),
+      request: { path: '/v1/adapters/overrides?site=github', method: 'DELETE' },
+      response: { ok: true, removed: adapterResetRemovals },
+      result: adapterResetRemovals,
+    },
+    {
+      name: 'reset all adapter overrides',
+      invoke: (client: HostedClient) => client.resetAdapterOverrides({ all: true }),
+      request: { path: '/v1/adapters/overrides?all=true', method: 'DELETE' },
+      response: { ok: true, removed: adapterResetRemovals },
+      result: adapterResetRemovals,
+    },
+    {
+      name: 'create profile',
+      invoke: (client: HostedClient) => client.createProfile('work'),
+      request: { path: '/v1/profiles', method: 'POST', body: '{"name":"work"}' },
+      response: { ok: true, profile: publicProfile, created: true },
+      responseStatus: 201,
+      result: { ok: true, profile: publicProfile, created: true },
+    },
+    {
+      name: 'rename profile',
+      invoke: (client: HostedClient) => client.renameProfile('profile_1', 'personal'),
+      request: { path: '/v1/profiles/profile_1', method: 'PATCH', body: '{"name":"personal"}' },
+      response: { ok: true, profile: { ...publicProfile, name: 'personal' }, changed: true },
+      result: { ok: true, profile: { ...publicProfile, name: 'personal' }, changed: true },
+    },
+    {
+      name: 'list marketplace catalog',
+      invoke: (client: HostedClient) => client.listMarketplaceCatalog(),
+      request: { path: '/v1/marketplace/catalog', method: 'GET' },
+      response: marketplaceCatalog,
+      result: marketplaceCatalog,
+    },
+  ])('sends and validates the $name request', async ({ invoke, request, response, responseStatus = 200, result }) => {
+    const requests: Array<{ path: string; method: string; body?: string }> = [];
+    const client = new HostedClient(clientOptions(async (url, init) => {
+      requests.push({
+        path: new URL(String(url)).pathname + new URL(String(url)).search,
+        method: init?.method ?? 'GET',
+        ...(init?.body !== undefined ? { body: String(init.body) } : {}),
+      });
+      return new Response(JSON.stringify(response), { status: responseStatus });
+    }));
+
+    await expect(invoke(client)).resolves.toEqual(result);
+    expect(requests).toEqual([request]);
+  });
+
+  it.each([
+    {
+      name: 'validate response with an extra top-level key',
+      invoke: (client: HostedClient) => client.validateAdapters(),
+      response: { ok: true, report: validationReport, extra: true },
+    },
+    {
+      name: 'verify response missing a required key',
+      invoke: (client: HostedClient) => client.verifyAdapters({}),
+      response: { ok: true, report: { ok: true, validation: validationReport } },
+    },
+    {
+      name: 'doctor response with a wrong enum',
+      invoke: (client: HostedClient) => client.getDoctor(),
+      response: { ok: true, report: { ok: false, checks: [{ ...doctorReport.checks[0], id: 'daemon' }] } },
+    },
+    {
+      name: 'adapter status response with a non-array list',
+      invoke: (client: HostedClient) => client.listAdapters(),
+      response: { ok: true, adapters: {} },
+    },
+    {
+      name: 'adapter reset response with a nested extra key',
+      invoke: (client: HostedClient) => client.resetAdapterOverrides({ all: true }),
+      response: { ok: true, removed: [{ ...adapterResetRemovals[0], extra: true }] },
+    },
+    {
+      name: 'profile create response with a nested extra key',
+      invoke: (client: HostedClient) => client.createProfile('work'),
+      response: { ok: true, profile: { ...publicProfile, extra: true }, created: true },
+      responseStatus: 201,
+    },
+    {
+      name: 'profile rename response missing changed',
+      invoke: (client: HostedClient) => client.renameProfile('profile_1', 'personal'),
+      response: { ok: true, profile: { ...publicProfile, name: 'personal' } },
+    },
+    {
+      name: 'catalog response with a wrong status enum',
+      invoke: (client: HostedClient) => client.listMarketplaceCatalog(),
+      response: {
+        ok: true,
+        sources: [{ ...marketplaceCatalog.sources[0], status: 'healthy' }],
+      },
+    },
+  ])('rejects malformed core transport: $name', async ({ invoke, response, responseStatus = 200 }) => {
+    const client = new HostedClient(clientOptions(async () => new Response(JSON.stringify(response), { status: responseStatus })));
+    await expect(invoke(client)).rejects.toMatchObject({ code: 'HOSTED_PROTOCOL' });
+  });
+
+  it('requires HTTP 201 for profile creation', async () => {
+    await expect(clientFor({ ok: true, profile: publicProfile, created: true }).createProfile('work'))
+      .rejects.toMatchObject({ code: 'HOSTED_PROTOCOL' });
+  });
+
+  it.each([
+    {},
+    { site: 'github', all: true },
+    { site: '' },
+  ])('rejects invalid adapter reset input before sending a request: %j', async (input) => {
+    const fetchImpl = vi.fn(async () => jsonResponse({ ok: true, removed: [] }));
+    await expect(new HostedClient(clientOptions(fetchImpl)).resetAdapterOverrides(input))
+      .rejects.toMatchObject({ code: 'ARGUMENT' });
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it('preserves a raw storage endpoint error envelope', async () => {
