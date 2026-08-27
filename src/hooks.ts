@@ -96,6 +96,7 @@ export const WEBCMD_ROOT_COMMANDS: ReadonlySet<string> = new Set([
   'plugin',
   'profile',
   'session',
+  'site',
   'skills',
   'update',
   'validate',

@@ -49,6 +49,7 @@ const registry: ExternalCliConfig[] = [
   { name: 'github', binary: 'gh-shadow', description: 'Shadows a hosted site name' },
   { name: 'agent-context', binary: 'agent-context', description: 'External with a retired Webcmd command name' },
   { name: 'profile', binary: 'profile-shadow', description: 'Shadows a Webcmd root command' },
+  { name: 'site', binary: 'site-shadow', description: 'Shadows the Webcmd site root command' },
   { name: 'validate', binary: 'validate-shadow', description: 'Shadows a local-only Webcmd root command' },
 ];
 
@@ -70,6 +71,34 @@ function harness(run: ReturnType<typeof vi.fn<RunFn>>) {
       externals: { list: () => registry, run },
     },
   };
+}
+
+function ownershipHarness(withExternal: boolean) {
+  const stdout = sink();
+  const stderr = sink();
+  const fetchImpl = vi.fn<typeof fetch>(async () => manifestResponse());
+  const list = vi.fn(() => registry);
+  const run = vi.fn<RunFn>(() => 0);
+  const getCredential = vi.fn(async () => 'key');
+  const credentialStore: HostedCredentialStore = {
+    get: getCredential,
+    put: vi.fn(async () => undefined),
+    delete: vi.fn(async () => undefined),
+    backend: () => 'os',
+  };
+  const opts = {
+    config: makeHostedConfig({
+      apiBaseUrl: 'https://api.example.com',
+      apiKeyRef: 'wcmd_ownership_collision',
+      credentialBackend: 'os',
+    }),
+    credentialStore,
+    stdout: stdout.stream,
+    stderr: stderr.stream,
+    fetchImpl,
+    ...(withExternal ? { externals: { list, run } } : {}),
+  };
+  return { stdout, stderr, fetchImpl, list, run, getCredential, opts };
 }
 
 describe('hosted external CLI execution', () => {
@@ -172,6 +201,46 @@ describe('hosted external CLI execution', () => {
     expect(result).toEqual({ handled: true, exitCode: 78 });
     expect(run).not.toHaveBeenCalled();
     expect(h.stderr.text()).toContain('webcmd validate is local-only');
+  });
+
+  it('keeps bare validate identical and side-effect free with or without a same-name external', async () => {
+    const variants = [ownershipHarness(false), ownershipHarness(true)];
+    const results = [];
+    for (const variant of variants) {
+      results.push(await runHostedCli(['validate'], variant.opts));
+      expect(variant.stdout.text()).toBe('');
+      expect(variant.stderr.text()).toContain('webcmd validate is local-only');
+      expect(variant.list).not.toHaveBeenCalled();
+      expect(variant.run).not.toHaveBeenCalled();
+      expect(variant.getCredential).not.toHaveBeenCalled();
+      expect(variant.fetchImpl).not.toHaveBeenCalled();
+    }
+
+    expect(results).toEqual([
+      { handled: true, exitCode: 78 },
+      { handled: true, exitCode: 78 },
+    ]);
+    expect(variants[1]!.stderr.text()).toBe(variants[0]!.stderr.text());
+  });
+
+  it('keeps site session validation identical and side-effect free with or without a same-name external', async () => {
+    const variants = [ownershipHarness(false), ownershipHarness(true)];
+    const results = [];
+    for (const variant of variants) {
+      results.push(await runHostedCli(['site', 'list', '--session=child-session'], variant.opts));
+      expect(variant.stdout.text()).toBe('');
+      expect(variant.stderr.text()).toContain('SESSION_SELECTOR_POSITION');
+      expect(variant.list).not.toHaveBeenCalled();
+      expect(variant.run).not.toHaveBeenCalled();
+      expect(variant.getCredential).not.toHaveBeenCalled();
+      expect(variant.fetchImpl).not.toHaveBeenCalled();
+    }
+
+    expect(results).toEqual([
+      { handled: true, exitCode: 2 },
+      { handled: true, exitCode: 2 },
+    ]);
+    expect(variants[1]!.stderr.text()).toBe(variants[0]!.stderr.text());
   });
 
   it('validates a Webcmd root before consulting a same-name external or hosted preflight', async () => {

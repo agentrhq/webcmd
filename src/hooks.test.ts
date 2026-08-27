@@ -3,6 +3,10 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { createProgram, isExternalRootCommand } from './cli.js';
 import {
   onStartup,
   onBeforeExecute,
@@ -11,6 +15,7 @@ import {
   clearAllHooks,
   shouldEmitStartupHook,
   shouldRunStartupSideEffects,
+  WEBCMD_ROOT_COMMANDS,
   type HookContext,
 } from './hooks.js';
 
@@ -110,6 +115,21 @@ describe('no-op when no hooks registered', () => {
 });
 
 describe('startup hook gating', () => {
+  it('covers every unconditional createProgram root in the authoritative inventory', () => {
+    const pluginsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-root-inventory-'));
+    try {
+      const program = createProgram('', '', pluginsDir);
+      const missing = program.commands
+        .filter(command => !isExternalRootCommand(program, command.name()))
+        .map(command => command.name())
+        .filter(name => !WEBCMD_ROOT_COMMANDS.has(name));
+
+      expect(missing).toEqual([]);
+    } finally {
+      fs.rmSync(pluginsDir, { recursive: true, force: true });
+    }
+  });
+
   it.each([
     ['--help'],
     ['list', '--format', 'json'],

@@ -183,6 +183,12 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
       if (!configs.some(config => config.name === site)) throw error;
       deferredExternalSession = { error, args, configs };
     }
+    const rootSurface = parseHostedRootCommandSurface(argv);
+    const rootName = rootSurface.kind === 'dispatch' ? rootSurface.argv[0] : undefined;
+    if (rootName === 'validate') {
+      throw new ConfigError(`${CLI_COMMAND} validate is local-only and is not available in hosted mode.`, LOCAL_ONLY_COMMAND_HELP);
+    }
+    const externals = rootName && isUnconditionalWebcmdRoot(rootName) ? undefined : opts.externals;
     const credential = await resolveHostedApiKey(config, {
       credentialStore: opts.credentialStore,
       env: opts.env,
@@ -194,7 +200,6 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
     if (opts.signal?.aborted) {
       throw opts.signal.reason ?? new Error('The operation was aborted.');
     }
-    const rootSurface = parseHostedRootCommandSurface(argv);
     const client = new HostedClient({
       apiBaseUrl: config.hosted.apiBaseUrl,
       apiKey: credential.apiKey,
@@ -226,7 +231,7 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
       opts.hasLocalClientCommandHandlers !== false,
       opts.signal,
       opts.onTrustedCommandResolution,
-      opts.externals,
+      externals,
       opts.installedLocalCommandRoots,
       deferredExternalSession,
     );
@@ -1679,9 +1684,12 @@ function parseUnknownSiteRootOptions(
 }
 
 function isWebcmdOwnedRoot(name: string, installedLocalCommandRoots?: ReadonlySet<string>): boolean {
+  return isUnconditionalWebcmdRoot(name) || installedLocalCommandRoots?.has(name) === true;
+}
+
+function isUnconditionalWebcmdRoot(name: string): boolean {
   return WEBCMD_ROOT_COMMANDS.has(name)
-    || HOSTED_ROOT_HELP.commands.some(command => command.name.split(/\s/, 1)[0] === name)
-    || installedLocalCommandRoots?.has(name) === true;
+    || HOSTED_ROOT_HELP.commands.some(command => command.name.split(/\s/, 1)[0] === name);
 }
 
 function hasTerminalBeforeSeparator(
