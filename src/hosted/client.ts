@@ -1,5 +1,6 @@
 import { attachTraceReceipt, CliError, EXIT_CODES, type ExitCode } from '../errors.js';
 import { parseExecutionArtifactDownloadUrl } from './artifact-url.js';
+import { HOSTED_CORE_COMMANDS_CAPABILITY, isHostedCoreCommandId } from './core-commands.js';
 import { log } from '../logger.js';
 import { HOSTED_SESSION_PROTOCOL_VERSION } from './types.js';
 import type {
@@ -501,7 +502,10 @@ export class HostedClient {
           accept: 'application/json',
           authorization: `Bearer ${this.apiKey}`,
           'x-webcmd-session-protocol-version': String(HOSTED_SESSION_PROTOCOL_VERSION),
-          'x-webcmd-client-capabilities': 'hosted-live-view-v1',
+          'x-webcmd-client-capabilities': [
+            'hosted-live-view-v1',
+            HOSTED_CORE_COMMANDS_CAPABILITY,
+          ].join(', '),
           ...(init.body ? { 'content-type': 'application/json' } : {}),
           ...(this.workspace ? { 'x-webcmd-workspace': this.workspace } : {}),
           ...(init.headers ?? {}),
@@ -621,19 +625,32 @@ function isHostedError(value: unknown): value is HostedErrorResponse {
 }
 
 function isHostedManifest(value: unknown): value is HostedManifest {
-  return hasExactKeys(value, ['userId', 'metadata', 'commands'])
-    && typeof value.userId === 'string'
-    && hasExactKeys(value.metadata, ['contractSchemaVersion', 'sessionProtocolVersion', 'webcmdPackageVersion', 'generatedAt'])
-    && typeof value.metadata.contractSchemaVersion === 'number'
-    && Number.isInteger(value.metadata.contractSchemaVersion)
-    && value.metadata.contractSchemaVersion > 0
-    && typeof value.metadata.sessionProtocolVersion === 'number'
-    && Number.isInteger(value.metadata.sessionProtocolVersion)
-    && value.metadata.sessionProtocolVersion > 0
-    && typeof value.metadata.webcmdPackageVersion === 'string'
-    && typeof value.metadata.generatedAt === 'string'
-    && Array.isArray(value.commands)
-    && value.commands.every(isHostedManifestCommand);
+  if (!hasExactKeys(value, ['userId', 'metadata', 'commands'])
+    || typeof value.userId !== 'string'
+    || !hasOnlyKeys(value.metadata, [
+      'contractSchemaVersion',
+      'sessionProtocolVersion',
+      'webcmdPackageVersion',
+      'generatedAt',
+      'coreCommands',
+    ])
+    || typeof value.metadata.contractSchemaVersion !== 'number'
+    || !Number.isInteger(value.metadata.contractSchemaVersion)
+    || value.metadata.contractSchemaVersion <= 0
+    || typeof value.metadata.sessionProtocolVersion !== 'number'
+    || !Number.isInteger(value.metadata.sessionProtocolVersion)
+    || value.metadata.sessionProtocolVersion <= 0
+    || typeof value.metadata.webcmdPackageVersion !== 'string'
+    || typeof value.metadata.generatedAt !== 'string'
+    || !Array.isArray(value.commands)
+    || !value.commands.every(isHostedManifestCommand)) return false;
+
+  const coreCommands = value.metadata.coreCommands;
+  if (coreCommands !== undefined) {
+    if (!Array.isArray(coreCommands) || !coreCommands.every(isHostedCoreCommandId)) return false;
+    if (new Set(coreCommands).size !== coreCommands.length) return false;
+  }
+  return true;
 }
 
 function isHostedExecuteResponse(

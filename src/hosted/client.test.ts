@@ -1,6 +1,29 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HostedClient, HostedClientError, resolveWorkspace } from './client.js';
 
+const manifest = {
+  userId: 'user_demo',
+  metadata: {
+    contractSchemaVersion: 1,
+    sessionProtocolVersion: 1,
+    webcmdPackageVersion: '0.7.8',
+    generatedAt: 'now',
+  },
+  commands: [],
+};
+
+function jsonResponse(body: unknown): Response {
+  return new Response(JSON.stringify(body), { status: 200 });
+}
+
+function clientOptions(fetchImpl: typeof fetch) {
+  return { apiBaseUrl: 'https://api.example.com', apiKey: 'key', fetchImpl };
+}
+
+function clientFor(body: unknown): HostedClient {
+  return new HostedClient(clientOptions(async () => jsonResponse(body)));
+}
+
 const invalidTraceUrlCases = [
   {
     name: 'raw absolute provider URL with token',
@@ -71,6 +94,38 @@ const validTraceUrlCases = [
 ] as const;
 
 describe('HostedClient', () => {
+  it('advertises live-view and hosted-core capability tokens', async () => {
+    const fetchImpl = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      expect(new Headers(init?.headers).get('x-webcmd-client-capabilities'))
+        .toBe('hosted-live-view-v1, hosted-core-commands-v1');
+      return jsonResponse({ ok: true, manifest });
+    });
+    await new HostedClient(clientOptions(fetchImpl)).getManifest();
+  });
+
+  it('accepts an old manifest without coreCommands', async () => {
+    await expect(clientFor({ ok: true, manifest }).getManifest()).resolves.toEqual(manifest);
+  });
+
+  it('accepts the canonical advertised core command IDs', async () => {
+    const advertised = {
+      ...manifest,
+      metadata: { ...manifest.metadata, coreCommands: ['validate', 'profile/create'] },
+    };
+    await expect(clientFor({ ok: true, manifest: advertised }).getManifest())
+      .resolves.toEqual(advertised);
+  });
+
+  it.each([
+    'validate',
+    ['validate', 1],
+    ['validate', 'validate'],
+    ['future-command'],
+  ])('rejects malformed coreCommands metadata: %j', async (coreCommands) => {
+    const response = { ok: true, manifest: { ...manifest, metadata: { ...manifest.metadata, coreCommands } } };
+    await expect(clientFor(response).getManifest()).rejects.toMatchObject({ code: 'HOSTED_PROTOCOL' });
+  });
+
   it('preserves a raw storage endpoint error envelope', async () => {
     const client = new HostedClient({
       apiBaseUrl: 'https://api.example.com',
@@ -173,11 +228,11 @@ describe('HostedClient', () => {
       url: 'https://api.example.com/v1/sessions',
       method: 'POST',
       body: '{"name":"Work Project","profile":"work"}',
-      liveViewCapability: 'hosted-live-view-v1',
+      liveViewCapability: 'hosted-live-view-v1, hosted-core-commands-v1',
     });
     expect(requests.slice(1).map(({ url, method, liveViewCapability }) => ({ url, method, liveViewCapability }))).toEqual([
-      { url: 'https://api.example.com/v1/sessions?profile=default&limit=20', method: 'GET', liveViewCapability: 'hosted-live-view-v1' },
-      { url: 'https://api.example.com/v1/sessions/session_wire/close', method: 'POST', liveViewCapability: 'hosted-live-view-v1' },
+      { url: 'https://api.example.com/v1/sessions?profile=default&limit=20', method: 'GET', liveViewCapability: 'hosted-live-view-v1, hosted-core-commands-v1' },
+      { url: 'https://api.example.com/v1/sessions/session_wire/close', method: 'POST', liveViewCapability: 'hosted-live-view-v1, hosted-core-commands-v1' },
     ]);
   });
 
@@ -225,7 +280,7 @@ describe('HostedClient', () => {
     expect(prepareBody).toEqual({
       command: 'github/whoami', profile: 'work', session: 'session_work', executionScope: 'profile',
     });
-    expect(prepareCapability).toBe('hosted-live-view-v1');
+    expect(prepareCapability).toBe('hosted-live-view-v1, hosted-core-commands-v1');
     await expect(client.prepareExecution({ command: 'github/unknown' })).rejects.toMatchObject({ code: 'HOSTED_PROTOCOL' });
   });
 

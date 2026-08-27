@@ -1,6 +1,7 @@
 import type { CommandSurfaceMetadata } from '../command-surface.js';
 import type { Arg } from '../registry.js';
 import type { FileArgumentDirection } from './contract.js';
+import type { HostedCoreCommandId } from './core-commands.js';
 
 export const HOSTED_SESSION_PROTOCOL_VERSION = 1 as const;
 
@@ -50,6 +51,7 @@ export interface HostedManifest {
     sessionProtocolVersion: number;
     webcmdPackageVersion: string;
     generatedAt: string;
+    coreCommands?: HostedCoreCommandId[];
   };
   commands: HostedCommand[];
 }

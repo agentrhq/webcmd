@@ -35,6 +35,7 @@
     "./pipeline": "./dist/src/pipeline/index.js",
     "./plugin-runtime": "./dist/src/plugin-runtime.js",
     "./hosted/availability": "./dist/src/hosted/availability.js",
+    "./hosted/core-commands": "./dist/src/hosted/core-commands.js",
     "./hosted/programmatic": "./dist/src/hosted/programmatic.js"
   },
   "files": [
