@@ -95,7 +95,7 @@ describe('browser run local lifecycle', () => {
     tempDirs.push(cacheDir);
     const env = { WEBCMD_CACHE_DIR: cacheDir, WEBCMD_CONFIG_DIR: cacheDir };
 
-    const created = await runCliWithStdin(['session', 'create', '-f', 'json'], '', env);
+    const created = await runCliWithStdin(['session', 'create', 'browser-run-e2e', '-f', 'json'], '', env);
     expect(created.code).toBe(0);
     const session = parseJsonOutput(created.stdout).id as string;
 

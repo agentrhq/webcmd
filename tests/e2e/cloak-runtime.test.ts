@@ -33,7 +33,7 @@ function browserRun(session: string, source: string, options: Parameters<typeof 
 }
 
 async function createSession(options: Parameters<typeof runCli>[1] = {}) {
-  const result = await runCli(['session', 'create', '-f', 'json'], isolatedOptions(options));
+  const result = await runCli(['session', 'create', 'cloak-e2e', '-f', 'json'], isolatedOptions(options));
   expect(result.code, `${result.stdout}\n${result.stderr}`).toBe(0);
   return JSON.parse(result.stdout).id as string;
 }
