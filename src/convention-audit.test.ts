@@ -130,6 +130,25 @@ describe('convention audit', () => {
     });
   });
 
+  it('does not read manifest source paths outside the project root', () => {
+    const root = makeProject([], {});
+    const outsideFile = path.join(path.dirname(root), `${path.basename(root)}-outside.js`);
+    fs.writeFileSync(outsideFile, 'rows.push({ id: 1, hidden: true });');
+    fs.writeFileSync(path.join(root, 'cli-manifest.json'), JSON.stringify([{
+      site: 'demo',
+      name: 'search',
+      access: 'read',
+      columns: ['id'],
+      sourceFile: `clis/../../${path.basename(outsideFile)}`,
+    }]));
+
+    try {
+      expect(runConventionAudit({ projectRoot: root }).summary.files_scanned).toBe(0);
+    } finally {
+      fs.rmSync(outsideFile, { force: true });
+    }
+  });
+
   it('renders a compact text report', () => {
     const root = makeProject([
       { site: 'demo', name: 'search', access: 'read', columns: ['id'], sourceFile: 'demo/search.js' },

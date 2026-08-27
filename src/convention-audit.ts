@@ -1,5 +1,10 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import type {
+  AdapterAnalysisCommand,
+  AdapterAnalysisSourceReader,
+} from './adapter-analysis.js';
+import { selectAdapterCommands } from './validate.js';
 
 export type ConventionRuleId =
   | 'silent-column-drop'
@@ -134,42 +139,91 @@ export function runConventionAudit(opts: ConventionAuditOptions): ConventionAudi
   const manifest = manifestPaths.flatMap(manifestPath => (
     JSON.parse(fs.readFileSync(manifestPath, 'utf-8')) as ManifestCommand[]
   ));
-  const filtered = manifest.filter((entry) => matchesTarget(entry, opts));
+  const commands = manifest.flatMap((entry) => {
+    const command = toAdapterAnalysisCommand(entry);
+    return command ? [command] : [];
+  });
+  const allowedPaths = new Set(commands.flatMap((command) => {
+    const logicalPath = command.sourceFile ?? command.modulePath;
+    return logicalPath ? [logicalPath] : [];
+  }));
+  const projectRoot = fs.realpathSync(opts.projectRoot);
+  const rootPrefix = `${projectRoot}${path.sep}`;
+  const readSource: AdapterAnalysisSourceReader = (logicalPath) => {
+    if (!allowedPaths.has(logicalPath)) return undefined;
+    const packageRelative = logicalPath.startsWith('plugins/') || logicalPath.startsWith('clis/')
+      ? logicalPath
+      : path.join('clis', logicalPath);
+    const sourcePath = path.resolve(projectRoot, packageRelative);
+    if (sourcePath !== projectRoot && !sourcePath.startsWith(rootPrefix)) return undefined;
+    try {
+      const realSourcePath = fs.realpathSync(sourcePath);
+      if (realSourcePath !== projectRoot && !realSourcePath.startsWith(rootPrefix)) return undefined;
+      return fs.readFileSync(realSourcePath, 'utf-8');
+    } catch {
+      return undefined;
+    }
+  };
+
+  const target = opts.target?.trim();
+  const targetExists = !target || commands.some(command => (
+    target.includes('/') ? command.command === target : command.site === target
+  ));
+  return auditAdapterConventions(targetExists ? commands : [], {
+    ...(targetExists && target ? { target } : {}),
+    ...(opts.site !== undefined ? { site: opts.site } : {}),
+    readSource,
+  });
+}
+
+export function auditAdapterConventions(
+  commands: readonly AdapterAnalysisCommand[],
+  options: {
+    target?: string;
+    site?: string;
+    readSource: AdapterAnalysisSourceReader;
+  },
+): ConventionAuditReport {
+  const targeted = selectAdapterCommands(commands, options.target, 'convention-audit');
+  const site = options.site?.trim();
+  const filtered = site ? targeted.filter(command => command.site === site) : targeted;
   const violations: ConventionViolation[] = [];
-  const sourceCache = new Map<string, string | null>();
+  const sourceCache = new Map<string, string | undefined>();
   const scannedFiles = new Set<string>();
 
-  for (const entry of filtered) {
-    const command = normalizeCommand(entry);
-    if (!command) continue;
-
-    if (entry.access !== 'read' && entry.access !== 'write') {
+  for (const command of filtered) {
+    const identity = { site: command.site, name: command.name, command: command.command };
+    if (command.access !== 'read' && command.access !== 'write') {
       violations.push({
         rule: 'missing-access-metadata',
-        ...command,
+        ...identity,
         message: `${command.command} must declare access: 'read' | 'write'`,
       });
     }
 
-    for (const column of entry.columns ?? []) {
+    for (const column of command.columns ?? []) {
       if (/[a-z][A-Z]/.test(column)) {
         violations.push({
           rule: 'camelCase-in-columns',
-          ...command,
+          ...identity,
           message: `${command.command} column "${column}" should use snake_case for agent-stable keys`,
           details: { column },
         });
       }
     }
 
-    const sourcePath = resolveSourcePath(opts.projectRoot, entry);
-    if (!sourcePath) continue;
-    const source = readSource(sourcePath, sourceCache);
-    if (source == null) continue;
-    scannedFiles.add(sourcePath);
+    const logicalPath = command.sourceFile ?? command.modulePath;
+    if (!logicalPath) continue;
+    let source = sourceCache.get(logicalPath);
+    if (!sourceCache.has(logicalPath)) {
+      source = options.readSource(logicalPath);
+      sourceCache.set(logicalPath, source);
+    }
+    if (source === undefined) continue;
+    scannedFiles.add(logicalPath);
 
-    violations.push(...auditColumnDrop(command, entry, source, sourcePath, opts.projectRoot));
-    violations.push(...auditTypedErrorPatterns(command, source, sourcePath, opts.projectRoot));
+    violations.push(...auditColumnDrop(identity, command, source, logicalPath));
+    violations.push(...auditTypedErrorPatterns(identity, source, logicalPath));
   }
 
   violations.push(...auditWriteDeletePair(filtered));
@@ -179,12 +233,11 @@ export function runConventionAudit(opts: ConventionAuditOptions): ConventionAudi
     return { rule, count: items.length, violations: items };
   });
 
-  const commandCount = filtered.filter((entry) => normalizeCommand(entry) != null).length;
-  const sites = new Set(filtered.map((entry) => entry.site).filter((site): site is string => typeof site === 'string'));
+  const sites = new Set(filtered.map(command => command.site));
   return {
     ok: violations.length === 0,
     summary: {
-      commands: commandCount,
+      commands: filtered.length,
       sites: sites.size,
       files_scanned: scannedFiles.size,
       violations: violations.length,
@@ -219,51 +272,25 @@ export function renderConventionAuditText(report: ConventionAuditReport): string
   return lines.join('\n');
 }
 
-function normalizeCommand(entry: ManifestCommand): Pick<ConventionViolation, 'site' | 'name' | 'command'> | null {
+function toAdapterAnalysisCommand(entry: ManifestCommand): AdapterAnalysisCommand | null {
   if (typeof entry.site !== 'string' || typeof entry.name !== 'string') return null;
   return {
     site: entry.site,
     name: entry.name,
     command: `${entry.site}/${entry.name}`,
+    ...(typeof entry.access === 'string' ? { access: entry.access } : {}),
+    ...(entry.columns ? { columns: entry.columns } : {}),
+    ...(typeof entry.sourceFile === 'string' ? { sourceFile: entry.sourceFile } : {}),
+    ...(typeof entry.modulePath === 'string' ? { modulePath: entry.modulePath } : {}),
+    runnable: true,
   };
-}
-
-function matchesTarget(entry: ManifestCommand, opts: Pick<ConventionAuditOptions, 'target' | 'site'>): boolean {
-  const target = opts.target?.trim();
-  const site = opts.site?.trim();
-  if (site && entry.site !== site) return false;
-  if (!target) return true;
-  if (target.includes('/')) return `${entry.site}/${entry.name}` === target;
-  return entry.site === target;
-}
-
-function resolveSourcePath(projectRoot: string, entry: ManifestCommand): string | null {
-  const relative = entry.sourceFile ?? entry.modulePath;
-  if (!relative) return null;
-  const sourcePath = relative.startsWith('plugins/') || relative.startsWith('clis/')
-    ? path.join(projectRoot, relative)
-    : path.join(projectRoot, 'clis', relative);
-  return fs.existsSync(sourcePath) ? sourcePath : null;
-}
-
-function readSource(sourcePath: string, cache: Map<string, string | null>): string | null {
-  if (cache.has(sourcePath)) return cache.get(sourcePath) ?? null;
-  try {
-    const source = fs.readFileSync(sourcePath, 'utf-8');
-    cache.set(sourcePath, source);
-    return source;
-  } catch {
-    cache.set(sourcePath, null);
-    return null;
-  }
 }
 
 function auditColumnDrop(
   command: Pick<ConventionViolation, 'site' | 'name' | 'command'>,
-  entry: ManifestCommand,
+  entry: Pick<AdapterAnalysisCommand, 'columns'>,
   source: string,
-  sourcePath: string,
-  projectRoot: string,
+  logicalPath: string,
 ): ConventionViolation[] {
   const columns = new Set(entry.columns ?? []);
   if (columns.size === 0) return [];
@@ -286,7 +313,7 @@ function auditColumnDrop(
     violations.push({
       rule: 'silent-column-drop',
       ...command,
-      file: relativeFile(projectRoot, sourcePath),
+      file: logicalPath,
       line: lineForIndex(source, object.index),
       message: `${command.command} row emits key(s) not present in columns: ${missing.join(', ')}`,
       details: { emitted_keys: keys, columns: [...columns], missing },
@@ -298,11 +325,10 @@ function auditColumnDrop(
 function auditTypedErrorPatterns(
   command: Pick<ConventionViolation, 'site' | 'name' | 'command'>,
   source: string,
-  sourcePath: string,
-  projectRoot: string,
+  logicalPath: string,
 ): ConventionViolation[] {
   const violations: ConventionViolation[] = [];
-  const relative = relativeFile(projectRoot, sourcePath);
+  const relative = logicalPath;
   const lines = source.split(/\r?\n/);
   const catchRanges = findCatchBlockRanges(source);
   let offset = 0;
@@ -352,8 +378,8 @@ function isThrowMessageLine(line: string): boolean {
   return /\bthrow\s+new\b/.test(line);
 }
 
-function auditWriteDeletePair(entries: ManifestCommand[]): ConventionViolation[] {
-  const bySite = new Map<string, ManifestCommand[]>();
+function auditWriteDeletePair(entries: readonly AdapterAnalysisCommand[]): ConventionViolation[] {
+  const bySite = new Map<string, AdapterAnalysisCommand[]>();
   for (const entry of entries) {
     if (!entry.site || !entry.name) continue;
     const list = bySite.get(entry.site) ?? [];
@@ -390,6 +416,7 @@ function extractPotentialRowObjects(source: string): Array<{ text: string; index
     /\breturn\s+(?:\(\s*)?{/g,
     /=>\s*\(\s*{/g,
     /\bmap\s*:\s*{/g,
+    /\b(?:const|let|var)\s+\w+\s*=\s*{/g,
   ];
   for (const trigger of triggers) {
     for (const match of source.matchAll(trigger)) {
@@ -598,10 +625,6 @@ function looksLikeCommandMetadata(keys: string[]): boolean {
 
 function lineForIndex(source: string, index: number): number {
   return source.slice(0, index).split(/\r?\n/).length;
-}
-
-function relativeFile(projectRoot: string, sourcePath: string): string {
-  return path.relative(projectRoot, sourcePath).replaceAll(path.sep, '/');
 }
 
 function formatDetails(details: Record<string, unknown> | undefined): string {

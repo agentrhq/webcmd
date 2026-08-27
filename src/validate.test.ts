@@ -186,8 +186,13 @@ describe('validateClisWithTarget unknown target', () => {
     withValidateFixtures([key], () => {
       registerValidateFixture(site, 'search');
       const report = validateClisWithTarget([], site);
-      expect(report.ok).toBe(true);
-      expect(report.commands).toBe(1);
+      expect(report).toEqual({
+        ok: true,
+        results: [{ label: `${site}/search`, errors: [], warnings: ['Missing description'] }],
+        errors: 0,
+        warnings: 1,
+        commands: 1,
+      });
     });
   });
 });

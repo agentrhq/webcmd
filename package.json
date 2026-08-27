@@ -12,6 +12,7 @@
   },
   "exports": {
     ".": "./dist/src/main.js",
+    "./adapter-analysis": "./dist/src/adapter-analysis.js",
     "./registry": "./dist/src/registry-api.js",
     "./errors": "./dist/src/errors.js",
     "./types": "./dist/src/types.js",
