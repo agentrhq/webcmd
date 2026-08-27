@@ -46,7 +46,7 @@ cli({
                 tag,
                 lastUpdated,
                 size: sizeMB,
-                architectures: archs || 'unknown',
+                architectures: archs || null,
                 url: `https://hub.docker.com/r/${imageSlug}/tags?name=${encodeURIComponent(tag)}`,
             };
         });
