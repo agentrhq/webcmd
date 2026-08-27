@@ -1,15 +1,5 @@
 # Changelog
 
-## Unreleased
-
-### Added
-
-- Hosted help and completion advertise `skills` and `update`, which already ran under hosted configuration.
-
-### Changed
-
-- Hosted root help no longer appends "Run `webcmd setup` and choose local mode to use local-only commands." The advice remains on the `daemon` and `doctor` errors, where it is accurate.
-
 ## [0.7.7](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.6...webcmd-v0.7.7) (2026-08-26)
 
 ### Improvements
