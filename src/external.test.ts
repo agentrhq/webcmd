@@ -23,7 +23,7 @@ vi.mock('node:os', async () => {
 });
 
 import { spawnSync } from 'node:child_process';
-import { executeExternalCli, formatExternalCliLabel, installExternalCli, parseCommand, type ExternalCliConfig } from './external.js';
+import { executeExternalCli, formatExternalCliLabel, installExternalCli, isBinaryInstalled, parseCommand, type ExternalCliConfig } from './external.js';
 import { EXIT_CODES } from './errors.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -78,6 +78,17 @@ describe('formatExternalCliLabel', () => {
     expect(formatExternalCliLabel({ name: 'lin', binary: 'lin', package: 'linear' })).toBe(
       'lin(linear)',
     );
+  });
+});
+
+describe('isBinaryInstalled', () => {
+  it('recognizes an existing explicit executable path without PATH lookup', () => {
+    mockExecFileSync.mockImplementation(() => {
+      throw new Error('PATH lookup must not run');
+    });
+
+    expect(isBinaryInstalled(process.execPath)).toBe(true);
+    expect(mockExecFileSync).not.toHaveBeenCalled();
   });
 });
 
