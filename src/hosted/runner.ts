@@ -272,6 +272,10 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
       return { handled: true, exitCode: EXIT_CODES.USAGE_ERROR };
     }
     if (err instanceof CommanderStructuralError) {
+      if (err.exitCode === EXIT_CODES.SUCCESS) {
+        await writeToStream(stdout, err.output);
+        return { handled: true, exitCode: EXIT_CODES.SUCCESS };
+      }
       // Usage errors carry their own envelope; honour -f/--format and --json the
       // same way the local CLI does instead of falling back to UNKNOWN/exit 1.
       const usageFormat = requestedMachineFormat(argv);

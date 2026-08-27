@@ -2323,6 +2323,9 @@ describe('runHostedCli', () => {
 
   it.each([
     { argv: ['validate', '--help'], command: 'validate', usage: 'Usage: webcmd validate' },
+    { argv: ['verify', '--help'], command: 'verify', usage: 'Usage: webcmd verify' },
+    { argv: ['convention-audit', '--help'], command: 'convention-audit', usage: 'Usage: webcmd convention-audit' },
+    { argv: ['doctor', '--help'], command: 'doctor', usage: 'Usage: webcmd doctor' },
     { argv: ['adapter', 'status', '--help'], command: 'adapter/status', usage: 'Usage: webcmd adapter status' },
     { argv: ['adapter', 'reset', '--help'], command: 'adapter/reset', usage: 'Usage: webcmd adapter reset' },
     { argv: ['profile', 'create', '--help'], command: 'profile/create', usage: 'Usage: webcmd profile create' },
@@ -2345,7 +2348,8 @@ describe('runHostedCli', () => {
 
     expect(result).toEqual({ handled: true, exitCode: 0 });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
-    expect(`${stdout.text()}${stderr.text()}`).toContain(usage);
+    expect(stdout.text()).toContain(usage);
+    expect(stderr.text()).toBe('');
   });
 
   it.each([
