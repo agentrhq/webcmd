@@ -124,6 +124,16 @@ Reusable adapters continue to use the existing `IPage` API. Playwright-style
 programs are for reconnaissance and ad-hoc multi-step work; they are not pasted
 into adapter modules.
 
+Hosted `browser run` receipts keep the `cloud-artifact://` locator and add an
+authenticated `downloadUrl`. Download later with:
+
+```bash
+webcmd artifact download <download-url> --output <local-path>
+```
+
+`--output` is required. Webcmd authenticates to the configured Cloud API.
+Ordinary `curl` is neither required nor automatically authenticated.
+
 ## Top-Level Commands
 
 | Command | Purpose |
@@ -132,6 +142,7 @@ into adapter modules.
 | `setup` | Choose local or hosted mode interactively. |
 | `doctor` | Diagnose browser bridge and daemon connectivity. |
 | `daemon` | Manage the local Webcmd daemon: status, stop, and restart. |
+| `artifact` | Download a hosted execution artifact to `--output`. |
 | `browser` | Agent-facing browser runtime for exploration and verification. |
 | `web` | Local URL fetch helpers. |
 | `profile` | List, rename, and select browser runtime profiles. |

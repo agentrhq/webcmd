@@ -16,6 +16,7 @@ import {
   toEnvelope,
   withAdapterRepairHelp,
 } from './errors.js';
+import { HostedClientError } from './hosted/client.js';
 import type { SessionLeaseHolder } from './session-lease.js';
 
 describe('Error type hierarchy', () => {
@@ -166,6 +167,28 @@ describe('toEnvelope', () => {
     const causeStr = envelope.error.cause ?? '';
     expect(causeStr).toContain('(cause chain truncated)');
     expect(causeStr).not.toContain('root'); // root is beyond depth 10
+  });
+
+  it('preserves hosted object details on the CLI error envelope', () => {
+    const details = { warnings: [{ code: 'PAGE_STALE' }], timings: { program_ms: 12 } };
+    const err = new HostedClientError(
+      'BROWSER_RUN_TIMEOUT',
+      'The browser program timed out.',
+      'Retry with a shorter program.',
+      75,
+      { details },
+    );
+
+    expect(toEnvelope(err)).toEqual({
+      ok: false,
+      error: {
+        code: 'BROWSER_RUN_TIMEOUT',
+        message: 'The browser program timed out.',
+        help: 'Retry with a shorter program.',
+        exitCode: 75,
+        details,
+      },
+    });
   });
 
   it('preserves public hosted trace receipts without inventing local paths', () => {

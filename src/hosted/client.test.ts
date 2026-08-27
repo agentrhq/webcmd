@@ -885,6 +885,80 @@ describe('HostedClient', () => {
     } satisfies Partial<HostedClientError>);
   });
 
+  it('keeps the original hosted error code when failure details are a nested object', async () => {
+    const details = {
+      warnings: [{ code: 'PAGE_STALE', message: 'The assigned page changed.' }],
+      timings: { program_ms: 12 },
+    };
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: false,
+        error: {
+          code: 'BROWSER_RUN_TIMEOUT',
+          message: 'The browser program timed out.',
+          help: 'Retry with a shorter program.',
+          exitCode: 75,
+          details,
+        },
+        execution: { id: 'exec_timeout', command: 'github/whoami', status: 'timed_out' },
+      }), { status: 504 }),
+    });
+
+    await expect(client.execute({ command: 'github/whoami', args: {} })).rejects.toMatchObject({
+      code: 'BROWSER_RUN_TIMEOUT',
+      details,
+    } satisfies Partial<HostedClientError>);
+  });
+
+  it('preserves object details on artifact-download failures', async () => {
+    const details = { artifactId: 'artifact_out', reason: 'expired' };
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: false,
+        error: {
+          code: 'ARTIFACT_NOT_FOUND',
+          message: 'The artifact is gone.',
+          exitCode: 66,
+          details,
+        },
+      }), { status: 404 }),
+    });
+
+    await expect(client.downloadExecutionArtifact({
+      executionId: 'exec_files',
+      artifactId: 'artifact_out',
+    })).rejects.toMatchObject({
+      code: 'ARTIFACT_NOT_FOUND',
+      details,
+    } satisfies Partial<HostedClientError>);
+  });
+
+  it('preserves object details on raw-text request failures', async () => {
+    const details = { site: 'github', path: 'notes.md' };
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: false,
+        error: {
+          code: 'SITE_MEMORY_NOT_FOUND',
+          message: 'Missing notes.',
+          exitCode: 66,
+          details,
+        },
+      }), { status: 404 }),
+    });
+
+    await expect(client.readSiteMemory('github', 'notes.md')).rejects.toMatchObject({
+      code: 'SITE_MEMORY_NOT_FOUND',
+      details,
+    } satisfies Partial<HostedClientError>);
+  });
+
   it.each(['success', 'failure'].flatMap(phase => invalidTraceUrlCases.map(testCase => ({
     phase,
     ...testCase,
@@ -1078,6 +1152,38 @@ describe('HostedClient', () => {
         execution: {
           id: 'exec_good', command: 'github/whoami', status: 'succeeded', internalPath: '/srv/private/token.json',
         },
+      },
+    },
+    {
+      name: 'array error details',
+      status: 500,
+      body: {
+        ok: false,
+        error: { code: 'UNKNOWN', message: 'failed', exitCode: 1, details: ['secret'] },
+      },
+    },
+    {
+      name: 'string error details',
+      status: 500,
+      body: {
+        ok: false,
+        error: { code: 'UNKNOWN', message: 'failed', exitCode: 1, details: 'secret' },
+      },
+    },
+    {
+      name: 'number error details',
+      status: 500,
+      body: {
+        ok: false,
+        error: { code: 'UNKNOWN', message: 'failed', exitCode: 1, details: 12 },
+      },
+    },
+    {
+      name: 'null error details',
+      status: 500,
+      body: {
+        ok: false,
+        error: { code: 'UNKNOWN', message: 'failed', exitCode: 1, details: null },
       },
     },
   ])('rejects malformed $name as HOSTED_PROTOCOL', async ({ status, body }) => {
@@ -1370,6 +1476,76 @@ describe('HostedClient', () => {
         },
       },
     ]);
+  });
+
+  it('runs sessionless authoring through the dedicated authoring endpoint', async () => {
+    const requests: Array<{ url: string; body?: unknown }> = [];
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'wcmd_live_test',
+      fetchImpl: async (url, init) => {
+        requests.push({
+          url: String(url),
+          body: init?.body ? JSON.parse(String(init.body)) as unknown : undefined,
+        });
+        return new Response(JSON.stringify({
+          ok: true,
+          result: [{ created: true, adapter: 'quotes/list' }],
+          columns: ['created', 'adapter'],
+          trace: null,
+          run: {
+            executionId: 'exec_1',
+            profile: { id: 'profile_default', displayName: 'default' },
+          },
+          execution: { id: 'exec_1', status: 'succeeded' },
+        }), { status: 200 });
+      },
+    });
+
+    await expect(client.executeAuthoringCommand({
+      command: 'browser/init',
+      action: 'init',
+      args: { name: 'quotes/list' },
+    })).resolves.toMatchObject({
+      result: [{ created: true, adapter: 'quotes/list' }],
+      execution: { id: 'exec_1', status: 'succeeded' },
+    });
+    expect(requests).toEqual([
+      {
+        url: 'https://api.example.com/v1/browser/authoring/commands',
+        body: {
+          command: 'browser/init',
+          action: 'init',
+          args: { name: 'quotes/list' },
+        },
+      },
+    ]);
+    expect(JSON.stringify(requests[0]?.body)).not.toMatch(/session/i);
+  });
+
+  it('rejects an authoring success that invents a Session token', async () => {
+    const client = new HostedClient({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'wcmd_live_test',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        result: {},
+        columns: [],
+        trace: null,
+        run: {
+          executionId: 'exec_1',
+          session: 'session_hidden',
+          profile: { id: 'profile_default', displayName: 'default' },
+        },
+        execution: { id: 'exec_1', status: 'succeeded' },
+      }), { status: 200 }),
+    });
+
+    await expect(client.executeAuthoringCommand({
+      command: 'browser/verify',
+      action: 'verify',
+      args: { name: 'quotes/list' },
+    })).rejects.toMatchObject({ code: 'HOSTED_PROTOCOL' });
   });
 
   it('accepts compact hosted snapshot responses', async () => {

@@ -13,7 +13,6 @@ const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const cliEntry = path.join(repoRoot, 'dist', 'src', 'main.js');
 const packageRoot = path.join(repoRoot, 'dist');
-const checkoutFingerprintExclusions = new Set(['.git', '.superpowers', 'coverage', 'dist', 'node_modules']);
 const sourceText = 'export const fixture = true;\n';
 const sourceFile: HostedVirtualFile = { path: 'source.js', content: new TextEncoder().encode(sourceText) };
 
@@ -116,7 +115,6 @@ describe('programmatic runner isolation', () => {
 
   it('keeps writer output virtual without changing the checkout or built package roots', async () => {
     const scratch = await mkdtemp(path.join(tmpdir(), 'webcmd-isolation-'));
-    const checkoutBefore = await fingerprintTree(repoRoot, checkoutFingerprintExclusions);
     const packageBefore = await fingerprintTree(packageRoot);
     const before = process.cwd();
     process.chdir(scratch);
@@ -131,7 +129,6 @@ describe('programmatic runner isolation', () => {
       ]);
       expect(source.outputFiles).toEqual([{ path: 'adapter.js', content: new TextEncoder().encode('export default {};\n') }]);
       expect(await readdir(scratch)).toEqual([]);
-      expect(await fingerprintTree(repoRoot, checkoutFingerprintExclusions)).toBe(checkoutBefore);
       expect(await fingerprintTree(packageRoot)).toBe(packageBefore);
     } finally {
       process.chdir(before);

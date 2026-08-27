@@ -40,6 +40,7 @@ export const HOSTED_ROOT_HELP: RootHelpPresentation = {
     { flags: '-h, --help', description: 'Display help for command' },
   ],
   commands: [
+    { name: 'artifact', description: 'Download a hosted execution artifact to a local path' },
     { name: 'browser', description: 'Browser control through a hosted browser session' },
     { name: 'completion <shell>', description: 'Output a shell completion script' },
     { name: 'list', description: 'List all available hosted CLI commands' },

@@ -345,6 +345,11 @@ export interface HostedBrowserRunActionResponse extends HostedBrowserActionRespo
   execution: HostedBrowserFinishResponse['execution'];
 }
 
+export interface HostedAuthoringCommandResponse extends HostedBrowserActionResponse {
+  run: Omit<HostedBrowserRunResponse['run'], 'session'>;
+  execution: HostedBrowserFinishResponse['execution'];
+}
+
 export interface HostedBrowserSnapshotActionResponse {
   ok: true;
   run: HostedBrowserRunResponse['run'];
@@ -358,6 +363,7 @@ export interface HostedErrorResponse {
     message: string;
     help?: string;
     exitCode?: number;
+    details?: Record<string, unknown>;
   };
   execution?: HostedExecution;
   trace?: HostedTraceReceipt;

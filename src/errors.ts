@@ -291,6 +291,7 @@ export interface ErrorEnvelope {
     exitCode: number;
     stack?: string;
     cause?: string;
+    details?: Record<string, unknown>;
   };
   trace?: {
     traceId: string;
@@ -302,6 +303,14 @@ export interface ErrorEnvelope {
 }
 
 // ── Utilities ───────────────────────────────────────────────────────────────
+
+function errorDetails(err: unknown): Record<string, unknown> | undefined {
+  if (!err || typeof err !== 'object') return undefined;
+  const details = (err as { details?: unknown }).details;
+  return details && typeof details === 'object' && !Array.isArray(details)
+    ? details as Record<string, unknown>
+    : undefined;
+}
 
 /** Extract a human-readable message from an unknown caught value. */
 export function getErrorMessage(error: unknown): string {
@@ -335,6 +344,7 @@ export function toEnvelope(err: unknown): ErrorEnvelope {
         }
     : undefined;
   if (err instanceof CliError) {
+    const details = errorDetails(err);
     return {
       ok: false,
       error: {
@@ -343,6 +353,7 @@ export function toEnvelope(err: unknown): ErrorEnvelope {
         ...(err.hint ? { help: err.hint } : {}),
         exitCode: err.exitCode,
         ...(cause ? { cause } : {}),
+        ...(details ? { details } : {}),
       },
       ...(trace ? { trace } : {}),
     };

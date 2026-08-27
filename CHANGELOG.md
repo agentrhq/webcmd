@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.7.7](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.6...webcmd-v0.7.7) (2026-08-26)
+
+### Improvements
+- Added `webcmd artifact download <download-url> --output <local-path>` for authenticated downloads of hosted execution artifacts. Download URLs are restricted to the configured Webcmd Cloud API origin to prevent credentials from being sent elsewhere.
+- Published the full 100-task BU Bench V1 report, including accuracy, token usage, estimated controller cost, agent turns, category results, methodology, limitations, and reproduction steps.
+
+### Fixes
+- Hosted Cloud failures with object-valued `error.details` now preserve their original error code and include those details in the CLI error envelope instead of being reported as `HOSTED_PROTOCOL`.
+- Site-memory writes on Windows now retry transient `EPERM` errors when creating lock files.
+
+### Adapters
+- Hosted `webcmd browser init <site>/<command>` and `webcmd browser verify <site>/<command>` now use the dedicated authoring route and no longer require—or accept—`--session`.
+
+### Contributors
+[@ankitranjan7](https://github.com/ankitranjan7) | [@beubax](https://github.com/beubax)
+
 ## [0.7.6](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.5...webcmd-v0.7.6) (2026-08-24)
 
 ### Highlights

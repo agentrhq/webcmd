@@ -36,6 +36,7 @@ import { CLI_COMMAND } from '../brand.js';
 import { formatPluginSearchEmptyCopy, presentPluginSearch } from '../plugin-search-presentation.js';
 import { missingPluginGuidance } from '../discovery.js';
 import { webFetchCommand } from '../fetch/command.js';
+import { runHostedArtifactDownload } from './artifact-download.js';
 import { HostedClient, HostedClientError, resolveWorkspace } from './client.js';
 import { createVirtualHostedFileIo, realHostedFileIo, type HostedFileIo } from './file-io.js';
 import { HOSTED_SESSION_PROTOCOL_VERSION } from './types.js';
@@ -58,6 +59,7 @@ import { resolveHostedApiKey, type HostedCredentialStore } from './credentials.j
 import { parseHostedRootCommandSurface } from '../root-command-surface.js';
 import { registerSiteCommands, type SiteMemoryBackend } from '../site-memory/commands.js';
 import type {
+  HostedAuthoringCommandResponse,
   HostedBrowserActionName,
   HostedBrowserRunActionResponse,
   HostedBrowserSnapshotActionResponse,
@@ -312,6 +314,11 @@ async function dispatchHosted(
     const manifest = await client.getManifest();
     validateManifestContractIdentity(manifest);
     await dispatchHostedBrowser(invocation, client, stdout, io);
+    return;
+  }
+
+  if (args[0] === 'artifact') {
+    await runHostedArtifactDownload(args.slice(1), client, stdout, io.fileIo);
     return;
   }
 
@@ -957,7 +964,7 @@ async function executeHostedPreparedCommand(input: {
 }
 
 interface ParsedHostedBrowserInvocation {
-  session: string;
+  session?: string;
   command: string;
   action: HostedBrowserActionName;
   args: Record<string, unknown>;
@@ -975,14 +982,17 @@ async function dispatchHostedBrowser(
   const args = invocation.action === 'set-file-input'
     ? await materializeHostedBrowserUploadArgs(invocation.args, io.fileIo)
     : invocation.args;
-  const response = await client.runBrowserAction(invocation.session, {
+  const request = {
     command: invocation.command,
     action: invocation.action,
     args,
     ...(invocation.profile !== undefined ? { profile: invocation.profile } : {}),
     ...(invocation.windowMode !== undefined ? { windowMode: invocation.windowMode } : {}),
-    trace: 'off',
-  });
+    trace: 'off' as const,
+  };
+  const response = invocation.session === undefined
+    ? await client.executeAuthoringCommand(request)
+    : await client.runBrowserAction(invocation.session, request);
   await renderHostedBrowserResponse(stdout, invocation, response, io);
 }
 
@@ -1055,9 +1065,18 @@ async function parseHostedBrowserInvocation(
 
   const windowMode = structure.window === undefined ? undefined : parseWindowMode(structure.window);
   const parsed = parseBrowserLeaf(structure.commandName, structure.positionals, structure.options);
+  const sessionless = hostedBrowserCommandsByPath.get(parsed.commandName)?.sessionPolicy === 'sessionless';
+  if (sessionless && (session !== undefined || structure.session)) {
+    throw new CliError(
+      'SESSION_NOT_ALLOWED',
+      'browser init and browser verify do not take --session.',
+      'Use: webcmd browser init <site>/<command> or webcmd browser verify <site>/<command>',
+      EXIT_CODES.USAGE_ERROR,
+    );
+  }
   const browserArgs = await materializeBrowserRunSource(parsed.commandName, parsed.args, io);
   return {
-    session: validateRawBrowserSession(structure.session, profile),
+    ...(sessionless ? {} : { session: validateRawBrowserSession(structure.session, profile) }),
     command: `browser/${parsed.commandName}`,
     action: parsed.action,
     args: browserArgs,
@@ -1253,7 +1272,7 @@ function withoutKeys(input: Record<string, unknown>, keys: readonly string[]): R
 async function renderHostedBrowserResponse(
   stdout: NodeJS.WritableStream,
   invocation: ParsedHostedBrowserInvocation,
-  response: HostedBrowserRunActionResponse | HostedBrowserSnapshotActionResponse,
+  response: HostedBrowserRunActionResponse | HostedBrowserSnapshotActionResponse | HostedAuthoringCommandResponse,
   io: HostedDispatchIo,
 ): Promise<void> {
   const result = response.result;
@@ -1706,7 +1725,7 @@ function readInstalledHostedContractIdentity(): InstalledHostedContractIdentity 
 
 function hostedCommandName(argv: readonly string[]): string | undefined {
   const positionals: string[] = [];
-  const builtinCommands = new Set(['adapter', 'browser', 'completion', 'daemon', 'doctor', 'list', 'plugin', 'profile', 'session', 'setup', 'site', 'skills', 'update', 'web']);
+  const builtinCommands = new Set(['adapter', 'artifact', 'browser', 'completion', 'daemon', 'doctor', 'list', 'plugin', 'profile', 'session', 'setup', 'site', 'skills', 'update', 'web']);
   const valueOptions = new Set(['--profile', '-f', '--format', '--trace']);
   for (let i = 0; i < argv.length && positionals.length < 2; i += 1) {
     const token = argv[i]!;
