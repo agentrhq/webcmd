@@ -342,6 +342,14 @@ async function dispatchHosted(
     validateManifestContractIdentity(manifest);
     return manifest;
   };
+  const getHelpCoreCommands = async (): Promise<readonly HostedCoreCommandId[] | undefined> => {
+    try {
+      return (await getManifest()).metadata.coreCommands;
+    } catch (error) {
+      if (signal?.aborted || error instanceof InterruptedError) throw error;
+      return undefined;
+    }
+  };
   let validatedPreferredProfile: Promise<string | undefined> | undefined;
   const profileForRequest = (override?: string): Promise<string | undefined> => {
     if (override !== undefined) return Promise.resolve(override);
@@ -351,13 +359,7 @@ async function dispatchHosted(
     return validatedPreferredProfile;
   };
   if (normalized.kind === 'help') {
-    let coreCommands: readonly HostedCoreCommandId[] | undefined;
-    try {
-      coreCommands = (await getManifest()).metadata.coreCommands;
-    } catch (error) {
-      if (signal?.aborted || error instanceof InterruptedError) throw error;
-      // Root help remains usable while offline, logged out, or paired with an incompatible Cloud.
-    }
+    const coreCommands = await getHelpCoreCommands();
     const help = formatRootHelp(getHostedRootHelp(coreCommands, hasLocalClientCommandHandlers));
     if (normalized.exitCode !== EXIT_CODES.SUCCESS) {
       throw new CommanderCompatibleError(help, normalized.exitCode);
@@ -375,6 +377,7 @@ async function dispatchHosted(
     return;
   }
   const args = normalized.argv;
+  const requestsNamespaceHelp = !normalized.literal && (args[1] === '--help' || args[1] === '-h');
   let hostedAuth: Extract<ParsedHostedAuthCommand, { kind: 'run' }> | undefined;
   if (args[0] === 'auth' && (!args[1] || args[1] === 'status' || args[1] === 'refresh' || args[1] === '--help' || args[1] === '-h')) {
     const parsed = parseHostedAuthCommand(args, normalized.literal);
@@ -442,7 +445,10 @@ async function dispatchHosted(
   }
 
   if (args[0] === 'adapter' && (args[1] === 'source' || args[1] === 'path' || args[1] === 'override' || args[1] === 'status' || args[1] === 'reset' || args[1] === '--help' || args[1] === '-h')) {
-    await runHostedAdapterSurface(args.slice(1), normalized.literal, client, stdout, homeDir, io, getManifest);
+    const coreCommands = requestsNamespaceHelp
+      ? await getHelpCoreCommands()
+      : undefined;
+    await runHostedAdapterSurface(args.slice(1), normalized.literal, client, stdout, homeDir, io, getManifest, coreCommands);
     return;
   }
 
@@ -458,7 +464,10 @@ async function dispatchHosted(
   }
 
   if (args[0] === 'profile') {
-    const parsed = parseHostedProfileSurface(args.slice(1), normalized.literal);
+    const coreCommands = requestsNamespaceHelp
+      ? await getHelpCoreCommands()
+      : undefined;
+    const parsed = parseHostedProfileSurface(args.slice(1), normalized.literal, coreCommands);
     if (parsed.kind === 'help') {
       await writeToStream(stdout, parsed.output);
       return;
@@ -486,7 +495,10 @@ async function dispatchHosted(
         'Hosted mode supports: webcmd plugin search, install, list, uninstall, update, and create.',
       );
     }
-    const parsed = parseHostedPluginSurface(args.slice(1), normalized.literal);
+    const coreCommands = requestsNamespaceHelp
+      ? await getHelpCoreCommands()
+      : undefined;
+    const parsed = parseHostedPluginSurface(args.slice(1), normalized.literal, coreCommands);
     if (parsed.kind === 'help') {
       await writeToStream(stdout, parsed.output);
       return;
@@ -934,6 +946,7 @@ async function runHostedAdapterSurface(
   homeDir: string,
   io: HostedDispatchIo,
   getManifest: () => Promise<HostedManifest>,
+  coreCommands?: readonly HostedCoreCommandId[],
 ): Promise<void> {
   let parsed: HostedAdapterCommand | undefined;
   let help = '';
@@ -959,7 +972,9 @@ async function runHostedAdapterSurface(
     .description('Fork an installed adapter command into a private copy you can modify')
     .argument('<command>', 'Command to override, as <site>/<command>')
     .action(commandKey => { parsed = { kind: 'override', commandKey }; });
-  const status = addOutputFormatOption(adapter.command('status'));
+  const status = addOutputFormatOption(adapter.command('status', {
+    hidden: !hasHostedCoreCommand(coreCommands, 'adapter/status'),
+  }));
   status.action((options: { format: string }) => {
     parsed = {
       kind: 'status',
@@ -967,7 +982,9 @@ async function runHostedAdapterSurface(
       formatExplicit: outputFormatIsExplicit(status),
     };
   });
-  const reset = addOutputFormatOption(adapter.command('reset').argument('[site]').option('--all', 'Reset all hosted overrides', false));
+  const reset = addOutputFormatOption(adapter.command('reset', {
+    hidden: !hasHostedCoreCommand(coreCommands, 'adapter/reset'),
+  }).argument('[site]').option('--all', 'Reset all hosted overrides', false));
   reset.action((site: string | undefined, options: { all?: boolean; format: string }) => {
     const all = options.all === true;
     if ((!site && !all) || (site !== undefined && all)) throw new ArgumentError('Specify one adapter site or --all.');
@@ -1659,6 +1676,7 @@ type ParsedHostedProfileSurface =
 function parseHostedProfileSurface(
   argv: readonly string[],
   literal: boolean,
+  coreCommands?: readonly HostedCoreCommandId[],
 ): ParsedHostedProfileSurface {
   let stdout = '';
   let stderr = '';
@@ -1695,10 +1713,14 @@ function parseHostedProfileSurface(
   list.exitOverride().configureOutput(output).action(() => setParsed('list', list));
   const remove = configureFormat(profile.command('delete').argument('<profile-id>'));
   remove.exitOverride().configureOutput(output).action((profileId: string) => setParsed('delete', remove, profileId));
-  profile.command('create').argument('<name>').exitOverride().configureOutput(output).action((name: string) => {
+  profile.command('create', {
+    hidden: !hasHostedCoreCommand(coreCommands, 'profile/create'),
+  }).argument('<name>').exitOverride().configureOutput(output).action((name: string) => {
     parsed = { kind: 'run', command: 'create', name };
   });
-  profile.command('rename').argument('<profile>').argument('<name>').exitOverride().configureOutput(output).action((profileValue: string, name: string) => {
+  profile.command('rename', {
+    hidden: !hasHostedCoreCommand(coreCommands, 'profile/rename'),
+  }).argument('<profile>').argument('<name>').exitOverride().configureOutput(output).action((profileValue: string, name: string) => {
     parsed = { kind: 'run', command: 'rename', profile: profileValue, name };
   });
   profile.command('use').argument('<profile>').exitOverride().configureOutput(output).action((profileValue: string) => {
@@ -1785,6 +1807,7 @@ type ParsedHostedPluginSurface =
 function parseHostedPluginSurface(
   argv: readonly string[],
   literal: boolean,
+  coreCommands?: readonly HostedCoreCommandId[],
 ): ParsedHostedPluginSurface {
   let stdout = '';
   let stderr = '';
@@ -1841,7 +1864,9 @@ function parseHostedPluginSurface(
       ...(options.authorHandle !== undefined ? { authorHandle: options.authorHandle } : {}),
     };
   });
-  const catalog = plugin.command('catalog');
+  const catalog = plugin.command('catalog', {
+    hidden: !hasHostedCoreCommand(coreCommands, 'plugin/catalog/list'),
+  });
   const catalogList = addOutputFormatOption(catalog.command('list')).exitOverride().configureOutput(output);
   catalogList.action((options: { format: string }) => {
     parsed = {

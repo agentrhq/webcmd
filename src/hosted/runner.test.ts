@@ -885,7 +885,7 @@ describe('runHostedCli', () => {
 
     expect(result).toEqual({ handled: true, exitCode: 0 });
     expect(stdout.text()).toContain('Commands:\n  source');
-    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it('presents web fetch help from local metadata without dispatching it to Cloud', async () => {
@@ -1316,7 +1316,7 @@ describe('runHostedCli', () => {
     expect(outputs.files()).toEqual([]);
   });
 
-  it('shows hosted plugin search and install help without an API call', async () => {
+  it('shows hosted plugin search and install help after one capability request', async () => {
     const stdout = sink();
     const stderr = sink();
     const fetchImpl = vi.fn<typeof fetch>();
@@ -1331,7 +1331,7 @@ describe('runHostedCli', () => {
     expect(stderr.text()).toBe('');
     expect(stdout.text()).toContain('search');
     expect(stdout.text()).toContain('install');
-    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it.each([
@@ -2226,6 +2226,71 @@ describe('runHostedCli', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(candidates).toEqual(expect.arrayContaining(included));
     for (const name of excluded) expect(candidates).not.toContain(name);
+  });
+
+  it.each([
+    {
+      namespace: 'adapter',
+      clientOwned: ['override', 'path', 'source'],
+      cloudOwned: ['status', 'reset'],
+    },
+    {
+      namespace: 'profile',
+      clientOwned: ['delete', 'list', 'use'],
+      cloudOwned: ['create', 'rename'],
+    },
+    {
+      namespace: 'plugin',
+      clientOwned: ['create', 'install', 'list', 'search', 'uninstall', 'update'],
+      cloudOwned: ['catalog'],
+    },
+  ])('hides $namespace Cloud children from help when coreCommands is absent or empty', async ({ namespace, clientOwned, cloudOwned }) => {
+    for (const coreCommands of [undefined, []]) {
+      const stdout = sink();
+      const fetchImpl = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
+        ok: true,
+        manifest: {
+          ...manifest,
+          metadata: {
+            ...manifest.metadata,
+            ...(coreCommands === undefined ? {} : { coreCommands }),
+          },
+        },
+      }), { status: 200 }));
+
+      const result = await runHostedCli([namespace, '--help'], {
+        config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+        stdout: stdout.stream,
+        fetchImpl,
+      });
+
+      expect(result).toEqual({ handled: true, exitCode: 0 });
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      for (const name of clientOwned) expect(stdout.text()).toMatch(new RegExp(`^\\s{2}${name}(?:\\s|\\[)`, 'm'));
+      for (const name of cloudOwned) expect(stdout.text()).not.toMatch(new RegExp(`^\\s{2}${name}(?:\\s|\\[)`, 'm'));
+    }
+  });
+
+  it.each([
+    { namespace: 'adapter', coreCommands: ['adapter/status', 'adapter/reset'], cloudOwned: ['status', 'reset'] },
+    { namespace: 'profile', coreCommands: ['profile/create', 'profile/rename'], cloudOwned: ['create', 'rename'] },
+    { namespace: 'plugin', coreCommands: ['plugin/catalog/list'], cloudOwned: ['catalog'] },
+  ])('shows advertised $namespace Cloud children in help', async ({ namespace, coreCommands, cloudOwned }) => {
+    const stdout = sink();
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
+      ok: true,
+      manifest: { ...manifest, metadata: { ...manifest.metadata, coreCommands } },
+    }), { status: 200 }));
+
+    const result = await runHostedCli([namespace, '--help'], {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stdout: stdout.stream,
+      fetchImpl,
+    });
+
+    expect(result).toEqual({ handled: true, exitCode: 0 });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    for (const name of cloudOwned) expect(stdout.text()).toMatch(new RegExp(`^\\s{2}${name}(?:\\s|\\[)`, 'm'));
   });
 
   it.each([
