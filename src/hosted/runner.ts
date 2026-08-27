@@ -23,6 +23,7 @@ import {
 import { splitAdapterCommandKey } from '../adapter-source.js';
 import { ArgumentError, CliError, ConfigError, EXIT_CODES, InterruptedError, toEnvelope } from '../errors.js';
 import { getRequestedHelpFormat, renderStructuredHelp } from '../help.js';
+import { WEBCMD_ROOT_COMMANDS } from '../hooks.js';
 import { enableVerbose } from '../logger.js';
 import { findPackageRoot } from '../package-paths.js';
 import { errorEnvelopeFormat, formatErrorEnvelope, requestedFormatFromArgv, requestedMachineFormat, render as renderOutput } from '../output.js';
@@ -126,14 +127,8 @@ interface TrustedCommandResolution {
 
 interface DeferredExternalSession {
   error: BrowserSessionArgvError;
-  site: string;
   args: string[];
   configs: ExternalCliConfig[];
-}
-
-/** Carries an external CLI's own exit code out of dispatch. Not an error. */
-class ExternalExitSignal {
-  constructor(readonly exitCode: number) {}
 }
 
 class CommanderCompatibleError extends Error {
@@ -179,7 +174,7 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
       const [site, ...args] = root.argv;
       const configs = opts.externals.list();
       if (!site || !configs.some(config => config.name === site)) throw error;
-      deferredExternalSession = { error, site, args, configs };
+      deferredExternalSession = { error, args, configs };
     }
     const credential = await resolveHostedApiKey(config, {
       credentialStore: opts.credentialStore,
@@ -212,7 +207,7 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
       fileIo,
       ...(usesVirtualFileIo ? { virtualScaffold: { files: virtualFiles, outputs: virtualOutputs } } : {}),
     };
-    await dispatchHosted(
+    const exitCode = await dispatchHosted(
       argv,
       client,
       stdout,
@@ -226,12 +221,9 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
       opts.externals,
       deferredExternalSession,
     );
-    return { handled: true, exitCode: EXIT_CODES.SUCCESS };
+    return { handled: true, exitCode: exitCode ?? EXIT_CODES.SUCCESS };
   } catch (caught) {
     if (caught instanceof StreamWriteError) throw caught;
-    if (caught instanceof ExternalExitSignal) {
-      return { handled: true, exitCode: caught.exitCode };
-    }
     const err = opts.signal?.aborted ? new InterruptedError() : caught;
     if (err instanceof BrowserSessionArgvError) {
       await writeToStream(stderr, `error: ${err.message}\n`);
@@ -295,7 +287,7 @@ async function dispatchHosted(
     run(name: string, args: string[], configs: ExternalCliConfig[]): number;
   },
   deferredExternalSession?: DeferredExternalSession,
-): Promise<void> {
+): Promise<number | undefined> {
   const normalized = parseHostedRootCommandSurface(argv);
   if (normalized.kind === 'help') {
     const help = formatRootHelp(HOSTED_ROOT_HELP);
@@ -545,11 +537,14 @@ async function dispatchHosted(
     if (externals) {
       const externalConfigs = deferredExternalSession?.configs ?? externals.list();
       if (externalConfigs.some(config => config.name === site)) {
-        throw new ExternalExitSignal(externals.run(
+        if (isWebcmdOwnedRoot(site)) {
+          throw new ConfigError(`${CLI_COMMAND} ${site} is local-only and is not available in hosted mode.`, LOCAL_ONLY_COMMAND_HELP);
+        }
+        return externals.run(
           site,
           deferredExternalSession?.args ?? args.slice(1),
           externalConfigs,
-        ));
+        );
       }
     }
     const unknownRoot = parseUnknownSiteRootOptions(args, normalized.literal);
@@ -1666,6 +1661,12 @@ function parseUnknownSiteRootOptions(
     if (token === '--help' || token === '-h') help = true;
   }
   return { help, version: false, ...(profile !== undefined ? { profile } : {}) };
+}
+
+function isWebcmdOwnedRoot(name: string): boolean {
+  return WEBCMD_ROOT_COMMANDS.has(name)
+    || HOSTED_ROOT_HELP.commands.some(command => command.name.split(/\s/, 1)[0] === name)
+    || HOSTED_ROOT_HELP.localOnlyCommands?.some(command => command.name.split(/\s/, 1)[0] === name) === true;
 }
 
 function hasTerminalBeforeSeparator(

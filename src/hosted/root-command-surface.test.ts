@@ -348,10 +348,15 @@ describe('hosted root command surface', () => {
   );
 
   it.each(profileForms.flatMap(profile => dispatchForms.map(dispatch => ({ profile, dispatch }))))(
-    'gives completion priority across $profile.name/$dispatch.name',
+    'leaves a child-owned completion sentinel with $profile.name/$dispatch.name',
     ({ profile, dispatch }) => {
       const argv = [...profile.tokens, ...dispatch.tokens, '--get-completions'];
-      expect(parseHostedRootCommandSurface(argv)).toEqual({ kind: 'completion', argv });
+      expect(parseHostedRootCommandSurface(argv)).toEqual({
+        kind: 'dispatch',
+        argv: [...dispatch.tokens, '--get-completions'],
+        ...(profile.profile !== undefined ? { profile: profile.profile } : {}),
+        literal: false,
+      });
     },
   );
 
@@ -360,10 +365,8 @@ describe('hosted root command surface', () => {
     { name: 'beats help', argv: ['--help', '--get-completions'] },
     { name: 'beats unknown', argv: ['--unknown', '--get-completions'] },
     { name: 'beats missing profile', argv: ['--profile', '--get-completions'] },
-    { name: 'after separator', argv: ['--', '--get-completions'] },
-    { name: 'after site tokens', argv: ['github', 'whoami', '--get-completions'] },
     { name: 'beats non-fast clustered version', argv: ['-Vx', '--get-completions'] },
-  ])('matches the local main completion fast-path: $name', ({ argv }) => {
+  ])('recognizes completion on the Webcmd root surface: $name', ({ argv }) => {
     expect(parseHostedRootCommandSurface(argv)).toEqual({ kind: 'completion', argv });
   });
 
@@ -416,7 +419,7 @@ describe('hosted root preflight call order', () => {
     ['--help', '--get-completions'],
     ['--unknown', '--get-completions'],
     ['--profile', '--get-completions'],
-    ['--', '--get-completions'],
+    ['--get-completions', '--'],
     ['-Vx', '--get-completions'],
   ])('completion preflight performs exactly one manifest request and no execute: %j', async (...argv) => {
     const stdout = sink();

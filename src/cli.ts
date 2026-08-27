@@ -2232,6 +2232,7 @@ cli({
         return;
       }
       const installed = installExternalCli(ext);
+      if (!installed) process.exitCode = EXIT_CODES.SERVICE_UNAVAIL;
       await emitActionResult(command, {
         ok: installed,
         action: 'install',

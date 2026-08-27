@@ -83,7 +83,7 @@ export async function emitHook(name: HookName, ctx: HookContext, result?: unknow
   }
 }
 
-const BUILTIN_COMMANDS = new Set([
+export const WEBCMD_ROOT_COMMANDS: ReadonlySet<string> = new Set([
   'agent-context',
   'adapter',
   'auth',
@@ -106,7 +106,7 @@ const BUILTIN_COMMANDS = new Set([
 
 export function shouldRunStartupSideEffects(argv: readonly string[]): boolean {
   if (isHelp(argv)) return false;
-  return !(hasExplicitOutputFormat(argv) && BUILTIN_COMMANDS.has(rootCommand(argv) ?? ''));
+  return !(hasExplicitOutputFormat(argv) && WEBCMD_ROOT_COMMANDS.has(rootCommand(argv) ?? ''));
 }
 
 export function shouldEmitStartupHook(argv: readonly string[]): boolean {

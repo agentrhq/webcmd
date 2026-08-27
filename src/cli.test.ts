@@ -2862,6 +2862,13 @@ describe('builtin output formats', () => {
     expect(aliasResult.stdout).toBe(yamlResult.stdout);
   });
 
+  it('sets a nonzero exit code when external install reports failure', async () => {
+    const result = await run('external', 'install', 'ntn', '-f', 'json');
+
+    expect(result.exitCode).toBe(EXIT_CODES.SERVICE_UNAVAIL);
+    expect(JSON.parse(result.stdout)).toMatchObject({ ok: false, action: 'install', cli: 'ntn' });
+  });
+
   it('renders an empty plugin list as structured data', async () => {
     const list = vi.spyOn(pluginModule, 'listPlugins').mockReturnValue([] as never);
     try {

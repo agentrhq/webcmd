@@ -23,7 +23,7 @@ import { PKG_VERSION } from './version.js';
 import { EXIT_CODES } from './errors.js';
 import { isSupportedNodeVersion, MIN_SUPPORTED_NODE_MAJOR } from './runtime-detect.js';
 import { CONFIG_DIR_NAME } from './brand.js';
-import { parseHostedRootCommandSurface } from './root-command-surface.js';
+import { configureHostedWorkspaceOption, parseHostedRootCommandSurface, rootCompletionSentinelIndex } from './root-command-surface.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -72,13 +72,26 @@ if (!fastPathHandled && argv[0] === 'completion' && argv.length >= 2) {
 // memory just to decide what commands exist. Awaiting the selected branch and
 // assigning exitCode lets Node flush pending stdout/stderr before shutdown.
 if (!fastPathHandled) {
+  const rootSurface = parseRootSurface(argv);
   if (argv[0] === 'setup') {
     const { runHostedSetup } = await import('./hosted/setup.js');
     process.exitCode = await runHostedSetup({ argv: argv.slice(1) });
-  } else if (argv[0] === 'skills' || argv[0] === 'update' || argv[0] === 'external') {
+  } else if (
+    argv[0] === 'skills'
+    || argv[0] === 'update'
+    || (rootSurface?.kind === 'dispatch' && rootSurface.argv[0] === 'external')
+  ) {
     const { createProgram } = await import('./cli.js');
-    await createProgram(BUILTIN_CLIS, USER_CLIS).parseAsync(argv, { from: 'user' });
-  } else if (isWebFetch(argv)) {
+    const program = createProgram(BUILTIN_CLIS, USER_CLIS);
+    if (rootSurface?.kind === 'dispatch' && rootSurface.workspace !== undefined) {
+      configureHostedWorkspaceOption(program);
+    }
+    await program.parseAsync(argv, { from: 'user' });
+  } else if (
+    rootSurface?.kind === 'dispatch'
+    && rootSurface.argv[0] === 'web'
+    && rootSurface.argv[1] === 'fetch'
+  ) {
     const { runWebFetchCommand } = await import('./fetch/command.js');
     await runWebFetchCommand(argv);
   } else {
@@ -105,18 +118,17 @@ if (!fastPathHandled) {
   }
 }
 
-function isWebFetch(args: readonly string[]): boolean {
+function parseRootSurface(args: readonly string[]) {
   try {
-    const parsed = parseHostedRootCommandSurface(args);
-    return parsed.kind === 'dispatch' && parsed.argv[0] === 'web' && parsed.argv[1] === 'fetch';
+    return parseHostedRootCommandSurface(args);
   } catch {
-    return false;
+    return undefined;
   }
 }
 
 async function runLocalMain(): Promise<void> {
 // Fast path: --get-completions — read from manifest, skip discovery
-const getCompIdx = process.argv.indexOf('--get-completions');
+const getCompIdx = rootCompletionSentinelIndex(argv);
 if (getCompIdx !== -1) {
   // Only include manifests that actually exist on disk.
   // With sparse override, the user clis dir may exist but have no manifest.
@@ -127,7 +139,7 @@ if (getCompIdx !== -1) {
   const userManifest = getCliManifestPath(USER_CLIS);
   try { fs.accessSync(userManifest); manifestPaths.push(userManifest); } catch { uncoveredCommandRoots.push(USER_CLIS); }
   if (hasAllManifests(manifestPaths, uncoveredCommandRoots)) {
-    const rest = process.argv.slice(getCompIdx + 1);
+    const rest = argv.slice(getCompIdx + 1);
     let cursor: number | undefined;
     const words: string[] = [];
     for (let i = 0; i < rest.length; i++) {
@@ -186,7 +198,7 @@ if (runStartupSideEffects) {
 
 // ── Fallback completion: manifest unavailable, use full registry ─────────
 if (getCompIdx !== -1) {
-  const rest = process.argv.slice(getCompIdx + 1);
+  const rest = argv.slice(getCompIdx + 1);
   let cursor: number | undefined;
   const words: string[] = [];
   for (let i = 0; i < rest.length; i++) {

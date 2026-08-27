@@ -47,6 +47,7 @@ const registry: ExternalCliConfig[] = [
   { name: 'gh', binary: 'gh', description: 'GitHub CLI' },
   { name: 'github', binary: 'gh-shadow', description: 'Shadows a hosted site name' },
   { name: 'profile', binary: 'profile-shadow', description: 'Shadows a Webcmd root command' },
+  { name: 'validate', binary: 'validate-shadow', description: 'Shadows a local-only Webcmd root command' },
 ];
 
 type RunFn = (name: string, args: string[], configs: ExternalCliConfig[]) => number;
@@ -158,6 +159,31 @@ describe('hosted external CLI execution', () => {
     expect(run).not.toHaveBeenCalled();
     expect(h.fetchImpl).not.toHaveBeenCalled();
     expect(h.stderr.text()).toContain("unknown option '--session=child-session'");
+  });
+
+  it('keeps a local-only Webcmd root ahead of external fallback', async () => {
+    const run = vi.fn<RunFn>(() => 0);
+    const h = harness(run);
+
+    const result = await runHostedCli(['validate'], h.opts);
+
+    expect(result).toEqual({ handled: true, exitCode: 78 });
+    expect(run).not.toHaveBeenCalled();
+    expect(h.stderr.text()).toContain('webcmd validate is local-only');
+  });
+
+  it.each([
+    { name: 'direct', tail: ['--get-completions'] },
+    { name: 'after separator', tail: ['--', '--get-completions'] },
+  ])('forwards child-owned completion sentinel $name to the external', async ({ tail }) => {
+    const run = vi.fn<RunFn>(() => 0);
+    const h = harness(run);
+
+    const result = await runHostedCli(['gh', ...tail], h.opts);
+
+    expect(result).toEqual({ handled: true, exitCode: 0 });
+    expect(run).toHaveBeenCalledWith('gh', tail, registry);
+    expect(h.stderr.text()).toBe('');
   });
 
   it('lets a hosted site win over an external of the same name', async () => {

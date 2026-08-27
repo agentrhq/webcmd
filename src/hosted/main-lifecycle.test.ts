@@ -166,6 +166,23 @@ describe('hosted CLI process lifecycle', () => {
     await expect(readFile(fixture.discoverySentinel, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
   }, 20_000);
 
+  it.each([
+    { name: 'profile', selectors: ['--profile', 'work'] },
+    { name: 'workspace', selectors: ['--workspace', 'ws'] },
+  ])('runs external list locally with a leading $name selector', async ({ selectors }) => {
+    const fixture = await createHostedFixture('success');
+
+    const result = await runCli([...selectors, 'external', 'list', '-f', 'json'], fixture.env);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(JSON.parse(result.stdout)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'gh', binary: 'gh' }),
+    ]));
+    expect(fixture.requests).toEqual([]);
+    await expect(readFile(fixture.discoverySentinel, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+  }, 20_000);
+
   it('runs a registered external with its child arguments and exit code in hosted mode', async () => {
     const fixture = await createHostedFixture('success');
     const registryPath = path.join(fixture.root, '.webcmd', 'external-clis.yaml');
