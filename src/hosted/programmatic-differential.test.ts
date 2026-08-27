@@ -58,7 +58,6 @@ function runProgrammatic(argv: string[], files?: readonly HostedVirtualFile[]) {
 }
 
 const FIXTURES: { name: string; argv: string[]; files?: readonly HostedVirtualFile[] }[] = [
-  { name: 'root help', argv: ['--help'] },
   { name: 'version', argv: ['--version'] },
   { name: 'list', argv: ['list'] },
   { name: 'list json', argv: ['list', '-f', 'json'] },

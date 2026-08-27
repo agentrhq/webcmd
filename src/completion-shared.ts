@@ -64,8 +64,26 @@ export const HOSTED_ROOT_HELP: RootHelpPresentation = {
   ],
 };
 
-export const HOSTED_BUILTIN_COMMANDS = HOSTED_ROOT_HELP.commands
-  .map((command) => command.name.split(/\s/, 1)[0]!);
+const LOCAL_CLIENT_ROOT_COMMANDS = new Set(['skills', 'update']);
+
+export function getHostedRootHelp(hasLocalClientCommandHandlers = true): RootHelpPresentation {
+  if (hasLocalClientCommandHandlers) return HOSTED_ROOT_HELP;
+  return {
+    ...HOSTED_ROOT_HELP,
+    commands: HOSTED_ROOT_HELP.commands.filter(command => !LOCAL_CLIENT_ROOT_COMMANDS.has(command.name.split(/\s/, 1)[0]!)),
+  };
+}
+
+export function getHostedBuiltinCommands(hasLocalClientCommandHandlers = true): string[] {
+  return getHostedRootHelp(hasLocalClientCommandHandlers).commands
+    .map((command) => command.name.split(/\s/, 1)[0]!);
+}
+
+export function isLocalClientRootCommand(command: string | undefined): boolean {
+  return command !== undefined && LOCAL_CLIENT_ROOT_COMMANDS.has(command);
+}
+
+export const HOSTED_BUILTIN_COMMANDS = getHostedBuiltinCommands();
 
 // ── Shell script generators ────────────────────────────────────────────────
 

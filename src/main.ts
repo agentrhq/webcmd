@@ -87,7 +87,10 @@ if (!fastPathHandled) {
       const { runHostedCli } = await import('./hosted/runner.js');
       // The installed CLI already owns local web/fetch transport authority.
       // Programmatic embedders remain opt-in and default to no network access.
-      const result = await runHostedCli(argv, { enableServerWebFetch: true });
+      const result = await runHostedCli(argv, {
+        enableServerWebFetch: true,
+        hasLocalClientCommandHandlers: true,
+      });
       process.exitCode = result.exitCode;
     } else {
       const { installDaemonRunSignalCancellation } = await import('./signal-cancel.js');

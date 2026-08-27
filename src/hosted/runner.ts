@@ -16,8 +16,9 @@ import { BrowserSessionArgvError, rejectMisplacedSessionSelectorArgv, rejectPosi
 import { addOutputFormatOption, CommanderStructuralError, MissingRequiredPositionalError, outputFormatIsExplicit, parseOutputFormat, requestedOutputFormat, resolveCommandFromArgv, structuralErrorFromCommander } from '../command-surface.js';
 import { filterCommandsByTag, formatRootHelp, getCommandCompletionCandidates } from '../command-presentation.js';
 import {
-  HOSTED_BUILTIN_COMMANDS,
-  HOSTED_ROOT_HELP,
+  getHostedBuiltinCommands,
+  getHostedRootHelp,
+  isLocalClientRootCommand,
   LOCAL_ONLY_COMMAND_HELP,
 } from '../completion-shared.js';
 import { splitAdapterCommandKey } from '../adapter-source.js';
@@ -87,6 +88,8 @@ export interface HostedRunnerOptions {
   now?: () => number;
   /** Explicitly grants the hosted runner public-network-only web fetch authority. */
   enableServerWebFetch?: boolean;
+  /** True when the installed executable can handle client-owned root commands locally. */
+  hasLocalClientCommandHandlers?: boolean;
   /** @internal Receives sanitized manifest resolution metadata for embedders. */
   onTrustedCommandResolution?: (resolution: TrustedCommandResolution) => void;
   /** Supplies `--stdin` content without reading `process.stdin`. */
@@ -189,6 +192,7 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
       opts.homeDir ?? opts.env?.HOME ?? homedir(),
       io,
       opts.enableServerWebFetch === true,
+      opts.hasLocalClientCommandHandlers !== false,
       opts.signal,
       opts.onTrustedCommandResolution,
     );
@@ -251,12 +255,14 @@ async function dispatchHosted(
   homeDir: string,
   io: HostedDispatchIo = { fileIo: realHostedFileIo },
   enableServerWebFetch = false,
+  hasLocalClientCommandHandlers = true,
   signal?: AbortSignal,
   onResolvedCommand?: (resolution: TrustedCommandResolution) => void,
 ): Promise<void> {
+  const rootHelp = getHostedRootHelp(hasLocalClientCommandHandlers);
   const normalized = parseHostedRootCommandSurface(argv);
   if (normalized.kind === 'help') {
-    const help = formatRootHelp(HOSTED_ROOT_HELP);
+    const help = formatRootHelp(rootHelp);
     if (normalized.exitCode !== EXIT_CODES.SUCCESS) {
       throw new CommanderCompatibleError(help, normalized.exitCode);
     }
@@ -269,10 +275,13 @@ async function dispatchHosted(
   }
   if (normalized.kind === 'completion') {
     const manifest = await getPresentationManifest(client, enableServerWebFetch);
-    await writeToStream(stdout, hostedCompletions(manifest, normalized.argv).join('\n') + '\n');
+    await writeToStream(stdout, hostedCompletions(manifest, normalized.argv, hasLocalClientCommandHandlers).join('\n') + '\n');
     return;
   }
   const args = normalized.argv;
+  if (!hasLocalClientCommandHandlers && isLocalClientRootCommand(args[0])) {
+    throw new CommanderCompatibleError(`error: unknown command '${args[0]}'\n`, EXIT_CODES.USAGE_ERROR);
+  }
   if (args[0] === 'completion') {
     const parsed = parseHostedCompletionSurface(args.slice(1), normalized.literal);
     if (parsed.kind === 'help') {
@@ -501,7 +510,7 @@ async function dispatchHosted(
       return;
     }
     if (unknownRoot.help) {
-      await writeToStream(stdout, formatRootHelp(HOSTED_ROOT_HELP));
+      await writeToStream(stdout, formatRootHelp(rootHelp));
       return;
     }
     // No help on stdout: an error path that emits a well-formed document to
@@ -1622,7 +1631,7 @@ function hasTerminalBeforeSeparator(
   return false;
 }
 
-function hostedCompletions(manifest: HostedManifest, argv: string[]): string[] {
+function hostedCompletions(manifest: HostedManifest, argv: string[], hasLocalClientCommandHandlers = true): string[] {
   const index = argv.indexOf('--get-completions');
   const rest = index === -1 ? argv : argv.slice(index + 1);
   const words: string[] = [];
@@ -1638,7 +1647,7 @@ function hostedCompletions(manifest: HostedManifest, argv: string[]): string[] {
     hostedCommands(manifest),
     words,
     Number.isFinite(cursor) ? cursor! : words.length,
-    HOSTED_BUILTIN_COMMANDS.filter(command => command !== 'web'),
+    getHostedBuiltinCommands(hasLocalClientCommandHandlers).filter(command => command !== 'web'),
   );
 }
 
