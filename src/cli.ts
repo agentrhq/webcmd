@@ -1430,10 +1430,13 @@ cli({
     const fmt = resolveCommandOutputFormat(doctorCmd, opts.format);
     if (fmt === null) return;
     const fmtExplicit = outputFormatIsExplicit(doctorCmd);
-    const { runBrowserDoctor, renderBrowserDoctorReport } = await import('./doctor.js');
+    const { runBrowserDoctor, renderBrowserDoctorReport, doctorRequiredChecksFailed } = await import('./doctor.js');
     const report = await runBrowserDoctor({ cliVersion: PKG_VERSION });
     if (fmt === 'table') console.log(renderBrowserDoctorReport(report));
     else await renderOutput(report, { fmt, fmtExplicit });
+    // The structured report is the payload and always reaches stdout; the exit
+    // code is what lets an agent gate its next step on the outcome.
+    if (doctorRequiredChecksFailed(report)) process.exitCode = EXIT_CODES.CONFIG_ERROR;
   });
 
   configureCompletionCommandSurface(program.command('completion'))
