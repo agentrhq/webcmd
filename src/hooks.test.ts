@@ -119,12 +119,13 @@ describe('startup hook gating', () => {
     const pluginsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-root-inventory-'));
     try {
       const program = createProgram('', '', pluginsDir);
-      const missing = program.commands
+      const actual = new Set(program.commands
         .filter(command => !isExternalRootCommand(program, command.name()))
-        .map(command => command.name())
-        .filter(name => !WEBCMD_ROOT_COMMANDS.has(name));
+        .map(command => command.name()));
+      const missing = [...actual].filter(name => !WEBCMD_ROOT_COMMANDS.has(name)).sort();
+      const stale = [...WEBCMD_ROOT_COMMANDS].filter(name => !actual.has(name)).sort();
 
-      expect(missing).toEqual([]);
+      expect({ missing, stale }).toEqual({ missing: [], stale: [] });
     } finally {
       fs.rmSync(pluginsDir, { recursive: true, force: true });
     }

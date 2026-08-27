@@ -233,7 +233,7 @@ describe('hosted CLI process lifecycle', () => {
     const result = await runCli(['antigravity', script, 'child-value'], fixture.env);
 
     expect(result.status).toBe(status);
-    expect(fixture.requests).toEqual(['GET /v1/manifest']);
+    expect(fixture.requests).toEqual(installed ? [] : ['GET /v1/manifest']);
     if (installed) {
       expect(result.stdout).toBe('');
       expect(result.stderr).toContain('webcmd antigravity is local-only');

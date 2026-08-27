@@ -51,6 +51,7 @@ const registry: ExternalCliConfig[] = [
   { name: 'profile', binary: 'profile-shadow', description: 'Shadows a Webcmd root command' },
   { name: 'site', binary: 'site-shadow', description: 'Shadows the Webcmd site root command' },
   { name: 'validate', binary: 'validate-shadow', description: 'Shadows a local-only Webcmd root command' },
+  { name: 'antigravity', binary: 'antigravity-shadow', description: 'Shadows an optional Webcmd root command' },
 ];
 
 type RunFn = (name: string, args: string[], configs: ExternalCliConfig[]) => number;
@@ -210,6 +211,29 @@ describe('hosted external CLI execution', () => {
       results.push(await runHostedCli(['validate'], variant.opts));
       expect(variant.stdout.text()).toBe('');
       expect(variant.stderr.text()).toContain('webcmd validate is local-only');
+      expect(variant.list).not.toHaveBeenCalled();
+      expect(variant.run).not.toHaveBeenCalled();
+      expect(variant.getCredential).not.toHaveBeenCalled();
+      expect(variant.fetchImpl).not.toHaveBeenCalled();
+    }
+
+    expect(results).toEqual([
+      { handled: true, exitCode: 78 },
+      { handled: true, exitCode: 78 },
+    ]);
+    expect(variants[1]!.stderr.text()).toBe(variants[0]!.stderr.text());
+  });
+
+  it('keeps installed antigravity identical and side-effect free with or without a same-name external', async () => {
+    const variants = [ownershipHarness(false), ownershipHarness(true)];
+    const results = [];
+    for (const variant of variants) {
+      results.push(await runHostedCli(['antigravity', 'serve'], {
+        ...variant.opts,
+        installedLocalCommandRoots: new Set(['antigravity']),
+      }));
+      expect(variant.stdout.text()).toBe('');
+      expect(variant.stderr.text()).toContain('webcmd antigravity is local-only');
       expect(variant.list).not.toHaveBeenCalled();
       expect(variant.run).not.toHaveBeenCalled();
       expect(variant.getCredential).not.toHaveBeenCalled();

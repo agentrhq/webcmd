@@ -185,10 +185,12 @@ export async function runHostedCli(argv: string[], opts: HostedRunnerOptions = {
     }
     const rootSurface = parseHostedRootCommandSurface(argv);
     const rootName = rootSurface.kind === 'dispatch' ? rootSurface.argv[0] : undefined;
-    if (rootName === 'validate') {
-      throw new ConfigError(`${CLI_COMMAND} validate is local-only and is not available in hosted mode.`, LOCAL_ONLY_COMMAND_HELP);
+    if (rootName === 'validate' || (rootName && opts.installedLocalCommandRoots?.has(rootName))) {
+      throw new ConfigError(`${CLI_COMMAND} ${rootName} is local-only and is not available in hosted mode.`, LOCAL_ONLY_COMMAND_HELP);
     }
-    const externals = rootName && isUnconditionalWebcmdRoot(rootName) ? undefined : opts.externals;
+    const externals = rootName && isWebcmdOwnedRoot(rootName, opts.installedLocalCommandRoots)
+      ? undefined
+      : opts.externals;
     const credential = await resolveHostedApiKey(config, {
       credentialStore: opts.credentialStore,
       env: opts.env,
