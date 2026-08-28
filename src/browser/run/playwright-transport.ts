@@ -441,7 +441,7 @@ export class PlaywrightTransport {
     this.#registerPageImpl(page);
   }
 
-  handleServerMessage(message: Record<string, unknown>): void {
+  private handleServerMessage(message: Record<string, unknown>): void {
     if (this.#disposed) return;
     this.#inbound.push(JSON.stringify(message));
     this.#scheduleFlush();

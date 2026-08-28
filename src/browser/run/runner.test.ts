@@ -89,7 +89,6 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  vi.restoreAllMocks();
   await context.close();
 });
 
@@ -745,7 +744,9 @@ afterAll(async () => {
       throw new Error('delivery failed');
     }, (error) => { seen.push(error); });
     try {
-      transport.handleServerMessage({ id: 1, method: 'unused' });
+      (transport as unknown as {
+        handleServerMessage(message: Record<string, unknown>): void;
+      }).handleServerMessage({ id: 1, method: 'unused' });
       await new Promise(resolve => setTimeout(resolve, 0));
       expect(seen.map(error => error.message)).toContain('delivery failed');
     } finally {
