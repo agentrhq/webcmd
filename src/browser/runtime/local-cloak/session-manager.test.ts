@@ -171,6 +171,7 @@ describe('CloakSessionManager', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
   });
 
   it('launches one persistent context per profile and reuses named sessions', async () => {
@@ -187,6 +188,48 @@ describe('CloakSessionManager', () => {
     expect(first.page).toBe(second.page);
     expect(launchPersistentContext).toHaveBeenCalledTimes(1);
     expect(launchPersistentContext.mock.calls[0][0]).toMatchObject({ headless: false });
+  });
+
+  it('passes WEBCMD_BROWSER_BINARY_PATH through as the Playwright executable', async () => {
+    vi.stubEnv('CLOAKBROWSER_BINARY_PATH', '/opt/cloak/chrome');
+    vi.stubEnv('WEBCMD_BROWSER_BINARY_PATH', '/opt/chromium-fork/chrome');
+    const launched = fakeContext();
+    const launchPersistentContext = vi.fn().mockResolvedValue(launched.context);
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      launchPersistentContext,
+    });
+
+    await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser' });
+
+    expect(launchPersistentContext).toHaveBeenCalledWith(expect.objectContaining({
+      launchOptions: { executablePath: '/opt/chromium-fork/chrome' },
+    }));
+    expect(process.env.CLOAKBROWSER_BINARY_PATH).toBe('/opt/chromium-fork/chrome');
+  });
+
+  it('uses the normal macOS launcher for a custom app-bundle executable', async () => {
+    vi.stubEnv('CLOAKBROWSER_BINARY_PATH', '');
+    vi.stubEnv('WEBCMD_BROWSER_BINARY_PATH', '/Applications/ChromiumFork.app/Contents/MacOS/ChromiumFork');
+    const launched = fakeContext();
+    const launchPersistentContext = vi.fn().mockResolvedValue(launched.context);
+    const launchBackgroundPersistentContext = vi.fn().mockResolvedValue(launched.context);
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      platform: 'darwin',
+      launchPersistentContext,
+      launchBackgroundPersistentContext,
+    });
+
+    await manager.getPage({
+      profileId: 'default',
+      session: 'work',
+      surface: 'browser',
+      windowMode: 'background',
+    });
+
+    expect(launchPersistentContext).toHaveBeenCalledOnce();
+    expect(launchBackgroundPersistentContext).not.toHaveBeenCalled();
   });
 
   it('correlates created targets and isolates Sessions into owned windows', async () => {

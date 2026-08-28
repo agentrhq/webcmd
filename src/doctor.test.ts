@@ -588,7 +588,7 @@ describe('doctor report rendering', () => {
       expect(issueText).toContain('/home/test/.cloakbrowser/chromium-146.0.7680.177.5/chrome');
       expect(issueText).toContain('https://cloakbrowser.dev/chromium-v146.0.7680.177.5/cloakbrowser-linux-x64.tar.gz');
       expect(issueText).toContain('Browser connectivity test failed: fetch failed');
-      expect(issueText).toContain('CLOAKBROWSER_BINARY_PATH');
+      expect(issueText).toContain('WEBCMD_BROWSER_BINARY_PATH');
       expect(issueText).not.toContain('could not be downloaded');
       expect(issueText).not.toContain('download failed');
     });
@@ -711,6 +711,33 @@ describe('doctor report rendering', () => {
         expect(binary.installed).toBe(true);
         expect(binary.override).toBe(true);
         expect(binary.path).toBe(overridePath);
+      } finally {
+        vi.unstubAllEnvs();
+        fs.rmSync(path.dirname(overridePath), { recursive: true, force: true });
+      }
+    });
+
+    it('prefers WEBCMD_BROWSER_BINARY_PATH and skips the managed binary download', async () => {
+      const overridePath = path.join(
+        fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-generic-binary-override-')),
+        process.platform === 'win32' ? 'chrome.exe' : 'chrome',
+      );
+      fs.writeFileSync(overridePath, '#!/bin/sh\n');
+      if (process.platform !== 'win32') fs.chmodSync(overridePath, 0o755);
+      vi.stubEnv('WEBCMD_BROWSER_BINARY_PATH', overridePath);
+      vi.stubEnv('CLOAKBROWSER_BINARY_PATH', '/legacy/cloak/chrome');
+      try {
+        const binary = checkBrowserBinary();
+        const connectivity = await checkConnectivity();
+
+        expect(binary).toMatchObject({
+          installed: true,
+          path: overridePath,
+          override: true,
+          overrideEnv: 'WEBCMD_BROWSER_BINARY_PATH',
+        });
+        expect(connectivity.ok).toBe(true);
+        expect(mockEnsureBinary).not.toHaveBeenCalled();
       } finally {
         vi.unstubAllEnvs();
         fs.rmSync(path.dirname(overridePath), { recursive: true, force: true });

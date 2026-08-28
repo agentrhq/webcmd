@@ -11,6 +11,7 @@
 
 ### Changed
 
+- `WEBCMD_BROWSER_BINARY_PATH` can select a compatible Chromium executable for local browser Sessions; it takes precedence over the existing `CLOAKBROWSER_BINARY_PATH` override.
 - Hosted help and completion advertise Cloud-owned core commands only when the authenticated manifest advertises them.
 - Hosted command lists retain excluded commands as `LOCAL` rows and return a local-only error instead of plugin-install guidance.
 - Local auth commands initialize user CLI compatibility shims, and hosted auth uses the same native grammar, flags, choices, and help as local mode.

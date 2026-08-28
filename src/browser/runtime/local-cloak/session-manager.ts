@@ -4,7 +4,10 @@ import { fileURLToPath } from 'node:url';
 import type { Browser, BrowserContext, CDPSession, Page as PlaywrightPage } from 'playwright-core';
 import { launchPersistentContext as cloakLaunchPersistentContext } from 'cloakbrowser';
 import type { BrowserSurface, BrowserWindowMode, SiteSessionMode } from '../../protocol.js';
-import { activateDarwinBackgroundContext, launchDarwinBackgroundPersistentContext } from './darwin-background-launch.js';
+import {
+  activateDarwinBackgroundContext,
+  launchDarwinBackgroundPersistentContext,
+} from './darwin-background-launch.js';
 import { normalizeProfileId, resolveCloakProfileDir } from './profiles.js';
 import { CloakNetworkCapture } from './network.js';
 import { findPackageRoot } from '../../../package-paths.js';
@@ -12,6 +15,7 @@ import { findExactCloakProfileProcesses } from './process-matcher.js';
 import { log } from '../../../logger.js';
 import { CliError, EXIT_CODES } from '../../../errors.js';
 import { isClosedContextError } from '../../run/types.js';
+import { applyBrowserBinaryOverrideToCloakEnvironment } from '../../browser-binary.js';
 
 const UNRESOLVED = Symbol('unresolved');
 const TARGET_PAGE_MATCH_TIMEOUT_MS = 1_000;
@@ -724,12 +728,18 @@ export class CloakSessionManager {
   private async launchProfileRuntime(profileId: string, windowMode?: BrowserWindowMode): Promise<ProfileRuntime> {
     const userDataDir = resolveCloakProfileDir(profileId, { baseDir: this.opts.baseDir });
     fs.mkdirSync(userDataDir, { recursive: true });
+    const binaryOverride = applyBrowserBinaryOverrideToCloakEnvironment();
     const launchOptions = {
       userDataDir,
       headless: false,
       humanize: true,
+      ...(binaryOverride ? { launchOptions: { executablePath: binaryOverride.path } } : {}),
     };
-    const launchPersistentContext = this.platform === 'darwin' && windowMode === 'background'
+    // The macOS background launcher depends on Cloak Chromium publishing a
+    // DevToolsActivePort file. Compatible Chromium forks may be app bundles but
+    // not implement that contract, so custom executables use Playwright's
+    // normal persistent launcher instead.
+    const launchPersistentContext = this.platform === 'darwin' && windowMode === 'background' && !binaryOverride
       ? this.launchBackgroundPersistentContext
       : this.launchPersistentContext;
     let context: BrowserContext;
