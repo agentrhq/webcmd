@@ -21,7 +21,7 @@ import {
 } from 'playwright-core';
 import { LocalBrowserRunArtifactSink } from './artifacts.js';
 import { MemorySnapshotBaselineStore } from '../snapshot/index.js';
-import { unsupportedApiMessage } from './playwright-transport.js';
+import { PlaywrightTransport, unsupportedApiMessage } from './playwright-transport.js';
 import { QuickJSHost } from './quickjs-host.js';
 import { DOWNLOAD_WAIT_TIMEOUT_HINT, POPUP_WAIT_TIMEOUT_HINT, runBrowserProgram } from './runner.js';
 
@@ -89,6 +89,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await context.close();
 });
 
@@ -356,6 +357,11 @@ afterAll(async () => {
   });
 
   it('resolves waitForEvent("popup") into a readable Page before the outer run timeout', async () => {
+    await context.route('https://popup.example.test/**', route => route.fulfill({
+      contentType: 'text/html',
+      body: '<!doctype html><title>Popup Title</title><p>Popup Body</p>',
+    }));
+    await page.setContent('<a href="https://popup.example.test/" target="_blank">Popup</a>');
     const registered: Page[] = [];
     const output = await runBrowserProgram({
       ...sessionScope(),
@@ -380,10 +386,10 @@ afterAll(async () => {
       };
     `, { timeoutMs: 15_000 });
 
-    expect(output.result).toMatchObject({
-      popupUrl: 'about:blank',
-      title: expect.any(String),
-      body: expect.any(String),
+    expect(output.result).toEqual({
+      popupUrl: 'https://popup.example.test/',
+      title: 'Popup Title',
+      body: 'Popup Body',
       pages: 2,
     });
     expect(registered).toEqual([context.pages()[1]]);
@@ -722,17 +728,29 @@ afterAll(async () => {
     ]);
   });
 
-  it('honors waitForEvent timeout when no popup or download fires', async () => {
+  it.each(['popup', 'download'] as const)('honors waitForEvent("%s") timeout when no event fires', async (event) => {
     const started = Date.now();
     await expect(run(`
-      await Promise.all([
-        page.waitForEvent('popup', { timeout: 80 }),
-        page.waitForEvent('download', { timeout: 80 }),
-      ]);
+      await page.waitForEvent(${JSON.stringify(event)}, { timeout: 80 });
     `, { timeoutMs: 5_000 })).rejects.toMatchObject({
       code: 'BROWSER_RUN_TIMEOUT',
+      message: expect.stringContaining(`Timeout 80ms exceeded while waiting for event "${event}"`),
     });
     expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
+  it('routes a throwing deferred delivery into onDeliveryError', async () => {
+    const seen: Error[] = [];
+    const transport = new PlaywrightTransport(sessionScope(), () => {
+      throw new Error('delivery failed');
+    }, (error) => { seen.push(error); });
+    try {
+      transport.handleServerMessage({ id: 1, method: 'unused' });
+      await new Promise(resolve => setTimeout(resolve, 0));
+      expect(seen.map(error => error.message)).toContain('delivery failed');
+    } finally {
+      await transport.dispose();
+    }
   });
 
   it('tells the caller not to recompute bytes when a download wait times out', async () => {

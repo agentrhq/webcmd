@@ -352,6 +352,7 @@ export class PlaywrightTransport {
   readonly #connection: DispatcherConnection;
   readonly #root: RootDispatcher;
   readonly #deliver: (message: string) => void;
+  readonly #onDeliveryError: ((error: Error) => void) | undefined;
   readonly #inbound: string[] = [];
   #registerPageImpl: (page: Page) => void;
   #cancellation: Promise<void> | undefined;
@@ -362,6 +363,7 @@ export class PlaywrightTransport {
   constructor(
     input: BrowserRunSessionScope,
     deliver: (message: string) => void,
+    onDeliveryError?: (error: Error) => void,
   ) {
     if (
       !input.browser.contexts().includes(input.context)
@@ -383,12 +385,9 @@ export class PlaywrightTransport {
     this.#registerPageImpl = page => { implementation(page); };
     for (const page of input.pages()) this.registerPage(page);
     this.#deliver = deliver;
+    this.#onDeliveryError = onDeliveryError;
     this.#connection = new server.DispatcherConnection();
-    this.#connection.onmessage = message => {
-      if (this.#disposed) return;
-      this.#inbound.push(JSON.stringify(message));
-      this.#scheduleFlush();
-    };
+    this.#connection.onmessage = message => this.handleServerMessage(message);
     this.#root = new server.RootDispatcher(
       this.#connection,
       async (scope, { sdkLanguage }) => new server.PlaywrightDispatcher(
@@ -442,6 +441,12 @@ export class PlaywrightTransport {
     this.#registerPageImpl(page);
   }
 
+  handleServerMessage(message: Record<string, unknown>): void {
+    if (this.#disposed) return;
+    this.#inbound.push(JSON.stringify(message));
+    this.#scheduleFlush();
+  }
+
   cancel(error: Error): Promise<void> {
     if (this.#disposed) return Promise.resolve();
     this.#cancellation ??= this.#root.stopPendingOperations(error).catch(() => undefined);
@@ -468,23 +473,36 @@ export class PlaywrightTransport {
 
   #flushInbound(): void {
     while (!this.#disposed && this.#inbound.length > 0) {
-      this.#deliver(this.#inbound.shift()!);
+      try {
+        this.#deliver(this.#inbound.shift()!);
+      } catch (error) {
+        this.#failDelivery(error);
+        return;
+      }
     }
+  }
+
+  #failDelivery(error: unknown): void {
+    this.#onDeliveryError?.(error instanceof Error ? error : new Error(String(error)));
   }
 
   #unsupported(id: unknown, api: string): void {
     queueMicrotask(() => {
       if (this.#disposed) return;
-      this.#deliver(JSON.stringify({
-        id,
-        error: {
+      try {
+        this.#deliver(JSON.stringify({
+          id,
           error: {
-            name: 'BrowserRunError',
-            message: `BROWSER_RUN_API_UNSUPPORTED: ${unsupportedApiMessage(api)}`,
-            stack: '',
+            error: {
+              name: 'BrowserRunError',
+              message: `BROWSER_RUN_API_UNSUPPORTED: ${unsupportedApiMessage(api)}`,
+              stack: '',
+            },
           },
-        },
-      }));
+        }));
+      } catch (error) {
+        this.#failDelivery(error);
+      }
     });
   }
 }
