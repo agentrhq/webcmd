@@ -2,7 +2,11 @@ import type { ConventionAuditReport, ConventionRuleId, ConventionViolation } fro
 import { ArgumentError, attachTraceReceipt, CliError, EXIT_CODES, type ExitCode } from '../errors.js';
 import type { ValidationReport } from '../validate.js';
 import { parseExecutionArtifactDownloadUrl } from './artifact-url.js';
-import { HOSTED_CORE_COMMANDS_CAPABILITY, isHostedCoreCommandId } from './core-commands.js';
+import {
+  HOSTED_COMMAND_ORIGIN_CAPABILITY,
+  HOSTED_CORE_COMMANDS_CAPABILITY,
+  isHostedCoreCommandId,
+} from './core-commands.js';
 import { log } from '../logger.js';
 import { HOSTED_SESSION_PROTOCOL_VERSION } from './types.js';
 import type {
@@ -609,6 +613,7 @@ export class HostedClient {
           'x-webcmd-client-capabilities': [
             'hosted-live-view-v1',
             HOSTED_CORE_COMMANDS_CAPABILITY,
+            HOSTED_COMMAND_ORIGIN_CAPABILITY,
           ].join(', '),
           ...(init.body ? { 'content-type': 'application/json' } : {}),
           ...(this.workspace ? { 'x-webcmd-workspace': this.workspace } : {}),
