@@ -73,21 +73,6 @@ Webcmd requires Node.js 20.6+.
 npm install -g @agentrhq/webcmd
 ```
 
-To use a compatible Chromium fork instead of Webcmd's managed browser binary,
-set its executable path before starting or restarting the daemon:
-
-```bash
-WEBCMD_BROWSER_BINARY_PATH="/path/to/chrome" webcmd daemon restart
-webcmd doctor
-```
-
-The daemon keeps the selected executable for its lifetime. The legacy
-`CLOAKBROWSER_BINARY_PATH` variable remains supported, but
-`WEBCMD_BROWSER_BINARY_PATH` takes precedence when both are set.
-On macOS, custom executables use Playwright's normal Chromium launcher because
-third-party app bundles may not support the managed browser's background-CDP
-launch contract.
-
 The npm package ships the Webcmd core and browser commands, but no site
 adapters. Search the plugin catalog and explicitly install the adapter you
 need:
