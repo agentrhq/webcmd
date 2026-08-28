@@ -1,5 +1,5 @@
 ---
-title: OpenCode Agent
+title: OpenCode
 sidebarTitle: OpenCode
 ---
 

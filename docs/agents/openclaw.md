@@ -1,5 +1,5 @@
 ---
-title: OpenClaw Agent
+title: OpenClaw
 sidebarTitle: OpenClaw
 ---
 
