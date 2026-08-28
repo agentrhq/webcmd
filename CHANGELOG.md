@@ -15,6 +15,22 @@
 - Hosted command lists retain excluded commands as `LOCAL` rows and return a local-only error instead of plugin-install guidance.
 - Local auth commands initialize user CLI compatibility shims, and hosted auth uses the same native grammar, flags, choices, and help as local mode.
 
+## [1.0.0](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.8...webcmd-v1.0.0) (2026-08-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* webcmd doctor now exits 78 on an unhealthy machine.
+
+### doctor
+
+* exit CONFIG_ERROR when a required check fails ([#456](https://github.com/agentrhq/webcmd/issues/456)) ([34fcc14](https://github.com/agentrhq/webcmd/commit/34fcc14707e28e02881686975068ea189940c9d9))
+
+
+### Features
+
+* bridge core CLI commands to hosted mode ([#458](https://github.com/agentrhq/webcmd/issues/458)) ([5e2d3df](https://github.com/agentrhq/webcmd/commit/5e2d3dfb4caefe711a04180009d622235b322d5b))
+
 ## [0.7.8](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.7...webcmd-v0.7.8) (2026-08-27)
 
 ### Highlights
