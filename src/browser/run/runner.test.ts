@@ -355,7 +355,7 @@ afterAll(async () => {
     });
   });
 
-  it('waits for popups and exposes context pages', async () => {
+  it('resolves waitForEvent("popup") into a readable Page before the outer run timeout', async () => {
     const registered: Page[] = [];
     const output = await runBrowserProgram({
       ...sessionScope(),
@@ -369,17 +369,23 @@ afterAll(async () => {
         return () => context.off('page', registeredListener);
       },
     }, `
-      const popupPromise = page.waitForEvent('popup');
+      const popupPromise = page.waitForEvent('popup', { timeout: 5000 });
       await page.getByRole('link', { name: 'Popup' }).click();
       const popup = await popupPromise;
       return {
         popupUrl: popup.url(),
+        title: await popup.title(),
+        body: await popup.locator('body').innerText(),
         pages: context.pages().length,
-        contexts: browser.contexts().length,
       };
-    `);
+    `, { timeoutMs: 15_000 });
 
-    expect(output.result).toEqual({ popupUrl: 'about:blank', pages: 2, contexts: 1 });
+    expect(output.result).toMatchObject({
+      popupUrl: 'about:blank',
+      title: expect.any(String),
+      body: expect.any(String),
+      pages: 2,
+    });
     expect(registered).toEqual([context.pages()[1]]);
   });
 
@@ -671,14 +677,19 @@ afterAll(async () => {
     }
   });
 
-  it('waits for downloads', async () => {
+  it('resolves waitForEvent("download") and saves the file before the outer run timeout', async () => {
     const output = await run(`
-      const downloadPromise = page.waitForEvent('download');
+      const downloadPromise = page.waitForEvent('download', { timeout: 5000 });
       await page.getByRole('link', { name: 'Download' }).click();
-      return (await downloadPromise).suggestedFilename();
-    `);
+      const download = await downloadPromise;
+      await download.saveAs(download.suggestedFilename());
+      return { filename: download.suggestedFilename() };
+    `, { timeoutMs: 15_000 });
 
-    expect(output.result).toBe('hello.txt');
+    expect(output.result).toEqual({ filename: 'hello.txt' });
+    expect(output.artifacts).toEqual([
+      expect.objectContaining({ filename: 'hello.txt' }),
+    ]);
   });
 
   it('captures a generated blob object-URL download as an artifact', async () => {
@@ -709,6 +720,19 @@ afterAll(async () => {
     expect(output.artifacts).toEqual([
       expect.objectContaining({ filename: 'normalized.csv', byteSize: 47 }),
     ]);
+  });
+
+  it('honors waitForEvent timeout when no popup or download fires', async () => {
+    const started = Date.now();
+    await expect(run(`
+      await Promise.all([
+        page.waitForEvent('popup', { timeout: 80 }),
+        page.waitForEvent('download', { timeout: 80 }),
+      ]);
+    `, { timeoutMs: 5_000 })).rejects.toMatchObject({
+      code: 'BROWSER_RUN_TIMEOUT',
+    });
+    expect(Date.now() - started).toBeLessThan(1_000);
   });
 
   it('tells the caller not to recompute bytes when a download wait times out', async () => {

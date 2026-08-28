@@ -352,9 +352,11 @@ export class PlaywrightTransport {
   readonly #connection: DispatcherConnection;
   readonly #root: RootDispatcher;
   readonly #deliver: (message: string) => void;
+  readonly #inbound: string[] = [];
   #registerPageImpl: (page: Page) => void;
   #cancellation: Promise<void> | undefined;
   #disposed = false;
+  #flushScheduled = false;
   #browserWaitMs = 0;
 
   constructor(
@@ -383,7 +385,9 @@ export class PlaywrightTransport {
     this.#deliver = deliver;
     this.#connection = new server.DispatcherConnection();
     this.#connection.onmessage = message => {
-      if (!this.#disposed) this.#deliver(JSON.stringify(message));
+      if (this.#disposed) return;
+      this.#inbound.push(JSON.stringify(message));
+      this.#scheduleFlush();
     };
     this.#root = new server.RootDispatcher(
       this.#connection,
@@ -448,8 +452,24 @@ export class PlaywrightTransport {
     if (this.#disposed) return;
     await this.cancel(error);
     this.#disposed = true;
+    this.#inbound.length = 0;
     this.#connection.onmessage = () => undefined;
     this.#root._dispose();
+  }
+
+  #scheduleFlush(): void {
+    if (this.#flushScheduled) return;
+    this.#flushScheduled = true;
+    queueMicrotask(() => {
+      this.#flushScheduled = false;
+      this.#flushInbound();
+    });
+  }
+
+  #flushInbound(): void {
+    while (!this.#disposed && this.#inbound.length > 0) {
+      this.#deliver(this.#inbound.shift()!);
+    }
   }
 
   #unsupported(id: unknown, api: string): void {
