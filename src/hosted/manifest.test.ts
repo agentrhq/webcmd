@@ -127,15 +127,15 @@ describe('hosted manifest helpers', () => {
       ...manifest,
       commands: [
         { ...manifest.commands[0]!, adapterPackageId: 'pkg_default_webcmd' },
-        { ...manifest.commands[0]!, site: 'pypi', name: 'package', command: 'pypi/package', origin: 'market' },
-        { ...manifest.commands[0]!, site: 'quotes', name: 'list', command: 'quotes/list', origin: 'user' },
-        { ...manifest.commands[0]!, site: 'openfda', name: 'search', command: 'openfda/search', origin: 'override' },
+        { ...manifest.commands[0]!, site: 'pypi', name: 'package', command: 'pypi/package', origin: 'plugin:pypi' },
+        { ...manifest.commands[0]!, site: 'quotes', name: 'list', command: 'quotes/list', origin: 'local' },
+        { ...manifest.commands[0]!, site: 'openfda', name: 'search', command: 'openfda/search', origin: 'override:openfda' },
       ],
     }, true)).toEqual(expect.arrayContaining([
-      expect.objectContaining({ command: 'github/whoami', origin: 'core' }),
-      expect.objectContaining({ command: 'pypi/package', origin: 'market' }),
-      expect.objectContaining({ command: 'quotes/list', origin: 'user' }),
-      expect.objectContaining({ command: 'openfda/search', origin: 'override' }),
+      expect.objectContaining({ command: 'github/whoami', origin: 'builtin' }),
+      expect.objectContaining({ command: 'pypi/package', origin: 'plugin:pypi' }),
+      expect.objectContaining({ command: 'quotes/list', origin: 'local' }),
+      expect.objectContaining({ command: 'openfda/search', origin: 'override:openfda' }),
     ]));
   });
 

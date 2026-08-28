@@ -200,7 +200,7 @@ argument, transient, or unreproduced failures.
 
 Storage paths:
 
-- Private: `~/.webcmd/clis/<site>/<command>.js`. This path takes precedence over the same command from an installed plugin; `webcmd list`'s `origin` column shows which space each command resolves from (`core`, `market`, `user`, `override`).
+- Private: `~/.webcmd/clis/<site>/<command>.js`. This path takes precedence over the same command from an installed plugin; `webcmd list`'s `origin` column shows which space each command resolves from (`builtin`, `plugin:<name>`, `local`, `override:<plugin>`).
 - Public (main repo, official or community): `plugins/<plugin-name>/` with its own `webcmd-plugin.json`
 
 The main Webcmd repo is itself a plugin monorepo: there is no separate "official bundle" location. Every public adapter belongs under `plugins/<plugin-name>/`. Do not hand-edit the root `webcmd-plugin.json` or generated README catalog; after merge, the community-plugin sync discovers each plugin manifest and updates both automatically.

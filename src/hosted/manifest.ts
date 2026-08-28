@@ -10,6 +10,7 @@ import {
   type PresentableCommand,
   type CommandListPresentation,
 } from '../command-presentation.js';
+import { formatCommandOrigin } from '../command-origin.js';
 import type { HostedCommand, HostedManifest } from './types.js';
 import { webFetchCommand } from '../fetch/command.js';
 
@@ -69,9 +70,9 @@ export function presentHostedCommand(command: HostedCommand): PresentableCommand
 
 function hostedListOrigin(command: HostedCommand): string | undefined {
   if (command.origin) return command.origin;
-  if (command.clientOwned) return 'core';
+  if (command.clientOwned) return formatCommandOrigin({ kind: 'builtin' });
   if (command.adapterPackageId === 'pkg_default_webcmd' || command.adapterPackageName === '@agentrhq/webcmd') {
-    return 'core';
+    return formatCommandOrigin({ kind: 'builtin' });
   }
   return undefined;
 }
