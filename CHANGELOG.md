@@ -15,6 +15,14 @@
 - Hosted command lists retain excluded commands as `LOCAL` rows and return a local-only error instead of plugin-install guidance.
 - Local auth commands initialize user CLI compatibility shims, and hosted auth uses the same native grammar, flags, choices, and help as local mode.
 
+## [0.7.10](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.9...webcmd-v0.7.10) (2026-08-28)
+
+
+### Bug Fixes
+
+* settle popup and download event handles without deadlock ([#463](https://github.com/agentrhq/webcmd/issues/463)) ([09f9782](https://github.com/agentrhq/webcmd/commit/09f9782b1d93768ce6c4d93332e0a180c2dd73dd))
+* surface workspace, origin, and browser-init in hosted help ([#464](https://github.com/agentrhq/webcmd/issues/464)) ([b021073](https://github.com/agentrhq/webcmd/commit/b021073f5867050a4319bbeefc93ce1b066a7818))
+
 ## [0.7.9](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.8...webcmd-v0.7.9) (2026-08-28)
 
 ### Highlights
