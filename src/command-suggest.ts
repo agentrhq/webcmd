@@ -177,9 +177,10 @@ export function isReservedRootCommand(name: string): boolean {
  * A command hosted mode serves that local mode never registers.
  *
  * Derived rather than listed, so a hosted command added later is covered
- * without touching this file. Today that is `artifact`: shell completion offers
- * it in both modes, but locally it resolved to "Site is not installed. Search:
- * webcmd plugin search artifact" — a hunt for a plugin that cannot exist.
+ * without touching this file. Today that is `artifact`, which the CLI reference
+ * lists among the top-level commands: locally it resolved to "Site is not
+ * installed. Search: webcmd plugin search artifact" — a hunt for a plugin that
+ * cannot exist.
  */
 export function isHostedOnlyRootCommand(name: string): boolean {
   if (WEBCMD_ROOT_COMMANDS.has(name)) return false;
