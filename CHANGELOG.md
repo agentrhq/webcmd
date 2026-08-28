@@ -15,7 +15,7 @@
 - Hosted command lists retain excluded commands as `LOCAL` rows and return a local-only error instead of plugin-install guidance.
 - Local auth commands initialize user CLI compatibility shims, and hosted auth uses the same native grammar, flags, choices, and help as local mode.
 
-## [1.0.0](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.8...webcmd-v1.0.0) (2026-08-28)
+## [0.7.9](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.8...webcmd-v0.7.9) (2026-08-28)
 
 
 ### ⚠ BREAKING CHANGES
