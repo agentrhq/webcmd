@@ -796,11 +796,11 @@ describe('hosted root preflight call order', () => {
     expect(local).toMatchObject({
       exitCode: 2,
       stdout: '',
-      stderr: "error: unknown command 'bogus'\nhelp: valid subcommands for `webcmd github`: whoami\n",
+      stderr: "error: unknown command 'bogus'\nhelp: valid subcommands for `webcmd github`: whoami\nTo author this command: webcmd browser init github/bogus\n",
     });
     expect(hosted).toEqual({ handled: true, exitCode: local.exitCode });
     expect(stdout.text()).toBe(local.stdout);
-    expect(stderr.text()).toBe("error: unknown command 'bogus'\nhelp: valid subcommands for `webcmd github`: whoami\n");
+    expect(stderr.text()).toBe("error: unknown command 'bogus'\nhelp: valid subcommands for `webcmd github`: whoami\nTo author this command: webcmd browser init github/bogus\n");
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(String(fetchImpl.mock.calls[0]![0])).toBe('https://api.example.com/v1/manifest');
   });

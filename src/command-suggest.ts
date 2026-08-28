@@ -153,6 +153,20 @@ export function unknownRootCommandMessage(
   return missingPluginGuidance(name);
 }
 
+const RESERVED_ROOTS = new Set([
+  'adapter', 'artifact', 'auth', 'browser', 'completion', 'convention-audit', 'daemon',
+  'doctor', 'external', 'list', 'plugin', 'profile', 'session', 'setup', 'site', 'skills',
+  'tab', 'update', 'validate', 'verify', 'web',
+]);
+
+export function unknownSiteCommandHint(site: string, commandName: string): string {
+  return `To author this command: ${CLI_COMMAND} browser init ${site}/${commandName}`;
+}
+
+export function isReservedRootCommand(name: string): boolean {
+  return RESERVED_ROOTS.has(name);
+}
+
 /** Message for an unknown subcommand inside a namespace. Caller writes it to stderr. */
 export function unknownSubcommandMessage(namespace: Command, name: string): string {
   const nsPath = namespace.name();

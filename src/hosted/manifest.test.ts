@@ -122,6 +122,23 @@ describe('hosted manifest helpers', () => {
     expect(commandNamesForSite(manifest, 'docker')).toEqual([]);
   });
 
+  it('reports origin on hosted list rows', () => {
+    expect(hostedListRows({
+      ...manifest,
+      commands: [
+        { ...manifest.commands[0]!, adapterPackageId: 'pkg_default_webcmd' },
+        { ...manifest.commands[0]!, site: 'pypi', name: 'package', command: 'pypi/package', origin: 'market' },
+        { ...manifest.commands[0]!, site: 'quotes', name: 'list', command: 'quotes/list', origin: 'user' },
+        { ...manifest.commands[0]!, site: 'openfda', name: 'search', command: 'openfda/search', origin: 'override' },
+      ],
+    }, true)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ command: 'github/whoami', origin: 'core' }),
+      expect.objectContaining({ command: 'pypi/package', origin: 'market' }),
+      expect.objectContaining({ command: 'quotes/list', origin: 'user' }),
+      expect.objectContaining({ command: 'openfda/search', origin: 'override' }),
+    ]));
+  });
+
   it('includes availability in hosted table presentation', () => {
     const presentation = hostedListPresentation(manifest, 'table');
 
@@ -259,7 +276,9 @@ describe('hosted manifest helpers', () => {
       'list',
       'plugin',
       'profile',
+      'session',
       'setup',
+      'site',
       'skills',
       'update',
       'web',

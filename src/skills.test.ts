@@ -280,6 +280,8 @@ describe('webcmd skills content', () => {
     const browser = bundledSkill('webcmd-browser');
     const autofix = bundledSkill('webcmd-autofix');
 
+    expect(usage).toContain('--workspace <id>');
+    expect(usage).toContain('WEBCMD_WORKSPACE');
     expect(usage).toContain('webcmd --profile work session create "Work Project" -f json');
     expect(usage).toContain('first-choice Webcmd fetch path');
     expect(usage).toContain('webcmd profile create work');
