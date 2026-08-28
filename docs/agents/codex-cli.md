@@ -1,6 +1,6 @@
 ---
-title: Codex CLI Agent
-sidebarTitle: Codex CLI
+title: Codex
+sidebarTitle: Codex
 ---
 
 ## Agent prompt

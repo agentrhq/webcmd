@@ -1,5 +1,5 @@
 ---
-title: Claude Code Agent
+title: Claude Code
 sidebarTitle: Claude Code
 ---
 
