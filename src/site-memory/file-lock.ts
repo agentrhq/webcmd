@@ -9,14 +9,13 @@
  * marker the filesystem can see: `open(..., 'wx')` creates the lock file only
  * when it does not already exist, atomically, on every platform we support.
  *
- * Abandoned locks never wedge site memory. A lock whose owner process is
- * confirmed gone is broken on the next attempt. `staleMs` only breaks a lock
- * when we cannot confirm the owner is still running (different host, or an
- * owner field we can't check) — a same-host owner we can see is alive is never
- * broken on staleness alone, so a critical section that runs long (a big file,
- * a slow disk, a loaded machine) is never mistaken for a crash. The holder also
- * refreshes the lock's mtime with a heartbeat while it works, as a second line
- * of defense for the cross-host/unconfirmed-owner case. `timeoutMs` is
+ * Abandoned locks never wedge site memory. A lock whose owner process is gone
+ * is broken on the next attempt. A lock is otherwise only broken once it has
+ * gone `staleMs` without a heartbeat: the holder in `withFileLock` refreshes
+ * the lock file's mtime on an interval well inside `staleMs` for as long as
+ * `fn()` runs, so a live holder's lock never looks abandoned regardless of how
+ * long its critical section actually takes — only a holder that has stopped
+ * heartbeating (crashed, or the process died) goes stale. `timeoutMs` is
  * deliberately longer than `staleMs` so an abandoned lock is always broken
  * rather than surfaced to the user as an error.
  */
@@ -27,10 +26,12 @@ import { basename } from 'node:path';
 import { CliError, EXIT_CODES } from '../errors.js';
 import { isActionablePid, isPidAlive } from '../session-lease.js';
 
-/** A lock held longer than this is treated as abandoned by a crashed process. */
+/** A lock held longer than this without a heartbeat is treated as abandoned. */
 export const LOCK_STALE_MS = 10_000;
 /** Total acquire budget. Longer than LOCK_STALE_MS so stale locks are broken, not reported. */
 export const LOCK_TIMEOUT_MS = 15_000;
+/** Heartbeats land at a fraction of staleMs, so one missed tick can't cause a false break. */
+const HEARTBEAT_DIVISOR = 3;
 
 const RETRY_MIN_MS = 5;
 const RETRY_MAX_MS = 50;
@@ -57,42 +58,38 @@ export async function withFileLock<T>(target: string, fn: () => Promise<T>, opti
   const lockPath = lockPathFor(target);
   const staleMs = options.staleMs ?? LOCK_STALE_MS;
   const token = await acquire(lockPath, options);
-  const heartbeat = startHeartbeat(lockPath, token, staleMs);
+  const heartbeat = startHeartbeat(lockPath, staleMs);
   try {
     return await fn();
   } finally {
-    clearInterval(heartbeat);
+    heartbeat.stop();
     await release(lockPath, token);
   }
 }
 
 /**
- * Refresh the lock file's mtime while the critical section is still running, so a
- * critical section that legitimately runs longer than `staleMs` (a big file, a slow
- * disk, a loaded machine) does not look abandoned to another process. Ticks at a
- * fraction of `staleMs` so at least one refresh lands before the file would otherwise
- * go stale. `.unref()`d so a stuck interval never keeps the process alive.
+ * Keeps `lockPath`'s mtime fresh for as long as the caller holds the lock, so
+ * `breakIfAbandoned` never mistakes a live, still-working holder for a crashed
+ * one just because its critical section is slow. Best-effort: a missed touch
+ * (e.g. the file briefly unreadable under load) is not fatal — it only risks
+ * the lock being broken early, the same failure mode this replaces, not a new
+ * one — and a touch is never attempted once `stop()` has been called.
  */
-function startHeartbeat(lockPath: string, token: string, staleMs: number): NodeJS.Timeout {
-  const intervalMs = Math.max(1_000, Math.floor(staleMs / 3));
+function startHeartbeat(lockPath: string, staleMs: number): { stop: () => void } {
+  const intervalMs = Math.max(1, Math.floor(staleMs / HEARTBEAT_DIVISOR));
+  let stopped = false;
   const timer = setInterval(() => {
-    void touchIfOwned(lockPath, token);
+    if (stopped) return;
+    const now = new Date();
+    utimes(lockPath, now, now).catch(() => undefined);
   }, intervalMs);
   timer.unref?.();
-  return timer;
-}
-
-/** Only refresh the mtime if we still hold this lock — never extend a lock reassigned to someone else. */
-async function touchIfOwned(lockPath: string, token: string): Promise<void> {
-  try {
-    const owner = await readOwner(lockPath);
-    if (owner.token !== token) return;
-    const now = new Date();
-    await utimes(lockPath, now, now);
-  } catch {
-    // Best-effort: if the touch fails, breakIfAbandoned's owner-liveness check is
-    // still there to stop a live holder's lock from being broken out from under it.
-  }
+  return {
+    stop() {
+      stopped = true;
+      clearInterval(timer);
+    },
+  };
 }
 
 async function acquire(lockPath: string, options: FileLockOptions): Promise<string> {
@@ -142,17 +139,8 @@ async function breakIfAbandoned(lockPath: string, staleMs: number): Promise<bool
   const before = await statOrUndefined(lockPath);
   if (!before) return true;
   const owner = await readOwner(lockPath);
-
-  // A same-host owner we can still see running is decisive: never break its lock on
-  // staleness alone, no matter how old the mtime looks. This is what actually stops a
-  // slow-but-alive critical section from being mistaken for a crash — the heartbeat in
-  // withFileLock keeps mtime fresh too, but this check is what closes the bug even if a
-  // heartbeat tick is ever missed (GC pause, event-loop stall, etc).
-  const checkable = owner.host === hostname() && isActionablePid(owner.pid);
-  if (checkable && isPidAlive(owner.pid)) return false;
-
   const expired = Date.now() - before.mtimeMs > staleMs;
-  const ownerGone = checkable && !isPidAlive(owner.pid);
+  const ownerGone = owner.host === hostname() && isActionablePid(owner.pid) && !isPidAlive(owner.pid);
   if (!expired && !ownerGone) return false;
 
   const after = await statOrUndefined(lockPath);
