@@ -54,9 +54,9 @@ describe('webcmd skills content', () => {
     const skill = bundledSkill('smart-search');
     const browser = bundledSkill('webcmd-browser');
     const skills = [skill, browser];
-    const sessionId = 'session_7d8f2c10-4a11-4f3e-9c22-1b6de0a91f45';
+    const sessionId = 'work-project-k7';
     const sessionWorkflow = [
-      'webcmd --profile work session create',
+      'webcmd --profile work session create "Work Project"',
       `webcmd --profile work --session ${sessionId} browser run --stdin`,
       `webcmd --profile work --session ${sessionId} browser snapshot --snapshot-mode read`,
       `webcmd --profile work session close ${sessionId}`,
@@ -280,14 +280,15 @@ describe('webcmd skills content', () => {
     const browser = bundledSkill('webcmd-browser');
     const autofix = bundledSkill('webcmd-autofix');
 
-    expect(usage).toContain('webcmd session create -f json');
+    expect(usage).toContain('--workspace <id>');
+    expect(usage).toContain('WEBCMD_WORKSPACE');
+    expect(usage).toContain('webcmd --profile work session create "Work Project" -f json');
     expect(usage).toContain('first-choice Webcmd fetch path');
     expect(usage).toContain('webcmd profile create work');
-    expect(usage).toContain('webcmd --session session_abc browser');
+    expect(usage).toContain('webcmd --profile work --session work-project-k7 browser');
     expect(usage).toContain('SESSION_BUSY');
     expect(usage).toContain('SESSION_REQUIRED');
-    expect(usage).toMatch(/Adapter commands may omit `--session`[\s\S]{0,200}adapter-default session/i);
-    expect(usage).toMatch(/retired positional session form is invalid/i);
+    expect(usage).toMatch(/Adapter commands without `--session`[\s\S]{0,200}`adapter-default` Session/i);
     expect(browser).toContain('webcmd profile create work');
     expect(browser).toMatch(/Profiles are cookie jars[\s\S]{0,180}sessions are browser workspaces\/windows/i);
     expect(browser).toMatch(/Parallel agents use separate sessions/i);
@@ -319,7 +320,7 @@ describe('webcmd skills content', () => {
 
     for (const required of [
       'Absence from truncated output never proves that no adapter exists',
-      'Create an opaque browser session before raw browser work',
+      'Create a named browser Session before raw browser work',
       'fresh JavaScript scope',
       'persistent browser state',
       'Never ask for or type passwords',

@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LocalCloakRuntimeProvider } from './provider.js';
+import { LocalBrowserSessionStore } from '../../sessions.js';
 import { BrowserRunError } from '../../run/types.js';
 
 const runBrowserProgram = vi.hoisted(() => vi.fn());
@@ -172,6 +173,7 @@ describe('LocalCloakRuntimeProvider', () => {
         id: 'create-doctor-session',
         action: 'session-create',
         contextId: 'default',
+        sessionName: 'doctor',
       });
 
       await provider.closeSession({
@@ -190,6 +192,41 @@ describe('LocalCloakRuntimeProvider', () => {
     }
   });
 
+  it('passes a readable Session name to the profile-scoped store', async () => {
+    const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-provider-session-'));
+    const create = vi.spyOn(LocalBrowserSessionStore.prototype, 'create');
+    try {
+      const provider = new LocalCloakRuntimeProvider({ baseDir });
+      const session = await provider.createSession({
+        id: 'create-work-project',
+        action: 'session-create',
+        contextId: 'profile-a',
+        sessionName: 'Work Project',
+      });
+
+      expect(create).toHaveBeenCalledWith('profile-a', 'Work Project');
+      expect(session).toMatchObject({ profileId: 'profile-a', id: expect.stringMatching(/^work-project-[23456789abcdefghijkmnpqrstuvwxyz]{2}$/) });
+    } finally {
+      create.mockRestore();
+      fs.rmSync(baseDir, { recursive: true, force: true });
+    }
+  });
+
+  it('resolves an omitted adapter --session as adapter-default', async () => {
+    const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-provider-session-'));
+    try {
+      const provider = new LocalCloakRuntimeProvider({ baseDir });
+      await expect(provider.resolveAdapterDefault({
+        id: 'adapter-default',
+        action: 'exec',
+        contextId: 'profile-a',
+        surface: 'adapter',
+      })).resolves.toMatchObject({ id: 'adapter-default', profileId: 'profile-a', kind: 'adapter-default' });
+    } finally {
+      fs.rmSync(baseDir, { recursive: true, force: true });
+    }
+  });
+
   it('does not discard a Session record unless close is forced', async () => {
     const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-provider-session-'));
     try {
@@ -198,6 +235,7 @@ describe('LocalCloakRuntimeProvider', () => {
         id: 'create-user-session',
         action: 'session-create',
         contextId: 'default',
+        sessionName: 'user',
       });
 
       await provider.closeSession({

@@ -9,6 +9,7 @@ import { createDaemonServer } from './server.js';
 
 class FakeProvider implements BrowserRuntimeProvider {
   commands: BrowserRuntimeCommand[] = [];
+  createSessionCommands: BrowserRuntimeCommand[] = [];
   sessions: BrowserSessionRecord[] = [];
   activeSessions = new Set<string>();
   foregroundedSessions: string[] = [];
@@ -16,7 +17,7 @@ class FakeProvider implements BrowserRuntimeProvider {
   delayMs = 0;
   dispatchImpl?: (command: BrowserRuntimeCommand, signal?: AbortSignal) => Promise<BrowserRuntimeResult>;
   resolveProfileId?: (command: BrowserRuntimeCommand) => string;
-  sessionId = 'session_11111111-1111-4111-8111-111111111111';
+  sessionId = 'work-project-k7';
 
   private result(command: BrowserRuntimeCommand) {
     return { id: command.id, ok: true as const, data: { action: command.action }, page: 'page-1' };
@@ -35,6 +36,7 @@ class FakeProvider implements BrowserRuntimeProvider {
   }
 
   async createSession(command: BrowserRuntimeCommand): Promise<BrowserSessionRecord> {
+    this.createSessionCommands.push(command);
     const profileId = command.contextId ?? 'default';
     const session = {
       id: this.sessionId,
@@ -220,29 +222,37 @@ describe('createDaemonServer', () => {
   it('handles local Session lifecycle controls outside normal dispatch', async () => {
     const { provider, baseUrl } = await start();
 
-    const created = await postCommand(baseUrl, { id: 'create-session', action: 'session-create' as BrowserRuntimeCommand['action'], contextId: 'profile_work' });
+    const created = await postCommand(baseUrl, {
+      id: 'create',
+      action: 'session-create' as BrowserRuntimeCommand['action'],
+      contextId: 'profile-a',
+      sessionName: 'Work Project',
+    });
     expect(created.status).toBe(200);
     await expect(created.json()).resolves.toMatchObject({
       ok: true,
-      data: { id: provider.sessionId, profileId: 'profile_work', kind: 'explicit' },
+      data: { id: 'work-project-k7', profileId: 'profile-a', kind: 'explicit' },
     });
+    expect(provider.createSessionCommands).toEqual([
+      expect.objectContaining({ contextId: 'profile-a', sessionName: 'Work Project' }),
+    ]);
 
     provider.activeSessions.add(provider.sessionId);
-    const listed = await postCommand(baseUrl, { id: 'list-sessions', action: 'session-list' as BrowserRuntimeCommand['action'], contextId: 'profile_work' });
+    const listed = await postCommand(baseUrl, { id: 'list-sessions', action: 'session-list' as BrowserRuntimeCommand['action'], contextId: 'profile-a' });
     expect(listed.status).toBe(200);
     await expect(listed.json()).resolves.toMatchObject({
       ok: true,
       data: [{ id: provider.sessionId, runtimeState: 'active' }],
     });
 
-    const closed = await postCommand(baseUrl, { id: 'close-session', action: 'session-close' as BrowserRuntimeCommand['action'], contextId: 'profile_work', session: provider.sessionId });
+    const closed = await postCommand(baseUrl, { id: 'close-session', action: 'session-close' as BrowserRuntimeCommand['action'], contextId: 'profile-a', session: provider.sessionId });
     expect(closed.status).toBe(200);
     await expect(closed.json()).resolves.toMatchObject({
       ok: true,
       data: { closed: true, alreadyIdle: false, session: provider.sessionId },
     });
 
-    const closedAgain = await postCommand(baseUrl, { id: 'close-session-again', action: 'session-close' as BrowserRuntimeCommand['action'], contextId: 'profile_work', session: provider.sessionId });
+    const closedAgain = await postCommand(baseUrl, { id: 'close-session-again', action: 'session-close' as BrowserRuntimeCommand['action'], contextId: 'profile-a', session: provider.sessionId });
     expect(closedAgain.status).toBe(200);
     await expect(closedAgain.json()).resolves.toMatchObject({
       ok: true,

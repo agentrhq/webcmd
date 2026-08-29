@@ -30,37 +30,36 @@ Until `doctor` is green, browser commands may fail. Registry and plugin discover
 
 ## Session lifecycle
 
-- Create an opaque browser session before raw browser work: `webcmd --profile <profile> session create`.
+- Create a named browser Session before raw browser work: `webcmd --profile <profile> session create <name>`.
 - Create a named profile first: `webcmd profile create <profile>`. If an explicit profile returns `PROFILE_NOT_FOUND`, create it, then retry session creation.
-- Raw browser commands require that ID at the root: `webcmd --session <session-id> browser ...`; the old positional session form is retired.
-- Profiles are cookie jars and auth scope; sessions are browser workspaces/windows within a profile. Parallel agents use separate sessions.
+- Raw browser commands require the returned readable ID at the root: `webcmd --profile <profile> --session <session-id> browser ...`.
+- Profiles are cookie jars and auth scope; Sessions are browser workspaces/windows within a Profile. Session IDs are immutable and Profile-scoped. Parallel agents use separate Sessions.
 - `webcmd session list` shows sessions and their handoff/runtime state; close finished work with `webcmd session close <session-id>`. Close is blocked while that Session has a live handoff.
 - Browser state in the bound page persists between calls, but each `run` gets a fresh JavaScript scope.
 - `webcmd --session <session-id> browser tabs` lists existing pages without creating a new one.
 - `webcmd --session <session-id> browser bind --page <page-id>` explicitly attaches the session to an existing page.
 - If the user manually signs in or changes the visible tab, re-bind or inspect with a fresh snapshot before continuing.
 
-For a `FETCH_BLOCKED` or `FETCH_REQUIRES_BROWSER` fallback, use one Session for the browser portion, preserve its complete opaque ID, and close it in cleanup. Local browser commands use Cloak; hosted browser commands use Webcmd Cloud and Browser Use. `web fetch` remains local in both modes and never opens a browser.
+For a `FETCH_BLOCKED` or `FETCH_REQUIRES_BROWSER` fallback, use one Session for the browser portion, preserve its readable ID, and close it in cleanup. Adapter commands without `--session` reuse the Profile's `adapter-default` Session; raw browser commands require an explicit readable selector. Local browser commands use Cloak; hosted browser commands use Webcmd Cloud and Browser Use. `web fetch` remains local in both modes and never opens a browser.
 
 ```bash
 webcmd profile create work
-webcmd --profile work session create
-# Copy the returned full ID:
-# session_7d8f2c10-4a11-4f3e-9c22-1b6de0a91f45
+webcmd --profile work session create "Work Project"
+# id: work-project-k7
+webcmd --profile work --session work-project-k7 browser tabs
 
 webcmd --profile work \
-  --session session_7d8f2c10-4a11-4f3e-9c22-1b6de0a91f45 \
+  --session work-project-k7 \
   browser run --stdin --no-snapshot-diff <<'JS'
 await page.goto('https://example.com');
 return { url: page.url(), title: await page.title() };
 JS
 
 webcmd --profile work \
-  --session session_7d8f2c10-4a11-4f3e-9c22-1b6de0a91f45 \
+  --session work-project-k7 \
   browser snapshot --snapshot-mode read
 
-webcmd --profile work session close \
-  session_7d8f2c10-4a11-4f3e-9c22-1b6de0a91f45
+webcmd --profile work session close work-project-k7
 ```
 
 ---
@@ -98,7 +97,7 @@ Choose diff behavior from the evidence the program returns:
 Research with sufficient returned evidence:
 
 ```bash
-webcmd --session session_abc browser run --stdin --no-snapshot-diff <<'JS'
+webcmd --profile work --session work-project-k7 browser run --stdin --no-snapshot-diff <<'JS'
 await page.goto('https://example.com/archive');
 const text = await page.locator('main').innerText();
 return {
@@ -112,7 +111,7 @@ JS
 Keep the default diff when discovering an unfamiliar state change:
 
 ```bash
-webcmd --session session_abc browser run --stdin <<'JS'
+webcmd --profile work --session work-project-k7 browser run --stdin <<'JS'
 await page.goto('https://example.com');
 await page.getByRole('link', { name: 'More information' }).click();
 return { title: await page.title(), url: page.url() };
@@ -142,7 +141,7 @@ Prefer one `run` over shell-chaining multiple browser calls. It keeps Playwright
 Good:
 
 ```bash
-webcmd --session session_abc browser run --stdin <<'JS'
+webcmd --profile work --session work-project-k7 browser run --stdin <<'JS'
 await page.goto('https://example.com/cart');
 const pending = page.waitForResponse(r => r.url().includes('/api/checkout'));
 await page.getByRole('button', { name: /checkout/i }).click();
@@ -199,7 +198,7 @@ await page.locator('input[type="file"]').setInputFiles({
 Inspect the exact accessible name before using `getByLabel`; do not invent punctuation such as a required `*`. After filling a datepicker or masked input, verify `inputValue()` and use the widget UI if the value was cleared or rejected.
 
 ```bash
-webcmd --session session_abc browser run --stdin <<'JS'
+webcmd --profile work --session work-project-k7 browser run --stdin <<'JS'
 await page.goto('https://example.com/form');
 const country = page.locator('select[name="country"]');
 return {
@@ -220,7 +219,7 @@ For custom React/Radix/shadcn/Material UI dropdowns, use semantic locators and v
 ### Capture a request triggered by UI
 
 ```bash
-webcmd --session session_abc browser run --stdin --no-snapshot-diff <<'JS'
+webcmd --profile work --session work-project-k7 browser run --stdin --no-snapshot-diff <<'JS'
 await page.goto('https://example.com/search');
 const pending = page.waitForResponse(r => r.url().includes('/api/search'));
 await page.getByRole('textbox', { name: /search/i }).fill('browser automation');
@@ -271,7 +270,7 @@ Use `run` and inspect `page.frames()`; target the frame by URL/name and keep ifr
 | Bound page is wrong or stale | Run `tabs`, choose the current page id, then `bind --page <id>` again. |
 | `run` times out before returning | Increase `--timeout` only after checking whether the wait condition is wrong. |
 | Write may have happened before timeout | Take a fresh snapshot before retrying. Avoid duplicate submissions. |
-| `SESSION_REQUIRED` | Create a Session, then retry with root `--session <session-id>`. |
+| `SESSION_REQUIRED` | Create a named Session, then retry with its readable root `--session <session-id>`. |
 | `SESSION_BUSY` | Wait for the listed holder; if it is dead, `webcmd session close <session-id> --force` is the last resort. |
 | `SESSION_PAUSED_FOR_HUMAN_HANDOFF` | Finish the handoff and run the returned verifier before retrying. |
 | Login wall appears | Use the Authentication and human handoff recipe. |

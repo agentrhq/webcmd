@@ -71,13 +71,17 @@ interface AuthRefreshState {
   sites: Record<string, AuthRefreshSiteState>;
 }
 
-function parsePositiveInt(raw: string | number | undefined, label: string, fallback: number): number {
-  if (raw === undefined || raw === null || raw === '') return fallback;
+export function parseAuthPositiveInt(raw: string | number | undefined, label: string): number | undefined {
+  if (raw === undefined || raw === null || raw === '') return undefined;
   const parsed = Number(raw);
   if (!Number.isInteger(parsed) || parsed <= 0) {
     throw new InvalidArgumentError(`${label} must be a positive integer. Received: "${String(raw)}"`);
   }
   return parsed;
+}
+
+function parsePositiveInt(raw: string | number | undefined, label: string, fallback: number): number {
+  return parseAuthPositiveInt(raw, label) ?? fallback;
 }
 
 function parseSiteFilter(raw: string | undefined): Set<string> | null {
@@ -454,7 +458,7 @@ export async function collectAuthRefresh(options: AuthRefreshOptions): Promise<A
   return rows;
 }
 
-export function registerAuthCommands(program: Command): Command {
+export function configureAuthCommandSurface(program: Command) {
   const auth = program
     .command('auth')
     .description('Inspect website login status');
@@ -469,6 +473,21 @@ export function registerAuthCommands(program: Command): Command {
     .addOption(new Option('--only <status>', 'Filter rows by status').choices(['all', 'logged-in', 'not-logged-in', 'unknown', 'error']).default('all'))
     .option('-v, --verbose', 'Debug output', false);
   addOutputFormatOption(status);
+  const refresh = auth
+    .command('refresh')
+    .description('Touch logged-in site sessions to keep browser auth fresh')
+    .option('--site <sites>', 'Comma-separated site names to refresh, e.g. github,claude')
+    .option('--all', 'Ignore the 24h refresh throttle and force every selected site', false)
+    .option('--concurrency <n>', 'Maximum sites to refresh at once')
+    .option('--timeout <seconds>', 'Per-site timeout in seconds')
+    .option('-v, --verbose', 'Debug output', false);
+  addOutputFormatOption(refresh);
+
+  return { auth, status, refresh };
+}
+
+export function registerAuthCommands(program: Command): Command {
+  const { auth, status, refresh } = configureAuthCommandSurface(program);
   status.action(async (opts) => {
       // Both auth probes drive the browser/daemon stack, so verbose mode surfaces
       // the CDP diagnostics those layers already gate on `isVerbose()` (#174).
@@ -493,15 +512,6 @@ export function registerAuthCommands(program: Command): Command {
       });
     });
 
-  const refresh = auth
-    .command('refresh')
-    .description('Touch logged-in site sessions to keep browser auth fresh')
-    .option('--site <sites>', 'Comma-separated site names to refresh, e.g. github,claude')
-    .option('--all', 'Ignore the 24h refresh throttle and force every selected site', false)
-    .option('--concurrency <n>', 'Maximum sites to refresh at once')
-    .option('--timeout <seconds>', 'Per-site timeout in seconds')
-    .option('-v, --verbose', 'Debug output', false);
-  addOutputFormatOption(refresh);
   refresh.action(async (opts) => {
       enableVerbose(opts.verbose === true);
       const fmt = resolveCommandOutputFormat(refresh, opts.format);

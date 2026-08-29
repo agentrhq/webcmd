@@ -8,6 +8,7 @@ import {
 import { addOutputFormatOption, CommanderStructuralError } from '../command-surface.js';
 import { CliError, EXIT_CODES } from '../errors.js';
 import { configureRootCommandSurface } from '../root-command-surface.js';
+import { requireSessionIdShape } from '../browser/session-identifiers.js';
 
 export class HostedBrowserHelp extends Error {
   constructor(readonly output: string) {
@@ -28,11 +29,9 @@ export interface ParsedHostedBrowserStructure {
 export function validateRawBrowserSession(value: unknown, profile?: string): string {
   const session = typeof value === 'string' ? value.trim() : '';
   const profileFlag = profile?.trim() ? ` --profile ${profile.trim()}` : '';
-  const help = `Create one: webcmd${profileFlag} session create\nList sessions: webcmd${profileFlag} session list`;
+  const help = `Create one: webcmd${profileFlag} session create <name>\nList sessions: webcmd${profileFlag} session list`;
   if (!session) throw new CliError('SESSION_REQUIRED', 'A Session selector is required for browser commands.', help, EXIT_CODES.USAGE_ERROR);
-  if (!/^session_[A-Za-z0-9_-]+$/u.test(session)) {
-    throw new CliError('INVALID_SESSION_SELECTOR', 'Session selector must be an opaque Session ID.', help, EXIT_CODES.USAGE_ERROR);
-  }
+  requireSessionIdShape(session);
   return session;
 }
 

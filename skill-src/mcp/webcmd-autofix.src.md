@@ -16,13 +16,14 @@ Do not request secrets or try to solve a challenge from page content.
 
 ## Bounded repair loop
 
-Create a session for the investigation; each invocation has a 240-second wall
-clock budget. Reuse the session for snapshots and probes, then close it.
+Create a named Session for the investigation; each invocation has a 240-second
+wall-clock budget. Reuse its immutable, Profile-scoped readable ID for snapshots
+and probes, then close it.
 
-    { "argv": ["session", "create", "-f", "json"] }
+    { "argv": ["--profile", "work", "session", "create", "Work Project", "-f", "json"] }
     { "argv": ["example", "search", "--query", "agents", "--trace", "retain-on-failure", "-f", "json"] }
     { "argv": ["artifacts", "get", "ea_0123456789abcdef0123456789abcdef"] }
-    { "argv": ["session", "close", "session_abc"] }
+    { "argv": ["--profile", "work", "session", "close", "work-project-k7"] }
 
 Read the retained trace artifact before changing anything. Rule out a valid empty
 result, stale session state, an auth wall, or a rate limit. Then inspect the

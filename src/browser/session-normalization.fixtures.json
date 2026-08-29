@@ -1,0 +1,8 @@
+[
+  { "input": "Work Project", "base": "work-project" },
+  { "input": " Client / A ", "base": "client-a" },
+  { "input": "Research 2026", "base": "research-2026" },
+  { "input": "---A___B---", "base": "a-b" },
+  { "input": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "base": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+  { "input": " / ", "error": "INVALID_SESSION_NAME" }
+]

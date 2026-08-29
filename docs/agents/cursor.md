@@ -52,8 +52,8 @@ Use Webcmd for anything on the open web — fetching, authenticated
 third-party sites, multi-step automation, workflows worth making reusable:
 
 - Check `webcmd list -f json` for an adapter that covers the task; use it first.
-- Otherwise create a session, then drive it with `webcmd --session <session-id> browser ...` via the shell tool.
-- Run `webcmd doctor` first; use `webcmd session list` to inspect state and `webcmd session close <session-id>` when finished.
+- Otherwise run `webcmd --profile work session create "Work Project"`, then drive its returned readable ID with `webcmd --profile work --session work-project-k7 browser tabs` via the shell tool.
+- Run `webcmd doctor` first; use `webcmd --profile work session list` to inspect state and `webcmd --profile work session close work-project-k7` when finished.
 - For login walls, use Webcmd's human handoff; never type passwords, OTPs, cookies, or credentials.
 
 Use the native Browser tool only for the app being edited: localhost dev server,
@@ -77,7 +77,7 @@ Note that the rule is guidance, not a block. Cursor's Browser Automation has bee
 | Cursor uses its Browser tool for external sites | Confirm `.cursor/rules/webcmd-browser.mdc` has `alwaysApply: true`; for a hard block, set Browser Automation to Off. |
 | Browser Automation turns itself back on | Known behaviour — a prompt mentioning "browser" can re-enable it. Avoid the word, or turn it off in the agent window. |
 | `webcmd` not found in Cursor shell | Confirm `webcmd` is on the PATH the Cursor shell uses; restart Cursor after installing the CLI. |
-| Browser Session idles or loses its window | Keep the same Session ID; the next `webcmd --session <session-id> browser ...` command reopens it. Use `webcmd session create -f json`, `webcmd session list`, and `webcmd session close <session-id>` for lifecycle. |
+| Browser Session idles or loses its window | Keep its immutable, Profile-scoped ID; `webcmd --profile work --session work-project-k7 browser tabs` reopens it. Start with `webcmd --profile work session create "Work Project"`; use `webcmd --profile work session list` and `webcmd --profile work session close work-project-k7` for lifecycle. Adapter commands without `--session` reuse `adapter-default`; raw browser commands require an explicit readable selector. |
 
 ## See also
 

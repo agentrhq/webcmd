@@ -32,4 +32,4 @@ Do not also add the skills with `webcmd skills add` in Codex.
 ## Other Agents or Plugin-Free Setup
 
 Run `webcmd skills add` to install or refresh the bundled Webcmd skills for your agent. The agent can then start with `webcmd-usage` and load the specialized skill that matches the outcome.
-For raw browser work, agents should create a Session with `webcmd session create -f json` and pass it as a root selector: `webcmd --session <session-id> browser ...`.
+For raw browser work, agents should run `webcmd --profile work session create "Work Project"`, keep the returned immutable, Profile-scoped ID, and pass it at the root: `webcmd --profile work --session work-project-k7 browser tabs`. Adapter commands without `--session` reuse `adapter-default`; raw browser commands require an explicit readable selector.

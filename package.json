@@ -1,6 +1,6 @@
 {
   "name": "@agentrhq/webcmd",
-  "version": "0.7.6",
+  "version": "0.7.10",
   "description": "Turn websites, browser sessions, desktop apps, and local tools into deterministic CLI surfaces for humans and AI agents.",
   "engines": {
     "node": ">=20.6.0"
@@ -12,6 +12,7 @@
   },
   "exports": {
     ".": "./dist/src/main.js",
+    "./adapter-analysis": "./dist/src/adapter-analysis.js",
     "./registry": "./dist/src/registry-api.js",
     "./errors": "./dist/src/errors.js",
     "./types": "./dist/src/types.js",
@@ -34,6 +35,7 @@
     "./pipeline": "./dist/src/pipeline/index.js",
     "./plugin-runtime": "./dist/src/plugin-runtime.js",
     "./hosted/availability": "./dist/src/hosted/availability.js",
+    "./hosted/core-commands": "./dist/src/hosted/core-commands.js",
     "./hosted/programmatic": "./dist/src/hosted/programmatic.js"
   },
   "files": [

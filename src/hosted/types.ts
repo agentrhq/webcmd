@@ -1,6 +1,8 @@
 import type { CommandSurfaceMetadata } from '../command-surface.js';
 import type { Arg } from '../registry.js';
+import type { ValidationReport } from '../validate.js';
 import type { FileArgumentDirection } from './contract.js';
+import type { HostedCoreCommandId } from './core-commands.js';
 
 export const HOSTED_SESSION_PROTOCOL_VERSION = 1 as const;
 
@@ -39,6 +41,9 @@ export interface HostedCommand extends CommandSurfaceMetadata {
   defaultFormat?: string | null;
   freshPage?: boolean;
   adapterPackageId?: string;
+  adapterPackageName?: string;
+  adapterPackageVersion?: string;
+  origin?: string;
   sourceFile?: string;
   modulePath?: string;
 }
@@ -50,6 +55,7 @@ export interface HostedManifest {
     sessionProtocolVersion: number;
     webcmdPackageVersion: string;
     generatedAt: string;
+    coreCommands?: HostedCoreCommandId[];
   };
   commands: HostedCommand[];
 }
@@ -68,6 +74,81 @@ export interface HostedPublicProfile {
 export interface HostedProfilesResponse {
   ok: true;
   profiles: HostedPublicProfile[];
+}
+
+export interface HostedVerifySmokeResult {
+  command: string;
+  status: 'passed' | 'failed' | 'skipped';
+  message: string;
+}
+
+export interface HostedVerifyReport {
+  ok: boolean;
+  validation: ValidationReport;
+  smoke: null | {
+    requested: true;
+    executed: boolean;
+    ok: boolean;
+    summary: string;
+    results: HostedVerifySmokeResult[];
+  };
+}
+
+export type HostedDoctorCheckId =
+  | 'api'
+  | 'workspace'
+  | 'compatibility'
+  | 'profile'
+  | 'browser-provider'
+  | 'capacity';
+
+export interface HostedDoctorReport {
+  ok: boolean;
+  checks: Array<{
+    id: HostedDoctorCheckId;
+    ok: boolean;
+    required: boolean;
+    message: string;
+  }>;
+}
+
+export interface HostedAdapterStatusRow {
+  command: string;
+  kind: 'override' | 'user';
+  package: string;
+  reconciliationState: 'current' | 'changed' | 'unknown';
+  loadError: string | null;
+}
+
+export interface HostedAdapterResetRemoval {
+  packageId: string;
+  package: string;
+  commands: string[];
+}
+
+export interface HostedProfileCreateResponse {
+  ok: true;
+  profile: HostedPublicProfile;
+  created: boolean;
+}
+
+export interface HostedProfileRenameResponse {
+  ok: true;
+  profile: HostedPublicProfile;
+  changed: boolean;
+}
+
+export interface HostedMarketplaceCatalogSource {
+  id: string;
+  repository: string;
+  commit?: string;
+  manifestPath: string;
+  status: 'empty' | 'consistent' | 'mixed';
+}
+
+export interface HostedMarketplaceCatalogResponse {
+  ok: true;
+  sources: HostedMarketplaceCatalogSource[];
 }
 
 export interface HostedBrowserSession {

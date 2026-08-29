@@ -5,8 +5,10 @@ import { PKG_VERSION } from './version.js';
 export const ROOT_PROFILE_FLAGS = '--profile <name>';
 export const ROOT_PROFILE_DESCRIPTION = 'Chrome profile/context alias for browser runtime commands';
 export const ROOT_SESSION_FLAGS = '--session <session-id>';
-export const ROOT_SESSION_DESCRIPTION = 'Existing opaque Session ID from `webcmd session create`';
+export const ROOT_SESSION_DESCRIPTION = 'Existing readable Session ID from `webcmd session create <name>`';
 export const ROOT_SESSION_SELECTOR_POSITION = 'root';
+const ROOT_WORKSPACE_FLAGS = '--workspace <id>';
+const ROOT_WORKSPACE_DESCRIPTION = 'Hosted workspace id/slug for the request';
 export const COMPLETION_SENTINEL = '--get-completions';
 
 /**
@@ -22,11 +24,15 @@ export function configureRootCommandSurface(program: Command): Command {
     .enablePositionalOptions();
 }
 
+export function configureHostedWorkspaceOption(program: Command): Command {
+  return program.option(ROOT_WORKSPACE_FLAGS, ROOT_WORKSPACE_DESCRIPTION);
+}
+
 export type HostedRootCommandSurface =
   | { kind: 'help'; exitCode: number }
   | { kind: 'version'; output: string }
   | { kind: 'completion'; argv: string[] }
-  | { kind: 'dispatch'; argv: string[]; profile?: string; session?: string; literal: boolean };
+  | { kind: 'dispatch'; argv: string[]; profile?: string; session?: string; workspace?: string; literal: boolean };
 
 /**
  * Parse only the root command surface without registering or discovering local
@@ -40,21 +46,20 @@ export function parseHostedRootCommandSurface(argv: readonly string[]): HostedRo
   if (input[0] === '--version' || input[0] === '-V') {
     return { kind: 'version', output: `${PKG_VERSION}\n` };
   }
-  // The local completion path scans the complete raw argv before discovery or
-  // Commander parsing, including after `--` and malformed root options.
-  if (input.includes(COMPLETION_SENTINEL)) {
+  // Completion is a Webcmd root sentinel. Once a command or `--` begins the
+  // child surface, the same token belongs to that command and must be kept.
+  if (rootCompletionSentinelIndex(input) !== -1) {
     return { kind: 'completion', argv: input };
   }
 
   let stdout = '';
   let stderr = '';
   const boundary = findRootCommandBoundary(input);
-  const root = configureRootCommandSurface(new Command('webcmd'))
+  const root = configureHostedWorkspaceOption(configureRootCommandSurface(new Command('webcmd')))
     // Hosted-only: registered here (not in the shared configureRootCommandSurface)
     // so the local CLI surface is unaffected. Lets Commander's structural parse
     // consume `--workspace <id>` before the site/command token instead of
     // throwing an unknown-option error.
-    .option('--workspace <id>', 'Hosted workspace id/slug for the request')
     .exitOverride()
     .configureOutput({
       writeOut: value => { stdout += value; },
@@ -89,7 +94,7 @@ export function parseHostedRootCommandSurface(argv: readonly string[]): HostedRo
     throw structuralErrorFromCommander(error, root, stderr);
   }
 
-  const { profile, session } = root.opts<{ profile?: string; session?: string }>();
+  const { profile, session, workspace } = root.opts<{ profile?: string; session?: string; workspace?: string }>();
   if (boundary.commandIndex === undefined && boundary.separatorIndex === undefined) return { kind: 'help', exitCode: 1 };
   const literal = boundary.separatorIndex !== undefined;
   const parsedArgv = boundary.commandIndex !== undefined
@@ -101,6 +106,7 @@ export function parseHostedRootCommandSurface(argv: readonly string[]): HostedRo
     argv: parsedArgv,
     ...(profile !== undefined ? { profile } : {}),
     ...(session !== undefined ? { session } : {}),
+    ...(workspace !== undefined ? { workspace } : {}),
     literal,
   };
 }
@@ -108,6 +114,14 @@ export function parseHostedRootCommandSurface(argv: readonly string[]): HostedRo
 interface RootCommandBoundary {
   commandIndex?: number;
   separatorIndex?: number;
+}
+
+export function rootCompletionSentinelIndex(argv: readonly string[]): number {
+  const index = argv.indexOf(COMPLETION_SENTINEL);
+  if (index === -1) return -1;
+  const boundary = findRootCommandBoundary(argv);
+  const childIndex = boundary.commandIndex ?? boundary.separatorIndex;
+  return childIndex === undefined || index < childIndex ? index : -1;
 }
 
 /** Locates the undiscovered command token while respecting root value options. */

@@ -9,7 +9,9 @@ import {
   loadWebcmdConfig,
   makeHostedConfig,
   makeLocalConfig,
+  resolveHostedProfileSelection,
   saveWebcmdConfig,
+  withHostedPreferredProfile,
 } from './config.js';
 import { resolveHostedApiKey } from './credentials.js';
 
@@ -69,6 +71,7 @@ describe('hosted config', () => {
           fetchedAt: '2026-07-08T00:01:00.000Z',
           manifest: { ok: true },
         },
+        preferredProfile: 'work',
       },
     }, null, 2));
 
@@ -85,6 +88,46 @@ describe('hosted config', () => {
     expect(persisted).not.toContain('wcmd_legacy_secret');
     expect(persisted).toContain('apiKeyRef');
     expect(persisted).toContain('manifestCache');
+    expect(persisted).toContain('preferredProfile');
+  });
+
+  it('loads old hosted config without inventing a preferred profile', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'webcmd-config-profile-old-'));
+    const env = { WEBCMD_CONFIG_DIR: tempDir } as NodeJS.ProcessEnv;
+    await writeFile(getConfigPath({ env }), JSON.stringify({
+      mode: 'hosted',
+      updatedAt: '2026-08-27T00:00:00.000Z',
+      hosted: { apiBaseUrl: 'https://api.example.com', apiKey: 'key' },
+    }));
+
+    const loaded = loadWebcmdConfig({ env });
+    if (!isHostedConfig(loaded)) throw new Error('Expected hosted config');
+    expect(loaded.hosted.preferredProfile).toBeUndefined();
+  });
+
+  it('persists a preferred hosted display name without changing credentials', () => {
+    const hostedConfig = makeHostedConfig({
+      apiBaseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      now: new Date('2026-08-27T00:00:00.000Z'),
+    });
+
+    const next = withHostedPreferredProfile(hostedConfig, ' work ', new Date('2026-08-27T01:00:00.000Z'));
+
+    expect(next).toMatchObject({
+      updatedAt: '2026-08-27T01:00:00.000Z',
+      hosted: { apiBaseUrl: 'https://api.example.com', apiKey: 'key', preferredProfile: 'work' },
+    });
+  });
+
+  it('uses explicit, environment, preferred, then Cloud default precedence', () => {
+    const hostedConfig = makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' });
+    const saved = withHostedPreferredProfile(hostedConfig, 'saved');
+
+    expect(resolveHostedProfileSelection(saved, 'flag', { WEBCMD_PROFILE: 'env' })).toEqual({ name: 'flag', source: 'explicit' });
+    expect(resolveHostedProfileSelection(saved, undefined, { WEBCMD_PROFILE: 'env' })).toEqual({ name: 'env', source: 'environment' });
+    expect(resolveHostedProfileSelection(saved, undefined, {})).toEqual({ name: 'saved', source: 'preferred' });
+    expect(resolveHostedProfileSelection(hostedConfig, undefined, {})).toBeUndefined();
   });
 
   it('writes local config and resolves default API URL from env', () => {

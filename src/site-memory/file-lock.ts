@@ -114,11 +114,15 @@ async function acquire(lockPath: string, options: FileLockOptions): Promise<stri
 /** Resolves true when this call created the lock, false when someone else holds it. */
 async function create(lockPath: string, body: string): Promise<boolean> {
   let handle;
-  try {
-    handle = await open(lockPath, 'wx');
-  } catch (err) {
-    if (isNodeError(err) && err.code === 'EEXIST') return false;
-    throw err;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      handle = await open(lockPath, 'wx');
+      break;
+    } catch (err) {
+      if (isNodeError(err) && err.code === 'EEXIST') return false;
+      if (process.platform !== 'win32' || !isNodeError(err) || err.code !== 'EPERM' || attempt >= 2) throw err;
+      await delay(backoffMs(attempt));
+    }
   }
   try {
     await handle.writeFile(body, 'utf8');

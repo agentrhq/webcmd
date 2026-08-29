@@ -11,7 +11,7 @@ vi.mock('../execution.js', () => ({
   executeCommand: executeCommandMock,
 }));
 
-import { collectAuthRefresh, collectAuthStatus, registerAuthCommands } from './auth.js';
+import { collectAuthRefresh, collectAuthStatus, configureAuthCommandSurface, registerAuthCommands } from './auth.js';
 import { AuthRequiredError } from '../errors.js';
 import { cli, getRegistry, Strategy } from '../registry.js';
 
@@ -305,6 +305,28 @@ describe('auth command format validation', () => {
 
     expect(process.exitCode).toBe(2);
     expect(executeCommandMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('auth command surface', () => {
+  it('exposes the native grammar without attaching local probe actions', () => {
+    const program = new Command('webcmd');
+    const { status, refresh } = configureAuthCommandSurface(program);
+
+    expect(status.options.map(option => option.flags)).toEqual([
+      '--site <sites>',
+      '--full',
+      '--concurrency <n>',
+      '--timeout <seconds>',
+      '--only <status>',
+      '-v, --verbose',
+      '-f, --format <fmt>',
+      '--json',
+    ]);
+    expect(status.options.find(option => option.long === '--only')?.argChoices).toEqual([
+      'all', 'logged-in', 'not-logged-in', 'unknown', 'error',
+    ]);
+    expect(refresh.options.map(option => option.long)).not.toContain('--trace');
   });
 });
 

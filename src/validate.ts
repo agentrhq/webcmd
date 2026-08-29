@@ -3,18 +3,9 @@ import { getRegistry, fullName, type CliCommand, type InternalCliCommand } from 
 import { getRegisteredStepNames } from './pipeline/registry.js';
 import { CLI_COMMAND } from './brand.js';
 import { ArgumentError } from './errors.js';
+import type { AdapterAnalysisCommand } from './adapter-analysis.js';
 
 const SITE_LIST_LIMIT = 20;
-
-/**
- * Pipeline step names — derived from the live pipeline registry on each
- * validate call so a new step registered in src/pipeline/registry.ts (or by
- * a plugin at runtime) is automatically allowlisted here (no parallel
- * hand-maintained list, no stale-snapshot drift).
- */
-function getKnownStepNames(): Set<string> {
-  return new Set(getRegisteredStepNames());
-}
 
 export interface CommandValidationResult {
   /** Display label: "site/name" or source path if available */
@@ -41,13 +32,31 @@ export function validateClisWithTarget(_dirs: string[], target?: string): Valida
   const registry = getRegistry();
   const commands = collectCanonicalCommands(registry);
   const normalizedTarget = target?.trim();
-  const selected = normalizedTarget
-    ? commandsMatchingTarget(commands, resolveValidateTarget(registry, normalizedTarget))
-    : commands;
+  const analysisCommands: AdapterAnalysisCommand[] = commands.map(command => ({
+    site: command.site,
+    name: command.name,
+    command: fullName(command),
+    ...(command.description ? { description: command.description } : {}),
+    ...(command.access ? { access: command.access } : {}),
+    browser: command.browser === true,
+    ...(command.domain !== undefined ? { domain: command.domain } : {}),
+    ...(command.args ? { args: command.args } : {}),
+    ...(command.columns ? { columns: command.columns } : {}),
+    ...(command.pipeline ? { pipeline: command.pipeline } : {}),
+    runnable: Boolean(command.func || command.pipeline || (command as InternalCliCommand)._lazy),
+  }));
 
-  if (normalizedTarget && selected.length === 0) {
-    throwUnknownValidateTarget(normalizedTarget, commands);
-  }
+  return validateAdapterCommands(analysisCommands, {
+    ...(normalizedTarget ? { target: resolveValidateTarget(registry, normalizedTarget) } : {}),
+    knownPipelineSteps: getRegisteredStepNames(),
+  });
+}
+
+export function validateAdapterCommands(
+  commands: readonly AdapterAnalysisCommand[],
+  options: { target?: string; knownPipelineSteps: readonly string[] },
+): ValidationReport {
+  const selected = selectAdapterCommands(commands, options.target);
 
   if (commands.length === 0) {
     const r: CommandValidationResult = {
@@ -60,8 +69,9 @@ export function validateClisWithTarget(_dirs: string[], target?: string): Valida
 
   const results: CommandValidationResult[] = [];
   let errors = 0; let warnings = 0;
-  for (const cmd of selected) {
-    const r = validateCommand(cmd);
+  const knownStepNames = new Set(options.knownPipelineSteps);
+  for (const command of selected) {
+    const r = validateCommand(command, knownStepNames);
     results.push(r);
     errors += r.errors.length;
     warnings += r.warnings.length;
@@ -87,13 +97,26 @@ function resolveValidateTarget(registry: Map<string, CliCommand>, target: string
   return cmd ? fullName(cmd) : target;
 }
 
-function commandsMatchingTarget(commands: CliCommand[], target: string): CliCommand[] {
-  if (target.includes('/')) return commands.filter(cmd => fullName(cmd) === target);
-  return commands.filter(cmd => cmd.site === target);
+export function selectAdapterCommands(
+  commands: readonly AdapterAnalysisCommand[],
+  target?: string,
+  commandName = 'validate',
+): AdapterAnalysisCommand[] {
+  const normalizedTarget = target?.trim();
+  if (!normalizedTarget) return [...commands];
+  const selected = normalizedTarget.includes('/')
+    ? commands.filter(command => command.command === normalizedTarget)
+    : commands.filter(command => command.site === normalizedTarget);
+  if (selected.length === 0) throwUnknownValidateTarget(normalizedTarget, commands, commandName);
+  return selected;
 }
 
-function throwUnknownValidateTarget(target: string, commands: CliCommand[]): never {
-  const usage = `usage: ${CLI_COMMAND} validate <site|site/name>`;
+function throwUnknownValidateTarget(
+  target: string,
+  commands: readonly AdapterAnalysisCommand[],
+  commandName: string,
+): never {
+  const usage = `usage: ${CLI_COMMAND} ${commandName} <site|site/name>`;
   const sites = [...new Set(commands.map(cmd => cmd.site))].sort((a, b) => a.localeCompare(b));
 
   if (target.includes('/')) {
@@ -102,7 +125,7 @@ function throwUnknownValidateTarget(target: string, commands: CliCommand[]): nev
     if (names.length > 0) {
       throw new ArgumentError(
         `No command matches "${target}". Valid commands for ${site}: ${names.join(', ')}`,
-        `${usage}\nexample: ${CLI_COMMAND} validate ${site}/${names[0]}`,
+        `${usage}\nexample: ${CLI_COMMAND} ${commandName} ${site}/${names[0]}`,
       );
     }
   }
@@ -122,27 +145,29 @@ function throwUnknownValidateTarget(target: string, commands: CliCommand[]): nev
   const more = sites.length > SITE_LIST_LIMIT ? `\nList all: ${CLI_COMMAND} list` : '';
   throw new ArgumentError(
     `No command matches "${target}". ${siteList}`,
-    `${usage}\nexample: ${CLI_COMMAND} validate ${sites[0]}${more}`,
+    `${usage}\nexample: ${CLI_COMMAND} ${commandName} ${sites[0]}${more}`,
   );
 }
 
-function validateCommand(cmd: CliCommand): CommandValidationResult {
-  const label = fullName(cmd);
+function validateCommand(
+  command: AdapterAnalysisCommand,
+  knownStepNames: ReadonlySet<string>,
+): CommandValidationResult {
+  const label = command.command;
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  if (!cmd.description) warnings.push('Missing description');
+  if (!command.description) warnings.push('Missing description');
 
   // Browser commands should specify a domain for authenticated browser context
-  if (cmd.browser && !cmd.domain) {
+  if (command.browser && !command.domain) {
     warnings.push('Browser command without "domain" — authenticated browser context may not work');
   }
 
   // Pipeline validation: check step names for typos
-  if (Array.isArray(cmd.pipeline)) {
-    const knownStepNames = getKnownStepNames();
-    for (let i = 0; i < cmd.pipeline.length; i++) {
-      const step = cmd.pipeline[i];
+  if (Array.isArray(command.pipeline)) {
+    for (let i = 0; i < command.pipeline.length; i++) {
+      const step = command.pipeline[i];
       if (step && typeof step === 'object') {
         for (const key of Object.keys(step)) {
           if (!knownStepNames.has(key)) {
@@ -155,17 +180,15 @@ function validateCommand(cmd: CliCommand): CommandValidationResult {
     }
   }
 
-  // Commands should have either func, pipeline, or be a lazy-loaded module
-  const internal = cmd as InternalCliCommand;
-  if (!cmd.func && !cmd.pipeline && !internal._lazy) {
+  if (!command.runnable) {
     errors.push('Command has neither "func" nor "pipeline" — it cannot execute');
   }
 
   // Arg validation
-  if (cmd.args && cmd.args.length > 0) {
+  if (command.args && command.args.length > 0) {
     const argNames = new Set<string>();
     let seenNonPositional = false;
-    for (const arg of cmd.args) {
+    for (const arg of command.args) {
       if (argNames.has(arg.name)) {
         errors.push(`Duplicate arg name "${arg.name}"`);
       }

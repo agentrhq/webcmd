@@ -22,5 +22,6 @@ describe('classifyCommandOrigin', () => {
     expect(formatCommandOrigin({ kind: 'plugin', plugin: 'linkedin' })).toBe('plugin:linkedin');
     expect(formatCommandOrigin({ kind: 'override', plugin: 'linkedin' })).toBe('override:linkedin');
     expect(formatCommandOrigin({ kind: 'local' })).toBe('local');
+    expect(formatCommandOrigin({ kind: 'builtin' })).toBe('builtin');
   });
 });

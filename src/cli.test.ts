@@ -1217,7 +1217,7 @@ name: 'search',
       const browser = program.commands.find(cmd => cmd.name() === 'browser');
       expect(browser).toBeTruthy();
 
-      process.argv = ['node', 'webcmd', '--session', 'session_test', 'browser', '--help', '-f', 'yaml'];
+      process.argv = ['node', 'webcmd', '--session', 'work-k7', 'browser', '--help', '-f', 'yaml'];
       const data = yaml.load(browser!.helpInformation()) as any;
 
       expect(data.namespace).toBe('browser');
@@ -1636,7 +1636,7 @@ describe('browser verify', () => {
       fs.writeFileSync(path.join(adapterDir, 'top.js'), 'export default {};\n', 'utf-8');
 
       const program = createProgram('', '');
-      await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'verify', 'hn/top', '--no-fixture', '--trace', 'retain-on-failure']);
+      await program.parseAsync(['node', 'webcmd', '--session', 'work-k7', 'browser', 'verify', 'hn/top', '--no-fixture', '--trace', 'retain-on-failure']);
 
       expect(mockExecFileSync).toHaveBeenCalledTimes(1);
       const [, execArgs] = mockExecFileSync.mock.calls[0] as [string, string[]];
@@ -1663,7 +1663,7 @@ describe('browser verify', () => {
       fs.writeFileSync(path.join(adapterDir, 'top.js'), 'export default {};\n', 'utf-8');
 
       const program = createProgram('', '');
-      await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'verify', 'hn/top', '--no-fixture', '--seed-args', 'webcmd-verify']);
+      await program.parseAsync(['node', 'webcmd', '--session', 'work-k7', 'browser', 'verify', 'hn/top', '--no-fixture', '--seed-args', 'webcmd-verify']);
 
       expect(mockExecFileSync).toHaveBeenCalledTimes(1);
       const [, execArgs] = mockExecFileSync.mock.calls[0] as [string, string[]];
@@ -1691,7 +1691,7 @@ describe('browser verify', () => {
       fs.writeFileSync(path.join(adapterDir, 'top.js'), 'export default {};\n', 'utf-8');
 
       const program = createProgram('', '');
-      await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'verify', 'hn/top', '--write-fixture', '--seed-args', 'webcmd-verify']);
+      await program.parseAsync(['node', 'webcmd', '--session', 'work-k7', 'browser', 'verify', 'hn/top', '--write-fixture', '--seed-args', 'webcmd-verify']);
 
       const fixtureFile = path.join(fakeHome, '.webcmd', 'sites', 'hn', 'verify', 'top.json');
       const fixture = JSON.parse(fs.readFileSync(fixtureFile, 'utf-8'));
@@ -1722,7 +1722,7 @@ describe('browser verify', () => {
       fs.writeFileSync(path.join(adapterDir, 'top.js'), 'export default {};\n', 'utf-8');
 
       const program = createProgram('', '');
-      await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'verify', 'hn/top', '--no-fixture']);
+      await program.parseAsync(['node', 'webcmd', '--session', 'work-k7', 'browser', 'verify', 'hn/top', '--no-fixture']);
 
       expect(process.exitCode).toBe(1);
       const output = consoleLogSpy.mock.calls.map((args) => args.join(' ')).join('\n');
@@ -2245,11 +2245,11 @@ describe('browser raw session commands', () => {
   it('lists tabs without allocating a local browser runtime', async () => {
     const program = createProgram('', '');
 
-    await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'tabs']);
+    await program.parseAsync(['node', 'webcmd', '--session', 'work-k7', 'browser', 'tabs']);
 
     expect(mockBrowserConnect).not.toHaveBeenCalled();
     expect(mockSendCommand).not.toHaveBeenCalled();
-    expect(mockListExistingBrowserTabs).toHaveBeenCalledWith('session_test', {});
+    expect(mockListExistingBrowserTabs).toHaveBeenCalledWith('work-k7', {});
     expect(consoleLogSpy).toHaveBeenLastCalledWith('[]');
   });
 
@@ -2257,33 +2257,33 @@ describe('browser raw session commands', () => {
     mockListExistingBrowserTabs.mockResolvedValue([{ page: 'page-123' }]);
     const program = createProgram('', '');
 
-    await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'tabs']);
+    await program.parseAsync(['node', 'webcmd', '--session', 'work-k7', 'browser', 'tabs']);
 
     expect(mockBrowserConnect).not.toHaveBeenCalled();
-    expect(mockListExistingBrowserTabs).toHaveBeenCalledWith('session_test', {});
+    expect(mockListExistingBrowserTabs).toHaveBeenCalledWith('work-k7', {});
   });
 
   it('binds only an explicit stable page id', async () => {
     const program = createProgram('', '');
 
-    await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'bind', '--page', 'page-123']);
+    await program.parseAsync(['node', 'webcmd', '--session', 'work-k7', 'browser', 'bind', '--page', 'page-123']);
 
     expect(mockSendCommand).toHaveBeenCalledWith('bind', {
-      session: 'session_test', surface: 'browser', page: 'page-123',
+      session: 'work-k7', surface: 'browser', page: 'page-123',
     });
-    await expect(program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'bind', '--index', '0']))
+    await expect(program.parseAsync(['node', 'webcmd', '--session', 'work-k7', 'browser', 'bind', '--index', '0']))
       .rejects.toThrow(/process\.exit unexpectedly called/);
-    await expect(program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'bind', '--page', '   ']))
+    await expect(program.parseAsync(['node', 'webcmd', '--session', 'work-k7', 'browser', 'bind', '--page', '   ']))
       .rejects.toThrow(/process\.exit unexpectedly called/);
   });
 
   it('sends snapshot inspection options to the browser runtime', async () => {
     const program = createProgram('', '');
 
-    await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'snapshot', '--snapshot-mode', 'read', '--ref', 'e12', '--max-output', '1000']);
+    await program.parseAsync(['node', 'webcmd', '--session', 'work-k7', 'browser', 'snapshot', '--snapshot-mode', 'read', '--ref', 'e12', '--max-output', '1000']);
 
     expect(mockSendCommand).toHaveBeenCalledWith('snapshot', {
-      session: 'session_test', surface: 'browser', snapshotMode: 'read', ref: 'e12', maxOutputChars: 1000,
+      session: 'work-k7', surface: 'browser', snapshotMode: 'read', ref: 'e12', maxOutputChars: 1000,
     });
   });
 
@@ -2298,7 +2298,7 @@ describe('browser raw session commands', () => {
       delete process.env.WEBCMD_VERBOSE;
       const program = createProgram('', '');
 
-      await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', leaf, '-v']);
+      await program.parseAsync(['node', 'webcmd', '--session', 'work-k7', 'browser', leaf, '-v']);
 
       expect(process.exitCode).toBeUndefined();
       expect(process.env.WEBCMD_VERBOSE).toBe('1');
@@ -2308,11 +2308,11 @@ describe('browser raw session commands', () => {
       delete process.env.WEBCMD_VERBOSE;
       const program = createProgram('', '');
 
-      await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'bind', '--page', 'page-123', '-v']);
+      await program.parseAsync(['node', 'webcmd', '--session', 'work-k7', 'browser', 'bind', '--page', 'page-123', '-v']);
 
       expect(process.env.WEBCMD_VERBOSE).toBe('1');
       expect(mockSendCommand).toHaveBeenCalledWith('bind', {
-        session: 'session_test', surface: 'browser', page: 'page-123',
+        session: 'work-k7', surface: 'browser', page: 'page-123',
       });
     });
 
@@ -2320,7 +2320,7 @@ describe('browser raw session commands', () => {
       delete process.env.WEBCMD_VERBOSE;
       const program = createProgram('', '');
 
-      await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'tabs']);
+      await program.parseAsync(['node', 'webcmd', '--session', 'work-k7', 'browser', 'tabs']);
 
       expect(process.env.WEBCMD_VERBOSE).toBeUndefined();
     });
@@ -2354,7 +2354,7 @@ describe('browser raw session commands', () => {
     });
     const program = createProgram('', '');
 
-    await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'snapshot']);
+    await program.parseAsync(['node', 'webcmd', '--session', 'work-k7', 'browser', 'snapshot']);
 
     expect(run).toMatchObject({
       runId: expect.stringMatching(/^run_/),
@@ -2367,7 +2367,7 @@ describe('browser raw session commands', () => {
     mockSendCommand.mockRejectedValue(new BrowserCommandError('Result unknown', 'command_result_unknown'));
     const program = createProgram('', '');
 
-    await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'snapshot']);
+    await program.parseAsync(['node', 'webcmd', '--session', 'work-k7', 'browser', 'snapshot']);
 
     expect(process.exitCode).toBe(1);
     expect(mockReleaseSiteSessionLease).not.toHaveBeenCalled();
@@ -2378,18 +2378,18 @@ describe('browser raw session commands', () => {
     fs.writeFileSync(sourcePath, 'return 42;', 'utf8');
     try {
       const program = createProgram('', '');
-      await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'run', '--file', sourcePath]);
+      await program.parseAsync(['node', 'webcmd', '--session', 'work-k7', 'browser', 'run', '--file', sourcePath]);
       expect(mockSendCommand).toHaveBeenCalledWith('run', {
-        session: 'session_test', surface: 'browser', source: 'return 42;', snapshotMode: 'act',
+        session: 'work-k7', surface: 'browser', source: 'return 42;', snapshotMode: 'act',
       });
 
-      await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'run', '--stdin', '--file', sourcePath]);
+      await program.parseAsync(['node', 'webcmd', '--session', 'work-k7', 'browser', 'run', '--stdin', '--file', sourcePath]);
       expect(mockSendCommand).toHaveBeenCalledTimes(1);
       expect(process.exitCode).toBeDefined();
 
       process.exitCode = undefined;
       fs.writeFileSync(sourcePath, '', 'utf8');
-      await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'run', '--file', sourcePath]);
+      await program.parseAsync(['node', 'webcmd', '--session', 'work-k7', 'browser', 'run', '--file', sourcePath]);
       expect(mockSendCommand).toHaveBeenCalledTimes(1);
       expect(process.exitCode).toBeDefined();
     } finally {
@@ -2402,10 +2402,10 @@ describe('browser raw session commands', () => {
     fs.writeFileSync(sourcePath, 'return 42;', 'utf8');
     try {
       const program = createProgram('', '');
-      await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'run', '--file', sourcePath, '--json']);
+      await program.parseAsync(['node', 'webcmd', '--session', 'work-k7', 'browser', 'run', '--file', sourcePath, '--json']);
 
       expect(mockSendCommand).toHaveBeenCalledWith('run', {
-        session: 'session_test', surface: 'browser', source: 'return 42;', snapshotMode: 'act',
+        session: 'work-k7', surface: 'browser', source: 'return 42;', snapshotMode: 'act',
       });
     } finally {
       fs.rmSync(sourcePath, { force: true });
@@ -2414,8 +2414,8 @@ describe('browser raw session commands', () => {
 
   it('closes the named session through the daemon', async () => {
     const program = createProgram('', '');
-    await program.parseAsync(['node', 'webcmd', '--session', 'session_test', 'browser', 'close']);
-    expect(mockSendCommand).toHaveBeenCalledWith('close-window', { session: 'session_test', surface: 'browser' });
+    await program.parseAsync(['node', 'webcmd', '--session', 'work-k7', 'browser', 'close']);
+    expect(mockSendCommand).toHaveBeenCalledWith('close-window', { session: 'work-k7', surface: 'browser' });
   });
 });
 
@@ -2433,37 +2433,121 @@ describe('browser Session lifecycle commands', () => {
     vi.unstubAllGlobals();
   });
 
+  it('requires a readable name when creating a Session', async () => {
+    await expect(createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'create']))
+      .rejects.toThrow('process.exit unexpectedly called with "1"');
+    expect(mockSendCommand).not.toHaveBeenCalled();
+  });
+
+  it('sends the raw readable name to the durable selected Profile', async () => {
+    mockSendCommand.mockResolvedValue({
+      id: 'work-project-k7',
+      kind: 'explicit',
+      profileId: 'work',
+      runtimeState: 'idle',
+    });
+
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'profile', 'create', 'work']);
+    consoleLogSpy.mockClear();
+    await createProgram('', '').parseAsync(['node', 'webcmd', '--profile', 'work', 'session', 'create', 'Work Project']);
+
+    expect(mockSendCommand).toHaveBeenCalledWith('session-create', {
+      contextId: 'work',
+      sessionName: 'Work Project',
+    });
+    expect(consoleLogSpy.mock.calls.flat().join('\n')).toContain('work-project-k7');
+  });
+
+  it('keeps the same readable Session ID valid in two Profiles', async () => {
+    const baseDir = path.join(isolatedCliTestHome, '.webcmd');
+    fs.mkdirSync(baseDir, { recursive: true });
+    fs.writeFileSync(path.join(baseDir, 'browser-sessions.json'), JSON.stringify({
+      version: 2,
+      sessions: ['default', 'work'].map((profileId) => ({
+        id: 'work-project-k7',
+        profileId,
+        kind: 'explicit',
+        createdAt: '2026-08-11T00:00:00.000Z',
+        updatedAt: '2026-08-11T00:00:00.000Z',
+        lastUsedAt: '2026-08-11T00:00:00.000Z',
+      })),
+    }), { mode: 0o600 });
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'profile', 'create', 'work']);
+    consoleLogSpy.mockClear();
+
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'list', '-f', 'json']);
+    expect(JSON.parse(consoleLogSpy.mock.calls.flat().join('\n'))).toEqual([
+      expect.objectContaining({ id: 'work-project-k7', profileId: 'default' }),
+    ]);
+
+    consoleLogSpy.mockClear();
+    await createProgram('', '').parseAsync(['node', 'webcmd', '--profile', 'work', 'session', 'list', '-f', 'json']);
+    expect(JSON.parse(consoleLogSpy.mock.calls.flat().join('\n'))).toEqual([
+      expect.objectContaining({ id: 'work-project-k7', profileId: 'work' }),
+    ]);
+  });
+
+  it('reports a missing selected-Profile Session without cross-Profile owner guidance', async () => {
+    const baseDir = path.join(isolatedCliTestHome, '.webcmd');
+    fs.mkdirSync(baseDir, { recursive: true });
+    fs.writeFileSync(path.join(baseDir, 'browser-sessions.json'), JSON.stringify({
+      version: 2,
+      sessions: [{
+        id: 'work-project-k7',
+        profileId: 'work',
+        kind: 'explicit',
+        createdAt: '2026-08-11T00:00:00.000Z',
+        updatedAt: '2026-08-11T00:00:00.000Z',
+        lastUsedAt: '2026-08-11T00:00:00.000Z',
+      }],
+    }), { mode: 0o600 });
+    mockSendCommand.mockRejectedValueOnce(new Error('daemon unavailable'));
+
+    await expect(createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'close', 'work-project-k7']))
+      .rejects.toMatchObject({
+        code: 'SESSION_NOT_FOUND',
+        hint: expect.stringContaining('webcmd --profile default session list'),
+      });
+  });
+
+  it.each(['session_uuid', 'work-abcdef'])('rejects legacy raw browser selectors: %s', async (selector) => {
+    await createProgram('', '').parseAsync(['node', 'webcmd', '--session', selector, 'browser', 'tabs', '-f', 'json']);
+
+    expect(mockListExistingBrowserTabs).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(EXIT_CODES.USAGE_ERROR);
+  });
+
   it('creates a Session through the daemon mutation path', async () => {
     mockSendCommand.mockResolvedValue({
-      id: 'session_abc',
+      id: 'work-project-k7',
       kind: 'explicit',
       profileId: 'default',
       runtimeState: 'idle',
     });
 
-    await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'create']);
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'create', 'Work Project']);
 
-    expect(mockSendCommand).toHaveBeenCalledWith('session-create', { contextId: 'default' });
+    expect(mockSendCommand).toHaveBeenCalledWith('session-create', { contextId: 'default', sessionName: 'Work Project' });
     const output = consoleLogSpy.mock.calls.flat().join('\n');
-    expect(output).toContain('session_abc');
+    expect(output).toContain('work-project-k7');
     expect(output).toContain('runtimeState');
     expect(output).not.toContain('profileId');
   });
 
   it('creates a session under a newly created profile', async () => {
     mockSendCommand.mockResolvedValue({
-      id: 'session_eval',
+      id: 'eval-k7',
       kind: 'explicit',
       profileId: 'eval-a',
       runtimeState: 'idle',
     });
     await createProgram('', '').parseAsync(['node', 'webcmd', 'profile', 'create', 'eval-a']);
-    await createProgram('', '').parseAsync(['node', 'webcmd', '--profile', 'eval-a', 'session', 'create']);
-    expect(mockSendCommand).toHaveBeenCalledWith('session-create', { contextId: 'eval-a' });
+    await createProgram('', '').parseAsync(['node', 'webcmd', '--profile', 'eval-a', 'session', 'create', 'Eval']);
+    expect(mockSendCommand).toHaveBeenCalledWith('session-create', { contextId: 'eval-a', sessionName: 'Eval' });
   });
 
   it('rejects an unknown --profile on session create with PROFILE_NOT_FOUND', async () => {
-    await expect(createProgram('', '').parseAsync(['node', 'webcmd', '--profile', 'does-not-exist', 'session', 'create']))
+    await expect(createProgram('', '').parseAsync(['node', 'webcmd', '--profile', 'does-not-exist', 'session', 'create', 'Work']))
       .rejects.toMatchObject({
         code: 'PROFILE_NOT_FOUND',
         message: expect.stringContaining('does-not-exist'),
@@ -2476,9 +2560,9 @@ describe('browser Session lifecycle commands', () => {
     const baseDir = path.join(isolatedCliTestHome, '.webcmd');
     fs.mkdirSync(baseDir, { recursive: true });
     fs.writeFileSync(path.join(baseDir, 'browser-sessions.json'), JSON.stringify({
-      version: 1,
+      version: 2,
       sessions: [{
-        id: 'session_existing',
+        id: 'existing-k7',
         profileId: 'default',
         kind: 'explicit',
         createdAt: '2026-08-11T00:00:00.000Z',
@@ -2491,7 +2575,7 @@ describe('browser Session lifecycle commands', () => {
 
     expect(mockSendCommand).not.toHaveBeenCalled();
     const rows = JSON.parse(consoleLogSpy.mock.calls.flat().join('\n'));
-    expect(rows).toEqual([expect.objectContaining({ id: 'session_existing', runtimeState: 'idle' })]);
+    expect(rows).toEqual([expect.objectContaining({ id: 'existing-k7', runtimeState: 'idle' })]);
   });
 
   it('closes an idle persisted Session as a no-op when daemon is absent', async () => {
@@ -2499,9 +2583,9 @@ describe('browser Session lifecycle commands', () => {
     const baseDir = path.join(isolatedCliTestHome, '.webcmd');
     fs.mkdirSync(baseDir, { recursive: true });
     fs.writeFileSync(path.join(baseDir, 'browser-sessions.json'), JSON.stringify({
-      version: 1,
+      version: 2,
       sessions: [{
-        id: 'session_idle',
+        id: 'work-project-k7',
         profileId: 'default',
         kind: 'explicit',
         createdAt: '2026-08-11T00:00:00.000Z',
@@ -2510,31 +2594,28 @@ describe('browser Session lifecycle commands', () => {
       }],
     }), { mode: 0o600 });
 
-    await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'close', 'session_idle', '-f', 'json']);
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'close', 'work-project-k7', '-f', 'json']);
 
     expect(mockSendCommand).toHaveBeenCalledWith('session-close', {
       contextId: 'default',
-      session: 'session_idle',
+      session: 'work-project-k7',
       force: false,
     });
     expect(JSON.parse(consoleLogSpy.mock.calls.flat().join('\n'))).toMatchObject({
       closed: false,
       alreadyIdle: true,
-      session: 'session_idle',
+      session: 'work-project-k7',
     });
   });
 
-  it('names the owning Profile instead of reporting a cross-Profile close as done', async () => {
-    // Idempotent close must not swallow a Session that plainly exists next
-    // door: reporting alreadyClosed there leaves the Session open while the
-    // agent believes cleanup ran.
+  it('keeps missing Session guidance scoped to the selected Profile', async () => {
     mockSendCommand.mockRejectedValueOnce(new Error('daemon unavailable'));
     const baseDir = path.join(isolatedCliTestHome, '.webcmd');
     fs.mkdirSync(baseDir, { recursive: true });
     fs.writeFileSync(path.join(baseDir, 'browser-sessions.json'), JSON.stringify({
-      version: 1,
+      version: 2,
       sessions: [{
-        id: 'session_owned',
+        id: 'work-project-k7',
         profileId: 'work',
         kind: 'explicit',
         createdAt: '2026-08-11T00:00:00.000Z',
@@ -2544,35 +2625,25 @@ describe('browser Session lifecycle commands', () => {
     }), { mode: 0o600 });
 
     await expect(
-      createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'close', 'session_owned', '-f', 'json']),
+      createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'close', 'work-project-k7', '-f', 'json']),
     ).rejects.toMatchObject({
       code: 'SESSION_NOT_FOUND',
-      ownerProfileId: 'work',
+      hint: expect.stringContaining('webcmd --profile default session list'),
     });
   });
 
-  it('closes a missing Session idempotently instead of failing', async () => {
+  it('reports a missing Session instead of claiming close cleanup completed', async () => {
     mockSendCommand.mockRejectedValueOnce(new Error('daemon unavailable'));
 
-    await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'close', 'session_missing', '-f', 'json']);
-
-    expect(JSON.parse(consoleLogSpy.mock.calls.flat().join('\n'))).toMatchObject({
-      ok: true,
-      closed: false,
-      alreadyClosed: true,
-      session: 'session_missing',
-    });
+    await expect(createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'close', 'missing-k7', '-f', 'json']))
+      .rejects.toMatchObject({ code: 'SESSION_NOT_FOUND' });
   });
 
-  it('accepts the Session ID from the root --session selector', async () => {
+  it('accepts a readable Session ID from the root --session selector', async () => {
     mockSendCommand.mockRejectedValueOnce(new Error('daemon unavailable'));
 
-    await createProgram('', '').parseAsync(['node', 'webcmd', '--session', 'session_missing', 'session', 'close', '-f', 'json']);
-
-    expect(JSON.parse(consoleLogSpy.mock.calls.flat().join('\n'))).toMatchObject({
-      alreadyClosed: true,
-      session: 'session_missing',
-    });
+    await expect(createProgram('', '').parseAsync(['node', 'webcmd', '--session', 'missing-k7', 'session', 'close', '-f', 'json']))
+      .rejects.toMatchObject({ code: 'SESSION_NOT_FOUND' });
   });
 
   it('rejects a malformed Session selector as a usage error', async () => {
@@ -2581,9 +2652,9 @@ describe('browser Session lifecycle commands', () => {
   });
 
   it.each([
-    ['create'],
+    ['create', 'Work'],
     ['list'],
-    ['close', 'session_abc'],
+    ['close', 'work-project-k7'],
   ])('rejects an unsupported format before local Session %s side effects', async (...subcommand) => {
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
@@ -2599,18 +2670,18 @@ describe('browser Session lifecycle commands', () => {
 
   it('normalizes aliases and case across local Session create/list/close', async () => {
     mockSendCommand.mockImplementation(async (command) => command === 'session-create'
-      ? { id: 'session_abc', kind: 'explicit', runtimeState: 'idle' }
-      : { closed: true, session: 'session_abc' });
+      ? { id: 'work-project-k7', kind: 'explicit', runtimeState: 'idle' }
+      : { closed: true, session: 'work-project-k7' });
 
-    await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'create', '-f', 'JSON']);
-    expect(JSON.parse(consoleLogSpy.mock.calls.flat().join('\n'))).toMatchObject({ id: 'session_abc' });
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'create', 'Work Project', '-f', 'JSON']);
+    expect(JSON.parse(consoleLogSpy.mock.calls.flat().join('\n'))).toMatchObject({ id: 'work-project-k7' });
 
     consoleLogSpy.mockClear();
     await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'list', '-f', 'YML']);
     expect(yaml.load(consoleLogSpy.mock.calls.flat().join('\n'))).toEqual([]);
 
     consoleLogSpy.mockClear();
-    await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'close', 'session_abc', '-f', 'Markdown']);
+    await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'close', 'work-project-k7', '-f', 'Markdown']);
     expect(consoleLogSpy.mock.calls.flat().join('\n')).toContain('| closed | session |');
   });
 
@@ -2659,7 +2730,7 @@ function installSelectorFirstTestHarness(label: string, pageOverrides: () => Par
       setActivePage: vi.fn(),
       getActivePage: vi.fn().mockReturnValue('tab-1'),
       tabs: vi.fn().mockResolvedValue([{ page: 'tab-1', active: true }]),
-      session: 'session_test',
+      session: 'work-k7',
       ...pageOverrides(),
     } as unknown as IPage;
   });
@@ -2789,6 +2860,13 @@ describe('builtin output formats', () => {
     const aliasResult = await run('list', '-f', 'YML');
     expect(aliasResult.exitCode).toBeUndefined();
     expect(aliasResult.stdout).toBe(yamlResult.stdout);
+  });
+
+  it('sets a nonzero exit code when external install reports failure', async () => {
+    const result = await run('external', 'install', 'ntn', '-f', 'json');
+
+    expect(result.exitCode).toBe(EXIT_CODES.SERVICE_UNAVAIL);
+    expect(JSON.parse(result.stdout)).toMatchObject({ ok: false, action: 'install', cli: 'ntn' });
   });
 
   it('renders an empty plugin list as structured data', async () => {

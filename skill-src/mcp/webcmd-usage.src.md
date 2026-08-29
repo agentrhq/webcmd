@@ -78,21 +78,23 @@ the `verifyCommand` before resuming.
 A single `webcmd_cli_run` invocation is capped at **240 seconds** of wall clock.
 Budget against that number rather than discovering it as a timeout.
 
-Anything longer is an explicit session: create one, issue bounded interactions
-against it, and poll.
+Anything longer is an explicit named Session: create one, issue bounded
+interactions against its immutable, Profile-scoped readable ID, and poll. Raw
+browser commands require that explicit selector. Adapter commands without
+`--session` reuse `adapter-default`.
 
-    { "argv": ["session", "create", "-f", "json"] }
+    { "argv": ["--profile", "work", "session", "create", "Work Project", "-f", "json"] }
     {
-      "argv": ["--session", "session_abc", "browser", "run", "--file", "navigate.js", "-f", "json"],
+      "argv": ["--profile", "work", "--session", "work-project-k7", "browser", "run", "--file", "navigate.js", "-f", "json"],
       "files": [{ "path": "navigate.js", "content": "await page.goto('https://example.com'); return { url: page.url(), title: await page.title() };", "encoding": "utf8" }]
     }
-    { "argv": ["--session", "session_abc", "browser", "snapshot", "-f", "json"] }
-    { "argv": ["session", "close", "session_abc"] }
+    { "argv": ["--profile", "work", "--session", "work-project-k7", "browser", "snapshot", "-f", "json"] }
+    { "argv": ["--profile", "work", "session", "close", "work-project-k7"] }
 
 Each interaction is its own invocation and its own 240-second budget. The
 session holds the browser state between them.
 
-Create the long-lived session with `session create`.
+Create the long-lived Session with `session create <name>`.
 
 ## Files
 

@@ -9,6 +9,7 @@ export interface PresentableCommand {
   description: string;
   access: 'read' | 'write';
   strategy: string;
+  availability?: string;
   browser: boolean;
   args: readonly Arg[];
   columns: readonly string[];
@@ -223,6 +224,7 @@ export function commandListRows(
         description: command.description,
         access: command.access,
         strategy: command.strategy,
+        ...(command.availability ? { availability: command.availability } : {}),
         browser: command.browser,
         args: command.args.map(serializePresentableArg),
         columns: [...command.columns],
@@ -243,6 +245,7 @@ export function commandListRows(
       description: command.description,
       access: command.access,
       strategy: command.strategy,
+      ...(command.availability ? { availability: command.availability } : {}),
       browser: command.browser,
       args: formatArgumentSummary(command.args),
     };
@@ -276,6 +279,7 @@ export function commandListPresentation(
       'description',
       'access',
       'strategy',
+      ...(unique.some((command) => command.availability) ? ['availability'] : []),
       'browser',
       'args',
       ...(unique.some((command) => command.origin) ? ['origin'] : []),
@@ -327,7 +331,7 @@ function formatGroupedCommandList(
       for (const command of siteCommands) {
         const aliases = command.aliases.length > 0 ? ` (aliases: ${command.aliases.join(', ')})` : '';
         lines.push(
-          `    ${command.name} [${command.strategy}]${aliases}`
+          `    ${command.name} [${command.strategy}]${command.availability ? ` [${command.availability}]` : ''}${aliases}`
           + `${command.description ? ` — ${command.description}` : ''}`
           + `${command.origin ? ` [${command.origin}]` : ''}`,
         );

@@ -135,29 +135,31 @@ describe('management commands E2E', () => {
 });
 
 describe('session close E2E', () => {
-  const NEVER_EXISTED = 'session_00000000-0000-0000-0000-000000000000';
+  const NEVER_EXISTED = 'never-existed-k7';
 
-  it('accepts the root --session selector and the command it used to suggest', async () => {
+  it('accepts both Session selector forms before reporting a missing Session', async () => {
     // Old behaviour: this errored with SESSION_SELECTOR_POSITION and suggested
     // `webcmd --session <id> session close`, which then failed on the missing
     // positional. Both spellings must now work.
     const viaFlag = await runManagementCli(['session', 'close', '--session', NEVER_EXISTED]);
     expect(viaFlag.stderr).not.toMatch(/SESSION_SELECTOR_POSITION|missing required argument/);
-    expect(viaFlag.code).toBe(0);
+    expect(viaFlag.code).not.toBe(0);
+    expect(viaFlag.stdout + viaFlag.stderr).toContain('SESSION_NOT_FOUND');
 
     const viaRootSelector = await runManagementCli(['--session', NEVER_EXISTED, 'session', 'close']);
     expect(viaRootSelector.stderr).not.toMatch(/missing required argument/);
-    expect(viaRootSelector.code).toBe(0);
+    expect(viaRootSelector.code).not.toBe(0);
+    expect(viaRootSelector.stdout + viaRootSelector.stderr).toContain('SESSION_NOT_FOUND');
   });
 
-  it('is idempotent for an unknown Session ID', async () => {
-    const { stdout, code } = await runManagementCli(['session', 'close', NEVER_EXISTED, '-f', 'json']);
-    expect(code).toBe(0);
-    expect(parseJsonOutput(stdout)).toMatchObject({ ok: true, closed: false, alreadyClosed: true, session: NEVER_EXISTED });
+  it('reports an unknown readable Session ID', async () => {
+    const { stdout, stderr, code } = await runManagementCli(['session', 'close', NEVER_EXISTED, '-f', 'json']);
+    expect(code).not.toBe(0);
+    expect(stdout + stderr).toContain('SESSION_NOT_FOUND');
   });
 
   it('closes a real Session twice without failing', async () => {
-    const created = await runManagementCli(['session', 'create', '-f', 'json']);
+    const created = await runManagementCli(['session', 'create', 'management-e2e', '-f', 'json']);
     expect(created.code).toBe(0);
     const sessionId = parseJsonOutput(created.stdout).id as string;
     for (const attempt of [1, 2]) {

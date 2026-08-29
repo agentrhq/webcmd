@@ -23,8 +23,14 @@ export type WebcmdConfig =
         apiKeyRef?: string;
         credentialBackend?: HostedCredentialBackend;
         manifestCache?: HostedManifestCache;
+        preferredProfile?: string;
       };
     };
+
+export interface HostedProfileSelection {
+  name: string;
+  source: 'explicit' | 'environment' | 'preferred';
+}
 
 export interface ConfigIo {
   readFileSync?: typeof fs.readFileSync;
@@ -58,6 +64,7 @@ function parseConfig(raw: string): WebcmdConfig {
     && (typeof parsed.hosted?.apiKey === 'string' || typeof parsed.hosted?.apiKeyRef === 'string')
   ) {
     const credentialBackend = readCredentialBackend(parsed.hosted.credentialBackend);
+    const preferredProfile = normalizeProfileName(parsed.hosted.preferredProfile);
     return {
       mode: 'hosted',
       updatedAt: parsed.updatedAt,
@@ -67,6 +74,7 @@ function parseConfig(raw: string): WebcmdConfig {
         ...(typeof parsed.hosted.apiKeyRef === 'string' ? { apiKeyRef: parsed.hosted.apiKeyRef } : {}),
         ...(credentialBackend ? { credentialBackend } : {}),
         ...(parsed.hosted.manifestCache ? { manifestCache: parsed.hosted.manifestCache } : {}),
+        ...(preferredProfile ? { preferredProfile } : {}),
       },
     };
   }
@@ -112,8 +120,10 @@ export function makeHostedConfig(input: {
   apiKeyRef?: string;
   credentialBackend?: HostedCredentialBackend;
   manifestCache?: HostedManifestCache;
+  preferredProfile?: string;
   now?: Date;
 }): HostedWebcmdConfig {
+  const preferredProfile = normalizeProfileName(input.preferredProfile);
   return {
     mode: 'hosted',
     updatedAt: (input.now ?? new Date()).toISOString(),
@@ -123,7 +133,35 @@ export function makeHostedConfig(input: {
       ...(input.apiKeyRef !== undefined ? { apiKeyRef: input.apiKeyRef } : {}),
       ...(input.credentialBackend !== undefined ? { credentialBackend: input.credentialBackend } : {}),
       ...(input.manifestCache ? { manifestCache: input.manifestCache } : {}),
+      ...(preferredProfile ? { preferredProfile } : {}),
     },
+  };
+}
+
+export function resolveHostedProfileSelection(
+  config: HostedWebcmdConfig,
+  explicit: string | undefined,
+  env: NodeJS.ProcessEnv,
+): HostedProfileSelection | undefined {
+  const explicitName = normalizeProfileName(explicit);
+  if (explicitName) return { name: explicitName, source: 'explicit' };
+  const environmentName = normalizeProfileName(env.WEBCMD_PROFILE);
+  if (environmentName) return { name: environmentName, source: 'environment' };
+  const preferredName = normalizeProfileName(config.hosted.preferredProfile);
+  return preferredName ? { name: preferredName, source: 'preferred' } : undefined;
+}
+
+export function withHostedPreferredProfile(
+  config: HostedWebcmdConfig,
+  name: string,
+  now: Date = new Date(),
+): HostedWebcmdConfig {
+  const preferredProfile = normalizeProfileName(name);
+  if (!preferredProfile) throw new Error('Hosted profile name must not be empty.');
+  return {
+    ...config,
+    updatedAt: now.toISOString(),
+    hosted: { ...config.hosted, preferredProfile },
   };
 }
 
@@ -139,6 +177,10 @@ export function defaultHostedApiBaseUrl(env: NodeJS.ProcessEnv = process.env): s
 function normalizeConfiguredUrl(raw: string | undefined): string | undefined {
   if (!raw?.trim()) return undefined;
   return raw.trim().replace(/\/+$/, '');
+}
+
+function normalizeProfileName(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
 export function isHostedConfig(config: WebcmdConfig): config is Extract<WebcmdConfig, { mode: 'hosted' }> {
@@ -163,6 +205,7 @@ function persistableConfig(config: WebcmdConfig): WebcmdConfig {
       apiKeyRef: config.hosted.apiKeyRef,
       ...(config.hosted.credentialBackend ? { credentialBackend: config.hosted.credentialBackend } : {}),
       ...(config.hosted.manifestCache ? { manifestCache: config.hosted.manifestCache } : {}),
+      ...(config.hosted.preferredProfile ? { preferredProfile: config.hosted.preferredProfile } : {}),
     },
   };
 }

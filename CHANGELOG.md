@@ -1,5 +1,105 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Hosted mode can negotiate and run core validation, diagnostics, adapter lifecycle, profile lifecycle, and catalog-list commands advertised by Webcmd Cloud.
+- `@agentrhq/webcmd/adapter-analysis` exposes platform-neutral validation and convention-audit rules for trusted hosted command inventories.
+- `@agentrhq/webcmd/hosted/core-commands` exposes the `hosted-core-commands-v1` capability contract and canonical command IDs.
+- `webcmd profile use` now stores a validated hosted profile preference locally.
+
+### Changed
+
+- Hosted help and completion advertise Cloud-owned core commands only when the authenticated manifest advertises them.
+- Hosted command lists retain excluded commands as `LOCAL` rows and return a local-only error instead of plugin-install guidance.
+- Local auth commands initialize user CLI compatibility shims, and hosted auth uses the same native grammar, flags, choices, and help as local mode.
+
+## [0.7.10](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.9...webcmd-v0.7.10) (2026-08-28)
+
+### Highlights
+- Hosted mode can now negotiate and run core commands advertised by Webcmd Cloud, including diagnostics, profile lifecycle, and plugin catalog commands. Help, completion, and execution only expose capabilities supported by the connected Cloud service.
+- Registered external CLIs can now run locally while Webcmd is configured for hosted mode. Arguments and child exit codes are preserved, and hosted sites take precedence if names collide.
+
+### Improvements
+- Hosted help and shell completion now advertise locally handled `skills`, `update`, and `external` commands.
+- Hosted root help now includes `session`, `site`, and `--workspace <id>`, including the `WEBCMD_WORKSPACE` environment-variable alternative.
+- Hosted authentication commands now use the same grammar, flags, choices, and help as local mode.
+- `webcmd profile use` now stores a validated hosted profile preference locally.
+- Hosted command lists retain unavailable commands as `LOCAL` entries and report origins consistently as `builtin`, `plugin:<name>`, `local`, or `override:<plugin>`.
+- Unknown site subcommands now suggest the corresponding authoring command, such as `webcmd browser init <site>/<command>`.
+- Added public package exports for the hosted core-command capability contract.
+
+### Fixes
+- **Breaking:** `webcmd doctor` now exits with code 78 (`CONFIG_ERROR`) when a required readiness check fails. Its stdout report is unchanged, and soft warnings do not affect the exit code.
+- Fixed browser runs hanging after popup or download events fired. `waitForEvent('popup')` and `waitForEvent('download')` now resolve correctly, while event-specific timeouts take effect before the outer run timeout.
+- `external install` now returns a nonzero exit code when installation fails.
+- External CLI registrations using explicit executable paths are now detected without an unnecessary `PATH` lookup.
+
+### Adapters
+- Hosted mode can run Cloud-advertised adapter workflows including `validate`, `verify`, `convention-audit`, `adapter status`, and `adapter reset`.
+- Added the public `@agentrhq/webcmd/adapter-analysis` export for platform-neutral adapter validation and convention auditing.
+
+### Contributors
+[@ankitranjan7](https://github.com/ankitranjan7)
+
+## [0.7.9](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.8...webcmd-v0.7.9) (2026-08-28)
+
+### Highlights
+- Hosted mode can now negotiate and run Cloud-advertised core commands for validation, diagnostics, adapter and profile lifecycle management, and plugin catalog listings. Commands appear in help and completion only when supported by the authenticated Cloud manifest.
+
+### Improvements
+- Registered external CLIs such as `gh`, `docker`, and user-defined passthrough commands now run in hosted mode. Hosted site commands take precedence when names overlap, arguments such as `--version` are forwarded correctly, and child exit codes are preserved.
+- Hosted help and shell completion now include the locally handled `skills` and `update` commands.
+- Root-level options such as `--profile`, `--workspace`, and `--session` now route correctly when placed before `skills` or `update`.
+- `webcmd profile use` now saves a validated hosted profile preference locally.
+- Hosted auth commands now use the same grammar, flags, choices, and help as local auth commands.
+- Hosted command listings retain unavailable commands as `LOCAL` entries and return local-only guidance instead of suggesting plugin installation.
+- Added public package exports for platform-neutral adapter analysis and the `hosted-core-commands-v1` capability contract.
+
+### Fixes
+- `webcmd doctor` now exits with code 78 (`CONFIG_ERROR`) when the daemon, runtime connection, or a performed connectivity check fails. Its stdout report remains unchanged, and soft warnings do not cause failure.
+- Failed `webcmd external install` operations now return a nonzero service-unavailable exit code.
+- External CLI executable paths containing directory separators are now checked directly instead of using a `PATH` lookup.
+
+### Adapters
+- Hosted mode now supports Cloud-advertised adapter validation, verification, convention auditing, status, and reset workflows.
+- Adapter analysis can now validate trusted hosted command inventories and audit adapter source conventions without local registry discovery.
+- Convention auditing now prevents manifest source paths from escaping the project root and avoids treating unrelated object literals as emitted adapter rows.
+
+### Contributors
+[@ankitranjan7](https://github.com/ankitranjan7)
+
+## [0.7.8](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.7...webcmd-v0.7.8) (2026-08-27)
+
+### Highlights
+- Browser Sessions now use readable, Profile-scoped IDs. Creating a Session requires a name, which is normalized and given a two-character suffix—for example, `webcmd --profile work session create "Work Project"` may return `work-project-k7`.
+- Raw browser commands require an explicit readable Session selector at the root, such as `webcmd --profile work --session work-project-k7 browser tabs`.
+- Adapter commands without `--session` now consistently reuse the Profile’s fixed `adapter-default` Session.
+- Opaque Session IDs and cross-Profile owner discovery have been removed. Continue using the same Profile and immutable ID throughout a Session’s lifetime.
+
+### Improvements
+- Updated the CLI reference, troubleshooting guidance, agent documentation, and generated skills for the new Session workflow.
+
+### Contributors
+[@rishabhraj36](https://github.com/rishabhraj36)
+
+## [0.7.7](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.6...webcmd-v0.7.7) (2026-08-26)
+
+### Improvements
+- Added `webcmd artifact download <download-url> --output <local-path>` for authenticated downloads of hosted execution artifacts. Download URLs are restricted to the configured Webcmd Cloud API origin to prevent credentials from being sent elsewhere.
+- Published the full 100-task BU Bench V1 report, including accuracy, token usage, estimated controller cost, agent turns, category results, methodology, limitations, and reproduction steps.
+
+### Fixes
+- Hosted Cloud failures with object-valued `error.details` now preserve their original error code and include those details in the CLI error envelope instead of being reported as `HOSTED_PROTOCOL`.
+- Site-memory writes on Windows now retry transient `EPERM` errors when creating lock files.
+
+### Adapters
+- Hosted `webcmd browser init <site>/<command>` and `webcmd browser verify <site>/<command>` now use the dedicated authoring route and no longer require—or accept—`--session`.
+
+### Contributors
+[@ankitranjan7](https://github.com/ankitranjan7) | [@beubax](https://github.com/beubax)
+
 ## [0.7.6](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.5...webcmd-v0.7.6) (2026-08-24)
 
 ### Highlights

@@ -77,6 +77,67 @@ describe('hosted CLI process lifecycle', () => {
     await expect(readFile(fixture.discoverySentinel, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
   }, 20_000);
 
+  it('uses exactly one advertised manifest to render hosted root help', async () => {
+    const fixture = await createHostedFixture('success', {
+      coreCommands: ['validate', 'adapter/status'],
+    });
+
+    const result = await runCli(['--help'], fixture.env);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toMatch(/validate\s+Validate hosted CLI definitions/);
+    expect(result.stdout).not.toMatch(/verify\s+Validate/);
+    expect(fixture.requests).toEqual(['GET /v1/manifest']);
+  }, 20_000);
+
+  it.each(['unavailable', 'malformed'] as const)(
+    'falls back to client-owned root help when the manifest is %s',
+    async (manifestOutcome) => {
+      const fixture = await createHostedFixture('success', { manifestOutcome });
+
+      const result = await runCli(['--help'], fixture.env);
+
+      expect(result.status).toBe(0);
+      expect(result.stderr).toBe('');
+      expect(result.stdout).toContain('external');
+      expect(result.stdout).not.toMatch(/validate\s+Validate hosted CLI definitions/);
+      expect(fixture.requests).toEqual(['GET /v1/manifest']);
+    },
+    20_000,
+  );
+
+  it('falls back to client-owned root help when the stored credential is missing', async () => {
+    const fixture = await createHostedFixture('success');
+    await rm(path.join(fixture.root, 'config', 'hosted-credentials.json'), { force: true });
+
+    const result = await runCli(['--help'], fixture.env);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain('external');
+    expect(result.stdout).not.toMatch(/validate\s+Validate hosted CLI definitions/);
+    expect(fixture.requests).toEqual([]);
+  }, 20_000);
+
+  it('gates root and nested completion by the advertised manifest', async () => {
+    const fixture = await createHostedFixture('success', {
+      coreCommands: ['doctor', 'profile/create'],
+    });
+
+    const root = await runCli(['--get-completions', '--cursor', '1'], fixture.env);
+    const profile = await runCli(['--get-completions', '--cursor', '2', 'profile'], fixture.env);
+
+    expect(root.status).toBe(0);
+    expect(root.stderr).toBe('');
+    expect(root.stdout.trim().split('\n')).toEqual(expect.arrayContaining(['doctor']));
+    expect(root.stdout.trim().split('\n')).not.toEqual(expect.arrayContaining(['validate']));
+    expect(profile.status).toBe(0);
+    expect(profile.stderr).toBe('');
+    expect(profile.stdout.trim().split('\n')).toEqual(['create', 'delete', 'list', 'use']);
+    expect(fixture.requests).toEqual(['GET /v1/manifest', 'GET /v1/manifest']);
+  }, 20_000);
+
   it('flushes delayed output and trace bytes, returns success, and never enters local discovery', async () => {
     const fixture = await createHostedFixture('success');
 
@@ -152,6 +213,124 @@ describe('hosted CLI process lifecycle', () => {
     expect(fixture.requests).toEqual([]);
   }, 20_000);
 
+  it('runs external list locally without contacting Cloud when hosted mode is configured', async () => {
+    const fixture = await createHostedFixture('success');
+
+    const result = await runCli(['external', 'list', '-f', 'json'], fixture.env);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(JSON.parse(result.stdout)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'gh', binary: 'gh' }),
+    ]));
+    expect(fixture.requests).toEqual([]);
+    await expect(readFile(fixture.discoverySentinel, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+  }, 20_000);
+
+  it.each([
+    { name: 'profile', selectors: ['--profile', 'work'] },
+    { name: 'workspace', selectors: ['--workspace', 'ws'] },
+  ])('runs external list locally with a leading $name selector', async ({ selectors }) => {
+    const fixture = await createHostedFixture('success');
+
+    const result = await runCli([...selectors, 'external', 'list', '-f', 'json'], fixture.env);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(JSON.parse(result.stdout)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'gh', binary: 'gh' }),
+    ]));
+    expect(fixture.requests).toEqual([]);
+    await expect(readFile(fixture.discoverySentinel, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+  }, 20_000);
+
+  it('runs a registered external with its child arguments and exit code in hosted mode', async () => {
+    const fixture = await createHostedFixture('success');
+    const registryPath = path.join(fixture.root, '.webcmd', 'external-clis.yaml');
+    await writeFile(registryPath, JSON.stringify([{
+      name: 'fixture-node',
+      binary: process.execPath,
+    }]));
+
+    const result = await runCli([
+      'fixture-node',
+      '-e',
+      'process.stdout.write(`external:${process.argv[1]}`); process.exit(3)',
+      'child-value',
+    ], fixture.env);
+
+    expect(result.status).toBe(3);
+    expect(result.stdout).toBe('external:child-value');
+    expect(result.stderr).toBe('');
+    expect(fixture.requests).toEqual(['GET /v1/manifest']);
+    await expect(readFile(fixture.discoverySentinel, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+  }, 20_000);
+
+  it.each([
+    { name: 'split', tail: ['--session', 'child-session'] },
+    { name: 'equals', tail: ['--session=child-session'] },
+  ])('forwards a child-owned $name session flag to a registered external in local mode', async ({ tail }) => {
+    const fixture = await createLocalExternalFixture('fixture-node');
+
+    const result = await runCli(['fixture-node', fixture.script, ...tail], fixture.env);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe(JSON.stringify(tail));
+    expect(result.stderr).toBe('');
+  }, 20_000);
+
+  it.each([
+    { installed: false, status: 0 },
+    { installed: true, status: 78 },
+  ])('treats optional antigravity as Webcmd-owned only when installed: $installed', async ({ installed, status }) => {
+    const fixture = await createHostedFixture('success');
+    const script = await registerArgvExternal(fixture.root, 'antigravity');
+    if (installed) {
+      const pluginDir = path.join(fixture.root, '.webcmd', 'plugins', 'antigravity');
+      await mkdir(pluginDir, { recursive: true });
+      await writeFile(path.join(pluginDir, 'serve.js'), 'export async function startServe() {}\n');
+    }
+
+    const result = await runCli(['antigravity', script, 'child-value'], fixture.env);
+
+    expect(result.status).toBe(status);
+    expect(fixture.requests).toEqual(installed ? [] : ['GET /v1/manifest']);
+    if (installed) {
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toContain('webcmd antigravity is local-only');
+    } else {
+      expect(result.stdout).toBe(JSON.stringify(['child-value']));
+      expect(result.stderr).toBe('');
+    }
+  }, 20_000);
+
+  it.each([
+    {
+      name: 'profile before skills',
+      argv: ['--profile', 'work', 'skills', '--help'],
+      help: 'Usage: webcmd skills [options] [command]',
+    },
+    {
+      name: 'workspace before update',
+      argv: ['--workspace', 'ws', 'update', '--help'],
+      help: 'update [options]',
+    },
+    {
+      name: 'session before skills',
+      argv: ['--session', 'session_work', 'skills', '--help'],
+      help: 'Usage: webcmd skills [options] [command]',
+    },
+  ])('routes $name to the local client command handler', async ({ argv, help }) => {
+    const fixture = await createHostedFixture('success');
+
+    const result = await runCli(argv, fixture.env);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(help);
+    expect(result.stderr).toBe('');
+    expect(fixture.requests).toEqual([]);
+  }, 20_000);
+
   it('keeps hosted auth on Cloud without local discovery', async () => {
     const fixture = await createHostedFixture('success');
 
@@ -160,6 +339,25 @@ describe('hosted CLI process lifecycle', () => {
     expect(result.stderr).toBe('');
     expect(result.status).toBe(0);
     expect(fixture.requests).toEqual(['GET /v1/manifest', 'POST /v1/execute']);
+    await expect(readFile(fixture.discoverySentinel, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+  }, 20_000);
+
+  it('persists profile use through the installed hosted config path', async () => {
+    const fixture = await createHostedFixture('success');
+
+    const result = await runCli(['profile', 'use', 'work'], fixture.env);
+    const saved = JSON.parse(await readFile(path.join(fixture.root, 'config', 'config.json'), 'utf8')) as {
+      hosted: { apiKeyRef?: string; preferredProfile?: string };
+    };
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain('profile: work');
+    expect(fixture.requests).toEqual(['GET /v1/profiles']);
+    expect(saved.hosted).toMatchObject({
+      apiKeyRef: 'wcmd_cred_lifecycle',
+      preferredProfile: 'work',
+    });
     await expect(readFile(fixture.discoverySentinel, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
   }, 20_000);
 
@@ -229,9 +427,32 @@ describe('hosted CLI process lifecycle', () => {
     expect(result.stderr).toBe('');
     expect(JSON.parse(result.stdout)).toEqual({ value: 'ready' });
   }, 20_000);
+
+  it('loads a lazy user auth adapter through the package compatibility shim for structured output', async () => {
+    const fixture = await createLocalLazyAuthFixture();
+
+    const result = await runCli(['auth', 'status', '--site', 'auth-fixture', '-f', 'json'], fixture.env);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(JSON.parse(result.stdout)).toEqual([{
+      site: 'auth-fixture',
+      status: 'unknown',
+      logged_in: '',
+      identity: '',
+      checked: 'skipped',
+      error: 'quickCheck not implemented; use --full to run whoami',
+    }]);
+  }, 20_000);
 });
 
-async function createHostedFixture(outcome: 'success' | 'failure' | 'browser'): Promise<{
+async function createHostedFixture(
+  outcome: 'success' | 'failure' | 'browser',
+  options: {
+    coreCommands?: string[];
+    manifestOutcome?: 'success' | 'unavailable' | 'malformed';
+  } = {},
+): Promise<{
   root: string;
   env: NodeJS.ProcessEnv;
   discoverySentinel: string;
@@ -261,6 +482,10 @@ async function createHostedFixture(outcome: 'success' | 'failure' | 'browser'): 
   const server = createServer(async (request, response) => {
     requests.push(`${request.method ?? 'GET'} ${request.url ?? '/'}`);
     if (request.url === '/v1/manifest') {
+      if (options.manifestOutcome === 'unavailable') {
+        response.writeHead(503).end('unavailable');
+        return;
+      }
       sendChunkedJson(response, {
         ok: true,
         manifest: {
@@ -270,9 +495,28 @@ async function createHostedFixture(outcome: 'success' | 'failure' | 'browser'): 
             sessionProtocolVersion: 1,
             webcmdPackageVersion: PKG_VERSION,
             generatedAt: '2026-07-14T00:00:00.000Z',
+            ...(options.manifestOutcome === 'malformed'
+              ? { coreCommands: ['unknown-core'] }
+              : options.coreCommands ? { coreCommands: options.coreCommands } : {}),
           },
           commands: [command, authCommand, liveViewCommand],
         },
+      });
+      return;
+    }
+    if (request.url === '/v1/profiles' && request.method === 'GET') {
+      sendChunkedJson(response, {
+        ok: true,
+        profiles: [{
+          id: 'profile_work',
+          name: 'work',
+          workspace: null,
+          default: false,
+          status: 'available',
+          createdAt: '2026-08-27T00:00:00.000Z',
+          updatedAt: '2026-08-27T00:00:00.000Z',
+          lastUsedAt: '2026-08-27T00:00:00.000Z',
+        }],
       });
       return;
     }
@@ -401,6 +645,90 @@ async function createLocalStartupPluginFixture(): Promise<{ root: string; env: N
       WEBCMD_NO_UPDATE_CHECK: '1',
     },
   };
+}
+
+async function createLocalLazyAuthFixture(): Promise<{ root: string; env: NodeJS.ProcessEnv }> {
+  const root = await mkdtemp(path.join(tmpdir(), 'webcmd-local-auth-'));
+  tempRoots.push(root);
+  const configDir = path.join(root, 'config');
+  const clisDir = path.join(root, '.webcmd', 'clis');
+  const siteDir = path.join(clisDir, 'auth-fixture');
+  await mkdir(configDir, { recursive: true });
+  await mkdir(siteDir, { recursive: true });
+  await writeFile(path.join(configDir, 'config.json'), '{"mode":"local"}\n');
+  await writeFile(path.join(root, '.webcmd', 'cli-manifest.json'), `${JSON.stringify([{
+    site: 'auth-fixture',
+    name: 'whoami',
+    description: 'Fixture identity',
+    access: 'read',
+    strategy: 'cookie',
+    browser: true,
+    args: [],
+    columns: ['logged_in'],
+    type: 'js',
+    modulePath: 'auth-fixture/whoami.js',
+  }])}\n`);
+  await writeFile(path.join(siteDir, 'whoami.js'), [
+    "import { cli, Strategy } from '@agentrhq/webcmd/registry';",
+    'cli({',
+    "  site: 'auth-fixture',",
+    "  name: 'whoami',",
+    "  description: 'Fixture identity',",
+    "  access: 'read',",
+    '  strategy: Strategy.COOKIE,',
+    '  browser: true,',
+    '  args: [],',
+    "  columns: ['logged_in'],",
+    '  func: async () => ({ logged_in: true }),',
+    '});',
+    '',
+  ].join('\n'));
+  return {
+    root,
+    env: {
+      ...process.env,
+      HOME: root,
+      USERPROFILE: root,
+      WEBCMD_CONFIG_DIR: configDir,
+      WEBCMD_NO_UPDATE_CHECK: '1',
+    },
+  };
+}
+
+async function createLocalExternalFixture(name: string): Promise<{
+  root: string;
+  env: NodeJS.ProcessEnv;
+  script: string;
+}> {
+  const root = await mkdtemp(path.join(tmpdir(), 'webcmd-local-external-'));
+  tempRoots.push(root);
+  const configDir = path.join(root, 'config');
+  await mkdir(configDir, { recursive: true });
+  await writeFile(path.join(configDir, 'config.json'), '{"mode":"local"}\n');
+  const script = await registerArgvExternal(root, name);
+  return {
+    root,
+    script,
+    env: {
+      ...process.env,
+      HOME: root,
+      USERPROFILE: root,
+      WEBCMD_CONFIG_DIR: configDir,
+      WEBCMD_NO_UPDATE_CHECK: '1',
+    },
+  };
+}
+
+async function registerArgvExternal(root: string, name: string): Promise<string> {
+  const registryDir = path.join(root, '.webcmd');
+  const script = path.join(root, `${name}-argv.mjs`);
+  await mkdir(registryDir, { recursive: true });
+  await writeFile(path.join(registryDir, 'external-clis.yaml'), JSON.stringify([{
+    name,
+    binary: process.execPath,
+  }]));
+  await writeFile(script, "process.stdout.write(JSON.stringify(process.argv.slice(2)));\n");
+  return script;
 }
 
 function sendChunkedJson(response: import('node:http').ServerResponse, value: unknown, status = 200): void {

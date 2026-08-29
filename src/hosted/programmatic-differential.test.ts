@@ -58,7 +58,6 @@ function runProgrammatic(argv: string[], files?: readonly HostedVirtualFile[]) {
 }
 
 const FIXTURES: { name: string; argv: string[]; files?: readonly HostedVirtualFile[] }[] = [
-  { name: 'root help', argv: ['--help'] },
   { name: 'version', argv: ['--version'] },
   { name: 'list', argv: ['list'] },
   { name: 'list json', argv: ['list', '-f', 'json'] },
@@ -71,7 +70,7 @@ const FIXTURES: { name: string; argv: string[]; files?: readonly HostedVirtualFi
   { name: 'auth refresh', argv: ['auth', 'refresh', '--site', 'acme'] },
   { name: 'browser tabs', argv: ['browser', 'tabs', '--session', 'session_fixture'] },
   { name: 'browser snapshot', argv: ['browser', 'snapshot', '--session', 'session_fixture', '-f', 'json'] },
-  { name: 'session create', argv: ['session', 'create', '-f', 'json'] },
+  { name: 'session create', argv: ['session', 'create', 'Work Project', '-f', 'json'] },
   { name: 'session list', argv: ['session', 'list'] },
   { name: 'session close', argv: ['session', 'close', 'session_fixture'] },
   { name: 'profile list', argv: ['profile', 'list'] },

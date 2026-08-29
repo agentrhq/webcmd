@@ -1,13 +1,19 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises';
+import { mkdtemp, open, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { hostname, tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { lockPathFor, withFileLock } from './file-lock.js';
 
 const tempDirs: string[] = [];
 
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return { ...actual, open: vi.fn(actual.open) };
+});
+
 afterEach(async () => {
+  vi.restoreAllMocks();
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
@@ -25,6 +31,17 @@ describe('site memory file lock', () => {
     })));
 
     expect(overlapped).toBe(false);
+    await expect(exists(lockPathFor(target))).resolves.toBe(false);
+  });
+
+  it('retries a transient Windows EPERM when creating the lock', async () => {
+    const target = await tempTarget();
+    vi.mocked(open).mockRejectedValueOnce(
+      Object.assign(new Error('transient Windows lock'), { code: 'EPERM' }),
+    );
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+
+    await expect(withFileLock(target, async () => 'written')).resolves.toBe('written');
     await expect(exists(lockPathFor(target))).resolves.toBe(false);
   });
 

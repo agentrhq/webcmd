@@ -348,10 +348,15 @@ describe('hosted root command surface', () => {
   );
 
   it.each(profileForms.flatMap(profile => dispatchForms.map(dispatch => ({ profile, dispatch }))))(
-    'gives completion priority across $profile.name/$dispatch.name',
+    'leaves a child-owned completion sentinel with $profile.name/$dispatch.name',
     ({ profile, dispatch }) => {
       const argv = [...profile.tokens, ...dispatch.tokens, '--get-completions'];
-      expect(parseHostedRootCommandSurface(argv)).toEqual({ kind: 'completion', argv });
+      expect(parseHostedRootCommandSurface(argv)).toEqual({
+        kind: 'dispatch',
+        argv: [...dispatch.tokens, '--get-completions'],
+        ...(profile.profile !== undefined ? { profile: profile.profile } : {}),
+        literal: false,
+      });
     },
   );
 
@@ -360,10 +365,8 @@ describe('hosted root command surface', () => {
     { name: 'beats help', argv: ['--help', '--get-completions'] },
     { name: 'beats unknown', argv: ['--unknown', '--get-completions'] },
     { name: 'beats missing profile', argv: ['--profile', '--get-completions'] },
-    { name: 'after separator', argv: ['--', '--get-completions'] },
-    { name: 'after site tokens', argv: ['github', 'whoami', '--get-completions'] },
     { name: 'beats non-fast clustered version', argv: ['-Vx', '--get-completions'] },
-  ])('matches the local main completion fast-path: $name', ({ argv }) => {
+  ])('recognizes completion on the Webcmd root surface: $name', ({ argv }) => {
     expect(parseHostedRootCommandSurface(argv)).toEqual({ kind: 'completion', argv });
   });
 
@@ -377,18 +380,18 @@ describe('hosted root command surface', () => {
 
 describe('hosted root preflight call order', () => {
   it.each([
-    { name: 'no args', argv: [], exitCode: 1, stdout: '', stderr: formatRootHelp(HOSTED_ROOT_HELP) },
-    { name: 'profile only', argv: ['--profile', 'work'], exitCode: 1, stdout: '', stderr: formatRootHelp(HOSTED_ROOT_HELP) },
-    { name: 'bare separator', argv: ['--'], exitCode: 1, stdout: '', stderr: formatRootHelp(HOSTED_ROOT_HELP) },
-    { name: 'help', argv: ['--help'], exitCode: 0, stdout: formatRootHelp(HOSTED_ROOT_HELP), stderr: '' },
-    { name: 'help after malformed prefix and site', argv: ['--unknown', 'github', '--help'], exitCode: 0, stdout: formatRootHelp(HOSTED_ROOT_HELP), stderr: '' },
-    { name: 'profile consumes help into implicit help', argv: ['--profile', '--help'], exitCode: 1, stdout: '', stderr: formatRootHelp(HOSTED_ROOT_HELP) },
-    { name: 'version', argv: ['-Vx'], exitCode: 0, stdout: `${PKG_VERSION}\n`, stderr: '' },
-    { name: 'missing profile', argv: ['--profile'], exitCode: 1, stdout: '', stderr: "error: option '--profile <name>' argument missing\n" },
-    { name: 'trailing missing profile beats help', argv: ['--help', 'github', '--profile'], exitCode: 1, stdout: '', stderr: "error: option '--profile <name>' argument missing\n" },
-    { name: 'trailing missing profile beats unknown', argv: ['--unknown', 'github', '--profile'], exitCode: 1, stdout: '', stderr: "error: option '--profile <name>' argument missing\n" },
-    { name: 'unknown option', argv: ['-xV'], exitCode: 2, stdout: '', stderr: "error: unknown option '-xV'\n" },
-  ])('$name terminates before Cloud discovery', async ({ name, argv, exitCode, stdout: expectedStdout, stderr: expectedStderr }) => {
+    { name: 'no args', argv: [], exitCode: 1, stdout: '', stderr: formatRootHelp(HOSTED_ROOT_HELP), requests: 1 },
+    { name: 'profile only', argv: ['--profile', 'work'], exitCode: 1, stdout: '', stderr: formatRootHelp(HOSTED_ROOT_HELP), requests: 1 },
+    { name: 'bare separator', argv: ['--'], exitCode: 1, stdout: '', stderr: formatRootHelp(HOSTED_ROOT_HELP), requests: 1 },
+    { name: 'help', argv: ['--help'], exitCode: 0, stdout: formatRootHelp(HOSTED_ROOT_HELP), stderr: '', requests: 1 },
+    { name: 'help after malformed prefix and site', argv: ['--unknown', 'github', '--help'], exitCode: 0, stdout: formatRootHelp(HOSTED_ROOT_HELP), stderr: '', requests: 1 },
+    { name: 'profile consumes help into implicit help', argv: ['--profile', '--help'], exitCode: 1, stdout: '', stderr: formatRootHelp(HOSTED_ROOT_HELP), requests: 1 },
+    { name: 'version', argv: ['-Vx'], exitCode: 0, stdout: `${PKG_VERSION}\n`, stderr: '', requests: 0 },
+    { name: 'missing profile', argv: ['--profile'], exitCode: 1, stdout: '', stderr: "error: option '--profile <name>' argument missing\n", requests: 0 },
+    { name: 'trailing missing profile beats help', argv: ['--help', 'github', '--profile'], exitCode: 1, stdout: '', stderr: "error: option '--profile <name>' argument missing\n", requests: 0 },
+    { name: 'trailing missing profile beats unknown', argv: ['--unknown', 'github', '--profile'], exitCode: 1, stdout: '', stderr: "error: option '--profile <name>' argument missing\n", requests: 0 },
+    { name: 'unknown option', argv: ['-xV'], exitCode: 2, stdout: '', stderr: "error: unknown option '-xV'\n", requests: 0 },
+  ])('$name performs only its allowed Cloud preflight', async ({ name, argv, exitCode, stdout: expectedStdout, stderr: expectedStderr, requests }) => {
     const stdout = sink();
     const stderr = sink();
     const fetchImpl = vi.fn<typeof fetch>();
@@ -408,7 +411,7 @@ describe('hosted root preflight call order', () => {
     } else {
       expect(stderr.text()).toBe(expectedStderr);
     }
-    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(fetchImpl).toHaveBeenCalledTimes(requests);
   });
 
   it.each([
@@ -416,7 +419,7 @@ describe('hosted root preflight call order', () => {
     ['--help', '--get-completions'],
     ['--unknown', '--get-completions'],
     ['--profile', '--get-completions'],
-    ['--', '--get-completions'],
+    ['--get-completions', '--'],
     ['-Vx', '--get-completions'],
   ])('completion preflight performs exactly one manifest request and no execute: %j', async (...argv) => {
     const stdout = sink();
@@ -793,11 +796,11 @@ describe('hosted root preflight call order', () => {
     expect(local).toMatchObject({
       exitCode: 2,
       stdout: '',
-      stderr: "error: unknown command 'bogus'\nhelp: valid subcommands for `webcmd github`: whoami\n",
+      stderr: "error: unknown command 'bogus'\nhelp: valid subcommands for `webcmd github`: whoami\nTo author this command: webcmd browser init github/bogus\n",
     });
     expect(hosted).toEqual({ handled: true, exitCode: local.exitCode });
     expect(stdout.text()).toBe(local.stdout);
-    expect(stderr.text()).toBe("error: unknown command 'bogus'\nhelp: valid subcommands for `webcmd github`: whoami\n");
+    expect(stderr.text()).toBe("error: unknown command 'bogus'\nhelp: valid subcommands for `webcmd github`: whoami\nTo author this command: webcmd browser init github/bogus\n");
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(String(fetchImpl.mock.calls[0]![0])).toBe('https://api.example.com/v1/manifest');
   });

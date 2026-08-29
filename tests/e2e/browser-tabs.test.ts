@@ -118,7 +118,7 @@ describe('browser public command surface e2e', () => {
   it('uses tabs, bind, run, and close through the built CLI', async () => {
     const daemon = await startFakeDaemon();
     daemons.push(daemon);
-    const session = 'session_four-command-surface';
+    const session = 'browser-tabs-k7';
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-browser-tabs-'));
     tempDirs.push(tempDir);
     const sourcePath = path.join(tempDir, 'program.js');

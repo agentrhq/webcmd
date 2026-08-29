@@ -23,7 +23,7 @@ import { PKG_VERSION } from './version.js';
 import { EXIT_CODES } from './errors.js';
 import { isSupportedNodeVersion, MIN_SUPPORTED_NODE_MAJOR } from './runtime-detect.js';
 import { CONFIG_DIR_NAME } from './brand.js';
-import { parseHostedRootCommandSurface } from './root-command-surface.js';
+import { configureHostedWorkspaceOption, parseHostedRootCommandSurface, rootCompletionSentinelIndex } from './root-command-surface.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -72,22 +72,44 @@ if (!fastPathHandled && argv[0] === 'completion' && argv.length >= 2) {
 // memory just to decide what commands exist. Awaiting the selected branch and
 // assigning exitCode lets Node flush pending stdout/stderr before shutdown.
 if (!fastPathHandled) {
+  const rootSurface = parseRootSurface(argv);
   if (argv[0] === 'setup') {
     const { runHostedSetup } = await import('./hosted/setup.js');
     process.exitCode = await runHostedSetup({ argv: argv.slice(1) });
-  } else if (argv[0] === 'skills' || argv[0] === 'update') {
+  } else if (
+    rootSurface?.kind === 'dispatch'
+    && (rootSurface.argv[0] === 'skills'
+      || rootSurface.argv[0] === 'update'
+      || rootSurface.argv[0] === 'external')
+  ) {
     const { createProgram } = await import('./cli.js');
-    await createProgram(BUILTIN_CLIS, USER_CLIS).parseAsync(argv, { from: 'user' });
-  } else if (isWebFetch(argv)) {
+    const program = createProgram(BUILTIN_CLIS, USER_CLIS);
+    if (rootSurface?.kind === 'dispatch' && rootSurface.workspace !== undefined) {
+      configureHostedWorkspaceOption(program);
+    }
+    await program.parseAsync(argv, { from: 'user' });
+  } else if (
+    rootSurface?.kind === 'dispatch'
+    && rootSurface.argv[0] === 'web'
+    && rootSurface.argv[1] === 'fetch'
+  ) {
     const { runWebFetchCommand } = await import('./fetch/command.js');
     await runWebFetchCommand(argv);
   } else {
     const { shouldUseHostedMode } = await import('./hosted/config.js');
     if (shouldUseHostedMode()) {
       const { runHostedCli } = await import('./hosted/runner.js');
+      const { executeExternalCli, loadExternalClis } = await import('./external.js');
       // The installed CLI already owns local web/fetch transport authority.
       // Programmatic embedders remain opt-in and default to no network access.
-      const result = await runHostedCli(argv, { enableServerWebFetch: true });
+      const result = await runHostedCli(argv, {
+        enableServerWebFetch: true,
+        hasLocalClientCommandHandlers: true,
+        externals: { list: loadExternalClis, run: executeExternalCli },
+        installedLocalCommandRoots: fs.existsSync(path.join(USER_PLUGINS, 'antigravity', 'serve.js'))
+          ? new Set(['antigravity'])
+          : undefined,
+      });
       process.exitCode = result.exitCode;
     } else {
       const { installDaemonRunSignalCancellation } = await import('./signal-cancel.js');
@@ -101,18 +123,17 @@ if (!fastPathHandled) {
   }
 }
 
-function isWebFetch(args: readonly string[]): boolean {
+function parseRootSurface(args: readonly string[]) {
   try {
-    const parsed = parseHostedRootCommandSurface(args);
-    return parsed.kind === 'dispatch' && parsed.argv[0] === 'web' && parsed.argv[1] === 'fetch';
+    return parseHostedRootCommandSurface(args);
   } catch {
-    return false;
+    return undefined;
   }
 }
 
 async function runLocalMain(): Promise<void> {
 // Fast path: --get-completions — read from manifest, skip discovery
-const getCompIdx = process.argv.indexOf('--get-completions');
+const getCompIdx = rootCompletionSentinelIndex(argv);
 if (getCompIdx !== -1) {
   // Only include manifests that actually exist on disk.
   // With sparse override, the user clis dir may exist but have no manifest.
@@ -123,7 +144,7 @@ if (getCompIdx !== -1) {
   const userManifest = getCliManifestPath(USER_CLIS);
   try { fs.accessSync(userManifest); manifestPaths.push(userManifest); } catch { uncoveredCommandRoots.push(USER_CLIS); }
   if (hasAllManifests(manifestPaths, uncoveredCommandRoots)) {
-    const rest = process.argv.slice(getCompIdx + 1);
+    const rest = argv.slice(getCompIdx + 1);
     let cursor: number | undefined;
     const words: string[] = [];
     for (let i = 0; i < rest.length; i++) {
@@ -146,8 +167,8 @@ if (getCompIdx !== -1) {
 // Dynamic imports: these are deferred so the fast path above never pays the cost.
 const { discoverClis, discoverPlugins, ensureUserCliCompatShims, ensureUserAdapters, PLUGINS_DIR } = await import('./discovery.js');
 const { getCompletions } = await import('./completion.js');
-const { runCli } = await import('./cli.js');
-const { emitHook, shouldEmitStartupHook, shouldRunStartupSideEffects } = await import('./hooks.js');
+const { createProgram, isExternalRootCommand, runCli } = await import('./cli.js');
+const { emitHook, shouldEmitStartupHook, shouldEnsureUserCliCompatShims, shouldRunStartupSideEffects } = await import('./hooks.js');
 const { installNodeNetwork } = await import('./node-network.js');
 const { registerUpdateNoticeOnExit, checkForUpdateBackground } = await import('./update-check.js');
 
@@ -161,11 +182,12 @@ installNodeNetwork();
 //    plugins is what makes an override actually take effect.
 const skipUserDiscovery = argv[0] === 'convention-audit';
 const runStartupSideEffects = shouldRunStartupSideEffects(argv);
+const ensureCompatShims = shouldEnsureUserCliCompatShims(argv);
 if (skipUserDiscovery) {
   await discoverClis(BUILTIN_CLIS);
 } else {
   const [, ,] = await Promise.all([
-    runStartupSideEffects ? ensureUserCliCompatShims() : Promise.resolve(),
+    ensureCompatShims ? ensureUserCliCompatShims() : Promise.resolve(),
     runStartupSideEffects ? ensureUserAdapters() : Promise.resolve(),
     discoverClis(BUILTIN_CLIS),
   ]);
@@ -182,7 +204,7 @@ if (runStartupSideEffects) {
 
 // ── Fallback completion: manifest unavailable, use full registry ─────────
 if (getCompIdx !== -1) {
-  const rest = process.argv.slice(getCompIdx + 1);
+  const rest = argv.slice(getCompIdx + 1);
   let cursor: number | undefined;
   const words: string[] = [];
   for (let i = 0; i < rest.length; i++) {
@@ -200,8 +222,13 @@ if (getCompIdx !== -1) {
 }
 
 const { rejectMisplacedSessionSelectorArgv, rejectPositionalBrowserSessionArgv, BrowserSessionArgvError, escapeLeadingDashPositional } = await import('./cli-argv-preprocess.js');
+const program = createProgram(BUILTIN_CLIS, USER_CLIS);
 try {
-  let rewritten = rejectMisplacedSessionSelectorArgv(rejectPositionalBrowserSessionArgv(process.argv.slice(2)));
+  let rewritten = rejectPositionalBrowserSessionArgv(process.argv.slice(2));
+  const rootSurface = parseRootSurface(rewritten);
+  if (!(rootSurface?.kind === 'dispatch' && isExternalRootCommand(program, rootSurface.argv[0]))) {
+    rewritten = rejectMisplacedSessionSelectorArgv(rewritten);
+  }
   // Use the metadata that discovery actually registered. The core manifest is
   // intentionally empty, while installed plugins and legacy user CLIs are not.
   const { getRegistry } = await import('./registry.js');
@@ -218,5 +245,5 @@ try {
 if (shouldEmitStartupHook(argv)) {
   await emitHook('onStartup', { command: '__startup__', args: {} });
 }
-await runCli(BUILTIN_CLIS, USER_CLIS);
+await runCli(BUILTIN_CLIS, USER_CLIS, program);
 }

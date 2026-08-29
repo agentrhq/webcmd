@@ -6,7 +6,8 @@
  */
 
 import { CLI_COMMAND } from './brand.js';
-import type { RootHelpPresentation } from './command-presentation.js';
+import type { RootHelpCommand, RootHelpPresentation } from './command-presentation.js';
+import { hasHostedCoreCommand, type HostedCoreCommandId } from './hosted/core-commands.js';
 
 /**
  * Built-in (non-dynamic) top-level commands.
@@ -26,7 +27,37 @@ export const BUILTIN_COMMANDS = [
 
 export const LOCAL_ONLY_COMMAND_HELP = 'Run `webcmd setup` and choose local mode to use local-only commands.';
 
-export const HOSTED_ROOT_HELP: RootHelpPresentation = {
+const HOSTED_CLIENT_ROOT_COMMANDS: readonly RootHelpCommand[] = [
+  { name: 'adapter', description: 'Manage hosted adapter sources and overrides' },
+  { name: 'artifact', description: 'Download a hosted execution artifact to a local path' },
+  { name: 'auth', description: 'Inspect hosted authentication status' },
+  { name: 'browser', description: 'Browser control through a hosted browser session' },
+  { name: 'completion <shell>', description: 'Output a shell completion script' },
+  { name: 'external', description: 'Manage local CLI passthrough commands' },
+  { name: 'list', description: 'List all available hosted CLI commands' },
+  { name: 'plugin', description: 'Manage Webcmd plugins' },
+  { name: 'profile', description: 'Manage hosted browser profiles' },
+  { name: 'session', description: 'Create, list, and close browser Sessions' },
+  { name: 'setup', description: 'Configure local or hosted mode' },
+  { name: 'site', description: 'Read and write per-site memory: notes, endpoints, field maps, fixtures' },
+  { name: 'skills', description: 'Manage bundled Webcmd skills on this computer' },
+  { name: 'update', description: 'Update the installed Webcmd CLI on this computer' },
+  { name: 'web', description: 'Fetch URLs locally without launching a browser. Use after a blocked, 403, or Cloudflare response.' },
+];
+
+const HOSTED_CORE_ROOT_COMMANDS: Record<HostedCoreCommandId, RootHelpCommand | undefined> = {
+  validate: { name: 'validate', description: 'Validate hosted CLI definitions' },
+  verify: { name: 'verify', description: 'Validate and smoke-test hosted adapters' },
+  'convention-audit': { name: 'convention-audit', description: 'Audit hosted adapter source conventions' },
+  doctor: { name: 'doctor', description: 'Diagnose hosted readiness' },
+  'adapter/status': undefined,
+  'adapter/reset': undefined,
+  'profile/create': undefined,
+  'profile/rename': undefined,
+  'plugin/catalog/list': undefined,
+};
+
+const HOSTED_ROOT_HELP_BASE: Omit<RootHelpPresentation, 'commands'> = {
   description: 'Make any website your CLI. Zero setup. AI-powered.',
   usage: [
     `${CLI_COMMAND} <site> <command> [args] [options]`,
@@ -36,36 +67,82 @@ export const HOSTED_ROOT_HELP: RootHelpPresentation = {
   ],
   options: [
     { flags: '--profile <name>', description: 'Browser profile/context alias for browser runtime commands' },
+    { flags: '--workspace <id>', description: 'Hosted workspace id/slug; also WEBCMD_WORKSPACE' },
     { flags: '-V, --version', description: 'Output the version number' },
     { flags: '-h, --help', description: 'Display help for command' },
   ],
-  commands: [
-    { name: 'artifact', description: 'Download a hosted execution artifact to a local path' },
-    { name: 'browser', description: 'Browser control through a hosted browser session' },
-    { name: 'completion <shell>', description: 'Output a shell completion script' },
-    { name: 'list', description: 'List all available hosted CLI commands' },
-    { name: 'profile', description: 'Manage hosted browser profiles' },
-    { name: 'setup', description: 'Configure local or hosted mode' },
-    { name: 'web', description: 'Fetch URLs locally without launching a browser. Use after a blocked, 403, or Cloudflare response.' },
-  ],
   localOnlyCommands: [
-    { name: 'adapter', description: 'Manage adapters installed on this computer' },
-    { name: 'antigravity', description: 'Run the local Antigravity proxy' },
-    { name: 'auth', description: 'Inspect credentials in the local browser runtime' },
-    { name: 'convention-audit', description: 'Audit adapter source files on this computer' },
     { name: 'daemon', description: 'Manage the local Webcmd daemon' },
-    { name: 'doctor', description: 'Diagnose local browser bridge connectivity' },
-    { name: 'external', description: 'Manage local CLI passthrough commands' },
-    { name: 'plugin', description: 'Manage plugins installed on this computer' },
-    { name: 'skills', description: 'Manage bundled skills on this computer' },
-    { name: 'validate', description: 'Validate local CLI definitions' },
-    { name: 'verify', description: 'Validate and smoke-test local adapters' },
   ],
-  localOnlyExplanation: LOCAL_ONLY_COMMAND_HELP,
 };
 
-export const HOSTED_BUILTIN_COMMANDS = HOSTED_ROOT_HELP.commands
-  .map((command) => command.name.split(/\s/, 1)[0]!);
+const LOCAL_CLIENT_ROOT_COMMANDS = new Set(['external', 'skills', 'update']);
+
+export function getHostedRootHelp(
+  coreCommands?: readonly HostedCoreCommandId[],
+  hasLocalClientCommandHandlers = true,
+): RootHelpPresentation {
+  const commands = [
+    ...HOSTED_CLIENT_ROOT_COMMANDS,
+    ...(coreCommands?.flatMap(id => HOSTED_CORE_ROOT_COMMANDS[id] ?? []) ?? []),
+  ].sort((left, right) => left.name.localeCompare(right.name));
+  return {
+    ...HOSTED_ROOT_HELP_BASE,
+    commands: hasLocalClientCommandHandlers
+      ? commands
+      : commands.filter(command => !LOCAL_CLIENT_ROOT_COMMANDS.has(command.name.split(/\s/, 1)[0]!)),
+  };
+}
+
+export function getHostedBuiltinCommands(
+  coreCommands?: readonly HostedCoreCommandId[],
+  hasLocalClientCommandHandlers = true,
+): string[] {
+  return getHostedRootHelp(coreCommands, hasLocalClientCommandHandlers).commands
+    .map((command) => command.name.split(/\s/, 1)[0]!);
+}
+
+export function getHostedBuiltinSubcommands(
+  root: 'adapter' | 'profile' | 'plugin',
+  coreCommands?: readonly HostedCoreCommandId[],
+): string[] {
+  if (root === 'adapter') {
+    return [
+      'override',
+      'path',
+      'source',
+      ...(hasHostedCoreCommand(coreCommands, 'adapter/status') ? ['status'] : []),
+      ...(hasHostedCoreCommand(coreCommands, 'adapter/reset') ? ['reset'] : []),
+    ].sort();
+  }
+  if (root === 'profile') {
+    return [
+      'delete',
+      'list',
+      'use',
+      ...(hasHostedCoreCommand(coreCommands, 'profile/create') ? ['create'] : []),
+      ...(hasHostedCoreCommand(coreCommands, 'profile/rename') ? ['rename'] : []),
+    ].sort();
+  }
+  return [
+    'create',
+    'install',
+    'list',
+    'search',
+    'uninstall',
+    'update',
+    ...(hasHostedCoreCommand(coreCommands, 'plugin/catalog/list') ? ['catalog'] : []),
+  ].sort();
+}
+
+export function isLocalClientRootCommand(command: string | undefined): boolean {
+  return command !== undefined && LOCAL_CLIENT_ROOT_COMMANDS.has(command);
+}
+
+/** No-core, installed-client snapshot retained for existing callers. */
+export const HOSTED_ROOT_HELP = getHostedRootHelp(undefined, true);
+
+export const HOSTED_BUILTIN_COMMANDS = getHostedBuiltinCommands(undefined, true);
 
 // ── Shell script generators ────────────────────────────────────────────────
 

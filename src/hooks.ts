@@ -83,8 +83,7 @@ export async function emitHook(name: HookName, ctx: HookContext, result?: unknow
   }
 }
 
-const BUILTIN_COMMANDS = new Set([
-  'agent-context',
+export const WEBCMD_ROOT_COMMANDS: ReadonlySet<string> = new Set([
   'adapter',
   'auth',
   'browser',
@@ -97,6 +96,7 @@ const BUILTIN_COMMANDS = new Set([
   'plugin',
   'profile',
   'session',
+  'site',
   'skills',
   'update',
   'validate',
@@ -106,7 +106,11 @@ const BUILTIN_COMMANDS = new Set([
 
 export function shouldRunStartupSideEffects(argv: readonly string[]): boolean {
   if (isHelp(argv)) return false;
-  return !(hasExplicitOutputFormat(argv) && BUILTIN_COMMANDS.has(rootCommand(argv) ?? ''));
+  return !(hasExplicitOutputFormat(argv) && WEBCMD_ROOT_COMMANDS.has(rootCommand(argv) ?? ''));
+}
+
+export function shouldEnsureUserCliCompatShims(argv: readonly string[]): boolean {
+  return shouldRunStartupSideEffects(argv) || (!isHelp(argv) && rootCommand(argv) === 'auth');
 }
 
 export function shouldEmitStartupHook(argv: readonly string[]): boolean {

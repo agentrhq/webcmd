@@ -57,6 +57,18 @@ export type DoctorReport = {
   issues: string[];
 };
 
+/**
+ * Required readiness checks, as opposed to `issues`, which also collects soft
+ * warnings such as an unreadable adapter-override directory. An absent
+ * `connectivity` means the probe never ran, which is not a failure.
+ */
+export function doctorRequiredChecksFailed(report: DoctorReport): boolean {
+  if (!report.daemonRunning) return true;
+  if (!report.runtimeConnected) return true;
+  if (report.connectivity && !report.connectivity.ok) return true;
+  return false;
+}
+
 function isLaunchableFile(binaryPath: string): boolean {
   try {
     if (!fs.statSync(binaryPath).isFile()) return false;
@@ -105,7 +117,7 @@ export async function checkConnectivity(opts?: { timeout?: number }): Promise<Co
     // A first-use download can exceed doctor's deliberately short live-probe deadline.
     await ensureBinary();
     setDaemonCommandTimeoutSeconds(timeoutSeconds);
-    const session = await sendCommand('session-create', {}) as { id?: unknown };
+    const session = await sendCommand('session-create', { sessionName: 'Doctor Probe' }) as { id?: unknown };
     if (typeof session.id !== 'string') throw new Error('Doctor could not create a browser Session.');
     sessionId = session.id;
     const bridge = new BrowserBridge();

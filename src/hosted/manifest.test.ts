@@ -12,6 +12,7 @@ import { Strategy, type CliCommand } from '../registry.js';
 import {
   commandNamesForSite,
   findHostedCommand,
+  hostedListPresentation,
   hostedListRows,
   renderHostedCommandHelp,
   renderHostedSiteHelp,
@@ -112,8 +113,47 @@ describe('hosted manifest helpers', () => {
     ]);
   });
 
-  it('filters LOCAL commands from hosted list rows', () => {
-    expect(hostedListRows(manifest, true).map((row) => row.command)).toEqual(['github/whoami']);
+  it('lists excluded commands as LOCAL without making them completable', () => {
+    expect(hostedListRows(manifest, true)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ command: 'github/whoami', availability: 'HOSTED' }),
+      expect.objectContaining({ command: 'docker/ps', availability: 'LOCAL' }),
+    ]));
+    expect(siteNames(manifest)).toEqual(['github']);
+    expect(commandNamesForSite(manifest, 'docker')).toEqual([]);
+  });
+
+  it('reports origin on hosted list rows', () => {
+    expect(hostedListRows({
+      ...manifest,
+      commands: [
+        { ...manifest.commands[0]!, adapterPackageId: 'pkg_default_webcmd' },
+        { ...manifest.commands[0]!, site: 'pypi', name: 'package', command: 'pypi/package', origin: 'plugin:pypi' },
+        { ...manifest.commands[0]!, site: 'quotes', name: 'list', command: 'quotes/list', origin: 'local' },
+        { ...manifest.commands[0]!, site: 'openfda', name: 'search', command: 'openfda/search', origin: 'override:openfda' },
+      ],
+    }, true)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ command: 'github/whoami', origin: 'builtin' }),
+      expect.objectContaining({ command: 'pypi/package', origin: 'plugin:pypi' }),
+      expect.objectContaining({ command: 'quotes/list', origin: 'local' }),
+      expect.objectContaining({ command: 'openfda/search', origin: 'override:openfda' }),
+    ]));
+  });
+
+  it('includes availability in hosted table presentation', () => {
+    const presentation = hostedListPresentation(manifest, 'table');
+
+    expect(presentation.columns).toContain('availability');
+    expect(presentation.rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ command: 'github/whoami', availability: 'HOSTED' }),
+      expect.objectContaining({ command: 'docker/ps', availability: 'LOCAL' }),
+    ]));
+  });
+
+  it('keeps duplicate inventory commands collapsed to one row', () => {
+    expect(hostedListRows({
+      ...manifest,
+      commands: [manifest.commands[0]!, { ...manifest.commands[0]! }],
+    }, true)).toHaveLength(1);
   });
 
   it('finds canonical commands and aliases', () => {
@@ -135,7 +175,7 @@ describe('hosted manifest helpers', () => {
 
   it('matches local structured list rows for equal metadata', () => {
     expect(hostedListRows({ ...manifest, commands: [manifest.commands[0]!] }, true))
-      .toEqual([serializeCommand(equivalentLocalCommand)]);
+      .toEqual([{ ...serializeCommand(equivalentLocalCommand), availability: 'HOSTED' }]);
   });
 
   it('describes universal hosted surfaces and accepted local-only commands at the root', async () => {
@@ -151,7 +191,6 @@ describe('hosted manifest helpers', () => {
     expect(stdout.text()).toMatch(/profile\s+Manage hosted browser profiles/);
     expect(stdout.text()).toContain('--profile <name>');
     expect(stdout.text()).toContain('Local-only commands:');
-    expect(stdout.text()).toContain('Run `webcmd setup` and choose local mode to use local-only commands.');
   });
 
   it('completes private hosted manifest commands without local discovery', async () => {
@@ -226,7 +265,24 @@ describe('hosted manifest helpers', () => {
       fetchImpl: async () => new Response(JSON.stringify({ ok: true, manifest }), { status: 200 }),
     });
 
-    expect(stdout.text().trim().split('\n')).toEqual(['artifact', 'browser', 'completion', 'github', 'list', 'profile', 'setup', 'web']);
+    expect(stdout.text().trim().split('\n')).toEqual([
+      'adapter',
+      'artifact',
+      'auth',
+      'browser',
+      'completion',
+      'external',
+      'github',
+      'list',
+      'plugin',
+      'profile',
+      'session',
+      'setup',
+      'site',
+      'skills',
+      'update',
+      'web',
+    ]);
 
     const siteHelp = sink();
     await runHostedCli(['web', '--help'], {

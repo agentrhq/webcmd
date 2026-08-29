@@ -61,23 +61,24 @@ npx tsx src/main.ts <command>
 
 ## Sessions
 
-Profiles are cookie jars and authentication scope. Sessions are browser workspaces/windows within a profile. Create one for each parallel raw-browser agent, then route every raw command through the opaque ID:
+Profiles are cookie jars and authentication scope. Sessions are browser workspaces/windows within a Profile. Their readable IDs are immutable and Profile-scoped. Create one for each parallel raw-browser agent, then route every raw command through its returned ID:
 
 ```bash
-webcmd session create -f json
 webcmd profile create work
-webcmd --profile work session create -f json
-webcmd --session session_abc browser snapshot --snapshot-mode act
-webcmd --session session_abc browser run --stdin
-webcmd session list
-webcmd session close session_abc
+webcmd --profile work session create "Work Project" -f json
+# id: work-project-k7
+webcmd --profile work --session work-project-k7 browser tabs
+webcmd --profile work --session work-project-k7 browser snapshot --snapshot-mode act
+webcmd --profile work --session work-project-k7 browser run --stdin
+webcmd --profile work session list
+webcmd --profile work session close work-project-k7
 ```
 
 Create a named profile before using it. If `--profile <name> session create` returns
 `PROFILE_NOT_FOUND`, run `webcmd profile create <name>` and retry.
 
 `webcmd session close <session-id>` is blocked while that Session has a live human handoff.
-Adapter commands may omit `--session` and use the selected profile's adapter-default session. Pass `--session <session-id>` to route one into an explicit session. Raw browser commands never omit it; the retired positional session form is invalid.
+Adapter commands without `--session` reuse the selected Profile's `adapter-default` Session. Pass `--session <session-id>` to route one into an explicit Session. Raw browser commands always require an explicit readable selector.
 
 Structured Session failures are runtime state, not adapter breakage. `SESSION_REQUIRED`
 means add a root `--session <session-id>` selector before `browser`; `SESSION_BUSY`
@@ -138,6 +139,7 @@ Use this fallback order:
 | --- | --- |
 | `-f, --format <fmt>` | `table` in TTY by default; `yaml` outside TTY by default; also supports `json`, `plain`, `md`, `csv`. Agents usually want `-f json`. |
 | `-v, --verbose` | Debug logs and stack traces on failure; also sets `WEBCMD_VERBOSE=1`. |
+| `--workspace <id>` | Workspace id/slug. Same as `WEBCMD_WORKSPACE`. First use creates it. |
 
 Command-specific flags such as `--limit` and `--filter` are not universal. Read `<site> <command> --help`.
 
@@ -163,6 +165,7 @@ Some commands override the default through `cmd.defaultFormat`; read `--help`.
 | `WEBCMD_CACHE_DIR` | `~/.webcmd/cache` | Network capture and browser-state cache. |
 | `WEBCMD_WINDOW` | `background` | Explicitly override browser window mode with `foreground` or `background`. |
 | `WEBCMD_VERBOSE` | `false` | Verbose logging, also triggered by `-v`. |
+| `WEBCMD_WORKSPACE` | unset | Workspace id/slug when `--workspace` is omitted. |
 
 ## Self-Repair
 
@@ -197,7 +200,7 @@ argument, transient, or unreproduced failures.
 
 Storage paths:
 
-- Private: `~/.webcmd/clis/<site>/<command>.js`. This path takes precedence over the same command from an installed plugin; `webcmd list`'s `origin` column shows which space each command resolves from.
+- Private: `~/.webcmd/clis/<site>/<command>.js`. This path takes precedence over the same command from an installed plugin; `webcmd list`'s `origin` column shows which space each command resolves from (`builtin`, `plugin:<name>`, `local`, `override:<plugin>`).
 - Public (main repo, official or community): `plugins/<plugin-name>/` with its own `webcmd-plugin.json`
 
 The main Webcmd repo is itself a plugin monorepo: there is no separate "official bundle" location. Every public adapter belongs under `plugins/<plugin-name>/`. Do not hand-edit the root `webcmd-plugin.json` or generated README catalog; after merge, the community-plugin sync discovers each plugin manifest and updates both automatically.
@@ -296,4 +299,6 @@ what won.
   `FETCH_REQUIRES_BROWSER`.
 - 2026-08-20: Review rejected saying `web fetch` always performs a
   TLS-impersonating retry; it may do so only when it detects a challenge.
+- 2026-08-25: Session lifecycle guidance now starts from a readable name and
+  distinguishes explicit raw-browser IDs from adapter `adapter-default` reuse.
 -->

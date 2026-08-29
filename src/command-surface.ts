@@ -1,4 +1,5 @@
 import { Command, CommanderError } from 'commander';
+import { isReservedRootCommand, unknownSiteCommandHint } from './command-suggest.js';
 import { ArgumentError, CliError, EXIT_CODES, type ErrorEnvelope } from './errors.js';
 import type { Arg, CliCommand, CommandArgs } from './registry.js';
 
@@ -135,7 +136,13 @@ export function structuralHelpText(code: string, command: Command): string | und
 export function formatStructuralError(err: CommanderError, command: Command): string {
   const help = structuralHelpText(err.code, command);
   const message = err.message.replace(/^error:\s*/i, '');
-  return `error: ${message}\n${help ? `help: ${help}\n` : ''}`;
+  const unknown = err.code === 'commander.unknownCommand'
+    ? /unknown command '([^']+)'/i.exec(err.message)?.[1]
+    : undefined;
+  const author = unknown && command.parent && !isReservedRootCommand(command.name())
+    ? `${unknownSiteCommandHint(command.name(), unknown)}\n`
+    : '';
+  return `error: ${message}\n${help ? `help: ${help}\n` : ''}${author}`;
 }
 
 export function structuralErrorFromCommander(

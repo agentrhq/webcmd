@@ -130,6 +130,25 @@ describe('convention audit', () => {
     });
   });
 
+  it('does not read manifest source paths outside the project root', () => {
+    const root = makeProject([], {});
+    const outsideFile = path.join(path.dirname(root), `${path.basename(root)}-outside.js`);
+    fs.writeFileSync(outsideFile, 'rows.push({ id: 1, hidden: true });');
+    fs.writeFileSync(path.join(root, 'cli-manifest.json'), JSON.stringify([{
+      site: 'demo',
+      name: 'search',
+      access: 'read',
+      columns: ['id'],
+      sourceFile: `clis/../../${path.basename(outsideFile)}`,
+    }]));
+
+    try {
+      expect(runConventionAudit({ projectRoot: root }).summary.files_scanned).toBe(0);
+    } finally {
+      fs.rmSync(outsideFile, { force: true });
+    }
+  });
+
   it('renders a compact text report', () => {
     const root = makeProject([
       { site: 'demo', name: 'search', access: 'read', columns: ['id'], sourceFile: 'demo/search.js' },
@@ -171,6 +190,27 @@ describe('convention audit', () => {
       command: 'demo/feed',
       details: expect.objectContaining({ missing: ['url'] }),
     });
+  });
+
+  it('does not treat unrelated assigned object literals as emitted rows', () => {
+    const root = makeProject([
+      { site: 'demo', name: 'search', access: 'read', columns: ['id'], sourceFile: 'demo/search.js' },
+    ], {
+      'demo/search.js': `
+        export async function run(item) {
+          const filters = { id: item.id, query: item.query };
+          const payload = { id: item.id, body: item.body };
+          const geometry = { id: item.id, x: 0, y: 0 };
+          const row = { id: item.id, hidden: item.hidden };
+          return row;
+        }
+      `,
+    });
+
+    const report = runConventionAudit({ projectRoot: root });
+    const violations = report.categories.find((item) => item.rule === 'silent-column-drop')!.violations;
+
+    expect(violations.map((violation) => violation.details?.missing)).toEqual([['hidden']]);
   });
 
   it('ignores ok:false diagnostic objects when checking emitted rows', () => {

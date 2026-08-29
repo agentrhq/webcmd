@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { EXIT_CODES } from './errors.js';
 
 const {
   mockGetDaemonHealth,
@@ -23,9 +24,13 @@ const {
   mockEnsureBinary: vi.fn(),
 }));
 
-vi.mock('./browser/daemon-transport.js', () => ({
-  getDaemonHealth: mockGetDaemonHealth,
-}));
+vi.mock('./browser/daemon-transport.js', async () => {
+  const actual = await vi.importActual<typeof import('./browser/daemon-transport.js')>('./browser/daemon-transport.js');
+  return {
+    ...actual,
+    getDaemonHealth: mockGetDaemonHealth,
+  };
+});
 
 // Real binaryInfo() reads this machine's actual CloakBrowser cache dir, which
 // varies by dev box/CI runner — mock it so doctor tests are hermetic and the
@@ -55,7 +60,8 @@ vi.mock('./adapter-shadow.js', async () => {
   };
 });
 
-import { checkBrowserBinary, checkConnectivity, renderBrowserDoctorReport, runBrowserDoctor } from './doctor.js';
+import { checkBrowserBinary, checkConnectivity, doctorRequiredChecksFailed, renderBrowserDoctorReport, runBrowserDoctor, type DoctorReport } from './doctor.js';
+import { createProgram } from './cli.js';
 
 const managedBinaryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-managed-binary-'));
 const managedBinaryPath = path.join(managedBinaryDir, process.platform === 'win32' ? 'chrome.exe' : 'chrome');
@@ -94,7 +100,7 @@ describe('doctor report rendering', () => {
     });
     mockClose.mockResolvedValue(undefined);
     mockSendCommand.mockImplementation(async (action: string) => {
-      if (action === 'session-create') return { id: 'session_doctor_11111111' };
+      if (action === 'session-create') return { id: 'doctor-probe-k7' };
       if (action === 'session-close') return { closed: true };
       throw new Error(`Unexpected doctor command: ${action}`);
     });
@@ -338,12 +344,12 @@ describe('doctor report rendering', () => {
     ]));
   });
 
-  it('uses a temporary opaque Session for live connectivity checks', async () => {
+  it('uses a temporary named Session for live connectivity checks', async () => {
     let timeoutSeen: number | undefined;
     const closeWindow = vi.fn().mockResolvedValue(undefined);
     mockConnect.mockImplementationOnce(async (opts?: { timeout?: number; session?: string; surface?: string }) => {
       timeoutSeen = opts?.timeout;
-      expect(opts?.session).toBe('session_doctor_11111111');
+      expect(opts?.session).toBe('doctor-probe-k7');
       expect(opts?.surface).toBe('browser');
       return {
         evaluate: vi.fn().mockResolvedValue(2),
@@ -356,9 +362,9 @@ describe('doctor report rendering', () => {
 
     expect(timeoutSeen).toBe(8);
     expect(closeWindow).toHaveBeenCalledTimes(1);
-    expect(mockSendCommand).toHaveBeenNthCalledWith(1, 'session-create', {});
+    expect(mockSendCommand).toHaveBeenNthCalledWith(1, 'session-create', { sessionName: 'Doctor Probe' });
     expect(mockSendCommand).toHaveBeenLastCalledWith('session-close', {
-      session: 'session_doctor_11111111',
+      session: 'doctor-probe-k7',
       surface: 'browser',
       force: true,
       discard: true,
@@ -382,9 +388,9 @@ describe('doctor report rendering', () => {
     finishInstall();
     await expect(connectivity).resolves.toMatchObject({ ok: true });
     expect(mockSetDaemonCommandTimeoutSeconds).toHaveBeenNthCalledWith(1, 8);
-    expect(mockSendCommand).toHaveBeenNthCalledWith(1, 'session-create', {});
+    expect(mockSendCommand).toHaveBeenNthCalledWith(1, 'session-create', { sessionName: 'Doctor Probe' });
     expect(mockSendCommand).toHaveBeenLastCalledWith('session-close', {
-      session: 'session_doctor_11111111',
+      session: 'doctor-probe-k7',
       surface: 'browser',
       force: true,
       discard: true,
@@ -813,5 +819,79 @@ describe('doctor window mode', () => {
     await checkConnectivity();
     expect(mockConnect).toHaveBeenCalledWith(expect.objectContaining({ windowMode: 'foreground' }));
     vi.unstubAllEnvs();
+  });
+});
+
+describe('doctorRequiredChecksFailed', () => {
+  const healthy: DoctorReport = {
+    daemonRunning: true,
+    runtimeConnected: true,
+    connectivity: { ok: true, durationMs: 12 },
+    issues: [],
+  };
+
+  it('passes when every required check is healthy', () => {
+    expect(doctorRequiredChecksFailed(healthy)).toBe(false);
+  });
+
+  it('passes when only a soft issue was recorded', () => {
+    expect(doctorRequiredChecksFailed({
+      ...healthy,
+      issues: ['Could not check adapter overrides: EACCES'],
+    })).toBe(false);
+  });
+
+  it.each([
+    ['daemon down', { ...healthy, daemonRunning: false }],
+    ['runtime disconnected', { ...healthy, runtimeConnected: false }],
+    ['connectivity failed', { ...healthy, connectivity: { ok: false, durationMs: 9 } }],
+  ])('fails when %s', (_label, report) => {
+    expect(doctorRequiredChecksFailed(report as DoctorReport)).toBe(true);
+  });
+
+  it('passes when connectivity was not probed at all', () => {
+    const { connectivity: _omitted, ...withoutConnectivity } = healthy;
+    expect(doctorRequiredChecksFailed(withoutConnectivity as DoctorReport)).toBe(false);
+  });
+});
+
+describe('doctor command', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockEnsureBinary.mockResolvedValue('path/to/chrome');
+    mockBinaryInfo.mockReturnValue({
+      version: '146.0.7680.177.5',
+      bundledVersion: '146.0.7680.177.5',
+      tier: 'free',
+      platform: 'linux-x64',
+      binaryPath: '/path/to/chrome',
+      installed: true,
+      cacheDir: '/cache',
+      downloadUrl: 'https://example.com/download',
+    });
+    mockConnect.mockResolvedValue({
+      evaluate: vi.fn().mockResolvedValue(2),
+      closeWindow: vi.fn().mockResolvedValue(undefined),
+    });
+    mockClose.mockResolvedValue(undefined);
+    mockSendCommand.mockImplementation(async (action: string) => {
+      if (action === 'session-create') return { id: 'doctor-probe-k7' };
+      if (action === 'session-close') return { closed: true };
+      throw new Error(`Unexpected doctor command: ${action}`);
+    });
+    mockFindShadowedUserAdapters.mockReturnValue([]);
+    mockSetDaemonCommandTimeoutSeconds.mockClear();
+  });
+
+  it('exits CONFIG_ERROR when a required doctor check fails', async () => {
+    mockGetDaemonHealth.mockResolvedValue({ state: 'stopped', status: null });
+    const previous = process.exitCode;
+    process.exitCode = undefined;
+    try {
+      await createProgram('', '').parseAsync(['doctor', '-f', 'json'], { from: 'user' });
+      expect(process.exitCode).toBe(EXIT_CODES.CONFIG_ERROR);
+    } finally {
+      process.exitCode = previous;
+    }
   });
 });

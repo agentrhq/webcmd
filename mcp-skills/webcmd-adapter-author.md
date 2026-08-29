@@ -18,10 +18,13 @@ semantics; use internal page requests or interception only when the page proves
 they are necessary. Record the observed request/state, authentication source,
 replay result, and why a simpler strategy cannot work.
 
+Create a named Session and keep its immutable, Profile-scoped readable ID for
+raw browser evidence:
+
     { "argv": ["list", "-f", "json"] }
     { "argv": ["site", "memory", "show", "example", "-f", "json"] }
-    { "argv": ["session", "create", "-f", "json"] }
-    { "argv": ["--session", "session_abc", "browser", "snapshot", "--snapshot-mode", "tree", "-f", "json"] }
+    { "argv": ["--profile", "work", "session", "create", "Work Project", "-f", "json"] }
+    { "argv": ["--profile", "work", "--session", "work-project-k7", "browser", "snapshot", "--snapshot-mode", "tree", "-f", "json"] }
 
 Do not bypass authentication, CAPTCHA, rate limits, or access controls. An
 `action_required` response belongs to the user; provide its view URL and run its

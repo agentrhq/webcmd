@@ -43,7 +43,7 @@ The agent chooses the strategy; the human describes the outcome and constraints.
 
 ## Profiles, Sessions, And Tabs
 
-A Profile is the browser identity and storage bucket, such as `default` or `work`. A Session is an opaque browser workspace inside a Profile; raw browser work creates one with `webcmd session create` and selects it at the root with `--session <session-id>`. A tab is one page inside that Session.
+A Profile is the browser identity and storage bucket, such as `default` or `work`. A Session is a named browser workspace inside a Profile. Create one with `webcmd --profile work session create "Work Project"`, then use its returned readable ID with `webcmd --profile work --session work-project-k7 browser tabs`. Session IDs are immutable and Profile-scoped. Adapter commands without `--session` reuse `adapter-default`; raw browser commands require an explicit readable selector. A tab is one page inside that Session.
 
 Adapter browser commands can use `siteSession: 'ephemeral'` for an isolated tab or `siteSession: 'persistent'` for a longer same-site workflow. Those adapter site-session modes are separate from raw browser Sessions.
 

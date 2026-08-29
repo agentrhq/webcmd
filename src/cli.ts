@@ -54,7 +54,8 @@ import type { BrowserDownloadWaitResult, IPage, ScreenshotOptions } from './type
 import type { BrowserWindowMode } from './runtime.js';
 import { configureRootCommandSurface } from './root-command-surface.js';
 import { validateRawBrowserSession } from './hosted/browser-args.js';
-import { LocalBrowserSessionStore, SessionNotFoundError, requireSessionIdShape, type BrowserSessionListRow } from './browser/sessions.js';
+import { LocalBrowserSessionStore, type BrowserSessionListRow } from './browser/sessions.js';
+import { requireSessionIdShape } from './browser/session-identifiers.js';
 import { getAdapterLoadFailures, PLUGINS_DIR } from './discovery.js';
 import { unknownRootCommandMessage, unknownSubcommandHelp, unknownSubcommandMessage } from './command-suggest.js';
 import { loadBrowserRunSource } from './browser/run/input.js';
@@ -67,6 +68,7 @@ import { resolveAdapterSourcePath, splitAdapterCommandKey } from './adapter-sour
 
 const CLI_FILE = fileURLToPath(import.meta.url);
 const FOLLOW_POLL_MS = 1_000;
+const externalRootCommands = new WeakSet<Command>();
 
 function getBrowserCacheDir(): string {
   return process.env.WEBCMD_CACHE_DIR || path.join(os.homedir(), '.webcmd', 'cache');
@@ -597,12 +599,6 @@ async function requireKnownProfileId(command?: Command): Promise<string> {
   return profileId;
 }
 
-/** True for "this Session does not exist here" errors, from either the durable store or the runtime. */
-function isSessionMissingError(error: unknown): boolean {
-  const code = (error as { code?: unknown } | null)?.code;
-  return code === 'SESSION_NOT_FOUND' || code === 'session_not_found';
-}
-
 function formatHandoff(row: BrowserSessionListRow): string {
   return row.handoff ? `${row.handoff.site} until ${row.handoff.expiresAt}` : '';
 }
@@ -910,12 +906,13 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
 
   const sessionCreateCmd = addOutputFormatOption(sessionCmd
     .command('create')
-    .description('Create a new opaque browser Session ID for the selected Profile'), 'yaml');
-  sessionCreateCmd.action(async (opts, command) => {
+    .description('Create a readable browser Session ID for the selected Profile')
+    .argument('<name>', 'Human-readable Session base name'), 'yaml');
+  sessionCreateCmd.action(async (name: string, opts, command) => {
       const fmt = resolveCommandOutputFormat(command, opts.format);
       if (fmt === null) return;
       const profileId = await requireKnownProfileId(command);
-      const data = await sendCommand('session-create', { contextId: profileId });
+      const data = await sendCommand('session-create', { contextId: profileId, sessionName: name });
       await renderOutput(sessionCreateOutput(data), { fmt, fmtExplicit: outputFormatIsExplicit(command), columns: ['id', 'kind', 'runtimeState'] });
     });
 
@@ -948,7 +945,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
   const sessionCloseCmd = addOutputFormatOption(sessionCmd
     .command('close')
     .description('Close a browser Session runtime without deleting its durable record')
-    .argument('[session-id]', 'Existing opaque Session ID from `webcmd session create` (or pass the root `--session <id>` selector)')
+    .argument('[session-id]', 'Existing readable Session ID from `webcmd session create <name>` (or pass the root `--session <id>` selector)')
     .option('--force', 'Close even while the Session is busy or paused for handoff'), 'yaml');
   sessionCloseCmd.action(async (positionalSessionId: string | undefined, opts: { format?: string; force?: boolean }, command) => {
       const fmt = resolveCommandOutputFormat(command, opts.format);
@@ -959,48 +956,30 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
       if (!sessionId) {
         throw new ArgumentError(
           'Missing Session ID.',
-          `Use \`${CLI_COMMAND} session close <session-id>\` or \`${CLI_COMMAND} --session <session-id> session close\`.`,
+          `Use \`${CLI_COMMAND} session close <session-id>\` or \`${CLI_COMMAND} --session <session-id> session close\` with a readable Session ID.`,
         );
       }
       requireSessionIdShape(sessionId);
-      try {
-        const status = await fetchDaemonStatus({ contextId: profileId });
-        if (!status || (status.runtimeConnected && !isDaemonStale(status, PKG_VERSION))) {
-          try {
-            const data = await sendCommand('session-close', {
-              contextId: profileId,
-              session: sessionId,
-              force: opts.force === true,
-            });
-            await renderOutput(data, { fmt, fmtExplicit: outputFormatIsExplicit(command) });
-            return;
-          } catch (error) {
-            if (status || opts.force === true) throw error;
-          }
-        }
-        if (opts.force === true) {
-          const data = await sendCommand('session-close', { contextId: profileId, session: sessionId, force: true });
+      const status = await fetchDaemonStatus({ contextId: profileId });
+      if (!status || (status.runtimeConnected && !isDaemonStale(status, PKG_VERSION))) {
+        try {
+          const data = await sendCommand('session-close', {
+            contextId: profileId,
+            session: sessionId,
+            force: opts.force === true,
+          });
           await renderOutput(data, { fmt, fmtExplicit: outputFormatIsExplicit(command) });
           return;
+        } catch (error) {
+          if (status || opts.force === true) throw error;
         }
-        new LocalBrowserSessionStore().require(profileId, sessionId);
-      } catch (error) {
-        // Closing an already-closed / reaped / never-existed Session is a no-op,
-        // not a failure: cleanup must stay idempotent for unattended agents.
-        if (!isSessionMissingError(error)) throw error;
-        // A Session that exists under another Profile is the one case that must
-        // not report success: the Session stays open, so "alreadyClosed" tells
-        // an unattended agent its cleanup ran when nothing was closed.
-        const owner = new LocalBrowserSessionStore().findOwner(sessionId);
-        if (owner !== undefined && owner !== profileId) {
-          throw new SessionNotFoundError(sessionId, profileId, owner);
-        }
-        await renderOutput(
-          { ok: true, closed: false, alreadyClosed: true, session: sessionId },
-          { fmt, fmtExplicit: outputFormatIsExplicit(command) },
-        );
+      }
+      if (opts.force === true) {
+        const data = await sendCommand('session-close', { contextId: profileId, session: sessionId, force: true });
+        await renderOutput(data, { fmt, fmtExplicit: outputFormatIsExplicit(command) });
         return;
       }
+      new LocalBrowserSessionStore().require(profileId, sessionId);
       await renderOutput({ closed: false, alreadyIdle: true, session: sessionId }, { fmt, fmtExplicit: outputFormatIsExplicit(command) });
     });
 
@@ -1085,7 +1064,7 @@ cli({
           ok: true, action: 'init', adapter: name, path: filePath, created: true,
         }, () => {
           console.log(`Created: ${filePath}`);
-          console.log('First time on this site? Run: webcmd session create, then webcmd --session <session-id> browser run --stdin');
+          console.log('First time on this site? Run: webcmd session create <name>, then webcmd --session <session-id> browser run --stdin');
           console.log(`Edit the file to implement your adapter, then run: webcmd browser verify ${name}`);
         });
       } catch (err) {
@@ -1452,10 +1431,13 @@ cli({
     const fmt = resolveCommandOutputFormat(doctorCmd, opts.format);
     if (fmt === null) return;
     const fmtExplicit = outputFormatIsExplicit(doctorCmd);
-    const { runBrowserDoctor, renderBrowserDoctorReport } = await import('./doctor.js');
+    const { runBrowserDoctor, renderBrowserDoctorReport, doctorRequiredChecksFailed } = await import('./doctor.js');
     const report = await runBrowserDoctor({ cliVersion: PKG_VERSION });
     if (fmt === 'table') console.log(renderBrowserDoctorReport(report));
     else await renderOutput(report, { fmt, fmtExplicit });
+    // The structured report is the payload and always reaches stdout; the exit
+    // code is what lets an agent gate its next step on the outcome.
+    if (doctorRequiredChecksFailed(report)) process.exitCode = EXIT_CODES.CONFIG_ERROR;
   });
 
   configureCompletionCommandSurface(program.command('completion'))
@@ -2251,6 +2233,7 @@ cli({
         return;
       }
       const installed = installExternalCli(ext);
+      if (!installed) process.exitCode = EXIT_CODES.SERVICE_UNAVAIL;
       await emitActionResult(command, {
         ok: installed,
         action: 'install',
@@ -2306,7 +2289,7 @@ cli({
       return process.argv.slice(idx + 1);
     })();
     try {
-      executeExternalCli(name, args, externalClis);
+      process.exitCode = executeExternalCli(name, args, externalClis);
     } catch (err) {
       console.error(`Error: ${getErrorMessage(err)}`);
       process.exitCode = EXIT_CODES.GENERIC_ERROR;
@@ -2315,7 +2298,7 @@ cli({
 
   for (const ext of externalClis) {
     if (program.commands.some(c => c.name() === ext.name)) continue;
-    program
+    const command = program
       .command(ext.name)
       .description(`(External) ${ext.description || ext.name}`)
       .argument('[args...]')
@@ -2323,6 +2306,7 @@ cli({
       .passThroughOptions()
       .helpOption(false)
       .action((args: string[]) => passthroughExternal(ext.name, args));
+    externalRootCommands.add(command);
   }
 
   // ── Antigravity serve (long-running, special case) ────────────────────────
@@ -2478,8 +2462,12 @@ export async function loadAntigravityServe(pluginsDir: string = PLUGINS_DIR): Pr
  * surfaced as an unhandled rejection, and the `exitCode` the error carried was
  * lost. `parseAsync` lets the rejection reach this catch.
  */
-export async function runCli(BUILTIN_CLIS: string, USER_CLIS: string): Promise<void> {
-  const program = createProgram(BUILTIN_CLIS, USER_CLIS);
+export function isExternalRootCommand(program: Command, name: string | undefined): boolean {
+  const command = program.commands.find(candidate => candidate.name() === name);
+  return command !== undefined && externalRootCommands.has(command);
+}
+
+export async function runCli(BUILTIN_CLIS: string, USER_CLIS: string, program = createProgram(BUILTIN_CLIS, USER_CLIS)): Promise<void> {
   applyUnknownOptionContract(program);
   try {
     await program.parseAsync();

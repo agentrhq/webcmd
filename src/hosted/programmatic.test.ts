@@ -1,5 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runHostedProgrammatic } from './programmatic.js';
+import { PKG_VERSION } from '../version.js';
+
+const externalDefaults = vi.hoisted(() => ({
+  list: vi.fn(() => [{ name: 'gh', binary: 'gh' }]),
+  run: vi.fn(() => 0),
+}));
+
+vi.mock('../external.js', () => ({
+  loadExternalClis: externalDefaults.list,
+  executeExternalCli: externalDefaults.run,
+}));
 
 const manifest = {
   userId: 'u1',
@@ -30,6 +41,75 @@ function fakeCloud(handler?: (url: string, init?: RequestInit) => Response): typ
 
 describe('runHostedProgrammatic', () => {
   afterEach(() => vi.restoreAllMocks());
+
+  it('does not advertise client-owned commands in root help', async () => {
+    const result = await runHostedProgrammatic({
+      argv: ['--help'],
+      apiBaseUrl: 'http://127.0.0.1:8787',
+      accessToken: 'oauth-access-token',
+      fetchImpl: fakeCloud(),
+    });
+
+    expect(result).toMatchObject({ exitCode: 0, stderr: '' });
+    expect(result.stdout).not.toContain('skills');
+    expect(result.stdout).not.toContain('update');
+  });
+
+  it('does not offer client-owned commands in completion', async () => {
+    const result = await runHostedProgrammatic({
+      argv: ['--get-completions', '--cursor', '0'],
+      apiBaseUrl: 'http://127.0.0.1:8787',
+      accessToken: 'oauth-access-token',
+      fetchImpl: fakeCloud(),
+    });
+
+    expect(result).toMatchObject({ exitCode: 0, stderr: '' });
+    const completions = result.stdout.split('\n');
+    expect(completions).not.toContain('skills');
+    expect(completions).not.toContain('update');
+  });
+
+  it('does not offer manifest sites that collide with client-owned commands', async () => {
+    const result = await runHostedProgrammatic({
+      argv: ['--get-completions', '--cursor', '0'],
+      apiBaseUrl: 'http://127.0.0.1:8787',
+      accessToken: 'oauth-access-token',
+      fetchImpl: fakeCloud(() => new Response(JSON.stringify({
+        ...manifest,
+        commands: ['skills', 'update'].map(site => ({
+          site,
+          name: 'status',
+          command: `${site}/status`,
+          description: `Show ${site} status`,
+          access: 'read',
+          strategy: 'PUBLIC',
+          browser: false,
+          args: [],
+          columns: [],
+        })),
+      }), { status: 200, headers: { 'content-type': 'application/json' } })),
+    });
+
+    expect(result).toMatchObject({ exitCode: 0, stderr: '' });
+    const completions = result.stdout.split('\n');
+    expect(completions).not.toContain('skills');
+    expect(completions).not.toContain('update');
+  });
+
+  it.each(['skills', 'update'])('rejects %s help instead of returning generic root help', async (command) => {
+    const fetchImpl = vi.fn(fakeCloud());
+    const result = await runHostedProgrammatic({
+      argv: [command, '--help'],
+      apiBaseUrl: 'http://127.0.0.1:8787',
+      accessToken: 'oauth-access-token',
+      fetchImpl,
+    });
+
+    expect(result.exitCode).toBe(2);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toBe(`error: unknown command '${command}'\n`);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
 
   it('returns captured stdout and a zero exit code', async () => {
     const result = await runHostedProgrammatic({
@@ -179,6 +259,24 @@ describe('runHostedProgrammatic', () => {
     });
     expect(urls.every((url) => url.startsWith('http://127.0.0.1:8787/v1/'))).toBe(true);
     expect(urls.some((url) => url.includes('/mcp'))).toBe(false);
+  });
+
+  it('does not load or execute local externals from the programmatic runner', async () => {
+    externalDefaults.list.mockClear();
+    externalDefaults.run.mockClear();
+
+    const result = await runHostedProgrammatic({
+      argv: ['gh', '--version'],
+      apiBaseUrl: 'http://127.0.0.1:8787',
+      accessToken: 't',
+      fetchImpl: fakeCloud(),
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe(`${PKG_VERSION}\n`);
+    expect(result.stderr).toBe('');
+    expect(externalDefaults.list).not.toHaveBeenCalled();
+    expect(externalDefaults.run).not.toHaveBeenCalled();
   });
 
   it('truncates oversized stdout without failing the invocation', async () => {

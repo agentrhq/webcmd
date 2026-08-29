@@ -75,6 +75,7 @@ export function loadExternalClis(): ExternalCliConfig[] {
 }
 
 export function isBinaryInstalled(binary: string): boolean {
+  if (path.isAbsolute(binary) || binary.includes('/') || binary.includes('\\')) return fs.existsSync(binary);
   try {
     const isWindows = os.platform() === 'win32';
     execFileSync(isWindows ? 'where' : 'which', [binary], { stdio: 'ignore' });
@@ -179,7 +180,7 @@ export function installExternalCli(cli: ExternalCliConfig): boolean {
   }
 }
 
-export function executeExternalCli(name: string, args: string[], preloaded?: ExternalCliConfig[]): void {
+export function executeExternalCli(name: string, args: string[], preloaded?: ExternalCliConfig[]): number {
   const configs = preloaded ?? loadExternalClis();
   const cli = configs.find((c) => c.name === name);
   if (!cli) {
@@ -191,8 +192,7 @@ export function executeExternalCli(name: string, args: string[], preloaded?: Ext
     // 2. Try to auto install
     const success = installExternalCli(cli);
     if (!success) {
-      process.exitCode = EXIT_CODES.SERVICE_UNAVAIL;
-      return;
+      return EXIT_CODES.SERVICE_UNAVAIL;
     }
   }
 
@@ -200,18 +200,14 @@ export function executeExternalCli(name: string, args: string[], preloaded?: Ext
   const result = spawnPassthrough(cli.binary, args);
   if (result.error) {
     log.error(`Failed to execute '${cli.binary}': ${result.error.message}`);
-    process.exitCode = EXIT_CODES.GENERIC_ERROR;
-    return;
+    return EXIT_CODES.GENERIC_ERROR;
   }
 
   if (result.signal) {
-    process.exitCode = EXIT_CODES.GENERIC_ERROR;
-    return;
+    return EXIT_CODES.GENERIC_ERROR;
   }
 
-  if (result.status !== null) {
-    process.exitCode = result.status;
-  }
+  return result.status ?? EXIT_CODES.SUCCESS;
 }
 
 function quoteForCmdShell(token: string): string {

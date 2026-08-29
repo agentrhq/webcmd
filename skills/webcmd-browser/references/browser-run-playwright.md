@@ -33,7 +33,11 @@ do not — each run starts with a fresh scope.
 `context.newPage()` works and creates a tab the Webcmd session tracks. You cannot close it
 from inside `run` (see below); list tabs with `webcmd --session <session-id> browser tabs`.
 
-`page.snapshotForAI()` is not available; use `webcmd browser snapshot` instead.
+Create the owning Session with `webcmd --profile work session create "Work Project"`,
+then use the returned immutable, Profile-scoped readable ID, for example
+`webcmd --profile work --session work-project-k7 browser tabs`.
+
+`page.snapshotForAI()` is not available; use `webcmd --session <session-id> browser snapshot` instead.
 
 ## What is blocked, and what to use instead
 
@@ -44,7 +48,7 @@ Webcmd session, not to your program:
 |---|---|
 | `page.close()` | Leave the tab open, or `webcmd session close <session-id>` |
 | `context.close()`, `browser.close()` | `webcmd session close <session-id>` |
-| `browser.newContext()` | `webcmd session create` — one run is scoped to one context |
+| `browser.newContext()` | `webcmd session create <name>` — one run is scoped to one Session |
 | `browser.newBrowserCDPSession()`, `context.newCDPSession()` | Not exposed inside `run` |
 | `playwright.request` (`newRequest`) | `page.request` for calls in the page's context |
 
