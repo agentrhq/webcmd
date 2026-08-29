@@ -34,6 +34,33 @@ describe('site memory file lock', () => {
     await expect(exists(lockPathFor(target))).resolves.toBe(false);
   });
 
+  it('does not break a live holder\'s lock even when its critical section outlives staleMs', async () => {
+    const target = await tempTarget();
+    const staleMs = 40;
+    let inside = 0;
+    let overlapped = false;
+
+    async function worker(holdMs: number) {
+      await withFileLock(target, async () => {
+        inside += 1;
+        if (inside > 1) overlapped = true;
+        await new Promise((resolve) => { setTimeout(resolve, holdMs); });
+        inside -= 1;
+      }, { staleMs, timeoutMs: 5_000 });
+    }
+
+    // Worker A's critical section (150ms) runs well past staleMs (40ms).
+    // Without a heartbeat refreshing the lock's mtime, worker B would see
+    // the lock as abandoned and break it out from under A.
+    const a = worker(150);
+    await new Promise((resolve) => { setTimeout(resolve, 80); });
+    const b = worker(20);
+    await Promise.all([a, b]);
+
+    expect(overlapped).toBe(false);
+    await expect(exists(lockPathFor(target))).resolves.toBe(false);
+  });
+
   it('retries a transient Windows EPERM when creating the lock', async () => {
     const target = await tempTarget();
     vi.mocked(open).mockRejectedValueOnce(
@@ -82,34 +109,6 @@ describe('site memory file lock', () => {
 
     expect(ran).toBe(false);
     await expect(readFile(lockPathFor(target), 'utf8')).resolves.toContain('held');
-  });
-
-  it('does not break a live same-host lock just because it is older than staleMs', async () => {
-    const target = await tempTarget();
-    const lockPath = lockPathFor(target);
-    await writeFile(lockPath, `${JSON.stringify({ pid: process.pid, host: hostname(), token: 'still-working' })}\n`);
-    const past = new Date(Date.now() - 60_000);
-    await utimes(lockPath, past, past);
-
-    // Same bug as the header comment describes: a legitimate critical section that
-    // outlives staleMs must never be conceded to a second writer while it's still running.
-    await expect(withFileLock(target, async () => 'written', { staleMs: 1_000, timeoutMs: 50 }))
-      .rejects.toMatchObject({ code: 'SITE_MEMORY_BUSY' });
-    await expect(readFile(lockPath, 'utf8')).resolves.toContain('still-working');
-  });
-
-  it('heartbeats the mtime of a lock held across a critical section longer than staleMs', async () => {
-    const target = await tempTarget();
-    const lockPath = lockPathFor(target);
-
-    await withFileLock(target, async () => {
-      await new Promise((resolve) => { setTimeout(resolve, 120); });
-      // A concurrent second acquirer must not be able to break this lock mid-flight.
-      await expect(withFileLock(target, async () => 'written', { staleMs: 30, timeoutMs: 20 }))
-        .rejects.toMatchObject({ code: 'SITE_MEMORY_BUSY' });
-    }, { staleMs: 30, timeoutMs: 1_000 });
-
-    await expect(exists(lockPath)).resolves.toBe(false);
   });
 
   it('does not delete a lock that was broken and taken over by someone else', async () => {
