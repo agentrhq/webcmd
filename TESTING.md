@@ -8,8 +8,8 @@ npm run build
 npm test
 ```
 
-The core package contains no site adapters; `npm test` runs the unit project
-and remaining `clis/` plugin tests. Public adapters live in `agentrhq/webcmd-plugins`.
+The core package contains no site adapters; `npm test` runs the unit project.
+Public adapter tests live in `agentrhq/webcmd-plugins`.
 
 ## Skill Sources
 
@@ -27,7 +27,6 @@ make verify
 npx vitest run --project unit src/skills.test.ts
 npx vitest run --project unit src/package-exports.test.ts
 npx vitest run --project unit src/convention-audit.test.ts src/runtime-copy.test.ts
-npm run test:plugin -- --reporter=verbose
 ```
 
 ## Cloak Runtime Smoke
