@@ -123,6 +123,17 @@ describe('CdpIpcTransport', () => {
     ]);
   });
 
+  it('allows CDP sends immediately after authentication', async () => {
+    const harness = await listen();
+    const transport = await connectAuthenticated(harness);
+    transport.send({ id: 1, method: 'Browser.getVersion' });
+
+    await expect.poll(() => harness.frames).toEqual([
+      { type: 'authenticate', credential: CREDENTIAL.reveal() },
+      { id: 1, method: 'Browser.getVersion' },
+    ]);
+  });
+
   it('rejects an advertised frame over 64 MiB before waiting for its body', async () => {
     const harness = await listen();
     const transport = await connectAuthenticated(harness);
@@ -197,11 +208,9 @@ describe('CdpIpcTransport', () => {
     await expect.poll(() => harness.socket().destroyed || harness.socket().readableEnded).toBe(true);
   });
 
-  it('rejects sends before open and after close', async () => {
+  it('rejects sends after close', async () => {
     const harness = await listen();
     const transport = await connectAuthenticated(harness);
-    expect(() => transport.send({ id: 1 })).toThrow(/open/i);
-    transport.open?.();
     transport.close();
     expect(() => transport.send({ id: 2 })).toThrow(/closed/i);
   });

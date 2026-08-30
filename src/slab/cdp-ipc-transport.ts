@@ -27,10 +27,10 @@ function encodeFrame(value: object): Buffer {
 }
 
 export class CdpIpcTransport implements ConnectOverCDPTransport {
-  onmessage?: (message: object) => void;
   onclose?: (reason?: string) => void;
 
   private readonly chunks: Buffer[] = [];
+  private messageHandler?: (message: object) => void;
   private pendingMessages: object[] = [];
   private bufferedBytes = 0;
   private expectedLength?: number;
@@ -44,6 +44,15 @@ export class CdpIpcTransport implements ConnectOverCDPTransport {
     socket.on('data', (chunk) => this.onData(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
     socket.on('error', () => this.fail('connection closed'));
     socket.on('close', () => this.fail('connection closed'));
+  }
+
+  get onmessage(): ((message: object) => void) | undefined {
+    return this.messageHandler;
+  }
+
+  set onmessage(handler: ((message: object) => void) | undefined) {
+    this.messageHandler = handler;
+    this.flushPendingMessages();
   }
 
   static connect(options: CdpIpcTransportOptions): Promise<ConnectOverCDPTransport> {
@@ -99,13 +108,12 @@ export class CdpIpcTransport implements ConnectOverCDPTransport {
   open(): void {
     if (this.state !== 'ready') return;
     this.state = 'open';
-    for (const message of this.pendingMessages) this.onmessage?.(message);
-    this.pendingMessages = [];
+    this.flushPendingMessages();
   }
 
   send(message: object): void {
     if (this.state === 'closed') throw new Error('SLAB CDP IPC transport is closed');
-    if (this.state !== 'open') throw new Error('SLAB CDP IPC transport is not open');
+    if (!this.authenticated) throw new Error('SLAB CDP IPC transport is not authenticated');
     if (!isObject(message)) throw new Error('SLAB CDP IPC message must be an object');
     this.socket.write(encodeFrame(message));
   }
@@ -182,6 +190,7 @@ export class CdpIpcTransport implements ConnectOverCDPTransport {
         return;
       }
       this.authenticated = true;
+      this.state = 'open';
       const resolve = this.resolveAuthentication;
       this.resolveAuthentication = undefined;
       this.rejectAuthentication = undefined;
@@ -189,8 +198,14 @@ export class CdpIpcTransport implements ConnectOverCDPTransport {
       resolve?.();
       return;
     }
-    if (this.state === 'open') this.onmessage?.(message);
+    if (this.state === 'open' && this.messageHandler) this.messageHandler(message);
     else this.pendingMessages.push(message);
+  }
+
+  private flushPendingMessages(): void {
+    if (this.state !== 'open' || !this.messageHandler) return;
+    for (const message of this.pendingMessages) this.messageHandler(message);
+    this.pendingMessages = [];
   }
 
   private fail(reason: string): void {
