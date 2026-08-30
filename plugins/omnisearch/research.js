@@ -15,6 +15,7 @@ import {
   devtoSearch,
   githubSearch,
   arxivSearch,
+  redditSearch,
 } from './sources.js';
 
 function requireQuery(value) {
@@ -28,7 +29,7 @@ cli({
   name: 'research',
   tags: ['search'],
   access: 'read',
-  description: "Aggregate results about a topic across all public platforms (Hacker News, Lobsters, Stack Overflow, Dev.to, GitHub, arXiv)",
+  description: "Aggregate results about a topic across all public platforms (Hacker News, Lobsters, Stack Overflow, Dev.to, GitHub, arXiv, Reddit)",
   strategy: Strategy.PUBLIC,
   browser: false,
   args: [
@@ -36,7 +37,7 @@ cli({
     { name: 'limit', type: 'int', default: 20, help: 'Maximum total results' },
     {
       name: 'sources',
-      default: 'hn,lobsters,stackoverflow,devto,github,arxiv',
+      default: 'hn,lobsters,stackoverflow,devto,github,arxiv,reddit',
       help: 'Comma-separated sources to query (default: all)',
     },
   ],
@@ -55,12 +56,13 @@ cli({
       .filter(Boolean);
 
     const fetchers = {
-      hn: () => hnSearch(query, perPlatform),
-      lobsters: () => lobstersSearch(query, perPlatform),
-      stackoverflow: () => stackoverflowSearch(query, perPlatform),
-      devto: () => devtoSearch(query, perPlatform),
-      github: () => githubSearch(query, perPlatform),
-      arxiv: () => arxivSearch(query, perPlatform),
+      hn: (lim) => hnSearch(query, lim),
+      lobsters: (lim) => lobstersSearch(query, lim),
+      stackoverflow: (lim) => stackoverflowSearch(query, lim),
+      devto: (lim) => devtoSearch(query, lim),
+      github: (lim) => githubSearch(query, lim),
+      arxiv: (lim) => arxivSearch(query, lim),
+      reddit: (lim) => redditSearch(query, lim),
     };
 
     const selected = wanted.length ? wanted.filter((s) => fetchers[s]) : Object.keys(fetchers);
@@ -69,7 +71,7 @@ cli({
     let rows;
     try {
       // Failure isolation: one rate-limited/erroring source must not wipe out the rest.
-      const outcomes = await Promise.allSettled(selected.map((key) => fetchers[key]()));
+      const outcomes = await Promise.allSettled(selected.map((key) => fetchers[key](perPlatform)));
       rows = outcomes
         .filter((o) => o.status === 'fulfilled')
         .flatMap((o) => o.value);

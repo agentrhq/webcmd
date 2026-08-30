@@ -17213,6 +17213,13 @@
         "default": 10,
         "required": false,
         "help": "Maximum versions to return (1-50)"
+      },
+      {
+        "name": "prereleases",
+        "type": "boolean",
+        "default": false,
+        "required": false,
+        "help": "Include prerelease and build versions (e.g. alpha, beta, rc, canary)"
       }
     ],
     "columns": [
@@ -17640,6 +17647,50 @@
     "type": "js",
     "modulePath": "plugins/omnisearch/lobsters.js",
     "sourceFile": "plugins/omnisearch/lobsters.js"
+  },
+  {
+    "site": "omnisearch",
+    "name": "packages",
+    "description": "Search across 6 major package registries simultaneously (npm, Crates.io, NuGet, RubyGems, Packagist, Maven Central)",
+    "access": "read",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "query",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Library name or search keyword"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Maximum total results to return"
+      },
+      {
+        "name": "registries",
+        "type": "str",
+        "default": "npm,crates,nuget,rubygems,packagist,maven",
+        "required": false,
+        "help": "Comma-separated registries to query (default: all)"
+      }
+    ],
+    "columns": [
+      "registry",
+      "name",
+      "version",
+      "description",
+      "url"
+    ],
+    "tags": [
+      "search"
+    ],
+    "type": "js",
+    "modulePath": "plugins/omnisearch/packages.js",
+    "sourceFile": "plugins/omnisearch/packages.js"
   },
   {
     "site": "omnisearch",
@@ -20485,6 +20536,43 @@
     "modulePath": "plugins/reddit/comment.js",
     "sourceFile": "plugins/reddit/comment.js",
     "navigateBefore": "https://reddit.com"
+  },
+  {
+    "site": "reddit",
+    "name": "draft-comment",
+    "description": "Draft a comment on a Reddit post without submitting it",
+    "access": "write",
+    "example": "webcmd reddit draft-comment <post-id-or-url> <text> --window foreground",
+    "domain": "reddit.com",
+    "strategy": "ui",
+    "browser": true,
+    "args": [
+      {
+        "name": "post-id",
+        "type": "string",
+        "required": true,
+        "positional": true,
+        "help": "Post ID (e.g. 1abc123), t3 fullname, or Reddit post URL"
+      },
+      {
+        "name": "text",
+        "type": "string",
+        "required": true,
+        "positional": true,
+        "help": "Comment text to leave in the composer"
+      }
+    ],
+    "columns": [
+      "status",
+      "message",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "plugins/reddit/draft-comment.js",
+    "sourceFile": "plugins/reddit/draft-comment.js",
+    "navigateBefore": false,
+    "siteSession": "persistent",
+    "freshPage": true
   },
   {
     "site": "reddit",
