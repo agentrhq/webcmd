@@ -106,7 +106,12 @@ export async function addCatalogSource(source: string, options: CatalogOptions =
 
 export function removeCatalogSource(id: string, options: CatalogOptions = {}): PluginCatalogSource {
   const catalog = readCatalog(options);
-  const index = catalog.sources.findIndex((source) => source.id === id);
+  const canonical = normalizeOfficialCatalogSource({
+    id,
+    source: id.startsWith('github:') ? id : `github:${id}`,
+    manifestUrl: '',
+  });
+  const index = catalog.sources.findIndex((source) => source.id === id || source.id === canonical.id);
   if (index < 0) throw new Error(`Catalog source not found: ${id}`);
   const [removed] = catalog.sources.splice(index, 1);
   writeCatalog(catalog, options);

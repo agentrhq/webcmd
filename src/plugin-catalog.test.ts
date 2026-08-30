@@ -194,6 +194,31 @@ describe('plugin catalog', () => {
     expect(readCatalog({ packageRoot, homeDir }).sources).toEqual([added]);
   });
 
+  it('removes the normalized official catalog entry by the legacy id', () => {
+    const userPath = getUserPluginCatalogPath(homeDir);
+    fs.mkdirSync(path.dirname(userPath), { recursive: true });
+    fs.writeFileSync(userPath, `${JSON.stringify({
+      version: 1,
+      sources: [
+        {
+          id: 'agentrhq/webcmd-plugins',
+          source: 'github:agentrhq/webcmd-plugins',
+          manifestUrl: 'https://raw.githubusercontent.com/agentrhq/webcmd-plugins/main/webcmd-plugin.json',
+        },
+        {
+          id: 'other/plugins',
+          source: 'github:other/plugins',
+          manifestUrl: 'https://raw.githubusercontent.com/other/plugins/main/webcmd-plugin.json',
+        },
+      ],
+    }, null, 2)}\n`);
+
+    const removed = removeCatalogSource('agentrhq/webcmd', { packageRoot, homeDir });
+    expect(removed.id).toBe('agentrhq/webcmd-plugins');
+    expect(readCatalog({ packageRoot, homeDir }).sources.map((source) => source.id)).toEqual(['other/plugins']);
+    expect(() => removeCatalogSource('other/plugins', { packageRoot, homeDir })).not.toThrow();
+  });
+
   it('returns canonical install sources from a legacy official catalog entry', async () => {
     const catalog: PluginCatalog = {
       version: 1,
