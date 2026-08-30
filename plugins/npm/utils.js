@@ -45,7 +45,10 @@ export function requireBoundedInt(value, defaultValue, maxValue, label = 'limit'
 export async function npmFetch(url, label) {
     let resp;
     try {
-        resp = await fetch(url, { headers: { 'user-agent': UA, accept: 'application/json' } });
+        resp = await fetch(url, {
+            headers: { 'user-agent': UA, accept: 'application/json' },
+            signal: AbortSignal.timeout(10_000),
+        });
     }
     catch (err) {
         throw new CommandExecutionError(

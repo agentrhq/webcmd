@@ -95,11 +95,13 @@ const SEARCH_PAYLOAD = {
 // Helpers
 // ---------------------------------------------------------------------------
 function fakeRequest(payload, { ok = true, status = 200 } = {}) {
-    const req = async (url, _opts) => {
+    const req = async (url, opts) => {
         req.calls.push(String(url));
+        req.opts.push(opts);
         return { ok, status, json: async () => payload };
     };
     req.calls = [];
+    req.opts = [];
     return req;
 }
 
@@ -269,13 +271,45 @@ test('npm versions sorts correctly when two versions share the same date', async
     });
 });
 
+test('npm versions filters out prereleases by default and includes them with flag', async () => {
+    const prereleasePayload = {
+        name: 'exlib',
+        'dist-tags': { latest: '2.1.0' },
+        versions: {
+            '2.0.0': { description: 'v2.0.0' },
+            '2.1.0': { description: 'v2.1.0' },
+            '2.2.0-beta.0': { description: 'v2.2.0-beta.0' },
+        },
+        time: {
+            created:        '2025-01-01T00:00:00.000Z',
+            modified:       '2026-07-01T00:00:00.000Z',
+            '2.0.0':        '2025-03-10T08:00:00.000Z',
+            '2.1.0':        '2026-06-15T12:00:00.000Z',
+            '2.2.0-beta.0': '2026-07-01T00:00:00.000Z',
+        },
+    };
+    await withFetch(prereleasePayload, async () => {
+        // By default, prerelease (2.2.0-beta.0) is filtered out
+        const defaultRows = await versionsNpm({ name: 'exlib', limit: 10 });
+        assert.equal(defaultRows.length, 2);
+        assert.equal(defaultRows[0].version, '2.1.0');
+        assert.equal(defaultRows[1].version, '2.0.0');
+
+        // With prereleases: true flag, prereleases are returned
+        const allRows = await versionsNpm({ name: 'exlib', limit: 10, prereleases: true });
+        assert.equal(allRows.length, 3);
+        assert.equal(allRows[0].version, '2.2.0-beta.0');
+        assert.equal(allRows[1].version, '2.1.0');
+        assert.equal(allRows[2].version, '2.0.0');
+    });
+});
+
 test('npm versions rejects out-of-range limit', async () => {
     await assert.rejects(
         () => versionsNpm({ name: 'exlib', limit: 51 }),
         /50/,
     );
 });
-
 // ---------------------------------------------------------------------------
 // npm downloads
 // ---------------------------------------------------------------------------
@@ -337,5 +371,18 @@ test('all npm commands are browser-free', () => {
         const cmd = registry.get(name);
         assert.ok(cmd, `command ${name} not registered`);
         assert.equal(cmd.browser, false, `${name} should not require a browser`);
+    }
+});
+
+test('npm commands pass a 10-second timeout AbortSignal to fetch requests', async () => {
+    const req = fakeRequest(REGISTRY_PAYLOAD);
+    const original = globalThis.fetch;
+    globalThis.fetch = req;
+    try {
+        await versionsNpm({ name: 'exlib' });
+        assert.equal(req.opts.length, 1);
+        assert.ok(req.opts[0].signal instanceof AbortSignal);
+    } finally {
+        globalThis.fetch = original;
     }
 });

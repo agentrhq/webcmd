@@ -98,3 +98,12 @@ export async function hubFetch(url, label) {
     }
     return body;
 }
+
+export function trimDate(value) {
+    const s = String(value ?? '').trim();
+    if (!s) return null;
+    // Docker Hub returns mixed precision (`...45Z` and `...35.286495Z`). Drop
+    // the fractional part so all timestamp columns share `YYYY-MM-DDTHH:MM:SSZ`.
+    const noFrac = s.replace(/\.\d+/, '');
+    return noFrac.endsWith('Z') ? noFrac : `${noFrac}Z`;
+}

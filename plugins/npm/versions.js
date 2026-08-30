@@ -22,7 +22,8 @@ export async function versionsNpm(args) {
         // only keep versions that actually exist in body.versions — time-only
         // keys (e.g. unpublished entries) have no real release and must be omitted
         .filter(([version, publishedAt]) => version in versionsMap && typeof publishedAt === 'string')
-        .filter(([version]) => !version.includes('-'))
+        // filter out prereleases by default (they contain a hyphen, e.g. 19.0.0-rc.0)
+        .filter(([version]) => args.prereleases || !version.includes('-'))
         // sort on the raw full ISO timestamp BEFORE formatting so that two
         // versions published on the same calendar date still sort correctly
         .sort(([, left], [, right]) => String(right ?? '').localeCompare(String(left ?? '')))
@@ -51,6 +52,7 @@ cli({
     args: [
         { name: 'name', positional: true, required: true, help: 'npm package name (e.g. "react", "@vercel/og")' },
         { name: 'limit', type: 'int', default: 10, help: 'Maximum versions to return (1-50)' },
+        { name: 'prereleases', type: 'boolean', default: false, help: 'Include prerelease and build versions (e.g. alpha, beta, rc, canary)' },
     ],
     columns: ['version', 'publishedAt', 'isLatest', 'url'],
     func: (args) => versionsNpm(args),
