@@ -134,6 +134,18 @@ describe('CdpIpcTransport', () => {
     ]);
   });
 
+  it('delivers CDP frames received before onmessage is assigned', async () => {
+    const harness = await listen();
+    const transport = await connectAuthenticated(harness);
+    harness.socket().write(frame({ id: 1, result: {} }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const messages: object[] = [];
+    transport.onmessage = (message) => messages.push(message);
+
+    await expect.poll(() => messages).toEqual([{ id: 1, result: {} }]);
+  });
+
   it('rejects an advertised frame over 64 MiB before waiting for its body', async () => {
     const harness = await listen();
     const transport = await connectAuthenticated(harness);
