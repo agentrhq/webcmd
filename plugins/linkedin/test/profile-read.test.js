@@ -53,25 +53,59 @@ describe('linkedin profile-read adapter', () => {
     });
   });
 
-  it('does not require edit access when reading an explicit profile URL', async () => {
-    const page = {
+  const workspacePage = (row, scrollRounds) => {
+    const rounds = [...scrollRounds];
+    const evaluated = [];
+    return {
+      evaluated,
       goto: vi.fn(async () => {}),
       wait: vi.fn(async () => {}),
       autoScroll: vi.fn(async () => {}),
-      evaluate: vi.fn()
-        .mockResolvedValueOnce(false)
-        .mockResolvedValueOnce({
-          profile_url: 'https://www.linkedin.com/in/alice/',
-          name: 'Alice',
-          headline: 'Engineer',
-          about: 'Builds products',
-        }),
+      evaluate: vi.fn(async (script) => {
+        evaluated.push(script);
+        if (script.includes('authwall')) return false;
+        if (script.includes('scrollTop')) return rounds.shift() ?? { found: [], atEnd: true };
+        return row;
+      }),
     };
+  };
+
+  it('does not require edit access when reading an explicit profile URL', async () => {
+    const page = workspacePage({
+      profile_url: 'https://www.linkedin.com/in/alice/',
+      name: 'Alice',
+      headline: 'Engineer',
+      about: 'Builds products',
+    }, [{ found: ['about', 'experience', 'education', 'featured'], atEnd: false }]);
 
     await expect(command.func(page, { 'profile-url': 'https://www.linkedin.com/in/alice/' }))
       .resolves.toMatchObject([{ name: 'Alice', about: 'Builds products' }]);
     expect(page.goto).toHaveBeenCalledTimes(1);
     expect(page.goto).toHaveBeenCalledWith('https://www.linkedin.com/in/alice/');
     expect(page.goto.mock.calls.some(([url]) => String(url).includes('/edit/forms/'))).toBe(false);
+  });
+
+  it('scrolls the inner container until the lazy sections load before extracting', async () => {
+    const page = workspacePage({
+      profile_url: 'https://www.linkedin.com/in/alice/',
+      name: 'Alice',
+      experience: 'Engineer at Acme',
+      education: 'Example University',
+    }, [
+      { found: [], atEnd: false, container: '#workspace' },
+      { found: ['about'], atEnd: false, container: '#workspace' },
+      { found: ['about', 'experience', 'education', 'featured'], atEnd: false, container: '#workspace' },
+    ]);
+
+    await expect(command.func(page, { 'profile-url': 'https://www.linkedin.com/in/alice/' }))
+      .resolves.toMatchObject([{ experience: 'Engineer at Acme', education: 'Example University' }]);
+
+    // window autoScroll stays for older layouts, but cannot move main#workspace
+    expect(page.autoScroll).toHaveBeenCalledWith({ times: 4, delayMs: 700 });
+    const scrollScripts = page.evaluated.filter((script) => script.includes('scrollTop'));
+    expect(scrollScripts).toHaveLength(3);
+    expect(scrollScripts[0]).toContain("main#workspace");
+    // the extraction runs only after the scroll rounds
+    expect(page.evaluated.at(-1)).toContain('readSection');
   });
 });

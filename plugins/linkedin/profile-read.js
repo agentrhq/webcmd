@@ -5,8 +5,12 @@ import {
   assertSafeLinkedinUrl,
   compactRepeatedText,
   normalizeWhitespace,
+  scrollToSections,
   unwrapEvaluateResult,
 } from './shared.js';
+
+/** Sections that only exist in the DOM once the profile has been scrolled. */
+const LAZY_PROFILE_SECTIONS = ['about', 'experience', 'education', 'featured'];
 
 function normalizeProfileReadUrl(value) {
   const url = assertSafeLinkedinUrl(value || 'https://www.linkedin.com/in/me/', 'profile-url', '/in/me/');
@@ -125,7 +129,10 @@ cli({
     await page.goto(profileUrl);
     await page.wait(5);
     await assertLinkedInAuthenticated(page, 'LinkedIn profile-read');
+    // Kept for older layouts that scroll the window; the current profile UI
+    // scrolls inside main#workspace, which autoScroll cannot move.
     await page.autoScroll({ times: 4, delayMs: 700 });
+    await scrollToSections(page, LAZY_PROFILE_SECTIONS);
     await page.wait(1);
     const row = unwrapEvaluateResult(await page.evaluate(buildProfileExtractionScript()));
     let aboutEdit = {};

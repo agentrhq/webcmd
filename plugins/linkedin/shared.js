@@ -122,3 +122,96 @@ export async function assertLinkedInAuthenticated(page, context) {
 export function splitVisibleLines(text) {
   return String(text || '').split(/\n+/).map(normalizeWhitespace).filter(Boolean);
 }
+
+/**
+ * Step the element that actually scrolls the current LinkedIn layout.
+ *
+ * `page.autoScroll()` drives `window.scrollTo`, but the current profile UI
+ * scrolls inside `main#workspace`, so the window scroller never moves and the
+ * lazy loaders for later sections (Experience, Education, ...) never fire. This
+ * script advances the real scroll container — falling back to the window
+ * scroller on older layouts — and reports which of the requested section
+ * headings are present so the caller can stop as soon as they have loaded.
+ */
+export function buildSectionScrollScript(headings) {
+  const wanted = JSON.stringify((headings || []).map((value) => String(value).toLowerCase()));
+  return String.raw`(() => {
+    const clean = (s) => String(s || '').replace(/[\u00a0\u202f]+/g, ' ').replace(/\s+/g, ' ').trim();
+    const wanted = ${wanted};
+    const seen = Array.from(document.querySelectorAll('main h2, main h3, section h2, section h3'))
+      .map((el) => clean(el.innerText || el.textContent || '').toLowerCase())
+      .filter(Boolean);
+    const found = wanted.filter((name) => seen.includes(name));
+    const scrollable = (el) => {
+      if (!el) return false;
+      if (el.scrollHeight <= el.clientHeight + 1) return false;
+      const overflowY = (window.getComputedStyle ? window.getComputedStyle(el).overflowY : '') || '';
+      return overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay';
+    };
+    const findScroller = () => {
+      const workspace = document.querySelector('main#workspace') || document.querySelector('#workspace');
+      if (workspace && workspace.scrollHeight > workspace.clientHeight + 1) return workspace;
+      let node = document.querySelector('main');
+      while (node && node !== document.body && node !== document.documentElement) {
+        if (scrollable(node)) return node;
+        node = node.parentElement;
+      }
+      return null;
+    };
+    const scroller = findScroller();
+    if (scroller) {
+      const bottom = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+      const step = Math.max(scroller.clientHeight || 0, 400);
+      scroller.scrollTop = Math.min(bottom, scroller.scrollTop + step);
+      return {
+        found,
+        atEnd: scroller.scrollTop >= bottom - 2,
+        container: scroller.id ? '#' + scroller.id : String(scroller.tagName || '').toLowerCase(),
+      };
+    }
+    const doc = document.documentElement;
+    const bottom = Math.max(0, doc.scrollHeight - window.innerHeight);
+    const step = Math.max(window.innerHeight || 0, 400);
+    window.scrollTo(0, Math.min(bottom, (window.scrollY || 0) + step));
+    return {
+      found,
+      atEnd: (window.scrollY || 0) >= bottom - 2,
+      container: 'window',
+    };
+  })()`;
+}
+
+/**
+ * Scroll until every requested section heading is loaded, the container stops
+ * growing, or `rounds` is exhausted. One `atEnd` round is not the end: LinkedIn
+ * lazy-loads on reaching the bottom, so the container grows and the next round
+ * has further to travel. Two consecutive `atEnd` rounds with no newly found
+ * section mean the content really is exhausted.
+ *
+ * Never throws — a layout this helper cannot scroll is not itself a command
+ * failure, only a reason the extraction below it may see fewer sections.
+ */
+export async function scrollToSections(page, headings, options = {}) {
+  const rounds = options.rounds ?? 8;
+  const waitSeconds = options.waitSeconds ?? 1;
+  const targets = (headings || []).map((value) => String(value).toLowerCase());
+  let last = { found: [], atEnd: false, container: '' };
+  let foundCount = 0;
+  let endRounds = 0;
+  for (let round = 0; round < rounds; round++) {
+    let payload;
+    try {
+      payload = unwrapEvaluateResult(await page.evaluate(buildSectionScrollScript(targets)));
+    } catch {
+      return last;
+    }
+    if (payload && typeof payload === 'object') last = payload;
+    const found = Array.isArray(last.found) ? last.found : [];
+    if (targets.every((name) => found.includes(name))) return last;
+    endRounds = last.atEnd === true && found.length === foundCount ? endRounds + 1 : 0;
+    foundCount = found.length;
+    if (endRounds >= 2) return last;
+    await page.wait(waitSeconds);
+  }
+  return last;
+}
