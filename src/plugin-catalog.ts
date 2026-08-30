@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getEnabledPlugins, isMonorepo, type PluginManifest } from './plugin-manifest.js';
 import { findPackageRoot } from './package-paths.js';
+import { normalizeOfficialCatalogSource, normalizeOfficialPluginSource } from './official-plugin-source.js';
 
 const MODULE_FILE = fileURLToPath(import.meta.url);
 const CATALOG_FILENAME = 'plugin-catalog.json';
@@ -76,12 +77,13 @@ export function writeCatalog(catalog: PluginCatalog, options: CatalogOptions = {
 }
 
 export function deriveGithubCatalogSource(source: string): PluginCatalogSource {
-  const parsed = parseGithubSource(source);
+  const canonical = normalizeOfficialPluginSource(source);
+  const parsed = parseGithubSource(canonical);
   if (!parsed) throw new Error(`Unsupported catalog source "${source}". Use github:owner/repo.`);
   const { owner, repo } = parsed;
   return {
     id: `${owner}/${repo}`,
-    source,
+    source: canonical,
     manifestUrl: `https://raw.githubusercontent.com/${owner}/${repo}/main/webcmd-plugin.json`,
   };
 }
@@ -141,10 +143,11 @@ export async function searchCatalogPlugins(
   const errors: PluginSearchError[] = [];
 
   await Promise.all(catalog.sources.map(async (source) => {
+    const canonical = normalizeOfficialCatalogSource(source);
     try {
-      const manifest = await fetchManifest(source, options.fetchJson);
-      validateMarketplaceManifest(manifest, source.manifestUrl);
-      plugins.push(...flattenPluginManifest(source, manifest));
+      const manifest = await fetchManifest(canonical, options.fetchJson);
+      validateMarketplaceManifest(manifest, canonical.manifestUrl);
+      plugins.push(...flattenPluginManifest(canonical, manifest));
     } catch (err) {
       errors.push({ sourceId: source.id, manifestUrl: source.manifestUrl, message: errorMessage(err) });
     }
@@ -190,7 +193,9 @@ function normalizeCatalog(value: unknown, filePath: string): PluginCatalog {
   if (!Array.isArray(value.sources)) throw new Error(`Malformed plugin catalog at ${filePath}: expected sources array`);
   return {
     version: 1,
-    sources: value.sources.map((source, index) => normalizeCatalogSource(source, `${filePath} sources[${index}]`)),
+    sources: value.sources.map((source, index) => normalizeOfficialCatalogSource(
+      normalizeCatalogSource(source, `${filePath} sources[${index}]`),
+    )),
   };
 }
 

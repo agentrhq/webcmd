@@ -831,9 +831,36 @@ describe('parseSource with monorepo subplugin', () => {
   it('resolves the LinkedIn catalog source as a WebCMD subplugin', () => {
     expect(_parseSource('github:agentrhq/webcmd/linkedin')).toEqual({
       type: 'git',
-      cloneUrl: 'https://github.com/agentrhq/webcmd.git',
-      name: 'webcmd',
+      cloneUrl: 'https://github.com/agentrhq/webcmd-plugins.git',
+      name: 'webcmd-plugins',
       subPlugin: 'linkedin',
+    });
+  });
+
+  it('clones the plugins repository for the legacy official shorthand', () => {
+    expect(_parseSource('github:agentrhq/webcmd/hackernews')).toEqual({
+      type: 'git',
+      cloneUrl: 'https://github.com/agentrhq/webcmd-plugins.git',
+      name: 'webcmd-plugins',
+      subPlugin: 'hackernews',
+    });
+  });
+
+  it('keeps the canonical plugins shorthand unchanged', () => {
+    expect(_parseSource('github:agentrhq/webcmd-plugins/hackernews')).toEqual({
+      type: 'git',
+      cloneUrl: 'https://github.com/agentrhq/webcmd-plugins.git',
+      name: 'webcmd-plugins',
+      subPlugin: 'hackernews',
+    });
+  });
+
+  it('does not rewrite another owner named webcmd', () => {
+    expect(_parseSource('github:other/webcmd/hackernews')).toEqual({
+      type: 'git',
+      cloneUrl: 'https://github.com/other/webcmd.git',
+      name: 'webcmd',
+      subPlugin: 'hackernews',
     });
   });
 
@@ -2355,5 +2382,142 @@ describe('invalid plugin source', () => {
       expect((err as pluginModule.InvalidPluginSourceError).source).toBe('openfda');
       expect((err as Error).message).toContain('Invalid plugin source: "openfda"');
     }
+  });
+});
+
+describe('official plugin source migration on update', () => {
+  const pluginName = '__test-official-hn__';
+  const repoName = '__test-official-webcmd__';
+  const monoDir = path.join(_getMonoreposDir(), repoName);
+  const subPath = `plugins/${pluginName}`;
+  const subDir = path.join(monoDir, subPath);
+  const linkPath = path.join(PLUGINS_DIR, pluginName);
+
+  beforeEach(() => {
+    mockExecFileSync.mockClear();
+    fs.mkdirSync(subDir, { recursive: true });
+    fs.writeFileSync(path.join(subDir, 'top.js'), 'cli({ site: "hackernews", name: "top", access: "read" })');
+    fs.mkdirSync(PLUGINS_DIR, { recursive: true });
+    fs.symlinkSync(subDir, linkPath, 'dir');
+  });
+
+  afterEach(() => {
+    try { fs.unlinkSync(linkPath); } catch {}
+    try { fs.rmSync(monoDir, { recursive: true, force: true }); } catch {}
+    const lock = _readLockFile();
+    delete lock[pluginName];
+    _writeLockFile(lock);
+  });
+
+  function mockClone(urlMustBe: string, { fail = false } = {}) {
+    mockExecFileSync.mockImplementation((cmd, args) => {
+      if (cmd === 'git' && Array.isArray(args) && args[0] === 'clone') {
+        expect(args[3]).toBe(urlMustBe);
+        if (fail) throw new Error('clone failed');
+        const cloneDir = String(args[4]);
+        const clonedPlugin = path.join(cloneDir, subPath);
+        fs.mkdirSync(clonedPlugin, { recursive: true });
+        fs.writeFileSync(path.join(cloneDir, 'webcmd-plugin.json'), JSON.stringify({
+          plugins: { [pluginName]: { path: subPath } },
+        }));
+        fs.writeFileSync(path.join(clonedPlugin, 'top.js'), 'cli({ site: "hackernews", name: "top", access: "read" })');
+        return '';
+      }
+      if (cmd === 'git' && Array.isArray(args) && args[0] === 'rev-parse' && args[1] === 'HEAD') {
+        return '1234567890abcdef1234567890abcdef12345678\n';
+      }
+      return '';
+    });
+  }
+
+  it('updates an object lock from the old official URL and rewrites only after success', () => {
+    const lock = _readLockFile();
+    lock[pluginName] = {
+      source: {
+        kind: 'monorepo',
+        url: 'https://github.com/agentrhq/webcmd.git',
+        repoName,
+        subPath,
+      },
+      commitHash: 'oldhasholdhasholdhasholdhasholdhasholdh',
+      installedAt: '2025-01-01T00:00:00.000Z',
+    };
+    _writeLockFile(lock);
+    mockClone('https://github.com/agentrhq/webcmd-plugins.git');
+
+    expect(updatePlugin(pluginName)).toEqual([pluginName]);
+    expect(_readLockFile()[pluginName]?.source).toEqual({
+      kind: 'monorepo',
+      url: 'https://github.com/agentrhq/webcmd-plugins.git',
+      repoName,
+      subPath,
+    });
+    expect(fs.existsSync(path.join(_getMonoreposDir(), repoName))).toBe(true);
+  });
+
+  it('updates a legacy string+monorepo lock from the old official URL', () => {
+    fs.mkdirSync(path.dirname(getLockFilePath()), { recursive: true });
+    fs.writeFileSync(getLockFilePath(), JSON.stringify({
+      [pluginName]: {
+        source: 'https://github.com/agentrhq/webcmd.git',
+        commitHash: 'oldhasholdhasholdhasholdhasholdhasholdh',
+        installedAt: '2025-01-01T00:00:00.000Z',
+        monorepo: { name: repoName, subPath },
+      },
+    }));
+    mockClone('https://github.com/agentrhq/webcmd-plugins.git');
+
+    expect(updatePlugin(pluginName)).toEqual([pluginName]);
+    expect(_readLockFile()[pluginName]?.source).toEqual({
+      kind: 'monorepo',
+      url: 'https://github.com/agentrhq/webcmd-plugins.git',
+      repoName,
+      subPath,
+    });
+  });
+
+  it('preserves the old lock when update clone fails', () => {
+    const lock = _readLockFile();
+    lock[pluginName] = {
+      source: {
+        kind: 'monorepo',
+        url: 'https://github.com/agentrhq/webcmd.git',
+        repoName,
+        subPath,
+      },
+      commitHash: 'oldhasholdhasholdhasholdhasholdhasholdh',
+      installedAt: '2025-01-01T00:00:00.000Z',
+    };
+    _writeLockFile(lock);
+    mockClone('https://github.com/agentrhq/webcmd-plugins.git', { fail: true });
+
+    expect(() => updatePlugin(pluginName)).toThrow(/Failed to clone plugin/);
+    expect(_readLockFile()[pluginName]?.source).toEqual({
+      kind: 'monorepo',
+      url: 'https://github.com/agentrhq/webcmd.git',
+      repoName,
+      subPath,
+    });
+    expect(fs.readFileSync(path.join(subDir, 'top.js'), 'utf8')).toContain('site: "hackernews"');
+  });
+
+  it('does not rewrite another owner named webcmd', () => {
+    const lock = _readLockFile();
+    lock[pluginName] = {
+      source: {
+        kind: 'monorepo',
+        url: 'https://github.com/other/webcmd.git',
+        repoName,
+        subPath,
+      },
+      commitHash: 'oldhasholdhasholdhasholdhasholdhasholdh',
+      installedAt: '2025-01-01T00:00:00.000Z',
+    };
+    _writeLockFile(lock);
+    mockClone('https://github.com/other/webcmd.git');
+
+    expect(updatePlugin(pluginName)).toEqual([pluginName]);
+    const source = _readLockFile()[pluginName]?.source;
+    expect(source?.kind === 'monorepo' ? source.url : undefined).toBe('https://github.com/other/webcmd.git');
   });
 });

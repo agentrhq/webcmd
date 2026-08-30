@@ -9,6 +9,10 @@ npm run build
 npm test
 ```
 
+## Community adapters
+
+Public site adapters live in [`agentrhq/webcmd-plugins`](https://github.com/agentrhq/webcmd-plugins), not this repository.
+
 ## Adapter Imports
 
 Adapters must import public APIs from `@agentrhq/webcmd`:

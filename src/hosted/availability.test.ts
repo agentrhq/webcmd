@@ -184,7 +184,7 @@ describe('hosted availability', () => {
 
   it('matches the reviewed local-only adapter exception sets exactly', () => {
     const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-    const entries = ['cli-manifest.json', 'plugin-command-manifest.json'].flatMap(file => JSON.parse(
+    const entries = ['cli-manifest.json'].flatMap(file => JSON.parse(
       fs.readFileSync(path.join(root, file), 'utf8'),
     ) as ManifestEntry[]);
     const byReason = new Map<string, string[]>([
@@ -201,10 +201,10 @@ describe('hosted availability', () => {
 
     const localTools = (byReason.get('local-tool') ?? []).sort();
     const desktopApps = (byReason.get('desktop-app') ?? []).sort();
-    expect(exceptionDiff(localTools, EXPECTED_LOCAL_TOOLS)).toEqual({ added: [], missing: [] });
-    expect(exceptionDiff(desktopApps, EXPECTED_DESKTOP_APPS)).toEqual({ added: [], missing: [] });
-    expect(localTools).toHaveLength(30);
-    expect(desktopApps).toHaveLength(111);
+    expect(exceptionDiff(localTools, [])).toEqual({ added: [], missing: [] });
+    expect(exceptionDiff(desktopApps, [])).toEqual({ added: [], missing: [] });
+    expect(localTools).toHaveLength(0);
+    expect(desktopApps).toHaveLength(0);
   });
 });
 

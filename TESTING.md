@@ -5,13 +5,11 @@
 ```bash
 npm run typecheck
 npm run build
-npm run build-plugin-manifest
 npm test
 ```
 
-`npm run build` must run before plugin tests because repository plugins import
-the compiled public package exports. The core package contains no site
-adapters; `npm test` runs the unit and generic plugin projects.
+The core package contains no site adapters; `npm test` runs the unit project
+and remaining `clis/` plugin tests. Public adapters live in `agentrhq/webcmd-plugins`.
 
 ## Skill Sources
 

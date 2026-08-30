@@ -16,23 +16,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  plugin-pr-scope:
-    name: Plugin PR scope
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '22'
-
-      - name: Check plugin PR scope
-        run: npm run check:plugin-pr-scope -- "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}"
-
   skills:
     name: Skill sources
     runs-on: ubuntu-latest
@@ -73,10 +56,6 @@ jobs:
       - name: Type check
         run: npm run typecheck
 
-      - name: Check community plugin metadata
-        if: runner.os == 'Linux'
-        run: npm run check-community-plugins
-
       - name: Check Codex plugin metadata
         if: runner.os == 'Linux'
         run: npm run check:codex-plugin
@@ -84,32 +63,16 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Build plugin command manifest
-        if: runner.os == 'Linux'
-        run: npm run build-plugin-manifest
-
-      - name: Check plugin command parity
-        if: runner.os == 'Linux'
-        run: npm run check:plugin-parity
-
       - name: Check generated contract artifacts
         if: runner.os == 'Linux'
         run: npm run check:hosted-contract
 
       - name: Check all generated artifacts are committed
         if: runner.os == 'Linux'
-        run: git diff --exit-code -- cli-manifest.json hosted-contract.json webcmd-plugin.json README.md
+        run: git diff --exit-code -- cli-manifest.json hosted-contract.json README.md
 
       - name: Verify packed CLI executables
         run: npm run check:package-bin
-
-      - name: Check silent column drops
-        if: runner.os == 'Linux'
-        run: npm run check:silent-column-drop
-
-      - name: Check typed error lint baseline
-        if: runner.os == 'Linux'
-        run: npm run check:typed-error-lint
 
   unit-test:
     name: Unit tests (${{ matrix.os }}, shard ${{ matrix.shard }}/2)

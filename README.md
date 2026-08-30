@@ -158,15 +158,12 @@ Webcmd Cloud can run supported commands and browser sessions on hosted infrastru
 
 ## Community
 
-<!-- webcmd-community-plugins:start -->
-### Community plugins
+Site adapters live in [`agentrhq/webcmd-plugins`](https://github.com/agentrhq/webcmd-plugins). Search and install them with:
 
-| Plugin | Description | Author |
-| --- | --- | --- |
-| [`omnisearch`](./plugins/omnisearch/) | No-login research across Hacker News, Stack Overflow, GitHub, arXiv, Dev.to, Lobsters, and Bluesky | [Rishet Mehra](https://github.com/Rishet11) |
-| [`pypi`](./plugins/pypi/) | Inspect public Python package metadata, downloads, and releases from PyPI | [Kemal Kaya](https://github.com/yoldaolmak) |
-| [`skyscanner`](./plugins/skyscanner/) | Skyscanner flight search commands for Webcmd | [Rishabh](https://github.com/rishabhraj36) |
-<!-- webcmd-community-plugins:end -->
+```bash
+webcmd plugin search <site> -f json
+webcmd plugin install github:agentrhq/webcmd-plugins/<name>
+```
 
 ## Contributing
 

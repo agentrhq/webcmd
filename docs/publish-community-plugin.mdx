@@ -12,12 +12,12 @@ Publish a plugin only when its workflows, examples, and verification are useful 
 ## Ask an Agent to Prepare the Contribution
 
 ```text
-Prepare my `webcmd-acme` plugin for contribution to the AgentR Webcmd repository. Place it under `plugins/acme/`, make the manifest name match the directory, include version, description, Webcmd compatibility, and my author name and GitHub handle, improve the README and examples, run the repository plugin checks, and open a pull request summarizing the workflows and verification evidence.
+Prepare my `webcmd-acme` plugin for contribution to agentrhq/webcmd-plugins. Place it under `plugins/acme/`, make the manifest name match the directory, include version, description, Webcmd compatibility, and my author name and GitHub handle, improve the README and examples, run the repository plugin checks, and open a pull request summarizing the workflows and verification evidence.
 ```
 
 ## Repository Requirements
 
-Community plugins live under `plugins/<name>/`. Their `webcmd-plugin.json` must use the directory name, and include non-empty `version`, `description`, and `webcmd` compatibility fields. Author metadata needs both a display name and valid GitHub handle.
+Community plugins live under `plugins/<name>/` in [`agentrhq/webcmd-plugins`](https://github.com/agentrhq/webcmd-plugins). Their `webcmd-plugin.json` must use the directory name, and include non-empty `version`, `description`, and `webcmd` compatibility fields. Author metadata needs both a display name and valid GitHub handle.
 
 Repository plugins are catalog source, not npm package contents. Users install
 an approved plugin explicitly; Webcmd core does not bundle it.
@@ -30,7 +30,7 @@ To fork an installed command into a private copy you can edit, run `webcmd adapt
 
 ## Validation and Pull Request
 
-The agent runs `npm run check-community-plugins`, improves the plugin README and examples, and opens a pull request with the workflows and verification evidence. The pull request is the review/publishing boundary.
+The agent runs `npm run sync-community-plugins` and `npm run check-community-plugins` in `agentrhq/webcmd-plugins`, improves the plugin README and examples, and opens a pull request with the workflows and verification evidence. The pull request is the review/publishing boundary.
 
 ## What Happens After Merge
 

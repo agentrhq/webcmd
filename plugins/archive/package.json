@@ -1,9 +1,0 @@
-{
-  "name": "webcmd-plugin-archive",
-  "version": "0.1.0",
-  "type": "module",
-  "description": "Webcmd commands for archive",
-  "peerDependencies": {
-    "@agentrhq/webcmd": ">=0.5.3"
-  }
-}
