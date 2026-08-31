@@ -2,7 +2,7 @@
 
 The webcmd-managed CloakBrowser runtime communicates only with the local Webcmd daemon on `localhost:9777`.
 
-The runtime can access browser pages and cookies because browser automation requires those permissions. Webcmd does not send page contents or cookies to AgentR. Except for the site-memory seed lookup below, Webcmd does not send browser data to AgentR. Commands run locally, and command output is printed to the local CLI process.
+The runtime can access browser pages and cookies because browser automation requires those permissions. Webcmd does not send page contents or cookies to AgentR. Except for the site-memory seed lookup and the optional candidate public-IP lookup below, Webcmd does not send browser data to AgentR. Commands run locally, and command output is printed to the local CLI process.
 
 Trace artifacts, cache files, plugins, user adapters, and site memory are stored under `~/.webcmd`.
 
@@ -11,6 +11,12 @@ Trace artifacts, cache files, plugins, user adapters, and site memory are stored
 On first access when no local memory exists, local Webcmd makes a public unauthenticated GET `<base>/v1/site-memory/seeds/<punycode-product-key>`. The default base is `https://api.webcmd.dev`. The request uses a 2-second timeout and no retry. It discloses the resolved product/domain.
 
 `WEBCMD_GLOBAL_MEMORY=off` disables the lookup. `WEBCMD_GLOBAL_MEMORY_URL` changes the base.
+
+## Candidate public-IP provenance
+
+When capturing candidate evidence, local Webcmd makes a best-effort unauthenticated GET `https://api.ipify.org` with a 2-second timeout and no credentials. It records the public egress IP in local candidate JSON only. Inability to resolve it does not block capture.
+
+`WEBCMD_CANDIDATE_PUBLIC_IP=off` disables the lookup.
 
 ## What stays local
 

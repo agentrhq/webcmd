@@ -210,6 +210,27 @@ describe('webcmd skills content', () => {
     expect(body.split(/\s+/).filter(Boolean).length).toBeLessThan(2300);
   });
 
+  it('names per-reference triggers, classify-before-write, and the 500/200 rewrite rule', () => {
+    const browser = bundledSkill('webcmd-browser');
+    const sitemap = bundledReference('sitemap-memory.md');
+    const git = bundledReference('git-lifecycle.md');
+
+    expect(browser).toMatch(/sitemap-memory\.md[\s\S]{0,220}(?:provisional-fallback|classif|draftPath)/i);
+    expect(browser).toMatch(/candidate-schema\.md[\s\S]{0,220}(?:qualifying|candidate)/i);
+    expect(browser).toMatch(/git-lifecycle\.md[\s\S]{0,220}(?:checkpoint|500)/i);
+    expect(browser).toMatch(/browser-run-playwright\.md[\s\S]{0,220}(?:run|QuickJS)/i);
+    expect(sitemap).toMatch(/provisional-fallback/);
+    expect(sitemap).toMatch(/site memory classify/);
+    expect(sitemap).toMatch(/same-product|same product/);
+    expect(sitemap).toMatch(/--distinct|distinct product/);
+    expect(sitemap).toMatch(/before any write/i);
+    expect(sitemap).toMatch(/do not (?:write|edit|touch).*~\/\.webcmd|never (?:write|edit).*~\/\.webcmd/i);
+    expect(sitemap).toMatch(/never (?:run |use )?git|do not (?:run |use )?git/i);
+    expect(git).toMatch(/500/);
+    expect(git).toMatch(/200/);
+    expect(git).toMatch(/even if only a reference|reference path was requested/i);
+  });
+
   it('teaches checkpoint lifecycle, one conflict retry, and never direct Git', () => {
     const git = bundledReference('git-lifecycle.md');
 
@@ -474,6 +495,9 @@ describe('public copy', () => {
     expect(privacy).toMatch(/no retry/i);
     expect(privacy).toContain('WEBCMD_GLOBAL_MEMORY=off');
     expect(privacy).toContain('WEBCMD_GLOBAL_MEMORY_URL');
+    expect(privacy).toMatch(/api\.ipify\.org|ipify/i);
+    expect(privacy).toContain('WEBCMD_CANDIDATE_PUBLIC_IP=off');
+    expect(privacy).toMatch(/no credentials|unauthenticated|without credentials/i);
     expect(privacy).toContain('~/.webcmd/sites');
     expect(privacy).toMatch(/never (?:uploaded|pushed)|is never uploaded/i);
     expect(privacy).toMatch(/never pushes/i);

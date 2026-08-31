@@ -8,7 +8,12 @@ allowed-tools: Bash(webcmd:*), Read, Write, Edit
 
 The first reader of this CLI is an agent, not a human. Use browser output as structured evidence, not as prose to skim.
 
-Run `webcmd site memory context <url> --task-id <id> -f json` before any live browser action. Then create the Session. Conditional detail lives in four references: [`references/sitemap-memory.md`](references/sitemap-memory.md), [`references/candidate-schema.md`](references/candidate-schema.md), [`references/git-lifecycle.md`](references/git-lifecycle.md), and [`references/browser-run-playwright.md`](references/browser-run-playwright.md).
+Run `webcmd site memory context <url> --task-id <id> -f json` before any live browser action. Then create the Session.
+
+Load [`references/sitemap-memory.md`](references/sitemap-memory.md) when context returns `resolution.status`, `readOnly`, or `draftPath`.
+Load [`references/candidate-schema.md`](references/candidate-schema.md) when a qualifying observation appears.
+Load [`references/git-lifecycle.md`](references/git-lifecycle.md) before checkpoint, or when SITE.md exceeds 500 lines.
+Load [`references/browser-run-playwright.md`](references/browser-run-playwright.md) before writing a `browser run` program.
 
 Capture a qualifying observation with `webcmd site memory candidate add`. Do not complete a payment or checkout without explicit user confirmation.
 

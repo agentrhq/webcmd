@@ -20,6 +20,8 @@ webcmd site memory checkpoint <product> \
 | `direct_correction` | Editing memory without promoting candidates. No dispositions. |
 | `major_rewrite` | Replacing a SITE.md that outgrew its bound. No dispositions. |
 
+Any active-memory update that finds `SITE.md` over 500 physical lines must rewrite it to at most 200 lines with contextual reference pointers in that same task, even if only a reference path was requested.
+
 Dispositions are `[{ "id", "status": "ingested"|"rejected", "evidenceRole"?, "rejectionReason"?, "conflictsWithMemory"? }]`. Ingested rows need `evidenceRole` `supporting` or `dissenting`. Rejected rows need `rejectionReason`.
 
 On conflict, run context again, then checkpoint once with the new revision. Do not loop.

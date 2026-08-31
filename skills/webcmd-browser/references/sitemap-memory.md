@@ -4,6 +4,11 @@
 
 Sitemap memory is **prior knowledge**, not ground truth. If the live page disagrees, trust the live browser.
 
+If `resolution.status` is `provisional-fallback`, classify the hostname as the same product or a distinct product **before any write**. Use `webcmd site memory classify` — do not write `~/.webcmd` and never use git.
+
+- `old.reddit.com` is the same product: `webcmd site memory classify old.reddit.com --same-product reddit.com --expected-revision <revision> -f json`
+- `news.ycombinator.com` is a distinct product: `webcmd site memory classify news.ycombinator.com --distinct --expected-revision <revision> -f json`
+
 ## Read
 
 1. Run context before any live browser action.
