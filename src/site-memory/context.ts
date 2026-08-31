@@ -1,4 +1,4 @@
-import { mkdir, readdir, unlink } from 'node:fs/promises';
+import { access, mkdir, readdir, unlink } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { openSitesRepository, type SitesRepository } from './git-store.js';
 import { atomicWrite, containedRelativePath, listProductKeys, readProductFile, sitesRoot, writeProductFile } from './local-store.js';
@@ -30,11 +30,15 @@ export async function getMemoryContext(input: MemoryContextInput): Promise<Memor
 
   let persistFailed = false;
   let transient: Extract<SeedLookupResult, { status: 'available' }> | undefined;
-  if (resolution.status === 'new' && !legacy) {
-    const seed = await (input.seedProvider ?? createHttpSeedProvider()).lookup(resolution.requested.key);
-    if (git) {
+  const storedUnattempted = resolution.manifest?.seed.status === 'unattempted';
+  if (!legacy && (resolution.status === 'new' || storedUnattempted)) {
+    const product = storedUnattempted ? resolution.product : resolution.requested;
+    const seed = await (input.seedProvider ?? createHttpSeedProvider()).lookup(product.key);
+    if (storedUnattempted && seed.status === 'unattempted') {
+      // already recorded; lookup stayed disabled
+    } else if (git) {
       try {
-        await persistSeed(resolution.requested, seed, git, opts);
+        await persistSeed(product, seed, git, opts);
         resolution = resolveProduct(input.url, await loadManifests(opts));
       } catch (err) {
         persistFailed = true;
@@ -73,24 +77,40 @@ async function persistSeed(
   opts: LocalStoreOptions,
 ): Promise<void> {
   await repo.withRepositoryLock(async () => {
-    if (parseProductManifest(await readProductFile(product.key, 'manifest.json', opts))) return;
+    const existing = parseProductManifest(await readProductFile(product.key, 'manifest.json', opts));
+    if (existing && existing.seed.status !== 'unattempted') return;
+    if (existing && seed.status === 'unattempted') return;
     const persisted: PersistedSeedResult = seed.status === 'available' ? { status: 'available', revision: seed.revision } : seed;
-    const manifest: ProductManifest = { schemaVersion: 1, product, interfaces: [], seed: persisted };
+    const manifest: ProductManifest = existing
+      ? { ...existing, seed: persisted }
+      : { schemaVersion: 1, product, interfaces: [], seed: persisted };
+    const prior = existing ? await readProductFile(product.key, 'manifest.json', opts) : null;
     const files = ['manifest.json'];
     try {
       await writeProductFile(product.key, 'manifest.json', `${JSON.stringify(manifest, null, 2)}\n`, opts);
       if (seed.status === 'available') {
-        await writeProductFile(product.key, 'sitemap/SITE.md', seed.site, opts);
-        files.push('sitemap/SITE.md');
+        if (await readProductFile(product.key, 'sitemap/SITE.md', opts) == null) {
+          await writeProductFile(product.key, 'sitemap/SITE.md', seed.site, opts);
+          files.push('sitemap/SITE.md');
+        }
         for (const [name, body] of Object.entries(seed.references ?? {})) {
           const path = `sitemap/references/${name}`;
-          await writeProductFile(product.key, path, body, opts);
-          files.push(path);
+          if (await readProductFile(product.key, path, opts) == null) {
+            await writeProductFile(product.key, path, body, opts);
+            files.push(path);
+          }
         }
       }
-      await repo.commit(files.map((file) => `${product.key}/${file}`), `initialize ${product.key}`);
+      await repo.commit(
+        files.map((file) => `${product.key}/${file}`),
+        existing ? `seed ${product.key}` : `initialize ${product.key}`,
+      );
     } catch (err) {
-      await Promise.all(files.map((file) => unlinkProductFile(product.key, file, opts)));
+      if (prior === null) await Promise.all(files.map((file) => unlinkProductFile(product.key, file, opts)));
+      else {
+        await writeProductFile(product.key, 'manifest.json', prior, opts);
+        await Promise.all(files.filter((file) => file !== 'manifest.json').map((file) => unlinkProductFile(product.key, file, opts)));
+      }
       throw err;
     }
   });
@@ -126,6 +146,12 @@ async function writeDraft(
 async function writeContained(root: string, path: string, body: string): Promise<void> {
   const relative = containedRelativePath(root, path);
   const target = join(root, ...relative.split('/'));
+  try {
+    await access(target);
+    return;
+  } catch (err) {
+    if (!(err instanceof Error) || !('code' in err) || err.code !== 'ENOENT') throw err;
+  }
   await mkdir(dirname(target), { recursive: true });
   await atomicWrite(target, body);
 }

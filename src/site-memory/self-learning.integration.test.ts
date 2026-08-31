@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
@@ -102,6 +102,28 @@ describe('self-learning lifecycle', () => {
     }]);
     expect(calls.filter((call) => call.url.endsWith('/offline.test'))).toHaveLength(1);
     expect(calls.some((call) => call.url.endsWith('/disabled.test'))).toBe(false);
+
+    const enabled = await getMemoryContext({
+      url: 'https://disabled.test/',
+      taskId: 'task-disabled-2',
+      homeDir,
+      seedProvider: createHttpSeedProvider({
+        fetch,
+        env: {},
+      }),
+    });
+    expect(enabled.manifest?.seed).toEqual({ status: 'available', revision: 'nope' });
+    expect(enabled.siteMarkdown).toBe(`# Disabled\n\n${FACT}`);
+    expect(await readProductFile('disabled.test', 'sitemap/SITE.md', { homeDir })).toBe(`# Disabled\n\n${FACT}`);
+    expect(calls.filter((call) => call.url.endsWith('/disabled.test'))).toHaveLength(1);
+
+    await getMemoryContext({
+      url: 'https://disabled.test/',
+      taskId: 'task-disabled-3',
+      homeDir,
+      seedProvider: createHttpSeedProvider({ fetch, env: {} }),
+    });
+    expect(calls.filter((call) => call.url.endsWith('/disabled.test'))).toHaveLength(1);
   });
 
   it('keeps Old Reddit a read-only parent fallback until interface confirmation and keeps Hacker News separate', async () => {
@@ -192,6 +214,40 @@ describe('self-learning lifecycle', () => {
     expect(parseProductManifest(await readProductFile('ycombinator.com', 'manifest.json', { homeDir }))?.interfaces)
       .toEqual([]);
     expect(await readProductFile('reddit.com', 'sitemap/SITE.md', { homeDir })).toBe('# Reddit\n');
+  });
+
+  it('keeps an incompatible beta SITE.md read-only through distinct classify', async () => {
+    const { homeDir } = await tempSites();
+    await mkdir(join(homeDir, '.webcmd/sites/beta.test/sitemap'), { recursive: true });
+    await writeFile(join(homeDir, '.webcmd/sites/beta.test/sitemap/SITE.md'), '# beta schema\nold beta content\n');
+    const seedProvider = createHttpSeedProvider({ fetch: seedFetch({}), env: {} });
+
+    const context = await getMemoryContext({
+      url: 'https://beta.test/',
+      taskId: 'task-beta',
+      homeDir,
+      seedProvider,
+    });
+    expect(context.readOnly).toBe(true);
+    expect(context.diagnostics.join('\n')).toMatch(/incompatible beta schema/i);
+
+    await expect(classifyProduct({
+      requested: 'https://beta.test/',
+      decision: 'distinct',
+      expectedRevision: context.revision,
+      homeDir,
+    })).rejects.toThrow(/incompatible beta schema/i);
+
+    expect(await readProductFile('beta.test', 'manifest.json', { homeDir })).toBeNull();
+    const again = await getMemoryContext({
+      url: 'https://beta.test/',
+      taskId: 'task-beta-2',
+      homeDir,
+      seedProvider,
+    });
+    expect(again.readOnly).toBe(true);
+    expect(again.siteMarkdown).toBe('# beta schema\nold beta content\n');
+    expect(again.diagnostics.join('\n')).toMatch(/incompatible beta schema/i);
   });
 
   it('leaves candidate inventory unchanged when the task is a no-op', async () => {
@@ -345,6 +401,48 @@ describe('self-learning lifecycle', () => {
     expect((await git(homeDir, ['status', '--porcelain', '-uall'])).trim()).not.toMatch(/^(A |M |D )/m);
     await expect(addCandidate(candidate(homeDir))).rejects.toThrow(/ancestor/i);
     expect(await jsonNames(sites)).toEqual([]);
+  });
+
+  it('keeps an edited draft byte-identical across conflict retry and then publishes it', async () => {
+    const { homeDir } = await tempSites();
+    const context = await coldStart(homeDir, 'task-1');
+    const edited = `# Example\n\n${FACT}- [verified 2026-09-01] IMPORTANT: /del bans the account.\n`;
+    await writeDraft(homeDir, { 'sitemap/SITE.md': edited }, 'task-1');
+    await addCandidate(candidate(homeDir, { observedAt: CLOCK.later }));
+
+    const conflict = await checkpointMemory({
+      product: 'example.test',
+      taskId: 'task-1',
+      expectedRevision: context.revision,
+      reason: 'direct_correction',
+      paths: ['sitemap/SITE.md'],
+      dispositions: [],
+      homeDir,
+    });
+    expect(conflict.status).toBe('conflict');
+
+    const reloaded = await getMemoryContext({
+      url: 'https://example.test/',
+      taskId: 'task-1',
+      homeDir,
+      seedProvider: createHttpSeedProvider({ fetch: seedFetch({}), env: {} }),
+    });
+    const draft = join(homeDir, '.webcmd/sites/.drafts/task-1/example.test/sitemap/SITE.md');
+    expect(await readFile(draft, 'utf8')).toBe(edited);
+    expect(reloaded.revision).not.toBe(context.revision);
+
+    const retried = await checkpointMemory({
+      product: 'example.test',
+      taskId: 'task-1',
+      expectedRevision: reloaded.revision,
+      reason: 'direct_correction',
+      paths: ['sitemap/SITE.md'],
+      dispositions: [],
+      homeDir,
+    });
+    expect(retried.status).toBe('committed');
+    expect(await readFile(draft, 'utf8')).toBe(edited);
+    expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBe(edited);
   });
 
   it('returns a CAS conflict for a competing draft and succeeds after one reload/retry', async () => {

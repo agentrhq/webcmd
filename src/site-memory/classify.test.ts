@@ -5,9 +5,10 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import { classifyProduct } from './classify.js';
-import { parseProductManifest } from './context.js';
+import { getMemoryContext, parseProductManifest } from './context.js';
 import { openSitesRepository } from './git-store.js';
 import { readProductFile, writeProductFile } from './local-store.js';
+import type { SeedLookupResult } from './model.js';
 import { canonicalProductKey } from './product-resolver.js';
 
 const run = promisify(execFile);
@@ -50,6 +51,26 @@ describe('product classification', () => {
     expect(again).toMatchObject({ status: 'classified', existing: true, revision: first.revision });
   });
 
+  it('refuses distinct classification when an incompatible beta SITE.md exists', async () => {
+    const { homeDir, revision } = await primed('ycombinator.com');
+    await mkdir(join(homeDir, '.webcmd/sites/news.ycombinator.com/sitemap'), { recursive: true });
+    await writeFile(
+      join(homeDir, '.webcmd/sites/news.ycombinator.com/sitemap/SITE.md'),
+      '# beta schema\nold beta content\n',
+    );
+
+    await expect(classifyProduct({
+      requested: 'https://news.ycombinator.com/',
+      decision: 'distinct',
+      expectedRevision: revision,
+      homeDir,
+    })).rejects.toThrow(/incompatible beta schema/i);
+
+    expect(await readProductFile('news.ycombinator.com', 'manifest.json', { homeDir })).toBeNull();
+    expect(parseProductManifest(await readProductFile('ycombinator.com', 'manifest.json', { homeDir }))?.interfaces)
+      .toEqual([]);
+  });
+
   it('creates a distinct package and does not mutate the parent', async () => {
     const { homeDir, revision } = await primed('ycombinator.com');
     const result = await classifyProduct({
@@ -72,6 +93,36 @@ describe('product classification', () => {
       interfaces: [],
       seed: { status: 'unattempted' },
     });
+  });
+
+  it('seeds a newly distinct package on the next context', async () => {
+    const { homeDir } = await primed('ycombinator.com');
+    const classified = await classifyProduct({
+      requested: 'https://news.ycombinator.com/',
+      decision: 'distinct',
+      expectedRevision: await (await openSitesRepository({ homeDir })).revision(),
+      homeDir,
+    });
+    expect(classified).toMatchObject({ status: 'classified', existing: false });
+    const context = await getMemoryContext({
+      url: 'https://news.ycombinator.com/',
+      taskId: 'task-hn',
+      homeDir,
+      seedProvider: {
+        lookup: async (): Promise<SeedLookupResult> => ({
+          status: 'available',
+          revision: 'hn-1',
+          site: '# HN\n',
+        }),
+      },
+    });
+
+    expect(context.manifest?.seed).toEqual({ status: 'available', revision: 'hn-1' });
+    expect(context.manifest?.product.key).toBe('news.ycombinator.com');
+    expect(context.siteMarkdown).toBe('# HN\n');
+    expect(await readProductFile('news.ycombinator.com', 'sitemap/SITE.md', { homeDir })).toBe('# HN\n');
+    expect(parseProductManifest(await readProductFile('ycombinator.com', 'manifest.json', { homeDir }))?.interfaces)
+      .toEqual([]);
   });
 
   it('returns a CAS conflict without writing', async () => {
@@ -150,6 +201,34 @@ describe('product classification', () => {
     expect((await git(sites, ['diff', '--cached', '--name-only'])).trim()).toBe('');
   });
 
+  it('combines classify commit and rollback errors', async () => {
+    const { homeDir, revision } = await primed('reddit.com');
+    const productDir = join(homeDir, '.webcmd/sites/reddit.com');
+    try {
+      const error = await withFailingCommit(async () => classifyProduct({
+        requested: 'https://old.reddit.com/',
+        decision: 'same-product',
+        parent: 'reddit.com',
+        expectedRevision: revision,
+        homeDir,
+      }).then(
+        () => {
+          throw new Error('expected classify to fail');
+        },
+        (err: unknown) => err,
+      ), productDir);
+      expect(error).toBeInstanceOf(AggregateError);
+      const aggregate = error as AggregateError;
+      expect(aggregate.errors).toHaveLength(2);
+      expect(aggregate.message).toMatch(/rollback/i);
+      expect(aggregate.errors.map((item) => (item instanceof Error ? item.message : String(item))).join('\n')).toMatch(
+        /EACCES|EPERM|permission denied/i,
+      );
+    } finally {
+      await chmod(productDir, 0o755).catch(() => undefined);
+    }
+  });
+
   it('deletes a newly created distinct manifest after a commit failure', async () => {
     const { homeDir, sites, revision } = await primed('ycombinator.com');
     await withFailingCommit(async () => {
@@ -168,22 +247,26 @@ describe('product classification', () => {
   });
 });
 
-async function withFailingCommit(fn: () => Promise<void>) {
+async function withFailingCommit<T>(fn: () => Promise<T>, chmodOnFail?: string): Promise<T> {
   const wrapperDir = await mkdtemp(join(tmpdir(), 'webcmd-classify-git-'));
   tempHomes.push(wrapperDir);
   const { stdout } = await run('/usr/bin/which', ['git'], { encoding: 'utf8' });
   const wrapper = join(wrapperDir, 'git');
   await writeFile(wrapper, `#!/usr/bin/env node
+const { chmodSync } = require('node:fs');
 const { spawnSync } = require('node:child_process');
 const args = process.argv.slice(2);
-if (args.includes('commit')) process.exit(1);
+if (args.includes('commit')) {
+  ${chmodOnFail ? `try { chmodSync(${JSON.stringify(chmodOnFail)}, 0o555); } catch {}` : ''}
+  process.exit(1);
+}
 const result = spawnSync(${JSON.stringify(stdout.trim())}, args, { stdio: 'inherit' });
 process.exit(result.status ?? 1);
 `);
   await chmod(wrapper, 0o755);
   process.env.PATH = `${wrapperDir}:${originalPath}`;
   try {
-    await fn();
+    return await fn();
   } finally {
     process.env.PATH = originalPath;
   }

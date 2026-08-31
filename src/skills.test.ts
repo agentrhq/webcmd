@@ -254,6 +254,8 @@ describe('webcmd skills content', () => {
     expect(git).toMatch(/same task id|same --task-id|--task-id <(?:id|same-id)>/i);
     expect(git).toMatch(/before editing|before you edit|before draft/i);
     expect(git).toMatch(/does not destroy|will not destroy|before any draft edit/i);
+    expect(git).toMatch(/reuses the existing draft/i);
+    expect(git).toMatch(/did not publish|does not publish|never (?:claim|report).{0,40}published/i);
     expect(git).toContain('webcmd site memory context');
   });
 

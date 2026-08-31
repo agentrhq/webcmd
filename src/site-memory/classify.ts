@@ -69,8 +69,12 @@ async function classifySameProduct(
     const revision = await repo.commit([`${parent.key}/manifest.json`], `classify ${requested.key} same-product ${parent.key}`);
     return classified('same-product', requested, parent, false, revision);
   } catch (err) {
-    if (prior === null) await deleteProductFile(parent.key, 'manifest.json', opts);
-    else await writeProductFile(parent.key, 'manifest.json', prior, opts);
+    try {
+      if (prior === null) await deleteProductFile(parent.key, 'manifest.json', opts);
+      else await writeProductFile(parent.key, 'manifest.json', prior, opts);
+    } catch (cleanupErr) {
+      throw new AggregateError([err, cleanupErr], 'Classification failed and rollback also failed');
+    }
     throw err;
   }
 }
@@ -90,6 +94,9 @@ async function classifyDistinct(
     return classified('distinct', requested, requested, true, actual);
   }
   const prior = await readProductFile(requested.key, 'manifest.json', opts);
+  if (await readProductFile(requested.key, 'sitemap/SITE.md', opts) && !parseProductManifest(prior)) {
+    throw new Error('Incompatible beta schema; learning is read-only until this SITE.md is cleared.');
+  }
   const manifest: ProductManifest = {
     schemaVersion: 1,
     product: requested,
@@ -101,8 +108,12 @@ async function classifyDistinct(
     const revision = await repo.commit([`${requested.key}/manifest.json`], `classify ${requested.key} distinct`);
     return classified('distinct', requested, requested, false, revision);
   } catch (err) {
-    if (prior === null) await deleteProductFile(requested.key, 'manifest.json', opts);
-    else await writeProductFile(requested.key, 'manifest.json', prior, opts);
+    try {
+      if (prior === null) await deleteProductFile(requested.key, 'manifest.json', opts);
+      else await writeProductFile(requested.key, 'manifest.json', prior, opts);
+    } catch (cleanupErr) {
+      throw new AggregateError([err, cleanupErr], 'Classification failed and rollback also failed');
+    }
     throw err;
   }
 }

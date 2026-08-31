@@ -89,6 +89,73 @@ describe('memory context initialization', () => {
     expect(await git(sites, ['ls-files'])).not.toContain('example.test/sitemap/SITE.md');
   });
 
+  it('retries an unattempted seed once lookup is enabled and preserves identity', async () => {
+    const { homeDir, sites } = await tempSites();
+    await getMemoryContext({
+      url: 'https://example.test/',
+      taskId: 'task-1',
+      homeDir,
+      seedProvider: provider(async () => ({ status: 'unattempted' })),
+    });
+    const lookup = vi.fn(async (): Promise<SeedLookupResult> => ({
+      status: 'available',
+      revision: 'seed-1',
+      site: '# Seeded\n',
+      references: { 'alt.md': '# Alt\n' },
+    }));
+
+    const context = await getMemoryContext({
+      url: 'https://example.test/',
+      taskId: 'task-2',
+      homeDir,
+      seedProvider: provider(lookup),
+    });
+
+    expect(lookup).toHaveBeenCalledTimes(1);
+    expect(context.manifest?.seed).toEqual({ status: 'available', revision: 'seed-1' });
+    expect(context.manifest?.product.key).toBe('example.test');
+    expect(context.manifest?.interfaces).toEqual([]);
+    expect(context.siteMarkdown).toBe('# Seeded\n');
+    expect(parseProductManifest(await readProductFile('example.test', 'manifest.json', { homeDir }))?.seed)
+      .toEqual({ status: 'available', revision: 'seed-1' });
+    expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBe('# Seeded\n');
+    expect(await readProductFile('example.test', 'sitemap/references/alt.md', { homeDir })).toBe('# Alt\n');
+    expect(await git(sites, ['ls-files'])).toContain('example.test/sitemap/SITE.md');
+    lookup.mockClear();
+    await getMemoryContext({
+      url: 'https://example.test/',
+      taskId: 'task-3',
+      homeDir,
+      seedProvider: provider(lookup),
+    });
+    expect(lookup).not.toHaveBeenCalled();
+  });
+
+  it('leaves unattempted in place when lookup stays disabled', async () => {
+    const { homeDir, sites } = await tempSites();
+    const lookup = vi.fn(async () => ({ status: 'unattempted' as const }));
+    await getMemoryContext({
+      url: 'https://example.test/',
+      taskId: 'task-1',
+      homeDir,
+      seedProvider: provider(lookup),
+    });
+    lookup.mockClear();
+    const log = (await git(sites, ['log', '--oneline'])).trim();
+
+    const context = await getMemoryContext({
+      url: 'https://example.test/',
+      taskId: 'task-2',
+      homeDir,
+      seedProvider: provider(lookup),
+    });
+
+    expect(context.manifest?.seed).toEqual({ status: 'unattempted' });
+    expect(lookup).toHaveBeenCalledTimes(1);
+    expect((await git(sites, ['log', '--oneline'])).trim()).toBe(log);
+    expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBeNull();
+  });
+
   it('does not look up a seed once a product already exists', async () => {
     const { homeDir } = await tempSites();
     const lookup = vi.fn(async () => ({ status: 'absent' as const }));
@@ -174,6 +241,37 @@ describe('memory context initialization', () => {
     expect(await readProductFile('example.test', 'manifest.json', { homeDir })).toBeNull();
     expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBeNull();
     expect(lookup).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not overwrite existing SITE or reference draft files', async () => {
+    const { homeDir } = await tempSites();
+    const context = await getMemoryContext({
+      url: 'https://example.test/',
+      taskId: 'task-1',
+      homeDir,
+      seedProvider: provider(async () => ({
+        status: 'available',
+        revision: 'r1',
+        site: '# Draft me\n',
+        references: { 'alt.md': '# Alt\n' },
+      })),
+    });
+    const siteDraft = join(context.draftPath, 'SITE.md');
+    const refDraft = join(context.draftPath, 'references', 'alt.md');
+    const editedSite = '# Draft me\n\n- [verified 2026-09-01] IMPORTANT: /del bans the account.\n';
+    const editedRef = '# Alt\n\n- [verified 2026-09-01] Keep the local note.\n';
+    await writeFile(siteDraft, editedSite);
+    await writeFile(refDraft, editedRef);
+
+    await getMemoryContext({
+      url: 'https://example.test/',
+      taskId: 'task-1',
+      homeDir,
+      seedProvider: provider(async () => ({ status: 'absent' })),
+    });
+
+    expect(await readFile(siteDraft, 'utf8')).toBe(editedSite);
+    expect(await readFile(refDraft, 'utf8')).toBe(editedRef);
   });
 
   it('creates a task-id-contained draft and rejects escaping task ids', async () => {

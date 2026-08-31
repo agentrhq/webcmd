@@ -1,6 +1,6 @@
 # Checkpoint lifecycle
 
-Never use git against site memory. Webcmd owns the repository. If `SITE_MEMORY_CONFLICT` is returned, retry once: `Retry webcmd site memory context, then checkpoint once.` That is exactly one retry. Stop after the second conflict.
+Never use git against site memory. Webcmd owns the repository. If `SITE_MEMORY_CONFLICT` is returned, retry once: `Retry webcmd site memory context, then checkpoint once.` That retry reuses the existing draft for the same task id. That is exactly one retry. Stop after the second conflict.
 
 ```bash
 webcmd site memory checkpoint <product> \
@@ -32,4 +32,4 @@ Any active-memory update that finds `SITE.md` over 500 physical lines must rewri
 
 Dispositions are `[{ "id", "status": "ingested"|"rejected", "evidenceRole"?, "rejectionReason"?, "conflictsWithMemory"? }]`. Ingested rows need `evidenceRole` `supporting` or `dissenting`. Rejected rows need `rejectionReason`.
 
-On conflict, run context again, then checkpoint once with the new revision. Do not loop.
+On conflict, run context again with the same task id, then checkpoint once with the new revision. Context reuses the existing draft and does not overwrite it. A `committed` result with no memory change did not publish new content. Do not loop.
