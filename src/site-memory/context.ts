@@ -1,4 +1,4 @@
-import { mkdir, readdir } from 'node:fs/promises';
+import { mkdir, readdir, unlink } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { openSitesRepository, type SitesRepository } from './git-store.js';
 import { atomicWrite, containedRelativePath, listProductKeys, readProductFile, sitesRoot, writeProductFile } from './local-store.js';
@@ -28,12 +28,19 @@ export async function getMemoryContext(input: MemoryContextInput): Promise<Memor
   const legacy = await isLegacySite(resolution.requested.key, opts);
   if (legacy) diagnostics.push('Incompatible beta schema; learning is read-only until this SITE.md is cleared.');
 
+  let persistFailed = false;
   let transient: Extract<SeedLookupResult, { status: 'available' }> | undefined;
   if (resolution.status === 'new' && !legacy) {
     const seed = await (input.seedProvider ?? createHttpSeedProvider()).lookup(resolution.requested.key);
     if (git && seed.status !== 'unattempted') {
-      await persistSeed(resolution.requested, seed, git, opts);
-      resolution = resolveProduct(input.url, await loadManifests(opts));
+      try {
+        await persistSeed(resolution.requested, seed, git, opts);
+        resolution = resolveProduct(input.url, await loadManifests(opts));
+      } catch (err) {
+        persistFailed = true;
+        diagnostics.push(err instanceof Error ? err.message : String(err));
+        if (seed.status === 'available') transient = seed;
+      }
     } else if (!git && seed.status === 'available') {
       transient = seed;
     }
@@ -54,7 +61,7 @@ export async function getMemoryContext(input: MemoryContextInput): Promise<Memor
     siteMarkdown,
     references,
     draftPath,
-    readOnly: resolution.readOnly || !git || legacy,
+    readOnly: resolution.readOnly || !git || legacy || persistFailed,
     diagnostics,
   };
 }
@@ -67,18 +74,29 @@ async function persistSeed(
 ): Promise<void> {
   const persisted: PersistedSeedResult = seed.status === 'available' ? { status: 'available', revision: seed.revision } : seed;
   const manifest: ProductManifest = { schemaVersion: 1, product, interfaces: [], seed: persisted };
-  const paths = [`${product.key}/manifest.json`];
-  await writeProductFile(product.key, 'manifest.json', `${JSON.stringify(manifest, null, 2)}\n`, opts);
-  if (seed.status === 'available') {
-    await writeProductFile(product.key, 'sitemap/SITE.md', seed.site, opts);
-    paths.push(`${product.key}/sitemap/SITE.md`);
-    for (const [name, body] of Object.entries(seed.references ?? {})) {
-      const path = `sitemap/references/${name}`;
-      await writeProductFile(product.key, path, body, opts);
-      paths.push(`${product.key}/${path}`);
+  const files = ['manifest.json'];
+  try {
+    await writeProductFile(product.key, 'manifest.json', `${JSON.stringify(manifest, null, 2)}\n`, opts);
+    if (seed.status === 'available') {
+      await writeProductFile(product.key, 'sitemap/SITE.md', seed.site, opts);
+      files.push('sitemap/SITE.md');
+      for (const [name, body] of Object.entries(seed.references ?? {})) {
+        const path = `sitemap/references/${name}`;
+        await writeProductFile(product.key, path, body, opts);
+        files.push(path);
+      }
     }
+    await repo.commit(files.map((file) => `${product.key}/${file}`), `initialize ${product.key}`);
+  } catch (err) {
+    await Promise.all(files.map((file) => unlinkProductFile(product.key, file, opts)));
+    throw err;
   }
-  await repo.commit(paths, `initialize ${product.key}`);
+}
+
+async function unlinkProductFile(productKey: string, path: string, opts: LocalStoreOptions): Promise<void> {
+  const productRoot = join(sitesRoot(opts), productKey);
+  const relative = containedRelativePath(productRoot, path);
+  await unlink(join(productRoot, ...relative.split('/'))).catch(() => undefined);
 }
 
 async function writeDraft(
@@ -89,6 +107,7 @@ async function writeDraft(
   transientRefs: Record<string, string> | undefined,
   opts: LocalStoreOptions,
 ): Promise<void> {
+  await mkdir(draftPath, { recursive: true });
   const draftRoot = join(draftPath, '..');
   if (siteMarkdown != null) await writeContained(draftRoot, 'sitemap/SITE.md', siteMarkdown);
   for (const { path } of references) {
@@ -116,19 +135,41 @@ async function loadManifests(opts: LocalStoreOptions): Promise<ProductManifest[]
 function parseManifest(raw: string | null): ProductManifest | undefined {
   if (!raw) return undefined;
   try {
-    const value = JSON.parse(raw) as ProductManifest;
-    if (value.schemaVersion !== 1 || !value.product?.key || !value.seed?.status) return undefined;
-    return value;
+    const value = JSON.parse(raw) as unknown;
+    return isProductManifest(value) ? value : undefined;
   } catch {
     return undefined;
   }
 }
 
+function isProductManifest(value: unknown): value is ProductManifest {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const candidate = value as Record<string, unknown>;
+  return candidate.schemaVersion === 1
+    && isProductIdentity(candidate.product)
+    && Array.isArray(candidate.interfaces)
+    && candidate.interfaces.every(isProductIdentity)
+    && isPersistedSeed(candidate.seed);
+}
+
+function isProductIdentity(value: unknown): value is ProductIdentity {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const candidate = value as Record<string, unknown>;
+  return [candidate.key, candidate.hostname, candidate.displayHostname, candidate.registrableDomain]
+    .every((field) => typeof field === 'string' && field.length > 0);
+}
+
+function isPersistedSeed(value: unknown): value is PersistedSeedResult {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const candidate = value as Record<string, unknown>;
+  if (candidate.status === 'unattempted' || candidate.status === 'absent' || candidate.status === 'lookup-failed') return true;
+  return candidate.status === 'available' && typeof candidate.revision === 'string' && candidate.revision.length > 0;
+}
+
 async function isLegacySite(productKey: string, opts: LocalStoreOptions): Promise<boolean> {
   const site = await readProductFile(productKey, 'sitemap/SITE.md', opts);
   if (!site) return false;
-  if (parseManifest(await readProductFile(productKey, 'manifest.json', opts))) return /^---\s*\n/.test(site);
-  return true;
+  return !parseManifest(await readProductFile(productKey, 'manifest.json', opts));
 }
 
 async function listReferences(productKey: string, opts: LocalStoreOptions): Promise<{ path: string }[]> {
