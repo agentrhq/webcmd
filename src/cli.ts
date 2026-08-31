@@ -873,7 +873,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
           console.error('Hint: run "webcmd skills update" once the new version is active.');
         }
       }
-      // The Cloak runtime/extension ships separately from npm; surface it if stale.
+  // The Cloak runtime/extension ships separately from npm; surface it if stale.
       const runtimeNotice = getRuntimeUpdateNotice();
       if (runtimeNotice) process.stdout.write(runtimeNotice);
       console.log('Update complete.');
@@ -1359,12 +1359,20 @@ cli({
   browser.addCommand(withBrowserVerbose(new Command('bind')
     .description('Bind this session to an existing page')
     .addOption(new Option('--page <id>', 'Stable page id returned by tabs')
-      .makeOptionMandatory()
       .argParser(browserOptionValueParser('bind', 'page')!))
+    .addOption(new Option('--target-id <id>', 'Native CDP target id for an explicitly acquired page')
+      .argParser(browserOptionValueParser('bind', 'targetId')!))
     .action(rawBrowserAction((session, routing, opts) => {
       const page = typeof opts.page === 'string' ? opts.page.trim() : '';
-      if (!page) throw new BrowserCommandError('--page must be a non-empty stable page id', 'invalid_request');
-      return sendCommand('bind', { session, surface: 'browser', ...routing, page });
+      const targetId = typeof opts.targetId === 'string' ? opts.targetId.trim() : '';
+      if (page && targetId) throw new BrowserCommandError('Use either --page or --target-id, not both', 'invalid_request');
+      if (!page && !targetId) throw new BrowserCommandError('Bind requires a non-empty --page or --target-id', 'invalid_request');
+      return sendCommand('bind', {
+        session,
+        surface: 'browser',
+        ...routing,
+        ...(page ? { page } : { targetId }),
+      });
     }))));
 
   const runCommand = withBrowserVerbose(new Command('run')

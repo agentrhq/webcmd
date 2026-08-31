@@ -8,7 +8,6 @@ export default defineConfig({
         test: {
           name: 'unit',
           include: ['src/**/*.test.ts'],
-          exclude: ['src/browser/runtime/local-cloak/browser-run.test.ts'],
           sequence: { groupOrder: 0 },
         },
       },

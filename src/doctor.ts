@@ -84,11 +84,9 @@ function isLaunchableFile(binaryPath: string): boolean {
 
 /**
  * Check whether the CloakBrowser Chromium binary is actually installed.
- * `runtimeConnected: true` only means the
- * daemon/Cloak runtime process is healthy — it says nothing about whether the
- * browser binary CloakBrowser needs to launch is present on disk, which is
- * exactly the gap that made a missing-binary failure look like a generic
- * connectivity problem (#239).
+ * `runtimeConnected: true` only means the daemon/Cloak runtime process is
+ * healthy — it says nothing about whether the browser binary CloakBrowser
+ * needs to launch is present on disk.
  */
 export function checkBrowserBinary(): BrowserBinaryStatus {
   const override = resolveBrowserBinaryOverride();
@@ -298,9 +296,7 @@ export function renderBrowserDoctorReport(report: DoctorReport): string {
     : report.runtimeConnected ? 'connected' : 'not connected';
   lines.push(`${runtimeIcon} Runtime: ${runtimeName} ${runtimeLabel}${runtimeVersion}`);
 
-  // Browser binary status — distinct from "Runtime connected", which only
-  // reflects the daemon/Cloak process and says nothing about whether the
-  // Chromium binary Cloak needs to launch is actually installed.
+  // Browser binary availability is distinct from a live daemon attachment.
   if (report.binary) {
     const binaryIcon = report.binary.installed === undefined
       ? '[WARN]'

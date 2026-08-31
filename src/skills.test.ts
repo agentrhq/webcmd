@@ -75,7 +75,7 @@ describe('webcmd skills content', () => {
       }
       expect(guide).toMatch(/web fetch.*(?:remains|runs).*local/i);
       expect(guide).toMatch(/web fetch.*never opens a browser/i);
-      expect(guide).toMatch(/local.*Cloak[\s\S]{0,160}hosted.*Webcmd Cloud.*Browser Use/i);
+      expect(guide).toMatch(/local.*SLAB[\s\S]{0,160}hosted.*Webcmd Cloud.*Browser Use/i);
       expect(guide).not.toMatch(/fetch-browser|web read|--browser/i);
     }
     expect(skill).toContain('Search Summary');

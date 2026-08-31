@@ -138,11 +138,25 @@ export function parseHostedBrowserStructure(argv: readonly string[]): ParsedHost
     );
   }
 
-  return parsed ?? {
+  const result = parsed ?? {
     positionals: [],
     options: {},
     ...readBrowserGlobals(root, browser),
   };
+  validateBindSelectors(result);
+  return result;
+}
+
+function validateBindSelectors(result: ParsedHostedBrowserStructure): void {
+  if (result.commandName !== 'bind') return;
+  const page = typeof result.options.page === 'string' ? result.options.page : '';
+  const targetId = typeof result.options.targetId === 'string' ? result.options.targetId : '';
+  if (Boolean(page) === Boolean(targetId)) {
+    throw new CommanderStructuralError(
+      `error: Bind requires exactly one of --page or --target-id\n`,
+      EXIT_CODES.USAGE_ERROR,
+    );
+  }
 }
 
 function normalizeBrowserOptions(command: string, options: Record<string, unknown>): Record<string, unknown> {

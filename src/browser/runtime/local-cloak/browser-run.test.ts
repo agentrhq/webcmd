@@ -1,4 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright-core';
 import { dispatchCloakAction } from './actions.js';
 import { CloakSessionManager, type LaunchPersistentContext } from './session-manager.js';
@@ -7,8 +10,10 @@ import * as snapshot from '../../snapshot/index.js';
 let browser: Browser;
 let context: BrowserContext;
 let initialPage: Page;
+let initialPageId: string;
 let manager: CloakSessionManager;
 let launchPersistentContext: ReturnType<typeof vi.fn<LaunchPersistentContext>>;
+let baseDir: string;
 
 const command = (id: string, action: 'run' | 'snapshot' | 'tabs' | 'bind' | 'close-window', extra: Record<string, unknown> = {}) => ({
   id,
@@ -24,18 +29,22 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
+  baseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-browser-run-test-'));
   context = await browser.newContext();
   initialPage = await context.newPage();
   launchPersistentContext = vi.fn<LaunchPersistentContext>().mockResolvedValue(context);
   manager = new CloakSessionManager({
-    baseDir: '/tmp/webcmd-browser-run-test',
+    baseDir,
     launchPersistentContext,
   });
-  initialPage = (await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser' })).page;
+  const initialLease = await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser' });
+  initialPage = initialLease.page;
+  initialPageId = initialLease.pageId;
 });
 
 afterEach(async () => {
   await context.close();
+  fs.rmSync(baseDir, { recursive: true, force: true });
 });
 
 afterAll(async () => {
@@ -224,14 +233,13 @@ describe('local Cloak browser run', () => {
     const original = await dispatchCloakAction(manager, command('run-original', 'run', {
       source: "await page.setContent('<p>original</p>'); return 'original';",
     }));
-    const created = await dispatchCloakAction(manager, command('new-tab', 'tabs', {
-      op: 'new',
+    const bound = await dispatchCloakAction(manager, command('bind', 'bind', {
+      page: initialPageId,
       session: 'manual',
     }));
-    const bound = await dispatchCloakAction(manager, command('bind', 'bind', { page: created.page }));
 
     expect(original).toMatchObject({ ok: true, page: expect.any(String) });
     expect(bound).toMatchObject({ ok: false, errorCode: 'SESSION_WINDOW_CONFLICT' });
-    expect(created).toMatchObject({ ok: true, page: expect.any(String) });
+    expect(initialPageId).toEqual(expect.any(String));
   });
 });

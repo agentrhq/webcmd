@@ -127,7 +127,7 @@ export function formatBrowserConnectError(kind: ConnectFailureKind, detail?: str
     case 'extension-not-connected':
       return new BrowserConnectError(
         'Browser runtime is not ready.' + (detail ? `\n\n${detail}` : ''),
-        'Run `webcmd daemon restart`. If this is the first browser-backed command, wait for CloakBrowser to finish installing its browser binary, then retry.',
+        'Open SLAB and retry the browser command. Run `webcmd doctor` for local status.',
         'runtime-not-ready',
       );
     case 'command-failed':

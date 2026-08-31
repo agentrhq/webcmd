@@ -1,0 +1,110 @@
+{
+  "INVALID_REQUEST": {
+    "request": {
+      "id": "error-invalid-1",
+      "method": "attach",
+      "params": {
+        "protocolVersion": { "min": 1, "max": 1 },
+        "profileId": "default"
+      }
+    },
+    "response": {
+      "id": "error-invalid-1",
+      "ok": false,
+      "error": {
+        "code": "INVALID_REQUEST",
+        "message": "Invalid JSON, framing, shape, size, or params"
+      }
+    }
+  },
+  "INCOMPATIBLE_PROTOCOL": {
+    "request": {
+      "id": "error-protocol-1",
+      "method": "hello",
+      "params": {
+        "protocolVersion": { "min": 2, "max": 2 },
+        "clientVersion": "webcmd/0.7.3"
+      }
+    },
+    "response": {
+      "id": "error-protocol-1",
+      "ok": false,
+      "error": {
+        "code": "INCOMPATIBLE_PROTOCOL",
+        "message": "Client range does not include v1"
+      }
+    }
+  },
+  "PROFILE_NOT_FOUND": {
+    "request": {
+      "id": "error-profile-1",
+      "method": "attach",
+      "params": {
+        "protocolVersion": { "min": 1, "max": 1 },
+        "profileId": "missing-profile"
+      }
+    },
+    "response": {
+      "id": "error-profile-1",
+      "ok": false,
+      "error": {
+        "code": "PROFILE_NOT_FOUND",
+        "message": "Requested profile is unavailable"
+      }
+    }
+  },
+  "ATTACH_FAILED": {
+    "request": {
+      "id": "error-attach-1",
+      "method": "attach",
+      "params": {
+        "protocolVersion": { "min": 1, "max": 1 },
+        "profileId": "default"
+      }
+    },
+    "response": {
+      "id": "error-attach-1",
+      "ok": false,
+      "error": {
+        "code": "ATTACH_FAILED",
+        "message": "Browser could not create the attachment"
+      }
+    }
+  },
+  "AUTHENTICATION_FAILED": {
+    "request": {
+      "id": "error-auth-1",
+      "method": "attach",
+      "params": {
+        "protocolVersion": { "min": 1, "max": 1 },
+        "profileId": "default"
+      }
+    },
+    "response": {
+      "id": "error-auth-1",
+      "ok": false,
+      "error": {
+        "code": "AUTHENTICATION_FAILED",
+        "message": "CDP IPC credential was missing or wrong"
+      }
+    }
+  },
+  "CONNECTION_NOT_FOUND": {
+    "request": {
+      "id": "error-connection-1",
+      "method": "attach",
+      "params": {
+        "protocolVersion": { "min": 1, "max": 1 },
+        "profileId": "default"
+      }
+    },
+    "response": {
+      "id": "error-connection-1",
+      "ok": false,
+      "error": {
+        "code": "CONNECTION_NOT_FOUND",
+        "message": "A non-release operation referenced an unknown lease"
+      }
+    }
+  }
+}

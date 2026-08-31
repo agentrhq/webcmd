@@ -162,7 +162,6 @@ function parseSetupArgs(argv: readonly string[]): { help?: true; mode?: SetupMod
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i]!;
     if (token === '--help' || token === '-h') return { help: true };
-
     if (token === '--mode' || token.startsWith('--mode=')) {
       const value = token.startsWith('--mode=') ? token.slice('--mode='.length) : argv[++i];
       if (value !== 'local' && value !== 'hosted') {
