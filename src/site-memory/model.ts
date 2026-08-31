@@ -100,3 +100,17 @@ export interface CandidateSummary {
   consequence: string;
   status: CandidateStatus;
 }
+
+export type CheckpointReason = 'candidate_ingestion' | 'direct_correction' | 'major_rewrite';
+
+export interface CandidateDisposition {
+  id: string;
+  status: 'ingested' | 'rejected';
+  evidenceRole?: 'supporting' | 'dissenting' | null;
+  rejectionReason?: string | null;
+  conflictsWithMemory?: boolean;
+}
+
+export type CheckpointResult =
+  | { status: 'committed'; memoryCommit: MemoryRevision; provenanceCommit: MemoryRevision | null }
+  | { status: 'conflict'; expectedRevision: MemoryRevision | null; actualRevision: MemoryRevision | null };

@@ -110,10 +110,19 @@ export async function listCandidates(product: string, opts: LocalStoreOptions = 
 }
 
 export async function showCandidate(product: string, id: string, opts: LocalStoreOptions = {}): Promise<Candidate> {
+  return readCandidateRecord(product, id, opts);
+}
+
+export async function readCandidateRecord(product: string, id: string, opts: LocalStoreOptions = {}): Promise<Candidate> {
   const key = canonicalProductKey(product).key;
   const body = await readProductFile(key, candidatePath(id), opts);
   if (body === null) throw new Error(`Candidate ${id} was not found.`);
   return parseCandidate(body, id);
+}
+
+export async function updateCandidateRecord(product: string, candidate: Candidate, opts: LocalStoreOptions = {}): Promise<void> {
+  const key = canonicalProductKey(product).key;
+  await writeProductFile(key, candidatePath(candidate.id), `${JSON.stringify(encodeCandidate(candidate), null, 2)}\n`, opts);
 }
 
 function candidatePath(id: string): string {
