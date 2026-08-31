@@ -5,6 +5,9 @@ import { ArgumentError, CliError, EXIT_CODES } from '../errors.js';
 import { getRequestedHelpFormat } from '../help.js';
 import { render as renderOutput } from '../output.js';
 import { writeToStream } from '../stream-write.js';
+import { addCandidate, listCandidates, searchCandidates, showCandidate } from './candidates.js';
+import { checkpointMemory } from './checkpoint.js';
+import { getMemoryContext } from './context.js';
 import {
   addFieldMapping,
   addResponseSample,
@@ -19,6 +22,15 @@ import {
   type SiteMemoryBody,
   type SiteMemoryListing,
 } from './local-store.js';
+import {
+  CANDIDATE_KINDS,
+  type Candidate,
+  type CandidateDisposition,
+  type CandidateSummary,
+  type CheckpointReason,
+  type CheckpointResult,
+  type MemoryContext,
+} from './model.js';
 
 type JsonObject = Record<string, unknown>;
 type MemoryKind = 'notes' | 'endpoints' | 'field-map' | 'verify' | 'fixture';
@@ -33,6 +45,30 @@ export interface SiteMemoryBackend {
   fixture(site: string, command: string): Promise<string | null>;
   putFixture(site: string, command: string, body: string): Promise<void>;
   sample(site: string, command: string, body: string): Promise<void>;
+}
+
+export interface SiteLearningBackend {
+  context(url: string, taskId: string): Promise<MemoryContext>;
+  addCandidate(input: {
+    product: string;
+    hostname?: string;
+    kind: string;
+    claim: string;
+    evidence: string;
+    consequence: string;
+    observedAt?: string;
+  }): Promise<CandidateSummary>;
+  searchCandidates(product: string, query: string, limit?: number): Promise<CandidateSummary[]>;
+  showCandidate(product: string, id: string): Promise<Candidate>;
+  listCandidates(product: string): Promise<CandidateSummary[]>;
+  checkpoint(input: {
+    product: string;
+    taskId: string;
+    expectedRevision: string | null;
+    reason: CheckpointReason;
+    paths: string[];
+    dispositions?: CandidateDisposition[];
+  }): Promise<CheckpointResult>;
 }
 
 export interface SiteCommandIo {
@@ -74,6 +110,7 @@ export function registerSiteCommands(
   backend: SiteMemoryBackend,
   stdout?: NodeJS.WritableStream,
   io: SiteCommandIo = {},
+  learning?: SiteLearningBackend,
 ): void {
   const site = withHelpFooter(root.command('site')
     .description('Read and write per-site memory: notes, verified endpoints, field maps, fixtures and samples')
@@ -107,6 +144,7 @@ export function registerSiteCommands(
   list.action(async (name, opts: { output?: string; format?: string }) => {
     await emitListing(list, await backend.list(name), opts, stdout, ['path', 'updatedAt', 'byteSize', 'sha256']);
   });
+  if (learning) registerLearningCommands(memory, learning, stdout);
 
   /** Write commands print nothing by default; a format flag turns that into a result object. */
   const emitWriteResult = async (command: Command, payload: Record<string, unknown>): Promise<void> => {
@@ -260,6 +298,132 @@ export function registerSiteCommands(
   });
 }
 
+function registerLearningCommands(
+  memory: Command,
+  learning: SiteLearningBackend,
+  stdout?: NodeJS.WritableStream,
+): void {
+  const emit = async (command: Command, data: unknown, opts: { format?: string } = {}): Promise<void> => {
+    const fmt = resolveCommandOutputFormat(command, opts.format);
+    if (fmt === null) return;
+    await renderOutput(data, { fmt, fmtExplicit: true, stdout });
+  };
+
+  const context = addOutputFormatOption(withExample(memory.command('context')
+    .description('Resolve product identity, seed memory once, and return the task draft path')
+    .argument('<url>', 'Page URL used to resolve the product')
+    .requiredOption('--task-id <id>', 'Task id that owns the isolated draft'),
+    'webcmd site memory context https://example.test/ --task-id task-1 -f json'), 'json');
+  context.action(async (url: string, opts: { taskId: string; format?: string }) => {
+    await emit(context, await learning.context(url, opts.taskId), opts);
+  });
+
+  const candidate = withExample(memory.command('candidate')
+    .description('Capture and inspect candidate evidence: webcmd site memory candidate <add|search|show|list> <product>')
+    .usage('add|search|show|list <product> [args] [options]'),
+    'webcmd site memory candidate list example.test -f json');
+
+  const add = addOutputFormatOption(withExample(candidate.command('add')
+    .description('Record one qualifying observation as candidate evidence')
+    .argument('<product>', 'Product key or hostname')
+    .requiredOption('--kind <kind>', `One of: ${CANDIDATE_KINDS.join(', ')}`)
+    .requiredOption('--claim <claim>', 'Short claim this observation supports')
+    .requiredOption('--evidence <evidence>', 'Bounded secret-free evidence from the task')
+    .requiredOption('--consequence <consequence>', 'Why this may matter later')
+    .option('--hostname <hostname>', 'Observed hostname when it differs from the product key')
+    .option('--observed-at <timestamp>', 'Observation timestamp; defaults to now'),
+    'webcmd site memory candidate add example.test --kind access --claim "Login is optional" --evidence "Opened /hot" --consequence "Skip auth" -f json'), 'json');
+  add.action(async (product: string, opts: {
+    kind: string; claim: string; evidence: string; consequence: string; hostname?: string; observedAt?: string; format?: string;
+  }) => {
+    await emit(add, await learning.addCandidate({
+      product,
+      kind: parseCandidateKind(opts.kind),
+      claim: opts.claim,
+      evidence: opts.evidence,
+      consequence: opts.consequence,
+      ...(opts.hostname ? { hostname: opts.hostname } : {}),
+      ...(opts.observedAt ? { observedAt: opts.observedAt } : {}),
+    }), opts);
+  });
+
+  const search = addOutputFormatOption(withExample(candidate.command('search')
+    .description('Search pending candidates with bounded lexical matching')
+    .argument('<product>', 'Product key or hostname')
+    .requiredOption('--query <query>', 'Lexical query over claim, kind, hostname, and consequence')
+    .option('--limit <n>', 'Maximum matches to return'),
+    'webcmd site memory candidate search example.test --query "old reddit" -f json'), 'json');
+  search.action(async (product: string, opts: { query: string; limit?: string; format?: string }) => {
+    await emit(search, await learning.searchCandidates(product, opts.query, parseLimit(opts.limit)), opts);
+  });
+
+  const show = addOutputFormatOption(withExample(candidate.command('show')
+    .description('Load one explicit candidate, including environment provenance')
+    .argument('<product>', 'Product key or hostname')
+    .argument('<id>', 'Candidate id'),
+    'webcmd site memory candidate show example.test 20260831T142300Z-aaaa -f json'), 'json');
+  show.action(async (product: string, id: string, opts: { format?: string }) => {
+    try {
+      await emit(show, await learning.showCandidate(product, id), opts);
+    } catch (error) {
+      throw notFoundOrRethrow(error);
+    }
+  });
+
+  const candidateList = addOutputFormatOption(withExample(candidate.command('list')
+    .description('List candidate inventory for a product without raw environment values')
+    .argument('<product>', 'Product key or hostname'),
+    'webcmd site memory candidate list example.test -f json'), 'json');
+  candidateList.action(async (product: string, opts: { format?: string }) => {
+    await emit(candidateList, await learning.listCandidates(product), opts);
+  });
+
+  const checkpoint = addOutputFormatOption(withExample(memory.command('checkpoint')
+    .description('Publish a task draft into active memory with explicit candidate dispositions')
+    .argument('<product>', 'Product key or hostname')
+    .requiredOption('--task-id <id>', 'Task id whose draft should be published')
+    .requiredOption('--expected-revision <revision>', 'Revision returned by site memory context; use null when none')
+    .requiredOption('--reason <reason>', 'candidate_ingestion, direct_correction, or major_rewrite')
+    .requiredOption('--paths <paths>', 'Comma-separated Markdown paths to copy from the draft')
+    .option('--dispositions <json>', 'JSON array of candidate dispositions'),
+    'webcmd site memory checkpoint example.test --task-id task-1 --expected-revision rev1 --reason direct_correction --paths sitemap/SITE.md -f json'), 'json');
+  checkpoint.action(async (product: string, opts: {
+    taskId: string; expectedRevision: string; reason: string; paths: string; dispositions?: string; format?: string;
+  }) => {
+    const result = await learning.checkpoint({
+      product,
+      taskId: opts.taskId,
+      expectedRevision: parseRevision(opts.expectedRevision),
+      reason: parseCheckpointReason(opts.reason),
+      paths: parsePaths(opts.paths),
+      ...(opts.dispositions ? { dispositions: parseDispositions(opts.dispositions) } : {}),
+    });
+    if (result.status === 'conflict') {
+      throw Object.assign(
+        new CliError(
+          'SITE_MEMORY_CONFLICT',
+          'Expected revision changed.',
+          'Retry webcmd site memory context, then checkpoint once.',
+          EXIT_CODES.TEMPFAIL,
+        ),
+        { details: { expectedRevision: result.expectedRevision, actualRevision: result.actualRevision } },
+      );
+    }
+    await emit(checkpoint, result, opts);
+  });
+}
+
+export function createLocalLearningBackend(options: LocalStoreOptions = {}): SiteLearningBackend {
+  return {
+    context: (url, taskId) => getMemoryContext({ url, taskId, ...options }),
+    addCandidate: input => addCandidate({ ...input, ...options }),
+    searchCandidates: (product, query, limit) => searchCandidates(product, query, limit, options),
+    showCandidate: (product, id) => showCandidate(product, id, options),
+    listCandidates: product => listCandidates(product, options),
+    checkpoint: input => checkpointMemory({ ...input, ...options }),
+  };
+}
+
 export function createLocalSiteMemoryBackend(options: LocalStoreOptions = {}): SiteMemoryBackend {
   return {
     show: async (site, kind) => (await showSiteMemory(site, options)).filter(item => !kind || kindForPath(item.path) === kind),
@@ -300,6 +464,48 @@ function parseKind(value: string | undefined): MemoryKind | undefined {
   if (value === undefined) return undefined;
   if (value === 'notes' || value === 'endpoints' || value === 'field-map' || value === 'verify' || value === 'fixture') return value;
   throw new ArgumentError('--kind must be notes, endpoints, field-map, verify, or fixture.');
+}
+
+function parseCandidateKind(value: string): (typeof CANDIDATE_KINDS)[number] {
+  if ((CANDIDATE_KINDS as readonly string[]).includes(value)) return value as (typeof CANDIDATE_KINDS)[number];
+  throw new ArgumentError(`--kind must be one of: ${CANDIDATE_KINDS.join(', ')}.`);
+}
+
+const CHECKPOINT_REASONS = ['candidate_ingestion', 'direct_correction', 'major_rewrite'] as const;
+
+function parseCheckpointReason(value: string): CheckpointReason {
+  if ((CHECKPOINT_REASONS as readonly string[]).includes(value)) return value as CheckpointReason;
+  throw new ArgumentError(`--reason must be one of: ${CHECKPOINT_REASONS.join(', ')}.`);
+}
+
+function parseRevision(value: string): string | null {
+  return value === '' || value === 'null' ? null : value;
+}
+
+function parsePaths(value: string): string[] {
+  return value.split(',').map(path => path.trim()).filter(Boolean);
+}
+
+function parseDispositions(value: string): CandidateDisposition[] {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (Array.isArray(parsed)) return parsed as CandidateDisposition[];
+  } catch { /* covered by the shared message below */ }
+  throw new ArgumentError('--dispositions must be a JSON array.');
+}
+
+function parseLimit(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) throw new ArgumentError('--limit must be a positive integer.');
+  return parsed;
+}
+
+function notFoundOrRethrow(error: unknown): never {
+  if (error instanceof Error && /not found/i.test(error.message)) {
+    throw new CliError('SITE_MEMORY_NOT_FOUND', error.message, undefined, EXIT_CODES.EMPTY_RESULT);
+  }
+  throw error;
 }
 
 function parseJsonObject(value: string): JsonObject {

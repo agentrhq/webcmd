@@ -653,6 +653,24 @@ describe('runHostedCli', () => {
     }
   });
 
+  it.each([
+    ['site', 'memory', 'context', 'https://example.test/', '--task-id', 'task-1'],
+    ['site', 'memory', 'candidate', 'add', 'example.test', '--kind', 'access', '--claim', 'c', '--evidence', 'e', '--consequence', 'q'],
+    ['site', 'memory', 'checkpoint', 'example.test', '--task-id', 'task-1', '--expected-revision', 'rev', '--reason', 'direct_correction', '--paths', 'sitemap/SITE.md'],
+  ])('does not advertise unsupported local learning mutations on hosted: %j', async (...argv) => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    const stderr = sink();
+    const result = await runHostedCli(argv, {
+      config: makeHostedConfig({ apiBaseUrl: 'https://api.example.com', apiKey: 'key' }),
+      stderr: stderr.stream,
+      fetchImpl,
+    });
+
+    expect(result.exitCode).toBe(2);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(`${stderr.text()}${JSON.stringify(result)}`).not.toMatch(/draftPath|candidates\//);
+  });
+
   it('uses hosted manifest provenance for adapter source and keeps memory reads on stdout', async () => {
     const homeDir = await mkdtemp(path.join(tmpdir(), 'webcmd-hosted-authoring-'));
     const stdout = sink();
