@@ -4,6 +4,7 @@ import type { BrowserContext, Page as PlaywrightPage } from 'playwright-core';
 import { CloakSessionManager, resolveLeaseKey } from './session-manager.js';
 import { log } from '../../../logger.js';
 import { dispatchCloakAction } from './actions.js';
+import { resolveBrowserProfileNamespace } from '../../browser-binary.js';
 
 function fakeContext() {
   const listeners = new Map<string, Set<(...args: unknown[]) => void>>();
@@ -191,8 +192,9 @@ describe('CloakSessionManager', () => {
   });
 
   it('passes WEBCMD_BROWSER_BINARY_PATH through as the Playwright executable', async () => {
+    const browserPath = '/opt/chromium-fork/chrome';
     vi.stubEnv('CLOAKBROWSER_BINARY_PATH', '/opt/cloak/chrome');
-    vi.stubEnv('WEBCMD_BROWSER_BINARY_PATH', '/opt/chromium-fork/chrome');
+    vi.stubEnv('WEBCMD_BROWSER_BINARY_PATH', browserPath);
     const launched = fakeContext();
     const launchPersistentContext = vi.fn().mockResolvedValue(launched.context);
     const manager = new CloakSessionManager({
@@ -203,10 +205,15 @@ describe('CloakSessionManager', () => {
     await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser' });
 
     expect(launchPersistentContext).toHaveBeenCalledWith(expect.objectContaining({
-      userDataDir: expect.stringMatching(/\/custom-chromium-[a-f0-9]{8}\/profiles\/default$/),
-      launchOptions: { executablePath: '/opt/chromium-fork/chrome' },
+      userDataDir: path.join(
+        '/tmp/webcmd-test',
+        resolveBrowserProfileNamespace({ WEBCMD_BROWSER_BINARY_PATH: browserPath }),
+        'profiles',
+        'default',
+      ),
+      launchOptions: { executablePath: browserPath },
     }));
-    expect(process.env.CLOAKBROWSER_BINARY_PATH).toBe('/opt/chromium-fork/chrome');
+    expect(process.env.CLOAKBROWSER_BINARY_PATH).toBe(browserPath);
   });
 
   it('uses the normal macOS launcher for a custom app-bundle executable', async () => {
