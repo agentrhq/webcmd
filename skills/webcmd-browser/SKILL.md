@@ -1,20 +1,16 @@
 ---
 name: webcmd-browser
-description: Use when no deterministic Webcmd adapter command covers a live browser task requiring Playwright interaction, authenticated handoff, visible UI verification, or ad-hoc page inspection.
-allowed-tools: Bash(webcmd:*), Read
+description: Use when a live browser task requires Playwright interaction, authenticated handoff, visible UI verification, or ad-hoc page inspection.
+allowed-tools: Bash(webcmd:*), Read, Write, Edit
 ---
 
 # webcmd-browser
 
-The first reader of this CLI is an agent, not a human. Use browser output as structured evidence, not as prose to skim. This skill is for **driving a live browser** to finish a task or understand a surface. If the workflow should become reusable, switch to `webcmd-adapter-author`.
+The first reader of this CLI is an agent, not a human. Use browser output as structured evidence, not as prose to skim.
 
----
+Run `webcmd site memory context <url> --task-id <id> -f json` before any live browser action. Then create the Session. Conditional detail lives in four references: [`references/sitemap-memory.md`](references/sitemap-memory.md), [`references/candidate-schema.md`](references/candidate-schema.md), [`references/git-lifecycle.md`](references/git-lifecycle.md), and [`references/browser-run-playwright.md`](references/browser-run-playwright.md).
 
-## Adapter fallback gate
-
-Before starting a raw browser session, filter `webcmd list -f json` at the source using request-derived terms across `site`, `name`, `description`, and `columns`; follow `webcmd-usage` for the exact command shape. Any truncation warning means adapter discovery is incomplete: narrow the filter and inspect again. Absence from truncated output never proves that no adapter exists.
-
-Use raw `webcmd browser` only after a complete, non-truncated registry check shows no suitable adapter and a plugin search for the missing site or capability returns no match. If plugin search returns a match, offer installation of the returned `installSource`; if it errors, report the error instead of opening the browser.
+Capture a qualifying observation with `webcmd site memory candidate add`. Do not complete a payment or checkout without explicit user confirmation.
 
 ---
 
@@ -24,7 +20,7 @@ Use raw `webcmd browser` only after a complete, non-truncated registry check sho
 webcmd doctor
 ```
 
-Until `doctor` is green, browser commands may fail. Registry and plugin discovery do not require `doctor`.
+Until `doctor` is green, browser commands may fail.
 
 ---
 
@@ -40,9 +36,10 @@ Until `doctor` is green, browser commands may fail. Registry and plugin discover
 - `webcmd --session <session-id> browser bind --page <page-id>` explicitly attaches the session to an existing page.
 - If the user manually signs in or changes the visible tab, re-bind or inspect with a fresh snapshot before continuing.
 
-For a `FETCH_BLOCKED` or `FETCH_REQUIRES_BROWSER` fallback, use one Session for the browser portion, preserve its readable ID, and close it in cleanup. Adapter commands without `--session` reuse the Profile's `adapter-default` Session; raw browser commands require an explicit readable selector. Local browser commands use Cloak; hosted browser commands use Webcmd Cloud and Browser Use. `web fetch` remains local in both modes and never opens a browser.
+Raw browser commands require an explicit readable selector. Local browser commands use Cloak; hosted browser commands use Webcmd Cloud and Browser Use.
 
 ```bash
+webcmd site memory context https://example.com/ --task-id task-1 -f json
 webcmd profile create work
 webcmd --profile work session create "Work Project"
 # id: work-project-k7
@@ -89,7 +86,7 @@ Keep related browser actions in one `run` and return compact JSON-compatible dat
 
 Choose diff behavior from the evidence the program returns:
 
-- Pass `--no-snapshot-diff` for research, information retrieval, and deterministic inspection when the returned result already contains the exact bounded evidence needed. This includes navigating to articles or result pages, searching, following read-only pagination, extracting links or table rows, and capturing a response. Navigation alone does not require a diff.
+- Pass `--no-snapshot-diff` for research, information retrieval, and deterministic inspection when the returned result already contains the exact bounded evidence needed. This includes navigating to articles or result pages, following read-only pagination, extracting links or table rows, and capturing a response. Navigation alone does not require a diff.
 - Keep the automatic diff for exploratory interactions when the resulting UI state is unknown, and for writes such as form submissions, uploads, saves, deletes, or settings changes unless the returned result independently verifies the new state.
 - If using `--no-snapshot-diff` after navigation, return identifying context such as the final URL or title together with the targeted evidence. Do not replace a diff with an unbounded body or DOM dump.
 - If Webcmd omits a diff because it exceeds the output ceiling, continue when the returned result and page metadata already verify the outcome. Otherwise take a targeted snapshot or extraction; do not request an unscoped full-page dump automatically.
@@ -124,8 +121,8 @@ JS
 
 ## Mental model
 
-1. **Adapter first, browser second.** Browser driving is fallback or reconnaissance, not the default execution path.
-2. **One run is the unit of action.** Put dependent waits, clicks, fills, and response listeners in the same Playwright program so ordering is deterministic.
+1. **Context first, then one run.** Put dependent waits, clicks, fills, and response listeners in the same Playwright program so ordering is deterministic.
+2. **One run is the unit of action.**
 3. **Snapshots are observations, not durable handles.** After navigation, form submit, SPA route change, login, or human handoff, take a fresh snapshot before trusting old observations.
 4. **Use semantic locators first.** Prefer Playwright `getByRole`, `getByLabel`, `getByText`, and scoped locators before brittle CSS.
 5. **Return compact evidence.** Return URL, title, selected text, response URL/status/body sample, or specific field values. Do not dump the whole DOM unless the task truly needs it.
@@ -151,12 +148,6 @@ JS
 ```
 
 If you split work across calls, use fresh snapshots between page transitions. Do not assume an observation from a prior route is still valid.
-
----
-
-## Sitemaps
-
-If Webcmd reports sitemap context, load `webcmd-browser-sitemap` before continuing a multi-step site flow. The sitemap is prior context for pages, actions, workflows, APIs, and pitfalls; it is not truth. If the browser disagrees with the sitemap, trust the browser and mark the sitemap stale later.
 
 ---
 
@@ -233,8 +224,6 @@ return {
 JS
 ```
 
-Use response evidence to choose an adapter strategy later. Do not paste the Playwright program into an adapter.
-
 ### Read long-form content
 
 Use `snapshot --snapshot-mode read` first. If the page is an app shell or needs custom scoping, use a targeted `run` with `--no-snapshot-diff` to extract the specific article/main region and return bounded Markdown or text, including the final URL or title.
@@ -252,7 +241,6 @@ Use `run` and inspect `page.frames()`; target the frame by URL/name and keep ifr
 - **Do not run a trigger before arming the waiter.** If a request matters, create `page.waitForResponse(...)` before the click/fill/keypress that triggers it.
 - **Do not trust autocomplete or masked inputs blindly.** Fill/type can appear to work while the app rejects the value. Verify visible text, `inputValue()`, or post-action state.
 - **Do not solve CAPTCHA or auth challenges programmatically.** Use human handoff and verification.
-- **Do not turn browser-run code into adapter code.** Preserve evidence and behavior; adapters use `IPage`, fetch/intercept helpers, or existing adapter patterns.
 - **Screenshots are for humans, not for agents.** Use snapshots or targeted extraction unless the page is genuinely visual: CAPTCHA, charts, icon-only controls, or layout ambiguity.
 - **Large DOM/text dumps are usually a bug.** Scope extraction, cap returned fields, and prefer response samples or visible values.
 - **Timeouts are ambiguous.** A timeout after a write may have partially succeeded. Inspect before retrying a non-idempotent action.
@@ -265,8 +253,7 @@ Use `run` and inspect `page.frames()`; target the frame by URL/name and keep ifr
 
 | symptom | fix |
 | --- | --- |
-| `webcmd doctor` is red | Fix the browser runtime first. Browser commands depend on it; adapter discovery does not. |
-| No suitable adapter appears | Confirm registry output was complete and non-truncated before browser fallback. |
+| `webcmd doctor` is red | Fix the browser runtime first. Browser commands depend on it. |
 | Bound page is wrong or stale | Run `tabs`, choose the current page id, then `bind --page <id>` again. |
 | `run` times out before returning | Increase `--timeout` only after checking whether the wait condition is wrong. |
 | Write may have happened before timeout | Take a fresh snapshot before retrying. Avoid duplicate submissions. |
@@ -278,12 +265,3 @@ Use `run` and inspect `page.frames()`; target the frame by URL/name and keep ifr
 | Page shows expected data but returned extraction is empty | Use `snapshot --snapshot-mode tree` to locate scope, or capture the network response in `run`. |
 | Snapshot diff was omitted at the output ceiling | Continue if `result` and `page` are sufficient; otherwise inspect only the relevant scope with a targeted snapshot or extraction. |
 | Output is too large | Return fewer fields, slice body/text samples, or switch from DOM dump to targeted selectors/network evidence. |
-
----
-
-## See also
-
-- `webcmd-adapter-author` — turn a proven workflow into a reusable command.
-- `webcmd-browser-sitemap` — consume sitemap context while driving a browser task.
-- `webcmd-sitemap-author` — update sitemap knowledge when durable context changes.
-- `webcmd-autofix` — repair an existing adapter from retained trace evidence.
