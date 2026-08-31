@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -275,6 +275,81 @@ describe('memory context initialization', () => {
       await expect(access(context.draftPath)).resolves.toBeUndefined();
     },
   );
+
+  it('keeps one committed product when two cold contexts initialize together', async () => {
+    const { homeDir, sites } = await tempSites();
+    const seed: SeedLookupResult = {
+      status: 'available',
+      revision: 'seed-1',
+      site: '# Seed\n',
+      references: { 'alt.md': '# Alt\n' },
+    };
+    let pending = 0;
+    let release!: () => void;
+    const bothLooking = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const lookup = vi.fn(async (): Promise<SeedLookupResult> => {
+      pending += 1;
+      if (pending === 2) release();
+      await bothLooking;
+      return seed;
+    });
+    const input = { url: 'https://example.test/', homeDir, seedProvider: provider(lookup) };
+
+    const [first, second] = await Promise.all([
+      getMemoryContext({ ...input, taskId: 'task-1' }),
+      getMemoryContext({ ...input, taskId: 'task-2' }),
+    ]);
+
+    expect(await readProductFile('example.test', 'manifest.json', { homeDir })).not.toBeNull();
+    expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBe('# Seed\n');
+    expect(await readProductFile('example.test', 'sitemap/references/alt.md', { homeDir })).toBe('# Alt\n');
+    expect(await git(sites, ['ls-files'])).toContain('example.test/manifest.json');
+    expect(await git(sites, ['show', 'HEAD:example.test/sitemap/SITE.md'])).toBe('# Seed\n');
+    for (const context of [first, second]) {
+      expect(context.resolution.status).toBe('exact');
+      expect(context.manifest?.seed).toEqual({ status: 'available', revision: 'seed-1' });
+      expect(context.siteMarkdown).toBe('# Seed\n');
+      expect(context.readOnly).toBe(false);
+    }
+  });
+
+  it('surfaces non-ENOENT seed cleanup failures', async () => {
+    const { homeDir, sites } = await tempSites();
+    const originalPath = process.env.PATH;
+    const productDir = join(sites, 'example.test');
+    const wrapperDir = await mkdtemp(join(tmpdir(), 'webcmd-git-cleanup-'));
+    tempHomes.push(wrapperDir);
+    const { stdout } = await run('/usr/bin/which', ['git'], { encoding: 'utf8' });
+    const wrapper = join(wrapperDir, 'git');
+    await writeFile(wrapper, `#!/usr/bin/env node
+const { chmodSync } = require('node:fs');
+const { spawnSync } = require('node:child_process');
+const args = process.argv.slice(2);
+if (args.includes('commit')) {
+  try { chmodSync(${JSON.stringify(productDir)}, 0o555); } catch {}
+  process.exit(1);
+}
+const result = spawnSync(${JSON.stringify(stdout.trim())}, args, { stdio: 'inherit' });
+process.exit(result.status ?? 1);
+`);
+    await chmod(wrapper, 0o755);
+    process.env.PATH = `${wrapperDir}:${originalPath}`;
+    try {
+      const context = await getMemoryContext({
+        url: 'https://example.test/',
+        taskId: 'task-1',
+        homeDir,
+        seedProvider: provider(async () => ({ status: 'available', revision: 'seed-1', site: '# Transient\n' })),
+      });
+      expect(context.readOnly).toBe(true);
+      expect(context.diagnostics.join('\n')).toMatch(/EACCES|EPERM|permission denied/i);
+    } finally {
+      process.env.PATH = originalPath;
+      await chmod(productDir, 0o755).catch(() => undefined);
+    }
+  });
 });
 
 function provider(lookup: GlobalSeedProvider['lookup']): GlobalSeedProvider {

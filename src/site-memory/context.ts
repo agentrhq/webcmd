@@ -72,31 +72,38 @@ async function persistSeed(
   repo: SitesRepository,
   opts: LocalStoreOptions,
 ): Promise<void> {
-  const persisted: PersistedSeedResult = seed.status === 'available' ? { status: 'available', revision: seed.revision } : seed;
-  const manifest: ProductManifest = { schemaVersion: 1, product, interfaces: [], seed: persisted };
-  const files = ['manifest.json'];
-  try {
-    await writeProductFile(product.key, 'manifest.json', `${JSON.stringify(manifest, null, 2)}\n`, opts);
-    if (seed.status === 'available') {
-      await writeProductFile(product.key, 'sitemap/SITE.md', seed.site, opts);
-      files.push('sitemap/SITE.md');
-      for (const [name, body] of Object.entries(seed.references ?? {})) {
-        const path = `sitemap/references/${name}`;
-        await writeProductFile(product.key, path, body, opts);
-        files.push(path);
+  await repo.withRepositoryLock(async () => {
+    if (parseManifest(await readProductFile(product.key, 'manifest.json', opts))) return;
+    const persisted: PersistedSeedResult = seed.status === 'available' ? { status: 'available', revision: seed.revision } : seed;
+    const manifest: ProductManifest = { schemaVersion: 1, product, interfaces: [], seed: persisted };
+    const files = ['manifest.json'];
+    try {
+      await writeProductFile(product.key, 'manifest.json', `${JSON.stringify(manifest, null, 2)}\n`, opts);
+      if (seed.status === 'available') {
+        await writeProductFile(product.key, 'sitemap/SITE.md', seed.site, opts);
+        files.push('sitemap/SITE.md');
+        for (const [name, body] of Object.entries(seed.references ?? {})) {
+          const path = `sitemap/references/${name}`;
+          await writeProductFile(product.key, path, body, opts);
+          files.push(path);
+        }
       }
+      await repo.commit(files.map((file) => `${product.key}/${file}`), `initialize ${product.key}`);
+    } catch (err) {
+      await Promise.all(files.map((file) => unlinkProductFile(product.key, file, opts)));
+      throw err;
     }
-    await repo.commit(files.map((file) => `${product.key}/${file}`), `initialize ${product.key}`);
-  } catch (err) {
-    await Promise.all(files.map((file) => unlinkProductFile(product.key, file, opts)));
-    throw err;
-  }
+  });
 }
 
 async function unlinkProductFile(productKey: string, path: string, opts: LocalStoreOptions): Promise<void> {
   const productRoot = join(sitesRoot(opts), productKey);
   const relative = containedRelativePath(productRoot, path);
-  await unlink(join(productRoot, ...relative.split('/'))).catch(() => undefined);
+  try {
+    await unlink(join(productRoot, ...relative.split('/')));
+  } catch (err) {
+    if (!(err instanceof Error) || !('code' in err) || err.code !== 'ENOENT') throw err;
+  }
 }
 
 async function writeDraft(
