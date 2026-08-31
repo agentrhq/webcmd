@@ -36,23 +36,27 @@ export async function checkpointMemory(input: CheckpointInput): Promise<Checkpoi
 
   return repo.withRepositoryLock(async () => {
     const actual = await repo.revision();
+    const manifest = parseProductManifest(await readProductFile(product, 'manifest.json', input));
+    if (!manifest || manifest.product.key !== product) {
+      throw new Error('Incompatible beta schema; learning is read-only until this SITE.md is cleared.');
+    }
     const loaded = await Promise.all(dispositions.map((row) => readCandidateRecord(product, row.id, input)));
+    for (const row of dispositions) validateDispositionFields(row);
+    const candidatePaths = dispositions.map((row) => `${product}/candidates/${row.id}.json`);
 
-    if (actual && input.expectedRevision === actual && isProvenanceRecovery(loaded, dispositions, actual)) {
+    if (
+      actual
+      && input.expectedRevision === actual
+      && isProvenanceRecovery(loaded, dispositions, actual)
+      && await repo.pathsChanged(candidatePaths)
+    ) {
       await writeDispositions(product, loaded, dispositions, actual, input);
-      const provenanceCommit = await repo.commit(
-        dispositions.map((row) => `${product}/candidates/${row.id}.json`),
-        `checkpoint provenance ${product}`,
-      );
+      const provenanceCommit = await repo.commit(candidatePaths, `checkpoint provenance ${product}`);
       return { status: 'committed', memoryCommit: actual, provenanceCommit };
     }
 
     if (actual !== input.expectedRevision) {
       return { status: 'conflict', expectedRevision: input.expectedRevision, actualRevision: actual };
-    }
-
-    if (!parseProductManifest(await readProductFile(product, 'manifest.json', input))) {
-      throw new Error('Incompatible beta schema; learning is read-only until this SITE.md is cleared.');
     }
 
     const drafts = await readDrafts(input, taskId, product, paths);
@@ -72,8 +76,10 @@ export async function checkpointMemory(input: CheckpointInput): Promise<Checkpoi
       prior.set(path, current);
       if (drafts.get(path) !== current) changed.push(path);
     }
-    if (input.reason === 'candidate_ingestion' && changed.length === 0) {
-      throw new Error('candidate_ingestion requires a memory change.');
+    if (input.reason === 'candidate_ingestion') {
+      const ingested = dispositions.some((row) => row.status === 'ingested');
+      if (ingested && changed.length === 0) throw new Error('candidate_ingestion requires a memory change.');
+      if (!ingested && changed.length > 0) throw new Error('candidate_ingestion rejections require unchanged memory.');
     }
     let memoryCommit = actual;
     if (changed.length > 0) {
@@ -83,7 +89,7 @@ export async function checkpointMemory(input: CheckpointInput): Promise<Checkpoi
       } catch (err) {
         const rollback = await restoreCopiedMarkdown(product, prior, input);
         if (rollback.length > 0) {
-          throw new Error([err, ...rollback].map(errorMessage).join('; '));
+          throw new AggregateError([err, ...rollback], 'Memory commit failed and rollback also failed');
         }
         throw err;
       }
@@ -125,9 +131,7 @@ function matchesRequestedTerminal(
   if (row.status === 'ingested') {
     return candidate.status === 'ingested'
       && candidate.memoryCommit === actual
-      && (row.evidenceRole === 'supporting' || row.evidenceRole === 'dissenting'
-        ? candidate.evidenceRole === row.evidenceRole
-        : candidate.evidenceRole === 'supporting' || candidate.evidenceRole === 'dissenting')
+      && candidate.evidenceRole === row.evidenceRole
       && candidate.rejectionReason === null;
   }
   if (row.status === 'rejected') {
@@ -173,20 +177,23 @@ async function writeDispositions(
   }
 }
 
-function validateDispositions(loaded: Candidate[], dispositions: CandidateDisposition[]): void {
-  for (const [index, row] of dispositions.entries()) {
-    if (loaded[index].status !== 'pending') throw new Error('Invalid candidate status transition.');
-    if (row.status === 'ingested') {
-      if (row.evidenceRole !== 'supporting' && row.evidenceRole !== 'dissenting') {
-        throw new Error('Invalid candidate evidence_role.');
-      }
-      if (row.rejectionReason) throw new Error('Invalid candidate status.');
-    } else if (row.status === 'rejected') {
-      if (!row.rejectionReason?.trim()) throw new Error('Rejected candidates require a reason.');
-      if (row.evidenceRole) throw new Error('Invalid candidate status.');
-    } else {
-      throw new Error('Invalid candidate status.');
+function validateDispositionFields(row: CandidateDisposition): void {
+  if (row.status === 'ingested') {
+    if (row.evidenceRole !== 'supporting' && row.evidenceRole !== 'dissenting') {
+      throw new Error('Invalid candidate evidence_role.');
     }
+    if (row.rejectionReason) throw new Error('Invalid candidate status.');
+  } else if (row.status === 'rejected') {
+    if (!row.rejectionReason?.trim()) throw new Error('Rejected candidates require a reason.');
+    if (row.evidenceRole) throw new Error('Invalid candidate status.');
+  } else {
+    throw new Error('Invalid candidate status.');
+  }
+}
+
+function validateDispositions(loaded: Candidate[], dispositions: CandidateDisposition[]): void {
+  for (const candidate of loaded) {
+    if (candidate.status !== 'pending') throw new Error('Invalid candidate status transition.');
   }
   const ingested = dispositions.map((row, index) => ({ row, candidate: loaded[index] })).filter((entry) => entry.row.status === 'ingested');
   if (ingested.length === 0) return;
@@ -281,11 +288,8 @@ function unique<T>(values: T[], message: string): T[] {
 }
 
 function uniqueBy<T>(values: T[], key: (value: T) => string, message: string): T[] {
-  return unique(values.map(key), message) && values;
-}
-
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+  unique(values.map(key), message);
+  return values;
 }
 
 async function readDrafts(

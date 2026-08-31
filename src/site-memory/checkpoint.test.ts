@@ -85,6 +85,12 @@ describe('checkpoint compare-and-swap', () => {
       product: { key: 'example.test', hostname: 'example.test', displayHostname: 'example.test', registrableDomain: 'example.test' },
       seed: { status: 'absent' },
     })],
+    ['mismatched key', JSON.stringify({
+      schemaVersion: 1,
+      product: { key: 'other.test', hostname: 'other.test', displayHostname: 'other.test', registrableDomain: 'other.test' },
+      interfaces: [],
+      seed: { status: 'absent' },
+    })],
   ] as const)('refuses a %s product manifest without copying the draft', async (_label, body) => {
     const { homeDir, sites, revision: initial } = await primed();
     const manifest = join(sites, 'example.test', 'manifest.json');
@@ -215,6 +221,39 @@ describe('checkpoint candidate dispositions', () => {
       ],
     })).rejects.toThrow(/memory|change|unchanged/i);
     expect((await showCandidate('example.test', first.id, { homeDir })).status).toBe('pending');
+  });
+
+  it('commits provenance only when candidate_ingestion rejects without a memory change', async () => {
+    const { homeDir, sites } = await primed();
+    const pending = await addCandidate(candidate(homeDir));
+    const revision = (await git(sites, ['rev-parse', 'HEAD'])).trim();
+    const next = `# Example\n\n${FACT}- [verified 2026-08-31] Later path is denser.\n`;
+    await writeDraft(homeDir, { 'sitemap/SITE.md': next });
+    await expect(checkpoint(homeDir, {
+      dispositions: [{ id: pending.id, status: 'rejected', rejectionReason: 'stale' }],
+    })).rejects.toThrow(/unchanged|memory|change/i);
+    expect((await showCandidate('example.test', pending.id, { homeDir })).status).toBe('pending');
+
+    await writeDraft(homeDir, { 'sitemap/SITE.md': SITE });
+    const result = await checkpoint(homeDir, {
+      dispositions: [{ id: pending.id, status: 'rejected', rejectionReason: 'stale' }],
+    });
+    expect(result.status).toBe('committed');
+    if (result.status !== 'committed') throw new Error('expected commit');
+    expect(result.memoryCommit).toBe(revision);
+    expect(result.provenanceCommit).toMatch(/^[0-9a-f]{40}$/);
+    expect(result.provenanceCommit).not.toBe(revision);
+    expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBe(SITE);
+    expect((await git(sites, ['log', '--oneline', '--', 'example.test/sitemap/SITE.md'])).trim().split('\n')).toHaveLength(1);
+    expect((await showCandidate('example.test', pending.id, { homeDir }))).toMatchObject({
+      status: 'rejected',
+      evidenceRole: null,
+      memoryCommit: null,
+      rejectionReason: 'stale',
+    });
+    const provenanceFiles = (await git(sites, ['show', '--name-only', '--pretty=format:', result.provenanceCommit ?? ''])).trim().split('\n');
+    expect(provenanceFiles.join('\n')).toMatch(/candidates/);
+    expect(provenanceFiles.join('\n')).not.toMatch(/SITE\.md/);
   });
 
   it('rejects dispositions on direct_correction and major_rewrite', async () => {
@@ -374,12 +413,27 @@ describe('checkpoint git transaction', () => {
 
     try {
       await withGitWrapper(blocked.homeDir, 'memory', async () => {
-        await expect(checkpoint(blocked.homeDir, {
+        const error = await checkpoint(blocked.homeDir, {
           dispositions: [
             { id: pending.id, status: 'ingested', evidenceRole: 'supporting' },
             { id: later.id, status: 'ingested', evidenceRole: 'supporting' },
           ],
-        })).rejects.toThrow(/checkpoint memory[\s\S]*(EACCES|EPERM|permission denied)|(EACCES|EPERM|permission denied)[\s\S]*checkpoint memory/i);
+        }).then(
+          () => {
+            throw new Error('expected checkpoint to fail');
+          },
+          (err: unknown) => err,
+        );
+        expect(error).toBeInstanceOf(AggregateError);
+        const aggregate = error as AggregateError;
+        expect(aggregate.errors.length).toBeGreaterThanOrEqual(2);
+        expect(aggregate.message).toMatch(/rollback/i);
+        expect(aggregate.errors.map((item) => (item instanceof Error ? item.message : String(item))).join('\n')).toMatch(
+          /checkpoint memory/i,
+        );
+        expect(aggregate.errors.map((item) => (item instanceof Error ? item.message : String(item))).join('\n')).toMatch(
+          /EACCES|EPERM|permission denied/i,
+        );
       }, sitemapDir);
     } finally {
       await chmod(sitemapDir, 0o755).catch(() => undefined);
@@ -481,6 +535,80 @@ describe('checkpoint git transaction', () => {
     await expect(checkpoint(homeDir, { expectedRevision: memoryRevision, dispositions })).rejects.toThrow(/pending|transition|status|mismatch/i);
     expect((await git(sites, ['log', '--oneline', '--', 'example.test/sitemap/SITE.md'])).trim().split('\n')).toHaveLength(2);
     expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBe(next);
+  });
+
+  it('validates the product manifest before provenance recovery', async () => {
+    const { homeDir, sites } = await primed();
+    const first = await addCandidate(candidate(homeDir, { observedAt: '2026-08-30T12:00:00Z' }));
+    const second = await addCandidate(candidate(homeDir, { observedAt: '2026-08-31T12:00:00Z', claim: 'Later' }));
+    const next = `# Example\n\n${FACT}- [verified 2026-08-31] Later path is denser.\n`;
+    await writeDraft(homeDir, { 'sitemap/SITE.md': next });
+    const dispositions = [
+      { id: first.id, status: 'ingested' as const, evidenceRole: 'supporting' as const },
+      { id: second.id, status: 'ingested' as const, evidenceRole: 'supporting' as const },
+    ];
+
+    await withGitWrapper(homeDir, 'provenance', async () => {
+      await expect(checkpoint(homeDir, { dispositions })).rejects.toThrow();
+    });
+
+    const memoryRevision = (await git(sites, ['rev-parse', 'HEAD'])).trim();
+    await writeProductFile('example.test', 'manifest.json', '{\n', { homeDir });
+
+    await expect(checkpoint(homeDir, { expectedRevision: memoryRevision, dispositions })).rejects.toThrow(/incompatible beta schema|manifest|schema/i);
+    expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBe(next);
+    expect((await git(sites, ['log', '--oneline', '--', 'example.test/sitemap/SITE.md'])).trim().split('\n')).toHaveLength(2);
+    expect(JSON.parse(await git(sites, ['show', `HEAD:example.test/candidates/${first.id}.json`])).status).toBe('pending');
+  });
+
+  it('validates disposition fields during provenance recovery', async () => {
+    const { homeDir, sites } = await primed();
+    const first = await addCandidate(candidate(homeDir, { observedAt: '2026-08-30T12:00:00Z' }));
+    const second = await addCandidate(candidate(homeDir, { observedAt: '2026-08-31T12:00:00Z', claim: 'Later' }));
+    const next = `# Example\n\n${FACT}- [verified 2026-08-31] Later path is denser.\n`;
+    await writeDraft(homeDir, { 'sitemap/SITE.md': next });
+    const dispositions = [
+      { id: first.id, status: 'ingested' as const, evidenceRole: 'supporting' as const },
+      { id: second.id, status: 'ingested' as const, evidenceRole: 'supporting' as const },
+    ];
+
+    await withGitWrapper(homeDir, 'provenance', async () => {
+      await expect(checkpoint(homeDir, { dispositions })).rejects.toThrow();
+    });
+
+    const memoryRevision = (await git(sites, ['rev-parse', 'HEAD'])).trim();
+    await expect(checkpoint(homeDir, {
+      expectedRevision: memoryRevision,
+      dispositions: [
+        { id: first.id, status: 'ingested' },
+        { id: second.id, status: 'ingested' },
+      ],
+    })).rejects.toThrow(/evidence_role|status/i);
+    expect((await git(sites, ['log', '--oneline', '--', 'example.test/sitemap/SITE.md'])).trim().split('\n')).toHaveLength(2);
+    expect(JSON.parse(await git(sites, ['show', `HEAD:example.test/candidates/${first.id}.json`])).status).toBe('pending');
+  });
+
+  it('rejects provenance recovery when candidate paths match HEAD', async () => {
+    const { homeDir, sites } = await primed();
+    const first = await addCandidate(candidate(homeDir, { observedAt: '2026-08-30T12:00:00Z' }));
+    const second = await addCandidate(candidate(homeDir, { observedAt: '2026-08-31T12:00:00Z', claim: 'Later' }));
+    const next = `# Example\n\n${FACT}- [verified 2026-08-31] Later path is denser.\n`;
+    await writeDraft(homeDir, { 'sitemap/SITE.md': next });
+    const dispositions = [
+      { id: first.id, status: 'ingested' as const, evidenceRole: 'supporting' as const },
+      { id: second.id, status: 'ingested' as const, evidenceRole: 'supporting' as const },
+    ];
+
+    await withGitWrapper(homeDir, 'provenance', async () => {
+      await expect(checkpoint(homeDir, { dispositions })).rejects.toThrow();
+    });
+
+    await git(sites, ['add', '--', `example.test/candidates/${first.id}.json`, `example.test/candidates/${second.id}.json`]);
+    await git(sites, ['-c', 'user.name=webcmd', '-c', 'user.email=webcmd@local', 'commit', '-m', 'manual-provenance']);
+    const head = (await git(sites, ['rev-parse', 'HEAD'])).trim();
+
+    await expect(checkpoint(homeDir, { expectedRevision: head, dispositions })).rejects.toThrow(/pending|transition|status/i);
+    expect((await git(sites, ['rev-parse', 'HEAD'])).trim()).toBe(head);
   });
 });
 

@@ -190,6 +190,22 @@ describe('sites git repository', () => {
     expect(await git(sites, ['status', '--porcelain', '-uall'])).not.toMatch(/^(A |AD)/m);
   });
 
+  it('reports whether explicit paths differ from HEAD', async () => {
+    const { homeDir } = await tempSites();
+    await writeProductFile('example.test', 'manifest.json', '{}\n', { homeDir });
+    const repo = await openSitesRepository({ homeDir });
+    await repo.commit(['example.test/manifest.json'], 'init');
+
+    expect(await repo.pathsChanged(['example.test/manifest.json'])).toBe(false);
+
+    await writeProductFile('example.test', 'manifest.json', '{"dirty":true}\n', { homeDir });
+    expect(await repo.pathsChanged(['example.test/manifest.json'])).toBe(true);
+
+    await writeProductFile('example.test', 'notes.md', 'untracked\n', { homeDir });
+    expect(await repo.pathsChanged(['example.test/notes.md'])).toBe(true);
+    expect(await repo.pathsChanged(['example.test/missing.md'])).toBe(false);
+  });
+
   it('exposes commit and cleanup failures together when restore also fails', async () => {
     const { homeDir } = await tempSites();
     await writeProductFile('example.test', 'manifest.json', '{}\n', { homeDir });

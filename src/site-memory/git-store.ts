@@ -20,6 +20,7 @@ const GIT_FLAGS = [
 export interface SitesRepository {
   revision(): Promise<MemoryRevision | null>;
   commit(paths: string[], message: string): Promise<MemoryRevision>;
+  pathsChanged(paths: string[]): Promise<boolean>;
   withRepositoryLock<T>(fn: () => Promise<T>): Promise<T>;
 }
 
@@ -29,6 +30,7 @@ export async function openSitesRepository(options: LocalStoreOptions = {}): Prom
   return {
     revision: () => revisionOf(root),
     commit: (paths, message) => withRepositoryLock(root, () => commitPaths(root, paths, message)),
+    pathsChanged: (paths) => pathsDifferFromHead(root, paths),
     withRepositoryLock: (fn) => withRepositoryLock(root, fn),
   };
 }
@@ -64,6 +66,13 @@ async function commitPaths(root: string, paths: string[], message: string): Prom
     throw err;
   }
   return (await git(root, ['rev-parse', 'HEAD'])).trim();
+}
+
+async function pathsDifferFromHead(root: string, paths: string[]): Promise<boolean> {
+  if (paths.length === 0) return false;
+  const relativePaths = paths.map((path) => containedRelativePath(root, path));
+  const status = await git(root, ['status', '--porcelain', '-uall', '--', ...relativePaths]);
+  return status.split('\n').some(Boolean);
 }
 
 async function restoreStagedPaths(root: string, relativePaths: string[]): Promise<void> {
