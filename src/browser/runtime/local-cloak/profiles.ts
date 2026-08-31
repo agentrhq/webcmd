@@ -1,9 +1,11 @@
 import path from 'node:path';
 import { CONFIG_DIR_NAME, ENV_PREFIX } from '../../../brand.js';
 import os from 'node:os';
+import { resolveBrowserProfileNamespace } from '../../browser-binary.js';
 
 export interface CloakProfileDirOptions {
   baseDir?: string;
+  env?: NodeJS.ProcessEnv;
 }
 
 export function normalizeProfileId(value: string | undefined | null): string {
@@ -20,5 +22,6 @@ export function getWebcmdConfigDir(): string {
 
 export function resolveCloakProfileDir(profileId: string, opts: CloakProfileDirOptions = {}): string {
   const safeProfileId = normalizeProfileId(profileId);
-  return path.join(opts.baseDir ?? getWebcmdConfigDir(), 'cloak', 'profiles', safeProfileId);
+  const browserNamespace = resolveBrowserProfileNamespace(opts.env);
+  return path.join(opts.baseDir ?? getWebcmdConfigDir(), browserNamespace, 'profiles', safeProfileId);
 }

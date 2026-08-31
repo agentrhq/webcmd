@@ -19,4 +19,13 @@ describe('cloak profile resolution', () => {
     expect(resolveCloakProfileDir('work', { baseDir: '/tmp/webcmd' }))
       .toBe(path.join('/tmp/webcmd', 'cloak', 'profiles', 'work'));
   });
+
+  it('isolates profiles for a custom browser binary', () => {
+    expect(resolveCloakProfileDir('default', {
+      baseDir: '/tmp/webcmd',
+      env: {
+        WEBCMD_BROWSER_BINARY_PATH: '/Users/test/Library/Caches/chromiumfish/151/mac-arm64/ChromiumFish.app/Contents/MacOS/ChromiumFish',
+      },
+    })).toBe(path.join('/tmp/webcmd', 'chromiumfish', 'profiles', 'default'));
+  });
 });

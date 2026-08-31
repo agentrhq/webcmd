@@ -203,6 +203,7 @@ describe('CloakSessionManager', () => {
     await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser' });
 
     expect(launchPersistentContext).toHaveBeenCalledWith(expect.objectContaining({
+      userDataDir: expect.stringMatching(/\/custom-chromium-[a-f0-9]{8}\/profiles\/default$/),
       launchOptions: { executablePath: '/opt/chromium-fork/chrome' },
     }));
     expect(process.env.CLOAKBROWSER_BINARY_PATH).toBe('/opt/chromium-fork/chrome');

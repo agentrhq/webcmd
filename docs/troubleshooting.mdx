@@ -138,7 +138,13 @@ Useful environment variables:
 | `WEBCMD_WINDOW` | Optional `foreground` or `background` override; browser commands default to `background`. |
 | `WEBCMD_BROWSER_CONNECT_TIMEOUT` | Seconds to wait for the browser bridge. |
 | `WEBCMD_BROWSER_COMMAND_TIMEOUT` | Seconds to wait for one browser command. |
+| `WEBCMD_BROWSER_BINARY_PATH` | Executable path for a compatible local Chromium fork. Without it, Webcmd uses managed Cloak as usual. |
 | `WEBCMD_CDP_ENDPOINT` | Manual CDP endpoint for remote browsers or Electron apps. |
 | `WEBCMD_CDP_TARGET` | Filter CDP targets by URL substring. |
 | `WEBCMD_CACHE_DIR` | Browser state and network cache directory. |
 | `WEBCMD_VERBOSE` | Enable verbose logs. |
+
+After changing `WEBCMD_BROWSER_BINARY_PATH`, restart the daemon and run
+`webcmd doctor`. Custom browser builds use their own profile directory under
+`~/.webcmd/<browser>/profiles`, so their cookies and browser state do not modify
+the managed Cloak profiles in `~/.webcmd/cloak/profiles`.
