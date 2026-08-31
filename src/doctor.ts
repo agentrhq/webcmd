@@ -166,11 +166,7 @@ export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<Doctor
   const runtimeName = health.status?.runtimeName;
   const runtimeVersion = health.status?.runtimeVersion;
   const issues: string[] = [];
-  const expectedRuntimeLabel = selectedBrowser.kind === 'slab'
-    ? 'SLAB'
-    : selectedBrowser.kind === 'custom'
-      ? 'custom'
-      : 'Cloak';
+  const expectedRuntimeLabel = expectedRuntimeLabelFor(selectedBrowser);
   let adapterShadows: AdapterShadow[] = [];
   try {
     adapterShadows = findShadowedUserAdapters();
@@ -201,8 +197,12 @@ export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<Doctor
   }
   if (runtimeFlaky) {
     issues.push(
-      'Cloak runtime connection is unstable. The live browser test succeeded, but the daemon reported the runtime disconnected immediately afterward.\n' +
-      'This usually means Chrome/Chromium or the Cloak runtime is still starting, reconnecting, or was suspended.',
+      `${expectedRuntimeLabel} runtime connection is unstable. The live browser test succeeded, but the daemon reported the runtime disconnected immediately afterward.\n` +
+      (selectedBrowser.kind === 'slab'
+        ? 'This usually means SLAB is still starting, reconnecting, or was suspended.'
+        : selectedBrowser.kind === 'custom'
+          ? 'This usually means the selected browser is still starting, reconnecting, or was suspended.'
+          : 'This usually means Chrome/Chromium or the Cloak runtime is still starting, reconnecting, or was suspended.'),
     );
   } else if (daemonRunning && !runtimeConnected) {
     if (health.state === 'profile-required') {
@@ -298,7 +298,7 @@ export function renderBrowserDoctorReport(report: DoctorReport): string {
     : report.runtimeVersion
       ? ` (v${report.runtimeVersion})`
       : ' (version unknown)';
-  const runtimeName = report.runtimeName ?? 'Cloak';
+  const runtimeName = report.runtimeName ?? expectedRuntimeLabelFor(report.selectedBrowser ?? { kind: 'cloak' });
   const runtimeLabel = report.runtimeFlaky
     ? 'unstable (connected during live check, then disconnected)'
     : report.runtimeConnected ? 'connected' : 'not connected';
@@ -355,4 +355,10 @@ export function renderBrowserDoctorReport(report: DoctorReport): string {
   }
 
   return lines.join('\n');
+}
+
+function expectedRuntimeLabelFor(browser: LocalBrowserConfig): string {
+  if (browser.kind === 'slab') return 'SLAB';
+  if (browser.kind === 'custom') return 'custom';
+  return 'Cloak';
 }

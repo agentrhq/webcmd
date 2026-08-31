@@ -239,6 +239,24 @@ describe('doctor report rendering', () => {
     expect(text).toContain('[OK] Selected browser: SLAB (macOS alpha opt-in)');
   });
 
+  it('uses the selected browser label when runtime name is missing', () => {
+    const slab = strip(renderBrowserDoctorReport({
+      daemonRunning: true,
+      runtimeConnected: false,
+      selectedBrowser: { kind: 'slab' },
+      issues: [],
+    }));
+    const custom = strip(renderBrowserDoctorReport({
+      daemonRunning: true,
+      runtimeConnected: false,
+      selectedBrowser: { kind: 'custom', executablePath: '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser' },
+      issues: [],
+    }));
+
+    expect(slab).toContain('[MISSING] Runtime: SLAB not connected');
+    expect(custom).toContain('[MISSING] Runtime: custom not connected');
+  });
+
   it('renders connectivity OK when live test succeeds', () => {
     const text = strip(renderBrowserDoctorReport({
       daemonRunning: true,
@@ -435,6 +453,25 @@ describe('doctor report rendering', () => {
     expect(report.issues).toEqual(expect.arrayContaining([
       expect.stringContaining('Cloak runtime connection is unstable'),
     ]));
+  });
+
+  it('uses SLAB wording when the selected SLAB runtime flaps', async () => {
+    const configDir = writeLocalConfig({ kind: 'slab' });
+    mockGetDaemonHealth.mockResolvedValueOnce({ state: 'no-runtime', status: { runtimeConnected: false } });
+
+    try {
+      const report = await runBrowserDoctor();
+      const issues = report.issues.join('\n');
+      const text = strip(renderBrowserDoctorReport(report));
+
+      expect(report.runtimeFlaky).toBe(true);
+      expect(issues).toContain('SLAB runtime connection is unstable');
+      expect(issues).not.toContain('Cloak runtime connection is unstable');
+      expect(text).toContain('[WARN] Runtime: SLAB unstable');
+    } finally {
+      vi.unstubAllEnvs();
+      fs.rmSync(configDir, { recursive: true, force: true });
+    }
   });
 
   it('uses Cloak readiness hints when the runtime is disconnected', async () => {
