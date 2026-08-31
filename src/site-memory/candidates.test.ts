@@ -1,11 +1,11 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import { addCandidate, listCandidates, searchCandidates, showCandidate } from './candidates.js';
-import { listSiteMemory, showSiteMemory, writeProductFile } from './local-store.js';
+import { listSiteMemory, readProductFile, showSiteMemory, writeProductFile } from './local-store.js';
 import type { Candidate } from './model.js';
 
 const run = promisify(execFile);
@@ -139,6 +139,156 @@ describe('candidate discovery', () => {
     expect(JSON.stringify({ listed, shown, explicit })).not.toMatch(/203\.0\.113\.9|192\.168\.1\.8|secret-host/);
     expect((await showCandidate('example.test', summary.id, { homeDir })).environment.publicIp).toBe('203.0.113.9');
   });
+
+  it('persists the approved snake_case candidate schema', async () => {
+    const { homeDir } = await tempSites();
+    const summary = await addCandidate(base(homeDir, {
+      observedAt: '2026-08-31T14:23:00+05:30',
+      environment: {
+        machine: 'box',
+        localIp: '192.168.1.8',
+        publicIp: '203.0.113.9',
+        os: 'Darwin 24.0',
+        browserVersion: '1.61.1',
+        webcmdVersion: '0.7.11',
+      },
+    }));
+
+    const raw = JSON.parse(await readProductFile('example.test', `candidates/${summary.id}.json`, { homeDir }) ?? '');
+    expect(raw).toEqual({
+      schema_version: 1,
+      id: summary.id,
+      domain: 'example.test',
+      hostname: 'www.example.test',
+      observed_at: '2026-08-31T14:23:00+05:30',
+      observed_date_utc: '2026-08-31',
+      kind: 'better_path',
+      claim: 'New listing is faster',
+      evidence: 'Used /new while /hot spun.',
+      consequence: 'Prefer /new for fresh posts',
+      environment: {
+        machine: 'box',
+        local_ip: '192.168.1.8',
+        public_ip: '203.0.113.9',
+        os: 'Darwin 24.0',
+        browser_version: '1.61.1',
+        webcmd_version: '0.7.11',
+      },
+      status: 'pending',
+      evidence_role: null,
+      memory_commit: null,
+      reviewed_at: null,
+      rejection_reason: null,
+    });
+  });
+
+  it('fails closed on malformed, unknown, secret, and mismatched candidate JSON', async () => {
+    const { homeDir } = await tempSites();
+    const summary = await addCandidate(base(homeDir));
+    const path = `candidates/${summary.id}.json`;
+    const raw = JSON.parse(await readProductFile('example.test', path, { homeDir }) ?? '');
+
+    await writeProductFile('example.test', 'candidates/not-json.json', '{\n', { homeDir });
+    await expect(showCandidate('example.test', 'not-json', { homeDir })).rejects.toThrow(/invalid|json|parse/i);
+    await expect(listCandidates('example.test', { homeDir })).rejects.toThrow(/invalid|json|parse/i);
+    await expect(searchCandidates('example.test', 'listing', 10, { homeDir })).rejects.toThrow(/invalid|json|parse/i);
+
+    await writeProductFile('example.test', 'candidates/not-json.json', `${JSON.stringify({ ...raw, extra: true }, null, 2)}\n`, { homeDir });
+    await expect(showCandidate('example.test', 'not-json', { homeDir })).rejects.toThrow(/invalid/i);
+
+    await writeProductFile('example.test', path, `${JSON.stringify({ ...raw, schema_version: 2 }, null, 2)}\n`, { homeDir });
+    await expect(showCandidate('example.test', summary.id, { homeDir })).rejects.toThrow(/schema/i);
+
+    await writeProductFile('example.test', path, `${JSON.stringify({ ...raw, status: 'draft' }, null, 2)}\n`, { homeDir });
+    await expect(showCandidate('example.test', summary.id, { homeDir })).rejects.toThrow(/status/i);
+
+    await writeProductFile('example.test', path, `${JSON.stringify({ ...raw, evidence_role: 'maybe' }, null, 2)}\n`, { homeDir });
+    await expect(showCandidate('example.test', summary.id, { homeDir })).rejects.toThrow(/role/i);
+
+    await writeProductFile('example.test', path, `${JSON.stringify({ ...raw, kind: 'trivial_success' }, null, 2)}\n`, { homeDir });
+    await expect(showCandidate('example.test', summary.id, { homeDir })).rejects.toThrow(/kind/i);
+
+    await writeProductFile('example.test', path, `${JSON.stringify({ ...raw, cookie: 'session' }, null, 2)}\n`, { homeDir });
+    await expect(showCandidate('example.test', summary.id, { homeDir })).rejects.toThrow(/secret/i);
+
+    await writeProductFile('example.test', `candidates/other-id.json`, `${JSON.stringify(raw, null, 2)}\n`, { homeDir });
+    await expect(showCandidate('example.test', 'other-id', { homeDir })).rejects.toThrow(/mismatch|invalid/i);
+
+    await expect(addCandidate(base(homeDir, { environment: { cookie: 'session' } }))).rejects.toThrow(/secret/i);
+    await expect(addCandidate(base(homeDir, { environment: { extra: 'nope' } }))).rejects.toThrow(/environment|invalid/i);
+    await expect(addCandidate(base(homeDir, { environment: { localIp: { nested: true } } }))).rejects.toThrow(/environment|invalid/i);
+  });
+
+  it('does not leave an uncommitted candidate when git open or commit fails', async () => {
+    const ancestor = await tempSites();
+    await mkdir(ancestor.sites, { recursive: true });
+    await git(ancestor.homeDir, ['init']);
+    await expect(addCandidate(base(ancestor.homeDir))).rejects.toThrow(/ancestor/i);
+    expect(await jsonNames(ancestor.sites)).toEqual([]);
+
+    const { homeDir, sites } = await tempSites();
+    const kept = await addCandidate(base(homeDir, { claim: 'Keep concurrent unique capture' }));
+    await writeProductFile('example.test', `candidates/${kept.id}.json`, 'dirty\n', { homeDir });
+    await expect(addCandidate(base(homeDir, { claim: 'Transient uncommitted row' }))).rejects.toThrow(/unrelated/i);
+    expect(await jsonNames(sites)).toEqual([`${kept.id}.json`]);
+  });
+
+  it('reports non-ENOENT cleanup errors after a failed commit', async () => {
+    const { homeDir, sites } = await tempSites();
+    const originalPath = process.env.PATH;
+    const candidatesDir = join(sites, 'example.test', 'candidates');
+    const wrapperDir = await mkdtemp(join(tmpdir(), 'webcmd-candidate-cleanup-'));
+    tempHomes.push(wrapperDir);
+    const { stdout } = await run('/usr/bin/which', ['git'], { encoding: 'utf8' });
+    const wrapper = join(wrapperDir, 'git');
+    await writeFile(wrapper, `#!/usr/bin/env node
+const { chmodSync } = require('node:fs');
+const { spawnSync } = require('node:child_process');
+const args = process.argv.slice(2);
+if (args.includes('commit')) {
+  try { chmodSync(${JSON.stringify(candidatesDir)}, 0o555); } catch {}
+  process.exit(1);
+}
+const result = spawnSync(${JSON.stringify(stdout.trim())}, args, { stdio: 'inherit' });
+process.exit(result.status ?? 1);
+`);
+    await chmod(wrapper, 0o755);
+    process.env.PATH = `${wrapperDir}:${originalPath}`;
+    try {
+      await expect(addCandidate(base(homeDir))).rejects.toThrow(/EACCES|EPERM|permission denied/i);
+    } finally {
+      process.env.PATH = originalPath;
+      await chmod(candidatesDir, 0o755).catch(() => undefined);
+    }
+  });
+
+  it('validates and hard-caps search limit with deterministic ordering', async () => {
+    const { homeDir } = await tempSites();
+    await expect(searchCandidates('example.test', 'listing', 0, { homeDir })).rejects.toThrow(/limit/i);
+    await expect(searchCandidates('example.test', 'listing', -1, { homeDir })).rejects.toThrow(/limit/i);
+    await expect(searchCandidates('example.test', 'listing', 1.5, { homeDir })).rejects.toThrow(/limit/i);
+
+    const earlier = await addCandidate(base(homeDir, {
+      claim: 'Equal score path',
+      observedAt: '2026-08-31T01:00:00Z',
+    }));
+    const later = await addCandidate(base(homeDir, {
+      claim: 'Equal score path',
+      observedAt: '2026-08-31T02:00:00Z',
+    }));
+    const ordered = await searchCandidates('example.test', 'equal score path', 10, { homeDir });
+    expect(ordered.map((hit) => hit.id)).toEqual([earlier.id, later.id]);
+
+    await Promise.all(Array.from({ length: 21 }, (_, index) => addCandidate(base(homeDir, {
+      claim: `Cap row ${index}`,
+      observedAt: `2026-08-31T03:00:${String(index).padStart(2, '0')}Z`,
+    }))));
+    const capped = await searchCandidates('example.test', 'cap row', 999, { homeDir });
+    expect(capped).toHaveLength(20);
+    expect(capped.map((hit) => hit.id)).toEqual([...capped].sort((a, b) => (
+      a.observedAt.localeCompare(b.observedAt) || a.id.localeCompare(b.id)
+    )).map((hit) => hit.id).slice(0, 20));
+  }, 20_000);
 });
 
 function base(homeDir: string, extra: Record<string, unknown> = {}) {
@@ -156,8 +306,21 @@ function base(homeDir: string, extra: Record<string, unknown> = {}) {
 }
 
 async function markStatus(homeDir: string, id: string, status: Candidate['status']) {
-  const stored = await showCandidate('example.test', id, { homeDir });
-  await writeProductFile('example.test', `candidates/${id}.json`, `${JSON.stringify({ ...stored, status }, null, 2)}\n`, { homeDir });
+  const path = `candidates/${id}.json`;
+  const body = await readProductFile('example.test', path, { homeDir });
+  if (body === null) throw new Error(`missing ${id}`);
+  const raw = JSON.parse(body) as { status: string };
+  raw.status = status;
+  await writeProductFile('example.test', path, `${JSON.stringify(raw, null, 2)}\n`, { homeDir });
+}
+
+async function jsonNames(sites: string): Promise<string[]> {
+  try {
+    return (await readdir(join(sites, 'example.test', 'candidates'))).filter((name) => name.endsWith('.json')).sort();
+  } catch (err) {
+    if (err instanceof Error && 'code' in err && err.code === 'ENOENT') return [];
+    throw err;
+  }
 }
 
 async function tempSites() {
