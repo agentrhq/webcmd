@@ -64,7 +64,6 @@ import { classifyCommandOrigin, formatCommandOrigin } from './command-origin.js'
 import { readOverrideRecords, removeOverrideRecords } from './override-provenance.js';
 import { clearDaemonRunContext, generateRunId, isUnknownOutcomeError, runWithDaemonRunContext } from './session-lease.js';
 import { createLocalLearningBackend, createLocalSiteMemoryBackend, registerSiteCommands } from './site-memory/commands.js';
-import { canonicalProductKey } from './site-memory/product-resolver.js';
 import { resolveAdapterSourcePath, splitAdapterCommandKey } from './adapter-source.js';
 
 const CLI_FILE = fileURLToPath(import.meta.url);
@@ -322,44 +321,6 @@ export type SiteMemoryReport = {
   endpoints: { present: boolean; count: number; path: string };
   notes: { present: boolean; path: string };
 };
-
-export type SitemapAvailability = {
-  site: string;
-  available: true;
-  source: 'local';
-  hint: string;
-  paths: {
-    local?: string;
-  };
-};
-
-type SitemapAvailabilityOptions = {
-  homeDir?: string;
-  fileExists?: (candidate: string) => boolean;
-};
-
-const SITEMAP_HINT =
-  'Product sitemap available. Use `webcmd site memory context <url> -f json` for navigation context; treat browser state as truth if it disagrees.';
-
-export function resolveSitemapAvailabilityForUrl(url: string, options: SitemapAvailabilityOptions = {}): SitemapAvailability | null {
-  let product;
-  try {
-    product = canonicalProductKey(url);
-  } catch {
-    return null;
-  }
-  const homeDir = options.homeDir ?? os.homedir();
-  const fileExists = options.fileExists ?? fs.existsSync;
-  const local = path.join(homeDir, '.webcmd', 'sites', product.key, 'sitemap', 'SITE.md');
-  if (!fileExists(local)) return null;
-  return {
-    site: product.key,
-    available: true,
-    source: 'local',
-    hint: SITEMAP_HINT,
-    paths: { local },
-  };
-}
 
 export function checkSiteMemory(site: string): SiteMemoryReport {
   const siteDir = path.join(os.homedir(), '.webcmd', 'sites', site);

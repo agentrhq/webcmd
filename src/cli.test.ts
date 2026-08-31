@@ -70,7 +70,7 @@ vi.mock('node:child_process', async () => {
 });
 
 import { handleProgramParseError } from './cli-error-report.js';
-import { createProgram, findPackageRoot, loadAntigravityServe, normalizeVerifyRows, renderVerifyPreview, resolveBrowserVerifyInvocation, resolveSitemapAvailabilityForUrl, selectFreshByTimestamp } from './cli.js';
+import { createProgram, findPackageRoot, loadAntigravityServe, normalizeVerifyRows, renderVerifyPreview, resolveBrowserVerifyInvocation, selectFreshByTimestamp } from './cli.js';
 
 const realHome = process.env.HOME;
 const realConfigDir = process.env.WEBCMD_CONFIG_DIR;
@@ -1546,64 +1546,6 @@ describe('selectFreshByTimestamp', () => {
     ], first.lastSeenTs);
     expect(rolled.fresh.map((item) => item.text)).toEqual(['c']);
     expect(rolled.lastSeenTs).toBe(3);
-  });
-});
-
-describe('resolveSitemapAvailabilityForUrl', () => {
-  it('resolves the product key and local SITE.md without registry names', () => {
-    const homeDir = path.join(os.tmpdir(), 'webcmd-sitemap-home');
-    const localSitemap = path.join(homeDir, '.webcmd', 'sites', 'news.ycombinator.com', 'sitemap', 'SITE.md');
-
-    const report = resolveSitemapAvailabilityForUrl('https://news.ycombinator.com/item?id=1', {
-      homeDir,
-      fileExists: (candidate) => candidate === localSitemap,
-    });
-
-    expect(report).toMatchObject({
-      site: 'news.ycombinator.com',
-      available: true,
-      source: 'local',
-      paths: { local: localSitemap },
-    });
-    expect(report?.hint).toContain('site memory context');
-    expect(JSON.stringify(report)).not.toMatch(/local\+global|hackernews|webcmd-browser-sitemap/);
-  });
-
-  it('ignores package sitemaps and registry aliases', () => {
-    const homeDir = path.join(os.tmpdir(), 'webcmd-sitemap-home');
-    const packageRoot = path.join(os.tmpdir(), 'webcmd-sitemap-package');
-    const packageSitemap = path.join(packageRoot, 'sitemaps', 'twitter');
-    const aliasSitemap = path.join(homeDir, '.webcmd', 'sites', 'twitter', 'sitemap.md');
-
-    const report = resolveSitemapAvailabilityForUrl('https://x.com/webcmd', {
-      homeDir,
-      fileExists: (candidate) => candidate === packageSitemap || candidate === aliasSitemap,
-    });
-
-    expect(report).toBeNull();
-  });
-
-  it('returns availability for existing SITE.md even when learning is read-only', () => {
-    const homeDir = path.join(os.tmpdir(), 'webcmd-sitemap-home');
-    const localSitemap = path.join(homeDir, '.webcmd', 'sites', 'example.test', 'sitemap', 'SITE.md');
-
-    expect(() => resolveSitemapAvailabilityForUrl('https://example.test/', {
-      homeDir,
-      fileExists: (candidate) => candidate === localSitemap,
-    })).not.toThrow();
-    expect(resolveSitemapAvailabilityForUrl('https://example.test/', {
-      homeDir,
-      fileExists: (candidate) => candidate === localSitemap,
-    })?.available).toBe(true);
-  });
-
-  it('returns null when no local SITE.md exists', () => {
-    const report = resolveSitemapAvailabilityForUrl('https://example.com/', {
-      homeDir: path.join(os.tmpdir(), 'webcmd-sitemap-home'),
-      fileExists: () => false,
-    });
-
-    expect(report).toBeNull();
   });
 });
 
