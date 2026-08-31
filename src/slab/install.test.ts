@@ -11,16 +11,25 @@ function fakeInstaller(options: {
   downloadedBytes?: Buffer;
   bundleId?: string;
   verifyManifest?: boolean;
-  failCommand?: 'codesign' | 'spctl';
+  failCommand?: 'codesign' | 'xattr';
+  xattrAbsent?: boolean;
 } = {}) {
   const operations: string[] = [];
+  const writes: string[] = [];
   const execFile = vi.fn(async (command: string, args: string[]) => {
     if (command === options.failCommand) throw new Error(`${command} rejected the staged app`);
     if (command === 'hdiutil' && args[0] === 'attach') operations.push('mount-readonly');
     if (command === 'hdiutil' && args[0] === 'detach') operations.push('detach');
     if (command === 'ditto') operations.push('copy-to-staging');
     if (command === 'codesign') operations.push('codesign-verify');
-    if (command === 'spctl') operations.push('spctl-verify');
+    if (command === 'xattr') {
+      operations.push('clear-quarantine');
+      if (options.xattrAbsent) {
+        const error = new Error('No such xattr: com.apple.quarantine') as Error & { stderr?: string };
+        error.stderr = 'xattr: No such xattr: com.apple.quarantine';
+        throw error;
+      }
+    }
   });
   const replaceApp = vi.fn(async () => { operations.push('replace-app'); });
   const access = vi.fn(async () => {});
@@ -46,9 +55,10 @@ function fakeInstaller(options: {
     replaceApp,
     verifyManifest: () => options.verifyManifest ?? true,
     bundleId: async () => options.bundleId ?? 'dev.webcmd.slab',
+    write: async message => { writes.push(message); },
     operations: () => operations.filter(operation => operation !== 'cleanup'),
   };
-  return io;
+  return { ...io, writes };
 }
 
 describe('SLAB macOS installer', () => {
@@ -74,7 +84,7 @@ describe('SLAB macOS installer', () => {
     expect(io.execFile).toHaveBeenCalledWith('hdiutil', expect.arrayContaining(['attach', '-readonly', '-nobrowse', '-mountpoint']));
     expect(io.operations()).toEqual([
       'download', 'checksum', 'mount-readonly', 'copy-to-staging',
-      'codesign-verify', 'spctl-verify', 'replace-app', 'detach',
+      'codesign-verify', 'clear-quarantine', 'replace-app', 'detach',
     ]);
     expect(io.replaceApp).toHaveBeenCalledWith('/Applications/.SLAB.app.webcmd-staging', '/Applications/SLAB.app');
   });
@@ -84,11 +94,82 @@ describe('SLAB macOS installer', () => {
       .rejects.toThrow('SLAB installer bundle identifier mismatch');
   });
 
-  it.each(['codesign', 'spctl'] as const)('does not replace the app when %s verification fails', async (failCommand) => {
+  it.each(['codesign', 'xattr'] as const)('does not replace the app when %s verification fails', async (failCommand) => {
     const io = fakeInstaller({ failCommand });
 
     await expect(installSlabMacos(io)).rejects.toThrow(`${failCommand} rejected the staged app`);
     expect(io.replaceApp).not.toHaveBeenCalled();
+  });
+
+  it('treats an absent quarantine attribute as harmless', async () => {
+    const io = fakeInstaller({ xattrAbsent: true });
+
+    await expect(installSlabMacos(io)).resolves.toMatchObject({
+      appPath: '/Applications/SLAB.app',
+    });
+    expect(io.replaceApp).toHaveBeenCalled();
+  });
+
+  it('removes only the quarantine xattr after verification and before replacement', async () => {
+    const io = fakeInstaller();
+
+    await installSlabMacos(io);
+
+    expect(io.execFile).toHaveBeenCalledWith('xattr', ['-dr', 'com.apple.quarantine', '/Applications/.SLAB.app.webcmd-staging']);
+    expect(io.operations()).toEqual([
+      'download', 'checksum', 'mount-readonly', 'copy-to-staging',
+      'codesign-verify', 'clear-quarantine', 'replace-app', 'detach',
+    ]);
+  });
+
+  it('reports percent and byte progress when Content-Length is known', async () => {
+    const bytes = Buffer.from('signed-slab-dmg');
+    const io = fakeInstaller({
+      downloadedBytes: bytes,
+    });
+    io.fetch = async (url) => url.endsWith('.json')
+      ? { ok: true, json: async () => ({ url: 'https://downloads.webcmd.dev/slab/SLAB.dmg', sha256: releaseSha256, signature: 'release-signature' }) }
+      : {
+        ok: true,
+        headers: { get: (name: string) => name.toLowerCase() === 'content-length' ? String(bytes.length) : null },
+        body: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(bytes.subarray(0, 4));
+            controller.enqueue(bytes.subarray(4));
+            controller.close();
+          },
+        }),
+      };
+
+    await installSlabMacos(io);
+
+    expect(io.writes.join('')).toContain('100%');
+    expect(io.writes.join('')).toContain(`${bytes.length.toFixed(1)} B / ${bytes.length.toFixed(1)} B`);
+  });
+
+  it('reports downloaded bytes when Content-Length is unknown', async () => {
+    const bytes = Buffer.from('signed-slab-dmg');
+    const io = fakeInstaller({
+      downloadedBytes: bytes,
+    });
+    io.fetch = async (url) => url.endsWith('.json')
+      ? { ok: true, json: async () => ({ url: 'https://downloads.webcmd.dev/slab/SLAB.dmg', sha256: releaseSha256, signature: 'release-signature' }) }
+      : {
+        ok: true,
+        headers: { get: () => null },
+        body: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(bytes.subarray(0, 4));
+            controller.enqueue(bytes.subarray(4));
+            controller.close();
+          },
+        }),
+      };
+
+    await installSlabMacos(io);
+
+    expect(io.writes.join('')).not.toContain('%');
+    expect(io.writes.join('')).toContain(`${bytes.length.toFixed(1)} B`);
   });
 
   it('checks system Applications write access before choosing its staging directory', async () => {

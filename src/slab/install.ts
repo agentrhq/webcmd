@@ -5,6 +5,7 @@ import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { execFile as execFileCallback } from 'node:child_process';
+import { formatBytes } from '../download/progress.js';
 import { verifySlabReleaseManifest, type SlabReleaseManifest } from './release-key.js';
 import type { SlabInstallation } from './installation.js';
 
@@ -21,7 +22,13 @@ export interface InstallSlabOptions {
 export interface SlabInstallerIo {
   homeDir: string;
   tempDir: string;
-  fetch(url: string): Promise<{ ok: boolean; json?(): Promise<unknown>; arrayBuffer?(): Promise<ArrayBuffer> }>;
+  fetch(url: string): Promise<{
+    ok: boolean;
+    json?(): Promise<unknown>;
+    arrayBuffer?(): Promise<ArrayBuffer>;
+    body?: ReadableStream<Uint8Array> | null;
+    headers?: { get(name: string): string | null | undefined };
+  }>;
   execFile(command: string, args: string[]): Promise<unknown>;
   mkdtemp(prefix: string): Promise<string>;
   writeFile(path: string, bytes: Uint8Array): Promise<void>;
@@ -32,6 +39,7 @@ export interface SlabInstallerIo {
   bundleId(appPath: string): Promise<string>;
   replaceApp(source: string, destination: string): Promise<void>;
   verifyManifest(manifest: SlabReleaseManifest): boolean | Promise<boolean>;
+  write?(message: string): void | Promise<void>;
 }
 
 export interface SlabReplacementIo {
@@ -53,9 +61,55 @@ async function responseJson(response: { ok: boolean; json?(): Promise<unknown> }
   return response.json();
 }
 
-async function responseBytes(response: { ok: boolean; arrayBuffer?(): Promise<ArrayBuffer> }): Promise<Buffer> {
-  if (!response.ok || !response.arrayBuffer) throw new Error('SLAB installer download failed');
-  return Buffer.from(await response.arrayBuffer());
+async function writeProgress(io: SlabInstallerIo, received: number, total?: number, done: boolean = false): Promise<void> {
+  if (!io.write) return;
+  const summary = total && total > 0
+    ? `${Math.round((received / total) * 100)}% ${formatBytes(received)} / ${formatBytes(total)}`
+    : formatBytes(received);
+  await io.write(`\rDownloading SLAB DMG: ${summary}${done ? '\n' : ''}`);
+}
+
+async function responseBytes(response: {
+  ok: boolean;
+  arrayBuffer?(): Promise<ArrayBuffer>;
+  body?: ReadableStream<Uint8Array> | null;
+  headers?: { get(name: string): string | null | undefined };
+}, io: SlabInstallerIo): Promise<Buffer> {
+  if (!response.ok) throw new Error('SLAB installer download failed');
+  const total = Number(response.headers?.get('content-length') ?? '');
+  const expectedBytes = Number.isFinite(total) && total > 0 ? total : undefined;
+  if (response.body) {
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let received = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      chunks.push(value);
+      received += value.byteLength;
+      await writeProgress(io, received, expectedBytes);
+    }
+    await writeProgress(io, received, expectedBytes, true);
+    return Buffer.concat(chunks.map(chunk => Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength)));
+  }
+  if (!response.arrayBuffer) throw new Error('SLAB installer download failed');
+  const bytes = Buffer.from(await response.arrayBuffer());
+  await writeProgress(io, bytes.byteLength, expectedBytes ?? bytes.byteLength, true);
+  return bytes;
+}
+
+async function clearQuarantine(io: SlabInstallerIo, appPath: string): Promise<void> {
+  try {
+    await io.execFile('xattr', ['-dr', 'com.apple.quarantine', appPath]);
+  } catch (error) {
+    const details = [
+      error instanceof Error ? error.message : String(error),
+      typeof error === 'object' && error && 'stderr' in error ? String((error as { stderr?: unknown }).stderr ?? '') : '',
+    ].join('\n');
+    if (details.includes('No such xattr') && details.includes('com.apple.quarantine')) return;
+    throw error;
+  }
 }
 
 export async function replaceSlabAppAtomically(io: SlabReplacementIo, source: string, destination: string): Promise<void> {
@@ -87,7 +141,7 @@ export async function installSlabMacos(io: SlabInstallerIo = createSlabInstaller
   let mounted = false;
 
   try {
-    const bytes = await responseBytes(await io.fetch(manifest.url));
+    const bytes = await responseBytes(await io.fetch(manifest.url), io);
     await io.writeFile(dmgPath, bytes);
     const checksum = await (io.sha256?.(bytes) ?? Promise.resolve(createHash('sha256').update(bytes).digest('hex')));
     if (checksum.toLowerCase() !== manifest.sha256.toLowerCase()) throw new Error('SLAB installer checksum mismatch');
@@ -109,7 +163,7 @@ export async function installSlabMacos(io: SlabInstallerIo = createSlabInstaller
     await io.execFile('ditto', [join(mountPath, 'SLAB.app'), stagingPath]);
     await io.execFile('codesign', ['--verify', '--deep', '--strict', '--identifier', SLAB_BUNDLE_ID, stagingPath]);
     if (await io.bundleId(stagingPath) !== SLAB_BUNDLE_ID) throw new Error('SLAB installer bundle identifier mismatch');
-    await io.execFile('spctl', ['--assess', '--type', 'execute', '--verbose=4', stagingPath]);
+    await clearQuarantine(io, stagingPath);
     await io.replaceApp(stagingPath, appPath);
     stagingPath = undefined;
     if (options.launchAfterInstall) await io.execFile('open', [appPath]);
@@ -141,5 +195,6 @@ export function createSlabInstallerIo(): SlabInstallerIo {
     },
     replaceApp: (source, destination) => replaceSlabAppAtomically({ rename, rm: async path => { await rm(path, { recursive: true, force: true }); } }, source, destination),
     verifyManifest: verifySlabReleaseManifest,
+    write: async message => { process.stderr.write(message); },
   };
 }

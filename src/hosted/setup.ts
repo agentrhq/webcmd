@@ -11,7 +11,12 @@ import { writeToStream } from '../stream-write.js';
 import { fetchDaemonStatus, type DaemonStatus } from '../browser/daemon-transport.js';
 import { restartDaemon, type DaemonRestartResult } from '../browser/daemon-lifecycle.js';
 import { createSlabInstallerIo, installSlabMacos } from '../slab/install.js';
-import { findSlabInstallation, type SlabInstallation } from '../slab/installation.js';
+import {
+  createSlabInstallationValidationIo,
+  findSlabInstallation,
+  validateSlabInstallation,
+  type SlabInstallation,
+} from '../slab/installation.js';
 import { inspectSlabStatus, slabStatusHasHello, type SlabSetupStatus } from '../slab/status.js';
 import { HostedClient } from './client.js';
 import {
@@ -46,6 +51,7 @@ export interface SetupIo extends ConfigIo, HostedCredentialIo {
   access?: (path: string, mode: number) => Promise<void>;
   findSlabInstallation?: () => SlabInstallation | null;
   installSlabMacos?: () => Promise<SlabInstallation>;
+  validateSlabInstallation?: (installation: SlabInstallation) => Promise<boolean>;
   inspectSlabStatus?: () => Promise<SlabSetupStatus>;
   fetchDaemonStatus?: () => Promise<DaemonStatus | null>;
   restartDaemon?: () => Promise<DaemonRestartResult>;
@@ -217,7 +223,11 @@ async function validateLocalBrowser(browser: LocalBrowserConfig, io: SetupIo): P
     return { kind: 'custom', executablePath };
   }
   if ((io.platform ?? process.platform) !== 'darwin') throw new Error('SLAB setup is only supported on macOS.');
-  if (!(io.findSlabInstallation ?? defaultFindSlabInstallation)()) {
+  const installation = (io.findSlabInstallation ?? defaultFindSlabInstallation)();
+  const trusted = installation
+    ? await (io.validateSlabInstallation ?? (candidate => validateSlabInstallation(candidate, createSlabInstallationValidationIo())))(installation)
+    : false;
+  if (!trusted) {
     await (io.installSlabMacos ?? (() => installSlabMacos(createSlabInstallerIo(), { launchAfterInstall: true })))();
   }
   if (!slabStatusHasHello(await (io.inspectSlabStatus ?? inspectSlabStatus)())) throw new Error('SLAB did not report its control protocol after launch.');

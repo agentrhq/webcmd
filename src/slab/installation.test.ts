@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { findSlabInstallation, isSlabInstalled, slabControlEndpoint } from './installation.js';
+import { findSlabInstallation, isSlabInstalled, slabControlEndpoint, validateSlabInstallation } from './installation.js';
 
 describe('SLAB installation discovery', () => {
   it('finds the first installed normal macOS app bundle', () => {
@@ -30,5 +30,29 @@ describe('SLAB installation discovery', () => {
 
   it('uses the owner-scoped control socket path', () => {
     expect(slabControlEndpoint('/Users/me')).toBe('/Users/me/.slab/run/slab-bridge.sock');
+  });
+
+  it('accepts an installation only when the executable, bundle id, and code signature validate', async () => {
+    await expect(validateSlabInstallation({
+      platform: 'darwin',
+      appPath: '/Applications/SLAB.app',
+      executablePath: '/Applications/SLAB.app/Contents/MacOS/SLAB',
+    }, {
+      access: async () => undefined,
+      bundleId: async () => 'dev.webcmd.slab',
+      execFile: async () => undefined,
+    })).resolves.toBe(true);
+  });
+
+  it('rejects an installation with the wrong bundle id', async () => {
+    await expect(validateSlabInstallation({
+      platform: 'darwin',
+      appPath: '/Applications/SLAB.app',
+      executablePath: '/Applications/SLAB.app/Contents/MacOS/SLAB',
+    }, {
+      access: async () => undefined,
+      bundleId: async () => 'com.example.other',
+      execFile: async () => undefined,
+    })).resolves.toBe(false);
   });
 });
