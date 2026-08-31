@@ -81,7 +81,7 @@ function attachOk(id: string, credential = CREDENTIAL): string {
       profile: { id: 'default', displayName: 'Default' },
       transport: {
         kind: 'cdp-ipc',
-        endpoint: '/Users/test/.slab/run/attachments/00000000-0000-4000-8000-000000000000.sock',
+        endpoint: '/Users/test/.slab/run/AAAAAAAAAAA.sock',
         credential,
       },
     },

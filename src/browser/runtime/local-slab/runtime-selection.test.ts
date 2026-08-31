@@ -166,4 +166,57 @@ describe('local browser runtime selection', () => {
     expect(attached.context.close).not.toHaveBeenCalled();
     expect(quitApp).not.toHaveBeenCalled();
   });
+
+  it('reports disconnected when the native SLAB control endpoint is unavailable', async () => {
+    const { createLocalBrowserRuntimeProvider } = await import('./provider.js');
+    const provider = createLocalBrowserRuntimeProvider({
+      attachProfile: vi.fn().mockResolvedValue(fakeAttachedProfile()),
+      statusBridge: vi.fn().mockRejectedValue(new Error('connect ECONNREFUSED')),
+    });
+
+    await expect(provider.status()).resolves.toMatchObject({
+      runtimeConnected: false,
+      profiles: [],
+    });
+  });
+
+  it('reports ready from native SLAB hello before the first profile attachment', async () => {
+    const { createLocalBrowserRuntimeProvider } = await import('./provider.js');
+    const close = vi.fn().mockResolvedValue(undefined);
+    const attachProfile = vi.fn().mockResolvedValue(fakeAttachedProfile());
+    const provider = createLocalBrowserRuntimeProvider({
+      attachProfile,
+      statusBridge: vi.fn().mockResolvedValue({
+        close,
+        hello: vi.fn().mockResolvedValue({
+          protocolVersion: 1,
+          browserVersion: '152.0.7977.65',
+          browserPid: 1234,
+          profiles: [{ id: 'default', displayName: 'Default' }],
+        }),
+      }),
+    });
+
+    await expect(provider.status({ contextId: 'default' })).resolves.toMatchObject({
+      runtimeConnected: true,
+      runtimeVersion: '152.0.7977.65',
+      profiles: [{ contextId: 'default', runtimeConnected: true, runtimeVersion: '152.0.7977.65', pending: 0 }],
+    });
+    expect(close).toHaveBeenCalledOnce();
+    expect(attachProfile).not.toHaveBeenCalled();
+  });
+
+  it('reports a requested profile as disconnected when no active SLAB profile matches', async () => {
+    const { createLocalBrowserRuntimeProvider } = await import('./provider.js');
+    const provider = createLocalBrowserRuntimeProvider({
+      attachProfile: vi.fn().mockResolvedValue(fakeAttachedProfile()),
+      statusBridge: vi.fn().mockRejectedValue(new Error('connect ECONNREFUSED')),
+    });
+
+    await expect(provider.status({ contextId: 'work' })).resolves.toMatchObject({
+      runtimeConnected: false,
+      profileDisconnected: true,
+      profiles: [],
+    });
+  });
 });

@@ -1,6 +1,10 @@
+import { homedir } from 'node:os';
 import type { BrowserRuntimeCommand, BrowserRuntimeResult, BrowserRuntimeStatus } from '../../protocol.js';
 import type { BrowserRuntimeProvider, RuntimeStatusOptions } from '../provider.js';
 import { LocalBrowserSessionStore, type BrowserSessionListRow, type BrowserSessionRecord } from '../../sessions.js';
+import { SlabBridgeClient } from '../../../slab/bridge-client.js';
+import { slabControlEndpoint } from '../../../slab/installation.js';
+import type { SlabHelloResult } from '../../../slab/protocol.js';
 import { dispatchSlabAction, resolveSlabCommandProfileId } from './actions.js';
 import type { AttachSlabProfile } from './session-manager.js';
 import { SlabSessionManager } from './session-manager.js';
@@ -8,6 +12,7 @@ import { SlabSessionManager } from './session-manager.js';
 export interface LocalSlabRuntimeProviderOptions {
   baseDir?: string;
   attachProfile?: AttachSlabProfile;
+  statusBridge?: () => Promise<Pick<SlabBridgeClient, 'close' | 'hello'>>;
 }
 
 export function createLocalBrowserRuntimeProvider(opts: LocalSlabRuntimeProviderOptions = {}): LocalSlabRuntimeProvider {
@@ -37,11 +42,34 @@ export class LocalSlabRuntimeProvider implements BrowserRuntimeProvider {
 
   async status(opts: RuntimeStatusOptions = {}): Promise<BrowserRuntimeStatus> {
     const profiles = this.manager.profileStatuses();
+    const hello = await this.nativeStatus().catch(() => undefined);
+    const profileById = new Map(profiles.map(profile => [profile.contextId, profile]));
+    if (hello) {
+      for (const profile of hello.profiles) {
+        if (!profileById.has(profile.id)) {
+          profileById.set(profile.id, {
+            contextId: profile.id,
+            runtimeConnected: true,
+            runtimeVersion: hello.browserVersion,
+            pending: 0,
+          });
+        }
+      }
+    }
+    const statusProfiles = [...profileById.values()];
+    const requestedProfile = opts.contextId?.trim();
+    const selectedProfile = requestedProfile
+      ? statusProfiles.find(profile => profile.contextId === requestedProfile)
+      : undefined;
+    const runtimeConnected = requestedProfile
+      ? Boolean(selectedProfile?.runtimeConnected)
+      : statusProfiles.some(profile => profile.runtimeConnected);
     return {
-      runtimeConnected: true,
+      runtimeConnected,
       runtimeName: 'SLAB',
-      runtimeVersion: profiles.find(profile => profile.runtimeVersion)?.runtimeVersion,
-      profiles,
+      runtimeVersion: statusProfiles.find(profile => profile.runtimeVersion)?.runtimeVersion ?? hello?.browserVersion,
+      profiles: statusProfiles,
+      ...(requestedProfile && !selectedProfile?.runtimeConnected ? { profileDisconnected: true } : {}),
       pending: 0,
       commandResultUnknown: 0,
       sessions: await this.listSessions({ profileId: opts.contextId }),
@@ -135,6 +163,16 @@ export class LocalSlabRuntimeProvider implements BrowserRuntimeProvider {
 
   async shutdown(): Promise<void> {
     await this.manager.shutdown();
+  }
+
+  private async nativeStatus(): Promise<SlabHelloResult> {
+    const client = await (this.opts.statusBridge?.()
+      ?? SlabBridgeClient.connect(slabControlEndpoint(homedir()), { timeoutMs: 1_000 }));
+    try {
+      return await client.hello();
+    } finally {
+      await client.close();
+    }
   }
 
   private commandQueueKey(command: BrowserRuntimeCommand): string {

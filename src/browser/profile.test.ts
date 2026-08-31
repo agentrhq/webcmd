@@ -116,7 +116,7 @@ describe('createProfile', () => {
     expect(createProfile('eval-a')).toEqual({ contextId: 'eval-a', alias: 'eval-a', created: true });
     expect(createProfile('eval-a')).toEqual({ contextId: 'eval-a', alias: 'eval-a', created: false });
     expect(loadProfileConfig().aliases['eval-a']).toBe('eval-a');
-    expect(fs.existsSync(path.join(configDir, 'slab', 'profiles', 'eval-a'))).toBe(true);
+    expect(fs.existsSync(path.join(configDir, 'slab', 'profiles', 'eval-a'))).toBe(false);
   });
 
   it('rejects an invalid alias', () => {

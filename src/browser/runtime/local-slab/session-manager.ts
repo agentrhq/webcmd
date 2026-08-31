@@ -725,7 +725,7 @@ export class SlabSessionManager {
     const detached = this.detachedSessions.get(profileId) ?? new Set<string>();
     for (const sessionId of runtime.sessions.keys()) detached.add(sessionId);
     if (detached.size > 0) this.detachedSessions.set(profileId, detached);
-    void this.releaseRuntime(runtime, false, false).catch(error => {
+    void this.releaseRuntime(runtime, false).catch(error => {
       log.warn(`SLAB Profile ${profileId} release failed: ${errorMessage(error)}`);
     });
     this.cleanupRuntime(runtime);

@@ -23,7 +23,8 @@
  */
 
 import type { Browser, BrowserContext, Page, Frame, CDPSession } from 'playwright-core';
-import { HumanConfig, HumanActionOptions, resolveConfig, mergeConfig, rand, randRange, sleep } from './config.js';
+import type { HumanConfig, HumanActionOptions } from './config.js';
+import { resolveConfig, mergeConfig, rand, randRange, sleep } from './config.js';
 import { RawMouse, RawKeyboard, humanMove, humanClick, clickTarget, humanIdle } from './mouse.js';
 import { humanType } from './keyboard.js';
 import { scrollToElement, humanScrollIntoView } from './scroll.js';
@@ -34,7 +35,8 @@ import {
   type CheckName,
 } from './actionability.js';
 
-export { HumanConfig, resolveConfig, mergeConfig } from './config.js';
+export type { HumanConfig } from './config.js';
+export { resolveConfig, mergeConfig } from './config.js';
 export { humanMove, humanClick, clickTarget, humanIdle } from './mouse.js';
 export { humanType } from './keyboard.js';
 export { scrollToElement, humanScrollIntoView } from './scroll.js';

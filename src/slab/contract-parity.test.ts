@@ -14,7 +14,7 @@ const FIXTURE_FILES = [
 ] as const;
 const CONNECTION_ID = '00000000-0000-4000-8000-000000000000';
 const PROFILE_ID = 'default';
-const ENDPOINT = `/Users/test/.slab/run/attachments/${CONNECTION_ID}.sock`;
+const ENDPOINT = '/Users/test/.slab/run/AAAAAAAAAAA.sock';
 const CREDENTIAL = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 const STABLE_ERRORS = [
   'INVALID_REQUEST',

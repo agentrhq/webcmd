@@ -2466,7 +2466,26 @@ describe('browser Session lifecycle commands', () => {
     expect(mockSendCommand).toHaveBeenCalledWith('session-create', { contextId: 'eval-a' });
   });
 
-  it('rejects an unknown --profile on session create with PROFILE_NOT_FOUND', async () => {
+  it('allows explicit profile bootstrap when daemon status is unavailable', async () => {
+    mockSendCommand.mockResolvedValue({
+      id: 'session_work',
+      kind: 'explicit',
+      profileId: 'work',
+      runtimeState: 'idle',
+    });
+
+    await createProgram('', '').parseAsync(['node', 'webcmd', '--profile', 'work', 'session', 'create']);
+
+    expect(mockSendCommand).toHaveBeenCalledWith('session-create', { contextId: 'work' });
+  });
+
+  it('rejects an unknown --profile on session create when daemon reports active profiles', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      daemonVersion: PKG_VERSION,
+      runtimeConnected: true,
+      profiles: [{ contextId: 'default', runtimeConnected: true, pending: 0 }],
+    }))));
+
     await expect(createProgram('', '').parseAsync(['node', 'webcmd', '--profile', 'does-not-exist', 'session', 'create']))
       .rejects.toMatchObject({
         code: 'PROFILE_NOT_FOUND',

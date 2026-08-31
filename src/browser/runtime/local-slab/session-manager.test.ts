@@ -215,8 +215,7 @@ describe('SlabSessionManager ownership', () => {
 
     expect(attachProfile).toHaveBeenCalledOnce();
     expect(attached.browser.close).not.toHaveBeenCalled();
-    expect(attached.attachment.closeTransport).toHaveBeenCalledOnce();
-    expect(attached.attachment.release).not.toHaveBeenCalled();
+    expect(attached.attachment.release).toHaveBeenCalledOnce();
 
     await expect(manager.getPage({ ...input, session: 'replacement', sessionId: 'replacement' }))
       .resolves.toMatchObject({ profileId: 'default' });

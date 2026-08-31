@@ -3,7 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { CLI_COMMAND, CONFIG_DIR_NAME, ENV_PREFIX } from '../brand.js';
 import { ArgumentError, CliError, EXIT_CODES } from '../errors.js';
-import { normalizeProfileId, resolveSlabProfileDir } from './runtime/local-slab/profiles.js';
+import { normalizeProfileId } from './runtime/local-slab/profiles.js';
 
 export const DEFAULT_CONTEXT_ID = 'default';
 
@@ -97,7 +97,7 @@ export class ProfileNotFoundError extends CliError {
     super(
       'PROFILE_NOT_FOUND',
       `No profile matches "${name}". ${valid}`,
-      `usage: ${CLI_COMMAND} --profile <alias|contextId> session create\nCreate one: ${CLI_COMMAND} profile create ${name}\nList profiles: ${CLI_COMMAND} profile list`,
+      `usage: ${CLI_COMMAND} --profile <alias|contextId> session create\nSave an alias: ${CLI_COMMAND} profile create ${name}\nList profiles: ${CLI_COMMAND} profile list`,
       EXIT_CODES.EMPTY_RESULT,
     );
   }
@@ -121,7 +121,6 @@ export function createProfile(alias: string): { contextId: string; alias: string
   }
   config.aliases[name] = contextId;
   saveProfileConfig(config);
-  fs.mkdirSync(resolveSlabProfileDir(contextId), { recursive: true });
   return { contextId, alias: name, created: true };
 }
 

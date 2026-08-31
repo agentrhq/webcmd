@@ -587,6 +587,7 @@ async function requireKnownProfileId(command?: Command): Promise<string> {
   const requested = explicitProfileName(command);
   if (!requested) return profileId;
   const status = await fetchDaemonStatus();
+  if (!status || isDaemonStale(status, PKG_VERSION)) return profileId;
   const connected = status && !isDaemonStale(status, PKG_VERSION) && Array.isArray(status.profiles)
     ? status.profiles
     : [];
@@ -2167,7 +2168,7 @@ cli({
         created: result.created,
       }, () => {
         console.log(result.created
-          ? `Profile ${result.alias} created (contextId: ${result.contextId}).`
+          ? `Profile alias ${result.alias} saved (contextId: ${result.contextId}).`
           : `Profile ${result.alias} already exists (contextId: ${result.contextId}).`);
       });
     });
