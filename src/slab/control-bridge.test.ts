@@ -24,4 +24,20 @@ describe('SLAB control bridge', () => {
     expect(client.attach).toHaveBeenCalledWith('default');
     expect(client.release).toHaveBeenCalledWith('connection-1');
   });
+
+  it('can close the control client before a lease exists', async () => {
+    const client = {
+      attach: vi.fn(),
+      release: vi.fn(),
+      close: vi.fn(async () => null),
+    };
+    const bridge = await connectSlabControlBridge({
+      ensureLaunched: async () => undefined,
+      connect: async () => client as never,
+    });
+
+    await bridge.close();
+
+    expect(client.close).toHaveBeenCalledOnce();
+  });
 });

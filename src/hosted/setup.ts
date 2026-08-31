@@ -2,7 +2,6 @@ import { createInterface } from 'node:readline/promises';
 import { stdin as defaultInput, stdout as defaultOutput } from 'node:process';
 import { constants, existsSync } from 'node:fs';
 import { access, realpath, stat } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import { isAbsolute } from 'node:path';
 import { CLI_COMMAND } from '../brand.js';
 import { ArgumentError, toEnvelope } from '../errors.js';
@@ -11,12 +10,7 @@ import { writeToStream } from '../stream-write.js';
 import { fetchDaemonStatus, type DaemonStatus } from '../browser/daemon-transport.js';
 import { restartDaemon, type DaemonRestartResult } from '../browser/daemon-lifecycle.js';
 import { createSlabInstallerIo, installSlabMacos } from '../slab/install.js';
-import {
-  createSlabInstallationValidationIo,
-  findSlabInstallation,
-  validateSlabInstallation,
-  type SlabInstallation,
-} from '../slab/installation.js';
+import type { SlabInstallation } from '../slab/installation.js';
 import { inspectSlabStatus, slabStatusHasHello, type SlabSetupStatus } from '../slab/status.js';
 import { HostedClient } from './client.js';
 import {
@@ -49,10 +43,9 @@ export interface SetupIo extends ConfigIo, HostedCredentialIo {
   realpath?: (path: string) => Promise<string>;
   stat?: (path: string) => Promise<{ isFile(): boolean }>;
   access?: (path: string, mode: number) => Promise<void>;
-  findSlabInstallation?: () => SlabInstallation | null;
   installSlabMacos?: () => Promise<SlabInstallation>;
-  validateSlabInstallation?: (installation: SlabInstallation) => Promise<boolean>;
   inspectSlabStatus?: () => Promise<SlabSetupStatus>;
+  wait?: (ms: number) => Promise<void>;
   fetchDaemonStatus?: () => Promise<DaemonStatus | null>;
   restartDaemon?: () => Promise<DaemonRestartResult>;
   saveConfig?: (config: WebcmdConfig, io: ConfigIo) => void;
@@ -223,19 +216,22 @@ async function validateLocalBrowser(browser: LocalBrowserConfig, io: SetupIo): P
     return { kind: 'custom', executablePath };
   }
   if ((io.platform ?? process.platform) !== 'darwin') throw new Error('SLAB setup is only supported on macOS.');
-  const installation = (io.findSlabInstallation ?? defaultFindSlabInstallation)();
-  const trusted = installation
-    ? await (io.validateSlabInstallation ?? (candidate => validateSlabInstallation(candidate, createSlabInstallationValidationIo())))(installation)
-    : false;
-  if (!trusted) {
-    await (io.installSlabMacos ?? (() => installSlabMacos(createSlabInstallerIo(), { launchAfterInstall: true })))();
-  }
-  if (!slabStatusHasHello(await (io.inspectSlabStatus ?? inspectSlabStatus)())) throw new Error('SLAB did not report its control protocol after launch.');
+  await (io.installSlabMacos ?? (() => installSlabMacos(createSlabInstallerIo(), { launchAfterInstall: true })))();
+  if (!await waitForSlabHello(io)) throw new Error('SLAB did not report its control protocol after launch.');
   return browser;
 }
 
-function defaultFindSlabInstallation(): SlabInstallation | null {
-  return findSlabInstallation({ platform: process.platform, homeDir: homedir(), existsSync });
+async function waitForSlabHello(io: SetupIo, timeoutMs = 10_000): Promise<boolean> {
+  const inspect = io.inspectSlabStatus ?? inspectSlabStatus;
+  const wait = io.wait ?? (ms => new Promise<void>(resolve => setTimeout(resolve, ms)));
+  const intervalMs = 250;
+  const attempts = Math.max(1, Math.ceil(timeoutMs / intervalMs));
+  for (let attempt = 0; attempt <= attempts; attempt += 1) {
+    if (slabStatusHasHello(await inspect())) return true;
+    if (attempt === attempts) return false;
+    await wait(intervalMs);
+  }
+  return false;
 }
 
 async function restartConfiguredDaemon(browser: LocalBrowserConfig, io: SetupIo): Promise<void> {

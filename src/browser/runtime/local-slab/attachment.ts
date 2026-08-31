@@ -26,7 +26,13 @@ export interface AttachSlabProfileOptions {
 
 export async function attachSlabProfile(profileId: string, options: AttachSlabProfileOptions = {}): Promise<AttachedSlabProfile> {
   const bridge = options.bridge ?? await (options.connectBridge ?? connectSlabControlBridge)();
-  const attachment = await bridge.attach(profileId);
+  let attachment: SlabAttachResult;
+  try {
+    attachment = await bridge.attach(profileId);
+  } catch (error) {
+    await bridge.close().catch(() => {});
+    throw error;
+  }
   const attachTimeoutMs = options.attachTimeoutMs ?? 30_000;
   let transport: ConnectOverCDPTransport | undefined;
   try {

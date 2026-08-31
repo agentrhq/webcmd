@@ -381,20 +381,6 @@ describe('doctor report rendering', () => {
       kind: 'custom',
       executablePath: managedBinaryPath,
     });
-    mockEnsureBinary.mockImplementationOnce(async () => {
-      expect(process.env.CLOAKBROWSER_BINARY_PATH).toBe(managedBinaryPath);
-      return managedBinaryPath;
-    });
-    mockBinaryInfo.mockImplementationOnce(() => ({
-      version: '1.0.0',
-      bundledVersion: '1.0.0',
-      tier: 'free',
-      platform: 'linux-x64',
-      binaryPath: process.env.CLOAKBROWSER_BINARY_PATH ?? managedBinaryPath,
-      installed: true,
-      cacheDir: managedBinaryDir,
-      downloadUrl: 'https://example.test/download',
-    }));
     mockGetDaemonHealth.mockResolvedValueOnce({ state: 'ready', status: { runtimeConnected: true, runtimeName: 'custom' } });
 
     try {
@@ -408,6 +394,8 @@ describe('doctor report rendering', () => {
         installed: true,
         path: managedBinaryPath,
       });
+      expect(mockEnsureBinary).not.toHaveBeenCalled();
+      expect(mockBinaryInfo).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllEnvs();
       fs.rmSync(configDir, { recursive: true, force: true });

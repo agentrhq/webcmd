@@ -87,7 +87,13 @@ function isLaunchableFile(binaryPath: string): boolean {
  * healthy — it says nothing about whether the browser binary CloakBrowser
  * needs to launch is present on disk.
  */
-export function checkBrowserBinary(): BrowserBinaryStatus {
+export function checkBrowserBinary(browser: LocalBrowserConfig = { kind: 'cloak' }): BrowserBinaryStatus {
+  if (browser.kind === 'custom') {
+    return {
+      installed: isLaunchableFile(browser.executablePath),
+      path: browser.executablePath,
+    };
+  }
   try {
     const info = binaryInfo();
     return {
@@ -112,7 +118,7 @@ export async function checkConnectivity(
   let sessionId: string | undefined;
   try {
     // A first-use download can exceed doctor's deliberately short live-probe deadline.
-    if (browser.kind !== 'slab') await ensureBinary();
+    if (browser.kind === 'cloak') await ensureBinary();
     setDaemonCommandTimeoutSeconds(timeoutSeconds);
     const session = await sendCommand('session-create', { sessionName: 'Doctor Probe' }) as { id?: unknown };
     if (typeof session.id !== 'string') throw new Error('Doctor could not create a browser Session.');
@@ -153,7 +159,7 @@ export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<Doctor
   // (bridge.connect spawns daemon) and validates
   // end-to-end browser bridge health.
   const connectivity = await checkConnectivity(selectedBrowser);
-  const binary = selectedBrowser.kind === 'slab' ? undefined : checkBrowserBinary();
+  const binary = selectedBrowser.kind === 'slab' ? undefined : checkBrowserBinary(selectedBrowser);
 
   // Single status read *after* connectivity side-effects settle.
   const health = await getDaemonHealth();

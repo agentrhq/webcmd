@@ -25,7 +25,7 @@ describe('attachSlabProfile', () => {
     const cdpTransport = transport();
     const context = {} as any;
     const browser = { contexts: vi.fn(() => [context]), version: vi.fn(() => '152.0') } as any;
-    const bridge = { attach: vi.fn().mockResolvedValue(lease), release: vi.fn().mockResolvedValue(null) };
+    const bridge = { attach: vi.fn().mockResolvedValue(lease), release: vi.fn().mockResolvedValue(null), close: vi.fn().mockResolvedValue(null) };
     const connectTransport = vi.fn().mockResolvedValue(cdpTransport);
     const connectOverCDP = vi.fn().mockResolvedValue(browser);
 
@@ -46,6 +46,7 @@ describe('attachSlabProfile', () => {
     const bridge = {
       attach: vi.fn().mockResolvedValue(lease),
       release: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
     };
     const connectBridge = vi.fn().mockResolvedValue(bridge);
     const context = {} as BrowserContext;
@@ -64,7 +65,7 @@ describe('attachSlabProfile', () => {
   it('closes the transport and releases the lease when Playwright setup fails', async () => {
     const lease = attachment();
     const cdpTransport = transport();
-    const bridge = { attach: vi.fn().mockResolvedValue(lease), release: vi.fn().mockResolvedValue(null) };
+    const bridge = { attach: vi.fn().mockResolvedValue(lease), release: vi.fn().mockResolvedValue(null), close: vi.fn().mockResolvedValue(null) };
     const connectTransport = vi.fn().mockResolvedValue(cdpTransport);
     const connectOverCDP = vi.fn().mockRejectedValue(new Error('Playwright refused the connection'));
 
@@ -73,12 +74,24 @@ describe('attachSlabProfile', () => {
     expect(bridge.release).toHaveBeenCalledWith('connection-1');
   });
 
+  it('closes the bridge when native attach fails before a lease exists', async () => {
+    const bridge = {
+      attach: vi.fn().mockRejectedValue(new Error('profile missing')),
+      release: vi.fn().mockResolvedValue(null),
+      close: vi.fn().mockResolvedValue(null),
+    };
+
+    await expect(attachSlabProfile('default', { bridge })).rejects.toThrow('profile missing');
+    expect(bridge.close).toHaveBeenCalledOnce();
+    expect(bridge.release).not.toHaveBeenCalled();
+  });
+
   it('closes its local transport before releasing the native lease', async () => {
     const lease = attachment();
     const cdpTransport = transport();
     const context = {} as any;
     const browser = { contexts: vi.fn(() => [context]), version: vi.fn(() => '152.0') } as any;
-    const bridge = { attach: vi.fn().mockResolvedValue(lease), release: vi.fn().mockResolvedValue(null) };
+    const bridge = { attach: vi.fn().mockResolvedValue(lease), release: vi.fn().mockResolvedValue(null), close: vi.fn().mockResolvedValue(null) };
     const result = await attachSlabProfile('default', {
       bridge,
       connectTransport: vi.fn().mockResolvedValue(cdpTransport),

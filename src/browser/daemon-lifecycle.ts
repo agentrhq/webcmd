@@ -6,6 +6,7 @@ import { DEFAULT_DAEMON_PORT } from '../constants.js';
 import { BrowserConnectError } from '../errors.js';
 import { PKG_VERSION } from '../version.js';
 import { isVerbose } from '../logger.js';
+import { loadWebcmdConfig } from '../hosted/config.js';
 import { waitForBridgeReady } from './bridge-readiness.js';
 import { fetchDaemonStatus, getDaemonHealth, requestDaemonShutdown, type DaemonHealth, type DaemonStatus } from './daemon-transport.js';
 
@@ -127,6 +128,7 @@ export async function ensureBrowserBridgeReady(
   const health = await getDaemonHealth({ contextId });
   const daemonVersion = health.status?.daemonVersion;
   const isStale = !!health.status && (!daemonVersion || daemonVersion !== PKG_VERSION);
+  const selectedSlab = selectedLocalBrowserKind() === 'slab';
   let staleDaemonReplaced = false;
   let spawnedProcess: ChildProcess | null = null;
 
@@ -171,6 +173,10 @@ export async function ensureBrowserBridgeReady(
     throw browserConnectErrorFromHealth(health, contextId);
   }
 
+  if (!staleDaemonReplaced && selectedSlab && health.state !== 'stopped') {
+    return { health, spawnedProcess };
+  }
+
   if (staleDaemonReplaced || health.state === 'stopped') {
     if (verbose && (isVerbose() || process.stderr.isTTY)) {
       process.stderr.write('⏳ Starting daemon...\n');
@@ -181,9 +187,25 @@ export async function ensureBrowserBridgeReady(
     process.stderr.write('   Make sure Chrome/Chromium is open and Cloak is enabled.\n');
   }
 
+  if (selectedSlab) {
+    const status = await waitForDaemonStatus(timeoutMs);
+    if (status) {
+      const finalHealth = await getDaemonHealth({ contextId });
+      if (finalHealth.state !== 'profile-required' && finalHealth.state !== 'stopped') {
+        return { health: finalHealth, spawnedProcess };
+      }
+      throw browserConnectErrorFromHealth(finalHealth, contextId);
+    }
+  }
+
   const finalHealth = await waitForBridgeReady(getDaemonHealth, { timeoutMs, contextId });
   if (finalHealth.state === 'ready') return { health: finalHealth, spawnedProcess };
   throw browserConnectErrorFromHealth(finalHealth, contextId);
+}
+
+function selectedLocalBrowserKind(): 'cloak' | 'slab' | 'custom' {
+  const config = loadWebcmdConfig();
+  return config.mode === 'local' ? config.browser.kind : 'cloak';
 }
 
 function browserConnectErrorFromHealth(health: DaemonHealth, contextId?: string): BrowserConnectError {

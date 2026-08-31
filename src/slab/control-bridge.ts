@@ -7,6 +7,7 @@ import type { SlabAttachResult } from './protocol.js';
 export interface SlabControlBridge {
   attach(profileId: string): Promise<SlabAttachResult>;
   release(connectionId: string): Promise<void>;
+  close(): Promise<void>;
 }
 
 export interface SlabControlBridgeIo {
@@ -26,6 +27,7 @@ export async function connectSlabControlBridge(io: SlabControlBridgeIo = createS
         await client.close();
       }
     },
+    close: () => client.close(),
   };
 }
 
