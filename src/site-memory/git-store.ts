@@ -56,7 +56,11 @@ async function commitPaths(root: string, paths: string[], message: string): Prom
     await git(root, ['add', '--', ...relativePaths, '.gitignore']);
     await git(root, ['commit', '--no-gpg-sign', '-m', message]);
   } catch (err) {
-    await restoreStagedPaths(root, relativePaths);
+    try {
+      await restoreStagedPaths(root, relativePaths);
+    } catch (cleanupErr) {
+      throw new AggregateError([err, cleanupErr], 'Commit failed and index cleanup also failed');
+    }
     throw err;
   }
   return (await git(root, ['rev-parse', 'HEAD'])).trim();
@@ -64,13 +68,11 @@ async function commitPaths(root: string, paths: string[], message: string): Prom
 
 async function restoreStagedPaths(root: string, relativePaths: string[]): Promise<void> {
   const paths = [...relativePaths, '.gitignore'];
-  try {
-    if (await revisionOf(root) !== null) {
-      await git(root, ['restore', '--staged', '--', ...paths]);
-    } else {
-      await git(root, ['rm', '--cached', '-f', '--ignore-unmatch', '--', ...paths]);
-    }
-  } catch {}
+  if (await revisionOf(root) !== null) {
+    await git(root, ['restore', '--staged', '--', ...paths]);
+  } else {
+    await git(root, ['rm', '--cached', '-f', '--ignore-unmatch', '--', ...paths]);
+  }
 }
 
 async function ensureRepository(root: string): Promise<void> {

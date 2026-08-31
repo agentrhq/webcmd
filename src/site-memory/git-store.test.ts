@@ -190,6 +190,30 @@ describe('sites git repository', () => {
     expect(await git(sites, ['status', '--porcelain', '-uall'])).not.toMatch(/^(A |AD)/m);
   });
 
+  it('exposes commit and cleanup failures together when restore also fails', async () => {
+    const { homeDir } = await tempSites();
+    await writeProductFile('example.test', 'manifest.json', '{}\n', { homeDir });
+    const repo = await openSitesRepository({ homeDir });
+    await repo.commit(['example.test/manifest.json'], 'init');
+    await writeProductFile('example.test', 'notes.md', 'keep later\n', { homeDir });
+    await installFailingCommitAndCleanupGit();
+
+    const error = await repo.commit(['example.test/notes.md'], 'notes').then(
+      () => {
+        throw new Error('expected commit to fail');
+      },
+      (err: unknown) => err,
+    );
+
+    expect(error).toBeInstanceOf(AggregateError);
+    const aggregate = error as AggregateError;
+    expect(aggregate.errors).toHaveLength(2);
+    expect(aggregate.message).toMatch(/cleanup/i);
+    expect(aggregate.errors.map((item) => (item instanceof Error ? item.message : String(item))).join('\n')).toMatch(
+      /restore|rm --cached/,
+    );
+  });
+
   it('excludes .git, .drafts, and other dot entries from product enumeration', async () => {
     const { homeDir, sites } = await tempSites();
     await writeProductFile('example.test', 'manifest.json', '{}\n', { homeDir });
@@ -222,6 +246,22 @@ async function installFailingCommitGit() {
 const { spawnSync } = require('node:child_process');
 const args = process.argv.slice(2);
 if (args.includes('commit')) process.exit(1);
+const result = spawnSync(${JSON.stringify(stdout.trim())}, args, { stdio: 'inherit' });
+process.exit(result.status ?? 1);
+`);
+  await chmod(wrapper, 0o755);
+  process.env.PATH = `${dir}:${process.env.PATH}`;
+}
+
+async function installFailingCommitAndCleanupGit() {
+  const dir = await mkdtemp(join(tmpdir(), 'webcmd-fail-git-cleanup-'));
+  tempHomes.push(dir);
+  const { stdout } = await run('/usr/bin/which', ['git'], { encoding: 'utf8' });
+  const wrapper = join(dir, 'git');
+  await writeFile(wrapper, `#!/usr/bin/env node
+const { spawnSync } = require('node:child_process');
+const args = process.argv.slice(2);
+if (args.includes('commit') || args.includes('restore') || args.includes('rm')) process.exit(1);
 const result = spawnSync(${JSON.stringify(stdout.trim())}, args, { stdio: 'inherit' });
 process.exit(result.status ?? 1);
 `);
