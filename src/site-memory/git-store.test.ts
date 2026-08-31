@@ -53,6 +53,43 @@ describe('sites git repository', () => {
     expect(ignore).toMatch(/verify/);
   });
 
+  it('leaves an existing modified .gitignore byte-identical', async () => {
+    const { homeDir, sites } = await tempSites();
+    await mkdir(sites, { recursive: true });
+    const custom = 'node_modules/\n';
+    await writeFile(join(sites, '.gitignore'), custom);
+    await writeProductFile('example.test', 'manifest.json', '{}\n', { homeDir });
+    await git(sites, ['init']);
+    await git(sites, ['add', '--', '.gitignore']);
+    await git(sites, ['-c', 'user.name=webcmd', '-c', 'user.email=webcmd@local', 'commit', '-m', 'ignore']);
+    const modified = `${custom}*.log\n`;
+    await writeFile(join(sites, '.gitignore'), modified);
+
+    await (await openSitesRepository({ homeDir })).commit(['example.test/manifest.json'], 'init');
+
+    expect(await readFile(join(sites, '.gitignore'), 'utf8')).toBe(modified);
+    expect(await git(sites, ['show', 'HEAD:.gitignore'])).toBe(custom);
+  });
+
+  it('refuses a pre-staged user .gitignore without destaging or rewriting it', async () => {
+    const { homeDir, sites } = await tempSites();
+    await writeProductFile('example.test', 'manifest.json', '{}\n', { homeDir });
+    const repo = await openSitesRepository({ homeDir });
+    await repo.commit(['example.test/manifest.json'], 'init');
+    const original = await readFile(join(sites, '.gitignore'), 'utf8');
+    const modified = `${original}*.log\n`;
+    await writeFile(join(sites, '.gitignore'), modified);
+    await git(sites, ['add', '--', '.gitignore']);
+    const stagedBefore = await git(sites, ['diff', '--cached', '--name-only', '-z']);
+    await writeProductFile('example.test', 'notes.md', 'keep\n', { homeDir });
+
+    await expect(repo.commit(['example.test/notes.md'], 'notes')).rejects.toThrow(/staged/i);
+
+    expect(await readFile(join(sites, '.gitignore'), 'utf8')).toBe(modified);
+    expect(await git(sites, ['diff', '--cached', '--name-only', '-z'])).toBe(stagedBefore);
+    expect(await git(sites, ['show', 'HEAD:.gitignore'])).toBe(original);
+  });
+
   it('accepts a repository whose real toplevel is exactly the sites root', async () => {
     const { homeDir, sites } = await tempSites();
     await mkdir(sites, { recursive: true });
@@ -85,6 +122,24 @@ describe('sites git repository', () => {
     await expect(repo.commit(['example.test/manifest.json'], 'notes')).rejects.toThrow(/unrelated/i);
     expect((await git(sites, ['show', 'HEAD:example.test/manifest.json'])).trim()).toBe('{}');
     expect((await git(sites, ['ls-files'])).trim().split('\n')).not.toContain('example.test/scratch.md');
+  });
+
+  it('refuses a pre-staged path outside the commit allow-set without destaging it', async () => {
+    const { homeDir, sites } = await tempSites();
+    await writeProductFile('a.test', 'manifest.json', '{}\n', { homeDir });
+    await writeProductFile('b.test', 'sitemap/SITE.md', '# B\n\nUNVALIDATED user text with no date and secrets: password=hunter2\n', { homeDir });
+    const repo = await openSitesRepository({ homeDir });
+    await repo.commit(['a.test/manifest.json'], 'init a');
+    await git(sites, ['add', '--', 'b.test/sitemap/SITE.md']);
+    const stagedBefore = await git(sites, ['diff', '--cached', '--name-only', '-z']);
+    await writeProductFile('a.test', 'notes.md', 'keep\n', { homeDir });
+
+    await expect(repo.commit(['a.test/notes.md'], 'a notes')).rejects.toThrow(/staged/i);
+
+    expect(await git(sites, ['diff', '--cached', '--name-only', '-z'])).toBe(stagedBefore);
+    expect((await git(sites, ['ls-tree', '-r', '--name-only', 'HEAD'])).trim().split('\n')).not.toContain('b.test/sitemap/SITE.md');
+    expect((await git(sites, ['log', '-1', '--format=%s'])).trim()).toBe('init a');
+    expect(await readProductFile('b.test', 'sitemap/SITE.md', { homeDir })).toMatch(/password=hunter2/);
   });
 
   it('does not let an unrelated product\'s dirty files wedge the target product', async () => {

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import { addCandidate, listCandidates, searchCandidates, showCandidate } from './candidates.js';
+import { openSitesRepository } from './git-store.js';
 import { listSiteMemory, readProductFile, showSiteMemory, writeProductFile } from './local-store.js';
 import type { Candidate } from './model.js';
 
@@ -63,6 +64,21 @@ describe('candidate capture', () => {
     expect(summary.status).toBe('pending');
     expect(stored.evidence).toBe('Used /new while /hot spun.');
     expect(stored.environment.publicIp).toBeUndefined();
+  });
+
+  it('refuses capturing a.test while b.test is pre-staged', async () => {
+    const { homeDir, sites } = await tempSites();
+    await writeProductFile('a.test', 'manifest.json', '{}\n', { homeDir });
+    await writeProductFile('b.test', 'sitemap/SITE.md', '# B\n\nUNVALIDATED user text with no date and secrets: password=hunter2\n', { homeDir });
+    await (await openSitesRepository({ homeDir })).commit(['a.test/manifest.json'], 'init a');
+    await git(sites, ['add', '--', 'b.test/sitemap/SITE.md']);
+    const stagedBefore = await git(sites, ['diff', '--cached', '--name-only', '-z']);
+
+    await expect(addCandidate(base(homeDir, { product: 'a.test', hostname: 'a.test' }))).rejects.toThrow(/staged/i);
+
+    expect(await git(sites, ['diff', '--cached', '--name-only', '-z'])).toBe(stagedBefore);
+    expect((await git(sites, ['ls-tree', '-r', '--name-only', 'HEAD'])).trim().split('\n')).not.toContain('b.test/sitemap/SITE.md');
+    expect((await git(sites, ['log', '-1', '--format=%s'])).trim()).toBe('init a');
   });
 
   it('commits each candidate once and keeps concurrent captures', async () => {

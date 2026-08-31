@@ -1,5 +1,5 @@
 import { execFile as execFileCb } from 'node:child_process';
-import { mkdir, realpath } from 'node:fs/promises';
+import { access, mkdir, realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { REPOSITORY_LOCK_STALE_MS, REPOSITORY_LOCK_TIMEOUT_MS, withFileLock } from './file-lock.js';
@@ -52,14 +52,17 @@ async function commitPaths(root: string, paths: string[], message: string): Prom
   if (paths.length === 0) throw new Error('Refusing to commit without explicit paths.');
   await ensureRepository(root);
   const relativePaths = paths.map((path) => containedRelativePath(root, path));
-  await atomicWrite(join(root, '.gitignore'), GITIGNORE);
+  const createdIgnore = await missing(join(root, '.gitignore'));
+  if (createdIgnore) await atomicWrite(join(root, '.gitignore'), GITIGNORE);
+  const staged = createdIgnore ? [...relativePaths, '.gitignore'] : relativePaths;
   await assertNoUnrelatedDirty(root, relativePaths);
   try {
-    await git(root, ['add', '--', ...relativePaths, '.gitignore']);
+    await git(root, ['add', '--', ...staged]);
+    await assertStagedSubset(root, staged);
     await git(root, ['commit', '--no-gpg-sign', '-m', message]);
   } catch (err) {
     try {
-      await restoreStagedPaths(root, relativePaths);
+      await restoreStagedPaths(root, staged);
     } catch (cleanupErr) {
       throw new AggregateError([err, cleanupErr], 'Commit failed and index cleanup also failed');
     }
@@ -76,11 +79,10 @@ async function pathsDifferFromHead(root: string, paths: string[]): Promise<boole
 }
 
 async function restoreStagedPaths(root: string, relativePaths: string[]): Promise<void> {
-  const paths = [...relativePaths, '.gitignore'];
   if (await revisionOf(root) !== null) {
-    await git(root, ['restore', '--staged', '--', ...paths]);
+    await git(root, ['restore', '--staged', '--', ...relativePaths]);
   } else {
-    await git(root, ['rm', '--cached', '-f', '--ignore-unmatch', '--', ...paths]);
+    await git(root, ['rm', '--cached', '-f', '--ignore-unmatch', '--', ...relativePaths]);
   }
 }
 
@@ -128,13 +130,32 @@ async function assertExactRoot(root: string): Promise<void> {
 }
 
 async function assertNoUnrelatedDirty(root: string, allowed: string[]): Promise<void> {
-  const allow = new Set([...allowed, '.gitignore']);
+  const allow = new Set(allowed);
   const scopes = productScopes(allowed);
   if (scopes.length === 0) return;
   const status = await git(root, ['status', '--porcelain', '-z', '-uall', '--', ...scopes]);
   for (const { code, path } of porcelainEntries(status)) {
     if (code === '??' || code === '!!') continue;
     if (!allow.has(path)) throw new Error(`Refusing to commit unrelated dirty path: ${path}`);
+  }
+}
+
+async function assertStagedSubset(root: string, allowed: string[]): Promise<void> {
+  const allow = new Set(allowed);
+  const cached = await git(root, ['diff', '--cached', '--name-only', '-z']);
+  for (const path of cached.split('\0')) {
+    if (!path) continue;
+    if (!allow.has(path)) throw new Error(`Refusing to commit unrelated staged path: ${path}`);
+  }
+}
+
+async function missing(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return false;
+  } catch (err) {
+    if (err instanceof Error && 'code' in err && err.code === 'ENOENT') return true;
+    throw err;
   }
 }
 
