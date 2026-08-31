@@ -296,7 +296,7 @@ function productSegment(value: string): string {
 
 async function memoryPaths(root: string, requested?: string[]): Promise<string[]> {
   if (!await exists(root)) return [];
-  const paths = (requested ?? await walkFiles(root)).filter((path) => !isInternalWritePath(path));
+  const paths = (requested ?? await walkFiles(root)).filter((path) => !isInternalWritePath(path) && !isCandidateMemoryPath(path));
   return Promise.all(paths.map((path) => readableRelativePath(root, path))).then((items) => items.sort());
 }
 
@@ -304,7 +304,7 @@ async function walkFiles(root: string, dir = root): Promise<string[]> {
   const entries = await readdir(dir, { withFileTypes: true });
   const nested = await Promise.all(entries.map(async (entry) => {
     const path = join(dir, entry.name);
-    if (entry.isDirectory()) return walkFiles(root, path);
+    if (entry.isDirectory()) return entry.name === 'candidates' ? [] : walkFiles(root, path);
     if (entry.isFile() && !isInternalWritePath(entry.name)) return [relative(root, path)];
     return [];
   }));
@@ -330,6 +330,11 @@ function safeRelativePath(root: string, path: string): string {
 function isInternalWritePath(path: string): boolean {
   const name = basename(path);
   return tempWritePattern.test(name) || lockWritePattern.test(name);
+}
+
+function isCandidateMemoryPath(path: string): boolean {
+  const normalized = path.split(sep).join('/');
+  return normalized === 'candidates' || normalized.startsWith('candidates/');
 }
 
 function requiredHomeDir(opts: LocalStoreOptions): string {

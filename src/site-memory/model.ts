@@ -58,6 +58,9 @@ export interface ProductResolution {
 
 export type CandidateStatus = 'pending' | 'ingested' | 'rejected';
 
+export const CANDIDATE_KINDS = ['action_space', 'better_path', 'access', 'high_consequence', 'repeated_mistake'] as const;
+export type CandidateKind = (typeof CANDIDATE_KINDS)[number];
+
 export interface CandidateEnvironment {
   machine?: string;
   localIp?: string;
@@ -84,4 +87,16 @@ export interface Candidate {
   memoryCommit: MemoryRevision | null;
   reviewedAt: string | null;
   rejectionReason: string | null;
+}
+
+export interface CandidateSummary {
+  id: string;
+  domain: string;
+  hostname: string;
+  observedAt: string;
+  observedDateUtc: string;
+  kind: string;
+  claim: string;
+  consequence: string;
+  status: CandidateStatus;
 }
