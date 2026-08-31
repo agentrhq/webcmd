@@ -9,8 +9,6 @@ import { addWebcmdSkills, listWebcmdSkills, removeWebcmdSkills, updateWebcmdSkil
 function makePackageRoot(label = 'current'): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), `webcmd-skills-${label}-`));
   fs.mkdirSync(path.join(root, 'skills', 'webcmd-browser'), { recursive: true });
-  fs.mkdirSync(path.join(root, 'skills', 'webcmd-autofix'), { recursive: true });
-  fs.mkdirSync(path.join(root, 'skills', 'smart-search'), { recursive: true });
   fs.writeFileSync(path.join(root, 'package.json'), '{"name":"@agentrhq/webcmd"}\n');
   fs.writeFileSync(path.join(root, 'skills', 'webcmd-browser', 'SKILL.md'), [
     '---',
@@ -22,20 +20,6 @@ function makePackageRoot(label = 'current'): string {
     '# Browser',
     '',
     'Body.',
-    '',
-  ].join('\n'));
-  fs.writeFileSync(path.join(root, 'skills', 'webcmd-autofix', 'SKILL.md'), [
-    '---',
-    'name: webcmd-autofix',
-    'description: Fix adapters: keep scope narrow',
-    '---',
-    '',
-  ].join('\n'));
-  fs.writeFileSync(path.join(root, 'skills', 'smart-search', 'SKILL.md'), [
-    '---',
-    'name: smart-search',
-    'description: Search skill',
-    '---',
     '',
   ].join('\n'));
   return root;
@@ -81,13 +65,9 @@ describe('webcmd skills content', () => {
   it('lists bundled skills', () => {
     const root = makePackageRoot();
 
-    expect(listWebcmdSkills(root).map((skill) => skill.name)).toEqual([
-      'smart-search',
-      'webcmd-autofix',
-      'webcmd-browser',
-    ]);
-    expect(listWebcmdSkills(root).find((skill) => skill.name === 'webcmd-autofix')?.description)
-      .toBe('Fix adapters: keep scope narrow');
+    expect(listWebcmdSkills(root).map((skill) => skill.name)).toEqual(['webcmd-browser']);
+    expect(listWebcmdSkills(root)[0]?.description).toBe('Browser control skill current');
+    expect(listWebcmdSkills(process.cwd()).map((skill) => skill.name)).toEqual(['webcmd-browser']);
   });
 
   it('keeps the expected installable skill set', () => {
@@ -155,6 +135,37 @@ describe('webcmd skills content', () => {
     expect(schema).toMatch(/do not (?:capture|record)|never (?:capture|record)/i);
     expect(schema).toMatch(/secret/i);
     expect(schema).not.toContain('trivial_success');
+  });
+
+  it('teaches post-capture inspection and ingestion judgment', () => {
+    const schema = bundledReference('candidate-schema.md');
+
+    expect(schema).toMatch(/after capture[\s\S]{0,120}(?:search|inspect)|(?:search|inspect)[\s\S]{0,120}after capture/i);
+    expect(schema).toMatch(/semantically related pending/i);
+    expect(schema).toContain('observed_date_utc');
+    expect(schema).toMatch(/two distinct/i);
+    expect(schema).toMatch(/judgment[\s\S]{0,80}not automatic|not automatic[\s\S]{0,80}judgment/i);
+    expect(schema).toMatch(/high_consequence[\s\S]{0,220}silent/i);
+    expect(schema).toMatch(/conflict[\s\S]{0,180}later[- ]date/i);
+    expect(schema).toContain('direct_correction');
+    expect(schema).toMatch(/factual memory[\s\S]{0,80}stale|stale[\s\S]{0,80}factual memory/i);
+    expect(schema).toMatch(/inferred[\s\S]{0,80}(?:causal|risk)[\s\S]{0,80}remain candidates/i);
+    expect(schema).toContain('evidenceRole');
+    expect(schema).toMatch(/supporting[\s\S]{0,60}dissenting|dissenting[\s\S]{0,60}supporting/i);
+    expect(schema).toMatch(/reject only/i);
+    expect(schema).toMatch(/wrong[\s\S]{0,40}transient[\s\S]{0,40}private[\s\S]{0,40}useless/i);
+    expect(schema).toMatch(/unrelated[\s\S]{0,40}pending/i);
+  });
+
+  it('keeps normal task output silent about routine memory I/O', () => {
+    const browser = bundledSkill('webcmd-browser');
+    const body = browser.replace(/^---[\s\S]*?---\s*/, '');
+
+    expect(browser).toMatch(/task-focused/i);
+    expect(browser).toMatch(/do not routinely announce/i);
+    expect(browser).toMatch(/memory reads|reads, writes, or checkpoints/i);
+    expect(browser).toMatch(/request[\s\S]{0,80}verbose[\s\S]{0,80}retention failure|verbose[\s\S]{0,80}retention failure/i);
+    expect(body.split(/\s+/).filter(Boolean).length).toBeLessThan(2300);
   });
 
   it('teaches checkpoint lifecycle, one conflict retry, and never direct Git', () => {
@@ -284,7 +295,7 @@ describe('webcmd skills content', () => {
       provider: 'codex',
       scope: 'project',
     });
-    expect(added.skills.map((skill) => skill.name)).toEqual(['smart-search', 'webcmd-autofix', 'webcmd-browser']);
+    expect(added.skills.map((skill) => skill.name)).toEqual(['webcmd-browser']);
     for (const skill of added.skills) {
       expect(skill.source).toBe(path.join(firstRoot, 'skills', skill.name));
       expect(skill.stableLink).toBe(path.join(homeDir, '.webcmd', 'skills', skill.name));
@@ -309,8 +320,6 @@ describe('webcmd skills content', () => {
 
     expect(added.provider).toBeUndefined();
     expect(added.skills.map((skill) => skill.destination)).toEqual([
-      path.join(customPath, 'smart-search'),
-      path.join(customPath, 'webcmd-autofix'),
       path.join(customPath, 'webcmd-browser'),
     ]);
     for (const skill of added.skills) {
@@ -321,7 +330,7 @@ describe('webcmd skills content', () => {
   it('refuses to replace real files or directories', () => {
     const packageRoot = makePackageRoot();
     const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-home-'));
-    const stablePath = path.join(homeDir, '.webcmd', 'skills', 'smart-search');
+    const stablePath = path.join(homeDir, '.webcmd', 'skills', 'webcmd-browser');
     fs.mkdirSync(stablePath, { recursive: true });
 
     expect(() => updateWebcmdSkill({ packageRoot, homeDir })).toThrow(ArgumentError);
@@ -341,7 +350,7 @@ describe('webcmd skills content', () => {
 
     const result = removeWebcmdSkills({ packageRoot, homeDir, cwd, customPath });
 
-    expect(result.removed).toHaveLength(24);
+    expect(result.removed).toHaveLength(8);
     for (const linkPath of result.removed) {
       expect(() => fs.lstatSync(linkPath)).toThrow();
     }
@@ -353,11 +362,19 @@ describe('webcmd skills content', () => {
     const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-home-'));
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-project-'));
     const added = addWebcmdSkills({ packageRoot, homeDir, cwd, provider: 'agents', scope: 'user' });
-    const blocker = path.join(cwd, '.codex', 'skills', 'smart-search');
+    const blocker = path.join(cwd, '.codex', 'skills', 'webcmd-browser');
     fs.mkdirSync(blocker, { recursive: true });
 
     expect(() => removeWebcmdSkills({ packageRoot, homeDir, cwd })).toThrow(ArgumentError);
     expect(fs.lstatSync(added.skills[0].destination!).isSymbolicLink()).toBe(true);
     expect(fs.lstatSync(blocker).isDirectory()).toBe(true);
+  });
+
+  it('mentions retired skill names only in RETIRED_SKILLS', () => {
+    const source = fs.readFileSync(path.join(process.cwd(), 'src', 'skills.test.ts'), 'utf8');
+    const withoutList = source.replace(/const RETIRED_SKILLS = \[[\s\S]*?\] as const;/, '');
+    for (const retired of RETIRED_SKILLS) {
+      expect(withoutList, retired).not.toContain(retired);
+    }
   });
 });

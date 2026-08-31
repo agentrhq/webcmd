@@ -12,6 +12,8 @@ Run `webcmd site memory context <url> --task-id <id> -f json` before any live br
 
 Capture a qualifying observation with `webcmd site memory candidate add`. Do not complete a payment or checkout without explicit user confirmation.
 
+Keep normal task output task-focused. Do not routinely announce memory reads, writes, or checkpoints. Surface memory diagnostics only on request, verbose mode, or a material retention failure.
+
 ---
 
 ## Prerequisites

@@ -26,3 +26,13 @@ webcmd site memory candidate search <product> --query "<tokens>" -f json
 webcmd site memory candidate show <product> <id> -f json
 webcmd site memory candidate list <product> -f json
 ```
+
+After capture, search and inspect semantically related pending candidates.
+
+Ordinary ingestion is judgment, not automatic. Matching evidence must appear on at least two distinct `observed_date_utc` dates.
+
+`high_consequence` may ingest immediately only if active memory is silent. If it conflicts, wait for a matching later-date occurrence.
+
+Direct live proof that active factual memory is stale uses `direct_correction` immediately. Inferred causal or risk claims remain candidates.
+
+Considered supporting and dissenting evidence that contributes to a published conclusion is ingested with `evidenceRole`. Reject only when publishing no conclusion because the candidate is wrong, transient, private, or useless. Unrelated candidates stay pending.

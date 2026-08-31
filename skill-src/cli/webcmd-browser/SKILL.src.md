@@ -12,6 +12,8 @@ Run `webcmd site memory context <url> --task-id <id> -f json` before any live br
 
 Capture a qualifying observation with `webcmd site memory candidate add`. Do not complete a payment or checkout without explicit user confirmation.
 
+Keep normal task output task-focused. Do not routinely announce memory reads, writes, or checkpoints. Surface memory diagnostics only on request, verbose mode, or a material retention failure.
+
 ---
 
 ## Prerequisites
@@ -276,4 +278,6 @@ what won.
 
 - 2026-09-01: One self-learning browser skill. Context before live action.
   Memory, candidates, and checkpointing live in references. Never direct Git.
+- 2026-09-01: Task output stays task-focused. Memory I/O is silent unless
+  requested, verbose, or a material retention failure.
 -->
