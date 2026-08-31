@@ -236,7 +236,7 @@ function validateLineBounds(
     if (!draftPointers) throw new Error('A major rewrite requires contextual reference pointers.');
     return;
   }
-  if (currentLines <= 200 && POINTER.test(current ?? '')) {
+  if (POINTER.test(current ?? '')) {
     if (draftLines > 200) throw new Error('Post-rewrite SITE.md updates must stay at or below 200 lines.');
     if (!draftPointers) throw new Error('Post-rewrite updates require contextual reference pointers.');
     return;
@@ -247,7 +247,8 @@ function validateLineBounds(
 function validateFacts(body: string): void {
   let fence: string | null = null;
   let frontmatter: boolean | null = null;
-  for (const [index, line] of body.split('\n').entries()) {
+  const lines = body.split('\n');
+  for (const [index, line] of lines.entries()) {
     const text = line.trim();
     if (index === 0 && text === '---') {
       frontmatter = true;
@@ -264,7 +265,7 @@ function validateFacts(body: string): void {
       else if (fence === kind) fence = null;
       continue;
     }
-    if (fence || isStructuralMarkdown(line, text)) continue;
+    if (fence || isStructuralMarkdown(line, text, lines[index + 1] ?? '')) continue;
     const match = VERIFIED.exec(text);
     if (!match || !validUtcDate(match[1])) {
       throw new Error('Each durable fact requires a valid [verified YYYY-MM-DD] date.');
@@ -273,15 +274,20 @@ function validateFacts(body: string): void {
   if (frontmatter || fence) throw new Error('Unclosed frontmatter or fenced code block.');
 }
 
-function isStructuralMarkdown(line: string, text: string): boolean {
+function isStructuralMarkdown(line: string, text: string, next: string): boolean {
   if (!text) return true;
   if (/^#{1,6}\s/.test(text)) return true;
   if (POINTER.test(text) && !VERIFIED.test(text)) return true;
-  if (text.startsWith('|') || text.startsWith('>')) return true;
+  if (isTableSeparator(text)) return true;
+  if (text.startsWith('|') && isTableSeparator(next.trim())) return true;
   if (/^[-*_]{3,}$/.test(text) || /^=+$/.test(text)) return true;
-  if (/^\s/.test(line)) return true;
+  if (/^\s/.test(line) && !/^([-*+]\s|\d+[.)]\s|>|\|)/.test(line.trimStart())) return true;
   if (/^\[.+\]:\s*\S/.test(text) || /^<!--/.test(text)) return true;
   return false;
+}
+
+function isTableSeparator(text: string): boolean {
+  return /^\|?[\s:|-]+\|$/.test(text) && text.includes('---');
 }
 
 function validUtcDate(text: string): boolean {

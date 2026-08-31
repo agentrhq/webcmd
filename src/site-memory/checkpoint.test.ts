@@ -58,7 +58,7 @@ describe('checkpoint compare-and-swap', () => {
     await expect(checkpoint(homeDir)).rejects.toThrow(/verified/i);
   });
 
-  it('accepts fenced code, tables, blockquotes, and list continuations without dates', async () => {
+  it('accepts fenced code, table header syntax, HTML, references, and list continuations without dates', async () => {
     const { homeDir } = await primed();
     await writeDraft(homeDir, { 'sitemap/SITE.md': `# Example
 
@@ -71,16 +71,37 @@ not a fact
 
 | col | val |
 | --- | --- |
-| a | b |
+| a | [verified 2026-08-31] b |
 
-> quoted structure
+> [verified 2026-08-31] quoted fact
 
 - [verified 2026-08-31] Nested:
   continuation line
+
+[ref]: https://example.test
+<!-- comment -->
 ` });
 
     const result = await checkpoint(homeDir, { reason: 'direct_correction', dispositions: [] });
     expect(result.status).toBe('committed');
+  });
+
+  it('requires dates on nested bullets, numbered bullets, blockquotes, and table data rows', async () => {
+    const { homeDir } = await primed();
+    await writeDraft(homeDir, { 'sitemap/SITE.md': `# Example\n\n- [verified 2026-08-31] Parent.\n  - Nested without date.\n` });
+    await expect(checkpoint(homeDir, { reason: 'direct_correction', dispositions: [] })).rejects.toThrow(/verified/i);
+
+    await writeDraft(homeDir, { 'sitemap/SITE.md': `# Example\n\n1. Numbered without date.\n` });
+    await expect(checkpoint(homeDir, { reason: 'direct_correction', dispositions: [] })).rejects.toThrow(/verified/i);
+
+    await writeDraft(homeDir, { 'sitemap/SITE.md': `# Example\n\n- [verified 2026-08-31] Parent.\n  1. Nested numbered without date.\n` });
+    await expect(checkpoint(homeDir, { reason: 'direct_correction', dispositions: [] })).rejects.toThrow(/verified/i);
+
+    await writeDraft(homeDir, { 'sitemap/SITE.md': `# Example\n\n> quoted structure\n` });
+    await expect(checkpoint(homeDir, { reason: 'direct_correction', dispositions: [] })).rejects.toThrow(/verified/i);
+
+    await writeDraft(homeDir, { 'sitemap/SITE.md': `# Example\n\n| col | val |\n| --- | --- |\n| a | b |\n` });
+    await expect(checkpoint(homeDir, { reason: 'direct_correction', dispositions: [] })).rejects.toThrow(/verified/i);
   });
 
   it('rejects unclosed frontmatter and unclosed backtick or tilde fences', async () => {
@@ -748,6 +769,18 @@ describe('checkpoint rewrite bounds', () => {
     });
     expect(result.status).toBe('committed');
     expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBe(rewritten);
+  });
+
+  it('requires a 201-500 pointer-bearing SITE.md to stay at or below 200 lines', async () => {
+    const { homeDir } = await primed(siteLines(250, true));
+    await writeDraft(homeDir, { 'sitemap/SITE.md': siteLines(201, true) });
+    await expect(checkpoint(homeDir, { reason: 'direct_correction', dispositions: [] })).rejects.toThrow(/200/i);
+
+    const next = siteLines(180, true);
+    await writeDraft(homeDir, { 'sitemap/SITE.md': next });
+    const result = await checkpoint(homeDir, { reason: 'direct_correction', dispositions: [] });
+    expect(result.status).toBe('committed');
+    expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBe(next);
   });
 
   it('preserves the 200-line cap and contextual pointers after a rewrite', async () => {
