@@ -38,7 +38,7 @@ codex plugin add webcmd@webcmd
 
 The same flow is available in the TUI: run `/plugins`, choose **Add plugin marketplace**, and enter `agentrhq/webcmd` or `https://github.com/agentrhq/webcmd`.
 
-The plugin bundles all seven Webcmd skills, and installs the npm CLI on first use if `webcmd` is missing. Start a new task after installing.
+The plugin bundles exactly one skill, `webcmd-browser`, and installs the npm CLI on first use if `webcmd` is missing. Start a new task after installing.
 
 Useful follow-ups: `codex plugin list`, `codex plugin remove webcmd`, `codex plugin marketplace upgrade`. All accept `--json`.
 

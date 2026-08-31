@@ -91,7 +91,7 @@ skills path. That install is exactly one skill, `webcmd-browser`. Adapter,
 search, fetch, and plugin commands remain on the CLI; they are outside the
 default installed browser skill.
 
-In your agent harness, load or tag `webcmd-browser`, then describe the outcome you want.
+Load or tag `webcmd-browser` only for live browser work. Existing adapter, search, fetch, and plugin CLI operations do not require that skill.
 
 ```text
 Use webcmd to research the latest discussions about browser automation across Hacker News and Reddit, then return a concise comparison with source links.

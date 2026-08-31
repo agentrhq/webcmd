@@ -144,22 +144,31 @@ describe('review context', () => {
     ]);
   });
 
+  it('selects general documentation without the browser skill', () => {
+    expect(selectDocumentationPaths([changed('src/cli.ts')])).toEqual([
+      'README.md',
+      'docs/cli-reference.mdx',
+      'docs/concepts.mdx',
+    ]);
+  });
+
   it('does not select profile documentation for unrelated hosted changes', () => {
     expect(selectDocumentationPaths([changed('src/hosted/files.ts')])).toEqual([
       'README.md',
       'docs/cli-reference.mdx',
       'docs/concepts.mdx',
-      'skills/webcmd-browser/SKILL.md',
     ]);
   });
 
-  it('selects adapter and plugin documentation', () => {
-    expect(selectDocumentationPaths([changed('clis/reddit/search.js')])).toEqual([
+  it.each([
+    ['adapter', 'clis/reddit/search.js'],
+    ['plugin', 'plugins/example/search.js'],
+  ])('selects %s documentation without the browser skill', (_name, filePath) => {
+    expect(selectDocumentationPaths([changed(filePath)])).toEqual([
       'README.md',
       'docs/authoring.mdx',
       'docs/cli-reference.mdx',
       'docs/skills.mdx',
-      'skills/webcmd-browser/SKILL.md',
     ]);
   });
 
@@ -205,7 +214,7 @@ describe('review context', () => {
 
     const [result] = buildReviewPrompts(context, [
       { path: 'README.md', content: 'x'.repeat(70_000) },
-      { path: 'skills/webcmd-browser/SKILL.md', content: 'TAIL_MARKER' },
+      { path: 'docs/concepts.mdx', content: 'TAIL_MARKER' },
     ]);
 
     expect(result.prompt).toContain('TAIL_MARKER');

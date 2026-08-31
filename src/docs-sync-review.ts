@@ -166,7 +166,6 @@ const GENERAL_DOCUMENTATION = [
   'README.md',
   'docs/cli-reference.mdx',
   'docs/concepts.mdx',
-  'skills/webcmd-browser/SKILL.md',
 ];
 
 const BROWSER_DOCUMENTATION = [
@@ -191,7 +190,6 @@ const ADAPTER_DOCUMENTATION = [
   'docs/authoring.mdx',
   'docs/cli-reference.mdx',
   'docs/skills.mdx',
-  'skills/webcmd-browser/SKILL.md',
 ];
 
 export function selectDocumentationPaths(files: ChangedFile[]): string[] {

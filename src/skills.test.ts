@@ -432,13 +432,26 @@ describe('public copy', () => {
 
     expect(readme).toContain('webcmd-browser');
     expect(readme).toMatch(/exactly one skill|one skill/i);
+    expect(readme).toMatch(/only for live browser work/i);
+    expect(readme).toMatch(/do not require that skill/i);
     expect(skills).toContain('webcmd-browser');
     expect(skills).toMatch(/exactly one skill|one bundled skill/i);
-    expect(skills).not.toMatch(/seven bundled/i);
     expect(quickstart).toContain('webcmd-browser');
     expect(quickstart).toMatch(/exactly one skill|one bundled skill/i);
-    expect(quickstart).not.toMatch(/seven bundled/i);
     expect(plugin.interface.longDescription).toMatch(/webcmd-browser|one skill/i);
+    const codex = fs.readFileSync(path.join(process.cwd(), 'docs', 'agents', 'codex-cli.md'), 'utf8');
+    expect(codex).toMatch(/exactly one (bundled )?skill/i);
+    expect(codex).toContain('webcmd-browser');
+  });
+
+  it('does not claim seven bundled skills in public copy', () => {
+    const stale = /all seven|seven bundled|seven Webcmd skills/i;
+    const hits: string[] = [];
+    for (const file of productFiles()) {
+      if (file.endsWith(`${path.sep}skills.test.ts`)) continue;
+      if (stale.test(fs.readFileSync(file, 'utf8'))) hits.push(path.relative(process.cwd(), file));
+    }
+    expect(hits).toEqual([]);
   });
 
   it('documents local seed lookup, provenance, clean break, and invisible learning', () => {
@@ -446,6 +459,11 @@ describe('public copy', () => {
     const memory = fs.readFileSync(path.join(process.cwd(), 'docs', 'browser-and-sitemap-memory.mdx'), 'utf8');
     const localCloud = fs.readFileSync(path.join(process.cwd(), 'docs', 'local-or-cloud.mdx'), 'utf8');
 
+    const intro = privacy.slice(0, privacy.indexOf('\n## '));
+    expect(intro).toMatch(/page contents/i);
+    expect(intro).toMatch(/cookies/i);
+    expect(intro).toMatch(/does not send/i);
+    expect(intro).toMatch(/except|seed lookup/i);
     expect(privacy).toMatch(/unauthenticated GET/i);
     expect(privacy).toContain('/v1/site-memory/seeds/');
     expect(privacy).toContain('https://api.webcmd.dev');
