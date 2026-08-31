@@ -52,16 +52,15 @@ export async function checkpointMemory(input: CheckpointInput): Promise<Checkpoi
       if (drafts.get(path) !== current) changed.push(path);
     }
 
-    if (
-      actual
-      && input.expectedRevision === actual
-      && changed.length === 0
-      && isProvenanceRecovery(loaded, dispositions, actual)
-      && await repo.pathsChanged(candidatePaths)
-    ) {
-      await writeDispositions(product, loaded, dispositions, actual, input);
-      const provenanceCommit = await repo.commit(candidatePaths, `checkpoint provenance ${product}`);
-      return { status: 'committed', memoryCommit: actual, provenanceCommit };
+    if (actual && input.expectedRevision === actual && isProvenanceRecovery(loaded, dispositions, actual)) {
+      if (changed.length > 0) {
+        throw new Error('Finish provenance recovery with an unchanged draft first.');
+      }
+      if (await repo.pathsChanged(candidatePaths)) {
+        await writeDispositions(product, loaded, dispositions, actual, input);
+        const provenanceCommit = await repo.commit(candidatePaths, `checkpoint provenance ${product}`);
+        return { status: 'committed', memoryCommit: actual, provenanceCommit };
+      }
     }
 
     if (actual !== input.expectedRevision) {
@@ -69,13 +68,18 @@ export async function checkpointMemory(input: CheckpointInput): Promise<Checkpoi
     }
 
     for (const body of drafts.values()) validateFacts(body);
-    validateLineBounds(await readProductFile(product, 'sitemap/SITE.md', input), drafts.get('sitemap/SITE.md'), input.reason);
+    validateLineBounds(
+      await readProductFile(product, 'sitemap/SITE.md', input),
+      drafts.get('sitemap/SITE.md'),
+      input.reason,
+      changed.length > 0,
+    );
     if (input.reason === 'candidate_ingestion') {
       if (dispositions.length === 0) throw new Error('candidate_ingestion requires dispositions.');
     } else if (dispositions.length > 0) {
       throw new Error('Checkpoint reason rejects dispositions.');
     }
-    validateDispositions(loaded, dispositions, actual);
+    validateDispositions(loaded, dispositions);
     if (input.reason === 'candidate_ingestion') {
       const ingested = dispositions.some((row) => row.status === 'ingested');
       if (ingested && changed.length === 0) throw new Error('candidate_ingestion requires a memory change.');
@@ -85,11 +89,7 @@ export async function checkpointMemory(input: CheckpointInput): Promise<Checkpoi
     if (changed.length > 0) {
       try {
         await copyDraftFiles(product, taskId, paths, input);
-        memoryCommit = await repo.commit(
-          paths.map((path) => `${product}/${path}`),
-          `checkpoint memory ${product}`,
-          candidatePaths,
-        );
+        memoryCommit = await repo.commit(paths.map((path) => `${product}/${path}`), `checkpoint memory ${product}`);
       } catch (err) {
         const rollback = await restoreCopiedMarkdown(product, prior, input);
         if (rollback.length > 0) {
@@ -195,23 +195,11 @@ function validateDispositionFields(row: CandidateDisposition): void {
   }
 }
 
-function validateDispositions(
-  loaded: Candidate[],
-  dispositions: CandidateDisposition[],
-  actual: MemoryRevision | null,
-): void {
-  const pending: { row: CandidateDisposition; candidate: Candidate }[] = [];
-  for (const [index, row] of dispositions.entries()) {
-    const candidate = loaded[index];
-    if (candidate.status === 'pending') {
-      pending.push({ row, candidate });
-      continue;
-    }
-    if (!actual || !matchesRequestedTerminal(candidate, row, actual)) {
-      throw new Error('Invalid candidate status transition.');
-    }
+function validateDispositions(loaded: Candidate[], dispositions: CandidateDisposition[]): void {
+  for (const candidate of loaded) {
+    if (candidate.status !== 'pending') throw new Error('Invalid candidate status transition.');
   }
-  const ingested = pending.filter((entry) => entry.row.status === 'ingested');
+  const ingested = dispositions.map((row, index) => ({ row, candidate: loaded[index] })).filter((entry) => entry.row.status === 'ingested');
   if (ingested.length === 0) return;
   const dates = [...new Set(ingested.map((entry) => entry.candidate.observedDateUtc))];
   const conflicting = ingested.filter((entry) => entry.row.conflictsWithMemory);
@@ -226,10 +214,15 @@ function validateDispositions(
   if (dates.length < 2) throw new Error('Ingestion requires evidence on two distinct UTC dates.');
 }
 
-function validateLineBounds(current: string | null, draft: string | undefined, reason: CheckpointReason): void {
+function validateLineBounds(
+  current: string | null,
+  draft: string | undefined,
+  reason: CheckpointReason,
+  memoryChanged: boolean,
+): void {
   const currentLines = physicalLines(current ?? '');
   const unchangedSite = draft !== undefined && (current ?? '') === draft;
-  if (currentLines > 500 && !unchangedSite) {
+  if (currentLines > 500 && memoryChanged) {
     if (draft === undefined || physicalLines(draft) > 200) {
       throw new Error('SITE.md updates over 500 lines require a rewrite to at most 200 lines.');
     }
@@ -252,7 +245,7 @@ function validateLineBounds(current: string | null, draft: string | undefined, r
 }
 
 function validateFacts(body: string): void {
-  let fenced = false;
+  let fence: string | null = null;
   let frontmatter: boolean | null = null;
   for (const [index, line] of body.split('\n').entries()) {
     const text = line.trim();
@@ -264,16 +257,20 @@ function validateFacts(body: string): void {
       if (text === '---') frontmatter = false;
       continue;
     }
-    if (/^```/.test(text)) {
-      fenced = !fenced;
+    const marker = /^(`{3,}|~{3,})/.exec(text);
+    if (marker) {
+      const kind = marker[1][0];
+      if (fence === null) fence = kind;
+      else if (fence === kind) fence = null;
       continue;
     }
-    if (fenced || isStructuralMarkdown(line, text)) continue;
+    if (fence || isStructuralMarkdown(line, text)) continue;
     const match = VERIFIED.exec(text);
     if (!match || !validUtcDate(match[1])) {
       throw new Error('Each durable fact requires a valid [verified YYYY-MM-DD] date.');
     }
   }
+  if (frontmatter || fence) throw new Error('Unclosed frontmatter or fenced code block.');
 }
 
 function isStructuralMarkdown(line: string, text: string): boolean {

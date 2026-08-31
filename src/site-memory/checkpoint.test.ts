@@ -83,6 +83,32 @@ not a fact
     expect(result.status).toBe('committed');
   });
 
+  it('rejects unclosed frontmatter and unclosed backtick or tilde fences', async () => {
+    const { homeDir } = await primed();
+    await writeDraft(homeDir, { 'sitemap/SITE.md': '---\ntitle: open\n# Example\n\n- Prefer /new.\n' });
+    await expect(checkpoint(homeDir, { reason: 'direct_correction', dispositions: [] })).rejects.toThrow(/unclosed|frontmatter|fence/i);
+
+    await writeDraft(homeDir, { 'sitemap/SITE.md': '# Example\n\n```\nnot a fact\n' });
+    await expect(checkpoint(homeDir, { reason: 'direct_correction', dispositions: [] })).rejects.toThrow(/unclosed|fence/i);
+
+    await writeDraft(homeDir, { 'sitemap/SITE.md': '# Example\n\n~~~\nnot a fact\n' });
+    await expect(checkpoint(homeDir, { reason: 'direct_correction', dispositions: [] })).rejects.toThrow(/unclosed|fence/i);
+  });
+
+  it('accepts closed tilde fences without dates inside them', async () => {
+    const { homeDir } = await primed();
+    await writeDraft(homeDir, { 'sitemap/SITE.md': `# Example
+
+- [verified 2026-08-31] Prefer /new.
+
+~~~
+not a fact
+~~~
+` });
+    const result = await checkpoint(homeDir, { reason: 'direct_correction', dispositions: [] });
+    expect(result.status).toBe('committed');
+  });
+
   it('refuses a legacy beta SITE.md without copying the draft', async () => {
     const { homeDir, sites } = await tempSites();
     const product = join(sites, 'example.test', 'sitemap');
@@ -500,7 +526,7 @@ describe('checkpoint git transaction', () => {
     expect((await git(sites, ['show', `HEAD:example.test/candidates/${first.id}.json`]))).toMatch(/"status": "ingested"/);
   });
 
-  it('applies a changed draft instead of provenance-only recovery', async () => {
+  it('rejects provenance recovery when the draft changed and then recovers with an unchanged draft', async () => {
     const { homeDir, sites } = await primed();
     const first = await addCandidate(candidate(homeDir, { observedAt: '2026-08-30T12:00:00Z' }));
     const second = await addCandidate(candidate(homeDir, { observedAt: '2026-08-31T12:00:00Z', claim: 'Later' }));
@@ -518,12 +544,19 @@ describe('checkpoint git transaction', () => {
     const memoryRevision = (await git(sites, ['rev-parse', 'HEAD'])).trim();
     const extra = `${next}- [verified 2026-09-01] Ban risk on bulk delete.\n`;
     await writeDraft(homeDir, { 'sitemap/SITE.md': extra });
+    await expect(checkpoint(homeDir, { expectedRevision: memoryRevision, dispositions })).rejects.toThrow(/unchanged draft/i);
+    expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBe(next);
+    expect(await readFile(join(homeDir, '.webcmd/sites/.drafts/task-1/example.test/sitemap/SITE.md'), 'utf8')).toBe(extra);
+    expect((await git(sites, ['log', '--oneline', '--', 'example.test/sitemap/SITE.md'])).trim().split('\n')).toHaveLength(2);
+
+    await writeDraft(homeDir, { 'sitemap/SITE.md': next });
     const resumed = await checkpoint(homeDir, { expectedRevision: memoryRevision, dispositions });
     expect(resumed.status).toBe('committed');
     if (resumed.status !== 'committed') throw new Error('expected commit');
-    expect(resumed.memoryCommit).not.toBe(memoryRevision);
-    expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBe(extra);
-    expect((await showCandidate('example.test', first.id, { homeDir })).status).toBe('ingested');
+    expect(resumed.memoryCommit).toBe(memoryRevision);
+    expect(resumed.provenanceCommit).toMatch(/^[0-9a-f]{40}$/);
+    expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBe(next);
+    expect((await git(sites, ['log', '--oneline', '--', 'example.test/sitemap/SITE.md'])).trim().split('\n')).toHaveLength(2);
     expect((await git(sites, ['show', `HEAD:example.test/candidates/${first.id}.json`]))).toMatch(/"status": "ingested"/);
   });
 
@@ -690,6 +723,18 @@ describe('checkpoint rewrite bounds', () => {
       paths: ['sitemap/references/listing.md'],
       dispositions: [],
     })).rejects.toThrow(/200|rewrite/i);
+
+    const oversized = siteLines(501);
+    await writeDraft(homeDir, {
+      'sitemap/SITE.md': oversized,
+      'sitemap/references/listing.md': REF,
+    });
+    await expect(checkpoint(homeDir, {
+      reason: 'direct_correction',
+      paths: ['sitemap/SITE.md', 'sitemap/references/listing.md'],
+      dispositions: [],
+    })).rejects.toThrow(/200|rewrite/i);
+    expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBe(oversized);
 
     const rewritten = siteLines(200, true);
     await writeDraft(homeDir, {

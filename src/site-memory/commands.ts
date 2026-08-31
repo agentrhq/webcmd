@@ -360,7 +360,7 @@ function registerLearningCommands(
     .description('Search pending candidates with bounded lexical matching')
     .argument('<product>', 'Product key or hostname')
     .requiredOption('--query <query>', 'Lexical query over claim, kind, hostname, and consequence')
-     .option('--limit <n>', `Maximum matches to return, capped at ${SEARCH_CANDIDATE_LIMIT}`),
+    .option('--limit <n>', `Maximum matches to return, capped at ${SEARCH_CANDIDATE_LIMIT}`),
     'webcmd site memory candidate search example.test --query "old reddit" -f json'), 'json');
   search.action(async (product: string, opts: { query: string; limit?: string; format?: string }) => {
     await emit(search, await learning.searchCandidates(product, opts.query, parseLimit(opts.limit)), opts);

@@ -115,6 +115,21 @@ describe('sites git repository', () => {
     expect(revision).toMatch(/^[0-9a-f]{40}$/);
   });
 
+  it('checks a rename destination and consumes the extra source field', async () => {
+    const { homeDir, sites } = await tempSites();
+    await writeProductFile('example.test', 'old.md', 'keep\n', { homeDir });
+    const repo = await openSitesRepository({ homeDir });
+    await repo.commit(['example.test/old.md'], 'init');
+    await git(sites, ['mv', 'example.test/old.md', 'example.test/new.md']);
+
+    const revision = await repo.commit(['example.test/new.md'], 'rename');
+
+    expect(revision).toMatch(/^[0-9a-f]{40}$/);
+    expect((await git(sites, ['ls-files'])).trim().split('\n')).toEqual(expect.arrayContaining(['example.test/new.md']));
+    expect((await git(sites, ['ls-files'])).trim().split('\n')).not.toContain('example.test/old.md');
+    expect(await git(sites, ['show', 'HEAD:example.test/new.md'])).toBe('keep\n');
+  });
+
   it('stages only explicit paths and never git add .', async () => {
     const { homeDir, sites } = await tempSites();
     await writeProductFile('example.test', 'manifest.json', '{}\n', { homeDir });

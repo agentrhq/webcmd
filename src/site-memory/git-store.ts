@@ -19,7 +19,7 @@ const GIT_FLAGS = [
 
 export interface SitesRepository {
   revision(): Promise<MemoryRevision | null>;
-  commit(paths: string[], message: string, allowedDirty?: string[]): Promise<MemoryRevision>;
+  commit(paths: string[], message: string): Promise<MemoryRevision>;
   pathsChanged(paths: string[]): Promise<boolean>;
   withRepositoryLock<T>(fn: () => Promise<T>): Promise<T>;
 }
@@ -29,7 +29,7 @@ export async function openSitesRepository(options: LocalStoreOptions = {}): Prom
   await assertExactRootOrAbsent(root);
   return {
     revision: () => revisionOf(root),
-    commit: (paths, message, allowedDirty) => withRepositoryLock(root, () => commitPaths(root, paths, message, allowedDirty)),
+    commit: (paths, message) => withRepositoryLock(root, () => commitPaths(root, paths, message)),
     pathsChanged: (paths) => pathsDifferFromHead(root, paths),
     withRepositoryLock: (fn) => withRepositoryLock(root, fn),
   };
@@ -48,12 +48,12 @@ async function ensureSitesRoot(options: LocalStoreOptions): Promise<string> {
   return realpath(root);
 }
 
-async function commitPaths(root: string, paths: string[], message: string, allowedDirty: string[] = []): Promise<MemoryRevision> {
+async function commitPaths(root: string, paths: string[], message: string): Promise<MemoryRevision> {
   if (paths.length === 0) throw new Error('Refusing to commit without explicit paths.');
   await ensureRepository(root);
   const relativePaths = paths.map((path) => containedRelativePath(root, path));
   await atomicWrite(join(root, '.gitignore'), GITIGNORE);
-  await assertNoUnrelatedDirty(root, [...relativePaths, ...allowedDirty.map((path) => containedRelativePath(root, path))]);
+  await assertNoUnrelatedDirty(root, relativePaths);
   try {
     await git(root, ['add', '--', ...relativePaths, '.gitignore']);
     await git(root, ['commit', '--no-gpg-sign', '-m', message]);
@@ -156,12 +156,8 @@ function porcelainEntries(status: string): { code: string; path: string }[] {
     if (!part) continue;
     const code = part.slice(0, 2);
     const path = part.slice(3);
-    if (code.includes('R') || code.includes('C')) {
-      i += 1;
-      entries.push({ code, path: parts[i] || path });
-    } else {
-      entries.push({ code, path });
-    }
+    if (code.includes('R') || code.includes('C')) i += 1;
+    entries.push({ code, path });
   }
   return entries;
 }

@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -12,8 +12,10 @@ import { canonicalProductKey } from './product-resolver.js';
 
 const run = promisify(execFile);
 const tempHomes: string[] = [];
+const originalPath = process.env.PATH;
 
 afterEach(async () => {
+  process.env.PATH = originalPath;
   await Promise.all(tempHomes.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
@@ -129,7 +131,63 @@ describe('product classification', () => {
       homeDir,
     })).rejects.toThrow(/ancestor/i);
   });
+
+  it('restores the parent manifest after a same-product commit failure', async () => {
+    const { homeDir, sites, revision } = await primed('reddit.com');
+    const prior = await readProductFile('reddit.com', 'manifest.json', { homeDir });
+    await withFailingCommit(async () => {
+      await expect(classifyProduct({
+        requested: 'https://old.reddit.com/',
+        decision: 'same-product',
+        parent: 'reddit.com',
+        expectedRevision: revision,
+        homeDir,
+      })).rejects.toThrow();
+    });
+    expect(await readProductFile('reddit.com', 'manifest.json', { homeDir })).toBe(prior);
+    expect(parseProductManifest(prior)?.interfaces).toEqual([]);
+    expect((await git(sites, ['status', '--porcelain', '-uall'])).trim()).toBe('');
+    expect((await git(sites, ['diff', '--cached', '--name-only'])).trim()).toBe('');
+  });
+
+  it('deletes a newly created distinct manifest after a commit failure', async () => {
+    const { homeDir, sites, revision } = await primed('ycombinator.com');
+    await withFailingCommit(async () => {
+      await expect(classifyProduct({
+        requested: 'https://news.ycombinator.com/',
+        decision: 'distinct',
+        expectedRevision: revision,
+        homeDir,
+      })).rejects.toThrow();
+    });
+    expect(await readProductFile('news.ycombinator.com', 'manifest.json', { homeDir })).toBeNull();
+    expect(parseProductManifest(await readProductFile('ycombinator.com', 'manifest.json', { homeDir }))?.interfaces)
+      .toEqual([]);
+    expect((await git(sites, ['status', '--porcelain', '-uall'])).trim()).toBe('');
+    expect((await git(sites, ['diff', '--cached', '--name-only'])).trim()).toBe('');
+  });
 });
+
+async function withFailingCommit(fn: () => Promise<void>) {
+  const wrapperDir = await mkdtemp(join(tmpdir(), 'webcmd-classify-git-'));
+  tempHomes.push(wrapperDir);
+  const { stdout } = await run('/usr/bin/which', ['git'], { encoding: 'utf8' });
+  const wrapper = join(wrapperDir, 'git');
+  await writeFile(wrapper, `#!/usr/bin/env node
+const { spawnSync } = require('node:child_process');
+const args = process.argv.slice(2);
+if (args.includes('commit')) process.exit(1);
+const result = spawnSync(${JSON.stringify(stdout.trim())}, args, { stdio: 'inherit' });
+process.exit(result.status ?? 1);
+`);
+  await chmod(wrapper, 0o755);
+  process.env.PATH = `${wrapperDir}:${originalPath}`;
+  try {
+    await fn();
+  } finally {
+    process.env.PATH = originalPath;
+  }
+}
 
 async function primed(productKey: string) {
   const { homeDir } = await tempSites();
@@ -142,7 +200,7 @@ async function primed(productKey: string) {
   }, null, 2)}\n`, { homeDir });
   const repo = await openSitesRepository({ homeDir });
   const revision = await repo.commit([`${product.key}/manifest.json`], `init ${product.key}`);
-  return { homeDir, revision };
+  return { homeDir, sites: join(homeDir, '.webcmd', 'sites'), revision };
 }
 
 async function tempSites() {

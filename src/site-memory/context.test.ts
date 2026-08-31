@@ -256,6 +256,55 @@ describe('memory context initialization', () => {
     expect(await readProductFile('other.test', 'manifest.json', { homeDir })).toBe('{"dirty":true}\n');
   });
 
+  it('degrades persist failures to read-only transient seed and drops uncommitted seed files', async () => {
+    const { homeDir } = await tempSites();
+    const lookup = vi.fn(async (): Promise<SeedLookupResult> => ({
+      status: 'available',
+      revision: 'seed-1',
+      site: '# Transient\n',
+      references: { 'alt.md': '# Alt\n' },
+    }));
+    const originalPath = process.env.PATH;
+    const wrapperDir = await mkdtemp(join(tmpdir(), 'webcmd-persist-fail-'));
+    tempHomes.push(wrapperDir);
+    const { stdout } = await run('/usr/bin/which', ['git'], { encoding: 'utf8' });
+    const wrapper = join(wrapperDir, 'git');
+    await writeFile(wrapper, `#!/usr/bin/env node
+const { spawnSync } = require('node:child_process');
+const args = process.argv.slice(2);
+if (args.includes('commit')) process.exit(1);
+const result = spawnSync(${JSON.stringify(stdout.trim())}, args, { stdio: 'inherit' });
+process.exit(result.status ?? 1);
+`);
+    await chmod(wrapper, 0o755);
+    process.env.PATH = `${wrapperDir}:${originalPath}`;
+    try {
+      const context = await getMemoryContext({
+        url: 'https://example.test/',
+        taskId: 'task-1',
+        homeDir,
+        seedProvider: provider(lookup),
+      });
+      expect(context.readOnly).toBe(true);
+      expect(context.siteMarkdown).toBe('# Transient\n');
+      expect(context.manifest).toBeUndefined();
+      expect(await readProductFile('example.test', 'manifest.json', { homeDir })).toBeNull();
+      expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBeNull();
+      expect(await readProductFile('example.test', 'sitemap/references/alt.md', { homeDir })).toBeNull();
+    } finally {
+      process.env.PATH = originalPath;
+    }
+
+    lookup.mockClear();
+    await getMemoryContext({
+      url: 'https://example.test/',
+      taskId: 'task-2',
+      homeDir,
+      seedProvider: provider(lookup),
+    });
+    expect(lookup).toHaveBeenCalled();
+  });
+
   it('ignores manifests whose shape would crash product resolution', async () => {
     const { homeDir } = await tempSites();
     await git(homeDir, ['init']);

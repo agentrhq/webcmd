@@ -1,6 +1,6 @@
 import { parseProductManifest } from './context.js';
 import { openSitesRepository } from './git-store.js';
-import { listProductKeys, readProductFile, writeProductFile, type LocalStoreOptions } from './local-store.js';
+import { deleteProductFile, listProductKeys, readProductFile, writeProductFile, type LocalStoreOptions } from './local-store.js';
 import type {
   ClassifyDecision,
   ClassifyResult,
@@ -62,10 +62,17 @@ async function classifySameProduct(
     if (!actual) throw new Error('Refusing to classify without a memory revision.');
     return classified('same-product', requested, parent, true, actual);
   }
+  const prior = await readProductFile(parent.key, 'manifest.json', opts);
   const next: ProductManifest = { ...manifest, interfaces: [...manifest.interfaces, requested] };
-  await writeProductFile(parent.key, 'manifest.json', `${JSON.stringify(next, null, 2)}\n`, opts);
-  const revision = await repo.commit([`${parent.key}/manifest.json`], `classify ${requested.key} same-product ${parent.key}`);
-  return classified('same-product', requested, parent, false, revision);
+  try {
+    await writeProductFile(parent.key, 'manifest.json', `${JSON.stringify(next, null, 2)}\n`, opts);
+    const revision = await repo.commit([`${parent.key}/manifest.json`], `classify ${requested.key} same-product ${parent.key}`);
+    return classified('same-product', requested, parent, false, revision);
+  } catch (err) {
+    if (prior === null) await deleteProductFile(parent.key, 'manifest.json', opts);
+    else await writeProductFile(parent.key, 'manifest.json', prior, opts);
+    throw err;
+  }
 }
 
 async function classifyDistinct(
@@ -82,15 +89,22 @@ async function classifyDistinct(
     if (!actual) throw new Error('Refusing to classify without a memory revision.');
     return classified('distinct', requested, requested, true, actual);
   }
+  const prior = await readProductFile(requested.key, 'manifest.json', opts);
   const manifest: ProductManifest = {
     schemaVersion: 1,
     product: requested,
     interfaces: [],
     seed: { status: 'unattempted' },
   };
-  await writeProductFile(requested.key, 'manifest.json', `${JSON.stringify(manifest, null, 2)}\n`, opts);
-  const revision = await repo.commit([`${requested.key}/manifest.json`], `classify ${requested.key} distinct`);
-  return classified('distinct', requested, requested, false, revision);
+  try {
+    await writeProductFile(requested.key, 'manifest.json', `${JSON.stringify(manifest, null, 2)}\n`, opts);
+    const revision = await repo.commit([`${requested.key}/manifest.json`], `classify ${requested.key} distinct`);
+    return classified('distinct', requested, requested, false, revision);
+  } catch (err) {
+    if (prior === null) await deleteProductFile(requested.key, 'manifest.json', opts);
+    else await writeProductFile(requested.key, 'manifest.json', prior, opts);
+    throw err;
+  }
 }
 
 function classified(
