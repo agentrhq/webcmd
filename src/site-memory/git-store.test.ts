@@ -112,6 +112,19 @@ describe('sites git repository', () => {
     expect(files).toEqual(['.gitignore', 'a.test/manifest.json', 'b.test/manifest.json']);
   });
 
+  it('commits from inside withRepositoryLock without deadlocking', async () => {
+    const { homeDir } = await tempSites();
+    await writeProductFile('example.test', 'manifest.json', '{}\n', { homeDir });
+    const repo = await openSitesRepository({ homeDir });
+
+    const revision = await repo.withRepositoryLock(async () =>
+      repo.commit(['example.test/manifest.json'], 'nested'),
+    );
+
+    expect(revision).toMatch(/^[0-9a-f]{40}$/);
+    expect(await repo.revision()).toBe(revision);
+  }, 5_000);
+
   it('keeps a slow git commit inside the repository-specific stale bound', async () => {
     expect(REPOSITORY_LOCK_STALE_MS).toBeGreaterThan(LOCK_STALE_MS);
     expect(REPOSITORY_LOCK_TIMEOUT_MS).toBeGreaterThan(LOCK_TIMEOUT_MS);

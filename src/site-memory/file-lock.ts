@@ -15,6 +15,7 @@
  * takes milliseconds. `timeoutMs` is deliberately longer than `staleMs` so an
  * abandoned lock is always broken rather than surfaced to the user as an error.
  */
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 import { open, readFile, stat, unlink } from 'node:fs/promises';
 import { hostname } from 'node:os';
@@ -33,6 +34,7 @@ export const REPOSITORY_LOCK_TIMEOUT_MS = 90_000;
 
 const RETRY_MIN_MS = 5;
 const RETRY_MAX_MS = 50;
+const heldLocks = new AsyncLocalStorage<Set<string>>();
 
 export interface FileLockOptions {
   staleMs?: number;
@@ -54,9 +56,14 @@ export function lockPathFor(target: string): string {
 /** Run `fn` while holding the cross-process lock for `target`. */
 export async function withFileLock<T>(target: string, fn: () => Promise<T>, options: FileLockOptions = {}): Promise<T> {
   const lockPath = lockPathFor(target);
+  const owned = heldLocks.getStore();
+  if (owned?.has(lockPath)) return fn();
+
   const token = await acquire(lockPath, options);
+  const next = new Set(owned);
+  next.add(lockPath);
   try {
-    return await fn();
+    return await heldLocks.run(next, fn);
   } finally {
     await release(lockPath, token);
   }
