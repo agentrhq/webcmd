@@ -6,11 +6,11 @@ import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import { addCandidate, listCandidates, showCandidate } from './candidates.js';
 import { checkpointMemory, type CheckpointInput } from './checkpoint.js';
-import { getMemoryContext } from './context.js';
+import { classifyProduct } from './classify.js';
+import { getMemoryContext, parseProductManifest } from './context.js';
 import { openSitesRepository } from './git-store.js';
 import { listSiteMemory, readProductFile, showSiteMemory, writeProductFile } from './local-store.js';
 import type { CandidateDisposition, SeedLookupResult } from './model.js';
-import { canonicalProductKey } from './product-resolver.js';
 import { createHttpSeedProvider } from './seed-client.js';
 
 const run = promisify(execFile);
@@ -78,11 +78,21 @@ describe('self-learning lifecycle', () => {
     expect(await git(sites, ['ls-files'])).toContain('offline.test/manifest.json');
     expect(await git(sites, ['ls-files'])).not.toContain('offline.test/sitemap/SITE.md');
 
-    expect(disabled.manifest).toBeUndefined();
+    expect(disabled.manifest?.seed).toEqual({ status: 'unattempted' });
+    expect(disabled.readOnly).toBe(false);
     expect(disabled.siteMarkdown).toBeNull();
-    expect(disabled.resolution.status).toBe('new');
-    expect(await readProductFile('disabled.test', 'manifest.json', { homeDir })).toBeNull();
+    expect(disabled.resolution.status).toBe('exact');
+    expect(parseProductManifest(await readProductFile('disabled.test', 'manifest.json', { homeDir }))?.seed)
+      .toEqual({ status: 'unattempted' });
     expect(await readProductFile('disabled.test', 'sitemap/SITE.md', { homeDir })).toBeNull();
+
+    const learned = await learnFromDraft(homeDir, {
+      product: 'disabled.test',
+      taskId: 'task-disabled',
+      site: `# Disabled\n\n${FACT}`,
+    });
+    expect(learned.status).toBe('committed');
+    expect(await readProductFile('disabled.test', 'sitemap/SITE.md', { homeDir })).toBe(`# Disabled\n\n${FACT}`);
 
     expect(calls.filter((call) => call.url.endsWith('/seeded.test'))).toEqual([{
       url: 'https://api.webcmd.dev/v1/site-memory/seeds/seeded.test',
@@ -98,7 +108,7 @@ describe('self-learning lifecycle', () => {
     const { homeDir } = await tempSites();
     const fetch = seedFetch({
       'reddit.com': { status: 'available', revision: 'reddit-1', site: '# Reddit\n' },
-      'news.ycombinator.com': { status: 'available', revision: 'hn-1', site: '# HN\n' },
+      'ycombinator.com': { status: 'available', revision: 'yc-1', site: '# YC\n' },
     });
     const seedProvider = createHttpSeedProvider({ fetch, env: {} });
 
@@ -120,10 +130,14 @@ describe('self-learning lifecycle', () => {
     expect(fallback.siteMarkdown).toBe('# Reddit\n');
     expect(await readProductFile('old.reddit.com', 'manifest.json', { homeDir })).toBeNull();
 
-    const manifest = JSON.parse(await readProductFile('reddit.com', 'manifest.json', { homeDir }) ?? '');
-    manifest.interfaces = [canonicalProductKey('https://old.reddit.com/')];
-    await writeProductFile('reddit.com', 'manifest.json', `${JSON.stringify(manifest, null, 2)}\n`, { homeDir });
-    await (await openSitesRepository({ homeDir })).commit(['reddit.com/manifest.json'], 'confirm old.reddit.com');
+    const classified = await classifyProduct({
+      requested: 'https://old.reddit.com/',
+      decision: 'same-product',
+      parent: 'reddit.com',
+      expectedRevision: fallback.revision,
+      homeDir,
+    });
+    expect(classified).toMatchObject({ status: 'classified', decision: 'same-product', existing: false });
 
     const confirmed = await getMemoryContext({
       url: 'https://old.reddit.com/r/typescript',
@@ -139,9 +153,33 @@ describe('self-learning lifecycle', () => {
     });
     expect(confirmed.readOnly).toBe(false);
 
-    const hn = await getMemoryContext({
+    await getMemoryContext({ url: 'https://ycombinator.com/', taskId: 'task-yc', homeDir, seedProvider });
+    const hnFallback = await getMemoryContext({
       url: 'https://news.ycombinator.com/',
       taskId: 'task-hn',
+      homeDir,
+      seedProvider,
+    });
+    expect(hnFallback.resolution).toMatchObject({
+      status: 'provisional-fallback',
+      readOnly: true,
+      product: { key: 'ycombinator.com' },
+      requested: { key: 'news.ycombinator.com' },
+    });
+    expect(hnFallback.readOnly).toBe(true);
+    expect(await readProductFile('news.ycombinator.com', 'manifest.json', { homeDir })).toBeNull();
+
+    const distinct = await classifyProduct({
+      requested: 'https://news.ycombinator.com/',
+      decision: 'distinct',
+      expectedRevision: hnFallback.revision,
+      homeDir,
+    });
+    expect(distinct).toMatchObject({ status: 'classified', decision: 'distinct', existing: false });
+
+    const hn = await getMemoryContext({
+      url: 'https://news.ycombinator.com/',
+      taskId: 'task-hn-2',
       homeDir,
       seedProvider,
     });
@@ -150,9 +188,9 @@ describe('self-learning lifecycle', () => {
       readOnly: false,
       product: { key: 'news.ycombinator.com' },
     });
-    expect(hn.siteMarkdown).toBe('# HN\n');
     expect(hn.readOnly).toBe(false);
-    expect(await readProductFile('news.ycombinator.com', 'sitemap/SITE.md', { homeDir })).toBe('# HN\n');
+    expect(parseProductManifest(await readProductFile('ycombinator.com', 'manifest.json', { homeDir }))?.interfaces)
+      .toEqual([]);
     expect(await readProductFile('reddit.com', 'sitemap/SITE.md', { homeDir })).toBe('# Reddit\n');
   });
 
@@ -578,9 +616,32 @@ function siteLines(count: number, pointer = false): string {
   return `${[...heading, ...facts, ...extra].join('\n')}\n`;
 }
 
-async function writeDraft(homeDir: string, files: Record<string, string>, taskId = 'task-1') {
+async function learnFromDraft(
+  homeDir: string,
+  input: { product: string; taskId: string; site: string },
+) {
+  const pending = await addCandidate(candidate(homeDir, {
+    product: input.product,
+    hostname: input.product,
+    observedAt: CLOCK.later,
+    kind: 'high_consequence',
+    claim: 'Cold product learned locally',
+  }));
+  await writeDraft(homeDir, { 'sitemap/SITE.md': input.site }, input.taskId, input.product);
+  return checkpointMemory({
+    product: input.product,
+    taskId: input.taskId,
+    expectedRevision: await revision(homeDir),
+    reason: 'candidate_ingestion',
+    paths: ['sitemap/SITE.md'],
+    dispositions: [{ id: pending.id, status: 'ingested', evidenceRole: 'supporting' }],
+    homeDir,
+  });
+}
+
+async function writeDraft(homeDir: string, files: Record<string, string>, taskId = 'task-1', product = 'example.test') {
   for (const [path, body] of Object.entries(files)) {
-    const target = join(homeDir, '.webcmd/sites/.drafts', taskId, 'example.test', path);
+    const target = join(homeDir, '.webcmd/sites/.drafts', taskId, product, path);
     await mkdir(dirname(target), { recursive: true });
     await writeFile(target, body);
   }

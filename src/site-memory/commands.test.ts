@@ -68,6 +68,14 @@ function learning(overrides: Partial<SiteLearningBackend> = {}): SiteLearningBac
     })),
     listCandidates: vi.fn(async () => [SUMMARY]),
     checkpoint: vi.fn(async () => ({ status: 'committed' as const, memoryCommit: 'mem1', provenanceCommit: 'prov1' })),
+    classify: vi.fn(async () => ({
+      status: 'classified' as const,
+      decision: 'same-product' as const,
+      requested: PRODUCT,
+      product: PRODUCT,
+      existing: false,
+      revision: 'rev2',
+    })),
     ...overrides,
   };
 }
@@ -231,6 +239,8 @@ describe('local learning command contract', () => {
     expect(leaf(root, ['site', 'memory', 'candidate', 'show']).helpInformation()).toMatch(/Usage: .*candidate show \[options\] <product> <id>/);
     expect(leaf(root, ['site', 'memory', 'candidate', 'list']).helpInformation()).toMatch(/Usage: .*candidate list \[options\] <product>/);
     expect(leaf(root, ['site', 'memory', 'checkpoint']).helpInformation()).toMatch(/Usage: .*memory checkpoint \[options\] <product>/);
+    expect(leaf(root, ['site', 'memory', 'classify']).helpInformation()).toMatch(/Usage: .*memory classify \[options\] <host>/);
+    expect(leaf(root, ['site', 'memory', 'candidate', 'search']).helpInformation()).toMatch(/capped at 20|at most 20/i);
   });
 
   it.each([
@@ -296,6 +306,17 @@ describe('local learning command contract', () => {
       'site', 'memory', 'checkpoint', 'example.test',
       '--task-id', 'task-1', '--expected-revision', 'rev1', '--reason', 'direct_correction', '--paths', 'sitemap/SITE.md',
     ], store)).toEqual({ status: 'committed', memoryCommit: 'mem1', provenanceCommit: 'prov1' });
+    expect(await jsonOf([
+      'site', 'memory', 'classify', 'old.example.test',
+      '--same-product', 'example.test', '--expected-revision', 'rev1',
+    ], store)).toEqual({
+      status: 'classified',
+      decision: 'same-product',
+      requested: PRODUCT,
+      product: PRODUCT,
+      existing: false,
+      revision: 'rev2',
+    });
   });
 
   it('hides candidates from ordinary memory list and show', async () => {
@@ -303,6 +324,31 @@ describe('local learning command contract', () => {
     const shown = await jsonOf(['site', 'memory', 'show', 'example.test', '-f', 'json']);
     expect(JSON.stringify({ listed, shown })).not.toMatch(/candidates\/|203\.0\.113\.9/);
     expect(await jsonOf(['site', 'memory', 'candidate', 'list', 'example.test'])).toEqual([SUMMARY]);
+  });
+
+  it('enumerates classify decisions and rejects combining --same-product with --distinct', async () => {
+    await expect(program(backend(), undefined, learn()).parseAsync([
+      'site', 'memory', 'classify', 'old.example.test', '--expected-revision', 'rev1',
+    ], { from: 'user' })).rejects.toMatchObject({
+      code: 'ARGUMENT',
+      message: expect.stringMatching(/--same-product|--distinct/),
+    });
+    await expect(program(backend(), undefined, learn()).parseAsync([
+      'site', 'memory', 'classify', 'old.example.test',
+      '--same-product', 'example.test', '--distinct', '--expected-revision', 'rev1',
+    ], { from: 'user' })).rejects.toMatchObject({ code: 'ARGUMENT' });
+  });
+
+  it('forwards distinct classification', async () => {
+    const store = learn();
+    await program(backend(), undefined, store).parseAsync([
+      'site', 'memory', 'classify', 'news.example.test', '--distinct', '--expected-revision', 'rev1',
+    ], { from: 'user' });
+    expect(store.classify).toHaveBeenCalledWith({
+      requested: 'news.example.test',
+      decision: 'distinct',
+      expectedRevision: 'rev1',
+    });
   });
 
   it('returns SITE_MEMORY_CONFLICT with revision details', async () => {

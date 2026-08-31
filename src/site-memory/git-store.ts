@@ -19,7 +19,7 @@ const GIT_FLAGS = [
 
 export interface SitesRepository {
   revision(): Promise<MemoryRevision | null>;
-  commit(paths: string[], message: string): Promise<MemoryRevision>;
+  commit(paths: string[], message: string, allowedDirty?: string[]): Promise<MemoryRevision>;
   pathsChanged(paths: string[]): Promise<boolean>;
   withRepositoryLock<T>(fn: () => Promise<T>): Promise<T>;
 }
@@ -29,7 +29,7 @@ export async function openSitesRepository(options: LocalStoreOptions = {}): Prom
   await assertExactRootOrAbsent(root);
   return {
     revision: () => revisionOf(root),
-    commit: (paths, message) => withRepositoryLock(root, () => commitPaths(root, paths, message)),
+    commit: (paths, message, allowedDirty) => withRepositoryLock(root, () => commitPaths(root, paths, message, allowedDirty)),
     pathsChanged: (paths) => pathsDifferFromHead(root, paths),
     withRepositoryLock: (fn) => withRepositoryLock(root, fn),
   };
@@ -48,12 +48,12 @@ async function ensureSitesRoot(options: LocalStoreOptions): Promise<string> {
   return realpath(root);
 }
 
-async function commitPaths(root: string, paths: string[], message: string): Promise<MemoryRevision> {
+async function commitPaths(root: string, paths: string[], message: string, allowedDirty: string[] = []): Promise<MemoryRevision> {
   if (paths.length === 0) throw new Error('Refusing to commit without explicit paths.');
   await ensureRepository(root);
   const relativePaths = paths.map((path) => containedRelativePath(root, path));
   await atomicWrite(join(root, '.gitignore'), GITIGNORE);
-  await assertNoUnrelatedDirty(root, relativePaths);
+  await assertNoUnrelatedDirty(root, [...relativePaths, ...allowedDirty.map((path) => containedRelativePath(root, path))]);
   try {
     await git(root, ['add', '--', ...relativePaths, '.gitignore']);
     await git(root, ['commit', '--no-gpg-sign', '-m', message]);
@@ -71,8 +71,8 @@ async function commitPaths(root: string, paths: string[], message: string): Prom
 async function pathsDifferFromHead(root: string, paths: string[]): Promise<boolean> {
   if (paths.length === 0) return false;
   const relativePaths = paths.map((path) => containedRelativePath(root, path));
-  const status = await git(root, ['status', '--porcelain', '-uall', '--', ...relativePaths]);
-  return status.split('\n').some(Boolean);
+  const status = await git(root, ['status', '--porcelain', '-z', '-uall', '--', ...relativePaths]);
+  return porcelainEntries(status).length > 0;
 }
 
 async function restoreStagedPaths(root: string, relativePaths: string[]): Promise<void> {
@@ -129,18 +129,41 @@ async function assertExactRoot(root: string): Promise<void> {
 
 async function assertNoUnrelatedDirty(root: string, allowed: string[]): Promise<void> {
   const allow = new Set([...allowed, '.gitignore']);
-  const status = await git(root, ['status', '--porcelain', '-uall']);
-  for (const line of status.split('\n').filter(Boolean)) {
-    const code = line.slice(0, 2);
+  const scopes = productScopes(allowed);
+  if (scopes.length === 0) return;
+  const status = await git(root, ['status', '--porcelain', '-z', '-uall', '--', ...scopes]);
+  for (const { code, path } of porcelainEntries(status)) {
     if (code === '??' || code === '!!') continue;
-    const path = porcelainPath(line);
     if (!allow.has(path)) throw new Error(`Refusing to commit unrelated dirty path: ${path}`);
   }
 }
 
-function porcelainPath(line: string): string {
-  const renamed = line.indexOf(' -> ');
-  return renamed === -1 ? line.slice(3) : line.slice(renamed + 4);
+function productScopes(allowed: string[]): string[] {
+  const scopes = new Set<string>();
+  for (const path of allowed) {
+    if (path === '.gitignore') continue;
+    const product = path.split('/')[0];
+    if (product) scopes.add(product);
+  }
+  return [...scopes];
+}
+
+function porcelainEntries(status: string): { code: string; path: string }[] {
+  const entries: { code: string; path: string }[] = [];
+  const parts = status.split('\0');
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    if (!part) continue;
+    const code = part.slice(0, 2);
+    const path = part.slice(3);
+    if (code.includes('R') || code.includes('C')) {
+      i += 1;
+      entries.push({ code, path: parts[i] || path });
+    } else {
+      entries.push({ code, path });
+    }
+  }
+  return entries;
 }
 
 async function git(root: string, args: string[]): Promise<string> {

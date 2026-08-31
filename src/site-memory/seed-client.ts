@@ -49,5 +49,11 @@ function safeReferences(value: unknown): value is Record<string, string> {
 }
 
 function safeReferenceName(key: string): boolean {
-  return Boolean(key) && !key.includes('/') && !key.includes('\\') && key !== '.' && key !== '..' && !key.startsWith('.');
+  return Boolean(key)
+    && key.endsWith('.md')
+    && !key.includes('/')
+    && !key.includes('\\')
+    && key !== '.'
+    && key !== '..'
+    && !key.startsWith('.');
 }

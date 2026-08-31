@@ -114,3 +114,16 @@ export interface CandidateDisposition {
 export type CheckpointResult =
   | { status: 'committed'; memoryCommit: MemoryRevision; provenanceCommit: MemoryRevision | null }
   | { status: 'conflict'; expectedRevision: MemoryRevision | null; actualRevision: MemoryRevision | null };
+
+export type ClassifyDecision = 'same-product' | 'distinct';
+
+export type ClassifyResult =
+  | {
+    status: 'classified';
+    decision: ClassifyDecision;
+    requested: ProductIdentity;
+    product: ProductIdentity;
+    existing: boolean;
+    revision: MemoryRevision;
+  }
+  | { status: 'conflict'; expectedRevision: MemoryRevision | null; actualRevision: MemoryRevision | null };

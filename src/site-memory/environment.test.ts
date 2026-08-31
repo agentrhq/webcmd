@@ -46,6 +46,46 @@ describe('candidate environment provenance', () => {
     expect(env).toEqual({});
   });
 
+  it('skips public-IP lookup when WEBCMD_CANDIDATE_PUBLIC_IP=off', async () => {
+    const fetch = vi.fn(async () => new Response('203.0.113.9', { status: 200 }));
+
+    const env = await collectEnvironment({
+      machine: false,
+      localIp: false,
+      os: false,
+      browserVersion: false,
+      webcmdVersion: false,
+      fetch,
+      env: { WEBCMD_CANDIDATE_PUBLIC_IP: 'off' },
+    });
+
+    expect(env.publicIp).toBeUndefined();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('looks up public IP without credentials by default', async () => {
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toBe('https://api.ipify.org');
+      expect(init?.credentials ?? 'omit').toBe('omit');
+      const headers = new Headers(init?.headers);
+      expect(headers.get('authorization')).toBeNull();
+      return new Response('203.0.113.9', { status: 200 });
+    });
+
+    const env = await collectEnvironment({
+      machine: false,
+      localIp: false,
+      os: false,
+      browserVersion: false,
+      webcmdVersion: false,
+      fetch,
+      env: {},
+    });
+
+    expect(env.publicIp).toBe('203.0.113.9');
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
   it('bounds public-IP lookup and omits the field on timeout', async () => {
     const fetch = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
       init?.signal?.addEventListener('abort', () => {

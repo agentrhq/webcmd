@@ -51,8 +51,36 @@ describe('checkpoint compare-and-swap', () => {
     await writeDraft(homeDir, { 'sitemap/SITE.md': '# Example\n\n- Prefer /new for fresh posts.\n' });
     await expect(checkpoint(homeDir)).rejects.toThrow(/verified/i);
 
+    await writeDraft(homeDir, { 'sitemap/SITE.md': '# Example\n\n- Prefer /new for fresh posts.\nOrdinary prose without a date.\n' });
+    await expect(checkpoint(homeDir, { reason: 'direct_correction', dispositions: [] })).rejects.toThrow(/verified/i);
+
     await writeDraft(homeDir, { 'sitemap/SITE.md': '# Example\n\n- [verified 2026-13-40] Prefer /new.\n' });
     await expect(checkpoint(homeDir)).rejects.toThrow(/verified/i);
+  });
+
+  it('accepts fenced code, tables, blockquotes, and list continuations without dates', async () => {
+    const { homeDir } = await primed();
+    await writeDraft(homeDir, { 'sitemap/SITE.md': `# Example
+
+- [verified 2026-08-31] Prefer /new.
+
+\`\`\`bash
+echo hello
+not a fact
+\`\`\`
+
+| col | val |
+| --- | --- |
+| a | b |
+
+> quoted structure
+
+- [verified 2026-08-31] Nested:
+  continuation line
+` });
+
+    const result = await checkpoint(homeDir, { reason: 'direct_correction', dispositions: [] });
+    expect(result.status).toBe('committed');
   });
 
   it('refuses a legacy beta SITE.md without copying the draft', async () => {
@@ -472,6 +500,33 @@ describe('checkpoint git transaction', () => {
     expect((await git(sites, ['show', `HEAD:example.test/candidates/${first.id}.json`]))).toMatch(/"status": "ingested"/);
   });
 
+  it('applies a changed draft instead of provenance-only recovery', async () => {
+    const { homeDir, sites } = await primed();
+    const first = await addCandidate(candidate(homeDir, { observedAt: '2026-08-30T12:00:00Z' }));
+    const second = await addCandidate(candidate(homeDir, { observedAt: '2026-08-31T12:00:00Z', claim: 'Later' }));
+    const next = `# Example\n\n${FACT}- [verified 2026-08-31] Later path is denser.\n`;
+    await writeDraft(homeDir, { 'sitemap/SITE.md': next });
+    const dispositions = [
+      { id: first.id, status: 'ingested' as const, evidenceRole: 'supporting' as const },
+      { id: second.id, status: 'ingested' as const, evidenceRole: 'supporting' as const },
+    ];
+
+    await withGitWrapper(homeDir, 'provenance', async () => {
+      await expect(checkpoint(homeDir, { dispositions })).rejects.toThrow();
+    });
+
+    const memoryRevision = (await git(sites, ['rev-parse', 'HEAD'])).trim();
+    const extra = `${next}- [verified 2026-09-01] Ban risk on bulk delete.\n`;
+    await writeDraft(homeDir, { 'sitemap/SITE.md': extra });
+    const resumed = await checkpoint(homeDir, { expectedRevision: memoryRevision, dispositions });
+    expect(resumed.status).toBe('committed');
+    if (resumed.status !== 'committed') throw new Error('expected commit');
+    expect(resumed.memoryCommit).not.toBe(memoryRevision);
+    expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBe(extra);
+    expect((await showCandidate('example.test', first.id, { homeDir })).status).toBe('ingested');
+    expect((await git(sites, ['show', `HEAD:example.test/candidates/${first.id}.json`]))).toMatch(/"status": "ingested"/);
+  });
+
   it('finishes remaining provenance writes without replaying memory', async () => {
     const { homeDir, sites } = await primed();
     const first = await addCandidate(candidate(homeDir, { observedAt: '2026-08-30T12:00:00Z' }));
@@ -628,6 +683,13 @@ describe('checkpoint rewrite bounds', () => {
     const { homeDir } = await primed(siteLines(501));
     await writeDraft(homeDir, { 'sitemap/SITE.md': siteLines(500) });
     await expect(checkpoint(homeDir, { reason: 'direct_correction', dispositions: [] })).rejects.toThrow(/200|rewrite/i);
+
+    await writeDraft(homeDir, { 'sitemap/references/listing.md': REF });
+    await expect(checkpoint(homeDir, {
+      reason: 'direct_correction',
+      paths: ['sitemap/references/listing.md'],
+      dispositions: [],
+    })).rejects.toThrow(/200|rewrite/i);
 
     const rewritten = siteLines(200, true);
     await writeDraft(homeDir, {

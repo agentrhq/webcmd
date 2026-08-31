@@ -15,6 +15,7 @@ export interface CollectEnvironmentOptions {
   webcmdVersion?: string | false;
   fetch?: typeof fetch;
   hostname?: () => string;
+  env?: NodeJS.ProcessEnv;
 }
 
 export async function collectEnvironment(options: CollectEnvironmentOptions = {}): Promise<CandidateEnvironment> {
@@ -35,7 +36,8 @@ export async function collectEnvironment(options: CollectEnvironmentOptions = {}
   if (options.webcmdVersion !== false) {
     env.webcmdVersion = typeof options.webcmdVersion === 'string' ? options.webcmdVersion : PKG_VERSION;
   }
-  if (options.publicIp !== false) {
+  const envVars = options.env ?? process.env;
+  if (options.publicIp !== false && envVars.WEBCMD_CANDIDATE_PUBLIC_IP !== 'off') {
     const publicIp = await lookupPublicIp(options.fetch ?? fetch);
     if (publicIp) env.publicIp = publicIp;
   }
@@ -52,7 +54,10 @@ function firstLocalIp(): string | undefined {
 
 async function lookupPublicIp(fetchFn: typeof fetch): Promise<string | undefined> {
   try {
-    const response = await fetchFn(PUBLIC_IP_URL, { signal: AbortSignal.timeout(PUBLIC_IP_TIMEOUT_MS) });
+    const response = await fetchFn(PUBLIC_IP_URL, {
+      signal: AbortSignal.timeout(PUBLIC_IP_TIMEOUT_MS),
+      credentials: 'omit',
+    });
     if (!response.ok) return;
     const value = (await response.text()).trim();
     return isIP(value) ? value : undefined;

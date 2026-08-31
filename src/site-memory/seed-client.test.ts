@@ -90,9 +90,19 @@ describe('global seed client', () => {
       env: {},
     }).lookup('evil.test');
 
+    const notMarkdown = await createHttpSeedProvider({
+      fetch: async () => jsonResponse({
+        revision: 'r1',
+        site: '# Site\n',
+        references: { 'foo.txt': '# no\n' },
+      }),
+      env: {},
+    }).lookup('txt.test');
+
     expect(offline).toEqual({ status: 'lookup-failed' });
     expect(malformed).toEqual({ status: 'lookup-failed' });
     expect(unsafe).toEqual({ status: 'lookup-failed' });
+    expect(notMarkdown).toEqual({ status: 'lookup-failed' });
   });
 
   it('skips lookup when WEBCMD_GLOBAL_MEMORY=off', async () => {

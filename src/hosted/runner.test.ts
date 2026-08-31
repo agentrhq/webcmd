@@ -657,6 +657,7 @@ describe('runHostedCli', () => {
     ['site', 'memory', 'context', 'https://example.test/', '--task-id', 'task-1'],
     ['site', 'memory', 'candidate', 'add', 'example.test', '--kind', 'access', '--claim', 'c', '--evidence', 'e', '--consequence', 'q'],
     ['site', 'memory', 'checkpoint', 'example.test', '--task-id', 'task-1', '--expected-revision', 'rev', '--reason', 'direct_correction', '--paths', 'sitemap/SITE.md'],
+    ['site', 'memory', 'classify', 'old.example.test', '--same-product', 'example.test', '--expected-revision', 'rev'],
   ])('does not advertise unsupported local learning mutations on hosted: %j', async (...argv) => {
     const fetchImpl = vi.fn<typeof fetch>();
     const stderr = sink();

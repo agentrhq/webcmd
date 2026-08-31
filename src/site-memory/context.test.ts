@@ -69,6 +69,26 @@ describe('memory context initialization', () => {
     expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBeNull();
   });
 
+  it('persists an unattempted seed result without creating SITE.md', async () => {
+    const { homeDir, sites } = await tempSites();
+
+    const context = await getMemoryContext({
+      url: 'https://example.test/',
+      taskId: 'task-1',
+      homeDir,
+      seedProvider: provider(async () => ({ status: 'unattempted' })),
+    });
+
+    expect(context.manifest?.seed).toEqual({ status: 'unattempted' });
+    expect(context.readOnly).toBe(false);
+    expect(context.siteMarkdown).toBeNull();
+    expect(parseProductManifest(await readProductFile('example.test', 'manifest.json', { homeDir }))?.seed)
+      .toEqual({ status: 'unattempted' });
+    expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBeNull();
+    expect(await git(sites, ['ls-files'])).toContain('example.test/manifest.json');
+    expect(await git(sites, ['ls-files'])).not.toContain('example.test/sitemap/SITE.md');
+  });
+
   it('does not look up a seed once a product already exists', async () => {
     const { homeDir } = await tempSites();
     const lookup = vi.fn(async () => ({ status: 'absent' as const }));
@@ -209,7 +229,7 @@ describe('memory context initialization', () => {
     expect(lookup).not.toHaveBeenCalled();
   });
 
-  it('degrades persist failures to read-only transient seed and drops uncommitted seed files', async () => {
+  it('persists a new product even when an unrelated product is dirty', async () => {
     const { homeDir } = await tempSites();
     await writeProductFile('other.test', 'manifest.json', '{}\n', { homeDir });
     await (await openSitesRepository({ homeDir })).commit(['other.test/manifest.json'], 'init');
@@ -217,7 +237,7 @@ describe('memory context initialization', () => {
     const lookup = vi.fn(async (): Promise<SeedLookupResult> => ({
       status: 'available',
       revision: 'seed-1',
-      site: '# Transient\n',
+      site: '# Seed\n',
       references: { 'alt.md': '# Alt\n' },
     }));
 
@@ -228,23 +248,12 @@ describe('memory context initialization', () => {
       seedProvider: provider(lookup),
     });
 
-    expect(context.readOnly).toBe(true);
-    expect(context.siteMarkdown).toBe('# Transient\n');
-    expect(context.manifest).toBeUndefined();
-    expect(context.diagnostics.join('\n')).toMatch(/unrelated dirty path/i);
-    expect(await readProductFile('example.test', 'manifest.json', { homeDir })).toBeNull();
-    expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBeNull();
-    expect(await readProductFile('example.test', 'sitemap/references/alt.md', { homeDir })).toBeNull();
+    expect(context.readOnly).toBe(false);
+    expect(context.siteMarkdown).toBe('# Seed\n');
+    expect(context.manifest?.seed).toEqual({ status: 'available', revision: 'seed-1' });
+    expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBe('# Seed\n');
+    expect(await readProductFile('example.test', 'sitemap/references/alt.md', { homeDir })).toBe('# Alt\n');
     expect(await readProductFile('other.test', 'manifest.json', { homeDir })).toBe('{"dirty":true}\n');
-
-    lookup.mockClear();
-    await getMemoryContext({
-      url: 'https://example.test/',
-      taskId: 'task-2',
-      homeDir,
-      seedProvider: provider(lookup),
-    });
-    expect(lookup).toHaveBeenCalled();
   });
 
   it('ignores manifests whose shape would crash product resolution', async () => {

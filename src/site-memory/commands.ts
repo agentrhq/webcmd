@@ -5,8 +5,9 @@ import { ArgumentError, CliError, EXIT_CODES } from '../errors.js';
 import { getRequestedHelpFormat } from '../help.js';
 import { render as renderOutput } from '../output.js';
 import { writeToStream } from '../stream-write.js';
-import { addCandidate, listCandidates, searchCandidates, showCandidate } from './candidates.js';
+import { addCandidate, listCandidates, SEARCH_CANDIDATE_LIMIT, searchCandidates, showCandidate } from './candidates.js';
 import { checkpointMemory } from './checkpoint.js';
+import { classifyProduct } from './classify.js';
 import { getMemoryContext } from './context.js';
 import {
   addFieldMapping,
@@ -29,6 +30,8 @@ import {
   type CandidateSummary,
   type CheckpointReason,
   type CheckpointResult,
+  type ClassifyDecision,
+  type ClassifyResult,
   type MemoryContext,
 } from './model.js';
 
@@ -69,6 +72,12 @@ export interface SiteLearningBackend {
     paths: string[];
     dispositions?: CandidateDisposition[];
   }): Promise<CheckpointResult>;
+  classify(input: {
+    requested: string;
+    decision: ClassifyDecision;
+    parent?: string;
+    expectedRevision: string | null;
+  }): Promise<ClassifyResult>;
 }
 
 export interface SiteCommandIo {
@@ -351,7 +360,7 @@ function registerLearningCommands(
     .description('Search pending candidates with bounded lexical matching')
     .argument('<product>', 'Product key or hostname')
     .requiredOption('--query <query>', 'Lexical query over claim, kind, hostname, and consequence')
-    .option('--limit <n>', 'Maximum matches to return'),
+     .option('--limit <n>', `Maximum matches to return, capped at ${SEARCH_CANDIDATE_LIMIT}`),
     'webcmd site memory candidate search example.test --query "old reddit" -f json'), 'json');
   search.action(async (product: string, opts: { query: string; limit?: string; format?: string }) => {
     await emit(search, await learning.searchCandidates(product, opts.query, parseLimit(opts.limit)), opts);
@@ -411,6 +420,36 @@ function registerLearningCommands(
     }
     await emit(checkpoint, result, opts);
   });
+
+  const classify = addOutputFormatOption(withExample(memory.command('classify')
+    .description('Record whether a hostname is the same product or a distinct product')
+    .argument('<host>', 'Requested hostname or URL')
+    .option('--same-product <parent>', 'Parent product this hostname belongs to')
+    .option('--distinct', 'Create an exact package for a distinct product')
+    .requiredOption('--expected-revision <revision>', 'Revision returned by site memory context; use null when none'),
+    'webcmd site memory classify old.reddit.com --same-product reddit.com --expected-revision rev1 -f json'), 'json');
+  classify.action(async (host: string, opts: {
+    sameProduct?: string; distinct?: boolean; expectedRevision: string; format?: string;
+  }) => {
+    const result = await learning.classify({
+      requested: host,
+      decision: parseClassifyDecision(opts),
+      expectedRevision: parseRevision(opts.expectedRevision),
+      ...(opts.sameProduct ? { parent: opts.sameProduct } : {}),
+    });
+    if (result.status === 'conflict') {
+      throw Object.assign(
+        new CliError(
+          'SITE_MEMORY_CONFLICT',
+          'Expected revision changed.',
+          'Retry webcmd site memory context, then classify once.',
+          EXIT_CODES.TEMPFAIL,
+        ),
+        { details: { expectedRevision: result.expectedRevision, actualRevision: result.actualRevision } },
+      );
+    }
+    await emit(classify, result, opts);
+  });
 }
 
 export function createLocalLearningBackend(options: LocalStoreOptions = {}): SiteLearningBackend {
@@ -421,6 +460,7 @@ export function createLocalLearningBackend(options: LocalStoreOptions = {}): Sit
     showCandidate: (product, id) => showCandidate(product, id, options),
     listCandidates: product => listCandidates(product, options),
     checkpoint: input => checkpointMemory({ ...input, ...options }),
+    classify: input => classifyProduct({ ...input, ...options }),
   };
 }
 
@@ -472,6 +512,15 @@ function parseCandidateKind(value: string): (typeof CANDIDATE_KINDS)[number] {
 }
 
 const CHECKPOINT_REASONS = ['candidate_ingestion', 'direct_correction', 'major_rewrite'] as const;
+
+function parseClassifyDecision(opts: { sameProduct?: string; distinct?: boolean }): ClassifyDecision {
+  if (opts.distinct && opts.sameProduct) {
+    throw new ArgumentError('Choose exactly one of --same-product <parent> or --distinct.');
+  }
+  if (opts.distinct) return 'distinct';
+  if (opts.sameProduct) return 'same-product';
+  throw new ArgumentError('--same-product <parent> or --distinct is required.');
+}
 
 function parseCheckpointReason(value: string): CheckpointReason {
   if ((CHECKPOINT_REASONS as readonly string[]).includes(value)) return value as CheckpointReason;

@@ -1559,6 +1559,7 @@ describe('local learning command registration', () => {
       ['site', 'memory', 'candidate', 'show'],
       ['site', 'memory', 'candidate', 'list'],
       ['site', 'memory', 'checkpoint'],
+      ['site', 'memory', 'classify'],
     ]) {
       let command: ReturnType<typeof createProgram> | undefined = program;
       for (const segment of path) command = command?.commands.find(child => child.name() === segment) as typeof program | undefined;

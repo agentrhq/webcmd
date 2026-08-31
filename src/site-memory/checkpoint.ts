@@ -43,10 +43,19 @@ export async function checkpointMemory(input: CheckpointInput): Promise<Checkpoi
     const loaded = await Promise.all(dispositions.map((row) => readCandidateRecord(product, row.id, input)));
     for (const row of dispositions) validateDispositionFields(row);
     const candidatePaths = dispositions.map((row) => `${product}/candidates/${row.id}.json`);
+    const drafts = await readDrafts(input, taskId, product, paths);
+    const prior = new Map<string, string | null>();
+    const changed: string[] = [];
+    for (const path of paths) {
+      const current = await readProductFile(product, path, input);
+      prior.set(path, current);
+      if (drafts.get(path) !== current) changed.push(path);
+    }
 
     if (
       actual
       && input.expectedRevision === actual
+      && changed.length === 0
       && isProvenanceRecovery(loaded, dispositions, actual)
       && await repo.pathsChanged(candidatePaths)
     ) {
@@ -59,7 +68,6 @@ export async function checkpointMemory(input: CheckpointInput): Promise<Checkpoi
       return { status: 'conflict', expectedRevision: input.expectedRevision, actualRevision: actual };
     }
 
-    const drafts = await readDrafts(input, taskId, product, paths);
     for (const body of drafts.values()) validateFacts(body);
     validateLineBounds(await readProductFile(product, 'sitemap/SITE.md', input), drafts.get('sitemap/SITE.md'), input.reason);
     if (input.reason === 'candidate_ingestion') {
@@ -67,15 +75,7 @@ export async function checkpointMemory(input: CheckpointInput): Promise<Checkpoi
     } else if (dispositions.length > 0) {
       throw new Error('Checkpoint reason rejects dispositions.');
     }
-    validateDispositions(loaded, dispositions);
-
-    const prior = new Map<string, string | null>();
-    const changed: string[] = [];
-    for (const path of paths) {
-      const current = await readProductFile(product, path, input);
-      prior.set(path, current);
-      if (drafts.get(path) !== current) changed.push(path);
-    }
+    validateDispositions(loaded, dispositions, actual);
     if (input.reason === 'candidate_ingestion') {
       const ingested = dispositions.some((row) => row.status === 'ingested');
       if (ingested && changed.length === 0) throw new Error('candidate_ingestion requires a memory change.');
@@ -85,7 +85,11 @@ export async function checkpointMemory(input: CheckpointInput): Promise<Checkpoi
     if (changed.length > 0) {
       try {
         await copyDraftFiles(product, taskId, paths, input);
-        memoryCommit = await repo.commit(paths.map((path) => `${product}/${path}`), `checkpoint memory ${product}`);
+        memoryCommit = await repo.commit(
+          paths.map((path) => `${product}/${path}`),
+          `checkpoint memory ${product}`,
+          candidatePaths,
+        );
       } catch (err) {
         const rollback = await restoreCopiedMarkdown(product, prior, input);
         if (rollback.length > 0) {
@@ -191,11 +195,23 @@ function validateDispositionFields(row: CandidateDisposition): void {
   }
 }
 
-function validateDispositions(loaded: Candidate[], dispositions: CandidateDisposition[]): void {
-  for (const candidate of loaded) {
-    if (candidate.status !== 'pending') throw new Error('Invalid candidate status transition.');
+function validateDispositions(
+  loaded: Candidate[],
+  dispositions: CandidateDisposition[],
+  actual: MemoryRevision | null,
+): void {
+  const pending: { row: CandidateDisposition; candidate: Candidate }[] = [];
+  for (const [index, row] of dispositions.entries()) {
+    const candidate = loaded[index];
+    if (candidate.status === 'pending') {
+      pending.push({ row, candidate });
+      continue;
+    }
+    if (!actual || !matchesRequestedTerminal(candidate, row, actual)) {
+      throw new Error('Invalid candidate status transition.');
+    }
   }
-  const ingested = dispositions.map((row, index) => ({ row, candidate: loaded[index] })).filter((entry) => entry.row.status === 'ingested');
+  const ingested = pending.filter((entry) => entry.row.status === 'ingested');
   if (ingested.length === 0) return;
   const dates = [...new Set(ingested.map((entry) => entry.candidate.observedDateUtc))];
   const conflicting = ingested.filter((entry) => entry.row.conflictsWithMemory);
@@ -211,8 +227,15 @@ function validateDispositions(loaded: Candidate[], dispositions: CandidateDispos
 }
 
 function validateLineBounds(current: string | null, draft: string | undefined, reason: CheckpointReason): void {
-  if (draft === undefined || (current ?? '') === draft) return;
   const currentLines = physicalLines(current ?? '');
+  const unchangedSite = draft !== undefined && (current ?? '') === draft;
+  if (currentLines > 500 && !unchangedSite) {
+    if (draft === undefined || physicalLines(draft) > 200) {
+      throw new Error('SITE.md updates over 500 lines require a rewrite to at most 200 lines.');
+    }
+    if (!POINTER.test(draft)) throw new Error('A major rewrite requires contextual reference pointers.');
+  }
+  if (draft === undefined || unchangedSite) return;
   const draftLines = physicalLines(draft);
   const draftPointers = POINTER.test(draft);
   if (currentLines > 500 || reason === 'major_rewrite') {
@@ -220,7 +243,6 @@ function validateLineBounds(current: string | null, draft: string | undefined, r
     if (!draftPointers) throw new Error('A major rewrite requires contextual reference pointers.');
     return;
   }
-  // ponytail: pointer-bearing SITE.md is treated as post-rewrite and capped at 200; persist a rewrite flag if organic 201-500 growth with pointers is required
   if (currentLines <= 200 && POINTER.test(current ?? '')) {
     if (draftLines > 200) throw new Error('Post-rewrite SITE.md updates must stay at or below 200 lines.');
     if (!draftPointers) throw new Error('Post-rewrite updates require contextual reference pointers.');
@@ -230,14 +252,39 @@ function validateLineBounds(current: string | null, draft: string | undefined, r
 }
 
 function validateFacts(body: string): void {
-  for (const line of body.split('\n')) {
+  let fenced = false;
+  let frontmatter: boolean | null = null;
+  for (const [index, line] of body.split('\n').entries()) {
     const text = line.trim();
-    if (!text || /^#{1,6}\s/.test(text) || (POINTER.test(text) && !VERIFIED.test(text))) continue;
+    if (index === 0 && text === '---') {
+      frontmatter = true;
+      continue;
+    }
+    if (frontmatter) {
+      if (text === '---') frontmatter = false;
+      continue;
+    }
+    if (/^```/.test(text)) {
+      fenced = !fenced;
+      continue;
+    }
+    if (fenced || isStructuralMarkdown(line, text)) continue;
     const match = VERIFIED.exec(text);
     if (!match || !validUtcDate(match[1])) {
       throw new Error('Each durable fact requires a valid [verified YYYY-MM-DD] date.');
     }
   }
+}
+
+function isStructuralMarkdown(line: string, text: string): boolean {
+  if (!text) return true;
+  if (/^#{1,6}\s/.test(text)) return true;
+  if (POINTER.test(text) && !VERIFIED.test(text)) return true;
+  if (text.startsWith('|') || text.startsWith('>')) return true;
+  if (/^[-*_]{3,}$/.test(text) || /^=+$/.test(text)) return true;
+  if (/^\s/.test(line)) return true;
+  if (/^\[.+\]:\s*\S/.test(text) || /^<!--/.test(text)) return true;
+  return false;
 }
 
 function validUtcDate(text: string): boolean {

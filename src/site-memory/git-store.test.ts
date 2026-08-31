@@ -12,7 +12,7 @@ import {
   REPOSITORY_LOCK_TIMEOUT_MS,
 } from './file-lock.js';
 import { openSitesRepository } from './git-store.js';
-import { listProductKeys, writeProductFile } from './local-store.js';
+import { listProductKeys, readProductFile, writeProductFile } from './local-store.js';
 
 const run = promisify(execFile);
 const tempHomes: string[] = [];
@@ -73,15 +73,46 @@ describe('sites git repository', () => {
     await expect(openSitesRepository({ homeDir })).rejects.toThrow(/ancestor/i);
   });
 
-  it('refuses to commit when an unrelated dirty file exists', async () => {
-    const { homeDir } = await tempSites();
+  it('refuses dirty files in the target product subtree and still stages only explicit paths', async () => {
+    const { homeDir, sites } = await tempSites();
+    await writeProductFile('example.test', 'manifest.json', '{}\n', { homeDir });
+    await writeProductFile('example.test', 'notes.md', 'keep\n', { homeDir });
+    const repo = await openSitesRepository({ homeDir });
+    await repo.commit(['example.test/manifest.json', 'example.test/notes.md'], 'init');
+    await writeProductFile('example.test', 'manifest.json', '{"ok":true}\n', { homeDir });
+    await writeProductFile('example.test', 'notes.md', 'dirty\n', { homeDir });
+
+    await expect(repo.commit(['example.test/manifest.json'], 'notes')).rejects.toThrow(/unrelated/i);
+    expect((await git(sites, ['show', 'HEAD:example.test/manifest.json'])).trim()).toBe('{}');
+    expect((await git(sites, ['ls-files'])).trim().split('\n')).not.toContain('example.test/scratch.md');
+  });
+
+  it('does not let an unrelated product\'s dirty files wedge the target product', async () => {
+    const { homeDir, sites } = await tempSites();
     await writeProductFile('example.test', 'manifest.json', '{}\n', { homeDir });
     const repo = await openSitesRepository({ homeDir });
     await repo.commit(['example.test/manifest.json'], 'init');
     await writeProductFile('example.test', 'manifest.json', '{"dirty":true}\n', { homeDir });
     await writeProductFile('other.test', 'manifest.json', '{}\n', { homeDir });
 
-    await expect(repo.commit(['other.test/manifest.json'], 'other')).rejects.toThrow(/unrelated/i);
+    const revision = await repo.commit(['other.test/manifest.json'], 'other');
+    expect(revision).toMatch(/^[0-9a-f]{40}$/);
+    expect((await git(sites, ['ls-files'])).trim().split('\n')).toEqual(expect.arrayContaining([
+      'example.test/manifest.json',
+      'other.test/manifest.json',
+    ]));
+    expect(await readProductFile('example.test', 'manifest.json', { homeDir })).toBe('{"dirty":true}\n');
+  });
+
+  it('parses NUL-terminated porcelain so quoted paths can commit themselves', async () => {
+    const { homeDir } = await tempSites();
+    await writeProductFile('example.test', 'café.md', 'one\n', { homeDir });
+    const repo = await openSitesRepository({ homeDir });
+    await repo.commit(['example.test/café.md'], 'unicode');
+    await writeProductFile('example.test', 'café.md', 'two\n', { homeDir });
+
+    const revision = await repo.commit(['example.test/café.md'], 'unicode-2');
+    expect(revision).toMatch(/^[0-9a-f]{40}$/);
   });
 
   it('stages only explicit paths and never git add .', async () => {

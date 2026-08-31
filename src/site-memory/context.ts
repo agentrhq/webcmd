@@ -32,7 +32,7 @@ export async function getMemoryContext(input: MemoryContextInput): Promise<Memor
   let transient: Extract<SeedLookupResult, { status: 'available' }> | undefined;
   if (resolution.status === 'new' && !legacy) {
     const seed = await (input.seedProvider ?? createHttpSeedProvider()).lookup(resolution.requested.key);
-    if (git && seed.status !== 'unattempted') {
+    if (git) {
       try {
         await persistSeed(resolution.requested, seed, git, opts);
         resolution = resolveProduct(input.url, await loadManifests(opts));
