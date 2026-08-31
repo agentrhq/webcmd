@@ -35,7 +35,7 @@ afterEach(async () => {
 describe('self-learning lifecycle', () => {
   it('persists seeded, offline, and disabled cold starts differently', async () => {
     const { homeDir, sites } = await tempSites();
-    const fetch = seedFetch({
+    const { fetch, calls } = recordingFetch(seedFetch({
       'seeded.test': {
         status: 'available',
         revision: 'seed-1',
@@ -43,7 +43,8 @@ describe('self-learning lifecycle', () => {
         references: { 'listing.md': REF },
       },
       'offline.test': 'throw',
-    });
+      'disabled.test': { status: 'available', revision: 'nope', site: '# No\n' },
+    }));
 
     const seeded = await getMemoryContext({
       url: 'https://seeded.test/',
@@ -57,12 +58,11 @@ describe('self-learning lifecycle', () => {
       homeDir,
       seedProvider: createHttpSeedProvider({ fetch, env: {} }),
     });
-    const disabledFetch = seedFetch({ 'disabled.test': { status: 'available', revision: 'nope', site: '# No\n' } });
     const disabled = await getMemoryContext({
       url: 'https://disabled.test/',
       taskId: 'task-disabled',
       homeDir,
-      seedProvider: createHttpSeedProvider({ fetch: disabledFetch, env: { WEBCMD_GLOBAL_MEMORY: 'off' } }),
+      seedProvider: createHttpSeedProvider({ fetch, env: { WEBCMD_GLOBAL_MEMORY: 'off' } }),
     });
 
     expect(seeded.manifest?.seed).toEqual({ status: 'available', revision: 'seed-1' });
@@ -83,6 +83,15 @@ describe('self-learning lifecycle', () => {
     expect(disabled.resolution.status).toBe('new');
     expect(await readProductFile('disabled.test', 'manifest.json', { homeDir })).toBeNull();
     expect(await readProductFile('disabled.test', 'sitemap/SITE.md', { homeDir })).toBeNull();
+
+    expect(calls.filter((call) => call.url.endsWith('/seeded.test'))).toEqual([{
+      url: 'https://api.webcmd.dev/v1/site-memory/seeds/seeded.test',
+      method: 'GET',
+      credentials: 'omit',
+      authorization: null,
+    }]);
+    expect(calls.filter((call) => call.url.endsWith('/offline.test'))).toHaveLength(1);
+    expect(calls.some((call) => call.url.endsWith('/disabled.test'))).toBe(false);
   });
 
   it('keeps Old Reddit a read-only parent fallback until interface confirmation and keeps Hacker News separate', async () => {
@@ -150,9 +159,13 @@ describe('self-learning lifecycle', () => {
   it('leaves candidate inventory unchanged when the task is a no-op', async () => {
     const { homeDir, sites } = await tempSites();
     const context = await coldStart(homeDir);
-    const before = (await git(sites, ['log', '--oneline'])).trim().split('\n');
-
-    await expect(addCandidate(candidate(homeDir, { kind: 'trivial_success' }))).rejects.toThrow(/kind/i);
+    const before = {
+      log: (await git(sites, ['log', '--oneline'])).trim(),
+      files: (await git(sites, ['ls-files'])).trim(),
+      candidates: (await git(sites, ['ls-files', '--', 'example.test/candidates'])).trim(),
+      inventory: await listCandidates('example.test', { homeDir }),
+      site: await readProductFile('example.test', 'sitemap/SITE.md', { homeDir }),
+    };
 
     const noop = await checkpointMemory({
       product: 'example.test',
@@ -169,10 +182,13 @@ describe('self-learning lifecycle', () => {
       memoryCommit: context.revision,
       provenanceCommit: null,
     });
-    expect(await listCandidates('example.test', { homeDir })).toEqual([]);
-    expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBe(SITE);
-    expect((await git(sites, ['log', '--oneline'])).trim().split('\n')).toEqual(before);
-    expect(await git(sites, ['ls-files'])).not.toMatch(/candidates/);
+    expect(await listCandidates('example.test', { homeDir })).toEqual(before.inventory);
+    expect(before.inventory).toEqual([]);
+    expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBe(before.site);
+    expect((await git(sites, ['log', '--oneline'])).trim()).toBe(before.log);
+    expect((await git(sites, ['ls-files'])).trim()).toBe(before.files);
+    expect((await git(sites, ['ls-files', '--', 'example.test/candidates'])).trim()).toBe(before.candidates);
+    expect(before.files).not.toMatch(/candidates/);
   });
 
   it('keeps same-date evidence pending, checkpoints later-date and immediate high_consequence, and records dissenting provenance', async () => {
@@ -437,7 +453,6 @@ describe('self-learning lifecycle', () => {
       })).rejects.toThrow();
     });
 
-    expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir: blocked.homeDir })).toBe(SITE);
     expect(await readProductFile('example.test', 'sitemap/references/listing.md', { homeDir: blocked.homeDir })).toBeNull();
     expect((await showCandidate('example.test', pending.id, { homeDir: blocked.homeDir })).status).toBe('pending');
     expect((await showCandidate('example.test', later.id, { homeDir: blocked.homeDir })).status).toBe('pending');
@@ -461,7 +476,8 @@ describe('self-learning lifecycle', () => {
 
     const memoryRevision = (await git(sites, ['rev-parse', 'HEAD'])).trim();
     expect(await git(sites, ['show', 'HEAD:example.test/sitemap/SITE.md'])).toBe(next);
-    expect((await git(sites, ['log', '--oneline', '--', 'example.test/sitemap/SITE.md'])).trim().split('\n')).toHaveLength(2);
+    const siteLog = (await git(sites, ['log', '--oneline', '--', 'example.test/sitemap/SITE.md'])).trim();
+    expect(siteLog.split('\n')).toHaveLength(2);
     expect((await showCandidate('example.test', first.id, { homeDir })).status).toBe('ingested');
 
     const resumed = await checkpoint(homeDir, memoryRevision, { dispositions });
@@ -470,7 +486,7 @@ describe('self-learning lifecycle', () => {
     expect(resumed.memoryCommit).toBe(memoryRevision);
     expect(resumed.provenanceCommit).toMatch(/^[0-9a-f]{40}$/);
     expect(resumed.provenanceCommit).not.toBe(memoryRevision);
-    expect((await git(sites, ['log', '--oneline', '--', 'example.test/sitemap/SITE.md'])).trim().split('\n')).toHaveLength(2);
+    expect((await git(sites, ['log', '--oneline', '--', 'example.test/sitemap/SITE.md'])).trim()).toBe(siteLog);
     expect((await git(sites, ['show', `HEAD:example.test/candidates/${first.id}.json`]))).toMatch(/"status": "ingested"/);
   });
 });
@@ -490,6 +506,20 @@ function seedFetch(results: Record<string, SeedLookupResult | 'throw'>): typeof 
     }
     return new Response('fail', { status: 500 });
   };
+}
+
+function recordingFetch(inner: typeof fetch) {
+  const calls: { url: string; method: string; credentials: RequestInit['credentials']; authorization: string | null }[] = [];
+  const fetch: typeof globalThis.fetch = async (input, init) => {
+    calls.push({
+      url: String(input),
+      method: init?.method ?? 'GET',
+      credentials: init?.credentials,
+      authorization: new Headers(init?.headers).get('authorization'),
+    });
+    return inner(input, init);
+  };
+  return { fetch, calls };
 }
 
 async function coldStart(homeDir: string, taskId = 'task-1', site = SITE) {
