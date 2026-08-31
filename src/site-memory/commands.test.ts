@@ -334,3 +334,79 @@ describe('local learning command contract', () => {
     });
   });
 });
+
+describe('learning command trust-boundary parsers', () => {
+  const checkpoint = (...extra: string[]) => [
+    'site', 'memory', 'checkpoint', 'example.test',
+    '--task-id', 'task-1', '--expected-revision', 'rev1', '--reason', 'direct_correction',
+    ...extra,
+  ];
+
+  async function expectArgument(argv: string[]): Promise<void> {
+    await expect(program(backend(), undefined, learning()).parseAsync(argv, { from: 'user' }))
+      .rejects.toMatchObject({ code: 'ARGUMENT' });
+  }
+
+  it.each(['1x', '1.5', '+1', '-1', '0', String(Number.MAX_SAFE_INTEGER + 1), '9'.repeat(400)])(
+    'rejects --limit %s',
+    async (limit) => {
+      await expectArgument(['site', 'memory', 'candidate', 'search', 'example.test', '--query', 'login', '--limit', limit]);
+    },
+  );
+
+  it('forwards a whole positive --limit', async () => {
+    const store = learning();
+    await program(backend(), undefined, store).parseAsync(
+      ['site', 'memory', 'candidate', 'search', 'example.test', '--query', 'login', '--limit', '3'],
+      { from: 'user' },
+    );
+    expect(store.searchCandidates).toHaveBeenCalledWith('example.test', 'login', 3);
+  });
+
+  it.each(['', ',', 'sitemap/SITE.md,', ',sitemap/SITE.md', 'sitemap/SITE.md,,other.md', 'a, a', 'a,b,a'])(
+    'rejects --paths %s',
+    async (paths) => {
+      await expectArgument(checkpoint('--paths', paths));
+    },
+  );
+
+  it('forwards unique nonempty --paths', async () => {
+    const store = learning();
+    await program(backend(), undefined, store).parseAsync(
+      checkpoint('--paths', 'sitemap/SITE.md, sitemap/other.md'),
+      { from: 'user' },
+    );
+    expect(store.checkpoint).toHaveBeenCalledWith(expect.objectContaining({
+      paths: ['sitemap/SITE.md', 'sitemap/other.md'],
+    }));
+  });
+
+  it.each([
+    'not-json',
+    '{}',
+    '[1]',
+    '[[]]',
+    '[{"status":"rejected"}]',
+    '[{"id":"","status":"rejected"}]',
+    '[{"id":"cand-1","status":"pending"}]',
+    '[{"id":"cand-1","status":"ingested","evidenceRole":"maybe"}]',
+    '[{"id":"cand-1","status":"rejected","conflictsWithMemory":"yes"}]',
+    '[{"id":"cand-1","status":"rejected","extra":true}]',
+    '[{"id":"cand-1","status":"rejected","rejectionReason":"password := hunter2"}]',
+  ])('rejects --dispositions %s', async (dispositions) => {
+    await expectArgument(checkpoint('--paths', 'sitemap/SITE.md', '--dispositions', dispositions));
+  });
+
+  it('forwards typed --dispositions without checkpoint field coupling', async () => {
+    const store = learning();
+    const dispositions = [
+      { id: 'cand-1', status: 'ingested' as const, evidenceRole: 'supporting' as const, conflictsWithMemory: false },
+      { id: 'cand-2', status: 'rejected' as const, rejectionReason: 'stale', evidenceRole: null },
+    ];
+    await program(backend(), undefined, store).parseAsync(
+      checkpoint('--paths', 'sitemap/SITE.md', '--dispositions', JSON.stringify(dispositions)),
+      { from: 'user' },
+    );
+    expect(store.checkpoint).toHaveBeenCalledWith(expect.objectContaining({ dispositions }));
+  });
+});

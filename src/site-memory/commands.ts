@@ -483,20 +483,74 @@ function parseRevision(value: string): string | null {
 }
 
 function parsePaths(value: string): string[] {
-  return value.split(',').map(path => path.trim()).filter(Boolean);
+  const paths = value.split(',').map(path => path.trim());
+  if (paths.some(path => path === '')) throw new ArgumentError('--paths requires nonempty explicit paths.');
+  if (new Set(paths).size !== paths.length) throw new ArgumentError('--paths must not contain duplicates.');
+  return paths;
 }
 
+const DISPOSITION_KEYS = new Set(['id', 'status', 'evidenceRole', 'rejectionReason', 'conflictsWithMemory']);
+const SECRET_KEY = /^(password|passwd|secret|token|cookie|cookies|authorization|api[_-]?key|set-cookie)$/i;
+const SECRET_TEXT = /(password\s*[:=]|secret\s*[:=]|api[_-]?key|authorization\s*:|bearer\s+\S+|cookie\s*[:=])/i;
+
 function parseDispositions(value: string): CandidateDisposition[] {
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(value) as unknown;
-    if (Array.isArray(parsed)) return parsed as CandidateDisposition[];
-  } catch { /* covered by the shared message below */ }
-  throw new ArgumentError('--dispositions must be a JSON array.');
+    parsed = JSON.parse(value);
+  } catch {
+    throw new ArgumentError('--dispositions must be a JSON array.');
+  }
+  if (!Array.isArray(parsed)) throw new ArgumentError('--dispositions must be a JSON array.');
+  return parsed.map(parseDisposition);
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function parseDisposition(value: unknown): CandidateDisposition {
+  if (!isPlainObject(value)) throw new ArgumentError('--dispositions must be a JSON array of objects.');
+  for (const key of Object.keys(value)) {
+    if (SECRET_KEY.test(key) || !DISPOSITION_KEYS.has(key)) {
+      throw new ArgumentError('--dispositions contains an unknown or secret-bearing field.');
+    }
+  }
+  const id = value.id;
+  if (typeof id !== 'string' || id.trim() === '' || SECRET_TEXT.test(id)) {
+    throw new ArgumentError('--dispositions id must be a nonempty secret-free string.');
+  }
+  const status = value.status;
+  if (status !== 'ingested' && status !== 'rejected') {
+    throw new ArgumentError('--dispositions status must be ingested or rejected.');
+  }
+  const row: CandidateDisposition = { id, status };
+  if ('evidenceRole' in value) {
+    const role = value.evidenceRole;
+    if (role !== null && role !== 'supporting' && role !== 'dissenting') {
+      throw new ArgumentError('--dispositions evidenceRole must be supporting, dissenting, or null.');
+    }
+    row.evidenceRole = role;
+  }
+  if ('rejectionReason' in value) {
+    const reason = value.rejectionReason;
+    if (reason !== null && (typeof reason !== 'string' || SECRET_TEXT.test(reason))) {
+      throw new ArgumentError('--dispositions rejectionReason must be a secret-free string or null.');
+    }
+    row.rejectionReason = reason;
+  }
+  if ('conflictsWithMemory' in value) {
+    if (typeof value.conflictsWithMemory !== 'boolean') {
+      throw new ArgumentError('--dispositions conflictsWithMemory must be a boolean.');
+    }
+    row.conflictsWithMemory = value.conflictsWithMemory;
+  }
+  return row;
 }
 
 function parseLimit(value: string | undefined): number | undefined {
   if (value === undefined) return undefined;
-  const parsed = Number.parseInt(value, 10);
+  if (!/^\d+$/.test(value)) throw new ArgumentError('--limit must be a positive integer.');
+  const parsed = Number(value);
   if (!Number.isSafeInteger(parsed) || parsed < 1) throw new ArgumentError('--limit must be a positive integer.');
   return parsed;
 }
