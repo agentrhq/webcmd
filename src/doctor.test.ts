@@ -474,6 +474,25 @@ describe('doctor report rendering', () => {
     }
   });
 
+  it('uses custom wording when the selected custom runtime flaps', async () => {
+    const configDir = writeLocalConfig({ kind: 'custom', executablePath: managedBinaryPath });
+    mockGetDaemonHealth.mockResolvedValueOnce({ state: 'no-runtime', status: { runtimeConnected: false } });
+
+    try {
+      const report = await runBrowserDoctor();
+      const issues = report.issues.join('\n');
+      const text = strip(renderBrowserDoctorReport(report));
+
+      expect(report.runtimeFlaky).toBe(true);
+      expect(issues).toContain('custom runtime connection is unstable');
+      expect(issues).not.toContain('Cloak runtime connection is unstable');
+      expect(text).toContain('[WARN] Runtime: custom unstable');
+    } finally {
+      vi.unstubAllEnvs();
+      fs.rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
   it('uses Cloak readiness hints when the runtime is disconnected', async () => {
     mockConnect.mockRejectedValueOnce(new Error('runtime unavailable'));
     mockGetDaemonHealth.mockResolvedValueOnce({
