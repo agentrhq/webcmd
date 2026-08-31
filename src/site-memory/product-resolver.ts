@@ -35,10 +35,12 @@ export function resolveProduct(url: string, manifests: ProductManifest[]): Produ
   const interfaceManifest = manifests.find((manifest) => manifest.interfaces.some(({ key }) => key === requested.key));
   if (interfaceManifest) return resolved('confirmed-interface', requested, interfaceManifest.product, interfaceManifest, false);
 
-  const parent = requested.key === requested.registrableDomain
-    ? undefined
-    : manifests.find((manifest) => manifest.product.key === requested.registrableDomain);
-  if (parent) return resolved('provisional-fallback', requested, parent.product, parent, true);
+  const labels = requested.key.split('.');
+  const boundary = requested.registrableDomain.split('.').length;
+  for (let i = 1; i <= labels.length - boundary; i++) {
+    const parent = manifests.find((manifest) => manifest.product.key === labels.slice(i).join('.'));
+    if (parent) return resolved('provisional-fallback', requested, parent.product, parent, true);
+  }
 
   return resolved('new', requested, requested, undefined, false);
 }

@@ -56,6 +56,20 @@ describe('product identity resolution', () => {
     });
   });
 
+  it('chooses the nearest existing parent inside the registrable-domain boundary', () => {
+    const resolution = resolveProduct('https://admin.eu.example.com/', [
+      manifest('example.com'),
+      manifest('eu.example.com'),
+    ]);
+
+    expect(resolution).toMatchObject({
+      status: 'provisional-fallback',
+      readOnly: true,
+      product: { key: 'eu.example.com' },
+      requested: { key: 'admin.eu.example.com' },
+    });
+  });
+
   it('does not look beyond the PSL-aware registrable-domain boundary', () => {
     const resolution = resolveProduct('https://news.ycombinator.com/', [manifest('ycombinator.com')]);
 
