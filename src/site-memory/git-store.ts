@@ -52,9 +52,25 @@ async function commitPaths(root: string, paths: string[], message: string): Prom
   const relativePaths = paths.map((path) => containedRelativePath(root, path));
   await atomicWrite(join(root, '.gitignore'), GITIGNORE);
   await assertNoUnrelatedDirty(root, relativePaths);
-  await git(root, ['add', '--', ...relativePaths, '.gitignore']);
-  await git(root, ['commit', '--no-gpg-sign', '-m', message]);
+  try {
+    await git(root, ['add', '--', ...relativePaths, '.gitignore']);
+    await git(root, ['commit', '--no-gpg-sign', '-m', message]);
+  } catch (err) {
+    await restoreStagedPaths(root, relativePaths);
+    throw err;
+  }
   return (await git(root, ['rev-parse', 'HEAD'])).trim();
+}
+
+async function restoreStagedPaths(root: string, relativePaths: string[]): Promise<void> {
+  const paths = [...relativePaths, '.gitignore'];
+  try {
+    if (await revisionOf(root) !== null) {
+      await git(root, ['restore', '--staged', '--', ...paths]);
+    } else {
+      await git(root, ['rm', '--cached', '-f', '--ignore-unmatch', '--', ...paths]);
+    }
+  } catch {}
 }
 
 async function ensureRepository(root: string): Promise<void> {

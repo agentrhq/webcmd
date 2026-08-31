@@ -217,6 +217,105 @@ describe('candidate discovery', () => {
     await expect(addCandidate(base(homeDir, { environment: { cookie: 'session' } }))).rejects.toThrow(/secret/i);
     await expect(addCandidate(base(homeDir, { environment: { extra: 'nope' } }))).rejects.toThrow(/environment|invalid/i);
     await expect(addCandidate(base(homeDir, { environment: { localIp: { nested: true } } }))).rejects.toThrow(/environment|invalid/i);
+    await expect(addCandidate(base(homeDir, { environment: { machine: 'password: hunter2' } }))).rejects.toThrow(/secret/i);
+  });
+
+  it('rejects invalid timestamps, hosts, environment secrets, and status metadata', async () => {
+    const { homeDir } = await tempSites();
+    const summary = await addCandidate(base(homeDir, { observedAt: '2026-08-31T14:23:00+05:30' }));
+    const path = `candidates/${summary.id}.json`;
+    const raw = JSON.parse(await readProductFile('example.test', path, { homeDir }) ?? '');
+
+    await writeProductFile('example.test', path, `${JSON.stringify({ ...raw, observed_at: 'not-a-timestamp' }, null, 2)}\n`, { homeDir });
+    await expect(showCandidate('example.test', summary.id, { homeDir })).rejects.toThrow(/observed_at|timestamp|invalid/i);
+
+    await writeProductFile('example.test', path, `${JSON.stringify({ ...raw, observed_date_utc: '2026-08-30' }, null, 2)}\n`, { homeDir });
+    await expect(showCandidate('example.test', summary.id, { homeDir })).rejects.toThrow(/observed_date_utc|invalid/i);
+
+    await writeProductFile('example.test', path, `${JSON.stringify({ ...raw, hostname: 'not a host' }, null, 2)}\n`, { homeDir });
+    await expect(showCandidate('example.test', summary.id, { homeDir })).rejects.toThrow(/hostname|invalid/i);
+
+    await writeProductFile('example.test', path, `${JSON.stringify({ ...raw, domain: 'www.example.test' }, null, 2)}\n`, { homeDir });
+    await expect(showCandidate('example.test', summary.id, { homeDir })).rejects.toThrow(/domain|invalid/i);
+
+    await writeProductFile('example.test', path, `${JSON.stringify({
+      ...raw,
+      environment: { ...raw.environment, machine: 'password: hunter2' },
+    }, null, 2)}\n`, { homeDir });
+    await expect(showCandidate('example.test', summary.id, { homeDir })).rejects.toThrow(/secret/i);
+
+    await writeProductFile('example.test', path, `${JSON.stringify({ ...raw, evidence_role: 'supporting' }, null, 2)}\n`, { homeDir });
+    await expect(showCandidate('example.test', summary.id, { homeDir })).rejects.toThrow(/status|role|invalid/i);
+
+    await writeProductFile('example.test', path, `${JSON.stringify({
+      ...raw,
+      status: 'ingested',
+      evidence_role: 'supporting',
+      memory_commit: 'abc',
+      reviewed_at: '2026-08-31T14:23:00Z',
+      rejection_reason: 'nope',
+    }, null, 2)}\n`, { homeDir });
+    await expect(showCandidate('example.test', summary.id, { homeDir })).rejects.toThrow(/status|rejection|invalid/i);
+
+    await writeProductFile('example.test', path, `${JSON.stringify({
+      ...raw,
+      status: 'ingested',
+      evidence_role: null,
+      memory_commit: 'abc',
+      reviewed_at: '2026-08-31T14:23:00Z',
+      rejection_reason: null,
+    }, null, 2)}\n`, { homeDir });
+    await expect(showCandidate('example.test', summary.id, { homeDir })).rejects.toThrow(/status|role|invalid/i);
+
+    await writeProductFile('example.test', path, `${JSON.stringify({
+      ...raw,
+      status: 'rejected',
+      evidence_role: null,
+      memory_commit: null,
+      reviewed_at: null,
+      rejection_reason: 'transient',
+    }, null, 2)}\n`, { homeDir });
+    await expect(showCandidate('example.test', summary.id, { homeDir })).rejects.toThrow(/status|reviewed|invalid/i);
+
+    await writeProductFile('example.test', path, `${JSON.stringify({
+      ...raw,
+      status: 'rejected',
+      evidence_role: 'dissenting',
+      memory_commit: null,
+      reviewed_at: '2026-08-31T14:23:00Z',
+      rejection_reason: 'transient',
+    }, null, 2)}\n`, { homeDir });
+    await expect(showCandidate('example.test', summary.id, { homeDir })).rejects.toThrow(/status|role|invalid/i);
+  });
+
+  it('does not leave a staged candidate after commit failure', async () => {
+    const { homeDir, sites } = await tempSites();
+    await mkdir(sites, { recursive: true });
+    await writeFile(join(sites, 'keep-me.txt'), 'unrelated\n');
+    const originalPath = process.env.PATH;
+    const wrapperDir = await mkdtemp(join(tmpdir(), 'webcmd-candidate-commit-fail-'));
+    tempHomes.push(wrapperDir);
+    const { stdout } = await run('/usr/bin/which', ['git'], { encoding: 'utf8' });
+    const wrapper = join(wrapperDir, 'git');
+    await writeFile(wrapper, `#!/usr/bin/env node
+const { spawnSync } = require('node:child_process');
+const args = process.argv.slice(2);
+if (args.includes('commit')) process.exit(1);
+const result = spawnSync(${JSON.stringify(stdout.trim())}, args, { stdio: 'inherit' });
+process.exit(result.status ?? 1);
+`);
+    await chmod(wrapper, 0o755);
+    process.env.PATH = `${wrapperDir}:${originalPath}`;
+    try {
+      await expect(addCandidate(base(homeDir))).rejects.toThrow();
+    } finally {
+      process.env.PATH = originalPath;
+    }
+
+    expect(await jsonNames(sites)).toEqual([]);
+    expect((await git(sites, ['ls-files', '--stage'])).trim()).toBe('');
+    expect(await git(sites, ['status', '--porcelain', '-uall'])).toMatch(/^\?\? keep-me\.txt$/m);
+    expect(await git(sites, ['status', '--porcelain', '-uall'])).not.toMatch(/candidates/);
   });
 
   it('does not leave an uncommitted candidate when git open or commit fails', async () => {
@@ -309,8 +408,19 @@ async function markStatus(homeDir: string, id: string, status: Candidate['status
   const path = `candidates/${id}.json`;
   const body = await readProductFile('example.test', path, { homeDir });
   if (body === null) throw new Error(`missing ${id}`);
-  const raw = JSON.parse(body) as { status: string };
+  const raw = JSON.parse(body) as Record<string, unknown>;
   raw.status = status;
+  if (status === 'ingested') {
+    raw.evidence_role = 'supporting';
+    raw.memory_commit = 'abc';
+    raw.reviewed_at = '2026-08-31T14:23:00Z';
+    raw.rejection_reason = null;
+  } else if (status === 'rejected') {
+    raw.evidence_role = null;
+    raw.memory_commit = null;
+    raw.reviewed_at = '2026-08-31T14:23:00Z';
+    raw.rejection_reason = 'transient';
+  }
   await writeProductFile('example.test', path, `${JSON.stringify(raw, null, 2)}\n`, { homeDir });
 }
 

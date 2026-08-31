@@ -1,5 +1,5 @@
 import { execFile, spawnSync } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, realpath, rm, utimes, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, utimes, writeFile } from 'node:fs/promises';
 import { hostname, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -152,6 +152,44 @@ describe('sites git repository', () => {
     await expect(repo.withRepositoryLock(async () => 'ok')).resolves.toBe('ok');
   });
 
+  it('restores only staged paths after a failed first commit without HEAD', async () => {
+    const { homeDir, sites } = await tempSites();
+    await writeProductFile('example.test', 'manifest.json', '{}\n', { homeDir });
+    await mkdir(join(sites, '.drafts', 'task'), { recursive: true });
+    await writeFile(join(sites, '.drafts', 'task', 'scratch.md'), 'draft');
+    await writeFile(join(sites, 'keep-me.txt'), 'unrelated\n');
+    await installFailingCommitGit();
+
+    await expect(
+      (await openSitesRepository({ homeDir })).commit(['example.test/manifest.json'], 'init'),
+    ).rejects.toThrow();
+
+    expect((await git(sites, ['ls-files'])).trim()).toBe('');
+    expect(await git(sites, ['status', '--porcelain', '-uall'])).toMatch(/^\?\? keep-me\.txt$/m);
+    expect(await git(sites, ['status', '--porcelain', '-uall'])).not.toMatch(/^(A |AD|D )/m);
+    expect(await readFile(join(sites, 'example.test', 'manifest.json'), 'utf8')).toBe('{}\n');
+    await expect(git(sites, ['rev-parse', 'HEAD'])).rejects.toThrow();
+  });
+
+  it('restores only staged paths after a failed commit when HEAD exists', async () => {
+    const { homeDir, sites } = await tempSites();
+    await writeProductFile('example.test', 'manifest.json', '{}\n', { homeDir });
+    const repo = await openSitesRepository({ homeDir });
+    await repo.commit(['example.test/manifest.json'], 'init');
+    const head = (await git(sites, ['rev-parse', 'HEAD'])).trim();
+    await writeProductFile('example.test', 'notes.md', 'keep later\n', { homeDir });
+    await writeFile(join(sites, 'keep-me.txt'), 'unrelated\n');
+    await installFailingCommitGit();
+
+    await expect(repo.commit(['example.test/notes.md'], 'notes')).rejects.toThrow();
+
+    expect((await git(sites, ['ls-files'])).trim().split('\n').sort()).toEqual(['.gitignore', 'example.test/manifest.json']);
+    expect((await git(sites, ['rev-parse', 'HEAD'])).trim()).toBe(head);
+    expect(await git(sites, ['status', '--porcelain', '-uall'])).toMatch(/^\?\? keep-me\.txt$/m);
+    expect(await git(sites, ['status', '--porcelain', '-uall'])).toMatch(/^\?\? example\.test\/notes\.md$/m);
+    expect(await git(sites, ['status', '--porcelain', '-uall'])).not.toMatch(/^(A |AD)/m);
+  });
+
   it('excludes .git, .drafts, and other dot entries from product enumeration', async () => {
     const { homeDir, sites } = await tempSites();
     await writeProductFile('example.test', 'manifest.json', '{}\n', { homeDir });
@@ -173,6 +211,22 @@ async function tempSites() {
 async function git(cwd: string, args: string[]) {
   const { stdout } = await run('git', args, { cwd, encoding: 'utf8' });
   return stdout;
+}
+
+async function installFailingCommitGit() {
+  const dir = await mkdtemp(join(tmpdir(), 'webcmd-fail-git-'));
+  tempHomes.push(dir);
+  const { stdout } = await run('/usr/bin/which', ['git'], { encoding: 'utf8' });
+  const wrapper = join(dir, 'git');
+  await writeFile(wrapper, `#!/usr/bin/env node
+const { spawnSync } = require('node:child_process');
+const args = process.argv.slice(2);
+if (args.includes('commit')) process.exit(1);
+const result = spawnSync(${JSON.stringify(stdout.trim())}, args, { stdio: 'inherit' });
+process.exit(result.status ?? 1);
+`);
+  await chmod(wrapper, 0o755);
+  process.env.PATH = `${dir}:${process.env.PATH}`;
 }
 
 async function installSlowGit(delayMs: number) {

@@ -195,13 +195,24 @@ function decodeCandidate(value: unknown, expectedId: string): Candidate {
     ? raw.evidence_role
     : null;
   if (raw.evidence_role !== evidenceRole) throw new Error('Invalid candidate evidence_role.');
+  const observedAt = requiredString(raw.observed_at, 'observed_at');
+  const observed = new Date(observedAt);
+  if (Number.isNaN(observed.getTime())) throw new Error('Invalid candidate observed_at.');
+  const observedDateUtc = requiredString(raw.observed_date_utc, 'observed_date_utc');
+  if (observedDateUtc !== observed.toISOString().slice(0, 10)) throw new Error('Invalid candidate observed_date_utc.');
+  const hostname = requiredCanonicalHost(raw.hostname, 'hostname');
+  const domain = requiredCanonicalHost(raw.domain, 'domain');
+  const memoryCommit = nullableString(raw.memory_commit, 'memory_commit');
+  const reviewedAt = nullableString(raw.reviewed_at, 'reviewed_at');
+  const rejectionReason = nullableString(raw.rejection_reason, 'rejection_reason');
+  assertStatusMetadata(status as CandidateStatus, evidenceRole, memoryCommit, reviewedAt, rejectionReason);
   return {
     schemaVersion: 1,
     id,
-    domain: requiredString(raw.domain, 'domain'),
-    hostname: requiredString(raw.hostname, 'hostname'),
-    observedAt: requiredString(raw.observed_at, 'observed_at'),
-    observedDateUtc: requiredString(raw.observed_date_utc, 'observed_date_utc'),
+    domain,
+    hostname,
+    observedAt,
+    observedDateUtc,
     kind,
     claim: requiredText(requiredString(raw.claim, 'claim'), 'claim'),
     evidence: requiredText(requiredString(raw.evidence, 'evidence'), 'evidence'),
@@ -209,10 +220,47 @@ function decodeCandidate(value: unknown, expectedId: string): Candidate {
     environment: decodeEnvironment(raw.environment),
     status: status as CandidateStatus,
     evidenceRole,
-    memoryCommit: nullableString(raw.memory_commit, 'memory_commit'),
-    reviewedAt: nullableString(raw.reviewed_at, 'reviewed_at'),
-    rejectionReason: nullableString(raw.rejection_reason, 'rejection_reason'),
+    memoryCommit,
+    reviewedAt,
+    rejectionReason,
   };
+}
+
+function requiredCanonicalHost(value: unknown, field: 'hostname' | 'domain'): string {
+  const text = requiredString(value, field);
+  let identity;
+  try {
+    identity = canonicalProductKey(text);
+  } catch {
+    throw new Error(`Invalid candidate ${field}.`);
+  }
+  const expected = field === 'domain' ? identity.registrableDomain : identity.hostname;
+  if (expected !== text) throw new Error(`Invalid candidate ${field}.`);
+  return text;
+}
+
+function assertStatusMetadata(
+  status: CandidateStatus,
+  evidenceRole: 'supporting' | 'dissenting' | null,
+  memoryCommit: string | null,
+  reviewedAt: string | null,
+  rejectionReason: string | null,
+): void {
+  if (status === 'pending') {
+    if (evidenceRole !== null || memoryCommit !== null || reviewedAt !== null || rejectionReason !== null) {
+      throw new Error('Invalid candidate status.');
+    }
+    return;
+  }
+  if (status === 'ingested') {
+    if ((evidenceRole !== 'supporting' && evidenceRole !== 'dissenting') || memoryCommit === null || reviewedAt === null || rejectionReason !== null) {
+      throw new Error('Invalid candidate status.');
+    }
+    return;
+  }
+  if (evidenceRole !== null || memoryCommit !== null || reviewedAt === null || rejectionReason === null) {
+    throw new Error('Invalid candidate status.');
+  }
 }
 
 function decodeEnvironment(value: unknown): CandidateEnvironment {
@@ -250,9 +298,11 @@ function knownObject(value: unknown, allowed: Set<string>, label: string): Recor
 }
 
 function optionalString(obj: Record<string, unknown>, from: string, to: keyof CandidateEnvironment): CandidateEnvironment {
-  if (obj[from] === undefined) return {};
-  if (typeof obj[from] !== 'string' || !obj[from]) throw new Error('Invalid candidate environment.');
-  return { [to]: obj[from] };
+  const value = obj[from];
+  if (value === undefined) return {};
+  if (typeof value !== 'string' || !value) throw new Error('Invalid candidate environment.');
+  if (SECRET_TEXT.test(value)) throw new Error('Candidate evidence cannot include secret-bearing fields.');
+  return { [to]: value };
 }
 
 function requiredString(value: unknown, field: string): string {
