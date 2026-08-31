@@ -166,6 +166,7 @@ describe('webcmd setup', () => {
   it('reuses an installed SLAB app without reinstalling it', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-slab-reuse-'));
     const installSlabMacos = vi.fn();
+    const events: string[] = [];
 
     await expect(runHostedSetup({
       env: { WEBCMD_CONFIG_DIR: tempDir },
@@ -174,11 +175,33 @@ describe('webcmd setup', () => {
       platform: 'darwin',
       findSlabInstallation: () => ({ platform: 'darwin', appPath: '/Applications/SLAB.app', executablePath: '/Applications/SLAB.app/Contents/MacOS/SLAB' }),
       installSlabMacos,
+      inspectSlabStatus: async () => { events.push('hello'); return 'installed-running'; },
       fetchDaemonStatus: async () => null,
+      saveConfig: (config, configIo) => { events.push('save'); saveWebcmdConfig(config, configIo); },
       write: () => undefined,
     })).resolves.toBe(0);
 
     expect(installSlabMacos).not.toHaveBeenCalled();
+    expect(events).toEqual(['hello', 'save']);
+  });
+
+  it('rejects an installed SLAB app that does not answer its control protocol', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-slab-reuse-not-ready-'));
+    const env = { WEBCMD_CONFIG_DIR: tempDir } as NodeJS.ProcessEnv;
+    saveWebcmdConfig(makeLocalConfig(new Date('2026-08-30T00:00:00.000Z')), { env });
+
+    await expect(runHostedSetup({
+      env,
+      argv: ['--mode', 'local', '--browser', 'slab'],
+      isTTY: false,
+      platform: 'darwin',
+      findSlabInstallation: () => ({ platform: 'darwin', appPath: '/Applications/SLAB.app', executablePath: '/Applications/SLAB.app/Contents/MacOS/SLAB' }),
+      inspectSlabStatus: async () => 'installed-not-running',
+      fetchDaemonStatus: async () => null,
+      write: () => undefined,
+    })).resolves.toBe(1);
+
+    expect(JSON.parse(await readFile(getConfigPath({ env }), 'utf8'))).toMatchObject({ browser: { kind: 'cloak' } });
   });
 
   it('installs SLAB and probes its control protocol before persisting', async () => {
@@ -286,6 +309,25 @@ describe('webcmd setup', () => {
     })).resolves.toBe(1);
 
     expect(JSON.parse(await readFile(getConfigPath({ env: { WEBCMD_CONFIG_DIR: tempDir } }), 'utf8'))).toMatchObject({ browser: { kind: 'cloak' } });
+    expect(messages.join('')).toContain('webcmd daemon restart');
+  });
+
+  it('keeps a valid selection and prints restart guidance when daemon restart fails', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-restart-failure-'));
+    const env = { WEBCMD_CONFIG_DIR: tempDir } as NodeJS.ProcessEnv;
+    const messages: string[] = [];
+
+    await expect(runHostedSetup({
+      env,
+      argv: ['--mode', 'local'],
+      isTTY: false,
+      resolveCloakPackage: async () => 'file:///cloakbrowser/index.js',
+      fetchDaemonStatus: async () => daemonStatus('custom'),
+      restartDaemon: async () => { throw new Error('port still busy'); },
+      write: message => { messages.push(message); },
+    })).resolves.toBe(1);
+
+    expect(JSON.parse(await readFile(getConfigPath({ env }), 'utf8'))).toMatchObject({ browser: { kind: 'cloak' } });
     expect(messages.join('')).toContain('webcmd daemon restart');
   });
 

@@ -217,8 +217,9 @@ async function validateLocalBrowser(browser: LocalBrowserConfig, io: SetupIo): P
     return { kind: 'custom', executablePath };
   }
   if ((io.platform ?? process.platform) !== 'darwin') throw new Error('SLAB setup is only supported on macOS.');
-  if ((io.findSlabInstallation ?? defaultFindSlabInstallation)()) return browser;
-  await (io.installSlabMacos ?? (() => installSlabMacos(createSlabInstallerIo(), { launchAfterInstall: true })))();
+  if (!(io.findSlabInstallation ?? defaultFindSlabInstallation)()) {
+    await (io.installSlabMacos ?? (() => installSlabMacos(createSlabInstallerIo(), { launchAfterInstall: true })))();
+  }
   if (!slabStatusHasHello(await (io.inspectSlabStatus ?? inspectSlabStatus)())) throw new Error('SLAB did not report its control protocol after launch.');
   return browser;
 }
@@ -228,7 +229,13 @@ function defaultFindSlabInstallation(): SlabInstallation | null {
 }
 
 async function restartConfiguredDaemon(browser: LocalBrowserConfig, io: SetupIo): Promise<void> {
-  const result = await (io.restartDaemon ?? restartDaemon)();
+  let result: DaemonRestartResult;
+  try {
+    result = await (io.restartDaemon ?? restartDaemon)();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new DaemonRestartError(message);
+  }
   const expected = browser.kind === 'slab' ? 'SLAB' : browser.kind;
   if (!result.stopped || result.status?.runtimeName !== expected) {
     throw new DaemonRestartError(`Daemon restarted without the selected ${expected} runtime.`);
