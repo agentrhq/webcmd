@@ -57,6 +57,9 @@ const PRODUCT_ROOTS = [
   'README.md',
   'PRIVACY.md',
   '.codex-plugin',
+  'benchmarks',
+  'start.md',
+  'Makefile',
 ];
 
 function productFiles(): string[] {
@@ -64,7 +67,7 @@ function productFiles(): string[] {
   const collect = (absolute: string) => {
     const stat = fs.statSync(absolute);
     if (stat.isFile()) {
-      if (/\.(?:ts|mjs|js|md|mdx|json)$/.test(absolute)) files.push(absolute);
+      if (/\.(?:ts|mjs|js|md|mdx|json|py)$/.test(absolute) || path.basename(absolute) === 'Makefile') files.push(absolute);
       return;
     }
     for (const entry of fs.readdirSync(absolute, { withFileTypes: true })) {
