@@ -13,7 +13,9 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Command } from 'commander';
 import { CLI_COMMAND } from './brand.js';
+import { HOSTED_ROOT_HELP } from './completion-shared.js';
 import { getAdapterLoadFailures, missingPluginGuidance, PLUGINS_DIR, USER_CLIS_DIR } from './discovery.js';
+import { WEBCMD_ROOT_COMMANDS } from './hooks.js';
 
 /**
  * High-priority overrides: intent that edit distance cannot infer.
@@ -151,6 +153,15 @@ export function unknownRootCommandMessage(
     ].join('\n');
   }
   return missingPluginGuidance(name);
+}
+
+export function unknownSiteCommandHint(site: string, commandName: string): string {
+  return `To author this command: ${CLI_COMMAND} browser init ${site}/${commandName}`;
+}
+
+export function isReservedRootCommand(name: string): boolean {
+  return WEBCMD_ROOT_COMMANDS.has(name)
+    || HOSTED_ROOT_HELP.commands.some(command => command.name.split(/\s/, 1)[0] === name);
 }
 
 /** Message for an unknown subcommand inside a namespace. Caller writes it to stderr. */

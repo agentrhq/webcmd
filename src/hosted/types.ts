@@ -41,6 +41,9 @@ export interface HostedCommand extends CommandSurfaceMetadata {
   defaultFormat?: string | null;
   freshPage?: boolean;
   adapterPackageId?: string;
+  adapterPackageName?: string;
+  adapterPackageVersion?: string;
+  origin?: string;
   sourceFile?: string;
   modulePath?: string;
 }

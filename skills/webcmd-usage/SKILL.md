@@ -139,6 +139,7 @@ Use this fallback order:
 | --- | --- |
 | `-f, --format <fmt>` | `table` in TTY by default; `yaml` outside TTY by default; also supports `json`, `plain`, `md`, `csv`. Agents usually want `-f json`. |
 | `-v, --verbose` | Debug logs and stack traces on failure; also sets `WEBCMD_VERBOSE=1`. |
+| `--workspace <id>` | Workspace id/slug. Same as `WEBCMD_WORKSPACE`. First use creates it. |
 
 Command-specific flags such as `--limit` and `--filter` are not universal. Read `<site> <command> --help`.
 
@@ -164,6 +165,7 @@ Some commands override the default through `cmd.defaultFormat`; read `--help`.
 | `WEBCMD_CACHE_DIR` | `~/.webcmd/cache` | Network capture and browser-state cache. |
 | `WEBCMD_WINDOW` | `background` | Explicitly override browser window mode with `foreground` or `background`. |
 | `WEBCMD_VERBOSE` | `false` | Verbose logging, also triggered by `-v`. |
+| `WEBCMD_WORKSPACE` | unset | Workspace id/slug when `--workspace` is omitted. |
 
 ## Self-Repair
 
@@ -198,7 +200,7 @@ argument, transient, or unreproduced failures.
 
 Storage paths:
 
-- Private: `~/.webcmd/clis/<site>/<command>.js`. This path takes precedence over the same command from an installed plugin; `webcmd list`'s `origin` column shows which space each command resolves from.
+- Private: `~/.webcmd/clis/<site>/<command>.js`. This path takes precedence over the same command from an installed plugin; `webcmd list`'s `origin` column shows which space each command resolves from (`builtin`, `plugin:<name>`, `local`, `override:<plugin>`).
 - Public (main repo, official or community): `plugins/<plugin-name>/` with its own `webcmd-plugin.json`
 
 The main Webcmd repo is itself a plugin monorepo: there is no separate "official bundle" location. Every public adapter belongs under `plugins/<plugin-name>/`. Do not hand-edit the root `webcmd-plugin.json` or generated README catalog; after merge, the community-plugin sync discovers each plugin manifest and updates both automatically.

@@ -172,10 +172,6 @@ Webcmd Cloud can run supported commands and browser sessions on hosted infrastru
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md).
 
-## Star History
-
-[![Star history](https://raw.githubusercontent.com/agentrhq/star-history-action/main/charts/agentrhq/webcmd.svg)](https://github.com/agentrhq/webcmd/stargazers)
-
 ## License
 
 Released under the terms in [`LICENSE`](./LICENSE).

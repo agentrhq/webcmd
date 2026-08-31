@@ -10,6 +10,7 @@ import {
   type PresentableCommand,
   type CommandListPresentation,
 } from '../command-presentation.js';
+import { formatCommandOrigin } from '../command-origin.js';
 import type { HostedCommand, HostedManifest } from './types.js';
 import { webFetchCommand } from '../fetch/command.js';
 
@@ -67,10 +68,21 @@ export function presentHostedCommand(command: HostedCommand): PresentableCommand
   return toPresentableCommand(command);
 }
 
+function hostedListOrigin(command: HostedCommand): string | undefined {
+  if (command.origin) return command.origin;
+  if (command.clientOwned) return formatCommandOrigin({ kind: 'builtin' });
+  if (command.adapterPackageId === 'pkg_default_webcmd' || command.adapterPackageName === '@agentrhq/webcmd') {
+    return formatCommandOrigin({ kind: 'builtin' });
+  }
+  return undefined;
+}
+
 function presentHostedListCommand(command: HostedCommand): PresentableCommand {
+  const origin = hostedListOrigin(command);
   return {
     ...presentHostedCommand(command),
     availability: isLocalOnlyHostedCommand(command) ? 'LOCAL' : 'HOSTED',
+    ...(origin ? { origin } : {}),
   };
 }
 
@@ -79,9 +91,11 @@ export function hostedListRows(manifest: HostedManifest, structured: boolean): R
   const commandsByName = new Map(commands.map((command) => [`${command.site}/${command.name}`, command]));
   return commandListRows(commands.map(presentHostedCommand), structured).map((row) => {
     const command = commandsByName.get(String(row.command))!;
+    const origin = hostedListOrigin(command);
     return {
       ...row,
       availability: isLocalOnlyHostedCommand(command) ? 'LOCAL' : 'HOSTED',
+      ...(origin ? { origin } : {}),
       ...(structured && command.clientOwned ? { clientOwned: true } : {}),
     };
   });

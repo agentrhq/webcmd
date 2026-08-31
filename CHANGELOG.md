@@ -16,6 +16,34 @@
 - Hosted command lists retain excluded commands as `LOCAL` rows and return a local-only error instead of plugin-install guidance.
 - Local auth commands initialize user CLI compatibility shims, and hosted auth uses the same native grammar, flags, choices, and help as local mode.
 
+## [0.7.10](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.9...webcmd-v0.7.10) (2026-08-28)
+
+### Highlights
+- Hosted mode can now negotiate and run core commands advertised by Webcmd Cloud, including diagnostics, profile lifecycle, and plugin catalog commands. Help, completion, and execution only expose capabilities supported by the connected Cloud service.
+- Registered external CLIs can now run locally while Webcmd is configured for hosted mode. Arguments and child exit codes are preserved, and hosted sites take precedence if names collide.
+
+### Improvements
+- Hosted help and shell completion now advertise locally handled `skills`, `update`, and `external` commands.
+- Hosted root help now includes `session`, `site`, and `--workspace <id>`, including the `WEBCMD_WORKSPACE` environment-variable alternative.
+- Hosted authentication commands now use the same grammar, flags, choices, and help as local mode.
+- `webcmd profile use` now stores a validated hosted profile preference locally.
+- Hosted command lists retain unavailable commands as `LOCAL` entries and report origins consistently as `builtin`, `plugin:<name>`, `local`, or `override:<plugin>`.
+- Unknown site subcommands now suggest the corresponding authoring command, such as `webcmd browser init <site>/<command>`.
+- Added public package exports for the hosted core-command capability contract.
+
+### Fixes
+- **Breaking:** `webcmd doctor` now exits with code 78 (`CONFIG_ERROR`) when a required readiness check fails. Its stdout report is unchanged, and soft warnings do not affect the exit code.
+- Fixed browser runs hanging after popup or download events fired. `waitForEvent('popup')` and `waitForEvent('download')` now resolve correctly, while event-specific timeouts take effect before the outer run timeout.
+- `external install` now returns a nonzero exit code when installation fails.
+- External CLI registrations using explicit executable paths are now detected without an unnecessary `PATH` lookup.
+
+### Adapters
+- Hosted mode can run Cloud-advertised adapter workflows including `validate`, `verify`, `convention-audit`, `adapter status`, and `adapter reset`.
+- Added the public `@agentrhq/webcmd/adapter-analysis` export for platform-neutral adapter validation and convention auditing.
+
+### Contributors
+[@ankitranjan7](https://github.com/ankitranjan7)
+
 ## [0.7.9](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.8...webcmd-v0.7.9) (2026-08-28)
 
 ### Highlights

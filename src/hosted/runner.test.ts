@@ -1708,6 +1708,7 @@ describe('runHostedCli', () => {
     expect(stderr.text()).toBe([
       "error: unknown command 'missing-command'",
       'help: valid subcommands for `webcmd github`: whoami',
+      'To author this command: webcmd browser init github/missing-command',
       '',
     ].join('\n'));
     expect(stdout.text()).toBe('');
