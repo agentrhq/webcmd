@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getMemoryContext } from './context.js';
+import { getMemoryContext, parseProductManifest } from './context.js';
 import { openSitesRepository } from './git-store.js';
 import { readProductFile, writeProductFile } from './local-store.js';
 import type { GlobalSeedProvider } from './seed-client.js';
@@ -15,6 +15,24 @@ const tempHomes: string[] = [];
 
 afterEach(async () => {
   await Promise.all(tempHomes.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+});
+
+describe('parseProductManifest', () => {
+  const product = {
+    key: 'example.test',
+    hostname: 'example.test',
+    displayHostname: 'example.test',
+    registrableDomain: 'example.test',
+  };
+  const valid = { schemaVersion: 1, product, interfaces: [], seed: { status: 'absent' as const } };
+
+  it('accepts a v1 manifest and rejects missing, partial, malformed, and non-v1 input', () => {
+    expect(parseProductManifest(`${JSON.stringify(valid)}\n`)).toEqual(valid);
+    expect(parseProductManifest(null)).toBeUndefined();
+    expect(parseProductManifest('{')).toBeUndefined();
+    expect(parseProductManifest(JSON.stringify({ ...valid, schemaVersion: 2 }))).toBeUndefined();
+    expect(parseProductManifest(JSON.stringify({ schemaVersion: 1, product, seed: { status: 'absent' } }))).toBeUndefined();
+  });
 });
 
 describe('memory context initialization', () => {

@@ -12,6 +12,7 @@ import {
   addResponseSample,
   appendNote,
   copyDraftFiles,
+  deleteProductFile,
   getVerifyFixture,
   listProductKeys,
   listSiteMemory,
@@ -279,6 +280,18 @@ describe('local site memory store', () => {
     await expect(writeProductFile('example.test', '../outside.md', 'nope\n', { homeDir }))
       .rejects.toThrow(/Invalid site memory path/);
     await expect(readProductFile('example.test', '../outside.md', { homeDir }))
+      .rejects.toThrow(/Invalid site memory path/);
+  });
+
+  it('deletes a contained product file and ignores a missing path', async () => {
+    const homeDir = await tempHome();
+    await writeProductFile('example.test', 'sitemap/SITE.md', '# Example\n', { homeDir });
+
+    await deleteProductFile('example.test', 'sitemap/SITE.md', { homeDir });
+
+    await expect(readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).resolves.toBeNull();
+    await expect(deleteProductFile('example.test', 'sitemap/SITE.md', { homeDir })).resolves.toBeUndefined();
+    await expect(deleteProductFile('example.test', '../outside.md', { homeDir }))
       .rejects.toThrow(/Invalid site memory path/);
   });
 

@@ -70,6 +70,35 @@ describe('checkpoint compare-and-swap', () => {
     await expect(checkpoint(homeDir, { expectedRevision: revision })).rejects.toThrow(/incompatible beta schema/i);
     expect(await readFile(join(product, 'SITE.md'), 'utf8')).toBe(legacy);
   });
+
+  it.each([
+    ['missing', null],
+    ['malformed', '{'],
+    ['non-v1', JSON.stringify({
+      schemaVersion: 2,
+      product: { key: 'example.test', hostname: 'example.test', displayHostname: 'example.test', registrableDomain: 'example.test' },
+      interfaces: [],
+      seed: { status: 'absent' },
+    })],
+    ['partial', JSON.stringify({
+      schemaVersion: 1,
+      product: { key: 'example.test', hostname: 'example.test', displayHostname: 'example.test', registrableDomain: 'example.test' },
+      seed: { status: 'absent' },
+    })],
+  ] as const)('refuses a %s product manifest without copying the draft', async (_label, body) => {
+    const { homeDir, sites, revision: initial } = await primed();
+    const manifest = join(sites, 'example.test', 'manifest.json');
+    if (body === null) await rm(manifest);
+    else await writeFile(manifest, `${body}\n`);
+    await git(sites, ['add', '-A', 'example.test/manifest.json']);
+    await git(sites, ['-c', 'user.name=webcmd', '-c', 'user.email=webcmd@local', 'commit', '-m', 'bad-manifest']);
+    const revision = (await git(sites, ['rev-parse', 'HEAD'])).trim();
+    expect(revision).not.toBe(initial);
+    await writeDraft(homeDir, { 'sitemap/SITE.md': `# Next\n\n${FACT}` });
+
+    await expect(checkpoint(homeDir, { expectedRevision: revision, reason: 'direct_correction' })).rejects.toThrow(/incompatible beta schema|manifest|schema/i);
+    expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBe(SITE);
+  });
 });
 
 describe('checkpoint candidate dispositions', () => {
@@ -171,6 +200,66 @@ describe('checkpoint candidate dispositions', () => {
     expect((await showCandidate('example.test', pending.id, { homeDir })).status).toBe('pending');
   });
 
+  it('requires candidate_ingestion dispositions and a memory change', async () => {
+    const { homeDir } = await primed();
+    const first = await addCandidate(candidate(homeDir, { observedAt: '2026-08-30T12:00:00Z' }));
+    const second = await addCandidate(candidate(homeDir, { observedAt: '2026-08-31T12:00:00Z', claim: 'Later' }));
+    await writeDraft(homeDir, { 'sitemap/SITE.md': `# Example\n\n${FACT}- [verified 2026-08-31] Later path is denser.\n` });
+
+    await expect(checkpoint(homeDir)).rejects.toThrow(/disposition/i);
+    await writeDraft(homeDir, { 'sitemap/SITE.md': SITE });
+    await expect(checkpoint(homeDir, {
+      dispositions: [
+        { id: first.id, status: 'ingested', evidenceRole: 'supporting' },
+        { id: second.id, status: 'ingested', evidenceRole: 'supporting' },
+      ],
+    })).rejects.toThrow(/memory|change|unchanged/i);
+    expect((await showCandidate('example.test', first.id, { homeDir })).status).toBe('pending');
+  });
+
+  it('rejects dispositions on direct_correction and major_rewrite', async () => {
+    const { homeDir } = await primed();
+    const pending = await addCandidate(candidate(homeDir));
+    await writeDraft(homeDir, { 'sitemap/SITE.md': `# Example\n\n- [verified 2026-09-01] /hot is the live listing.\n` });
+
+    await expect(checkpoint(homeDir, {
+      reason: 'direct_correction',
+      dispositions: [{ id: pending.id, status: 'rejected', rejectionReason: 'stale' }],
+    })).rejects.toThrow(/disposition/i);
+    await writeDraft(homeDir, {
+      'sitemap/SITE.md': siteLines(200, true),
+      'sitemap/references/listing.md': REF,
+    });
+    await expect(checkpoint(homeDir, {
+      reason: 'major_rewrite',
+      paths: ['sitemap/SITE.md', 'sitemap/references/listing.md'],
+      dispositions: [{ id: pending.id, status: 'rejected', rejectionReason: 'stale' }],
+    })).rejects.toThrow(/disposition/i);
+    expect((await showCandidate('example.test', pending.id, { homeDir })).status).toBe('pending');
+  });
+
+  it('rejects duplicate Markdown paths and duplicate candidate ids', async () => {
+    const { homeDir } = await primed();
+    const first = await addCandidate(candidate(homeDir, { observedAt: '2026-08-30T12:00:00Z' }));
+    const second = await addCandidate(candidate(homeDir, { observedAt: '2026-08-31T12:00:00Z', claim: 'Later' }));
+    await writeDraft(homeDir, { 'sitemap/SITE.md': `# Example\n\n${FACT}- [verified 2026-08-31] Later path is denser.\n` });
+
+    await expect(checkpoint(homeDir, {
+      paths: ['sitemap/SITE.md', 'sitemap/SITE.md'],
+      dispositions: [
+        { id: first.id, status: 'ingested', evidenceRole: 'supporting' },
+        { id: second.id, status: 'ingested', evidenceRole: 'supporting' },
+      ],
+    })).rejects.toThrow(/duplicate|path/i);
+    await expect(checkpoint(homeDir, {
+      dispositions: [
+        { id: first.id, status: 'ingested', evidenceRole: 'supporting' },
+        { id: first.id, status: 'ingested', evidenceRole: 'supporting' },
+      ],
+    })).rejects.toThrow(/duplicate|id/i);
+    expect((await showCandidate('example.test', first.id, { homeDir })).status).toBe('pending');
+  });
+
   it('records supporting and dissenting roles and requires rejection reasons', async () => {
     const { homeDir } = await primed();
     const support = await addCandidate(candidate(homeDir, { observedAt: '2026-08-30T12:00:00Z' }));
@@ -247,6 +336,56 @@ describe('checkpoint git transaction', () => {
     expect((await showCandidate('example.test', later.id, { homeDir: blocked.homeDir })).status).toBe('pending');
   });
 
+  it('restores prior Markdown, deletes new paths, and keeps the index clean if memory commit fails', async () => {
+    const blocked = await primed();
+    const pending = await addCandidate(candidate(blocked.homeDir, { observedAt: '2026-08-30T12:00:00Z' }));
+    const later = await addCandidate(candidate(blocked.homeDir, { observedAt: '2026-08-31T12:00:00Z', claim: 'Later' }));
+    const next = `# Example\n\n${FACT}- [verified 2026-08-31] Later path is denser.\n`;
+    await writeDraft(blocked.homeDir, {
+      'sitemap/SITE.md': next,
+      'sitemap/references/listing.md': REF,
+    });
+
+    await withGitWrapper(blocked.homeDir, 'memory', async () => {
+      await expect(checkpoint(blocked.homeDir, {
+        paths: ['sitemap/SITE.md', 'sitemap/references/listing.md'],
+        dispositions: [
+          { id: pending.id, status: 'ingested', evidenceRole: 'supporting' },
+          { id: later.id, status: 'ingested', evidenceRole: 'supporting' },
+        ],
+      })).rejects.toThrow();
+    });
+
+    expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir: blocked.homeDir })).toBe(SITE);
+    expect(await readProductFile('example.test', 'sitemap/references/listing.md', { homeDir: blocked.homeDir })).toBeNull();
+    expect((await showCandidate('example.test', pending.id, { homeDir: blocked.homeDir })).status).toBe('pending');
+    expect((await showCandidate('example.test', later.id, { homeDir: blocked.homeDir })).status).toBe('pending');
+    expect((await git(blocked.sites, ['status', '--porcelain', '-uall'])).trim()).toBe('');
+    expect((await git(blocked.sites, ['diff', '--cached', '--name-only'])).trim()).toBe('');
+  });
+
+  it('combines memory commit and rollback errors', async () => {
+    const blocked = await primed();
+    const pending = await addCandidate(candidate(blocked.homeDir, { observedAt: '2026-08-30T12:00:00Z' }));
+    const later = await addCandidate(candidate(blocked.homeDir, { observedAt: '2026-08-31T12:00:00Z', claim: 'Later' }));
+    const next = `# Example\n\n${FACT}- [verified 2026-08-31] Later path is denser.\n`;
+    await writeDraft(blocked.homeDir, { 'sitemap/SITE.md': next });
+    const sitemapDir = join(blocked.sites, 'example.test', 'sitemap');
+
+    try {
+      await withGitWrapper(blocked.homeDir, 'memory', async () => {
+        await expect(checkpoint(blocked.homeDir, {
+          dispositions: [
+            { id: pending.id, status: 'ingested', evidenceRole: 'supporting' },
+            { id: later.id, status: 'ingested', evidenceRole: 'supporting' },
+          ],
+        })).rejects.toThrow(/checkpoint memory[\s\S]*(EACCES|EPERM|permission denied)|(EACCES|EPERM|permission denied)[\s\S]*checkpoint memory/i);
+      }, sitemapDir);
+    } finally {
+      await chmod(sitemapDir, 0o755).catch(() => undefined);
+    }
+  });
+
   it('resumes a failed provenance commit without replaying the memory change', async () => {
     const { homeDir, sites } = await primed();
     const first = await addCandidate(candidate(homeDir, { observedAt: '2026-08-30T12:00:00Z' }));
@@ -277,6 +416,71 @@ describe('checkpoint git transaction', () => {
     expect(resumed.provenanceCommit).not.toBe(memoryRevision);
     expect((await git(sites, ['log', '--oneline', '--', 'example.test/sitemap/SITE.md'])).trim().split('\n')).toHaveLength(2);
     expect((await git(sites, ['show', `HEAD:example.test/candidates/${first.id}.json`]))).toMatch(/"status": "ingested"/);
+  });
+
+  it('finishes remaining provenance writes without replaying memory', async () => {
+    const { homeDir, sites } = await primed();
+    const first = await addCandidate(candidate(homeDir, { observedAt: '2026-08-30T12:00:00Z' }));
+    const second = await addCandidate(candidate(homeDir, { observedAt: '2026-08-31T12:00:00Z', claim: 'Later' }));
+    const next = `# Example\n\n${FACT}- [verified 2026-08-31] Later path is denser.\n`;
+    await writeDraft(homeDir, { 'sitemap/SITE.md': next });
+    const dispositions = [
+      { id: first.id, status: 'ingested' as const, evidenceRole: 'supporting' as const },
+      { id: second.id, status: 'ingested' as const, evidenceRole: 'supporting' as const },
+    ];
+
+    await withGitWrapper(homeDir, 'provenance', async () => {
+      await expect(checkpoint(homeDir, { dispositions })).rejects.toThrow();
+    });
+
+    const memoryRevision = (await git(sites, ['rev-parse', 'HEAD'])).trim();
+    const pendingBody = JSON.parse(await readProductFile('example.test', `candidates/${second.id}.json`, { homeDir }) ?? '');
+    pendingBody.status = 'pending';
+    pendingBody.evidence_role = null;
+    pendingBody.memory_commit = null;
+    pendingBody.reviewed_at = null;
+    pendingBody.rejection_reason = null;
+    await writeProductFile('example.test', `candidates/${second.id}.json`, `${JSON.stringify(pendingBody, null, 2)}\n`, { homeDir });
+
+    const resumed = await checkpoint(homeDir, { expectedRevision: memoryRevision, dispositions });
+    expect(resumed.status).toBe('committed');
+    if (resumed.status !== 'committed') throw new Error('expected commit');
+    expect(resumed.memoryCommit).toBe(memoryRevision);
+    expect(resumed.provenanceCommit).toMatch(/^[0-9a-f]{40}$/);
+    expect((await git(sites, ['log', '--oneline', '--', 'example.test/sitemap/SITE.md'])).trim().split('\n')).toHaveLength(2);
+    expect((await showCandidate('example.test', first.id, { homeDir })).status).toBe('ingested');
+    expect((await showCandidate('example.test', second.id, { homeDir }))).toMatchObject({
+      status: 'ingested',
+      memoryCommit: memoryRevision,
+    });
+  });
+
+  it('rejects provenance recovery when a candidate does not match the requested terminal state', async () => {
+    const { homeDir, sites } = await primed();
+    const first = await addCandidate(candidate(homeDir, { observedAt: '2026-08-30T12:00:00Z' }));
+    const second = await addCandidate(candidate(homeDir, { observedAt: '2026-08-31T12:00:00Z', claim: 'Later' }));
+    const next = `# Example\n\n${FACT}- [verified 2026-08-31] Later path is denser.\n`;
+    await writeDraft(homeDir, { 'sitemap/SITE.md': next });
+    const dispositions = [
+      { id: first.id, status: 'ingested' as const, evidenceRole: 'supporting' as const },
+      { id: second.id, status: 'ingested' as const, evidenceRole: 'supporting' as const },
+    ];
+
+    await withGitWrapper(homeDir, 'provenance', async () => {
+      await expect(checkpoint(homeDir, { dispositions })).rejects.toThrow();
+    });
+
+    const memoryRevision = (await git(sites, ['rev-parse', 'HEAD'])).trim();
+    const mismatched = JSON.parse(await readProductFile('example.test', `candidates/${first.id}.json`, { homeDir }) ?? '');
+    mismatched.status = 'rejected';
+    mismatched.evidence_role = null;
+    mismatched.memory_commit = null;
+    mismatched.rejection_reason = 'stale';
+    await writeProductFile('example.test', `candidates/${first.id}.json`, `${JSON.stringify(mismatched, null, 2)}\n`, { homeDir });
+
+    await expect(checkpoint(homeDir, { expectedRevision: memoryRevision, dispositions })).rejects.toThrow(/pending|transition|status|mismatch/i);
+    expect((await git(sites, ['log', '--oneline', '--', 'example.test/sitemap/SITE.md'])).trim().split('\n')).toHaveLength(2);
+    expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBe(next);
   });
 });
 
@@ -410,7 +614,7 @@ async function writeDraft(homeDir: string, files: Record<string, string>, taskId
   }
 }
 
-async function withGitWrapper(homeDir: string, fail: 'memory' | 'provenance', fn: () => Promise<void>) {
+async function withGitWrapper(homeDir: string, fail: 'memory' | 'provenance', fn: () => Promise<void>, chmodOnFail?: string) {
   const originalPath = process.env.PATH;
   const wrapperDir = await mkdtemp(join(tmpdir(), 'webcmd-checkpoint-git-'));
   tempHomes.push(wrapperDir);
@@ -418,10 +622,14 @@ async function withGitWrapper(homeDir: string, fail: 'memory' | 'provenance', fn
   const needle = fail === 'memory' ? 'checkpoint memory' : 'checkpoint provenance';
   const wrapper = join(wrapperDir, 'git');
   await writeFile(wrapper, `#!/usr/bin/env node
+const { chmodSync } = require('node:fs');
 const { spawnSync } = require('node:child_process');
 const args = process.argv.slice(2);
 const msg = args.includes('-m') ? args[args.indexOf('-m') + 1] : '';
-if (args.includes('commit') && msg.includes(${JSON.stringify(needle)})) process.exit(1);
+if (args.includes('commit') && msg.includes(${JSON.stringify(needle)})) {
+  ${chmodOnFail ? `try { chmodSync(${JSON.stringify(chmodOnFail)}, 0o555); } catch {}` : ''}
+  process.exit(1);
+}
 const result = spawnSync(${JSON.stringify(stdout.trim())}, args, { stdio: 'inherit' });
 process.exit(result.status ?? 1);
 `);

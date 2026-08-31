@@ -197,6 +197,17 @@ export async function writeProductFile(productKey: string, path: string, body: s
   await withWriteLock(target, () => atomicWrite(target, body));
 }
 
+export async function deleteProductFile(productKey: string, path: string, opts: LocalStoreOptions = {}): Promise<void> {
+  const productRoot = join(sitesRoot(opts), productSegment(productKey));
+  const relative = containedRelativePath(productRoot, path);
+  try {
+    await unlink(join(productRoot, ...relative.split('/')));
+  } catch (err) {
+    if (isNodeError(err) && err.code === 'ENOENT') return;
+    throw err;
+  }
+}
+
 export async function copyDraftFiles(productKey: string, taskId: string, paths: string[], opts: LocalStoreOptions = {}): Promise<void> {
   const draftRoot = join(sitesRoot(opts), '.drafts', productSegment(taskId), productSegment(productKey));
   for (const path of paths) {

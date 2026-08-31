@@ -1,8 +1,9 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { readCandidateRecord, updateCandidateRecord } from './candidates.js';
+import { parseProductManifest } from './context.js';
 import { openSitesRepository } from './git-store.js';
-import { containedRelativePath, copyDraftFiles, readProductFile, sitesRoot, type LocalStoreOptions } from './local-store.js';
+import { containedRelativePath, copyDraftFiles, deleteProductFile, readProductFile, sitesRoot, writeProductFile, type LocalStoreOptions } from './local-store.js';
 import type {
   Candidate,
   CandidateDisposition,
@@ -27,17 +28,17 @@ const POINTER = /\]\(references\/[^)]+\)/;
 
 export async function checkpointMemory(input: CheckpointInput): Promise<CheckpointResult> {
   if (!REASONS.has(input.reason)) throw new Error(`Invalid checkpoint reason: ${input.reason}`);
-  const paths = input.paths.map(assertMarkdownPath);
+  const paths = unique(input.paths.map(assertMarkdownPath), 'Duplicate site memory Markdown path.');
   const product = canonicalProductKey(input.product).key;
   const taskId = memorySegment(input.taskId);
-  const dispositions = input.dispositions ?? [];
+  const dispositions = uniqueBy(input.dispositions ?? [], (row) => row.id, 'Duplicate candidate id.');
   const repo = await openSitesRepository(input);
 
   return repo.withRepositoryLock(async () => {
     const actual = await repo.revision();
     const loaded = await Promise.all(dispositions.map((row) => readCandidateRecord(product, row.id, input)));
 
-    if (actual && input.expectedRevision === actual && isIncompleteProvenance(loaded, dispositions, actual)) {
+    if (actual && input.expectedRevision === actual && isProvenanceRecovery(loaded, dispositions, actual)) {
       await writeDispositions(product, loaded, dispositions, actual, input);
       const provenanceCommit = await repo.commit(
         dispositions.map((row) => `${product}/candidates/${row.id}.json`),
@@ -50,23 +51,42 @@ export async function checkpointMemory(input: CheckpointInput): Promise<Checkpoi
       return { status: 'conflict', expectedRevision: input.expectedRevision, actualRevision: actual };
     }
 
-    if (await isLegacy(product, input)) {
+    if (!parseProductManifest(await readProductFile(product, 'manifest.json', input))) {
       throw new Error('Incompatible beta schema; learning is read-only until this SITE.md is cleared.');
     }
 
     const drafts = await readDrafts(input, taskId, product, paths);
     for (const body of drafts.values()) validateFacts(body);
     validateLineBounds(await readProductFile(product, 'sitemap/SITE.md', input), drafts.get('sitemap/SITE.md'), input.reason);
+    if (input.reason === 'candidate_ingestion') {
+      if (dispositions.length === 0) throw new Error('candidate_ingestion requires dispositions.');
+    } else if (dispositions.length > 0) {
+      throw new Error('Checkpoint reason rejects dispositions.');
+    }
     validateDispositions(loaded, dispositions);
 
+    const prior = new Map<string, string | null>();
     const changed: string[] = [];
     for (const path of paths) {
-      if (drafts.get(path) !== await readProductFile(product, path, input)) changed.push(path);
+      const current = await readProductFile(product, path, input);
+      prior.set(path, current);
+      if (drafts.get(path) !== current) changed.push(path);
+    }
+    if (input.reason === 'candidate_ingestion' && changed.length === 0) {
+      throw new Error('candidate_ingestion requires a memory change.');
     }
     let memoryCommit = actual;
     if (changed.length > 0) {
-      await copyDraftFiles(product, taskId, paths, input);
-      memoryCommit = await repo.commit(paths.map((path) => `${product}/${path}`), `checkpoint memory ${product}`);
+      try {
+        await copyDraftFiles(product, taskId, paths, input);
+        memoryCommit = await repo.commit(paths.map((path) => `${product}/${path}`), `checkpoint memory ${product}`);
+      } catch (err) {
+        const rollback = await restoreCopiedMarkdown(product, prior, input);
+        if (rollback.length > 0) {
+          throw new Error([err, ...rollback].map(errorMessage).join('; '));
+        }
+        throw err;
+      }
     }
     if (!memoryCommit) throw new Error('Refusing to checkpoint without a memory revision.');
 
@@ -81,18 +101,44 @@ export async function checkpointMemory(input: CheckpointInput): Promise<Checkpoi
   });
 }
 
-function isIncompleteProvenance(
+function isProvenanceRecovery(
   loaded: Candidate[],
   dispositions: CandidateDisposition[],
   actual: MemoryRevision,
 ): boolean {
   if (dispositions.length === 0) return false;
-  return dispositions.every((row, index) => {
+  let seenTerminal = false;
+  for (const [index, row] of dispositions.entries()) {
     const candidate = loaded[index];
-    if (candidate.status !== row.status) return false;
-    if (row.status === 'ingested') return candidate.memoryCommit === actual;
-    return candidate.reviewedAt !== null && candidate.rejectionReason !== null;
-  });
+    if (candidate.status === 'pending') continue;
+    if (!matchesRequestedTerminal(candidate, row, actual)) throw new Error('Invalid candidate status transition.');
+    seenTerminal = true;
+  }
+  return seenTerminal;
+}
+
+function matchesRequestedTerminal(
+  candidate: Candidate,
+  row: CandidateDisposition,
+  actual: MemoryRevision,
+): boolean {
+  if (row.status === 'ingested') {
+    return candidate.status === 'ingested'
+      && candidate.memoryCommit === actual
+      && (row.evidenceRole === 'supporting' || row.evidenceRole === 'dissenting'
+        ? candidate.evidenceRole === row.evidenceRole
+        : candidate.evidenceRole === 'supporting' || candidate.evidenceRole === 'dissenting')
+      && candidate.rejectionReason === null;
+  }
+  if (row.status === 'rejected') {
+    return candidate.status === 'rejected'
+      && candidate.memoryCommit === null
+      && candidate.evidenceRole === null
+      && candidate.reviewedAt !== null
+      && candidate.rejectionReason !== null
+      && (!row.rejectionReason || candidate.rejectionReason === row.rejectionReason);
+  }
+  return false;
 }
 
 async function writeDispositions(
@@ -105,6 +151,7 @@ async function writeDispositions(
   const reviewedAt = new Date().toISOString();
   for (const [index, row] of dispositions.entries()) {
     const current = loaded[index];
+    if (current.status !== 'pending') continue;
     const next: Candidate = row.status === 'ingested'
       ? {
         ...current,
@@ -211,16 +258,34 @@ function assertMarkdownPath(path: string): string {
   throw new Error(`Invalid site memory Markdown path: ${path}`);
 }
 
-async function isLegacy(product: string, opts: LocalStoreOptions): Promise<boolean> {
-  if (!await readProductFile(product, 'sitemap/SITE.md', opts)) return false;
-  const raw = await readProductFile(product, 'manifest.json', opts);
-  if (!raw) return true;
-  try {
-    const value = JSON.parse(raw) as { schemaVersion?: unknown };
-    return value.schemaVersion !== 1;
-  } catch {
-    return true;
+async function restoreCopiedMarkdown(
+  product: string,
+  prior: Map<string, string | null>,
+  opts: LocalStoreOptions,
+): Promise<unknown[]> {
+  const errors: unknown[] = [];
+  for (const [path, body] of prior) {
+    try {
+      if (body === null) await deleteProductFile(product, path, opts);
+      else await writeProductFile(product, path, body, opts);
+    } catch (err) {
+      errors.push(err);
+    }
   }
+  return errors;
+}
+
+function unique<T>(values: T[], message: string): T[] {
+  if (new Set(values).size !== values.length) throw new Error(message);
+  return values;
+}
+
+function uniqueBy<T>(values: T[], key: (value: T) => string, message: string): T[] {
+  return unique(values.map(key), message) && values;
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 async function readDrafts(

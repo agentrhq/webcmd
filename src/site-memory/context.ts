@@ -73,7 +73,7 @@ async function persistSeed(
   opts: LocalStoreOptions,
 ): Promise<void> {
   await repo.withRepositoryLock(async () => {
-    if (parseManifest(await readProductFile(product.key, 'manifest.json', opts))) return;
+    if (parseProductManifest(await readProductFile(product.key, 'manifest.json', opts))) return;
     const persisted: PersistedSeedResult = seed.status === 'available' ? { status: 'available', revision: seed.revision } : seed;
     const manifest: ProductManifest = { schemaVersion: 1, product, interfaces: [], seed: persisted };
     const files = ['manifest.json'];
@@ -133,13 +133,13 @@ async function writeContained(root: string, path: string, body: string): Promise
 async function loadManifests(opts: LocalStoreOptions): Promise<ProductManifest[]> {
   const manifests: ProductManifest[] = [];
   for (const key of await listProductKeys(opts)) {
-    const parsed = parseManifest(await readProductFile(key, 'manifest.json', opts));
+    const parsed = parseProductManifest(await readProductFile(key, 'manifest.json', opts));
     if (parsed) manifests.push(parsed);
   }
   return manifests;
 }
 
-function parseManifest(raw: string | null): ProductManifest | undefined {
+export function parseProductManifest(raw: string | null): ProductManifest | undefined {
   if (!raw) return undefined;
   try {
     const value = JSON.parse(raw) as unknown;
@@ -176,7 +176,7 @@ function isPersistedSeed(value: unknown): value is PersistedSeedResult {
 async function isLegacySite(productKey: string, opts: LocalStoreOptions): Promise<boolean> {
   const site = await readProductFile(productKey, 'sitemap/SITE.md', opts);
   if (!site) return false;
-  return !parseManifest(await readProductFile(productKey, 'manifest.json', opts));
+  return !parseProductManifest(await readProductFile(productKey, 'manifest.json', opts));
 }
 
 async function listReferences(productKey: string, opts: LocalStoreOptions): Promise<{ path: string }[]> {
