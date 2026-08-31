@@ -156,6 +156,37 @@ describe('memory context initialization', () => {
     expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBeNull();
   });
 
+  it('does not retry an unattempted seed when local SITE.md already exists', async () => {
+    const { homeDir } = await tempSites();
+    await getMemoryContext({
+      url: 'https://example.test/',
+      taskId: 'task-1',
+      homeDir,
+      seedProvider: provider(async () => ({ status: 'unattempted' })),
+    });
+    const localSite = '# Learned locally\n';
+    await writeProductFile('example.test', 'sitemap/SITE.md', localSite, { homeDir });
+    const lookup = vi.fn(async (): Promise<SeedLookupResult> => ({
+      status: 'available',
+      revision: 'nope',
+      site: '# Seed would overwrite\n',
+    }));
+
+    const context = await getMemoryContext({
+      url: 'https://example.test/',
+      taskId: 'task-2',
+      homeDir,
+      seedProvider: provider(lookup),
+    });
+
+    expect(lookup).not.toHaveBeenCalled();
+    expect(context.manifest?.seed).toEqual({ status: 'unattempted' });
+    expect(context.siteMarkdown).toBe(localSite);
+    expect(parseProductManifest(await readProductFile('example.test', 'manifest.json', { homeDir }))?.seed)
+      .toEqual({ status: 'unattempted' });
+    expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBe(localSite);
+  });
+
   it('does not look up a seed once a product already exists', async () => {
     const { homeDir } = await tempSites();
     const lookup = vi.fn(async () => ({ status: 'absent' as const }));

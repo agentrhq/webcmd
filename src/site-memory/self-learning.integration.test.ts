@@ -112,10 +112,12 @@ describe('self-learning lifecycle', () => {
         env: {},
       }),
     });
-    expect(enabled.manifest?.seed).toEqual({ status: 'available', revision: 'nope' });
+    expect(enabled.manifest?.seed).toEqual({ status: 'unattempted' });
     expect(enabled.siteMarkdown).toBe(`# Disabled\n\n${FACT}`);
+    expect(parseProductManifest(await readProductFile('disabled.test', 'manifest.json', { homeDir }))?.seed)
+      .toEqual({ status: 'unattempted' });
     expect(await readProductFile('disabled.test', 'sitemap/SITE.md', { homeDir })).toBe(`# Disabled\n\n${FACT}`);
-    expect(calls.filter((call) => call.url.endsWith('/disabled.test'))).toHaveLength(1);
+    expect(calls.filter((call) => call.url.endsWith('/disabled.test'))).toHaveLength(0);
 
     await getMemoryContext({
       url: 'https://disabled.test/',
@@ -123,7 +125,7 @@ describe('self-learning lifecycle', () => {
       homeDir,
       seedProvider: createHttpSeedProvider({ fetch, env: {} }),
     });
-    expect(calls.filter((call) => call.url.endsWith('/disabled.test'))).toHaveLength(1);
+    expect(calls.filter((call) => call.url.endsWith('/disabled.test'))).toHaveLength(0);
   });
 
   it('keeps Old Reddit a read-only parent fallback until interface confirmation and keeps Hacker News separate', async () => {

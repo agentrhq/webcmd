@@ -31,7 +31,7 @@ export async function getMemoryContext(input: MemoryContextInput): Promise<Memor
   let persistFailed = false;
   let transient: Extract<SeedLookupResult, { status: 'available' }> | undefined;
   const storedUnattempted = resolution.manifest?.seed.status === 'unattempted';
-  if (!legacy && (resolution.status === 'new' || storedUnattempted)) {
+  if (!legacy && (resolution.status === 'new' || (storedUnattempted && await readProductFile(resolution.product.key, 'sitemap/SITE.md', opts) == null))) {
     const product = storedUnattempted ? resolution.product : resolution.requested;
     const seed = await (input.seedProvider ?? createHttpSeedProvider()).lookup(product.key);
     if (storedUnattempted && seed.status === 'unattempted') {
