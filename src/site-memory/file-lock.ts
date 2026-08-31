@@ -26,6 +26,10 @@ import { isActionablePid, isPidAlive } from '../session-lease.js';
 export const LOCK_STALE_MS = 10_000;
 /** Total acquire budget. Longer than LOCK_STALE_MS so stale locks are broken, not reported. */
 export const LOCK_TIMEOUT_MS = 15_000;
+/** Repository lock stale bound: copy, explicit staging, and two local commits, including slow Git. */
+export const REPOSITORY_LOCK_STALE_MS = 60_000;
+/** Total repository-lock acquire budget. Longer than REPOSITORY_LOCK_STALE_MS so stale owners recover. */
+export const REPOSITORY_LOCK_TIMEOUT_MS = 90_000;
 
 const RETRY_MIN_MS = 5;
 const RETRY_MAX_MS = 50;
