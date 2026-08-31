@@ -36,7 +36,8 @@ export async function checkpointMemory(input: CheckpointInput): Promise<Checkpoi
 
   return repo.withRepositoryLock(async () => {
     const actual = await repo.revision();
-    const manifest = parseProductManifest(await readProductFile(product, 'manifest.json', input));
+    const manifestRaw = await readProductFile(product, 'manifest.json', input);
+    const manifest = parseProductManifest(manifestRaw);
     if (!manifest || manifest.product.key !== product) {
       throw new Error('Incompatible beta schema; learning is read-only until this SITE.md is cleared.');
     }
@@ -68,11 +69,14 @@ export async function checkpointMemory(input: CheckpointInput): Promise<Checkpoi
     }
 
     for (const body of drafts.values()) validateFacts(body);
+    const currentSite = await readProductFile(product, 'sitemap/SITE.md', input);
+    const siteDraft = drafts.get('sitemap/SITE.md');
     validateLineBounds(
-      await readProductFile(product, 'sitemap/SITE.md', input),
-      drafts.get('sitemap/SITE.md'),
+      currentSite,
+      siteDraft,
       input.reason,
       changed.length > 0,
+      manifest.postRewrite === true,
     );
     if (input.reason === 'candidate_ingestion') {
       if (dispositions.length === 0) throw new Error('candidate_ingestion requires dispositions.');
@@ -89,7 +93,13 @@ export async function checkpointMemory(input: CheckpointInput): Promise<Checkpoi
     if (changed.length > 0) {
       try {
         await copyDraftFiles(product, taskId, paths, input);
-        memoryCommit = await repo.commit(paths.map((path) => `${product}/${path}`), `checkpoint memory ${product}`);
+        const commitPaths = paths.map((path) => `${product}/${path}`);
+        if (marksPostRewrite(input.reason, currentSite, siteDraft, changed) && manifest.postRewrite !== true) {
+          prior.set('manifest.json', manifestRaw);
+          await writeProductFile(product, 'manifest.json', `${JSON.stringify({ ...manifest, postRewrite: true }, null, 2)}\n`, input);
+          commitPaths.push(`${product}/manifest.json`);
+        }
+        memoryCommit = await repo.commit(commitPaths, `checkpoint memory ${product}`);
       } catch (err) {
         const rollback = await restoreCopiedMarkdown(product, prior, input);
         if (rollback.length > 0) {
@@ -219,6 +229,7 @@ function validateLineBounds(
   draft: string | undefined,
   reason: CheckpointReason,
   memoryChanged: boolean,
+  postRewrite: boolean,
 ): void {
   const currentLines = physicalLines(current ?? '');
   const unchangedSite = draft !== undefined && (current ?? '') === draft;
@@ -236,12 +247,22 @@ function validateLineBounds(
     if (!draftPointers) throw new Error('A major rewrite requires contextual reference pointers.');
     return;
   }
-  if (POINTER.test(current ?? '')) {
+  if (postRewrite) {
     if (draftLines > 200) throw new Error('Post-rewrite SITE.md updates must stay at or below 200 lines.');
     if (!draftPointers) throw new Error('Post-rewrite updates require contextual reference pointers.');
     return;
   }
   if (draftLines > 500) throw new Error('SITE.md updates over 500 lines require a rewrite to at most 200 lines.');
+}
+
+function marksPostRewrite(
+  reason: CheckpointReason,
+  current: string | null,
+  draft: string | undefined,
+  changed: string[],
+): boolean {
+  if (draft === undefined || !changed.includes('sitemap/SITE.md') || (current ?? '') === draft) return false;
+  return reason === 'major_rewrite' || physicalLines(current ?? '') > 500;
 }
 
 function validateFacts(body: string): void {

@@ -32,6 +32,7 @@ export interface ProductManifest {
   /** Confirmed alternate hostnames belonging to this product. */
   interfaces: ProductIdentity[];
   seed: PersistedSeedResult;
+  postRewrite?: true;
 }
 
 export interface MemoryContext {

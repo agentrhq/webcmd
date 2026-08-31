@@ -182,7 +182,8 @@ function isProductManifest(value: unknown): value is ProductManifest {
     && isProductIdentity(candidate.product)
     && Array.isArray(candidate.interfaces)
     && candidate.interfaces.every(isProductIdentity)
-    && isPersistedSeed(candidate.seed);
+    && isPersistedSeed(candidate.seed)
+    && (!('postRewrite' in candidate) || candidate.postRewrite === true);
 }
 
 function isProductIdentity(value: unknown): value is ProductIdentity {

@@ -243,6 +243,9 @@ describe('webcmd skills content', () => {
     expect(git).toContain('SITE_MEMORY_CONFLICT');
     expect(git).toContain('Retry webcmd site memory context, then checkpoint once.');
     expect(git).toMatch(/exactly one retry|checkpoint once/i);
+    expect(git).toMatch(/compare[\s\S]{0,120}siteMarkdown[\s\S]{0,120}(?:preserved )?draft/i);
+    expect(git).toMatch(/re-?apply|reconcil/i);
+    expect(git).toMatch(/refreshed content/i);
     expect(git).toMatch(/never (?:run |use )?git|do not (?:run |use )?git/i);
     expect(git).not.toMatch(/\bgit add\b|\bgit commit\b/);
   });
@@ -254,7 +257,7 @@ describe('webcmd skills content', () => {
     expect(git).toMatch(/same task id|same --task-id|--task-id <(?:id|same-id)>/i);
     expect(git).toMatch(/before editing|before you edit|before draft/i);
     expect(git).toMatch(/does not destroy|will not destroy|before any draft edit/i);
-    expect(git).toMatch(/reuses the existing draft/i);
+    expect(git).toMatch(/does not (?:overwrite|destroy)/i);
     expect(git).toMatch(/did not publish|does not publish|never (?:claim|report).{0,40}published/i);
     expect(git).toContain('webcmd site memory context');
   });

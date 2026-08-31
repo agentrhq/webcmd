@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import { addCandidate, showCandidate } from './candidates.js';
 import { checkpointMemory, type CheckpointInput } from './checkpoint.js';
+import { parseProductManifest } from './context.js';
 import { openSitesRepository } from './git-store.js';
 import { readProductFile, writeProductFile } from './local-store.js';
 
@@ -771,20 +772,21 @@ describe('checkpoint rewrite bounds', () => {
     expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBe(rewritten);
   });
 
-  it('requires a 201-500 pointer-bearing SITE.md to stay at or below 200 lines', async () => {
-    const { homeDir } = await primed(siteLines(250, true));
-    await writeDraft(homeDir, { 'sitemap/SITE.md': siteLines(201, true) });
-    await expect(checkpoint(homeDir, { reason: 'direct_correction', dispositions: [] })).rejects.toThrow(/200/i);
+  it('allows a pointer-bearing non-rewritten SITE.md to grow up to 500 lines', async () => {
+    const { homeDir } = await primed(siteLines(150, true));
+    const grown = siteLines(500, true);
+    await writeDraft(homeDir, { 'sitemap/SITE.md': grown });
 
-    const next = siteLines(180, true);
-    await writeDraft(homeDir, { 'sitemap/SITE.md': next });
     const result = await checkpoint(homeDir, { reason: 'direct_correction', dispositions: [] });
+
     expect(result.status).toBe('committed');
-    expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBe(next);
+    expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBe(grown);
+    expect(parseProductManifest(await readProductFile('example.test', 'manifest.json', { homeDir }))?.postRewrite)
+      .toBeUndefined();
   });
 
   it('preserves the 200-line cap and contextual pointers after a rewrite', async () => {
-    const { homeDir, revision } = await primed(siteLines(501));
+    const { homeDir, sites, revision } = await primed(siteLines(501));
     await writeDraft(homeDir, {
       'sitemap/SITE.md': siteLines(200, true),
       'sitemap/references/listing.md': REF,
@@ -817,6 +819,11 @@ describe('checkpoint rewrite bounds', () => {
     expect(result.status).toBe('committed');
     expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBe(next);
     expect(next).toContain('](references/listing.md)');
+    expect(parseProductManifest(await readProductFile('example.test', 'manifest.json', { homeDir }))?.postRewrite)
+      .toBe(true);
+    const memoryFiles = (await git(sites, ['show', '--name-only', '--pretty=format:', rewritten.memoryCommit])).trim();
+    expect(memoryFiles).toContain('example.test/manifest.json');
+    expect(memoryFiles).toContain('example.test/sitemap/SITE.md');
   });
 });
 

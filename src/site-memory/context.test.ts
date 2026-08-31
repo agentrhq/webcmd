@@ -33,6 +33,14 @@ describe('parseProductManifest', () => {
     expect(parseProductManifest(JSON.stringify({ ...valid, schemaVersion: 2 }))).toBeUndefined();
     expect(parseProductManifest(JSON.stringify({ schemaVersion: 1, product, seed: { status: 'absent' } }))).toBeUndefined();
   });
+
+  it('round-trips ordinary v1 manifests and optional postRewrite', () => {
+    expect(parseProductManifest(`${JSON.stringify(valid)}\n`)).toEqual(valid);
+    const rewritten = { ...valid, postRewrite: true as const };
+    expect(parseProductManifest(`${JSON.stringify(rewritten)}\n`)).toEqual(rewritten);
+    expect(parseProductManifest(JSON.stringify({ ...valid, extra: 'keep' }))).toEqual({ ...valid, extra: 'keep' });
+    expect(parseProductManifest(JSON.stringify({ ...valid, postRewrite: false }))).toBeUndefined();
+  });
 });
 
 describe('memory context initialization', () => {
