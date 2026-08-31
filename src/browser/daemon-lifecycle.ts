@@ -177,8 +177,8 @@ export async function ensureBrowserBridgeReady(
     }
     spawnedProcess = daemonLifecycleHooks.spawnDaemonProcess();
   } else if (verbose && (isVerbose() || process.stderr.isTTY)) {
-    process.stderr.write('⏳ Waiting for SLAB to connect...\n');
-    process.stderr.write('   Make sure SLAB is open.\n');
+    process.stderr.write('⏳ Waiting for Cloak to connect...\n');
+    process.stderr.write('   Make sure Chrome/Chromium is open and Cloak is enabled.\n');
   }
 
   const finalHealth = await waitForBridgeReady(getDaemonHealth, { timeoutMs, contextId });
@@ -199,14 +199,14 @@ function browserConnectErrorFromHealth(health: DaemonHealth, contextId?: string)
     const label = contextId ?? health.status.contextId ?? 'unknown';
     return new BrowserConnectError(
       `Browser profile "${label}" is not connected`,
-      'Open the matching SLAB profile and make sure SLAB is running, or choose another profile with webcmd profile use <name>.',
+      'Open the matching Chrome profile and make sure Cloak is enabled, or choose another profile with webcmd profile use <name>.',
       'profile-disconnected',
     );
   }
   if (health.state === 'no-runtime') {
     return new BrowserConnectError(
       'Browser runtime is not ready',
-      'Open SLAB and retry the browser command. Run `webcmd doctor` for local status.',
+      'Open Chrome/Chromium with Cloak enabled and retry the browser command. Run `webcmd doctor` for local status.',
       'runtime-not-ready',
     );
   }

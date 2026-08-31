@@ -110,7 +110,7 @@ export async function daemonStop(): Promise<void> {
 export async function daemonRestart(): Promise<void> {
   const before = await fetchDaemonStatus();
   if (before?.profiles && before.profiles.length > 0) {
-    log.warn(`Restarting daemon will disconnect ${before.profiles.length} browser ${before.profiles.length === 1 ? 'profile' : 'profiles'}; SLAB should reconnect automatically.`);
+    log.warn(`Restarting daemon will disconnect ${before.profiles.length} browser ${before.profiles.length === 1 ? 'profile' : 'profiles'}; Cloak should reconnect automatically.`);
   }
 
   const result = await restartDaemon();
@@ -133,6 +133,6 @@ export async function daemonRestart(): Promise<void> {
     const profileText = profiles > 0 ? `; ${profiles} ${profiles === 1 ? 'profile' : 'profiles'} connected` : '';
     log.status(`Runtime connected${profileText}.`);
   } else {
-    log.warn('Daemon is running, but the SLAB runtime has not connected yet.');
+    log.warn('Daemon is running, but the Cloak runtime has not connected yet.');
   }
 }
