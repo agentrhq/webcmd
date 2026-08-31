@@ -9,10 +9,16 @@ export interface HostedManifestCache {
   manifest: unknown;
 }
 
+export type LocalBrowserConfig =
+  | { kind: 'cloak' }
+  | { kind: 'slab' }
+  | { kind: 'custom'; executablePath: string };
+
 export type WebcmdConfig =
   | {
       mode: 'local';
       updatedAt: string;
+      browser: LocalBrowserConfig;
     }
   | {
       mode: 'hosted';
@@ -55,7 +61,7 @@ export function getConfigPath(io: Pick<ConfigIo, 'env' | 'homeDir'> = {}): strin
 function parseConfig(raw: string): WebcmdConfig {
   const parsed = JSON.parse(raw) as Partial<WebcmdConfig>;
   if (parsed.mode === 'local' && typeof parsed.updatedAt === 'string') {
-    return { mode: 'local', updatedAt: parsed.updatedAt };
+    return { mode: 'local', updatedAt: parsed.updatedAt, browser: readLocalBrowser((parsed as { browser?: unknown }).browser) };
   }
   if (
     parsed.mode === 'hosted'
@@ -78,7 +84,7 @@ function parseConfig(raw: string): WebcmdConfig {
       },
     };
   }
-  return { mode: 'local', updatedAt: new Date(0).toISOString() };
+  return makeLocalConfig(new Date(0));
 }
 
 export function loadWebcmdConfig(io: ConfigIo = {}): WebcmdConfig {
@@ -86,7 +92,7 @@ export function loadWebcmdConfig(io: ConfigIo = {}): WebcmdConfig {
   try {
     return parseConfig(readFileSync(getConfigPath(io), 'utf-8') as string);
   } catch {
-    return { mode: 'local', updatedAt: new Date(0).toISOString() };
+    return makeLocalConfig(new Date(0));
   }
 }
 
@@ -107,10 +113,14 @@ export function saveWebcmdConfig(config: WebcmdConfig, io: ConfigIo = {}): void 
 export type LocalWebcmdConfig = Extract<WebcmdConfig, { mode: 'local' }>;
 export type HostedWebcmdConfig = Extract<WebcmdConfig, { mode: 'hosted' }>;
 
-export function makeLocalConfig(now: Date = new Date()): LocalWebcmdConfig {
+export function makeLocalConfig(
+  now: Date = new Date(),
+  browser: LocalBrowserConfig = { kind: 'cloak' },
+): LocalWebcmdConfig {
   return {
     mode: 'local',
     updatedAt: now.toISOString(),
+    browser,
   };
 }
 
@@ -193,6 +203,17 @@ export function shouldUseHostedMode(io: ConfigIo = {}): boolean {
 
 function readCredentialBackend(value: unknown): HostedCredentialBackend | undefined {
   return value === 'os' || value === 'file-fallback' ? value : undefined;
+}
+
+function readLocalBrowser(value: unknown): LocalBrowserConfig {
+  if (value && typeof value === 'object') {
+    const browser = value as { kind?: unknown; executablePath?: unknown };
+    if (browser.kind === 'cloak' || browser.kind === 'slab') return { kind: browser.kind };
+    if (browser.kind === 'custom' && typeof browser.executablePath === 'string' && path.isAbsolute(browser.executablePath)) {
+      return { kind: 'custom', executablePath: browser.executablePath };
+    }
+  }
+  return { kind: 'cloak' };
 }
 
 function persistableConfig(config: WebcmdConfig): WebcmdConfig {

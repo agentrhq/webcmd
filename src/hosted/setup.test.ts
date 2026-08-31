@@ -20,7 +20,7 @@ afterEach(async () => {
 describe('webcmd setup', () => {
   it('writes local mode from interactive answer', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-'));
-    const answers = ['local'];
+    const answers = ['local', 'slab'];
     const messages: string[] = [];
     const env = { WEBCMD_CONFIG_DIR: tempDir } as NodeJS.ProcessEnv;
 
@@ -36,6 +36,7 @@ describe('webcmd setup', () => {
     expect(JSON.parse(await readFile(getConfigPath({ env }), 'utf8'))).toEqual({
       mode: 'local',
       updatedAt: '2026-07-08T00:00:00.000Z',
+      browser: { kind: 'slab' },
     });
     expect(messages.join('')).toContain('local mode');
   });
@@ -110,8 +111,63 @@ describe('webcmd setup', () => {
     expect(JSON.parse(await readFile(getConfigPath({ env }), 'utf8'))).toEqual({
       mode: 'local',
       updatedAt: '2026-07-08T00:00:00.000Z',
+      browser: { kind: 'cloak' },
     });
     expect(messages.join('')).toContain('local mode');
+  });
+
+  it.each([
+    [['--mode', 'local', '--browser', 'cloak'], { kind: 'cloak' }],
+    [['--mode=local', '--browser=slab'], { kind: 'slab' }],
+    [['--mode', 'local', '--browser', '/Applications/Chrome.app/Contents/MacOS/Google Chrome'], {
+      kind: 'custom', executablePath: '/Applications/Chrome.app/Contents/MacOS/Google Chrome',
+    }],
+  ])('persists browser selection from %j', async (argv, browser) => {
+    tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-browser-'));
+    const env = { WEBCMD_CONFIG_DIR: tempDir } as NodeJS.ProcessEnv;
+
+    await expect(runHostedSetup({
+      env,
+      argv,
+      isTTY: false,
+      now: () => new Date('2026-08-31T00:00:00.000Z'),
+      write: () => undefined,
+    })).resolves.toBe(0);
+
+    expect(JSON.parse(await readFile(getConfigPath({ env }), 'utf8'))).toMatchObject({
+      mode: 'local',
+      browser,
+    });
+  });
+
+  it.each([
+    [['--mode', 'local', '--browser'], '--browser requires a value.'],
+    [['--mode', 'local', '--browser', 'chrome'], '--browser must be cloak, slab, or an absolute path'],
+    [['--mode', 'local', '--browser', 'relative/browser'], '--browser must be cloak, slab, or an absolute path'],
+    [['--mode', 'hosted', '--browser', 'slab', '--api-key', 'wcmd_live_test'], '--browser is only valid with --mode local.'],
+  ])('rejects invalid browser arguments from %j', async (argv, message) => {
+    const stderr = collectStderr();
+
+    await expect(runHostedSetup({
+      env: { WEBCMD_CONFIG_DIR: join(tmpdir(), `webcmd-setup-browser-error-${Date.now()}`) },
+      argv,
+      isTTY: false,
+      stderr: stderr.stream,
+      write: () => undefined,
+    })).resolves.toBe(2);
+
+    expect(stderr.text()).toContain(message);
+  });
+
+  it('shows browser usage in setup help', async () => {
+    const messages: string[] = [];
+
+    await expect(runHostedSetup({
+      argv: ['--help'],
+      write: message => { messages.push(message); },
+    })).resolves.toBe(0);
+
+    expect(messages.join('')).toContain('--browser <cloak|slab|absolute-path>');
   });
 
   it('rejects non-TTY setup without --mode and never prompts', async () => {
@@ -206,11 +262,12 @@ describe('webcmd setup', () => {
     tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-slow-output-'));
     const output = new SetupControlledWritable();
     let settled = false;
+    const answers = ['local', 'cloak'];
 
     const run = runHostedSetup({
       env: { WEBCMD_CONFIG_DIR: tempDir },
       output,
-      question: async () => 'local',
+      question: async () => answers.shift() ?? '',
     }).then(code => {
       settled = true;
       return code;

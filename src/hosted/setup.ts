@@ -1,5 +1,6 @@
 import { createInterface } from 'node:readline/promises';
 import { stdin as defaultInput, stdout as defaultOutput } from 'node:process';
+import { isAbsolute } from 'node:path';
 import { CLI_COMMAND } from '../brand.js';
 import { ArgumentError, toEnvelope } from '../errors.js';
 import { formatErrorEnvelope } from '../output.js';
@@ -10,6 +11,7 @@ import {
   makeLocalConfig,
   saveWebcmdConfig,
   type ConfigIo,
+  type LocalBrowserConfig,
 } from './config.js';
 import {
   makeStoredHostedConfig,
@@ -31,7 +33,7 @@ export interface SetupIo extends ConfigIo, HostedCredentialIo {
 
 type SetupMode = 'local' | 'hosted';
 
-const SETUP_USAGE = `usage: ${CLI_COMMAND} setup --mode <local|hosted> [--api-key <key>]`;
+const SETUP_USAGE = `usage: ${CLI_COMMAND} setup --mode <local|hosted> [--browser <cloak|slab|absolute-path>] [--api-key <key>]`;
 const SETUP_EXAMPLE = `example: ${CLI_COMMAND} setup --mode local`;
 const SETUP_HELP = [
   `${CLI_COMMAND} setup`,
@@ -39,6 +41,7 @@ const SETUP_HELP = [
   'Configure local or hosted mode.',
   '',
   '  --mode <local|hosted>   Required when stdin is not a TTY',
+  '  --browser <cloak|slab|absolute-path>  Local browser in local mode',
   '  --api-key <key>         Required for --mode hosted when stdin is not a TTY',
   '  -h, --help',
   '',
@@ -91,9 +94,19 @@ export async function runHostedSetup(io: SetupIo = {}): Promise<number> {
           `${SETUP_USAGE}\n${SETUP_EXAMPLE}`,
         );
       }
-      saveWebcmdConfig(makeLocalConfig(io.now?.() ?? new Date()), io);
+      const browser = parsed.browser ?? (interactive
+        ? parseLocalBrowser((await ask('Local browser [cloak/slab/absolute path] (cloak): ')).trim() || 'cloak')
+        : { kind: 'cloak' });
+      saveWebcmdConfig(makeLocalConfig(io.now?.() ?? new Date(), browser), io);
       await write('Webcmd is now configured for local mode.\n');
       return 0;
+    }
+
+    if (parsed.browser) {
+      throw new ArgumentError(
+        '--browser is only valid with --mode local.',
+        `${SETUP_USAGE}\n${SETUP_EXAMPLE}`,
+      );
     }
 
     let apiKey = parsed.apiKey?.trim();
@@ -151,13 +164,14 @@ export async function runHostedSetup(io: SetupIo = {}): Promise<number> {
 }
 
 function canPrompt(io: SetupIo): boolean {
-  if (io.question) return true;
   if (io.isTTY !== undefined) return io.isTTY;
+  if (io.question) return true;
   return process.stdin.isTTY === true && process.stdout.isTTY === true;
 }
 
-function parseSetupArgs(argv: readonly string[]): { help?: true; mode?: SetupMode; apiKey?: string } {
+function parseSetupArgs(argv: readonly string[]): { help?: true; mode?: SetupMode; browser?: LocalBrowserConfig; apiKey?: string } {
   let mode: SetupMode | undefined;
+  let browser: LocalBrowserConfig | undefined;
   let apiKey: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i]!;
@@ -186,12 +200,30 @@ function parseSetupArgs(argv: readonly string[]): { help?: true; mode?: SetupMod
       continue;
     }
 
+    if (token === '--browser' || token.startsWith('--browser=')) {
+      const value = token.startsWith('--browser=') ? token.slice('--browser='.length) : argv[++i];
+      browser = parseLocalBrowser(value);
+      continue;
+    }
+
     throw new ArgumentError(
       `unknown flag ${token} for \`setup\``,
-      `valid flags for \`setup\`: --mode, --api-key, --help\n${SETUP_USAGE}`,
+      `valid flags for \`setup\`: --mode, --browser, --api-key, --help\n${SETUP_USAGE}`,
     );
   }
-  return { mode, apiKey };
+  return { mode, browser, apiKey };
+}
+
+function parseLocalBrowser(value: string | undefined): LocalBrowserConfig {
+  if (!value || value.startsWith('-')) {
+    throw new ArgumentError('--browser requires a value.', `${SETUP_USAGE}\n${SETUP_EXAMPLE}`);
+  }
+  if (value === 'cloak' || value === 'slab') return { kind: value };
+  if (isAbsolute(value)) return { kind: 'custom', executablePath: value };
+  throw new ArgumentError(
+    `--browser must be cloak, slab, or an absolute path (got: "${value}").`,
+    `${SETUP_USAGE}\n${SETUP_EXAMPLE}`,
+  );
 }
 
 function hostedAccountLabel(body: unknown): string | undefined {
