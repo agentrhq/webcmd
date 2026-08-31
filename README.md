@@ -160,6 +160,8 @@ Webcmd Cloud can run supported commands and browser sessions on hosted infrastru
 
 Site adapters live in [`agentrhq/webcmd-plugins`](https://github.com/agentrhq/webcmd-plugins). Search and install them with:
 
+Use Webcmd 0.7.11 or newer for compatibility with the standalone plugin catalog.
+
 ```bash
 webcmd plugin search <site> -f json
 webcmd plugin install github:agentrhq/webcmd-plugins/<name>
