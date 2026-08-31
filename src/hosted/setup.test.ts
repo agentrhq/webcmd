@@ -396,6 +396,7 @@ describe('webcmd setup', () => {
     })).resolves.toBe(0);
 
     expect(messages.join('')).toContain('--browser <cloak|slab|absolute-path>');
+    expect(messages.join('')).toContain('Cloak stays default, SLAB is macOS alpha opt-in');
   });
 
   it('reports the configured custom browser without probing SLAB', async () => {

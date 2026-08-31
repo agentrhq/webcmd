@@ -68,7 +68,7 @@ const SETUP_HELP = [
   'Configure local or hosted mode.',
   '',
   '  --mode <local|hosted>   Required when stdin is not a TTY',
-  '  --browser <cloak|slab|absolute-path>  Local browser in local mode',
+  '  --browser <cloak|slab|absolute-path>  Local browser in local mode; Cloak stays default, SLAB is macOS alpha opt-in',
   '  --api-key <key>         Required for --mode hosted when stdin is not a TTY',
   '  --status                Show the configured mode and local browser',
   '  -h, --help',

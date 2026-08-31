@@ -17,6 +17,8 @@ import type { BrowserProfileStatus } from './browser/daemon-transport.js';
 import { aliasForContextId, loadProfileConfig } from './browser/profile.js';
 import { formatDaemonVersion, isDaemonStale, staleDaemonIssue } from './browser/daemon-version.js';
 import { findShadowedUserAdapters, formatAdapterShadowIssue, type AdapterShadow } from './adapter-shadow.js';
+import { configureCloakBrowserBinary } from './browser/browser-binary.js';
+import { loadWebcmdConfig, type LocalBrowserConfig } from './hosted/config.js';
 
 const DOCTOR_LIVE_TIMEOUT_SECONDS = 8;
 
@@ -48,6 +50,7 @@ export type DoctorReport = {
   runtimeFlaky?: boolean;
   runtimeName?: string;
   runtimeVersion?: string;
+  selectedBrowser?: LocalBrowserConfig;
   binary?: BrowserBinaryStatus;
   connectivity?: ConnectivityResult;
   profiles?: BrowserProfileStatus[];
@@ -100,13 +103,16 @@ export function checkBrowserBinary(): BrowserBinaryStatus {
 /**
  * Test connectivity by attempting a real browser command.
  */
-export async function checkConnectivity(opts?: { timeout?: number }): Promise<ConnectivityResult> {
+export async function checkConnectivity(
+  browser: LocalBrowserConfig = { kind: 'cloak' },
+  opts?: { timeout?: number },
+): Promise<ConnectivityResult> {
   const start = Date.now();
   const timeoutSeconds = opts?.timeout ?? DOCTOR_LIVE_TIMEOUT_SECONDS;
   let sessionId: string | undefined;
   try {
     // A first-use download can exceed doctor's deliberately short live-probe deadline.
-    await ensureBinary();
+    if (browser.kind !== 'slab') await ensureBinary();
     setDaemonCommandTimeoutSeconds(timeoutSeconds);
     const session = await sendCommand('session-create', { sessionName: 'Doctor Probe' }) as { id?: unknown };
     if (typeof session.id !== 'string') throw new Error('Doctor could not create a browser Session.');
@@ -140,11 +146,14 @@ export async function checkConnectivity(opts?: { timeout?: number }): Promise<Co
 }
 
 export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<DoctorReport> {
+  const config = loadWebcmdConfig();
+  const selectedBrowser = config.mode === 'local' ? config.browser : { kind: 'cloak' } satisfies LocalBrowserConfig;
+  configureCloakBrowserBinary(selectedBrowser.kind === 'custom' ? selectedBrowser.executablePath : undefined);
   // Live connectivity check is the core of doctor — it doubles as auto-start
   // (bridge.connect spawns daemon) and validates
   // end-to-end browser bridge health.
-  const connectivity = await checkConnectivity();
-  const binary = checkBrowserBinary();
+  const connectivity = await checkConnectivity(selectedBrowser);
+  const binary = selectedBrowser.kind === 'slab' ? undefined : checkBrowserBinary();
 
   // Single status read *after* connectivity side-effects settle.
   const health = await getDaemonHealth();
@@ -157,19 +166,26 @@ export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<Doctor
   const runtimeName = health.status?.runtimeName;
   const runtimeVersion = health.status?.runtimeVersion;
   const issues: string[] = [];
+  const expectedRuntimeLabel = selectedBrowser.kind === 'slab'
+    ? 'SLAB'
+    : selectedBrowser.kind === 'custom'
+      ? 'custom'
+      : 'Cloak';
   let adapterShadows: AdapterShadow[] = [];
   try {
     adapterShadows = findShadowedUserAdapters();
   } catch (err) {
     issues.push(`Could not check adapter overrides: ${getErrorMessage(err)}`);
   }
-  if (binary.error) {
-    issues.push(`Could not check CloakBrowser Chromium binary: ${binary.error}`);
-  } else if (binary.installed === false) {
+  if (binary?.error) {
+    issues.push(`Could not check ${expectedRuntimeLabel === 'custom' ? 'custom browser' : 'CloakBrowser Chromium'} binary: ${binary.error}`);
+  } else if (binary?.installed === false) {
     issues.push(
-      `CloakBrowser Chromium is not installed at ${binary.path}.\n` +
+      `${expectedRuntimeLabel === 'custom' ? 'Selected browser executable is not available' : 'CloakBrowser Chromium is not installed'} at ${binary.path}.\n` +
       (binary.downloadUrl ? `  Download URL: ${binary.downloadUrl}\n` : '') +
-      '  Check network access to the download URL above.',
+      (selectedBrowser.kind === 'custom'
+        ? '  Confirm the absolute executable path still exists and is launchable.'
+        : '  Check network access to the download URL above.'),
     );
   }
   if (daemonFlaky) {
@@ -191,18 +207,26 @@ export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<Doctor
   } else if (daemonRunning && !runtimeConnected) {
     if (health.state === 'profile-required') {
       issues.push(
-        'Multiple Chrome profiles are connected to the daemon, but no default profile was selected.\n' +
+        'Multiple browser profiles are connected to the daemon, but no default profile was selected.\n' +
         '  Run webcmd profile list, then webcmd profile use <name>, or pass --profile <name>.',
       );
     } else if (health.state === 'profile-disconnected') {
       issues.push(
         `Selected browser profile is not connected: ${health.status?.contextId ?? 'unknown'}.\n` +
-        '  Open that Chrome profile and make sure Cloak is enabled.',
+        (selectedBrowser.kind === 'slab'
+          ? '  Open SLAB and reconnect that profile.'
+          : selectedBrowser.kind === 'custom'
+            ? '  Open that browser profile and make sure the selected browser is running.'
+            : '  Open that Chrome profile and make sure Cloak is enabled.'),
       );
     } else {
       issues.push(
-        'Daemon is running but the Cloak runtime is not connected.\n' +
-        '  Make sure Chrome/Chromium is open and Cloak is enabled.\n' +
+        `Daemon is running but the ${expectedRuntimeLabel} runtime is not connected.\n` +
+        (selectedBrowser.kind === 'slab'
+          ? '  Make sure SLAB is open.\n'
+          : selectedBrowser.kind === 'custom'
+            ? '  Make sure the selected browser executable can launch and the browser is open.\n'
+            : '  Make sure Chrome/Chromium is open and Cloak is enabled.\n') +
         '  If Chrome is already open, try: webcmd daemon restart',
       );
     }
@@ -219,7 +243,7 @@ export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<Doctor
       ? `Commands currently fall back to the only active profile: ${profiles[0].contextId}.`
       : 'Multiple profiles are active, so commands will ask you to choose.';
     issues.push(
-      `Default Cloak profile is not active: ${label}.\n` +
+      `Default browser profile is not active: ${label}.\n` +
       `  ${fallbackNote}\n` +
       '  Refresh it with: webcmd profile list, then webcmd profile use <name>.',
     );
@@ -238,6 +262,7 @@ export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<Doctor
     runtimeFlaky,
     runtimeName,
     runtimeVersion,
+    selectedBrowser,
     binary,
     connectivity,
     profiles,
@@ -278,6 +303,13 @@ export function renderBrowserDoctorReport(report: DoctorReport): string {
     ? 'unstable (connected during live check, then disconnected)'
     : report.runtimeConnected ? 'connected' : 'not connected';
   lines.push(`${runtimeIcon} Runtime: ${runtimeName} ${runtimeLabel}${runtimeVersion}`);
+
+  const selectedBrowserLabel = report.selectedBrowser?.kind === 'custom'
+    ? `custom (${report.selectedBrowser.executablePath})`
+    : report.selectedBrowser?.kind === 'slab'
+      ? 'SLAB (macOS alpha opt-in)'
+      : 'Cloak (bundled default)';
+  lines.push(`[OK] Selected browser: ${selectedBrowserLabel}`);
 
   // Browser binary availability is distinct from a live daemon attachment.
   if (report.binary) {
