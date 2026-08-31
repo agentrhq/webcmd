@@ -50,12 +50,12 @@ webcmd skills add
 
 Use the provider that matches your agent (`agents`, `codex`, or `claude`) and one scope, whether selected by prompts, flags, or command defaults. Use the user/global scope for a personal setup that should work across projects. Use the project/local scope only when the user wants the skills kept with this project for teammates. Do not rerun the command for the other scope unless the user explicitly asks for both.
 
-Read `webcmd-usage/SKILL.md` from the location created by that command before creating or editing browser automation. The path may be user-level or project-level:
+Read `webcmd-browser/SKILL.md` from the location created by that command before creating or editing browser automation. The path may be user-level or project-level:
 
 ```text
-~/.agents/skills/webcmd-usage/SKILL.md  or  .agents/skills/webcmd-usage/SKILL.md
-~/.codex/skills/webcmd-usage/SKILL.md   or  .codex/skills/webcmd-usage/SKILL.md
-~/.claude/skills/webcmd-usage/SKILL.md  or  .claude/skills/webcmd-usage/SKILL.md
+~/.agents/skills/webcmd-browser/SKILL.md  or  .agents/skills/webcmd-browser/SKILL.md
+~/.codex/skills/webcmd-browser/SKILL.md   or  .codex/skills/webcmd-browser/SKILL.md
+~/.claude/skills/webcmd-browser/SKILL.md  or  .claude/skills/webcmd-browser/SKILL.md
 ```
 
 If the selected user-level path exists, a missing project-level path is expected and does not require another installation (and vice versa).

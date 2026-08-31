@@ -50,7 +50,7 @@ webcmd doctor
 webcmd skills add
 ```
 
-When `webcmd skills add` prompts, choose the `agents` provider. It installs into `~/.agents/skills/` (user) or `.agents/skills/` (project), which Codex CLI reads on startup. Codex then surfaces `webcmd-usage` and `webcmd-browser` as skills.
+When `webcmd skills add` prompts, choose the `agents` provider. It installs into `~/.agents/skills/` (user) or `.agents/skills/` (project), which Codex CLI reads on startup. Codex then surfaces `webcmd-browser` as a skill.
 
 Restart Codex (or start a new session) after installing skills.
 
@@ -90,4 +90,3 @@ disabled_tools = ["navigate", "screenshot"]
 
 * [`start.md`](../../start.md) — common setup, [auth profiles and human handoff](../../start.md#auth-profiles-and-human-handoff), and [security](../../start.md#security).
 * [`webcmd-browser`](../../skills/webcmd-browser/SKILL.md) — the raw browser session surface.
-* [`webcmd-usage`](../../skills/webcmd-usage/SKILL.md) — adapter-first usage rules.

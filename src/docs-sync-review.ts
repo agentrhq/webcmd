@@ -166,7 +166,7 @@ const GENERAL_DOCUMENTATION = [
   'README.md',
   'docs/cli-reference.mdx',
   'docs/concepts.mdx',
-  'skills/webcmd-usage/SKILL.md',
+  'skills/webcmd-browser/SKILL.md',
 ];
 
 const BROWSER_DOCUMENTATION = [
@@ -175,9 +175,7 @@ const BROWSER_DOCUMENTATION = [
   'docs/browser-and-sitemap-memory.mdx',
   'docs/cli-reference.mdx',
   'docs/concepts.mdx',
-  'skills/webcmd-browser-sitemap/SKILL.md',
   'skills/webcmd-browser/SKILL.md',
-  'skills/webcmd-usage/SKILL.md',
 ];
 
 const HOSTED_DOCUMENTATION = [
@@ -193,8 +191,7 @@ const ADAPTER_DOCUMENTATION = [
   'docs/authoring.mdx',
   'docs/cli-reference.mdx',
   'docs/skills.mdx',
-  'skills/webcmd-adapter-author/SKILL.md',
-  'skills/webcmd-usage/SKILL.md',
+  'skills/webcmd-browser/SKILL.md',
 ];
 
 export function selectDocumentationPaths(files: ChangedFile[]): string[] {

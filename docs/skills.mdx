@@ -1,35 +1,24 @@
 ---
 title: Skills
-description: Start with webcmd-usage and let your agent select the specialized Webcmd workflow it needs.
+description: The bundled install is exactly one skill, webcmd-browser, for live browser work.
 ---
 
 # Skills
 
-## Start With webcmd-usage
+The bundled install is exactly one skill, `webcmd-browser`. Load it for live browser work.
 
-Ask the agent to load `webcmd-usage` at the start of a Webcmd task. It discovers existing commands, understands common output and strategy choices, and selects the right specialized workflow.
-
-## Specialized Skills
-
-| Skill | Outcome |
-| --- | --- |
-| `smart-search` | Finds the right Webcmd-backed source for a research or search task. |
-| `webcmd-browser` | Completes a one-off task in a live browser when no existing command fits. |
-| `webcmd-browser-sitemap` | Uses retained site navigation knowledge while checking it against the live page. |
-| `webcmd-sitemap-author` | Records durable, verified navigation and workflow knowledge for later browser work. |
-| `webcmd-adapter-author` | Turns a repeatable website or app workflow into a verified command. |
-| `webcmd-autofix` | Diagnoses and repairs a broken adapter after a site changes. |
+Adapter, search, fetch, and plugin commands remain on the CLI. They are outside the default installed browser skill.
 
 ## Install in Codex
 
 Open **Plugins**, choose **Add plugin marketplace**, enter `agentrhq/webcmd`,
-and install **Webcmd**. The plugin bundles these same seven skills and installs
+and install **Webcmd**. The plugin bundles this same skill and installs
 the npm CLI on first use if `webcmd` is missing. Start a new task after
 installation.
 
-Do not also add the skills with `webcmd skills add` in Codex.
+Do not also add the skill with `webcmd skills add` in Codex.
 
 ## Other Agents or Plugin-Free Setup
 
-Run `webcmd skills add` to install or refresh the bundled Webcmd skills for your agent. The agent can then start with `webcmd-usage` and load the specialized skill that matches the outcome.
+Run `webcmd skills add` to install or refresh the bundled `webcmd-browser` skill for your agent.
 For raw browser work, agents should run `webcmd --profile work session create "Work Project"`, keep the returned immutable, Profile-scoped ID, and pass it at the root: `webcmd --profile work --session work-project-k7 browser tabs`. Adapter commands without `--session` reuse `adapter-default`; raw browser commands require an explicit readable selector.

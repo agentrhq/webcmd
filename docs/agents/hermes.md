@@ -36,7 +36,7 @@ skills:
     - ~/.agents/skills
 ```
 
-Hermes then reads `webcmd-usage` and `webcmd-browser` as skills. Restart Hermes after changing config and confirm the skills are discoverable.
+Hermes then reads `webcmd-browser` as a skill. Restart Hermes after changing config and confirm the skill is discoverable.
 
 ### Override default tools
 
@@ -91,4 +91,3 @@ Do not disable the `terminal` toolset — that is how Hermes runs `webcmd`.
 
 * [`start.md`](../../start.md) — common setup, [auth profiles and human handoff](../../start.md#auth-profiles-and-human-handoff), and [security](../../start.md#security).
 * [`webcmd-browser`](../../skills/webcmd-browser/SKILL.md) — the raw browser session surface.
-* [`webcmd-usage`](../../skills/webcmd-usage/SKILL.md) — adapter-first usage rules.

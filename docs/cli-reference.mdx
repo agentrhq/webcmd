@@ -35,7 +35,7 @@ webcmd wikipedia summary "Command-line interface"
 webcmd pubmed search "agentic browser automation" --limit 5 -f json
 ```
 
-Agents should prefer existing adapters before raw browser exploration. For search and fetch tasks, use the bundled `smart-search` skill: it tries fetch-based search first, explicit browser Sessions after eligible fetch failures, and search adapters last.
+Agents should prefer existing adapters before raw browser exploration. For search and fetch tasks, use `webcmd web fetch` first, then explicit browser Sessions after eligible fetch failures, and search adapters last.
 
 ## Search and Fetch
 

@@ -47,6 +47,45 @@ const RETIRED_SKILLS = [
   'webcmd-usage',
 ] as const;
 
+const PRODUCT_ROOTS = [
+  'src',
+  'scripts',
+  'skills',
+  'mcp-skills',
+  'skill-src',
+  'docs',
+  'README.md',
+  'PRIVACY.md',
+  '.codex-plugin',
+];
+
+function productFiles(): string[] {
+  const files: string[] = [];
+  const collect = (absolute: string) => {
+    const stat = fs.statSync(absolute);
+    if (stat.isFile()) {
+      if (/\.(?:ts|mjs|js|md|mdx|json)$/.test(absolute)) files.push(absolute);
+      return;
+    }
+    for (const entry of fs.readdirSync(absolute, { withFileTypes: true })) {
+      if (entry.name === 'node_modules' || entry.name === 'dist') continue;
+      collect(path.join(absolute, entry.name));
+    }
+  };
+  for (const root of PRODUCT_ROOTS) {
+    const absolute = path.join(process.cwd(), root);
+    if (fs.existsSync(absolute)) collect(absolute);
+  }
+  return files;
+}
+
+function withoutRetiredList(file: string, text: string): string {
+  if (file.endsWith(`${path.sep}skills.test.ts`)) {
+    return text.replace(/const RETIRED_SKILLS = \[[\s\S]*?\] as const;/, '');
+  }
+  return text;
+}
+
 describe('webcmd skills content', () => {
   it('keeps bundled skill frontmatter valid yaml', () => {
     const skillsRoot = path.join(process.cwd(), 'skills');
@@ -371,10 +410,56 @@ describe('webcmd skills content', () => {
   });
 
   it('mentions retired skill names only in RETIRED_SKILLS', () => {
-    const source = fs.readFileSync(path.join(process.cwd(), 'src', 'skills.test.ts'), 'utf8');
-    const withoutList = source.replace(/const RETIRED_SKILLS = \[[\s\S]*?\] as const;/, '');
-    for (const retired of RETIRED_SKILLS) {
-      expect(withoutList, retired).not.toContain(retired);
+    const hits: string[] = [];
+    for (const file of productFiles()) {
+      const text = withoutRetiredList(file, fs.readFileSync(file, 'utf8'));
+      for (const retired of RETIRED_SKILLS) {
+        if (text.includes(retired)) hits.push(`${path.relative(process.cwd(), file)}: ${retired}`);
+      }
     }
+    expect(hits).toEqual([]);
+  });
+});
+
+describe('public copy', () => {
+  it('describes the bundled install as exactly one skill, webcmd-browser', () => {
+    const readme = fs.readFileSync(path.join(process.cwd(), 'README.md'), 'utf8');
+    const skills = fs.readFileSync(path.join(process.cwd(), 'docs', 'skills.mdx'), 'utf8');
+    const quickstart = fs.readFileSync(path.join(process.cwd(), 'docs', 'quickstart.mdx'), 'utf8');
+    const plugin = JSON.parse(fs.readFileSync(path.join(process.cwd(), '.codex-plugin', 'plugin.json'), 'utf8')) as {
+      interface: { longDescription: string };
+    };
+
+    expect(readme).toContain('webcmd-browser');
+    expect(readme).toMatch(/exactly one skill|one skill/i);
+    expect(skills).toContain('webcmd-browser');
+    expect(skills).toMatch(/exactly one skill|one bundled skill/i);
+    expect(skills).not.toMatch(/seven bundled/i);
+    expect(quickstart).toContain('webcmd-browser');
+    expect(quickstart).toMatch(/exactly one skill|one bundled skill/i);
+    expect(quickstart).not.toMatch(/seven bundled/i);
+    expect(plugin.interface.longDescription).toMatch(/webcmd-browser|one skill/i);
+  });
+
+  it('documents local seed lookup, provenance, clean break, and invisible learning', () => {
+    const privacy = fs.readFileSync(path.join(process.cwd(), 'PRIVACY.md'), 'utf8');
+    const memory = fs.readFileSync(path.join(process.cwd(), 'docs', 'browser-and-sitemap-memory.mdx'), 'utf8');
+    const localCloud = fs.readFileSync(path.join(process.cwd(), 'docs', 'local-or-cloud.mdx'), 'utf8');
+
+    expect(privacy).toMatch(/unauthenticated GET/i);
+    expect(privacy).toContain('/v1/site-memory/seeds/');
+    expect(privacy).toContain('https://api.webcmd.dev');
+    expect(privacy).toMatch(/2-second timeout|2 second timeout/i);
+    expect(privacy).toMatch(/no retry/i);
+    expect(privacy).toContain('WEBCMD_GLOBAL_MEMORY=off');
+    expect(privacy).toContain('WEBCMD_GLOBAL_MEMORY_URL');
+    expect(privacy).toContain('~/.webcmd/sites');
+    expect(privacy).toMatch(/never (?:uploaded|pushed)|is never uploaded/i);
+    expect(privacy).toMatch(/never pushes/i);
+    expect(privacy).toContain('sitemap/SITE.md');
+    expect(memory).toMatch(/invisible|do not routinely announce|normal output/i);
+    expect(memory).toMatch(/request|verbose|retention failure/i);
+    expect(localCloud).toMatch(/self-learning|site memory/i);
+    expect(localCloud).toMatch(/browser-operation-only|browser operation only|browser-only/i);
   });
 });

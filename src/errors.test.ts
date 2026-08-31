@@ -71,7 +71,8 @@ describe('Error type hierarchy', () => {
     expect(err.code).toBe('EMPTY_RESULT');
     expect(err.message).toBe('hackernews/top returned no data');
     expect(err.hint).toContain('webcmd adapter path hackernews/top');
-    expect(err.hint).toContain('webcmd-autofix');
+    expect(err.hint).toContain('retain-on-failure');
+    expect(err.hint).not.toMatch(/Load the .* skill/i);
     expect(err.hint).not.toMatch(/you may need to log in/i);
   });
 
@@ -80,7 +81,8 @@ describe('Error type hierarchy', () => {
     expect(err.code).toBe('SELECTOR');
     expect(err.message).toContain('.submit-btn');
     expect(err.hint).toContain('webcmd adapter path');
-    expect(err.hint).toContain('webcmd-autofix');
+    expect(err.hint).toContain('retain-on-failure');
+    expect(err.hint).not.toMatch(/Load the .* skill/i);
   });
 
   it('BrowserConnectError has correct code', () => {
@@ -213,6 +215,7 @@ describe('toEnvelope', () => {
     }, 'rest-countries/top');
     expect(envelope.error.help).toContain('webcmd adapter path rest-countries/top');
     expect(envelope.error.help).toMatch(/Do not sign up/i);
+    expect(envelope.error.help).not.toMatch(/Load the .* skill/i);
   });
 });
 

@@ -19,7 +19,7 @@
   "interface": {
     "displayName": "Webcmd",
     "shortDescription": "Agent-native CLIs for websites, apps, and local tools",
-    "longDescription": "Use Webcmd's reusable CLI, browser, search, authoring, sitemap, and repair workflows from Codex. Requires the @agentrhq/webcmd npm CLI.",
+    "longDescription": "Use Webcmd's bundled webcmd-browser skill from Codex. The npm CLI also covers adapters, search, fetch, and plugins. Requires the @agentrhq/webcmd npm CLI.",
     "developerName": "AgentRHQ",
     "category": "Developer Tools",
     "capabilities": [

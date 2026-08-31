@@ -170,6 +170,16 @@ describe('formatErrorEnvelope', () => {
     expect(formatErrorEnvelope(envelope, { fmt: 'table' })).toMatch(/^ok: false\nerror:/);
   });
 
+  it('adds adapter-path trace guidance without loading a skill', () => {
+    const text = formatErrorEnvelope({
+      ok: false,
+      error: { code: 'EMPTY_RESULT', message: 'none', exitCode: 66 },
+    }, { cmdName: 'github/issue' });
+    expect(text).toContain('webcmd adapter path github/issue');
+    expect(text).toContain('--trace=retain-on-failure');
+    expect(text).not.toMatch(/Load the .* skill/i);
+  });
+
   it('omits YAML AutoFix comments from JSON envelopes', () => {
     const text = formatErrorEnvelope({
       ok: false,

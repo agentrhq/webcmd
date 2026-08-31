@@ -44,7 +44,7 @@ describe('classifyPullRequest', () => {
     ['public type changes', changed('src/types.ts', '+export interface Result {}')],
     ['README changes', changed('README.md', '+New user behavior')],
     ['documentation changes', changed('docs/cli-reference.mdx', '+New CLI behavior')],
-    ['skill changes', changed('skills/webcmd-usage/SKILL.md', '+New agent behavior')],
+    ['skill changes', changed('skills/webcmd-browser/SKILL.md', '+New agent behavior')],
   ])('routes %s to Gemini with a public signal', (_name, file) => {
     expect(classifyPullRequest([file])).toMatchObject({
       route: 'gemini',
@@ -114,9 +114,7 @@ describe('review context', () => {
       'docs/browser-and-sitemap-memory.mdx',
       'docs/cli-reference.mdx',
       'docs/concepts.mdx',
-      'skills/webcmd-browser-sitemap/SKILL.md',
       'skills/webcmd-browser/SKILL.md',
-      'skills/webcmd-usage/SKILL.md',
     ]);
   });
 
@@ -129,9 +127,7 @@ describe('review context', () => {
       'docs/cli-reference.mdx',
       'docs/concepts.mdx',
       'docs/local-or-cloud.mdx',
-      'skills/webcmd-browser-sitemap/SKILL.md',
       'skills/webcmd-browser/SKILL.md',
-      'skills/webcmd-usage/SKILL.md',
     ]);
   });
 
@@ -144,9 +140,7 @@ describe('review context', () => {
       'docs/cli-reference.mdx',
       'docs/concepts.mdx',
       'docs/local-or-cloud.mdx',
-      'skills/webcmd-browser-sitemap/SKILL.md',
       'skills/webcmd-browser/SKILL.md',
-      'skills/webcmd-usage/SKILL.md',
     ]);
   });
 
@@ -155,7 +149,7 @@ describe('review context', () => {
       'README.md',
       'docs/cli-reference.mdx',
       'docs/concepts.mdx',
-      'skills/webcmd-usage/SKILL.md',
+      'skills/webcmd-browser/SKILL.md',
     ]);
   });
 
@@ -165,8 +159,7 @@ describe('review context', () => {
       'docs/authoring.mdx',
       'docs/cli-reference.mdx',
       'docs/skills.mdx',
-      'skills/webcmd-adapter-author/SKILL.md',
-      'skills/webcmd-usage/SKILL.md',
+      'skills/webcmd-browser/SKILL.md',
     ]);
   });
 
@@ -212,7 +205,7 @@ describe('review context', () => {
 
     const [result] = buildReviewPrompts(context, [
       { path: 'README.md', content: 'x'.repeat(70_000) },
-      { path: 'skills/webcmd-usage/SKILL.md', content: 'TAIL_MARKER' },
+      { path: 'skills/webcmd-browser/SKILL.md', content: 'TAIL_MARKER' },
     ]);
 
     expect(result.prompt).toContain('TAIL_MARKER');

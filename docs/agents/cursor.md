@@ -27,7 +27,7 @@ webcmd doctor
 webcmd skills add
 ```
 
-When `webcmd skills add` prompts, choose the `agents` provider. It installs into `~/.agents/skills/`, which Cursor reads on startup along with `.cursor/skills/`, `.agents/skills/`, and `~/.cursor/skills/`. Cursor then surfaces `webcmd-usage` and `webcmd-browser` as skills when a task matches their descriptions.
+When `webcmd skills add` prompts, choose the `agents` provider. It installs into `~/.agents/skills/`, which Cursor reads on startup along with `.cursor/skills/`, `.agents/skills/`, and `~/.cursor/skills/`. Cursor then surfaces `webcmd-browser` as a skill when a task matches its description.
 
 For a project-scoped setup, copy the `webcmd-*` skill folders into the project's `.cursor/skills/` or `.agents/skills/` so the whole team gets them. Restart Cursor after installing skills.
 
@@ -83,4 +83,3 @@ Note that the rule is guidance, not a block. Cursor's Browser Automation has bee
 
 * [`start.md`](../../start.md) — common setup, [auth profiles and human handoff](../../start.md#auth-profiles-and-human-handoff), and [security](../../start.md#security).
 * [`webcmd-browser`](../../skills/webcmd-browser/SKILL.md) — the raw browser session surface.
-* [`webcmd-usage`](../../skills/webcmd-usage/SKILL.md) — adapter-first usage rules.

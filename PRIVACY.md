@@ -6,4 +6,20 @@ The runtime can access browser pages and cookies because browser automation requ
 
 Trace artifacts, cache files, plugins, user adapters, and site memory are stored under `~/.webcmd`.
 
+## Local site-memory seed lookup
+
+On first access when no local memory exists, local Webcmd makes a public unauthenticated GET `<base>/v1/site-memory/seeds/<punycode-product-key>`. The default base is `https://api.webcmd.dev`. The request uses a 2-second timeout and no retry. It discloses the resolved product/domain.
+
+`WEBCMD_GLOBAL_MEMORY=off` disables the lookup. `WEBCMD_GLOBAL_MEMORY_URL` changes the base.
+
+## What stays local
+
+Candidate provenance stays local under `~/.webcmd/sites`. It includes local machine/network metadata, is excluded from ordinary output, and is never uploaded or pushed by this design. The local sites Git repository never pushes.
+
+Learning is invisible in normal output. Diagnostics appear on request, verbose mode, or a material warning-retention failure.
+
+## Beta memory clean break
+
+If you used beta site memory, remove that product's old `~/.webcmd/sites/<product>/sitemap/SITE.md` before first use, or remove that entire beta product directory if you do not want it. There is no migration guarantee. Do not delete unrelated product directories.
+
 For attribution and license information, see `LICENSE` and `NOTICE`.
