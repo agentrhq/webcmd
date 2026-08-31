@@ -1,12 +1,6 @@
 import { createHash } from 'node:crypto';
 
-export const WEBCMD_BROWSER_BINARY_PATH_ENV = 'WEBCMD_BROWSER_BINARY_PATH';
 export const CLOAKBROWSER_BINARY_PATH_ENV = 'CLOAKBROWSER_BINARY_PATH';
-
-export type BrowserBinaryOverride = {
-  path: string;
-  envVar: typeof WEBCMD_BROWSER_BINARY_PATH_ENV | typeof CLOAKBROWSER_BINARY_PATH_ENV;
-};
 
 function normalizeBrowserNamespace(value: string): string {
   return value
@@ -30,15 +24,15 @@ function safeCustomNamespace(candidate: string, binaryPath: string): string {
 
 /**
  * Select the on-disk namespace that owns local Chromium profile data.
- * Managed Cloak and its legacy override retain the historical `cloak` path.
+ * Managed Cloak retains the historical `cloak` path.
  */
 export function resolveBrowserProfileNamespace(
-  env: NodeJS.ProcessEnv = process.env,
+  executablePath?: string,
 ): string {
-  const genericPath = env[WEBCMD_BROWSER_BINARY_PATH_ENV]?.trim();
-  if (!genericPath) return 'cloak';
+  const binaryPath = executablePath?.trim();
+  if (!binaryPath) return 'cloak';
 
-  const components = genericPath.split(/[\\/]+/).filter(Boolean);
+  const components = binaryPath.split(/[\\/]+/).filter(Boolean);
   const appBundle = [...components].reverse().find(component => /\.app$/i.test(component));
   const executable = normalizeBrowserNamespace(components.at(-1) ?? '');
   const appNamespace = normalizeBrowserNamespace(appBundle ?? '');
@@ -51,45 +45,20 @@ export function resolveBrowserProfileNamespace(
 
   if (appBundle) {
     if (appNamespace && appNamespace !== 'chromium') {
-      return safeCustomNamespace(appNamespace, genericPath);
+      return safeCustomNamespace(appNamespace, binaryPath);
     }
   }
 
   if (executable && !['chrome', 'chromium'].includes(executable)) {
-    return safeCustomNamespace(executable, genericPath);
+    return safeCustomNamespace(executable, binaryPath);
   }
-  return `custom-chromium-${browserPathHash(genericPath)}`;
+  return `custom-chromium-${browserPathHash(binaryPath)}`;
 }
 
-/**
- * Resolve the browser executable selected by the user.
- *
- * The Webcmd-owned name takes precedence. The CloakBrowser-specific name stays
- * supported so existing installations continue to launch the same binary.
- */
-export function resolveBrowserBinaryOverride(
+export function configureCloakBrowserBinary(
+  executablePath: string | undefined,
   env: NodeJS.ProcessEnv = process.env,
-): BrowserBinaryOverride | undefined {
-  if (env[WEBCMD_BROWSER_BINARY_PATH_ENV]) {
-    return { path: env[WEBCMD_BROWSER_BINARY_PATH_ENV], envVar: WEBCMD_BROWSER_BINARY_PATH_ENV };
-  }
-  if (env[CLOAKBROWSER_BINARY_PATH_ENV]) {
-    return { path: env[CLOAKBROWSER_BINARY_PATH_ENV], envVar: CLOAKBROWSER_BINARY_PATH_ENV };
-  }
-  return undefined;
-}
-
-/**
- * CloakBrowser resolves its managed executable before applying raw Playwright
- * launch options. Mirror Webcmd's generic override into the legacy variable so
- * the wrapper short-circuits that download and platform-resolution path.
- */
-export function applyBrowserBinaryOverrideToCloakEnvironment(
-  env: NodeJS.ProcessEnv = process.env,
-): BrowserBinaryOverride | undefined {
-  const override = resolveBrowserBinaryOverride(env);
-  if (override?.envVar === WEBCMD_BROWSER_BINARY_PATH_ENV) {
-    env[CLOAKBROWSER_BINARY_PATH_ENV] = override.path;
-  }
-  return override;
+): void {
+  if (executablePath) env[CLOAKBROWSER_BINARY_PATH_ENV] = executablePath;
+  else delete env[CLOAKBROWSER_BINARY_PATH_ENV];
 }

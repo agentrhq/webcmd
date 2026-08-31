@@ -17,7 +17,6 @@ import type { BrowserProfileStatus } from './browser/daemon-transport.js';
 import { aliasForContextId, loadProfileConfig } from './browser/profile.js';
 import { formatDaemonVersion, isDaemonStale, staleDaemonIssue } from './browser/daemon-version.js';
 import { findShadowedUserAdapters, formatAdapterShadowIssue, type AdapterShadow } from './adapter-shadow.js';
-import { resolveBrowserBinaryOverride } from './browser/browser-binary.js';
 
 const DOCTOR_LIVE_TIMEOUT_SECONDS = 8;
 
@@ -37,9 +36,6 @@ export type BrowserBinaryStatus = {
   path: string;
   downloadUrl?: string;
   error?: string;
-  /** True when a custom executable is selected instead of the managed cache. */
-  override: boolean;
-  overrideEnv?: string;
 };
 
 export type DoctorReport = {
@@ -89,25 +85,15 @@ function isLaunchableFile(binaryPath: string): boolean {
  * needs to launch is present on disk.
  */
 export function checkBrowserBinary(): BrowserBinaryStatus {
-  const override = resolveBrowserBinaryOverride();
-  if (override) {
-    return {
-      installed: isLaunchableFile(override.path),
-      path: override.path,
-      override: true,
-      overrideEnv: override.envVar,
-    };
-  }
   try {
     const info = binaryInfo();
     return {
       installed: info.installed && isLaunchableFile(info.binaryPath),
       path: info.binaryPath,
       downloadUrl: info.downloadUrl,
-      override: false,
     };
   } catch (err) {
-    return { installed: undefined, path: 'unknown', error: getErrorMessage(err), override: false };
+    return { installed: undefined, path: 'unknown', error: getErrorMessage(err) };
   }
 }
 
@@ -120,7 +106,7 @@ export async function checkConnectivity(opts?: { timeout?: number }): Promise<Co
   let sessionId: string | undefined;
   try {
     // A first-use download can exceed doctor's deliberately short live-probe deadline.
-    if (!resolveBrowserBinaryOverride()) await ensureBinary();
+    await ensureBinary();
     setDaemonCommandTimeoutSeconds(timeoutSeconds);
     const session = await sendCommand('session-create', { sessionName: 'Doctor Probe' }) as { id?: unknown };
     if (typeof session.id !== 'string') throw new Error('Doctor could not create a browser Session.');
@@ -180,13 +166,10 @@ export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<Doctor
   if (binary.error) {
     issues.push(`Could not check CloakBrowser Chromium binary: ${binary.error}`);
   } else if (binary.installed === false) {
-    const source = binary.override ? `${binary.overrideEnv} (${binary.path})` : binary.path;
     issues.push(
-      `CloakBrowser Chromium is ${binary.override ? 'not launchable at' : 'not installed at'} ${source}.\n` +
+      `CloakBrowser Chromium is not installed at ${binary.path}.\n` +
       (binary.downloadUrl ? `  Download URL: ${binary.downloadUrl}\n` : '') +
-      (binary.override
-        ? `  Check that ${binary.overrideEnv} points at a compatible local Chromium executable.`
-        : '  Check network access to the download URL above, or set WEBCMD_BROWSER_BINARY_PATH to a compatible local Chromium executable.'),
+      '  Check network access to the download URL above.',
     );
   }
   if (daemonFlaky) {
@@ -305,7 +288,7 @@ export function renderBrowserDoctorReport(report: DoctorReport): string {
       ? 'status unknown'
       : report.binary.installed
       ? `installed at ${report.binary.path}`
-      : `${report.binary.override ? 'not launchable' : 'not installed'} (${report.binary.path})`;
+      : `not installed (${report.binary.path})`;
     lines.push(`${binaryIcon} Browser binary: ${binaryLabel}`);
   }
 

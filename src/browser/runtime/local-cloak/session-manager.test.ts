@@ -4,7 +4,6 @@ import type { BrowserContext, Page as PlaywrightPage } from 'playwright-core';
 import { CloakSessionManager, resolveLeaseKey } from './session-manager.js';
 import { log } from '../../../logger.js';
 import { dispatchCloakAction } from './actions.js';
-import { resolveBrowserProfileNamespace } from '../../browser-binary.js';
 
 function fakeContext() {
   const listeners = new Map<string, Set<(...args: unknown[]) => void>>();
@@ -191,14 +190,15 @@ describe('CloakSessionManager', () => {
     expect(launchPersistentContext.mock.calls[0][0]).toMatchObject({ headless: false });
   });
 
-  it('passes WEBCMD_BROWSER_BINARY_PATH through as the Playwright executable', async () => {
+  it('passes the configured executable and namespace through to Cloak', async () => {
     const browserPath = '/opt/chromium-fork/chrome';
     vi.stubEnv('CLOAKBROWSER_BINARY_PATH', '/opt/cloak/chrome');
-    vi.stubEnv('WEBCMD_BROWSER_BINARY_PATH', browserPath);
     const launched = fakeContext();
     const launchPersistentContext = vi.fn().mockResolvedValue(launched.context);
     const manager = new CloakSessionManager({
       baseDir: '/tmp/webcmd-test',
+      executablePath: browserPath,
+      profileNamespace: 'custom-chromium-12345678',
       launchPersistentContext,
     });
 
@@ -207,7 +207,7 @@ describe('CloakSessionManager', () => {
     expect(launchPersistentContext).toHaveBeenCalledWith(expect.objectContaining({
       userDataDir: path.join(
         '/tmp/webcmd-test',
-        resolveBrowserProfileNamespace({ WEBCMD_BROWSER_BINARY_PATH: browserPath }),
+        'custom-chromium-12345678',
         'profiles',
         'default',
       ),
@@ -216,14 +216,14 @@ describe('CloakSessionManager', () => {
     expect(process.env.CLOAKBROWSER_BINARY_PATH).toBe(browserPath);
   });
 
-  it('uses the normal macOS launcher for a custom app-bundle executable', async () => {
+  it('uses the normal macOS launcher for a configured custom app-bundle executable', async () => {
     vi.stubEnv('CLOAKBROWSER_BINARY_PATH', '');
-    vi.stubEnv('WEBCMD_BROWSER_BINARY_PATH', '/Applications/ChromiumFork.app/Contents/MacOS/ChromiumFork');
     const launched = fakeContext();
     const launchPersistentContext = vi.fn().mockResolvedValue(launched.context);
     const launchBackgroundPersistentContext = vi.fn().mockResolvedValue(launched.context);
     const manager = new CloakSessionManager({
       baseDir: '/tmp/webcmd-test',
+      executablePath: '/Applications/ChromiumFork.app/Contents/MacOS/ChromiumFork',
       platform: 'darwin',
       launchPersistentContext,
       launchBackgroundPersistentContext,

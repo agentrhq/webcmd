@@ -1,5 +1,3 @@
-import fs from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 
 function fakeAttachedProfile() {
@@ -107,11 +105,7 @@ function fakeAttachedProfile() {
 }
 
 describe('local browser runtime selection', () => {
-  it('keeps Cloak as the daemon default while retaining the SLAB provider factory', async () => {
-    const daemonSource = fs.readFileSync(fileURLToPath(new URL('../../../daemon.ts', import.meta.url)), 'utf8');
-    expect(daemonSource).toContain("from './browser/runtime/local-cloak/provider.js'");
-    expect(daemonSource).toContain('new LocalCloakRuntimeProvider');
-
+  it('retains the SLAB provider factory', async () => {
     const { createLocalBrowserRuntimeProvider, LocalSlabRuntimeProvider } = await import('./provider.js');
     const provider = createLocalBrowserRuntimeProvider({
       attachProfile: vi.fn().mockResolvedValue(fakeAttachedProfile()),

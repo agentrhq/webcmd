@@ -15,7 +15,7 @@ import { findExactCloakProfileProcesses } from './process-matcher.js';
 import { log } from '../../../logger.js';
 import { CliError, EXIT_CODES } from '../../../errors.js';
 import { isClosedContextError } from '../../run/types.js';
-import { applyBrowserBinaryOverrideToCloakEnvironment } from '../../browser-binary.js';
+import { configureCloakBrowserBinary } from '../../browser-binary.js';
 
 const UNRESOLVED = Symbol('unresolved');
 const TARGET_PAGE_MATCH_TIMEOUT_MS = 1_000;
@@ -157,6 +157,8 @@ export class SessionWindowConflictError extends CliError {
 
 export interface CloakSessionManagerOptions {
   baseDir?: string;
+  profileNamespace?: string;
+  executablePath?: string;
   launchPersistentContext?: LaunchPersistentContext;
   launchBackgroundPersistentContext?: LaunchPersistentContext;
   activateBackgroundContext?: typeof activateDarwinBackgroundContext;
@@ -726,20 +728,23 @@ export class CloakSessionManager {
   }
 
   private async launchProfileRuntime(profileId: string, windowMode?: BrowserWindowMode): Promise<ProfileRuntime> {
-    const userDataDir = resolveCloakProfileDir(profileId, { baseDir: this.opts.baseDir });
+    const userDataDir = resolveCloakProfileDir(profileId, {
+      baseDir: this.opts.baseDir,
+      profileNamespace: this.opts.profileNamespace,
+    });
     fs.mkdirSync(userDataDir, { recursive: true });
-    const binaryOverride = applyBrowserBinaryOverrideToCloakEnvironment();
+    configureCloakBrowserBinary(this.opts.executablePath);
     const launchOptions = {
       userDataDir,
       headless: false,
       humanize: true,
-      ...(binaryOverride ? { launchOptions: { executablePath: binaryOverride.path } } : {}),
+      ...(this.opts.executablePath ? { launchOptions: { executablePath: this.opts.executablePath } } : {}),
     };
     // The macOS background launcher depends on Cloak Chromium publishing a
     // DevToolsActivePort file. Compatible Chromium forks may be app bundles but
     // not implement that contract, so custom executables use Playwright's
     // normal persistent launcher instead.
-    const launchPersistentContext = this.platform === 'darwin' && windowMode === 'background' && !binaryOverride
+    const launchPersistentContext = this.platform === 'darwin' && windowMode === 'background' && !this.opts.executablePath
       ? this.launchBackgroundPersistentContext
       : this.launchPersistentContext;
     let context: BrowserContext;
