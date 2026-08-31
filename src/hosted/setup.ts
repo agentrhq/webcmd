@@ -1,17 +1,28 @@
 import { createInterface } from 'node:readline/promises';
 import { stdin as defaultInput, stdout as defaultOutput } from 'node:process';
+import { constants, existsSync } from 'node:fs';
+import { access, realpath, stat } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { isAbsolute } from 'node:path';
 import { CLI_COMMAND } from '../brand.js';
 import { ArgumentError, toEnvelope } from '../errors.js';
 import { formatErrorEnvelope } from '../output.js';
 import { writeToStream } from '../stream-write.js';
+import { fetchDaemonStatus, type DaemonStatus } from '../browser/daemon-transport.js';
+import { restartDaemon, type DaemonRestartResult } from '../browser/daemon-lifecycle.js';
+import { createSlabInstallerIo, installSlabMacos } from '../slab/install.js';
+import { findSlabInstallation, type SlabInstallation } from '../slab/installation.js';
+import { inspectSlabStatus, slabStatusHasHello, type SlabSetupStatus } from '../slab/status.js';
 import { HostedClient } from './client.js';
 import {
   defaultHostedApiBaseUrl,
+  getConfigPath,
+  loadWebcmdConfig,
   makeLocalConfig,
   saveWebcmdConfig,
   type ConfigIo,
   type LocalBrowserConfig,
+  type WebcmdConfig,
 } from './config.js';
 import {
   makeStoredHostedConfig,
@@ -29,6 +40,16 @@ export interface SetupIo extends ConfigIo, HostedCredentialIo {
   write?: (message: string) => void | Promise<void>;
   argv?: readonly string[];
   isTTY?: boolean;
+  resolveCloakPackage?: () => string | Promise<string>;
+  realpath?: (path: string) => Promise<string>;
+  stat?: (path: string) => Promise<{ isFile(): boolean }>;
+  access?: (path: string, mode: number) => Promise<void>;
+  findSlabInstallation?: () => SlabInstallation | null;
+  installSlabMacos?: () => Promise<SlabInstallation>;
+  inspectSlabStatus?: () => Promise<SlabSetupStatus>;
+  fetchDaemonStatus?: () => Promise<DaemonStatus | null>;
+  restartDaemon?: () => Promise<DaemonRestartResult>;
+  saveConfig?: (config: WebcmdConfig, io: ConfigIo) => void;
 }
 
 type SetupMode = 'local' | 'hosted';
@@ -43,6 +64,7 @@ const SETUP_HELP = [
   '  --mode <local|hosted>   Required when stdin is not a TTY',
   '  --browser <cloak|slab|absolute-path>  Local browser in local mode',
   '  --api-key <key>         Required for --mode hosted when stdin is not a TTY',
+  '  --status                Show the configured mode and local browser',
   '  -h, --help',
   '',
   SETUP_EXAMPLE,
@@ -67,6 +89,10 @@ export async function runHostedSetup(io: SetupIo = {}): Promise<number> {
     const parsed = parseSetupArgs(io.argv ?? []);
     if (parsed.help) {
       await write(SETUP_HELP);
+      return 0;
+    }
+    if (parsed.status) {
+      await write(`${JSON.stringify(await getSetupStatus(io))}\n`);
       return 0;
     }
 
@@ -97,7 +123,17 @@ export async function runHostedSetup(io: SetupIo = {}): Promise<number> {
       const browser = parsed.browser ?? (interactive
         ? parseLocalBrowser((await ask('Local browser [cloak/slab/absolute path] (cloak): ')).trim() || 'cloak')
         : { kind: 'cloak' });
-      saveWebcmdConfig(makeLocalConfig(io.now?.() ?? new Date(), browser), io);
+      const before = await (io.fetchDaemonStatus ?? fetchDaemonStatus)();
+      try {
+        const selected = await validateLocalBrowser(browser, io);
+        (io.saveConfig ?? saveWebcmdConfig)(makeLocalConfig(io.now?.() ?? new Date(), selected), io);
+        if (before) await restartConfiguredDaemon(selected, io);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        await write(`Local browser setup failed: ${message}\n`);
+        if (err instanceof DaemonRestartError) await write('Run `webcmd daemon restart` to apply the selected browser.\n');
+        return 1;
+      }
       await write('Webcmd is now configured for local mode.\n');
       return 0;
     }
@@ -169,13 +205,69 @@ function canPrompt(io: SetupIo): boolean {
   return process.stdin.isTTY === true && process.stdout.isTTY === true;
 }
 
-function parseSetupArgs(argv: readonly string[]): { help?: true; mode?: SetupMode; browser?: LocalBrowserConfig; apiKey?: string } {
+async function validateLocalBrowser(browser: LocalBrowserConfig, io: SetupIo): Promise<LocalBrowserConfig> {
+  if (browser.kind === 'cloak') {
+    await (io.resolveCloakPackage ?? (() => import.meta.resolve('cloakbrowser')))();
+    return browser;
+  }
+  if (browser.kind === 'custom') {
+    const executablePath = await (io.realpath ?? realpath)(browser.executablePath);
+    if (!(await (io.stat ?? stat)(executablePath)).isFile()) throw new Error(`Browser executable is not a file: ${executablePath}`);
+    await (io.access ?? access)(executablePath, constants.X_OK);
+    return { kind: 'custom', executablePath };
+  }
+  if ((io.platform ?? process.platform) !== 'darwin') throw new Error('SLAB setup is only supported on macOS.');
+  if ((io.findSlabInstallation ?? defaultFindSlabInstallation)()) return browser;
+  await (io.installSlabMacos ?? (() => installSlabMacos(createSlabInstallerIo(), { launchAfterInstall: true })))();
+  if (!slabStatusHasHello(await (io.inspectSlabStatus ?? inspectSlabStatus)())) throw new Error('SLAB did not report its control protocol after launch.');
+  return browser;
+}
+
+function defaultFindSlabInstallation(): SlabInstallation | null {
+  return findSlabInstallation({ platform: process.platform, homeDir: homedir(), existsSync });
+}
+
+async function restartConfiguredDaemon(browser: LocalBrowserConfig, io: SetupIo): Promise<void> {
+  const result = await (io.restartDaemon ?? restartDaemon)();
+  const expected = browser.kind === 'slab' ? 'SLAB' : browser.kind;
+  if (!result.stopped || result.status?.runtimeName !== expected) {
+    throw new DaemonRestartError(`Daemon restarted without the selected ${expected} runtime.`);
+  }
+}
+
+class DaemonRestartError extends Error {}
+
+export interface SetupStatus {
+  configured: boolean;
+  mode: SetupMode;
+  browser: LocalBrowserConfig | null;
+  runtime?: SlabSetupStatus;
+}
+
+export async function getSetupStatus(io: SetupIo = {}): Promise<SetupStatus> {
+  const config = loadWebcmdConfig(io);
+  const browser = config.mode === 'local' ? config.browser : null;
+  const status: SetupStatus = {
+    configured: (io.existsSync ?? existsSync)(getConfigPath(io)),
+    mode: config.mode,
+    browser,
+  };
+  if (browser?.kind === 'slab') status.runtime = await (io.inspectSlabStatus ?? inspectSlabStatus)();
+  return status;
+}
+
+function parseSetupArgs(argv: readonly string[]): { help?: true; status?: true; mode?: SetupMode; browser?: LocalBrowserConfig; apiKey?: string } {
   let mode: SetupMode | undefined;
   let browser: LocalBrowserConfig | undefined;
   let apiKey: string | undefined;
+  let status: true | undefined;
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i]!;
     if (token === '--help' || token === '-h') return { help: true };
+    if (token === '--status') {
+      status = true;
+      continue;
+    }
     if (token === '--mode' || token.startsWith('--mode=')) {
       const value = token.startsWith('--mode=') ? token.slice('--mode='.length) : argv[++i];
       if (value !== 'local' && value !== 'hosted') {
@@ -208,10 +300,10 @@ function parseSetupArgs(argv: readonly string[]): { help?: true; mode?: SetupMod
 
     throw new ArgumentError(
       `unknown flag ${token} for \`setup\``,
-      `valid flags for \`setup\`: --mode, --browser, --api-key, --help\n${SETUP_USAGE}`,
+      `valid flags for \`setup\`: --mode, --browser, --api-key, --status, --help\n${SETUP_USAGE}`,
     );
   }
-  return { mode, browser, apiKey };
+  return { ...(status ? { status } : {}), mode, browser, apiKey };
 }
 
 function parseLocalBrowser(value: string | undefined): LocalBrowserConfig {

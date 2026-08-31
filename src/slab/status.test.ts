@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { inspectSlabStatus } from './status.js';
+import { inspectSlabStatus, slabStatusHasHello } from './status.js';
 
 const hello = { protocolVersion: 1, browserVersion: '1', browserPid: 1234, profiles: [] };
 const installation = {
@@ -9,6 +9,15 @@ const installation = {
 };
 
 describe('SLAB setup status', () => {
+  it.each([
+    ['preliminary-running', true],
+    ['installed-running', true],
+    ['installed-not-running', false],
+    ['not-installed', false],
+  ] as const)('recognizes whether %s completed the control hello', (status, expected) => {
+    expect(slabStatusHasHello(status)).toBe(expected);
+  });
+
   it('reports a control-ready app without requiring a signed installation', async () => {
     const io = {
       findInstallation: vi.fn(() => null),

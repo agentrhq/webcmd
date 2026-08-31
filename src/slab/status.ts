@@ -21,6 +21,10 @@ export async function inspectSlabStatus(io: SlabStatusIo = createSlabStatusIo())
   }
 }
 
+export function slabStatusHasHello(status: SlabSetupStatus): boolean {
+  return status === 'preliminary-running' || status === 'installed-running';
+}
+
 export function createSlabStatusIo(): SlabStatusIo {
   const endpoint = slabControlEndpoint(homedir());
   return {
