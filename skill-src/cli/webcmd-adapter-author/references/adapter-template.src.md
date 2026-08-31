@@ -15,7 +15,7 @@ webcmd browser init <site>/<name>
 
 This scaffolds a `Strategy.PUBLIC` placeholder. Use `webcmd adapter path <site>/<name>` to locate it, then edit that local file. Local `adapter source get` prints the same path only without `--output`; local `adapter source put` is unavailable. In hosted mode, `adapter source get|put` download and upload tenant-owned source. Set the real `strategy:` value and other `TODO` fields.
 
-Promote a community CLI to the main repo as a plugin — **only after the user has explicitly confirmed they want it pushed into the repo**; a general instruction to build a working adapter is not that confirmation (see `SKILL.md`'s Key Conventions):
+Promote a community CLI to `agentrhq/webcmd-plugins` as a plugin — **only after the user has explicitly confirmed they want it pushed into that repo**; a general instruction to build a working adapter is not that confirmation (see `SKILL.md`'s Key Conventions):
 
 Determine the plugin name (default to `<site>`) and collect the author's display name and GitHub handle if they are not already known.
 

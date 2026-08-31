@@ -5,13 +5,11 @@
 ```bash
 npm run typecheck
 npm run build
-npm run build-plugin-manifest
 npm test
 ```
 
-`npm run build` must run before plugin tests because repository plugins import
-the compiled public package exports. The core package contains no site
-adapters; `npm test` runs the unit and generic plugin projects.
+The core package contains no site adapters; `npm test` runs the unit project.
+Public adapter tests live in `agentrhq/webcmd-plugins`.
 
 ## Skill Sources
 
@@ -29,7 +27,6 @@ make verify
 npx vitest run --project unit src/skills.test.ts
 npx vitest run --project unit src/package-exports.test.ts
 npx vitest run --project unit src/convention-audit.test.ts src/runtime-copy.test.ts
-npm run test:plugin -- --reporter=verbose
 ```
 
 ## Cloak Runtime Smoke

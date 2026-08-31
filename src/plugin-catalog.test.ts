@@ -27,9 +27,9 @@ describe('plugin catalog', () => {
     fs.writeFileSync(path.join(packageRoot, 'plugin-catalog.json'), JSON.stringify({
       version: 1,
       sources: [{
-        id: 'agentrhq/webcmd',
-        source: 'github:agentrhq/webcmd',
-        manifestUrl: 'https://raw.githubusercontent.com/agentrhq/webcmd/main/webcmd-plugin.json',
+        id: 'agentrhq/webcmd-plugins',
+        source: 'github:agentrhq/webcmd-plugins',
+        manifestUrl: 'https://raw.githubusercontent.com/agentrhq/webcmd-plugins/main/webcmd-plugin.json',
       }],
     }));
   });
@@ -41,7 +41,7 @@ describe('plugin catalog', () => {
   it('seeds the user catalog from the packaged default', () => {
     const catalog = readCatalog({ packageRoot, homeDir });
 
-    expect(catalog.sources).toEqual([{ id: 'agentrhq/webcmd', source: 'github:agentrhq/webcmd', manifestUrl: 'https://raw.githubusercontent.com/agentrhq/webcmd/main/webcmd-plugin.json' }]);
+    expect(catalog.sources).toEqual([{ id: 'agentrhq/webcmd-plugins', source: 'github:agentrhq/webcmd-plugins', manifestUrl: 'https://raw.githubusercontent.com/agentrhq/webcmd-plugins/main/webcmd-plugin.json' }]);
     expect(fs.existsSync(getUserPluginCatalogPath(homeDir))).toBe(true);
   });
 
@@ -60,12 +60,12 @@ describe('plugin catalog', () => {
     expect(added.id).toBe('other-org/webcmd-travel-plugins');
 
     expect(readCatalog({ packageRoot, homeDir }).sources.map((source) => source.id)).toEqual([
-      'agentrhq/webcmd',
+      'agentrhq/webcmd-plugins',
       'other-org/webcmd-travel-plugins',
     ]);
 
     removeCatalogSource('other-org/webcmd-travel-plugins', { packageRoot, homeDir });
-    expect(readCatalog({ packageRoot, homeDir }).sources.map((source) => source.id)).toEqual(['agentrhq/webcmd']);
+    expect(readCatalog({ packageRoot, homeDir }).sources.map((source) => source.id)).toEqual(['agentrhq/webcmd-plugins']);
   });
 
   it('rejects duplicate catalog sources', async () => {
@@ -141,5 +141,103 @@ describe('plugin catalog', () => {
     const fetchJson = async () => ({ plugins: { hackernews: { path: 'plugins/hackernews', description: 'Tools for technology discussions' } } });
     const miss = await searchCatalogPlugins(catalog, { query: 'reddit news', fetchJson });
     expect(miss.plugins).toEqual([]);
+  });
+
+  it('normalizes a legacy official catalog entry in memory without rewriting the user file', () => {
+    const userPath = getUserPluginCatalogPath(homeDir);
+    fs.mkdirSync(path.dirname(userPath), { recursive: true });
+    const onDisk = {
+      version: 1,
+      sources: [
+        {
+          id: 'agentrhq/webcmd',
+          source: 'github:agentrhq/webcmd',
+          manifestUrl: 'https://raw.githubusercontent.com/agentrhq/webcmd/main/webcmd-plugin.json',
+        },
+        {
+          id: 'other/plugins',
+          source: 'github:other/plugins',
+          manifestUrl: 'https://raw.githubusercontent.com/other/plugins/main/webcmd-plugin.json',
+        },
+      ],
+    };
+    fs.writeFileSync(userPath, `${JSON.stringify(onDisk, null, 2)}\n`);
+
+    expect(readCatalog({ packageRoot, homeDir }).sources).toEqual([
+      {
+        id: 'agentrhq/webcmd-plugins',
+        source: 'github:agentrhq/webcmd-plugins',
+        manifestUrl: 'https://raw.githubusercontent.com/agentrhq/webcmd-plugins/main/webcmd-plugin.json',
+      },
+      {
+        id: 'other/plugins',
+        source: 'github:other/plugins',
+        manifestUrl: 'https://raw.githubusercontent.com/other/plugins/main/webcmd-plugin.json',
+      },
+    ]);
+    expect(JSON.parse(fs.readFileSync(userPath, 'utf8'))).toEqual(onDisk);
+  });
+
+  it('canonicalizes adding the exact legacy official catalog shorthand', async () => {
+    fs.writeFileSync(path.join(packageRoot, 'plugin-catalog.json'), JSON.stringify({
+      version: 1,
+      sources: [],
+    }));
+    const fetchJson = async () => ({ plugins: { hackernews: { path: 'plugins/hackernews' } } });
+
+    const added = await addCatalogSource('github:agentrhq/webcmd', { packageRoot, homeDir, fetchJson });
+    expect(added).toEqual({
+      id: 'agentrhq/webcmd-plugins',
+      source: 'github:agentrhq/webcmd-plugins',
+      manifestUrl: 'https://raw.githubusercontent.com/agentrhq/webcmd-plugins/main/webcmd-plugin.json',
+    });
+    expect(readCatalog({ packageRoot, homeDir }).sources).toEqual([added]);
+  });
+
+  it('removes the normalized official catalog entry by the legacy id', () => {
+    const userPath = getUserPluginCatalogPath(homeDir);
+    fs.mkdirSync(path.dirname(userPath), { recursive: true });
+    fs.writeFileSync(userPath, `${JSON.stringify({
+      version: 1,
+      sources: [
+        {
+          id: 'agentrhq/webcmd-plugins',
+          source: 'github:agentrhq/webcmd-plugins',
+          manifestUrl: 'https://raw.githubusercontent.com/agentrhq/webcmd-plugins/main/webcmd-plugin.json',
+        },
+        {
+          id: 'other/plugins',
+          source: 'github:other/plugins',
+          manifestUrl: 'https://raw.githubusercontent.com/other/plugins/main/webcmd-plugin.json',
+        },
+      ],
+    }, null, 2)}\n`);
+
+    const removed = removeCatalogSource('agentrhq/webcmd', { packageRoot, homeDir });
+    expect(removed.id).toBe('agentrhq/webcmd-plugins');
+    expect(readCatalog({ packageRoot, homeDir }).sources.map((source) => source.id)).toEqual(['other/plugins']);
+    expect(() => removeCatalogSource('other/plugins', { packageRoot, homeDir })).not.toThrow();
+  });
+
+  it('returns canonical install sources from a legacy official catalog entry', async () => {
+    const catalog: PluginCatalog = {
+      version: 1,
+      sources: [{
+        id: 'agentrhq/webcmd',
+        source: 'github:agentrhq/webcmd',
+        manifestUrl: 'https://example.com/webcmd-plugin.json',
+      }],
+    };
+    const fetchJson = async () => ({ plugins: { hackernews: { path: 'plugins/hackernews', description: 'HN' } } });
+
+    const result = await searchCatalogPlugins(catalog, { query: 'hackernews', fetchJson });
+    expect(result.plugins).toEqual([{
+      installSource: 'github:agentrhq/webcmd-plugins/hackernews',
+      name: 'hackernews',
+      description: 'HN',
+      version: undefined,
+      sourceId: 'agentrhq/webcmd-plugins',
+      webcmd: undefined,
+    }]);
   });
 });

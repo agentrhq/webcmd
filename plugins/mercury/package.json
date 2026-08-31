@@ -1,9 +1,0 @@
-{
-  "name": "webcmd-plugin-mercury",
-  "version": "0.1.0",
-  "type": "module",
-  "description": "Webcmd commands for mercury",
-  "peerDependencies": {
-    "@agentrhq/webcmd": ">=0.5.3"
-  }
-}
