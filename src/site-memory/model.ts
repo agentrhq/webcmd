@@ -16,10 +16,14 @@ export interface SeedPayload {
   references?: Record<string, string>;
 }
 
-export type SeedLookupResult =
+export type PersistedSeedResult =
   | { status: 'unattempted' }
   | { status: 'absent' }
   | { status: 'lookup-failed' }
+  | { status: 'available'; revision: string };
+
+export type SeedLookupResult =
+  | Exclude<PersistedSeedResult, { status: 'available' }>
   | ({ status: 'available' } & SeedPayload);
 
 export interface ProductManifest {
@@ -27,7 +31,18 @@ export interface ProductManifest {
   product: ProductIdentity;
   /** Confirmed alternate hostnames belonging to this product. */
   interfaces: ProductIdentity[];
-  seed: SeedLookupResult;
+  seed: PersistedSeedResult;
+}
+
+export interface MemoryContext {
+  resolution: ProductResolution;
+  manifest?: ProductManifest;
+  revision: MemoryRevision | null;
+  siteMarkdown: string | null;
+  references: { path: string }[];
+  draftPath: string;
+  readOnly: boolean;
+  diagnostics: string[];
 }
 
 export type ProductResolutionStatus = 'exact' | 'confirmed-interface' | 'provisional-fallback' | 'new';
