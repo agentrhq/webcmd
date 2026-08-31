@@ -14,6 +14,14 @@ webcmd site memory checkpoint <product> \
 
 `--expected-revision` is the `revision` from context (`null` when context returned none). `--paths` are explicit draft Markdown paths to publish.
 
+After the final candidate capture or search decision and before editing the draft, rerun context with the same task id:
+
+```bash
+webcmd site memory context <url> --task-id <id> -f json
+```
+
+Use that refreshed `revision`. This rerun happens before any draft edit, so it does not destroy edits. Then edit the draft and checkpoint.
+
 | reason | when |
 | --- | --- |
 | `candidate_ingestion` | Promoting candidates. Requires `--dispositions` and a memory change when any row is `ingested`. |

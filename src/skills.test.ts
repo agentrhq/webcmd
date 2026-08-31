@@ -247,6 +247,16 @@ describe('webcmd skills content', () => {
     expect(git).not.toMatch(/\bgit add\b|\bgit commit\b/);
   });
 
+  it('teaches rerunning context after capture and before draft edits', () => {
+    const git = bundledReference('git-lifecycle.md');
+
+    expect(git).toMatch(/after(?: the)? final candidate|after capture/i);
+    expect(git).toMatch(/same task id|same --task-id|--task-id <(?:id|same-id)>/i);
+    expect(git).toMatch(/before editing|before you edit|before draft/i);
+    expect(git).toMatch(/does not destroy|will not destroy|before any draft edit/i);
+    expect(git).toContain('webcmd site memory context');
+  });
+
   it('keeps session, profile, auth, CAPTCHA, payment, write, and fresh-state safety', () => {
     const browser = bundledSkill('webcmd-browser');
 
