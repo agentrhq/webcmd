@@ -1,0 +1,604 @@
+import { execFile } from 'node:child_process';
+import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { promisify } from 'node:util';
+import { afterEach, describe, expect, it } from 'vitest';
+import { addCandidate, listCandidates, showCandidate } from './candidates.js';
+import { checkpointMemory, type CheckpointInput } from './checkpoint.js';
+import { getMemoryContext } from './context.js';
+import { openSitesRepository } from './git-store.js';
+import { listSiteMemory, readProductFile, showSiteMemory, writeProductFile } from './local-store.js';
+import type { CandidateDisposition, SeedLookupResult } from './model.js';
+import { canonicalProductKey } from './product-resolver.js';
+import { createHttpSeedProvider } from './seed-client.js';
+
+const run = promisify(execFile);
+const tempHomes: string[] = [];
+const originalPath = process.env.PATH;
+const FACT = '- [verified 2026-08-31] Prefer /new for fresh posts.\n';
+const SITE = `# Example\n\n${FACT}`;
+const POINTER = '- More: [references/listing.md](references/listing.md).\n';
+const REF = `# Listing\n\n${FACT}`;
+const CLOCK = {
+  sameMorning: '2026-08-31T01:00:00.000Z',
+  sameEvening: '2026-08-31T23:00:00.000Z',
+  later: '2026-09-01T12:00:00.000Z',
+  earlier: '2026-08-30T12:00:00.000Z',
+} as const;
+
+afterEach(async () => {
+  process.env.PATH = originalPath;
+  await Promise.all(tempHomes.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+});
+
+describe('self-learning lifecycle', () => {
+  it('persists seeded, offline, and disabled cold starts differently', async () => {
+    const { homeDir, sites } = await tempSites();
+    const fetch = seedFetch({
+      'seeded.test': {
+        status: 'available',
+        revision: 'seed-1',
+        site: SITE,
+        references: { 'listing.md': REF },
+      },
+      'offline.test': 'throw',
+    });
+
+    const seeded = await getMemoryContext({
+      url: 'https://seeded.test/',
+      taskId: 'task-seeded',
+      homeDir,
+      seedProvider: createHttpSeedProvider({ fetch, env: {} }),
+    });
+    const offline = await getMemoryContext({
+      url: 'https://offline.test/',
+      taskId: 'task-offline',
+      homeDir,
+      seedProvider: createHttpSeedProvider({ fetch, env: {} }),
+    });
+    const disabledFetch = seedFetch({ 'disabled.test': { status: 'available', revision: 'nope', site: '# No\n' } });
+    const disabled = await getMemoryContext({
+      url: 'https://disabled.test/',
+      taskId: 'task-disabled',
+      homeDir,
+      seedProvider: createHttpSeedProvider({ fetch: disabledFetch, env: { WEBCMD_GLOBAL_MEMORY: 'off' } }),
+    });
+
+    expect(seeded.manifest?.seed).toEqual({ status: 'available', revision: 'seed-1' });
+    expect(seeded.siteMarkdown).toBe(SITE);
+    expect(seeded.readOnly).toBe(false);
+    expect(await readProductFile('seeded.test', 'sitemap/SITE.md', { homeDir })).toBe(SITE);
+    expect(await readProductFile('seeded.test', 'sitemap/references/listing.md', { homeDir })).toBe(REF);
+    expect(await git(sites, ['ls-files'])).toContain('seeded.test/sitemap/SITE.md');
+
+    expect(offline.manifest?.seed).toEqual({ status: 'lookup-failed' });
+    expect(offline.siteMarkdown).toBeNull();
+    expect(await readProductFile('offline.test', 'sitemap/SITE.md', { homeDir })).toBeNull();
+    expect(await git(sites, ['ls-files'])).toContain('offline.test/manifest.json');
+    expect(await git(sites, ['ls-files'])).not.toContain('offline.test/sitemap/SITE.md');
+
+    expect(disabled.manifest).toBeUndefined();
+    expect(disabled.siteMarkdown).toBeNull();
+    expect(disabled.resolution.status).toBe('new');
+    expect(await readProductFile('disabled.test', 'manifest.json', { homeDir })).toBeNull();
+    expect(await readProductFile('disabled.test', 'sitemap/SITE.md', { homeDir })).toBeNull();
+  });
+
+  it('keeps Old Reddit a read-only parent fallback until interface confirmation and keeps Hacker News separate', async () => {
+    const { homeDir } = await tempSites();
+    const fetch = seedFetch({
+      'reddit.com': { status: 'available', revision: 'reddit-1', site: '# Reddit\n' },
+      'news.ycombinator.com': { status: 'available', revision: 'hn-1', site: '# HN\n' },
+    });
+    const seedProvider = createHttpSeedProvider({ fetch, env: {} });
+
+    await getMemoryContext({ url: 'https://reddit.com/', taskId: 'task-reddit', homeDir, seedProvider });
+    const fallback = await getMemoryContext({
+      url: 'https://old.reddit.com/r/typescript',
+      taskId: 'task-old',
+      homeDir,
+      seedProvider,
+    });
+
+    expect(fallback.resolution).toMatchObject({
+      status: 'provisional-fallback',
+      readOnly: true,
+      product: { key: 'reddit.com' },
+      requested: { key: 'old.reddit.com' },
+    });
+    expect(fallback.readOnly).toBe(true);
+    expect(fallback.siteMarkdown).toBe('# Reddit\n');
+    expect(await readProductFile('old.reddit.com', 'manifest.json', { homeDir })).toBeNull();
+
+    const manifest = JSON.parse(await readProductFile('reddit.com', 'manifest.json', { homeDir }) ?? '');
+    manifest.interfaces = [canonicalProductKey('https://old.reddit.com/')];
+    await writeProductFile('reddit.com', 'manifest.json', `${JSON.stringify(manifest, null, 2)}\n`, { homeDir });
+    await (await openSitesRepository({ homeDir })).commit(['reddit.com/manifest.json'], 'confirm old.reddit.com');
+
+    const confirmed = await getMemoryContext({
+      url: 'https://old.reddit.com/r/typescript',
+      taskId: 'task-old-2',
+      homeDir,
+      seedProvider,
+    });
+    expect(confirmed.resolution).toMatchObject({
+      status: 'confirmed-interface',
+      readOnly: false,
+      product: { key: 'reddit.com' },
+      requested: { key: 'old.reddit.com' },
+    });
+    expect(confirmed.readOnly).toBe(false);
+
+    const hn = await getMemoryContext({
+      url: 'https://news.ycombinator.com/',
+      taskId: 'task-hn',
+      homeDir,
+      seedProvider,
+    });
+    expect(hn.resolution).toMatchObject({
+      status: 'exact',
+      readOnly: false,
+      product: { key: 'news.ycombinator.com' },
+    });
+    expect(hn.siteMarkdown).toBe('# HN\n');
+    expect(hn.readOnly).toBe(false);
+    expect(await readProductFile('news.ycombinator.com', 'sitemap/SITE.md', { homeDir })).toBe('# HN\n');
+    expect(await readProductFile('reddit.com', 'sitemap/SITE.md', { homeDir })).toBe('# Reddit\n');
+  });
+
+  it('leaves candidate inventory unchanged when the task is a no-op', async () => {
+    const { homeDir, sites } = await tempSites();
+    const context = await coldStart(homeDir);
+    const before = (await git(sites, ['log', '--oneline'])).trim().split('\n');
+
+    await expect(addCandidate(candidate(homeDir, { kind: 'trivial_success' }))).rejects.toThrow(/kind/i);
+
+    const noop = await checkpointMemory({
+      product: 'example.test',
+      taskId: 'task-1',
+      expectedRevision: context.revision,
+      reason: 'direct_correction',
+      paths: ['sitemap/SITE.md'],
+      dispositions: [],
+      homeDir,
+    });
+
+    expect(noop).toEqual({
+      status: 'committed',
+      memoryCommit: context.revision,
+      provenanceCommit: null,
+    });
+    expect(await listCandidates('example.test', { homeDir })).toEqual([]);
+    expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBe(SITE);
+    expect((await git(sites, ['log', '--oneline'])).trim().split('\n')).toEqual(before);
+    expect(await git(sites, ['ls-files'])).not.toMatch(/candidates/);
+  });
+
+  it('keeps same-date evidence pending, checkpoints later-date and immediate high_consequence, and records dissenting provenance', async () => {
+    const { homeDir, sites } = await tempSites();
+    await coldStart(homeDir);
+    const sameA = await addCandidate(candidate(homeDir, {
+      claim: 'Same morning path',
+      observedAt: CLOCK.sameMorning,
+    }));
+    const sameB = await addCandidate(candidate(homeDir, {
+      claim: 'Same evening path',
+      observedAt: CLOCK.sameEvening,
+    }));
+    await writeDraft(homeDir, { 'sitemap/SITE.md': `# Example\n\n${FACT}- [verified 2026-08-31] Same day is not enough.\n` });
+
+    await expect(checkpoint(homeDir, await revision(homeDir), {
+      dispositions: [
+        { id: sameA.id, status: 'ingested', evidenceRole: 'supporting' },
+        { id: sameB.id, status: 'ingested', evidenceRole: 'supporting' },
+      ],
+    })).rejects.toThrow(/date/i);
+    expect((await showCandidate('example.test', sameA.id, { homeDir })).status).toBe('pending');
+    expect((await showCandidate('example.test', sameB.id, { homeDir })).status).toBe('pending');
+
+    const later = await addCandidate(candidate(homeDir, {
+      claim: 'Later path disagrees',
+      observedAt: CLOCK.later,
+    }));
+    const dated = `# Example\n\n${FACT}- [verified 2026-09-01] Keep /new after a later date.\n`;
+    await writeDraft(homeDir, { 'sitemap/SITE.md': dated });
+    const ingested = await checkpoint(homeDir, await revision(homeDir), {
+      dispositions: [
+        { id: sameA.id, status: 'ingested', evidenceRole: 'supporting' },
+        { id: later.id, status: 'ingested', evidenceRole: 'dissenting' },
+      ],
+    });
+    expect(ingested.status).toBe('committed');
+    if (ingested.status !== 'committed') throw new Error('expected commit');
+    expect((await showCandidate('example.test', sameA.id, { homeDir }))).toMatchObject({
+      status: 'ingested',
+      evidenceRole: 'supporting',
+      memoryCommit: ingested.memoryCommit,
+    });
+    expect((await showCandidate('example.test', later.id, { homeDir }))).toMatchObject({
+      status: 'ingested',
+      evidenceRole: 'dissenting',
+      memoryCommit: ingested.memoryCommit,
+    });
+    expect((await showCandidate('example.test', sameB.id, { homeDir })).status).toBe('pending');
+    const provenance = await git(sites, ['show', `HEAD:example.test/candidates/${later.id}.json`]);
+    expect(provenance).toMatch(/"status": "ingested"/);
+    expect(provenance).toMatch(/"evidence_role": "dissenting"/);
+    expect(JSON.parse(provenance).memory_commit).toBe(ingested.memoryCommit);
+
+    const warning = await addCandidate(candidate(homeDir, {
+      kind: 'high_consequence',
+      claim: 'Ban risk on bulk delete',
+      observedAt: CLOCK.later,
+    }));
+    const warned = `# Example\n\n${FACT}- [verified 2026-09-01] Keep /new after a later date.\n- [verified 2026-09-01] Bulk delete can ban the account.\n`;
+    await writeDraft(homeDir, { 'sitemap/SITE.md': warned }, 'task-2');
+    const immediate = await checkpoint(homeDir, await revision(homeDir), {
+      taskId: 'task-2',
+      dispositions: [{ id: warning.id, status: 'ingested', evidenceRole: 'supporting' }],
+    });
+    expect(immediate.status).toBe('committed');
+    expect((await showCandidate('example.test', warning.id, { homeDir })).status).toBe('ingested');
+  });
+
+  it('hides candidates and environment values from ordinary legacy listing', async () => {
+    const { homeDir } = await tempSites();
+    await coldStart(homeDir);
+    await writeProductFile('example.test', 'notes.md', 'hello\n', { homeDir });
+    const summary = await addCandidate(candidate(homeDir, {
+      environment: { publicIp: '203.0.113.9', localIp: '192.168.1.8', machine: 'secret-host' },
+    }));
+
+    const listed = await listSiteMemory('example.test', { homeDir });
+    const shown = await showSiteMemory('example.test', { homeDir });
+    const explicit = await listSiteMemory('example.test', { homeDir, paths: [`candidates/${summary.id}.json`] });
+
+    expect(listed.map((item) => item.path)).not.toContain(`candidates/${summary.id}.json`);
+    expect(shown.map((item) => item.path)).not.toContain(`candidates/${summary.id}.json`);
+    expect(explicit).toEqual([]);
+    expect(JSON.stringify({ listed, shown, explicit })).not.toMatch(/203\.0\.113\.9|192\.168\.1\.8|secret-host/);
+    expect((await showCandidate('example.test', summary.id, { homeDir })).environment.publicIp).toBe('203.0.113.9');
+    expect((await listCandidates('example.test', { homeDir })).map((item) => item.id)).toEqual([summary.id]);
+  });
+
+  it('stays read-only under an ancestor repository and leaves the ancestor untouched', async () => {
+    const { homeDir, sites } = await tempSites();
+    await mkdir(sites, { recursive: true });
+    await git(homeDir, ['init']);
+    await git(homeDir, ['-c', 'user.name=owner', '-c', 'user.email=owner@local', 'commit', '--allow-empty', '-m', 'ancestor']);
+    const head = (await git(homeDir, ['rev-parse', 'HEAD'])).trim();
+    const before = await git(homeDir, ['status', '--porcelain', '-uall']);
+
+    const context = await getMemoryContext({
+      url: 'https://example.test/',
+      taskId: 'task-1',
+      homeDir,
+      seedProvider: createHttpSeedProvider({
+        fetch: seedFetch({ 'example.test': { status: 'available', revision: 'seed-1', site: SITE } }),
+        env: {},
+      }),
+    });
+
+    expect(context.readOnly).toBe(true);
+    expect(context.manifest).toBeUndefined();
+    expect(context.siteMarkdown).toBe(SITE);
+    expect(await readProductFile('example.test', 'manifest.json', { homeDir })).toBeNull();
+    expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBeNull();
+    expect((await git(homeDir, ['rev-parse', 'HEAD'])).trim()).toBe(head);
+    expect((await git(homeDir, ['log', '--oneline'])).trim()).toBe(`${head.slice(0, 7)} ancestor`);
+    expect(await git(homeDir, ['diff', '--cached'])).toBe(before.includes('\n') ? before : '');
+    expect((await git(homeDir, ['status', '--porcelain', '-uall'])).trim()).not.toMatch(/^(A |M |D )/m);
+    await expect(addCandidate(candidate(homeDir))).rejects.toThrow(/ancestor/i);
+    expect(await jsonNames(sites)).toEqual([]);
+  });
+
+  it('returns a CAS conflict for a competing draft and succeeds after one reload/retry', async () => {
+    const { homeDir } = await tempSites();
+    const context = await coldStart(homeDir, 'task-a');
+    await getMemoryContext({
+      url: 'https://example.test/',
+      taskId: 'task-b',
+      homeDir,
+      seedProvider: createHttpSeedProvider({ fetch: seedFetch({}), env: {} }),
+    });
+    const aBody = `# Example\n\n${FACT}- [verified 2026-08-31] Task A correction.\n`;
+    const bBody = `# Example\n\n${FACT}- [verified 2026-08-31] Task B correction.\n`;
+    await writeDraft(homeDir, { 'sitemap/SITE.md': aBody }, 'task-a');
+    await writeDraft(homeDir, { 'sitemap/SITE.md': bBody }, 'task-b');
+
+    const first = await checkpointMemory({
+      product: 'example.test',
+      taskId: 'task-a',
+      expectedRevision: context.revision,
+      reason: 'direct_correction',
+      paths: ['sitemap/SITE.md'],
+      dispositions: [],
+      homeDir,
+    });
+    const conflict = await checkpointMemory({
+      product: 'example.test',
+      taskId: 'task-b',
+      expectedRevision: context.revision,
+      reason: 'direct_correction',
+      paths: ['sitemap/SITE.md'],
+      dispositions: [],
+      homeDir,
+    });
+
+    expect(first.status).toBe('committed');
+    if (first.status !== 'committed') throw new Error('expected commit');
+    expect(conflict).toEqual({
+      status: 'conflict',
+      expectedRevision: context.revision,
+      actualRevision: first.memoryCommit,
+    });
+    expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBe(aBody);
+
+    const reloaded = await getMemoryContext({
+      url: 'https://example.test/',
+      taskId: 'task-b',
+      homeDir,
+      seedProvider: createHttpSeedProvider({ fetch: seedFetch({}), env: {} }),
+    });
+    expect(reloaded.revision).toBe(first.memoryCommit);
+    const retryBody = `# Example\n\n${FACT}- [verified 2026-08-31] Task A correction.\n- [verified 2026-08-31] Task B after reload.\n`;
+    await writeDraft(homeDir, { 'sitemap/SITE.md': retryBody }, 'task-b');
+    const retried = await checkpointMemory({
+      product: 'example.test',
+      taskId: 'task-b',
+      expectedRevision: reloaded.revision,
+      reason: 'direct_correction',
+      paths: ['sitemap/SITE.md'],
+      dispositions: [],
+      homeDir,
+    });
+    expect(retried.status).toBe('committed');
+    expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBe(retryBody);
+  });
+
+  it('rejects a >500-line SITE.md rewrite unless the draft is at most 200 lines', async () => {
+    const { homeDir } = await tempSites();
+    const oversized = siteLines(501);
+    const context = await coldStart(homeDir, 'task-1', oversized);
+    expect((await readProductFile('example.test', 'sitemap/SITE.md', { homeDir }))?.split('\n').filter(Boolean).length).toBe(501);
+
+    await writeDraft(homeDir, { 'sitemap/SITE.md': siteLines(500) });
+    await expect(checkpointMemory({
+      product: 'example.test',
+      taskId: 'task-1',
+      expectedRevision: context.revision,
+      reason: 'direct_correction',
+      paths: ['sitemap/SITE.md'],
+      dispositions: [],
+      homeDir,
+    })).rejects.toThrow(/200|rewrite/i);
+
+    const rewritten = siteLines(200, true);
+    await writeDraft(homeDir, {
+      'sitemap/SITE.md': rewritten,
+      'sitemap/references/listing.md': REF,
+    });
+    const result = await checkpointMemory({
+      product: 'example.test',
+      taskId: 'task-1',
+      expectedRevision: context.revision,
+      reason: 'major_rewrite',
+      paths: ['sitemap/SITE.md', 'sitemap/references/listing.md'],
+      dispositions: [],
+      homeDir,
+    });
+    expect(result.status).toBe('committed');
+    expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBe(rewritten);
+    expect(rewritten.split('\n').filter(Boolean)).toHaveLength(200);
+  });
+
+  it('keeps concurrent captures, their commits, and unrelated untracked files', async () => {
+    const { homeDir, sites } = await tempSites();
+    await coldStart(homeDir);
+    await writeFile(join(sites, 'keep-me.txt'), 'unrelated\n');
+    await writeProductFile('example.test', 'scratch.md', 'also unrelated\n', { homeDir });
+
+    const [a, b] = await Promise.all([
+      addCandidate(candidate(homeDir, { claim: 'First concurrent path', observedAt: CLOCK.sameMorning })),
+      addCandidate(candidate(homeDir, { claim: 'Second concurrent path', observedAt: CLOCK.sameEvening })),
+    ]);
+
+    const files = (await git(sites, ['ls-files', '--', 'example.test/candidates'])).trim().split('\n').sort();
+    expect(files).toEqual([`example.test/candidates/${a.id}.json`, `example.test/candidates/${b.id}.json`].sort());
+    expect((await git(sites, ['log', '--oneline', '--', `example.test/candidates/${a.id}.json`])).trim().split('\n')).toHaveLength(1);
+    expect((await git(sites, ['log', '--oneline', '--', `example.test/candidates/${b.id}.json`])).trim().split('\n')).toHaveLength(1);
+    expect(await git(sites, ['status', '--porcelain', '-uall'])).toMatch(/^\?\? keep-me\.txt$/m);
+    expect(await git(sites, ['status', '--porcelain', '-uall'])).toMatch(/^\?\? example\.test\/scratch\.md$/m);
+    expect((await git(sites, ['ls-files'])).trim().split('\n')).not.toContain('keep-me.txt');
+    expect((await git(sites, ['ls-files'])).trim().split('\n')).not.toContain('example.test/scratch.md');
+    expect((await git(sites, ['diff', '--cached', '--name-only'])).trim()).toBe('');
+  });
+
+  it('rolls back a failed memory commit exactly and recovers a failed provenance commit without replay', async () => {
+    const blocked = await tempSites();
+    await coldStart(blocked.homeDir);
+    const pending = await addCandidate(candidate(blocked.homeDir, { observedAt: CLOCK.earlier }));
+    const later = await addCandidate(candidate(blocked.homeDir, { observedAt: CLOCK.later, claim: 'Later' }));
+    const next = `# Example\n\n${FACT}- [verified 2026-09-01] Later path is denser.\n`;
+    await writeDraft(blocked.homeDir, {
+      'sitemap/SITE.md': next,
+      'sitemap/references/listing.md': REF,
+    });
+    const memoryHead = (await git(blocked.sites, ['rev-parse', 'HEAD'])).trim();
+
+    await withGitWrapper(blocked.homeDir, 'memory', async () => {
+      await expect(checkpoint(blocked.homeDir, memoryHead, {
+        paths: ['sitemap/SITE.md', 'sitemap/references/listing.md'],
+        dispositions: [
+          { id: pending.id, status: 'ingested', evidenceRole: 'supporting' },
+          { id: later.id, status: 'ingested', evidenceRole: 'supporting' },
+        ],
+      })).rejects.toThrow();
+    });
+
+    expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir: blocked.homeDir })).toBe(SITE);
+    expect(await readProductFile('example.test', 'sitemap/references/listing.md', { homeDir: blocked.homeDir })).toBeNull();
+    expect((await showCandidate('example.test', pending.id, { homeDir: blocked.homeDir })).status).toBe('pending');
+    expect((await showCandidate('example.test', later.id, { homeDir: blocked.homeDir })).status).toBe('pending');
+    expect((await git(blocked.sites, ['rev-parse', 'HEAD'])).trim()).toBe(memoryHead);
+    expect((await git(blocked.sites, ['status', '--porcelain', '-uall'])).trim()).toBe('');
+    expect((await git(blocked.sites, ['diff', '--cached', '--name-only'])).trim()).toBe('');
+
+    const { homeDir, sites } = await tempSites();
+    await coldStart(homeDir);
+    const first = await addCandidate(candidate(homeDir, { observedAt: CLOCK.earlier }));
+    const second = await addCandidate(candidate(homeDir, { observedAt: CLOCK.later, claim: 'Later' }));
+    await writeDraft(homeDir, { 'sitemap/SITE.md': next });
+    const dispositions: CandidateDisposition[] = [
+      { id: first.id, status: 'ingested', evidenceRole: 'supporting' },
+      { id: second.id, status: 'ingested', evidenceRole: 'supporting' },
+    ];
+
+    await withGitWrapper(homeDir, 'provenance', async () => {
+      await expect(checkpoint(homeDir, await revision(homeDir), { dispositions })).rejects.toThrow();
+    });
+
+    const memoryRevision = (await git(sites, ['rev-parse', 'HEAD'])).trim();
+    expect(await git(sites, ['show', 'HEAD:example.test/sitemap/SITE.md'])).toBe(next);
+    expect((await git(sites, ['log', '--oneline', '--', 'example.test/sitemap/SITE.md'])).trim().split('\n')).toHaveLength(2);
+    expect((await showCandidate('example.test', first.id, { homeDir })).status).toBe('ingested');
+
+    const resumed = await checkpoint(homeDir, memoryRevision, { dispositions });
+    expect(resumed.status).toBe('committed');
+    if (resumed.status !== 'committed') throw new Error('expected commit');
+    expect(resumed.memoryCommit).toBe(memoryRevision);
+    expect(resumed.provenanceCommit).toMatch(/^[0-9a-f]{40}$/);
+    expect(resumed.provenanceCommit).not.toBe(memoryRevision);
+    expect((await git(sites, ['log', '--oneline', '--', 'example.test/sitemap/SITE.md'])).trim().split('\n')).toHaveLength(2);
+    expect((await git(sites, ['show', `HEAD:example.test/candidates/${first.id}.json`]))).toMatch(/"status": "ingested"/);
+  });
+});
+
+function seedFetch(results: Record<string, SeedLookupResult | 'throw'>): typeof fetch {
+  return async (input) => {
+    const key = decodeURIComponent(String(input).split('/').pop() ?? '');
+    const result = results[key];
+    if (result === undefined || result === 'throw') throw new TypeError('offline');
+    if (result.status === 'absent') return new Response('missing', { status: 404 });
+    if (result.status === 'available') {
+      return new Response(JSON.stringify({
+        revision: result.revision,
+        site: result.site,
+        references: result.references,
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    return new Response('fail', { status: 500 });
+  };
+}
+
+async function coldStart(homeDir: string, taskId = 'task-1', site = SITE) {
+  return getMemoryContext({
+    url: 'https://example.test/',
+    taskId,
+    homeDir,
+    seedProvider: createHttpSeedProvider({
+      fetch: seedFetch({
+        'example.test': { status: 'available', revision: 'seed-1', site },
+      }),
+      env: {},
+    }),
+  });
+}
+
+async function checkpoint(
+  homeDir: string,
+  expectedRevision: string | null,
+  extra: Partial<CheckpointInput> = {},
+) {
+  return checkpointMemory({
+    product: 'example.test',
+    taskId: 'task-1',
+    reason: 'candidate_ingestion',
+    paths: ['sitemap/SITE.md'],
+    dispositions: [],
+    ...extra,
+    homeDir,
+    expectedRevision,
+  });
+}
+
+function candidate(homeDir: string, extra: Record<string, unknown> = {}) {
+  return {
+    product: 'example.test',
+    hostname: 'www.example.test',
+    kind: 'better_path',
+    claim: 'New listing is faster',
+    evidence: 'Used /new while /hot spun.',
+    consequence: 'Prefer /new for fresh posts',
+    environment: {},
+    observedAt: CLOCK.sameMorning,
+    fetch: async () => {
+      throw new TypeError('offline');
+    },
+    homeDir,
+    ...extra,
+  };
+}
+
+function siteLines(count: number, pointer = false): string {
+  const extra = pointer ? [POINTER.trimEnd()] : [];
+  const heading = ['# Example'];
+  const facts = Array.from({ length: count - heading.length - extra.length }, (_, i) => `- [verified 2026-08-31] Fact ${i}.`);
+  return `${[...heading, ...facts, ...extra].join('\n')}\n`;
+}
+
+async function writeDraft(homeDir: string, files: Record<string, string>, taskId = 'task-1') {
+  for (const [path, body] of Object.entries(files)) {
+    const target = join(homeDir, '.webcmd/sites/.drafts', taskId, 'example.test', path);
+    await mkdir(dirname(target), { recursive: true });
+    await writeFile(target, body);
+  }
+}
+
+async function withGitWrapper(homeDir: string, fail: 'memory' | 'provenance', fn: () => Promise<void>) {
+  const wrapperDir = await mkdtemp(join(tmpdir(), 'webcmd-self-learning-git-'));
+  tempHomes.push(wrapperDir);
+  const { stdout } = await run('/usr/bin/which', ['git'], { encoding: 'utf8' });
+  const needle = fail === 'memory' ? 'checkpoint memory' : 'checkpoint provenance';
+  const wrapper = join(wrapperDir, 'git');
+  await writeFile(wrapper, `#!/usr/bin/env node
+const { spawnSync } = require('node:child_process');
+const args = process.argv.slice(2);
+const msg = args.includes('-m') ? args[args.indexOf('-m') + 1] : '';
+if (args.includes('commit') && msg.includes(${JSON.stringify(needle)})) process.exit(1);
+const result = spawnSync(${JSON.stringify(stdout.trim())}, args, { stdio: 'inherit' });
+process.exit(result.status ?? 1);
+`);
+  await chmod(wrapper, 0o755);
+  process.env.PATH = `${wrapperDir}:${originalPath}`;
+  try {
+    await fn();
+  } finally {
+    process.env.PATH = originalPath;
+  }
+}
+
+async function jsonNames(sites: string): Promise<string[]> {
+  try {
+    return (await readdir(join(sites, 'example.test', 'candidates'))).filter((name) => name.endsWith('.json')).sort();
+  } catch (err) {
+    if (err instanceof Error && 'code' in err && err.code === 'ENOENT') return [];
+    throw err;
+  }
+}
+
+async function tempSites() {
+  const homeDir = await mkdtemp(join(tmpdir(), 'webcmd-self-learning-'));
+  tempHomes.push(homeDir);
+  return { homeDir, sites: join(homeDir, '.webcmd', 'sites') };
+}
+
+async function revision(homeDir: string) {
+  return (await openSitesRepository({ homeDir })).revision();
+}
+
+async function git(cwd: string, args: string[]) {
+  const { stdout } = await run('git', args, { cwd, encoding: 'utf8' });
+  return stdout;
+}
