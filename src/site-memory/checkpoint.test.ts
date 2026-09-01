@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { addCandidate, showCandidate } from './candidates.js';
 import { checkpointMemory, type CheckpointInput } from './checkpoint.js';
 import { parseProductManifest } from './context.js';
+import { installGitShim } from './git-shim.js';
 import { openSitesRepository } from './git-store.js';
 import { readProductFile, writeProductFile } from './local-store.js';
 
@@ -479,7 +480,7 @@ describe('checkpoint git transaction', () => {
     expect((await git(blocked.sites, ['diff', '--cached', '--name-only'])).trim()).toBe('');
   });
 
-  it('combines memory commit and rollback errors', async () => {
+  it.skipIf(process.platform === 'win32')('combines memory commit and rollback errors', async () => {
     const blocked = await primed();
     const pending = await addCandidate(candidate(blocked.homeDir, { observedAt: '2026-08-30T12:00:00Z' }));
     const later = await addCandidate(candidate(blocked.homeDir, { observedAt: '2026-08-31T12:00:00Z', claim: 'Later' }));
@@ -890,13 +891,8 @@ async function writeDraft(homeDir: string, files: Record<string, string>, taskId
 }
 
 async function withGitWrapper(homeDir: string, fail: 'memory' | 'provenance', fn: () => Promise<void>, chmodOnFail?: string) {
-  const originalPath = process.env.PATH;
-  const wrapperDir = await mkdtemp(join(tmpdir(), 'webcmd-checkpoint-git-'));
-  tempHomes.push(wrapperDir);
-  const { stdout } = await run('/usr/bin/which', ['git'], { encoding: 'utf8' });
   const needle = fail === 'memory' ? 'checkpoint memory' : 'checkpoint provenance';
-  const wrapper = join(wrapperDir, 'git');
-  await writeFile(wrapper, `#!/usr/bin/env node
+  const { dir, restore } = await installGitShim((git) => `
 const { chmodSync } = require('node:fs');
 const { spawnSync } = require('node:child_process');
 const args = process.argv.slice(2);
@@ -905,15 +901,14 @@ if (args.includes('commit') && msg.includes(${JSON.stringify(needle)})) {
   ${chmodOnFail ? `try { chmodSync(${JSON.stringify(chmodOnFail)}, 0o555); } catch {}` : ''}
   process.exit(1);
 }
-const result = spawnSync(${JSON.stringify(stdout.trim())}, args, { stdio: 'inherit' });
+const result = spawnSync(${JSON.stringify(git)}, args, { stdio: 'inherit' });
 process.exit(result.status ?? 1);
 `);
-  await chmod(wrapper, 0o755);
-  process.env.PATH = `${wrapperDir}:${originalPath}`;
+  tempHomes.push(dir);
   try {
     await fn();
   } finally {
-    process.env.PATH = originalPath;
+    restore();
   }
 }
 

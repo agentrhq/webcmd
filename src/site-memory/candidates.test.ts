@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import { addCandidate, listCandidates, searchCandidates, showCandidate } from './candidates.js';
+import { installGitShim } from './git-shim.js';
 import { openSitesRepository } from './git-store.js';
 import { listSiteMemory, readProductFile, showSiteMemory, writeProductFile } from './local-store.js';
 import type { Candidate } from './model.js';
@@ -308,24 +309,18 @@ describe('candidate discovery', () => {
     const { homeDir, sites } = await tempSites();
     await mkdir(sites, { recursive: true });
     await writeFile(join(sites, 'keep-me.txt'), 'unrelated\n');
-    const originalPath = process.env.PATH;
-    const wrapperDir = await mkdtemp(join(tmpdir(), 'webcmd-candidate-commit-fail-'));
-    tempHomes.push(wrapperDir);
-    const { stdout } = await run('/usr/bin/which', ['git'], { encoding: 'utf8' });
-    const wrapper = join(wrapperDir, 'git');
-    await writeFile(wrapper, `#!/usr/bin/env node
+    const { dir, restore } = await installGitShim((git) => `
 const { spawnSync } = require('node:child_process');
 const args = process.argv.slice(2);
 if (args.includes('commit')) process.exit(1);
-const result = spawnSync(${JSON.stringify(stdout.trim())}, args, { stdio: 'inherit' });
+const result = spawnSync(${JSON.stringify(git)}, args, { stdio: 'inherit' });
 process.exit(result.status ?? 1);
 `);
-    await chmod(wrapper, 0o755);
-    process.env.PATH = `${wrapperDir}:${originalPath}`;
+    tempHomes.push(dir);
     try {
       await expect(addCandidate(base(homeDir))).rejects.toThrow();
     } finally {
-      process.env.PATH = originalPath;
+      restore();
     }
 
     expect(await jsonNames(sites)).toEqual([]);
@@ -348,15 +343,10 @@ process.exit(result.status ?? 1);
     expect(await jsonNames(sites)).toEqual([`${kept.id}.json`]);
   });
 
-  it('reports non-ENOENT cleanup errors after a failed commit', async () => {
+  it.skipIf(process.platform === 'win32')('reports non-ENOENT cleanup errors after a failed commit', async () => {
     const { homeDir, sites } = await tempSites();
-    const originalPath = process.env.PATH;
     const candidatesDir = join(sites, 'example.test', 'candidates');
-    const wrapperDir = await mkdtemp(join(tmpdir(), 'webcmd-candidate-cleanup-'));
-    tempHomes.push(wrapperDir);
-    const { stdout } = await run('/usr/bin/which', ['git'], { encoding: 'utf8' });
-    const wrapper = join(wrapperDir, 'git');
-    await writeFile(wrapper, `#!/usr/bin/env node
+    const { dir, restore } = await installGitShim((git) => `
 const { chmodSync } = require('node:fs');
 const { spawnSync } = require('node:child_process');
 const args = process.argv.slice(2);
@@ -364,15 +354,14 @@ if (args.includes('commit')) {
   try { chmodSync(${JSON.stringify(candidatesDir)}, 0o555); } catch {}
   process.exit(1);
 }
-const result = spawnSync(${JSON.stringify(stdout.trim())}, args, { stdio: 'inherit' });
+const result = spawnSync(${JSON.stringify(git)}, args, { stdio: 'inherit' });
 process.exit(result.status ?? 1);
 `);
-    await chmod(wrapper, 0o755);
-    process.env.PATH = `${wrapperDir}:${originalPath}`;
+    tempHomes.push(dir);
     try {
       await expect(addCandidate(base(homeDir))).rejects.toThrow(/EACCES|EPERM|permission denied/i);
     } finally {
-      process.env.PATH = originalPath;
+      restore();
       await chmod(candidatesDir, 0o755).catch(() => undefined);
     }
   });

@@ -1,5 +1,5 @@
 import { execFile, spawnSync } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, readFile, realpath, rm, utimes, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, utimes, writeFile } from 'node:fs/promises';
 import { hostname, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -11,6 +11,7 @@ import {
   REPOSITORY_LOCK_STALE_MS,
   REPOSITORY_LOCK_TIMEOUT_MS,
 } from './file-lock.js';
+import { installGitShim } from './git-shim.js';
 import { openSitesRepository } from './git-store.js';
 import { listProductKeys, readProductFile, writeProductFile } from './local-store.js';
 
@@ -355,51 +356,36 @@ async function git(cwd: string, args: string[]) {
 }
 
 async function installFailingCommitGit() {
-  const dir = await mkdtemp(join(tmpdir(), 'webcmd-fail-git-'));
-  tempHomes.push(dir);
-  const { stdout } = await run('/usr/bin/which', ['git'], { encoding: 'utf8' });
-  const wrapper = join(dir, 'git');
-  await writeFile(wrapper, `#!/usr/bin/env node
+  const { dir } = await installGitShim((git) => `
 const { spawnSync } = require('node:child_process');
 const args = process.argv.slice(2);
 if (args.includes('commit')) process.exit(1);
-const result = spawnSync(${JSON.stringify(stdout.trim())}, args, { stdio: 'inherit' });
+const result = spawnSync(${JSON.stringify(git)}, args, { stdio: 'inherit' });
 process.exit(result.status ?? 1);
 `);
-  await chmod(wrapper, 0o755);
-  process.env.PATH = `${dir}:${process.env.PATH}`;
+  tempHomes.push(dir);
 }
 
 async function installFailingCommitAndCleanupGit() {
-  const dir = await mkdtemp(join(tmpdir(), 'webcmd-fail-git-cleanup-'));
-  tempHomes.push(dir);
-  const { stdout } = await run('/usr/bin/which', ['git'], { encoding: 'utf8' });
-  const wrapper = join(dir, 'git');
-  await writeFile(wrapper, `#!/usr/bin/env node
+  const { dir } = await installGitShim((git) => `
 const { spawnSync } = require('node:child_process');
 const args = process.argv.slice(2);
 if (args.includes('commit') || args.includes('restore') || args.includes('rm')) process.exit(1);
-const result = spawnSync(${JSON.stringify(stdout.trim())}, args, { stdio: 'inherit' });
+const result = spawnSync(${JSON.stringify(git)}, args, { stdio: 'inherit' });
 process.exit(result.status ?? 1);
 `);
-  await chmod(wrapper, 0o755);
-  process.env.PATH = `${dir}:${process.env.PATH}`;
+  tempHomes.push(dir);
 }
 
 async function installSlowGit(delayMs: number) {
-  const dir = await mkdtemp(join(tmpdir(), 'webcmd-slow-git-'));
-  tempHomes.push(dir);
-  const { stdout } = await run('/usr/bin/which', ['git'], { encoding: 'utf8' });
-  const wrapper = join(dir, 'git');
-  await writeFile(wrapper, `#!/usr/bin/env node
+  const { dir } = await installGitShim((git) => `
 const { spawnSync } = require('node:child_process');
 const args = process.argv.slice(2);
 if (args.includes('commit')) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ${delayMs});
-const result = spawnSync(${JSON.stringify(stdout.trim())}, args, { stdio: 'inherit' });
+const result = spawnSync(${JSON.stringify(git)}, args, { stdio: 'inherit' });
 process.exit(result.status ?? 1);
 `);
-  await chmod(wrapper, 0o755);
-  process.env.PATH = `${dir}:${process.env.PATH}`;
+  tempHomes.push(dir);
 }
 
 function deadPid(): number {

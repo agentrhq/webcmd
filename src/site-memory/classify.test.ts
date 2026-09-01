@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import { classifyProduct } from './classify.js';
 import { getMemoryContext, parseProductManifest } from './context.js';
+import { installGitShim } from './git-shim.js';
 import { openSitesRepository } from './git-store.js';
 import { readProductFile, writeProductFile } from './local-store.js';
 import type { SeedLookupResult } from './model.js';
@@ -201,7 +202,7 @@ describe('product classification', () => {
     expect((await git(sites, ['diff', '--cached', '--name-only'])).trim()).toBe('');
   });
 
-  it('combines classify commit and rollback errors', async () => {
+  it.skipIf(process.platform === 'win32')('combines classify commit and rollback errors', async () => {
     const { homeDir, revision } = await primed('reddit.com');
     const productDir = join(homeDir, '.webcmd/sites/reddit.com');
     try {
@@ -248,11 +249,7 @@ describe('product classification', () => {
 });
 
 async function withFailingCommit<T>(fn: () => Promise<T>, chmodOnFail?: string): Promise<T> {
-  const wrapperDir = await mkdtemp(join(tmpdir(), 'webcmd-classify-git-'));
-  tempHomes.push(wrapperDir);
-  const { stdout } = await run('/usr/bin/which', ['git'], { encoding: 'utf8' });
-  const wrapper = join(wrapperDir, 'git');
-  await writeFile(wrapper, `#!/usr/bin/env node
+  const { dir, restore } = await installGitShim((git) => `
 const { chmodSync } = require('node:fs');
 const { spawnSync } = require('node:child_process');
 const args = process.argv.slice(2);
@@ -260,15 +257,14 @@ if (args.includes('commit')) {
   ${chmodOnFail ? `try { chmodSync(${JSON.stringify(chmodOnFail)}, 0o555); } catch {}` : ''}
   process.exit(1);
 }
-const result = spawnSync(${JSON.stringify(stdout.trim())}, args, { stdio: 'inherit' });
+const result = spawnSync(${JSON.stringify(git)}, args, { stdio: 'inherit' });
 process.exit(result.status ?? 1);
 `);
-  await chmod(wrapper, 0o755);
-  process.env.PATH = `${wrapperDir}:${originalPath}`;
+  tempHomes.push(dir);
   try {
     return await fn();
   } finally {
-    process.env.PATH = originalPath;
+    restore();
   }
 }
 

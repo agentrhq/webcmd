@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
@@ -8,6 +8,7 @@ import { addCandidate, listCandidates, showCandidate } from './candidates.js';
 import { checkpointMemory, type CheckpointInput } from './checkpoint.js';
 import { classifyProduct } from './classify.js';
 import { getMemoryContext, parseProductManifest } from './context.js';
+import { installGitShim } from './git-shim.js';
 import { openSitesRepository } from './git-store.js';
 import { listSiteMemory, readProductFile, showSiteMemory, writeProductFile } from './local-store.js';
 import type { CandidateDisposition, SeedLookupResult } from './model.js';
@@ -773,25 +774,20 @@ async function writeDraft(homeDir: string, files: Record<string, string>, taskId
 }
 
 async function withGitWrapper(homeDir: string, fail: 'memory' | 'provenance', fn: () => Promise<void>) {
-  const wrapperDir = await mkdtemp(join(tmpdir(), 'webcmd-self-learning-git-'));
-  tempHomes.push(wrapperDir);
-  const { stdout } = await run('/usr/bin/which', ['git'], { encoding: 'utf8' });
   const needle = fail === 'memory' ? 'checkpoint memory' : 'checkpoint provenance';
-  const wrapper = join(wrapperDir, 'git');
-  await writeFile(wrapper, `#!/usr/bin/env node
+  const { dir, restore } = await installGitShim((git) => `
 const { spawnSync } = require('node:child_process');
 const args = process.argv.slice(2);
 const msg = args.includes('-m') ? args[args.indexOf('-m') + 1] : '';
 if (args.includes('commit') && msg.includes(${JSON.stringify(needle)})) process.exit(1);
-const result = spawnSync(${JSON.stringify(stdout.trim())}, args, { stdio: 'inherit' });
+const result = spawnSync(${JSON.stringify(git)}, args, { stdio: 'inherit' });
 process.exit(result.status ?? 1);
 `);
-  await chmod(wrapper, 0o755);
-  process.env.PATH = `${wrapperDir}:${originalPath}`;
+  tempHomes.push(dir);
   try {
     await fn();
   } finally {
-    process.env.PATH = originalPath;
+    restore();
   }
 }
 
