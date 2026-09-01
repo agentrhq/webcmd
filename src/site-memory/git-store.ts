@@ -36,6 +36,8 @@ export interface SitesRepository {
   revision(): Promise<MemoryRevision | null>;
   commit(paths: string[], message: string): Promise<MemoryRevision>;
   pathsChanged(paths: string[]): Promise<boolean>;
+  dirtyPaths(scope: string): Promise<string[]>;
+  isAncestor(commit: MemoryRevision): Promise<boolean>;
   showAtHead(path: string): Promise<string | null>;
   withRepositoryLock<T>(fn: () => Promise<T>): Promise<T>;
 }
@@ -47,6 +49,8 @@ export async function openSitesRepository(options: LocalStoreOptions = {}): Prom
     revision: () => revisionOf(root),
     commit: (paths, message) => withRepositoryLock(root, () => commitPaths(root, paths, message)),
     pathsChanged: (paths) => pathsDifferFromHead(root, paths),
+    dirtyPaths: (scope) => dirtyPathsIn(root, scope),
+    isAncestor: (commit) => isAncestorOfHead(root, commit),
     showAtHead: (path) => showAtHead(root, path),
     withRepositoryLock: (fn) => withRepositoryLock(root, fn),
   };
@@ -93,6 +97,23 @@ async function pathsDifferFromHead(root: string, paths: string[]): Promise<boole
   const relativePaths = paths.map((path) => containedRelativePath(root, path));
   const status = await git(root, ['status', '--porcelain', '-z', '-uall', '--', ...relativePaths]);
   return porcelainEntries(status).length > 0;
+}
+
+async function dirtyPathsIn(root: string, scope: string): Promise<string[]> {
+  const relative = containedRelativePath(root, scope);
+  const status = await git(root, ['status', '--porcelain', '-z', '-uall', '--', relative]);
+  return porcelainEntries(status).map((entry) => entry.path);
+}
+
+async function isAncestorOfHead(root: string, commit: MemoryRevision): Promise<boolean> {
+  if (!commit) return false;
+  try {
+    await git(root, ['merge-base', '--is-ancestor', commit, 'HEAD']);
+    return true;
+  } catch (err) {
+    if (isGitExit(err, 1) || isGitExit(err, 128)) return false;
+    throw err;
+  }
 }
 
 async function showAtHead(root: string, path: string): Promise<string | null> {
@@ -213,6 +234,8 @@ async function git(root: string, args: string[]): Promise<string> {
   const env = { ...process.env };
   delete env.GIT_DIR;
   delete env.GIT_WORK_TREE;
+  env.LC_ALL = 'C';
+  env.LANG = 'C';
   env.GIT_AUTHOR_NAME = AUTHOR_NAME;
   env.GIT_AUTHOR_EMAIL = AUTHOR_EMAIL;
   env.GIT_COMMITTER_NAME = AUTHOR_NAME;
@@ -225,6 +248,10 @@ function isNotRepo(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
   const stderr = 'stderr' in err && typeof err.stderr === 'string' ? err.stderr : '';
   return 'code' in err && err.code === 128 && /not a git repository/i.test(stderr);
+}
+
+function isGitExit(err: unknown, code: number): boolean {
+  return Boolean(err && typeof err === 'object' && 'code' in err && err.code === code);
 }
 
 function isMissingHeadPath(err: unknown): boolean {

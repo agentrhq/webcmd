@@ -718,7 +718,7 @@ async function checkpoint(
 function candidate(homeDir: string, extra: Record<string, unknown> = {}) {
   return {
     product: 'example.test',
-    hostname: 'www.example.test',
+    hostname: 'example.test',
     kind: 'better_path',
     claim: 'New listing is faster',
     evidence: 'Used /new while /hot spun.',

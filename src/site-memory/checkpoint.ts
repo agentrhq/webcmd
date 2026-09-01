@@ -54,14 +54,15 @@ export async function checkpointMemory(input: CheckpointInput): Promise<Checkpoi
       if (drafts.get(path) !== current) changed.push(path);
     }
 
-    if (actual && input.expectedRevision === actual && isProvenanceRecovery(loaded, dispositions, actual)) {
+    if (actual && input.expectedRevision === actual && await isProvenanceRecovery(loaded, dispositions, repo)) {
       if (changed.length > 0) {
         throw new Error('Finish provenance recovery with an unchanged draft first.');
       }
       if (await repo.pathsChanged(candidatePaths)) {
-        await writeDispositions(product, loaded, dispositions, actual, input);
+        const memoryCommit = loaded.find((row) => row.status === 'ingested')?.memoryCommit ?? actual;
+        await writeDispositions(product, loaded, dispositions, memoryCommit, input);
         const provenanceCommit = await repo.commit(candidatePaths, `checkpoint provenance ${product}`);
-        return { status: 'committed', memoryCommit: actual, provenanceCommit };
+        return { status: 'committed', memoryCommit, provenanceCommit };
       }
     }
 
@@ -124,30 +125,31 @@ export async function checkpointMemory(input: CheckpointInput): Promise<Checkpoi
   });
 }
 
-function isProvenanceRecovery(
+async function isProvenanceRecovery(
   loaded: Candidate[],
   dispositions: CandidateDisposition[],
-  actual: MemoryRevision,
-): boolean {
+  repo: Awaited<ReturnType<typeof openSitesRepository>>,
+): Promise<boolean> {
   if (dispositions.length === 0) return false;
   let seenTerminal = false;
   for (const [index, row] of dispositions.entries()) {
     const candidate = loaded[index];
     if (candidate.status === 'pending') continue;
-    if (!matchesRequestedTerminal(candidate, row, actual)) throw new Error('Invalid candidate status transition.');
+    if (!await matchesRequestedTerminal(candidate, row, repo)) throw new Error('Invalid candidate status transition.');
     seenTerminal = true;
   }
   return seenTerminal;
 }
 
-function matchesRequestedTerminal(
+async function matchesRequestedTerminal(
   candidate: Candidate,
   row: CandidateDisposition,
-  actual: MemoryRevision,
-): boolean {
+  repo: Awaited<ReturnType<typeof openSitesRepository>>,
+): Promise<boolean> {
   if (row.status === 'ingested') {
     return candidate.status === 'ingested'
-      && candidate.memoryCommit === actual
+      && candidate.memoryCommit !== null
+      && await repo.isAncestor(candidate.memoryCommit)
       && candidate.evidenceRole === row.evidenceRole
       && candidate.rejectionReason === null;
   }

@@ -15,7 +15,9 @@ Kinds: `action_space`, `better_path`, `access`, `high_consequence`, `repeated_mi
 | `--claim` | Short reusable claim. |
 | `--evidence` | Bounded secret-free evidence from this task. |
 | `--consequence` | Why a later agent should care. |
-| `--hostname` | Only when it differs from the product key. |
+| `--hostname` | Live host when it differs from the product key. |
+
+If context returned `provisional-fallback`, classify before `candidate add`. Do not capture onto the parent. After `--same-product`, `<product>` is the parent and `--hostname` is the live host.
 
 `high_consequence` is an immediate warning: capture it as soon as the danger is observed. Other kinds wait for a real consequence, not a successful no-op.
 

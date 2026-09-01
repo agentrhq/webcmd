@@ -12,7 +12,7 @@ webcmd site memory checkpoint <product> \
   -f json
 ```
 
-`--expected-revision` is the `revision` from context (`null` when context returned none). `--paths` are explicit draft Markdown paths to publish.
+`--expected-revision` is the `revision` from context (`null` when context returned none). `--paths` are explicit draft Markdown paths to publish. Checkpoint does not take a hostname; it publishes this task's product draft. After classify, rerun context, then checkpoint.
 
 After the final candidate capture or search decision and before editing the draft, rerun context with the same task id:
 

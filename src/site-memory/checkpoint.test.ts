@@ -197,13 +197,13 @@ not a fact
     expect(context.readOnly).toBe(true);
     expect(context.resolution.status).toBe('provisional-fallback');
     const next = `# Example\n\n${FACT}- [verified 2026-09-01] Extra.\n`;
-    await writeDraft(homeDir, { 'sitemap/SITE.md': next });
+    await writeFile(join(context.draftPath, 'SITE.md'), next);
 
     await expect(checkpoint(homeDir, {
       expectedRevision: context.revision ?? revision,
       reason: 'direct_correction',
       dispositions: [],
-    })).rejects.toThrow(/read-only|provisional|classify/i);
+    })).rejects.toThrow(/read-only|provisional|classify|metadata/i);
     expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBe(SITE);
   });
 
@@ -238,7 +238,7 @@ not a fact
     expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBe(SITE);
   });
 
-  it('denies a reused tainted fallback draft after classify without treating the product as provisional', async () => {
+  it('allows checkpoint after fallback classify and fresh context in the same task', async () => {
     const { homeDir, revision } = await primed();
     const fallback = await getMemoryContext({
       url: 'https://www.example.test/',
@@ -246,8 +246,6 @@ not a fact
       homeDir,
       seedProvider: { lookup: async () => ({ status: 'absent' as const }) },
     });
-    const next = `# Example\n\n${FACT}- [verified 2026-09-01] Extra.\n`;
-    await writeDraft(homeDir, { 'sitemap/SITE.md': next });
     const classified = await classifyProduct({
       requested: 'https://www.example.test/',
       decision: 'same-product',
@@ -258,19 +256,85 @@ not a fact
     expect(classified.status).toBe('classified');
 
     const again = await getMemoryContext({
+      url: 'https://www.example.test/',
+      taskId: 'task-1',
+      homeDir,
+      seedProvider: { lookup: async () => ({ status: 'absent' as const }) },
+    });
+    expect(again.resolution.status).toBe('confirmed-interface');
+    expect(again.readOnly).toBe(false);
+    expect(again.draftPath).toBe(join(homeDir, '.webcmd/sites/.drafts/task-1/example.test/sitemap'));
+    const next = `# Example\n\n${FACT}- [verified 2026-09-01] Extra.\n`;
+    await writeFile(join(again.draftPath, 'SITE.md'), next);
+    const result = await checkpoint(homeDir, {
+      expectedRevision: again.revision ?? revision,
+      reason: 'direct_correction',
+      dispositions: [],
+    });
+    expect(result.status).toBe('committed');
+    expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBe(next);
+  });
+
+  it('keeps an exact draft publishable after visiting a provisional sibling host', async () => {
+    const { homeDir, revision } = await primed();
+    const exact = await getMemoryContext({
       url: 'https://example.test/',
       taskId: 'task-1',
       homeDir,
       seedProvider: { lookup: async () => ({ status: 'absent' as const }) },
     });
-    expect(again.resolution.status).toBe('exact');
-    expect(again.resolution.readOnly).toBe(false);
-    await expect(checkpoint(homeDir, {
-      expectedRevision: again.revision ?? revision,
+    expect(exact.readOnly).toBe(false);
+    const next = `# Example\n\n${FACT}- [verified 2026-09-01] Extra.\n`;
+    await writeDraft(homeDir, { 'sitemap/SITE.md': next });
+
+    const sibling = await getMemoryContext({
+      url: 'https://www.example.test/',
+      taskId: 'task-1',
+      homeDir,
+      seedProvider: { lookup: async () => ({ status: 'absent' as const }) },
+    });
+    expect(sibling.readOnly).toBe(true);
+    expect(sibling.resolution.status).toBe('provisional-fallback');
+
+    const result = await checkpoint(homeDir, {
+      expectedRevision: exact.revision ?? revision,
       reason: 'direct_correction',
       dispositions: [],
-    })).rejects.toThrow(/read-only|provisional|classify/i);
-    expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBe(SITE);
+    });
+    expect(result.status).toBe('committed');
+    expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBe(next);
+  });
+
+  it('does not publish edits written through a provisional sibling draftPath', async () => {
+    const { homeDir, revision } = await primed();
+    const exact = await getMemoryContext({
+      url: 'https://example.test/',
+      taskId: 'task-1',
+      homeDir,
+      seedProvider: { lookup: async () => ({ status: 'absent' as const }) },
+    });
+    expect(exact.readOnly).toBe(false);
+    const exactNext = `# Example\n\n${FACT}- [verified 2026-09-01] Extra.\n`;
+    await writeFile(join(exact.draftPath, 'SITE.md'), exactNext);
+
+    const sibling = await getMemoryContext({
+      url: 'https://www.example.test/',
+      taskId: 'task-1',
+      homeDir,
+      seedProvider: { lookup: async () => ({ status: 'absent' as const }) },
+    });
+    expect(sibling.readOnly).toBe(true);
+    expect(sibling.resolution.status).toBe('provisional-fallback');
+    const hijack = `# Example\n\n${FACT}- [verified 2026-09-01] Sibling hijack.\n`;
+    await writeFile(join(sibling.draftPath, 'SITE.md'), hijack);
+
+    const result = await checkpoint(homeDir, {
+      expectedRevision: exact.revision ?? revision,
+      reason: 'direct_correction',
+      dispositions: [],
+    });
+    expect(result.status).toBe('committed');
+    expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBe(exactNext);
   });
 });
 
@@ -817,6 +881,65 @@ describe('checkpoint git transaction', () => {
     expect(JSON.parse(await git(sites, ['show', `HEAD:example.test/candidates/${later.id}.json`])).status).toBe('pending');
   });
 
+  it('recovers interrupted ingested provenance after an unrelated later product commit', async () => {
+    const { homeDir, sites } = await primed();
+    const first = await addCandidate(candidate(homeDir, { observedAt: '2026-08-30T12:00:00Z' }));
+    const second = await addCandidate(candidate(homeDir, { observedAt: '2026-08-31T12:00:00Z', claim: 'Later' }));
+    const next = `# Example\n\n${FACT}- [verified 2026-08-31] Later path is denser.\n`;
+    await writeDraft(homeDir, { 'sitemap/SITE.md': next });
+    const dispositions = [
+      { id: first.id, status: 'ingested' as const, evidenceRole: 'supporting' as const },
+      { id: second.id, status: 'ingested' as const, evidenceRole: 'supporting' as const },
+    ];
+
+    await withGitWrapper(homeDir, 'provenance', async () => {
+      await expect(checkpoint(homeDir, { dispositions })).rejects.toThrow();
+    });
+
+    const memoryRevision = (await git(sites, ['rev-parse', 'HEAD'])).trim();
+    expect((await showCandidate('example.test', first.id, { homeDir })).memoryCommit).toBe(memoryRevision);
+
+    const other = {
+      key: 'other.test',
+      hostname: 'other.test',
+      displayHostname: 'other.test',
+      registrableDomain: 'other.test',
+    };
+    await writeProductFile('other.test', 'manifest.json', `${JSON.stringify({
+      schemaVersion: 1,
+      product: other,
+      interfaces: [],
+      seed: { status: 'absent' },
+    }, null, 2)}\n`, { homeDir });
+    await (await openSitesRepository({ homeDir })).commit(['other.test/manifest.json'], 'init other');
+    const laterHead = (await git(sites, ['rev-parse', 'HEAD'])).trim();
+    expect(laterHead).not.toBe(memoryRevision);
+
+    const statusScopes: string[][] = [];
+    const { restore } = installGitShim(async (args, runReal) => {
+      if (args.includes('status')) {
+        const dash = args.lastIndexOf('--');
+        if (dash >= 0) statusScopes.push(args.slice(dash + 1).filter((part) => !part.startsWith('-')));
+      }
+      return runReal();
+    });
+    try {
+      const later = await addCandidate(candidate(homeDir, { claim: 'Ordinary later capture' }));
+      expect(later.status).toBe('pending');
+    } finally {
+      restore();
+    }
+
+    expect(statusScopes.some((scope) => scope.some((path) => path.endsWith(`${first.id}.json`) || path.endsWith(`${second.id}.json`)))).toBe(false);
+    expect(statusScopes.some((scope) => scope.includes('example.test/candidates'))).toBe(true);
+    expect((await showCandidate('example.test', first.id, { homeDir })).memoryCommit).toBe(memoryRevision);
+    await git(sites, ['merge-base', '--is-ancestor', memoryRevision, 'HEAD']);
+    expect((await git(sites, ['show', `HEAD:example.test/candidates/${first.id}.json`]))).toMatch(/"status": "ingested"/);
+    expect((await git(sites, ['show', `HEAD:example.test/candidates/${second.id}.json`]))).toMatch(/"status": "ingested"/);
+    expect((await git(sites, ['status', '--porcelain', '-uall', '--', 'example.test/candidates'])).trim()).toBe('');
+    expect(JSON.parse(await git(sites, ['show', `HEAD:example.test/candidates/${first.id}.json`])).memory_commit).toBe(memoryRevision);
+  });
+
   it('recovers a rejected-only interrupted provenance batch on a later product write', async () => {
     const { homeDir, sites } = await primed();
     const first = await addCandidate(candidate(homeDir, { observedAt: '2026-08-30T12:00:00Z' }));
@@ -1047,7 +1170,7 @@ async function checkpoint(homeDir: string, extra: Partial<CheckpointInput> = {})
 function candidate(homeDir: string, extra: Record<string, unknown> = {}) {
   return {
     product: 'example.test',
-    hostname: 'www.example.test',
+    hostname: 'example.test',
     kind: 'better_path',
     claim: 'New listing is faster',
     evidence: 'Used /new while /hot spun.',

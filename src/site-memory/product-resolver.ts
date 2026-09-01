@@ -1,7 +1,7 @@
 import { isIP } from 'node:net';
 import { domainToUnicode } from 'node:url';
 import { getDomain } from 'tldts';
-import type { ProductIdentity, ProductManifest, ProductResolution } from './model.js';
+import type { PersistedSeedResult, ProductIdentity, ProductManifest, ProductResolution } from './model.js';
 
 export function canonicalProductKey(urlOrHost: string): ProductIdentity {
   const value = urlOrHost.trim();
@@ -25,6 +25,41 @@ export function canonicalProductKey(urlOrHost: string): ProductIdentity {
     displayHostname: domainToUnicode(hostname) || hostname,
     registrableDomain,
   };
+}
+
+export function parseProductManifest(raw: string | null): ProductManifest | undefined {
+  if (!raw) return undefined;
+  try {
+    const value = JSON.parse(raw) as unknown;
+    return isProductManifest(value) ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isProductManifest(value: unknown): value is ProductManifest {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const candidate = value as Record<string, unknown>;
+  return candidate.schemaVersion === 1
+    && isProductIdentity(candidate.product)
+    && Array.isArray(candidate.interfaces)
+    && candidate.interfaces.every(isProductIdentity)
+    && isPersistedSeed(candidate.seed)
+    && (!('postRewrite' in candidate) || candidate.postRewrite === true);
+}
+
+function isProductIdentity(value: unknown): value is ProductIdentity {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const candidate = value as Record<string, unknown>;
+  return [candidate.key, candidate.hostname, candidate.displayHostname, candidate.registrableDomain]
+    .every((field) => typeof field === 'string' && field.length > 0);
+}
+
+function isPersistedSeed(value: unknown): value is PersistedSeedResult {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const candidate = value as Record<string, unknown>;
+  if (candidate.status === 'unattempted' || candidate.status === 'absent' || candidate.status === 'lookup-failed') return true;
+  return candidate.status === 'available' && typeof candidate.revision === 'string' && candidate.revision.length > 0;
 }
 
 export function resolveProduct(url: string, manifests: ProductManifest[]): ProductResolution {

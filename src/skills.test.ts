@@ -213,6 +213,7 @@ describe('webcmd skills content', () => {
   it('names per-reference triggers, classify-before-write, and the 500/200 rewrite rule', () => {
     const browser = bundledSkill('webcmd-browser');
     const sitemap = bundledReference('sitemap-memory.md');
+    const schema = bundledReference('candidate-schema.md');
     const git = bundledReference('git-lifecycle.md');
 
     expect(browser).toMatch(/sitemap-memory\.md[\s\S]{0,220}(?:provisional-fallback|classif|draftPath)/i);
@@ -224,6 +225,10 @@ describe('webcmd skills content', () => {
     expect(sitemap).toMatch(/same-product|same product/);
     expect(sitemap).toMatch(/--distinct|distinct product/);
     expect(sitemap).toMatch(/before any write/i);
+    expect(sitemap).toMatch(/candidate add/);
+    expect(sitemap).toMatch(/does not make an exact draft|does not taint/i);
+    expect(schema).toMatch(/provisional-fallback[\s\S]{0,160}classif/i);
+    expect(git).toMatch(/does not take a hostname|rerun context, then checkpoint/i);
     expect(sitemap).toMatch(/do not (?:write|edit|touch).*~\/\.webcmd|never (?:write|edit).*~\/\.webcmd/i);
     expect(sitemap).toMatch(/never (?:run |use )?git|do not (?:run |use )?git/i);
     expect(git).toMatch(/500/);

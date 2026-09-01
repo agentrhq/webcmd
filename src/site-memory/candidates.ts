@@ -3,16 +3,16 @@ import { readdir, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { collectEnvironment } from './environment.js';
 import { openSitesRepository, type SitesRepository } from './git-store.js';
-import { containedRelativePath, readProductFile, sitesRoot, writeProductFile, type LocalStoreOptions } from './local-store.js';
+import { containedRelativePath, listProductKeys, readProductFile, sitesRoot, writeProductFile, type LocalStoreOptions } from './local-store.js';
 import {
   CANDIDATE_KINDS,
   type Candidate,
   type CandidateEnvironment,
   type CandidateStatus,
   type CandidateSummary,
-  type MemoryRevision,
+  type ProductManifest,
 } from './model.js';
-import { canonicalProductKey } from './product-resolver.js';
+import { canonicalProductKey, parseProductManifest, resolveProduct } from './product-resolver.js';
 
 export const SEARCH_CANDIDATE_LIMIT = 20;
 
@@ -79,6 +79,7 @@ export async function addCandidate(input: AddCandidateInput): Promise<CandidateS
   const relative = candidatePath(id);
   const repo = await openSitesRepository(input);
   await repo.withRepositoryLock(async () => {
+    await assertCaptureAuthorized(product.key, host.key, input);
     try {
       await recoverInterruptedProvenance(product.key, repo, input);
       await writeProductFile(product.key, relative, `${JSON.stringify(encodeCandidate(candidate), null, 2)}\n`, input);
@@ -135,11 +136,11 @@ export async function recoverInterruptedProvenance(
   const key = canonicalProductKey(product).key;
   const head = await repo.revision();
   if (!head) return;
+  const prefix = `${key}/candidates/`;
   const recoverable: string[] = [];
-  for (const name of await candidateFileNames(key, opts)) {
-    const id = name.slice(0, -'.json'.length);
-    const path = `${key}/${candidatePath(id)}`;
-    if (!await repo.pathsChanged([path])) continue;
+  for (const path of await repo.dirtyPaths(`${key}/candidates`)) {
+    if (!path.startsWith(prefix) || !path.endsWith('.json') || path.slice(prefix.length).includes('/')) continue;
+    const id = path.slice(prefix.length, -'.json'.length);
     let candidate: Candidate;
     try {
       candidate = await readCandidateRecord(key, id, opts);
@@ -154,17 +155,23 @@ export async function recoverInterruptedProvenance(
     } catch {
       continue;
     }
-    if (!isInterruptedProvenanceRecord(candidate, previous, head)) continue;
+    if (!await isInterruptedProvenanceRecord(candidate, previous, repo)) continue;
     recoverable.push(path);
   }
   if (recoverable.length === 0) return;
   await repo.commit(recoverable, `checkpoint provenance ${key}`);
 }
 
-function isInterruptedProvenanceRecord(worktree: Candidate, committed: Candidate, head: MemoryRevision): boolean {
+async function isInterruptedProvenanceRecord(
+  worktree: Candidate,
+  committed: Candidate,
+  repo: SitesRepository,
+): Promise<boolean> {
   if (committed.status !== 'pending') return false;
   if (!sameExceptProvenance(worktree, committed)) return false;
-  if (worktree.status === 'ingested') return worktree.memoryCommit === head;
+  if (worktree.status === 'ingested') {
+    return worktree.memoryCommit !== null && await repo.isAncestor(worktree.memoryCommit);
+  }
   return worktree.status === 'rejected';
 }
 
@@ -176,6 +183,29 @@ function sameExceptProvenance(worktree: Candidate, committed: Candidate): boolea
     delete right[field];
   }
   return JSON.stringify(left) === JSON.stringify(right);
+}
+
+async function assertCaptureAuthorized(productKey: string, hostname: string, opts: LocalStoreOptions): Promise<void> {
+  const resolution = resolveProduct(hostname, await loadManifests(opts));
+  if (resolution.status === 'provisional-fallback') {
+    throw new Error('Provisional parent fallback is read-only until classified.');
+  }
+  if (resolution.product.key !== productKey) {
+    throw new Error(`Candidate product must be ${resolution.product.key}.`);
+  }
+  const target = parseProductManifest(await readProductFile(productKey, 'manifest.json', opts));
+  if (!target || target.product.key !== productKey) {
+    throw new Error('Candidate capture requires a valid product manifest.');
+  }
+}
+
+async function loadManifests(opts: LocalStoreOptions): Promise<ProductManifest[]> {
+  const manifests: ProductManifest[] = [];
+  for (const key of await listProductKeys(opts)) {
+    const parsed = parseProductManifest(await readProductFile(key, 'manifest.json', opts));
+    if (parsed && parsed.product.key === key) manifests.push(parsed);
+  }
+  return manifests;
 }
 
 function candidatePath(id: string): string {

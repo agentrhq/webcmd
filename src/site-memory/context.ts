@@ -1,4 +1,4 @@
-import { access, mkdir, readdir, readFile, unlink } from 'node:fs/promises';
+import { access, mkdir, readdir, unlink } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { recoverInterruptedProvenance } from './candidates.js';
 import { openSitesRepository, type SitesRepository } from './git-store.js';
@@ -11,8 +11,10 @@ import type {
   ProductManifest,
   SeedLookupResult,
 } from './model.js';
-import { canonicalProductKey, resolveProduct } from './product-resolver.js';
+import { canonicalProductKey, parseProductManifest, resolveProduct } from './product-resolver.js';
 import { createHttpSeedProvider, type GlobalSeedProvider } from './seed-client.js';
+
+export { parseProductManifest };
 
 export interface MemoryContextInput extends LocalStoreOptions {
   url: string;
@@ -56,10 +58,21 @@ export async function getMemoryContext(input: MemoryContextInput): Promise<Memor
   const references = transient
     ? Object.keys(transient.references ?? {}).sort().map((name) => ({ path: `sitemap/references/${name}` }))
     : await listReferences(productKey, opts);
-  const draftPath = join(sitesRoot(opts), '.drafts', taskId, memorySegment(productKey), 'sitemap');
-  const draftReadOnly = git
-    ? await writeDraft(draftPath, productKey, siteMarkdown, references, transient?.references, opts, resolution.readOnly)
-    : resolution.readOnly;
+  const productDraft = join(sitesRoot(opts), '.drafts', taskId, memorySegment(productKey));
+  const draftPath = resolution.status === 'provisional-fallback'
+    ? join(productDraft, memorySegment(resolution.requested.key), 'sitemap')
+    : join(productDraft, 'sitemap');
+  if (git) {
+    await writeDraft(
+      draftPath,
+      productKey,
+      siteMarkdown,
+      references,
+      transient?.references,
+      opts,
+      resolution.readOnly,
+    );
+  }
 
   return {
     resolution,
@@ -68,7 +81,7 @@ export async function getMemoryContext(input: MemoryContextInput): Promise<Memor
     siteMarkdown,
     references,
     draftPath,
-    readOnly: draftReadOnly || !git || legacy || persistFailed,
+    readOnly: resolution.readOnly || !git || legacy || persistFailed,
     diagnostics,
   };
 }
@@ -153,22 +166,15 @@ async function writeDraft(
   transientRefs: Record<string, string> | undefined,
   opts: LocalStoreOptions,
   readOnly: boolean,
-): Promise<boolean> {
+): Promise<void> {
   await mkdir(draftPath, { recursive: true });
   const draftRoot = join(draftPath, '..');
-  const metaPath = join(draftRoot, 'context.json');
-  try {
-    if (parseDraftContextMetadata(await readFile(metaPath, 'utf8')).readOnly) readOnly = true;
-  } catch (err) {
-    if (!(err instanceof Error && 'code' in err && err.code === 'ENOENT')) throw err;
-  }
-  await atomicWrite(metaPath, `${JSON.stringify({ readOnly })}\n`);
+  await atomicWrite(join(draftRoot, 'context.json'), `${JSON.stringify({ readOnly })}\n`);
   if (siteMarkdown != null) await writeContained(draftRoot, 'sitemap/SITE.md', siteMarkdown);
   for (const { path } of references) {
     const body = transientRefs?.[path.slice('sitemap/references/'.length)] ?? await readProductFile(productKey, path, opts);
     if (body != null) await writeContained(draftRoot, path, body);
   }
-  return readOnly;
 }
 
 async function writeContained(root: string, path: string, body: string): Promise<void> {
@@ -191,41 +197,6 @@ async function loadManifests(opts: LocalStoreOptions): Promise<ProductManifest[]
     if (parsed) manifests.push(parsed);
   }
   return manifests;
-}
-
-export function parseProductManifest(raw: string | null): ProductManifest | undefined {
-  if (!raw) return undefined;
-  try {
-    const value = JSON.parse(raw) as unknown;
-    return isProductManifest(value) ? value : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function isProductManifest(value: unknown): value is ProductManifest {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const candidate = value as Record<string, unknown>;
-  return candidate.schemaVersion === 1
-    && isProductIdentity(candidate.product)
-    && Array.isArray(candidate.interfaces)
-    && candidate.interfaces.every(isProductIdentity)
-    && isPersistedSeed(candidate.seed)
-    && (!('postRewrite' in candidate) || candidate.postRewrite === true);
-}
-
-function isProductIdentity(value: unknown): value is ProductIdentity {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const candidate = value as Record<string, unknown>;
-  return [candidate.key, candidate.hostname, candidate.displayHostname, candidate.registrableDomain]
-    .every((field) => typeof field === 'string' && field.length > 0);
-}
-
-function isPersistedSeed(value: unknown): value is PersistedSeedResult {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const candidate = value as Record<string, unknown>;
-  if (candidate.status === 'unattempted' || candidate.status === 'absent' || candidate.status === 'lookup-failed') return true;
-  return candidate.status === 'available' && typeof candidate.revision === 'string' && candidate.revision.length > 0;
 }
 
 async function isLegacySite(productKey: string, opts: LocalStoreOptions): Promise<boolean> {

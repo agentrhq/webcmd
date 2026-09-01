@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import { addCandidate, listCandidates, searchCandidates, showCandidate } from './candidates.js';
+import { classifyProduct } from './classify.js';
 import { installGitShim, restoreGitShim } from './git-shim.js';
 import { openSitesRepository } from './git-store.js';
 import { listSiteMemory, readProductFile, showSiteMemory, writeProductFile } from './local-store.js';
@@ -21,7 +22,7 @@ afterEach(async () => {
 
 describe('candidate capture', () => {
   it('writes unique lexical filenames and derives UTC date from offset timestamps', async () => {
-    const { homeDir, sites } = await tempSites();
+    const { homeDir, sites } = await primedParent();
     const first = await addCandidate(base(homeDir, {
       claim: 'Old Reddit is denser',
       observedAt: '2026-08-31T00:30:00+05:30',
@@ -57,7 +58,7 @@ describe('candidate capture', () => {
   });
 
   it('captures even when provenance collection fails', async () => {
-    const { homeDir } = await tempSites();
+    const { homeDir } = await primedParent();
 
     const summary = await addCandidate(base(homeDir, {
       environment: undefined,
@@ -74,7 +75,12 @@ describe('candidate capture', () => {
 
   it('refuses capturing a.test while b.test is pre-staged', async () => {
     const { homeDir, sites } = await tempSites();
-    await writeProductFile('a.test', 'manifest.json', '{}\n', { homeDir });
+    await writeProductFile('a.test', 'manifest.json', `${JSON.stringify({
+      schemaVersion: 1,
+      product: identity('a.test'),
+      interfaces: [],
+      seed: { status: 'absent' },
+    }, null, 2)}\n`, { homeDir });
     await writeProductFile('b.test', 'sitemap/SITE.md', '# B\n\nUNVALIDATED user text with no date and secrets: password=hunter2\n', { homeDir });
     await (await openSitesRepository({ homeDir })).commit(['a.test/manifest.json'], 'init a');
     await git(sites, ['add', '--', 'b.test/sitemap/SITE.md']);
@@ -88,7 +94,7 @@ describe('candidate capture', () => {
   });
 
   it('commits each candidate once and keeps concurrent captures', async () => {
-    const { homeDir, sites } = await tempSites();
+    const { homeDir, sites } = await primedParent();
     const [a, b] = await Promise.all([
       addCandidate(base(homeDir, { claim: 'First concurrent path' })),
       addCandidate(base(homeDir, { claim: 'Second concurrent path' })),
@@ -98,27 +104,24 @@ describe('candidate capture', () => {
     expect(files).toEqual([`example.test/candidates/${a.id}.json`, `example.test/candidates/${b.id}.json`].sort());
     expect((await git(sites, ['log', '--oneline', '--', `example.test/candidates/${a.id}.json`])).trim().split('\n')).toHaveLength(1);
     expect((await git(sites, ['log', '--oneline', '--', `example.test/candidates/${b.id}.json`])).trim().split('\n')).toHaveLength(1);
-    expect((await git(sites, ['log', '--oneline'])).trim().split('\n')).toHaveLength(2);
+    expect((await git(sites, ['log', '--oneline'])).trim().split('\n')).toHaveLength(3);
   });
 });
 
 describe('candidate discovery', () => {
   it('searches pending candidates with compact lexical ranking and hides completed ones', async () => {
-    const { homeDir } = await tempSites();
+    const { homeDir } = await primedParent();
     const ranked = await addCandidate(base(homeDir, {
-      hostname: 'old.reddit.com',
       kind: 'better_path',
       claim: 'Old Reddit denser listing',
       consequence: 'Fewer page loads',
     }));
     const weaker = await addCandidate(base(homeDir, {
-      hostname: 'www.reddit.com',
       kind: 'access',
       claim: 'Login wall on old posts',
       consequence: 'Need an account',
     }));
     const ingested = await addCandidate(base(homeDir, {
-      hostname: 'old.reddit.com',
       kind: 'better_path',
       claim: 'Old Reddit denser listing again',
       consequence: 'Fewer page loads',
@@ -131,7 +134,7 @@ describe('candidate discovery', () => {
     expect(hits[0]).toEqual(expect.objectContaining({
       id: ranked.id,
       kind: 'better_path',
-      hostname: 'old.reddit.com',
+       hostname: 'example.test',
       claim: 'Old Reddit denser listing',
       consequence: 'Fewer page loads',
       status: 'pending',
@@ -145,7 +148,7 @@ describe('candidate discovery', () => {
   });
 
   it('hides candidates and raw environment values from ordinary memory listing', async () => {
-    const { homeDir } = await tempSites();
+    const { homeDir } = await primedParent();
     await writeProductFile('example.test', 'notes.md', 'hello\n', { homeDir });
     const summary = await addCandidate(base(homeDir, {
       environment: { publicIp: '203.0.113.9', localIp: '192.168.1.8', machine: 'secret-host' },
@@ -155,15 +158,15 @@ describe('candidate discovery', () => {
     const shown = await showSiteMemory('example.test', { homeDir });
     const explicit = await listSiteMemory('example.test', { homeDir, paths: [`candidates/${summary.id}.json`] });
 
-    expect(listed.map((item) => item.path)).toEqual(['notes.md']);
-    expect(shown.map((item) => item.path)).toEqual(['notes.md']);
+    expect(listed.map((item) => item.path)).toEqual(['manifest.json', 'notes.md']);
+    expect(shown.map((item) => item.path)).toEqual(['manifest.json', 'notes.md']);
     expect(explicit).toEqual([]);
     expect(JSON.stringify({ listed, shown, explicit })).not.toMatch(/203\.0\.113\.9|192\.168\.1\.8|secret-host/);
     expect((await showCandidate('example.test', summary.id, { homeDir })).environment.publicIp).toBe('203.0.113.9');
   });
 
   it('persists the approved snake_case candidate schema', async () => {
-    const { homeDir } = await tempSites();
+    const { homeDir } = await primedParent();
     const summary = await addCandidate(base(homeDir, {
       observedAt: '2026-08-31T14:23:00+05:30',
       environment: {
@@ -181,7 +184,7 @@ describe('candidate discovery', () => {
       schema_version: 1,
       id: summary.id,
       domain: 'example.test',
-      hostname: 'www.example.test',
+      hostname: 'example.test',
       observed_at: '2026-08-31T14:23:00+05:30',
       observed_date_utc: '2026-08-31',
       kind: 'better_path',
@@ -205,7 +208,7 @@ describe('candidate discovery', () => {
   });
 
   it('fails closed on malformed, unknown, secret, and mismatched candidate JSON', async () => {
-    const { homeDir } = await tempSites();
+    const { homeDir } = await primedParent();
     const summary = await addCandidate(base(homeDir));
     const path = `candidates/${summary.id}.json`;
     const raw = JSON.parse(await readProductFile('example.test', path, { homeDir }) ?? '');
@@ -243,7 +246,7 @@ describe('candidate discovery', () => {
   });
 
   it('rejects invalid timestamps, hosts, environment secrets, and status metadata', async () => {
-    const { homeDir } = await tempSites();
+    const { homeDir } = await primedParent();
     const summary = await addCandidate(base(homeDir, { observedAt: '2026-08-31T14:23:00+05:30' }));
     const path = `candidates/${summary.id}.json`;
     const raw = JSON.parse(await readProductFile('example.test', path, { homeDir }) ?? '');
@@ -311,7 +314,7 @@ describe('candidate discovery', () => {
   });
 
   it('does not leave a staged candidate after commit failure', async () => {
-    const { homeDir, sites } = await tempSites();
+    const { homeDir, sites } = await primedParent();
     await mkdir(sites, { recursive: true });
     await writeFile(join(sites, 'keep-me.txt'), 'unrelated\n');
     const { restore } = installGitShim(async (args, runReal) => (
@@ -326,7 +329,7 @@ describe('candidate discovery', () => {
     }
 
     expect(await jsonNames(sites)).toEqual([]);
-    expect((await git(sites, ['ls-files', '--stage'])).trim()).toBe('');
+    expect((await git(sites, ['ls-files', '--stage', '--', 'example.test/candidates'])).trim()).toBe('');
     expect(await git(sites, ['status', '--porcelain', '-uall'])).toMatch(/^\?\? keep-me\.txt$/m);
     expect(await git(sites, ['status', '--porcelain', '-uall'])).not.toMatch(/candidates/);
   });
@@ -338,7 +341,7 @@ describe('candidate discovery', () => {
     await expect(addCandidate(base(ancestor.homeDir))).rejects.toThrow(/ancestor/i);
     expect(await jsonNames(ancestor.sites)).toEqual([]);
 
-    const { homeDir, sites } = await tempSites();
+    const { homeDir, sites } = await primedParent();
     const kept = await addCandidate(base(homeDir, { claim: 'Keep concurrent unique capture' }));
     await writeProductFile('example.test', `candidates/${kept.id}.json`, 'dirty\n', { homeDir });
     await expect(addCandidate(base(homeDir, { claim: 'Transient uncommitted row' }))).rejects.toThrow(/unrelated/i);
@@ -346,7 +349,7 @@ describe('candidate discovery', () => {
   });
 
   it.skipIf(process.platform === 'win32')('reports non-ENOENT cleanup errors after a failed commit', async () => {
-    const { homeDir, sites } = await tempSites();
+    const { homeDir, sites } = await primedParent();
     const candidatesDir = join(sites, 'example.test', 'candidates');
     const { restore } = installGitShim(async (args, runReal) => {
       if (args.includes('commit')) {
@@ -364,7 +367,7 @@ describe('candidate discovery', () => {
   });
 
   it('validates and hard-caps search limit with deterministic ordering', async () => {
-    const { homeDir } = await tempSites();
+    const { homeDir } = await primedParent();
     await expect(searchCandidates('example.test', 'listing', 0, { homeDir })).rejects.toThrow(/limit/i);
     await expect(searchCandidates('example.test', 'listing', -1, { homeDir })).rejects.toThrow(/limit/i);
     await expect(searchCandidates('example.test', 'listing', 1.5, { homeDir })).rejects.toThrow(/limit/i);
@@ -390,12 +393,88 @@ describe('candidate discovery', () => {
       a.observedAt.localeCompare(b.observedAt) || a.id.localeCompare(b.id)
     )).map((hit) => hit.id).slice(0, 20));
   }, 60_000);
+
+  it('refuses capture through an unclassified provisional parent fallback', async () => {
+    const { homeDir, sites } = await primedParent();
+    await expect(addCandidate(base(homeDir, { hostname: 'www.example.test' }))).rejects.toThrow(/provisional|classif|read-only/i);
+    expect(await jsonNames(sites)).toEqual([]);
+    expect(await readProductFile('example.test', 'manifest.json', { homeDir })).toMatch(/example\.test/);
+  });
+
+  it('allows capture after same-product classification', async () => {
+    const { homeDir, sites, revision } = await primedParent();
+    const classified = await classifyProduct({
+      requested: 'www.example.test',
+      decision: 'same-product',
+      parent: 'example.test',
+      expectedRevision: revision,
+      homeDir,
+    });
+    expect(classified.status).toBe('classified');
+    const summary = await addCandidate(base(homeDir, { hostname: 'www.example.test' }));
+    expect(summary.status).toBe('pending');
+    expect(summary.hostname).toBe('www.example.test');
+    expect(await jsonNames(sites)).toEqual([`${summary.id}.json`]);
+  });
+
+  it('refuses mismatched product/hostname with no manifests', async () => {
+    const { homeDir, sites } = await tempSites();
+    await expect(addCandidate(base(homeDir, { product: 'example.test', hostname: 'www.example.test' }))).rejects.toThrow(/must be|manifest|invalid|initialized/i);
+    expect(await jsonNames(sites)).toEqual([]);
+  });
+
+  it('refuses capture when the target manifest is absent', async () => {
+    const { homeDir, sites } = await tempSites();
+    await expect(addCandidate(base(homeDir, { hostname: 'example.test' }))).rejects.toThrow(/manifest|invalid|initialized/i);
+    expect(await jsonNames(sites)).toEqual([]);
+  });
+
+  it('refuses capture when the target manifest is malformed', async () => {
+    const { homeDir, sites } = await tempSites();
+    await writeProductFile('example.test', 'manifest.json', `${JSON.stringify({
+      schemaVersion: 1,
+      product: { key: 'example.test' },
+      interfaces: [],
+    })}\n`, { homeDir });
+    await (await openSitesRepository({ homeDir })).commit(['example.test/manifest.json'], 'init');
+    await writeProductFile('other.test', 'manifest.json', `${JSON.stringify({
+      schemaVersion: 1,
+      product: { key: 'other.test' },
+      interfaces: [{ key: 'example.test' }],
+    })}\n`, { homeDir });
+    await expect(addCandidate(base(homeDir, { hostname: 'example.test' }))).rejects.toThrow(/manifest|invalid|initialized/i);
+    expect(await jsonNames(sites)).toEqual([]);
+  });
+
+  it('allows capture against a valid exact target', async () => {
+    const { homeDir, sites } = await primedParent();
+    const summary = await addCandidate(base(homeDir, { hostname: 'example.test' }));
+    expect(summary.status).toBe('pending');
+    expect(summary.hostname).toBe('example.test');
+    expect(await jsonNames(sites)).toEqual([`${summary.id}.json`]);
+  });
+
+  it('allows capture against a confirmed interface', async () => {
+    const { homeDir, sites } = await tempSites();
+    const product = identity('example.test');
+    await writeProductFile('example.test', 'manifest.json', `${JSON.stringify({
+      schemaVersion: 1,
+      product,
+      interfaces: [identity('www.example.test')],
+      seed: { status: 'absent' },
+    }, null, 2)}\n`, { homeDir });
+    await (await openSitesRepository({ homeDir })).commit(['example.test/manifest.json'], 'init');
+    const summary = await addCandidate(base(homeDir, { hostname: 'www.example.test' }));
+    expect(summary.status).toBe('pending');
+    expect(summary.hostname).toBe('www.example.test');
+    expect(await jsonNames(sites)).toEqual([`${summary.id}.json`]);
+  });
 });
 
 function base(homeDir: string, extra: Record<string, unknown> = {}) {
   return {
     product: 'example.test',
-    hostname: 'www.example.test',
+    hostname: 'example.test',
     kind: 'better_path',
     claim: 'New listing is faster',
     evidence: 'Used /new while /hot spun.',
@@ -433,6 +512,22 @@ async function jsonNames(sites: string): Promise<string[]> {
     if (err instanceof Error && 'code' in err && err.code === 'ENOENT') return [];
     throw err;
   }
+}
+
+function identity(host: string) {
+  return { key: host, hostname: host, displayHostname: host, registrableDomain: host.replace(/^www\./, '') };
+}
+
+async function primedParent() {
+  const { homeDir, sites } = await tempSites();
+  await writeProductFile('example.test', 'manifest.json', `${JSON.stringify({
+    schemaVersion: 1,
+    product: identity('example.test'),
+    interfaces: [],
+    seed: { status: 'absent' },
+  }, null, 2)}\n`, { homeDir });
+  const revision = await (await openSitesRepository({ homeDir })).commit(['example.test/manifest.json'], 'init');
+  return { homeDir, sites, revision };
 }
 
 async function tempSites() {
