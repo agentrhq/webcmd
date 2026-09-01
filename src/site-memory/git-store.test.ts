@@ -291,6 +291,24 @@ describe('sites git repository', () => {
     expect(await git(sites, ['status', '--porcelain', '-uall'])).not.toMatch(/^(A |AD)/m);
   });
 
+  it('returns null from showAtHead only when HEAD lacks the path', async () => {
+    const { homeDir } = await tempSites();
+    await writeProductFile('example.test', 'manifest.json', '{}\n', { homeDir });
+    const repo = await openSitesRepository({ homeDir });
+    await repo.commit(['example.test/manifest.json'], 'init');
+
+    expect(await repo.showAtHead('example.test/missing.json')).toBeNull();
+    expect(await repo.showAtHead('example.test/manifest.json')).toBe('{}\n');
+
+    installGitShim(async (args, runReal) => {
+      if (args.includes('show')) {
+        throw Object.assign(new Error('git show exploded'), { code: 128, stderr: 'fatal: not a git repository\n' });
+      }
+      return runReal();
+    });
+    await expect(repo.showAtHead('example.test/manifest.json')).rejects.toThrow(/exploded/);
+  });
+
   it('reports whether explicit paths differ from HEAD', async () => {
     const { homeDir } = await tempSites();
     await writeProductFile('example.test', 'manifest.json', '{}\n', { homeDir });

@@ -1,5 +1,6 @@
-import { access, mkdir, readdir, unlink } from 'node:fs/promises';
+import { access, mkdir, readdir, readFile, unlink } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { recoverInterruptedProvenance } from './candidates.js';
 import { openSitesRepository, type SitesRepository } from './git-store.js';
 import { atomicWrite, containedRelativePath, listProductKeys, readProductFile, sitesRoot, writeProductFile } from './local-store.js';
 import type { LocalStoreOptions } from './local-store.js';
@@ -56,7 +57,9 @@ export async function getMemoryContext(input: MemoryContextInput): Promise<Memor
     ? Object.keys(transient.references ?? {}).sort().map((name) => ({ path: `sitemap/references/${name}` }))
     : await listReferences(productKey, opts);
   const draftPath = join(sitesRoot(opts), '.drafts', taskId, memorySegment(productKey), 'sitemap');
-  if (git) await writeDraft(draftPath, productKey, siteMarkdown, references, transient?.references, opts);
+  const draftReadOnly = git
+    ? await writeDraft(draftPath, productKey, siteMarkdown, references, transient?.references, opts, resolution.readOnly)
+    : resolution.readOnly;
 
   return {
     resolution,
@@ -65,7 +68,7 @@ export async function getMemoryContext(input: MemoryContextInput): Promise<Memor
     siteMarkdown,
     references,
     draftPath,
-    readOnly: resolution.readOnly || !git || legacy || persistFailed,
+    readOnly: draftReadOnly || !git || legacy || persistFailed,
     diagnostics,
   };
 }
@@ -87,6 +90,7 @@ async function persistSeed(
     const prior = existing ? await readProductFile(product.key, 'manifest.json', opts) : null;
     const files = ['manifest.json'];
     try {
+      await recoverInterruptedProvenance(product.key, repo, opts);
       await writeProductFile(product.key, 'manifest.json', `${JSON.stringify(manifest, null, 2)}\n`, opts);
       if (seed.status === 'available') {
         if (await readProductFile(product.key, 'sitemap/SITE.md', opts) == null) {
@@ -126,6 +130,21 @@ async function unlinkProductFile(productKey: string, path: string, opts: LocalSt
   }
 }
 
+export function parseDraftContextMetadata(raw: string): { readOnly: boolean } {
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    throw new Error('Invalid draft context metadata.');
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Invalid draft context metadata.');
+  }
+  const readOnly = (value as { readOnly?: unknown }).readOnly;
+  if (typeof readOnly !== 'boolean') throw new Error('Invalid draft context metadata.');
+  return { readOnly };
+}
+
 async function writeDraft(
   draftPath: string,
   productKey: string,
@@ -133,14 +152,23 @@ async function writeDraft(
   references: { path: string }[],
   transientRefs: Record<string, string> | undefined,
   opts: LocalStoreOptions,
-): Promise<void> {
+  readOnly: boolean,
+): Promise<boolean> {
   await mkdir(draftPath, { recursive: true });
   const draftRoot = join(draftPath, '..');
+  const metaPath = join(draftRoot, 'context.json');
+  try {
+    if (parseDraftContextMetadata(await readFile(metaPath, 'utf8')).readOnly) readOnly = true;
+  } catch (err) {
+    if (!(err instanceof Error && 'code' in err && err.code === 'ENOENT')) throw err;
+  }
+  await atomicWrite(metaPath, `${JSON.stringify({ readOnly })}\n`);
   if (siteMarkdown != null) await writeContained(draftRoot, 'sitemap/SITE.md', siteMarkdown);
   for (const { path } of references) {
     const body = transientRefs?.[path.slice('sitemap/references/'.length)] ?? await readProductFile(productKey, path, opts);
     if (body != null) await writeContained(draftRoot, path, body);
   }
+  return readOnly;
 }
 
 async function writeContained(root: string, path: string, body: string): Promise<void> {

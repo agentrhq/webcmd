@@ -405,7 +405,6 @@ describe('self-learning lifecycle', () => {
     await git(homeDir, ['init']);
     await git(homeDir, ['-c', 'user.name=owner', '-c', 'user.email=owner@local', 'commit', '--allow-empty', '-m', 'ancestor']);
     const head = (await git(homeDir, ['rev-parse', 'HEAD'])).trim();
-    const before = await git(homeDir, ['status', '--porcelain', '-uall']);
 
     const context = await getMemoryContext({
       url: 'https://example.test/',
@@ -424,7 +423,7 @@ describe('self-learning lifecycle', () => {
     expect(await readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).toBeNull();
     expect((await git(homeDir, ['rev-parse', 'HEAD'])).trim()).toBe(head);
     expect((await git(homeDir, ['log', '--oneline'])).trim()).toBe(`${head.slice(0, 7)} ancestor`);
-    expect(await git(homeDir, ['diff', '--cached'])).toBe(before.includes('\n') ? before : '');
+    expect(await git(homeDir, ['diff', '--cached'])).toBe('');
     expect((await git(homeDir, ['status', '--porcelain', '-uall'])).trim()).not.toMatch(/^(A |M |D )/m);
     await expect(addCandidate(candidate(homeDir))).rejects.toThrow(/ancestor/i);
     expect(await jsonNames(sites)).toEqual([]);
@@ -765,10 +764,18 @@ async function learnFromDraft(
 }
 
 async function writeDraft(homeDir: string, files: Record<string, string>, taskId = 'task-1', product = 'example.test') {
+  const draftRoot = join(homeDir, '.webcmd/sites/.drafts', taskId, product);
   for (const [path, body] of Object.entries(files)) {
-    const target = join(homeDir, '.webcmd/sites/.drafts', taskId, product, path);
+    const target = join(draftRoot, path);
     await mkdir(dirname(target), { recursive: true });
     await writeFile(target, body);
+  }
+  const meta = join(draftRoot, 'context.json');
+  try {
+    await readFile(meta);
+  } catch (err) {
+    if (!(err instanceof Error && 'code' in err && err.code === 'ENOENT')) throw err;
+    await writeFile(meta, `${JSON.stringify({ readOnly: false })}\n`);
   }
 }
 

@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { readCandidateRecord, updateCandidateRecord } from './candidates.js';
-import { parseProductManifest } from './context.js';
+import { readCandidateRecord, recoverInterruptedProvenance, updateCandidateRecord } from './candidates.js';
+import { parseDraftContextMetadata, parseProductManifest } from './context.js';
 import { openSitesRepository } from './git-store.js';
 import { containedRelativePath, copyDraftFiles, deleteProductFile, readProductFile, sitesRoot, writeProductFile, type LocalStoreOptions } from './local-store.js';
 import type {
@@ -44,6 +44,7 @@ export async function checkpointMemory(input: CheckpointInput): Promise<Checkpoi
     const loaded = await Promise.all(dispositions.map((row) => readCandidateRecord(product, row.id, input)));
     for (const row of dispositions) validateDispositionFields(row);
     const candidatePaths = dispositions.map((row) => `${product}/candidates/${row.id}.json`);
+    await assertWritableDraft(input, taskId, product);
     const drafts = await readDrafts(input, taskId, product, paths);
     const prior = new Map<string, string | null>();
     const changed: string[] = [];
@@ -67,6 +68,8 @@ export async function checkpointMemory(input: CheckpointInput): Promise<Checkpoi
     if (actual !== input.expectedRevision) {
       return { status: 'conflict', expectedRevision: input.expectedRevision, actualRevision: actual };
     }
+
+    await recoverInterruptedProvenance(product, repo, input);
 
     for (const body of drafts.values()) validateFacts(body);
     const currentSite = await readProductFile(product, 'sitemap/SITE.md', input);
@@ -361,6 +364,22 @@ function unique<T>(values: T[], message: string): T[] {
 function uniqueBy<T>(values: T[], key: (value: T) => string, message: string): T[] {
   unique(values.map(key), message);
   return values;
+}
+
+async function assertWritableDraft(input: LocalStoreOptions, taskId: string, product: string): Promise<void> {
+  const path = join(sitesRoot(input), '.drafts', taskId, product, 'context.json');
+  let raw: string;
+  try {
+    raw = await readFile(path, 'utf8');
+  } catch (err) {
+    if (err instanceof Error && 'code' in err && err.code === 'ENOENT') {
+      throw new Error('Missing draft context metadata.');
+    }
+    throw err;
+  }
+  if (parseDraftContextMetadata(raw).readOnly) {
+    throw new Error('Provisional parent fallback is read-only until classified.');
+  }
 }
 
 async function readDrafts(

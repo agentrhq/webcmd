@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { readdir, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { collectEnvironment } from './environment.js';
-import { openSitesRepository } from './git-store.js';
+import { openSitesRepository, type SitesRepository } from './git-store.js';
 import { containedRelativePath, readProductFile, sitesRoot, writeProductFile, type LocalStoreOptions } from './local-store.js';
 import {
   CANDIDATE_KINDS,
@@ -10,13 +10,14 @@ import {
   type CandidateEnvironment,
   type CandidateStatus,
   type CandidateSummary,
+  type MemoryRevision,
 } from './model.js';
 import { canonicalProductKey } from './product-resolver.js';
 
 export const SEARCH_CANDIDATE_LIMIT = 20;
 
 const SECRET_KEY = /^(password|passwd|secret|token|cookie|cookies|authorization|api[_-]?key|set-cookie)$/i;
-const SECRET_TEXT = /(password\s*[:=]|secret\s*[:=]|api[_-]?key|authorization\s*:|bearer\s+\S+|cookie\s*[:=])/i;
+const SECRET_TEXT = /(password\s*[:=]|secret\s*[:=]|api[_-]?key|authorization\s*:|bearer\s+\S+|cookie\s*[:=]|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)/i;
 const KINDS = new Set<string>(CANDIDATE_KINDS);
 const STATUSES = new Set<CandidateStatus>(['pending', 'ingested', 'rejected']);
 const CANDIDATE_FIELDS = new Set([
@@ -79,6 +80,7 @@ export async function addCandidate(input: AddCandidateInput): Promise<CandidateS
   const repo = await openSitesRepository(input);
   await repo.withRepositoryLock(async () => {
     try {
+      await recoverInterruptedProvenance(product.key, repo, input);
       await writeProductFile(product.key, relative, `${JSON.stringify(encodeCandidate(candidate), null, 2)}\n`, input);
       await repo.commit([`${product.key}/${relative}`], `capture candidate ${id}`);
     } catch (err) {
@@ -125,6 +127,57 @@ export async function updateCandidateRecord(product: string, candidate: Candidat
   await writeProductFile(key, candidatePath(candidate.id), `${JSON.stringify(encodeCandidate(candidate), null, 2)}\n`, opts);
 }
 
+export async function recoverInterruptedProvenance(
+  product: string,
+  repo: SitesRepository,
+  opts: LocalStoreOptions = {},
+): Promise<void> {
+  const key = canonicalProductKey(product).key;
+  const head = await repo.revision();
+  if (!head) return;
+  const recoverable: string[] = [];
+  for (const name of await candidateFileNames(key, opts)) {
+    const id = name.slice(0, -'.json'.length);
+    const path = `${key}/${candidatePath(id)}`;
+    if (!await repo.pathsChanged([path])) continue;
+    let candidate: Candidate;
+    try {
+      candidate = await readCandidateRecord(key, id, opts);
+    } catch {
+      continue;
+    }
+    const committed = await repo.showAtHead(path);
+    if (committed == null) continue;
+    let previous: Candidate;
+    try {
+      previous = parseCandidate(committed, id);
+    } catch {
+      continue;
+    }
+    if (!isInterruptedProvenanceRecord(candidate, previous, head)) continue;
+    recoverable.push(path);
+  }
+  if (recoverable.length === 0) return;
+  await repo.commit(recoverable, `checkpoint provenance ${key}`);
+}
+
+function isInterruptedProvenanceRecord(worktree: Candidate, committed: Candidate, head: MemoryRevision): boolean {
+  if (committed.status !== 'pending') return false;
+  if (!sameExceptProvenance(worktree, committed)) return false;
+  if (worktree.status === 'ingested') return worktree.memoryCommit === head;
+  return worktree.status === 'rejected';
+}
+
+function sameExceptProvenance(worktree: Candidate, committed: Candidate): boolean {
+  const left = encodeCandidate(worktree);
+  const right = encodeCandidate(committed);
+  for (const field of ['status', 'evidence_role', 'memory_commit', 'reviewed_at', 'rejection_reason']) {
+    delete left[field];
+    delete right[field];
+  }
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 function candidatePath(id: string): string {
   if (!id || id.includes('/') || id.includes('\\') || id === '.' || id === '..' || id.startsWith('.')) {
     throw new Error(`Invalid site memory path: ${id}`);
@@ -134,19 +187,21 @@ function candidatePath(id: string): string {
 
 async function loadCandidates(product: string, opts: LocalStoreOptions): Promise<Candidate[]> {
   const key = canonicalProductKey(product).key;
-  const dir = join(sitesRoot(opts), key, 'candidates');
-  let names: string[];
-  try {
-    names = (await readdir(dir)).filter((name) => name.endsWith('.json')).sort();
-  } catch (err) {
-    if (isEnoent(err)) return [];
-    throw err;
-  }
+  const names = await candidateFileNames(key, opts);
   const loaded = await Promise.all(names.map(async (name) => {
     const body = await readProductFile(key, `candidates/${name}`, opts);
     return body ? parseCandidate(body, name.slice(0, -'.json'.length)) : null;
   }));
   return loaded.filter((candidate): candidate is Candidate => candidate !== null);
+}
+
+async function candidateFileNames(productKey: string, opts: LocalStoreOptions): Promise<string[]> {
+  try {
+    return (await readdir(join(sitesRoot(opts), productKey, 'candidates'))).filter((name) => name.endsWith('.json')).sort();
+  } catch (err) {
+    if (isEnoent(err)) return [];
+    throw err;
+  }
 }
 
 function encodeCandidate(candidate: Candidate): Record<string, unknown> {

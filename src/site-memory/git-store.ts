@@ -36,6 +36,7 @@ export interface SitesRepository {
   revision(): Promise<MemoryRevision | null>;
   commit(paths: string[], message: string): Promise<MemoryRevision>;
   pathsChanged(paths: string[]): Promise<boolean>;
+  showAtHead(path: string): Promise<string | null>;
   withRepositoryLock<T>(fn: () => Promise<T>): Promise<T>;
 }
 
@@ -46,6 +47,7 @@ export async function openSitesRepository(options: LocalStoreOptions = {}): Prom
     revision: () => revisionOf(root),
     commit: (paths, message) => withRepositoryLock(root, () => commitPaths(root, paths, message)),
     pathsChanged: (paths) => pathsDifferFromHead(root, paths),
+    showAtHead: (path) => showAtHead(root, path),
     withRepositoryLock: (fn) => withRepositoryLock(root, fn),
   };
 }
@@ -91,6 +93,15 @@ async function pathsDifferFromHead(root: string, paths: string[]): Promise<boole
   const relativePaths = paths.map((path) => containedRelativePath(root, path));
   const status = await git(root, ['status', '--porcelain', '-z', '-uall', '--', ...relativePaths]);
   return porcelainEntries(status).length > 0;
+}
+
+async function showAtHead(root: string, path: string): Promise<string | null> {
+  try {
+    return await git(root, ['show', `HEAD:${containedRelativePath(root, path)}`]);
+  } catch (err) {
+    if (isMissingHeadPath(err)) return null;
+    throw err;
+  }
 }
 
 async function restoreStagedPaths(root: string, relativePaths: string[]): Promise<void> {
@@ -214,4 +225,10 @@ function isNotRepo(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
   const stderr = 'stderr' in err && typeof err.stderr === 'string' ? err.stderr : '';
   return 'code' in err && err.code === 128 && /not a git repository/i.test(stderr);
+}
+
+function isMissingHeadPath(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const stderr = 'stderr' in err && typeof err.stderr === 'string' ? err.stderr : '';
+  return /exists on disk, but not in 'HEAD'|does not exist in 'HEAD'/.test(stderr);
 }

@@ -46,6 +46,9 @@ describe('candidate capture', () => {
     await expect(addCandidate(base(homeDir, { kind: 'trivial_success' }))).rejects.toThrow(/kind/i);
     await expect(addCandidate(base(homeDir, { product: '../escape' }))).rejects.toThrow(/invalid/i);
     await expect(addCandidate(base(homeDir, { claim: 'Cookie: session=abc' }))).rejects.toThrow(/secret/i);
+    await expect(addCandidate(base(homeDir, {
+      claim: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0In0.abc',
+    }))).rejects.toThrow(/secret/i);
     await expect(addCandidate({
       ...base(homeDir),
       password: 'hunter2',

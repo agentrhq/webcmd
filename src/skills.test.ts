@@ -242,7 +242,7 @@ describe('webcmd skills content', () => {
     expect(git).toContain('major_rewrite');
     expect(git).toContain('SITE_MEMORY_CONFLICT');
     expect(git).toContain('Retry webcmd site memory context, then checkpoint once.');
-    expect(git).toMatch(/exactly one retry|checkpoint once/i);
+    expect(git).toMatch(/exactly one retry/i);
     expect(git).toMatch(/compare[\s\S]{0,120}siteMarkdown[\s\S]{0,120}(?:preserved )?draft/i);
     expect(git).toMatch(/re-?apply|reconcil/i);
     expect(git).toMatch(/refreshed content/i);

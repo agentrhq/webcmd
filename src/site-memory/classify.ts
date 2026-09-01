@@ -1,3 +1,4 @@
+import { recoverInterruptedProvenance } from './candidates.js';
 import { parseProductManifest } from './context.js';
 import { openSitesRepository } from './git-store.js';
 import { deleteProductFile, listProductKeys, readProductFile, writeProductFile, type LocalStoreOptions } from './local-store.js';
@@ -65,6 +66,7 @@ async function classifySameProduct(
   const prior = await readProductFile(parent.key, 'manifest.json', opts);
   const next: ProductManifest = { ...manifest, interfaces: [...manifest.interfaces, requested] };
   try {
+    await recoverInterruptedProvenance(parent.key, repo, opts);
     await writeProductFile(parent.key, 'manifest.json', `${JSON.stringify(next, null, 2)}\n`, opts);
     const revision = await repo.commit([`${parent.key}/manifest.json`], `classify ${requested.key} same-product ${parent.key}`);
     return classified('same-product', requested, parent, false, revision);
@@ -104,6 +106,7 @@ async function classifyDistinct(
     seed: { status: 'unattempted' },
   };
   try {
+    await recoverInterruptedProvenance(requested.key, repo, opts);
     await writeProductFile(requested.key, 'manifest.json', `${JSON.stringify(manifest, null, 2)}\n`, opts);
     const revision = await repo.commit([`${requested.key}/manifest.json`], `classify ${requested.key} distinct`);
     return classified('distinct', requested, requested, false, revision);

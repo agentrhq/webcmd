@@ -540,7 +540,7 @@ function parsePaths(value: string): string[] {
 
 const DISPOSITION_KEYS = new Set(['id', 'status', 'evidenceRole', 'rejectionReason', 'conflictsWithMemory']);
 const SECRET_KEY = /^(password|passwd|secret|token|cookie|cookies|authorization|api[_-]?key|set-cookie)$/i;
-const SECRET_TEXT = /(password\s*[:=]|secret\s*[:=]|api[_-]?key|authorization\s*:|bearer\s+\S+|cookie\s*[:=])/i;
+const SECRET_TEXT = /(password\s*[:=]|secret\s*[:=]|api[_-]?key|authorization\s*:|bearer\s+\S+|cookie\s*[:=]|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)/i;
 
 function parseDispositions(value: string): CandidateDisposition[] {
   let parsed: unknown;
