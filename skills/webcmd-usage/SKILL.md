@@ -1,6 +1,6 @@
 ---
 name: webcmd-usage
-description: Use at the start of any Webcmd session. This is the top-level map of what `webcmd` can do, how to discover adapters, what flags and output formats are universal, and which specialized skill to load next. Point here when an agent asks "what can webcmd do?" or "how do I find the right command?".
+description: Use at the start of any Webcmd session. This is the top-level map of what `webcmd` can do, how to discover adapters, which flags and output formats each command supports, and which specialized skill to load next. Point here when an agent asks "what can webcmd do?" or "how do I find the right command?".
 allowed-tools: Bash(webcmd:*), Bash(npm:*), Read
 ---
 
@@ -133,15 +133,20 @@ Use this fallback order:
 3. Only after that complete filtered result is `[]`, derive a short plugin query from the missing site or capability and run `webcmd plugin search <query> -f json`. Preserve the user's term when practical: `find flights` becomes `flight`.
 4. If the complete, non-truncated plugin search returns a match, offer `webcmd plugin install <installSource>`. Only if that complete result returns no match and no error is raw `webcmd browser` allowed. Both plugin search and raw browser fallback require the prior complete filtered registry result to be `[]`. A truncated plugin result is incomplete evidence: refine the query or output before fallback. If plugin search errors, report plugin discovery as unavailable and stop. If `fetch failed` appears in `errors[].message`, report plugin discovery as unavailable due to network/reachability and ask the user whether to rerun with network/escalated permissions. Do not retry unless they approve.
 
-## Universal Flags
+## Format and Verbose Flags
 
-| Flag | Effect |
-| --- | --- |
-| `-f, --format <fmt>` | `table` in TTY by default; `yaml` outside TTY by default; also supports `json`, `plain`, `md`, `csv`. Agents usually want `-f json`. |
-| `-v, --verbose` | Debug logs and stack traces on failure; also sets `WEBCMD_VERBOSE=1`. |
-| `--workspace <id>` | Workspace id/slug. Same as `WEBCMD_WORKSPACE`. First use creates it. |
+Neither flag is universal. Support is command-specific; the authoritative check
+is `<command> --help` (or `<site> <command> --help` for an adapter).
 
-Command-specific flags such as `--limit` and `--filter` are not universal. Read `<site> <command> --help`.
+`--workspace <id>` is different: it is a root flag, hoisted from any position in
+argv, so it does not follow the per-command table below.
+
+| Flag | Effect when supported | Where it is supported |
+| --- | --- | --- |
+| `-f, --format <fmt>` | `table` in TTY by default; `yaml` outside TTY by default; also supports `json`, `plain`, `md`, `csv`. Agents usually want `-f json`. | Every `<site> <command>` adapter, plus data-returning built-ins (`list`, `validate`, `verify`, `doctor`, `skills`, `adapter status`, `daemon status`, `profile list`, `session create\|list\|close`, `plugin search`, `browser verify`, `web fetch`, `auth status\|refresh`). Simple action built-ins that print a one-line confirmation (`plugin install\|update`, `adapter override`, `profile create\|rename\|use`, `daemon restart\|stop`, `browser init`) do not take it. |
+| `-v, --verbose` | Debug logs and stack traces on failure; also sets `WEBCMD_VERBOSE=1`. | The raw browser session leaves (`tabs`, `bind`, `run`, `snapshot`, `close`), `web fetch`, `doctor`, and `auth status\|refresh`. Most `plugin`/`profile`/`session`/`adapter`/`daemon` built-ins do not take it. |
+
+Command-specific flags such as `--limit` and `--filter` are also not universal. Read `<site> <command> --help`.
 
 Report and status commands — `validate`, `verify`, `doctor`, `skills`, `adapter status`, `daemon status`, and `profile list` — default to a human-readable `table` rendering and return their underlying result object under any other format. Use `-f json` when parsing them. `profile list -f json` returns rows of `contextId`, `alias`, `default`, `connected`, and `runtimeVersion`, and fails with a `DAEMON_UNAVAILABLE` error (exit 1) instead of `[]` when the daemon is unreachable or stale. `daemon status -f json` returns `{ "running": false }` when no daemon is reachable; that guidance goes to stdout as data, not stderr.
 
