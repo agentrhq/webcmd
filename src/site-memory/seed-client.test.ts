@@ -1,7 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createHttpSeedProvider } from './seed-client.js';
 
+const urlEnv = { WEBCMD_GLOBAL_MEMORY_URL: 'https://api.webcmd.dev' };
+
 describe('global seed client', () => {
+  it.each([{}, { WEBCMD_GLOBAL_MEMORY_URL: '   ' }])(
+    'does not fetch without a configured remote URL',
+    async (env) => {
+      const fetch = vi.fn();
+      await expect(createHttpSeedProvider({ fetch, env }).lookup('example.test'))
+        .resolves.toEqual({ status: 'unattempted' });
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
+
   it('GETs the punycode seed URL without credentials and returns the JSON contract', async () => {
     const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       expect(String(input)).toBe('https://api.webcmd.dev/v1/site-memory/seeds/xn--bcher-kva.example');
@@ -16,7 +28,7 @@ describe('global seed client', () => {
       });
     });
 
-    const result = await createHttpSeedProvider({ fetch, env: {} }).lookup('xn--bcher-kva.example');
+    const result = await createHttpSeedProvider({ fetch, env: urlEnv }).lookup('xn--bcher-kva.example');
 
     expect(result).toEqual({
       status: 'available',
@@ -44,7 +56,7 @@ describe('global seed client', () => {
   it('treats HTTP 404 as absent', async () => {
     const result = await createHttpSeedProvider({
       fetch: async () => new Response('missing', { status: 404 }),
-      env: {},
+      env: urlEnv,
     }).lookup('missing.test');
 
     expect(result).toEqual({ status: 'absent' });
@@ -62,7 +74,7 @@ describe('global seed client', () => {
     });
 
     const started = Date.now();
-    const result = await createHttpSeedProvider({ fetch, env: {} }).lookup('slow.test');
+    const result = await createHttpSeedProvider({ fetch, env: urlEnv }).lookup('slow.test');
 
     expect(result).toEqual({ status: 'lookup-failed' });
     expect(calls).toBe(1);
@@ -75,11 +87,11 @@ describe('global seed client', () => {
       fetch: async () => {
         throw new TypeError('fetch failed');
       },
-      env: {},
+      env: urlEnv,
     }).lookup('offline.test');
     const malformed = await createHttpSeedProvider({
       fetch: async () => jsonResponse({ nope: true }),
-      env: {},
+      env: urlEnv,
     }).lookup('bad.test');
     const unsafe = await createHttpSeedProvider({
       fetch: async () => jsonResponse({
@@ -87,7 +99,7 @@ describe('global seed client', () => {
         site: '# Site\n',
         references: { '../evil.md': '# no\n' },
       }),
-      env: {},
+      env: urlEnv,
     }).lookup('evil.test');
 
     const notMarkdown = await createHttpSeedProvider({
@@ -96,7 +108,7 @@ describe('global seed client', () => {
         site: '# Site\n',
         references: { 'foo.txt': '# no\n' },
       }),
-      env: {},
+      env: urlEnv,
     }).lookup('txt.test');
 
     expect(offline).toEqual({ status: 'lookup-failed' });
@@ -105,12 +117,12 @@ describe('global seed client', () => {
     expect(notMarkdown).toEqual({ status: 'lookup-failed' });
   });
 
-  it('skips lookup when WEBCMD_GLOBAL_MEMORY=off', async () => {
+  it('skips lookup when WEBCMD_GLOBAL_MEMORY=off even with a configured URL', async () => {
     const fetch = vi.fn();
 
     const result = await createHttpSeedProvider({
       fetch,
-      env: { WEBCMD_GLOBAL_MEMORY: 'off' },
+      env: { ...urlEnv, WEBCMD_GLOBAL_MEMORY: 'off' },
     }).lookup('example.test');
 
     expect(result).toEqual({ status: 'unattempted' });

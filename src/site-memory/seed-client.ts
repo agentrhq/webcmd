@@ -4,7 +4,6 @@ export interface GlobalSeedProvider {
   lookup(productKey: string, signal?: AbortSignal): Promise<SeedLookupResult>;
 }
 
-export const DEFAULT_GLOBAL_MEMORY_URL = 'https://api.webcmd.dev';
 const LOOKUP_TIMEOUT_MS = 2000;
 
 export function createHttpSeedProvider(options: {
@@ -16,9 +15,10 @@ export function createHttpSeedProvider(options: {
 
   return {
     async lookup(productKey, signal) {
-      if (env.WEBCMD_GLOBAL_MEMORY === 'off') return { status: 'unattempted' };
+      const baseUrl = env.WEBCMD_GLOBAL_MEMORY_URL?.trim();
+      if (env.WEBCMD_GLOBAL_MEMORY === 'off' || !baseUrl) return { status: 'unattempted' };
 
-      const base = (env.WEBCMD_GLOBAL_MEMORY_URL ?? DEFAULT_GLOBAL_MEMORY_URL).replace(/\/+$/, '');
+      const base = baseUrl.replace(/\/+$/, '');
       const url = `${base}/v1/site-memory/seeds/${encodeURIComponent(productKey)}`;
       const timeout = AbortSignal.timeout(LOOKUP_TIMEOUT_MS);
       const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;

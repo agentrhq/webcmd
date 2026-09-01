@@ -3,7 +3,7 @@ import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { addCandidate, listCandidates, showCandidate } from './candidates.js';
 import { checkpointMemory, type CheckpointInput } from './checkpoint.js';
 import { classifyProduct } from './classify.js';
@@ -16,6 +16,7 @@ import { createHttpSeedProvider } from './seed-client.js';
 const run = promisify(execFile);
 const tempHomes: string[] = [];
 const originalPath = process.env.PATH;
+const seedEnv = { WEBCMD_GLOBAL_MEMORY_URL: 'https://api.webcmd.dev' };
 const FACT = '- [verified 2026-08-31] Prefer /new for fresh posts.\n';
 const SITE = `# Example\n\n${FACT}`;
 const POINTER = '- More: [references/listing.md](references/listing.md).\n';
@@ -50,19 +51,28 @@ describe('self-learning lifecycle', () => {
       url: 'https://seeded.test/',
       taskId: 'task-seeded',
       homeDir,
-      seedProvider: createHttpSeedProvider({ fetch, env: {} }),
+      seedProvider: createHttpSeedProvider({ fetch, env: seedEnv }),
     });
     const offline = await getMemoryContext({
       url: 'https://offline.test/',
       taskId: 'task-offline',
       homeDir,
-      seedProvider: createHttpSeedProvider({ fetch, env: {} }),
+      seedProvider: createHttpSeedProvider({ fetch, env: seedEnv }),
     });
     const disabled = await getMemoryContext({
       url: 'https://disabled.test/',
       taskId: 'task-disabled',
       homeDir,
-      seedProvider: createHttpSeedProvider({ fetch, env: { WEBCMD_GLOBAL_MEMORY: 'off' } }),
+      seedProvider: createHttpSeedProvider({ fetch, env: { ...seedEnv, WEBCMD_GLOBAL_MEMORY: 'off' } }),
+    });
+    const localFetch = vi.fn(async () => {
+      throw new TypeError('seed fetch must not run');
+    });
+    const localOnly = await getMemoryContext({
+      url: 'https://local.test/',
+      taskId: 'task-local',
+      homeDir,
+      seedProvider: createHttpSeedProvider({ fetch: localFetch, env: {} }),
     });
 
     expect(seeded.manifest?.seed).toEqual({ status: 'available', revision: 'seed-1' });
@@ -85,6 +95,21 @@ describe('self-learning lifecycle', () => {
     expect(parseProductManifest(await readProductFile('disabled.test', 'manifest.json', { homeDir }))?.seed)
       .toEqual({ status: 'unattempted' });
     expect(await readProductFile('disabled.test', 'sitemap/SITE.md', { homeDir })).toBeNull();
+
+    expect(localOnly.manifest?.seed).toEqual({ status: 'unattempted' });
+    expect(localOnly.siteMarkdown).toBeNull();
+    expect(parseProductManifest(await readProductFile('local.test', 'manifest.json', { homeDir }))?.seed)
+      .toEqual({ status: 'unattempted' });
+    expect(await readProductFile('local.test', 'sitemap/SITE.md', { homeDir })).toBeNull();
+    expect(localFetch).not.toHaveBeenCalled();
+
+    const learnedLocal = await learnFromDraft(homeDir, {
+      product: 'local.test',
+      taskId: 'task-local',
+      site: `# Local\n\n${FACT}`,
+    });
+    expect(learnedLocal.status).toBe('committed');
+    expect(await readProductFile('local.test', 'sitemap/SITE.md', { homeDir })).toBe(`# Local\n\n${FACT}`);
 
     const learned = await learnFromDraft(homeDir, {
       product: 'disabled.test',
@@ -134,7 +159,7 @@ describe('self-learning lifecycle', () => {
       'reddit.com': { status: 'available', revision: 'reddit-1', site: '# Reddit\n' },
       'ycombinator.com': { status: 'available', revision: 'yc-1', site: '# YC\n' },
     });
-    const seedProvider = createHttpSeedProvider({ fetch, env: {} });
+    const seedProvider = createHttpSeedProvider({ fetch, env: seedEnv });
 
     await getMemoryContext({ url: 'https://reddit.com/', taskId: 'task-reddit', homeDir, seedProvider });
     const fallback = await getMemoryContext({
@@ -388,7 +413,7 @@ describe('self-learning lifecycle', () => {
       homeDir,
       seedProvider: createHttpSeedProvider({
         fetch: seedFetch({ 'example.test': { status: 'available', revision: 'seed-1', site: SITE } }),
-        env: {},
+        env: seedEnv,
       }),
     });
 
@@ -669,7 +694,7 @@ async function coldStart(homeDir: string, taskId = 'task-1', site = SITE) {
       fetch: seedFetch({
         'example.test': { status: 'available', revision: 'seed-1', site },
       }),
-      env: {},
+      env: seedEnv,
     }),
   });
 }
