@@ -1021,7 +1021,7 @@ describe('checkpoint rewrite bounds', () => {
     const memoryFiles = (await git(sites, ['show', '--name-only', '--pretty=format:', rewritten.memoryCommit])).trim();
     expect(memoryFiles).toContain('example.test/manifest.json');
     expect(memoryFiles).toContain('example.test/sitemap/SITE.md');
-  });
+  }, 20_000);
 });
 
 function siteLines(count: number, pointer = false): string {

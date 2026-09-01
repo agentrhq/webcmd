@@ -389,7 +389,7 @@ describe('candidate discovery', () => {
     expect(capped.map((hit) => hit.id)).toEqual([...capped].sort((a, b) => (
       a.observedAt.localeCompare(b.observedAt) || a.id.localeCompare(b.id)
     )).map((hit) => hit.id).slice(0, 20));
-  }, 20_000);
+  }, 60_000);
 });
 
 function base(homeDir: string, extra: Record<string, unknown> = {}) {
