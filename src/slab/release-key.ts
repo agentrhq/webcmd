@@ -3,7 +3,7 @@ import { verify } from 'node:crypto';
 // Trust anchor for the signed SLAB release manifest. This public key is safe to
 // embed; the matching private key stays in the official release environment.
 export const SLAB_RELEASE_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
-MCowBQYDK2VwAyEAoMo7Cbb1CRk2csqvdxMrR3SLBhQ9a8RHeDTRnChTeSQ=
+MCowBQYDK2VwAyEAR0ZysgfDP6qRNlsKV3AZBsNnV78ZhD55RAhWDYykmeg=
 -----END PUBLIC KEY-----
 `;
 
