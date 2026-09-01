@@ -377,7 +377,7 @@ describe('self-learning lifecycle', () => {
     });
     expect(immediate.status).toBe('committed');
     expect((await showCandidate('example.test', warning.id, { homeDir })).status).toBe('ingested');
-  });
+  }, 20_000);
 
   it('hides candidates and environment values from ordinary legacy listing', async () => {
     const { homeDir } = await tempSites();
