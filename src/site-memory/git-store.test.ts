@@ -11,16 +11,15 @@ import {
   REPOSITORY_LOCK_STALE_MS,
   REPOSITORY_LOCK_TIMEOUT_MS,
 } from './file-lock.js';
-import { installGitShim } from './git-shim.js';
+import { installGitShim, restoreGitShim } from './git-shim.js';
 import { openSitesRepository } from './git-store.js';
 import { listProductKeys, readProductFile, writeProductFile } from './local-store.js';
 
 const run = promisify(execFile);
 const tempHomes: string[] = [];
-const originalPath = process.env.PATH;
 
 afterEach(async () => {
-  process.env.PATH = originalPath;
+  restoreGitShim();
   await Promise.all(tempHomes.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
@@ -355,37 +354,25 @@ async function git(cwd: string, args: string[]) {
   return stdout;
 }
 
-async function installFailingCommitGit() {
-  const { dir } = await installGitShim((git) => `
-const { spawnSync } = require('node:child_process');
-const args = process.argv.slice(2);
-if (args.includes('commit')) process.exit(1);
-const result = spawnSync(${JSON.stringify(git)}, args, { stdio: 'inherit' });
-process.exit(result.status ?? 1);
-`);
-  tempHomes.push(dir);
+function failGit(args: readonly string[]): never {
+  throw Object.assign(new Error(`Command failed: git ${args.join(' ')}`), { code: 1, stderr: '' });
 }
 
-async function installFailingCommitAndCleanupGit() {
-  const { dir } = await installGitShim((git) => `
-const { spawnSync } = require('node:child_process');
-const args = process.argv.slice(2);
-if (args.includes('commit') || args.includes('restore') || args.includes('rm')) process.exit(1);
-const result = spawnSync(${JSON.stringify(git)}, args, { stdio: 'inherit' });
-process.exit(result.status ?? 1);
-`);
-  tempHomes.push(dir);
+function installFailingCommitGit() {
+  installGitShim(async (args, runReal) => args.includes('commit') ? failGit(args) : runReal());
 }
 
-async function installSlowGit(delayMs: number) {
-  const { dir } = await installGitShim((git) => `
-const { spawnSync } = require('node:child_process');
-const args = process.argv.slice(2);
-if (args.includes('commit')) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ${delayMs});
-const result = spawnSync(${JSON.stringify(git)}, args, { stdio: 'inherit' });
-process.exit(result.status ?? 1);
-`);
-  tempHomes.push(dir);
+function installFailingCommitAndCleanupGit() {
+  installGitShim(async (args, runReal) => (
+    args.includes('commit') || args.includes('restore') || args.includes('rm') ? failGit(args) : runReal()
+  ));
+}
+
+function installSlowGit(delayMs: number) {
+  installGitShim(async (args, runReal) => {
+    if (args.includes('commit')) await new Promise((resolve) => setTimeout(resolve, delayMs));
+    return runReal();
+  });
 }
 
 function deadPid(): number {

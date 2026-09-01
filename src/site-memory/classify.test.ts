@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { chmodSync } from 'node:fs';
 import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -6,7 +7,7 @@ import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import { classifyProduct } from './classify.js';
 import { getMemoryContext, parseProductManifest } from './context.js';
-import { installGitShim } from './git-shim.js';
+import { installGitShim, restoreGitShim } from './git-shim.js';
 import { openSitesRepository } from './git-store.js';
 import { readProductFile, writeProductFile } from './local-store.js';
 import type { SeedLookupResult } from './model.js';
@@ -14,10 +15,9 @@ import { canonicalProductKey } from './product-resolver.js';
 
 const run = promisify(execFile);
 const tempHomes: string[] = [];
-const originalPath = process.env.PATH;
 
 afterEach(async () => {
-  process.env.PATH = originalPath;
+  restoreGitShim();
   await Promise.all(tempHomes.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
@@ -249,18 +249,13 @@ describe('product classification', () => {
 });
 
 async function withFailingCommit<T>(fn: () => Promise<T>, chmodOnFail?: string): Promise<T> {
-  const { dir, restore } = await installGitShim((git) => `
-const { chmodSync } = require('node:fs');
-const { spawnSync } = require('node:child_process');
-const args = process.argv.slice(2);
-if (args.includes('commit')) {
-  ${chmodOnFail ? `try { chmodSync(${JSON.stringify(chmodOnFail)}, 0o555); } catch {}` : ''}
-  process.exit(1);
-}
-const result = spawnSync(${JSON.stringify(git)}, args, { stdio: 'inherit' });
-process.exit(result.status ?? 1);
-`);
-  tempHomes.push(dir);
+  const { restore } = installGitShim(async (args, runReal) => {
+    if (args.includes('commit')) {
+      if (chmodOnFail) try { chmodSync(chmodOnFail, 0o555); } catch {}
+      throw Object.assign(new Error(`Command failed: git ${args.join(' ')}`), { code: 1, stderr: '' });
+    }
+    return runReal();
+  });
   try {
     return await fn();
   } finally {

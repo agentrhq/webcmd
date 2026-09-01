@@ -7,6 +7,21 @@ import { atomicWrite, containedRelativePath, sitesRoot, type LocalStoreOptions }
 import type { MemoryRevision } from './model.js';
 
 const execFile = promisify(execFileCb);
+export type GitExecFile = (
+  file: string,
+  args: readonly string[],
+  options: { cwd: string; encoding: 'utf8'; env: NodeJS.ProcessEnv },
+) => Promise<{ stdout: string }>;
+export const defaultGitExec: GitExecFile = async (file, args, options) => {
+  const { stdout } = await execFile(file, [...args], options);
+  return { stdout };
+};
+let gitExec = defaultGitExec;
+
+export function setGitExecForTests(next?: GitExecFile): void {
+  gitExec = next ?? defaultGitExec;
+}
+
 const AUTHOR_NAME = 'webcmd';
 const AUTHOR_EMAIL = 'webcmd@local';
 const GITIGNORE = ['.drafts/', '*.lock', '*.tmp', '**/fixtures/', '**/verify/', ''].join('\n');
@@ -191,7 +206,7 @@ async function git(root: string, args: string[]): Promise<string> {
   env.GIT_AUTHOR_EMAIL = AUTHOR_EMAIL;
   env.GIT_COMMITTER_NAME = AUTHOR_NAME;
   env.GIT_COMMITTER_EMAIL = AUTHOR_EMAIL;
-  const { stdout } = await execFile('git', [...GIT_FLAGS, ...args], { cwd: root, encoding: 'utf8', env });
+  const { stdout } = await gitExec('git', [...GIT_FLAGS, ...args], { cwd: root, encoding: 'utf8', env });
   return stdout;
 }
 

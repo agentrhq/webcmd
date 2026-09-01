@@ -8,7 +8,7 @@ import { addCandidate, listCandidates, showCandidate } from './candidates.js';
 import { checkpointMemory, type CheckpointInput } from './checkpoint.js';
 import { classifyProduct } from './classify.js';
 import { getMemoryContext, parseProductManifest } from './context.js';
-import { installGitShim } from './git-shim.js';
+import { installGitShim, restoreGitShim } from './git-shim.js';
 import { openSitesRepository } from './git-store.js';
 import { listSiteMemory, readProductFile, showSiteMemory, writeProductFile } from './local-store.js';
 import type { CandidateDisposition, SeedLookupResult } from './model.js';
@@ -16,7 +16,6 @@ import { createHttpSeedProvider } from './seed-client.js';
 
 const run = promisify(execFile);
 const tempHomes: string[] = [];
-const originalPath = process.env.PATH;
 const seedEnv = { WEBCMD_GLOBAL_MEMORY_URL: 'https://api.webcmd.dev' };
 const FACT = '- [verified 2026-08-31] Prefer /new for fresh posts.\n';
 const SITE = `# Example\n\n${FACT}`;
@@ -30,7 +29,7 @@ const CLOCK = {
 } as const;
 
 afterEach(async () => {
-  process.env.PATH = originalPath;
+  restoreGitShim();
   await Promise.all(tempHomes.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
@@ -775,15 +774,13 @@ async function writeDraft(homeDir: string, files: Record<string, string>, taskId
 
 async function withGitWrapper(homeDir: string, fail: 'memory' | 'provenance', fn: () => Promise<void>) {
   const needle = fail === 'memory' ? 'checkpoint memory' : 'checkpoint provenance';
-  const { dir, restore } = await installGitShim((git) => `
-const { spawnSync } = require('node:child_process');
-const args = process.argv.slice(2);
-const msg = args.includes('-m') ? args[args.indexOf('-m') + 1] : '';
-if (args.includes('commit') && msg.includes(${JSON.stringify(needle)})) process.exit(1);
-const result = spawnSync(${JSON.stringify(git)}, args, { stdio: 'inherit' });
-process.exit(result.status ?? 1);
-`);
-  tempHomes.push(dir);
+  const { restore } = installGitShim(async (args, runReal) => {
+    const msg = args.includes('-m') ? args[args.indexOf('-m') + 1] : '';
+    if (args.includes('commit') && msg.includes(needle)) {
+      throw Object.assign(new Error(`Command failed: git ${args.join(' ')}`), { code: 1, stderr: '' });
+    }
+    return runReal();
+  });
   try {
     await fn();
   } finally {

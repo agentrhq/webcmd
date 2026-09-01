@@ -1,11 +1,12 @@
 import { execFile } from 'node:child_process';
+import { chmodSync } from 'node:fs';
 import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import { addCandidate, listCandidates, searchCandidates, showCandidate } from './candidates.js';
-import { installGitShim } from './git-shim.js';
+import { installGitShim, restoreGitShim } from './git-shim.js';
 import { openSitesRepository } from './git-store.js';
 import { listSiteMemory, readProductFile, showSiteMemory, writeProductFile } from './local-store.js';
 import type { Candidate } from './model.js';
@@ -14,6 +15,7 @@ const run = promisify(execFile);
 const tempHomes: string[] = [];
 
 afterEach(async () => {
+  restoreGitShim();
   await Promise.all(tempHomes.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
@@ -309,14 +311,11 @@ describe('candidate discovery', () => {
     const { homeDir, sites } = await tempSites();
     await mkdir(sites, { recursive: true });
     await writeFile(join(sites, 'keep-me.txt'), 'unrelated\n');
-    const { dir, restore } = await installGitShim((git) => `
-const { spawnSync } = require('node:child_process');
-const args = process.argv.slice(2);
-if (args.includes('commit')) process.exit(1);
-const result = spawnSync(${JSON.stringify(git)}, args, { stdio: 'inherit' });
-process.exit(result.status ?? 1);
-`);
-    tempHomes.push(dir);
+    const { restore } = installGitShim(async (args, runReal) => (
+      args.includes('commit')
+        ? Promise.reject(Object.assign(new Error(`Command failed: git ${args.join(' ')}`), { code: 1, stderr: '' }))
+        : runReal()
+    ));
     try {
       await expect(addCandidate(base(homeDir))).rejects.toThrow();
     } finally {
@@ -346,18 +345,13 @@ process.exit(result.status ?? 1);
   it.skipIf(process.platform === 'win32')('reports non-ENOENT cleanup errors after a failed commit', async () => {
     const { homeDir, sites } = await tempSites();
     const candidatesDir = join(sites, 'example.test', 'candidates');
-    const { dir, restore } = await installGitShim((git) => `
-const { chmodSync } = require('node:fs');
-const { spawnSync } = require('node:child_process');
-const args = process.argv.slice(2);
-if (args.includes('commit')) {
-  try { chmodSync(${JSON.stringify(candidatesDir)}, 0o555); } catch {}
-  process.exit(1);
-}
-const result = spawnSync(${JSON.stringify(git)}, args, { stdio: 'inherit' });
-process.exit(result.status ?? 1);
-`);
-    tempHomes.push(dir);
+    const { restore } = installGitShim(async (args, runReal) => {
+      if (args.includes('commit')) {
+        try { chmodSync(candidatesDir, 0o555); } catch {}
+        throw Object.assign(new Error(`Command failed: git ${args.join(' ')}`), { code: 1, stderr: '' });
+      }
+      return runReal();
+    });
     try {
       await expect(addCandidate(base(homeDir))).rejects.toThrow(/EACCES|EPERM|permission denied/i);
     } finally {

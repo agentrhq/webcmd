@@ -1,11 +1,12 @@
 import { execFile } from 'node:child_process';
+import { chmodSync } from 'node:fs';
 import { access, chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getMemoryContext, parseProductManifest } from './context.js';
-import { installGitShim } from './git-shim.js';
+import { installGitShim, restoreGitShim } from './git-shim.js';
 import { openSitesRepository } from './git-store.js';
 import { readProductFile, writeProductFile } from './local-store.js';
 import type { GlobalSeedProvider } from './seed-client.js';
@@ -15,6 +16,7 @@ const run = promisify(execFile);
 const tempHomes: string[] = [];
 
 afterEach(async () => {
+  restoreGitShim();
   await Promise.all(tempHomes.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
@@ -402,14 +404,11 @@ describe('memory context initialization', () => {
       site: '# Transient\n',
       references: { 'alt.md': '# Alt\n' },
     }));
-    const { dir, restore } = await installGitShim((git) => `
-const { spawnSync } = require('node:child_process');
-const args = process.argv.slice(2);
-if (args.includes('commit')) process.exit(1);
-const result = spawnSync(${JSON.stringify(git)}, args, { stdio: 'inherit' });
-process.exit(result.status ?? 1);
-`);
-    tempHomes.push(dir);
+    const { restore } = installGitShim(async (args, runReal) => (
+      args.includes('commit')
+        ? Promise.reject(Object.assign(new Error(`Command failed: git ${args.join(' ')}`), { code: 1, stderr: '' }))
+        : runReal()
+    ));
     try {
       const context = await getMemoryContext({
         url: 'https://example.test/',
@@ -526,18 +525,13 @@ process.exit(result.status ?? 1);
   it.skipIf(process.platform === 'win32')('surfaces non-ENOENT seed cleanup failures', async () => {
     const { homeDir, sites } = await tempSites();
     const productDir = join(sites, 'example.test');
-    const { dir, restore } = await installGitShim((git) => `
-const { chmodSync } = require('node:fs');
-const { spawnSync } = require('node:child_process');
-const args = process.argv.slice(2);
-if (args.includes('commit')) {
-  try { chmodSync(${JSON.stringify(productDir)}, 0o555); } catch {}
-  process.exit(1);
-}
-const result = spawnSync(${JSON.stringify(git)}, args, { stdio: 'inherit' });
-process.exit(result.status ?? 1);
-`);
-    tempHomes.push(dir);
+    const { restore } = installGitShim(async (args, runReal) => {
+      if (args.includes('commit')) {
+        try { chmodSync(productDir, 0o555); } catch {}
+        throw Object.assign(new Error(`Command failed: git ${args.join(' ')}`), { code: 1, stderr: '' });
+      }
+      return runReal();
+    });
     try {
       const context = await getMemoryContext({
         url: 'https://example.test/',
