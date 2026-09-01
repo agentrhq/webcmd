@@ -243,6 +243,26 @@ describe('webcmd setup', () => {
     expect(events).toEqual(['install', 'hello', 'wait', 'hello', 'save']);
   });
 
+  it('allows slow first SLAB launch before persisting', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-slab-slow-ready-'));
+    const statuses: SlabSetupStatus[] = [
+      ...Array.from<SlabSetupStatus>({ length: 41 }).fill('installed-not-running'),
+      'installed-running',
+    ];
+
+    await expect(runHostedSetup({
+      env: { WEBCMD_CONFIG_DIR: tempDir },
+      argv: ['--mode', 'local', '--browser', 'slab'],
+      isTTY: false,
+      platform: 'darwin',
+      installSlabMacos: async () => ({ platform: 'darwin', appPath: '/Applications/SLAB.app', executablePath: '/Applications/SLAB.app/Contents/MacOS/SLAB' }),
+      inspectSlabStatus: async () => statuses.shift() ?? 'installed-running',
+      wait: async () => undefined,
+      fetchDaemonStatus: async () => null,
+      write: () => undefined,
+    })).resolves.toBe(0);
+  });
+
   it('leaves config and daemon unchanged when SLAB installation fails', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-slab-failure-'));
     const env = { WEBCMD_CONFIG_DIR: tempDir } as NodeJS.ProcessEnv;

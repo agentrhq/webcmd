@@ -221,7 +221,7 @@ async function validateLocalBrowser(browser: LocalBrowserConfig, io: SetupIo): P
   return browser;
 }
 
-async function waitForSlabHello(io: SetupIo, timeoutMs = 10_000): Promise<boolean> {
+async function waitForSlabHello(io: SetupIo, timeoutMs = 60_000): Promise<boolean> {
   const inspect = io.inspectSlabStatus ?? inspectSlabStatus;
   const wait = io.wait ?? (ms => new Promise<void>(resolve => setTimeout(resolve, ms)));
   const intervalMs = 250;

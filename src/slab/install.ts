@@ -61,12 +61,19 @@ async function responseJson(response: { ok: boolean; json?(): Promise<unknown> }
   return response.json();
 }
 
-async function writeProgress(io: SlabInstallerIo, received: number, total?: number, done: boolean = false): Promise<void> {
-  if (!io.write) return;
+function progressBucket(received: number, total?: number): string {
+  return total && total > 0 ? String(Math.round((received / total) * 100)) : String(Math.floor(received / (1024 * 1024)));
+}
+
+async function writeProgress(io: SlabInstallerIo, received: number, total?: number, done: boolean = false, lastBucket?: string): Promise<string | undefined> {
+  if (!io.write) return lastBucket;
+  const bucket = progressBucket(received, total);
+  if (!done && bucket === lastBucket) return lastBucket;
   const summary = total && total > 0
     ? `${Math.round((received / total) * 100)}% ${formatBytes(received)} / ${formatBytes(total)}`
     : formatBytes(received);
   await io.write(`\rDownloading SLAB DMG: ${summary}${done ? '\n' : ''}`);
+  return bucket;
 }
 
 async function responseBytes(response: {
@@ -82,13 +89,14 @@ async function responseBytes(response: {
     const reader = response.body.getReader();
     const chunks: Uint8Array[] = [];
     let received = 0;
+    let lastBucket: string | undefined;
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       if (!value) continue;
       chunks.push(value);
       received += value.byteLength;
-      await writeProgress(io, received, expectedBytes);
+      lastBucket = await writeProgress(io, received, expectedBytes, false, lastBucket);
     }
     await writeProgress(io, received, expectedBytes, true);
     return Buffer.concat(chunks.map(chunk => Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength)));

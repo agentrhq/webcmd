@@ -147,6 +147,31 @@ describe('SLAB macOS installer', () => {
     expect(io.writes.join('')).toContain(`${bytes.length.toFixed(1)} B / ${bytes.length.toFixed(1)} B`);
   });
 
+  it('throttles repeated percent progress updates', async () => {
+    const bytes = Buffer.from('signed-slab-dmg');
+    const io = fakeInstaller({
+      downloadedBytes: bytes,
+    });
+    io.fetch = async (url) => url.endsWith('.json')
+      ? { ok: true, json: async () => ({ url: 'https://downloads.webcmd.dev/slab/SLAB.dmg', sha256: releaseSha256, signature: 'release-signature' }) }
+      : {
+        ok: true,
+        headers: { get: (name: string) => name.toLowerCase() === 'content-length' ? '1000' : null },
+        body: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(bytes.subarray(0, 1));
+            controller.enqueue(bytes.subarray(1, 2));
+            controller.enqueue(bytes.subarray(2));
+            controller.close();
+          },
+        }),
+      };
+
+    await installSlabMacos(io);
+
+    expect(io.writes.filter(message => message.includes('0%'))).toHaveLength(1);
+  });
+
   it('reports downloaded bytes when Content-Length is unknown', async () => {
     const bytes = Buffer.from('signed-slab-dmg');
     const io = fakeInstaller({
