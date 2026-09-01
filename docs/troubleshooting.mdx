@@ -7,7 +7,7 @@ description: Prompt-based fixes for common Webcmd install, profile, auth, plugin
 
 Most troubleshooting should be done by an agent. Give the symptom, the command, the expected output, and permission to diagnose.
 
-For local browser selection, use `webcmd setup --mode local --browser cloak`, `webcmd setup --mode local --browser slab`, or `webcmd setup --mode local --browser /absolute/path/to/browser`. Cloak remains the bundled default; SLAB is the macOS alpha opt-in.
+For local browser selection, use `webcmd setup --mode local --browser cloak`, `webcmd setup --mode local --browser chrome`, `webcmd setup --mode local --browser slab`, or `webcmd setup --mode local --browser /absolute/path/to/browser`. Cloak remains the bundled default; Chrome reuses an installed normal Google Chrome, and SLAB is the macOS alpha opt-in.
 
 ## Basic Diagnosis
 
@@ -144,6 +144,13 @@ Useful environment variables:
 | `WEBCMD_CDP_TARGET` | Filter CDP targets by URL substring. |
 | `WEBCMD_CACHE_DIR` | Browser state and network cache directory. |
 | `WEBCMD_VERBOSE` | Enable verbose logs. |
+
+`webcmd setup --mode local --browser chrome` uses an existing normal Google
+Chrome installation and keeps its profiles under `~/.webcmd/chrome/profiles`.
+Interactive setup labels Chrome as `installed` or `install required`. Webcmd
+does not install Chrome automatically; when it is missing and selected, setup
+links to `https://www.google.com/chrome/` and preserves the current browser
+selection.
 
 After changing the local browser with `webcmd setup --mode local --browser ...`,
 restart the daemon and run `webcmd doctor`. `webcmd doctor` reports the live

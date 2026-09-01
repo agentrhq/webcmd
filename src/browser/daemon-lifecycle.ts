@@ -203,7 +203,7 @@ export async function ensureBrowserBridgeReady(
   throw browserConnectErrorFromHealth(finalHealth, contextId);
 }
 
-function selectedLocalBrowserKind(): 'cloak' | 'slab' | 'custom' {
+function selectedLocalBrowserKind(): 'cloak' | 'chrome' | 'slab' | 'custom' {
   const config = loadWebcmdConfig();
   return config.mode === 'local' ? config.browser.kind : 'cloak';
 }

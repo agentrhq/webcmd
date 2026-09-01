@@ -10,11 +10,13 @@ export function createConfiguredLocalBrowserRuntimeProvider(
   const browser = config?.browser ?? { kind: 'cloak' };
   if (browser.kind === 'slab') return new LocalSlabRuntimeProvider();
 
-  const executablePath = browser.kind === 'custom' ? browser.executablePath : undefined;
+  const executablePath = browser.kind === 'custom' || browser.kind === 'chrome'
+    ? browser.executablePath
+    : undefined;
   configureCloakBrowserBinary(executablePath);
   return new LocalCloakRuntimeProvider({
     executablePath,
-    profileNamespace: resolveBrowserProfileNamespace(executablePath),
+    profileNamespace: browser.kind === 'chrome' ? 'chrome' : resolveBrowserProfileNamespace(executablePath),
     runtimeName: browser.kind,
   });
 }

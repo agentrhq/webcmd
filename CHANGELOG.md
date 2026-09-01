@@ -4,6 +4,7 @@
 
 ### Added
 
+- `webcmd setup --mode local --browser chrome` detects and reuses an installed normal Google Chrome with an isolated `~/.webcmd/chrome/profiles` directory.
 - Hosted mode can negotiate and run core validation, diagnostics, adapter lifecycle, profile lifecycle, and catalog-list commands advertised by Webcmd Cloud.
 - `@agentrhq/webcmd/adapter-analysis` exposes platform-neutral validation and convention-audit rules for trusted hosted command inventories.
 - `@agentrhq/webcmd/hosted/core-commands` exposes the `hosted-core-commands-v1` capability contract and canonical command IDs.

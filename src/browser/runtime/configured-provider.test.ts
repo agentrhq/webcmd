@@ -40,6 +40,21 @@ describe('configured local browser provider', () => {
     });
   });
 
+  it('runs configured Google Chrome with the stable chrome profile namespace', async () => {
+    const LocalCloakRuntimeProvider = vi.fn();
+    vi.doMock('./local-cloak/provider.js', () => ({ LocalCloakRuntimeProvider }));
+    const { createConfiguredLocalBrowserRuntimeProvider: createProvider } = await import('./configured-provider.js');
+    const executablePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+
+    createProvider(makeLocalConfig(new Date(0), { kind: 'chrome', executablePath }));
+
+    expect(LocalCloakRuntimeProvider).toHaveBeenCalledWith({
+      executablePath,
+      profileNamespace: 'chrome',
+      runtimeName: 'chrome',
+    });
+  });
+
   it('does not fall back to Cloak when SLAB construction fails', async () => {
     const cloak = vi.fn();
     const failure = new Error('SLAB startup failed');

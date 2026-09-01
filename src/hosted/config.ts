@@ -11,6 +11,7 @@ export interface HostedManifestCache {
 
 export type LocalBrowserConfig =
   | { kind: 'cloak' }
+  | { kind: 'chrome'; executablePath: string }
   | { kind: 'slab' }
   | { kind: 'custom'; executablePath: string };
 
@@ -209,6 +210,9 @@ function readLocalBrowser(value: unknown): LocalBrowserConfig {
   if (value && typeof value === 'object') {
     const browser = value as { kind?: unknown; executablePath?: unknown };
     if (browser.kind === 'cloak' || browser.kind === 'slab') return { kind: browser.kind };
+    if (browser.kind === 'chrome' && typeof browser.executablePath === 'string' && path.isAbsolute(browser.executablePath)) {
+      return { kind: 'chrome', executablePath: browser.executablePath };
+    }
     if (browser.kind === 'custom' && typeof browser.executablePath === 'string' && path.isAbsolute(browser.executablePath)) {
       return { kind: 'custom', executablePath: browser.executablePath };
     }

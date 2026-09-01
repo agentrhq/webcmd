@@ -148,6 +148,7 @@ describe('hosted config', () => {
 
     for (const browser of [
       { kind: 'cloak' } as const,
+      { kind: 'chrome', executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' } as const,
       { kind: 'slab' } as const,
       { kind: 'custom', executablePath: '/Applications/Chrome.app/Contents/MacOS/Google Chrome' } as const,
     ]) {
@@ -165,6 +166,8 @@ describe('hosted config', () => {
       { kind: 'custom' },
       { kind: 'custom', executablePath: '' },
       { kind: 'custom', executablePath: 'relative/browser' },
+      { kind: 'chrome' },
+      { kind: 'chrome', executablePath: 'relative/browser' },
       { kind: 'other' },
     ]) {
       expect(loadWebcmdConfig({

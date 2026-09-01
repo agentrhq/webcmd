@@ -30,6 +30,7 @@ describe('webcmd setup', () => {
       platform: 'linux',
       now: () => new Date('2026-07-08T00:00:00.000Z'),
       question: async () => answers.shift() ?? '',
+      fetchDaemonStatus: async () => null,
       write: (message) => { messages.push(message); },
     });
 
@@ -40,6 +41,58 @@ describe('webcmd setup', () => {
       browser: { kind: 'cloak' },
     });
     expect(messages.join('')).toContain('local mode');
+  });
+
+  it('shows installed Chrome in the interactive browser prompt and reuses its detection', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-interactive-chrome-'));
+    const env = { WEBCMD_CONFIG_DIR: tempDir } as NodeJS.ProcessEnv;
+    const answers = ['local', 'chrome'];
+    const prompts: string[] = [];
+    const executablePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+    const resolveGoogleChromeExecutable = vi.fn(async () => executablePath);
+
+    await expect(runHostedSetup({
+      env,
+      question: async prompt => {
+        prompts.push(prompt);
+        return answers.shift() ?? '';
+      },
+      resolveGoogleChromeExecutable,
+      fetchDaemonStatus: async () => null,
+      write: () => undefined,
+    })).resolves.toBe(0);
+
+    expect(prompts).toContain('Local browser [cloak/chrome (installed)/slab/absolute path] (cloak): ');
+    expect(resolveGoogleChromeExecutable).toHaveBeenCalledOnce();
+    expect(JSON.parse(await readFile(getConfigPath({ env }), 'utf8'))).toMatchObject({
+      browser: { kind: 'chrome', executablePath },
+    });
+  });
+
+  it('shows install required and the official link when unavailable Chrome is selected', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-interactive-chrome-missing-'));
+    const env = { WEBCMD_CONFIG_DIR: tempDir } as NodeJS.ProcessEnv;
+    saveWebcmdConfig(makeLocalConfig(new Date('2026-08-31T00:00:00.000Z')), { env });
+    const answers = ['local', 'chrome'];
+    const prompts: string[] = [];
+    const messages: string[] = [];
+    const resolveGoogleChromeExecutable = vi.fn(async () => undefined);
+
+    await expect(runHostedSetup({
+      env,
+      question: async prompt => {
+        prompts.push(prompt);
+        return answers.shift() ?? '';
+      },
+      resolveGoogleChromeExecutable,
+      fetchDaemonStatus: async () => null,
+      write: message => { messages.push(message); },
+    })).resolves.toBe(1);
+
+    expect(prompts).toContain('Local browser [cloak/chrome (install required)/slab/absolute path] (cloak): ');
+    expect(resolveGoogleChromeExecutable).toHaveBeenCalledOnce();
+    expect(messages.join('')).toContain('https://www.google.com/chrome/');
+    expect(JSON.parse(await readFile(getConfigPath({ env }), 'utf8'))).toMatchObject({ browser: { kind: 'cloak' } });
   });
 
   it('writes hosted mode and validates with /v1/me', async () => {
@@ -104,6 +157,7 @@ describe('webcmd setup', () => {
       argv: ['--mode', 'local'],
       isTTY: false,
       question,
+      fetchDaemonStatus: async () => null,
       write: (message) => { messages.push(message); },
     });
 
@@ -162,6 +216,43 @@ describe('webcmd setup', () => {
       mode: 'local',
       browser: { kind: 'custom', executablePath: '/private/Applications/Chrome.app/Contents/MacOS/Google Chrome' },
     });
+  });
+
+  it('detects and persists an installed Google Chrome executable', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-chrome-'));
+    const env = { WEBCMD_CONFIG_DIR: tempDir } as NodeJS.ProcessEnv;
+    const executablePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+
+    await expect(runHostedSetup({
+      env,
+      argv: ['--mode', 'local', '--browser', 'chrome'],
+      isTTY: false,
+      resolveGoogleChromeExecutable: async () => executablePath,
+      fetchDaemonStatus: async () => null,
+      write: () => undefined,
+    })).resolves.toBe(0);
+
+    expect(JSON.parse(await readFile(getConfigPath({ env }), 'utf8'))).toMatchObject({
+      mode: 'local',
+      browser: { kind: 'chrome', executablePath },
+    });
+  });
+
+  it('explains how to install Google Chrome when it is unavailable', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-chrome-missing-'));
+    const messages: string[] = [];
+
+    await expect(runHostedSetup({
+      env: { WEBCMD_CONFIG_DIR: tempDir },
+      argv: ['--mode', 'local', '--browser', 'chrome'],
+      isTTY: false,
+      resolveGoogleChromeExecutable: async () => undefined,
+      fetchDaemonStatus: async () => null,
+      write: message => { messages.push(message); },
+    })).resolves.toBe(1);
+
+    expect(messages.join('')).toContain('Google Chrome is not installed');
+    expect(messages.join('')).toContain('https://www.google.com/chrome/');
   });
 
   it('reinstalls an existing SLAB app through the signed installer path', async () => {
@@ -385,8 +476,7 @@ describe('webcmd setup', () => {
 
   it.each([
     [['--mode', 'local', '--browser'], '--browser requires a value.'],
-    [['--mode', 'local', '--browser', 'chrome'], '--browser must be cloak, slab, or an absolute path'],
-    [['--mode', 'local', '--browser', 'relative/browser'], '--browser must be cloak, slab, or an absolute path'],
+    [['--mode', 'local', '--browser', 'relative/browser'], '--browser must be cloak, chrome, slab, or an absolute path'],
     [['--mode', 'hosted', '--browser', 'slab', '--api-key', 'wcmd_live_test'], '--browser is only valid with --mode local.'],
   ])('rejects invalid browser arguments from %j', async (argv, message) => {
     const stderr = collectStderr();
@@ -410,8 +500,8 @@ describe('webcmd setup', () => {
       write: message => { messages.push(message); },
     })).resolves.toBe(0);
 
-    expect(messages.join('')).toContain('--browser <cloak|slab|absolute-path>');
-    expect(messages.join('')).toContain('Cloak stays default, SLAB is macOS alpha opt-in');
+    expect(messages.join('')).toContain('--browser <cloak|chrome|slab|absolute-path>');
+    expect(messages.join('')).toContain('Cloak is default, Chrome reuses an installed Google Chrome');
   });
 
   it('reports the configured custom browser without probing SLAB', async () => {
@@ -555,6 +645,7 @@ describe('webcmd setup', () => {
       question: async () => answers.shift() ?? '',
       fetchDaemonStatus: async () => null,
       resolveCloakPackage: async () => 'file:///cloakbrowser/index.js',
+      resolveGoogleChromeExecutable: async () => undefined,
     }).then(code => {
       settled = true;
       return code;

@@ -12,7 +12,7 @@ export interface LocalCloakRuntimeProviderOptions {
   baseDir?: string;
   profileNamespace?: string;
   executablePath?: string;
-  runtimeName?: 'cloak' | 'custom';
+  runtimeName?: 'cloak' | 'chrome' | 'custom';
   launchPersistentContext?: LaunchPersistentContext;
   launchBackgroundPersistentContext?: LaunchPersistentContext;
 }

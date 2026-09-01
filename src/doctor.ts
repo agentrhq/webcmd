@@ -88,7 +88,7 @@ function isLaunchableFile(binaryPath: string): boolean {
  * needs to launch is present on disk.
  */
 export function checkBrowserBinary(browser: LocalBrowserConfig = { kind: 'cloak' }): BrowserBinaryStatus {
-  if (browser.kind === 'custom') {
+  if (browser.kind === 'custom' || browser.kind === 'chrome') {
     return {
       installed: isLaunchableFile(browser.executablePath),
       path: browser.executablePath,
@@ -154,7 +154,11 @@ export async function checkConnectivity(
 export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<DoctorReport> {
   const config = loadWebcmdConfig();
   const selectedBrowser = config.mode === 'local' ? config.browser : { kind: 'cloak' } satisfies LocalBrowserConfig;
-  configureCloakBrowserBinary(selectedBrowser.kind === 'custom' ? selectedBrowser.executablePath : undefined);
+  configureCloakBrowserBinary(
+    selectedBrowser.kind === 'custom' || selectedBrowser.kind === 'chrome'
+      ? selectedBrowser.executablePath
+      : undefined,
+  );
   // Live connectivity check is the core of doctor — it doubles as auto-start
   // (bridge.connect spawns daemon) and validates
   // end-to-end browser bridge health.
@@ -180,12 +184,12 @@ export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<Doctor
     issues.push(`Could not check adapter overrides: ${getErrorMessage(err)}`);
   }
   if (binary?.error) {
-    issues.push(`Could not check ${expectedRuntimeLabel === 'custom' ? 'custom browser' : 'CloakBrowser Chromium'} binary: ${binary.error}`);
+    issues.push(`Could not check ${selectedBrowser.kind === 'cloak' ? 'CloakBrowser Chromium' : `${expectedRuntimeLabel} browser`} binary: ${binary.error}`);
   } else if (binary?.installed === false) {
     issues.push(
-      `${expectedRuntimeLabel === 'custom' ? 'Selected browser executable is not available' : 'CloakBrowser Chromium is not installed'} at ${binary.path}.\n` +
+      `${selectedBrowser.kind === 'cloak' ? 'CloakBrowser Chromium is not installed' : 'Selected browser executable is not available'} at ${binary.path}.\n` +
       (binary.downloadUrl ? `  Download URL: ${binary.downloadUrl}\n` : '') +
-      (selectedBrowser.kind === 'custom'
+      (selectedBrowser.kind === 'custom' || selectedBrowser.kind === 'chrome'
         ? '  Confirm the absolute executable path still exists and is launchable.'
         : '  Check network access to the download URL above.'),
     );
@@ -206,7 +210,7 @@ export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<Doctor
       `${expectedRuntimeLabel} runtime connection is unstable. The live browser test succeeded, but the daemon reported the runtime disconnected immediately afterward.\n` +
       (selectedBrowser.kind === 'slab'
         ? 'This usually means SLAB is still starting, reconnecting, or was suspended.'
-        : selectedBrowser.kind === 'custom'
+        : selectedBrowser.kind === 'custom' || selectedBrowser.kind === 'chrome'
           ? 'This usually means the selected browser is still starting, reconnecting, or was suspended.'
           : 'This usually means Chrome/Chromium or the Cloak runtime is still starting, reconnecting, or was suspended.'),
     );
@@ -221,7 +225,7 @@ export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<Doctor
         `Selected browser profile is not connected: ${health.status?.contextId ?? 'unknown'}.\n` +
         (selectedBrowser.kind === 'slab'
           ? '  Open SLAB and reconnect that profile.'
-          : selectedBrowser.kind === 'custom'
+          : selectedBrowser.kind === 'custom' || selectedBrowser.kind === 'chrome'
             ? '  Open that browser profile and make sure the selected browser is running.'
             : '  Open that Chrome profile and make sure Cloak is enabled.'),
       );
@@ -230,7 +234,7 @@ export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<Doctor
         `Daemon is running but the ${expectedRuntimeLabel} runtime is not connected.\n` +
         (selectedBrowser.kind === 'slab'
           ? '  Make sure SLAB is open.\n'
-          : selectedBrowser.kind === 'custom'
+          : selectedBrowser.kind === 'custom' || selectedBrowser.kind === 'chrome'
             ? '  Make sure the selected browser executable can launch and the browser is open.\n'
             : '  Make sure Chrome/Chromium is open and Cloak is enabled.\n') +
         '  If Chrome is already open, try: webcmd daemon restart',
@@ -312,6 +316,8 @@ export function renderBrowserDoctorReport(report: DoctorReport): string {
 
   const selectedBrowserLabel = report.selectedBrowser?.kind === 'custom'
     ? `custom (${report.selectedBrowser.executablePath})`
+    : report.selectedBrowser?.kind === 'chrome'
+      ? `Google Chrome (${report.selectedBrowser.executablePath})`
     : report.selectedBrowser?.kind === 'slab'
       ? 'SLAB (macOS alpha opt-in)'
       : 'Cloak (bundled default)';
@@ -365,6 +371,7 @@ export function renderBrowserDoctorReport(report: DoctorReport): string {
 
 function expectedRuntimeLabelFor(browser: LocalBrowserConfig): string {
   if (browser.kind === 'slab') return 'SLAB';
+  if (browser.kind === 'chrome') return 'chrome';
   if (browser.kind === 'custom') return 'custom';
   return 'Cloak';
 }

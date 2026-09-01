@@ -9,6 +9,7 @@ import { formatErrorEnvelope } from '../output.js';
 import { writeToStream } from '../stream-write.js';
 import { fetchDaemonStatus, type DaemonStatus } from '../browser/daemon-transport.js';
 import { restartDaemon, type DaemonRestartResult } from '../browser/daemon-lifecycle.js';
+import { findInstalledGoogleChrome } from '../browser/google-chrome.js';
 import { createSlabInstallerIo, installSlabMacos } from '../slab/install.js';
 import type { SlabInstallation } from '../slab/installation.js';
 import { inspectSlabStatus, slabStatusHasHello, type SlabSetupStatus } from '../slab/status.js';
@@ -40,6 +41,7 @@ export interface SetupIo extends ConfigIo, HostedCredentialIo {
   argv?: readonly string[];
   isTTY?: boolean;
   resolveCloakPackage?: () => string | Promise<string>;
+  resolveGoogleChromeExecutable?: () => Promise<string | undefined>;
   realpath?: (path: string) => Promise<string>;
   stat?: (path: string) => Promise<{ isFile(): boolean }>;
   access?: (path: string, mode: number) => Promise<void>;
@@ -52,8 +54,9 @@ export interface SetupIo extends ConfigIo, HostedCredentialIo {
 }
 
 type SetupMode = 'local' | 'hosted';
+type LocalBrowserSelection = LocalBrowserConfig | { kind: 'chrome' };
 
-const SETUP_USAGE = `usage: ${CLI_COMMAND} setup --mode <local|hosted> [--browser <cloak|slab|absolute-path>] [--api-key <key>]`;
+const SETUP_USAGE = `usage: ${CLI_COMMAND} setup --mode <local|hosted> [--browser <cloak|chrome|slab|absolute-path>] [--api-key <key>]`;
 const SETUP_EXAMPLE = `example: ${CLI_COMMAND} setup --mode local`;
 const SETUP_HELP = [
   `${CLI_COMMAND} setup`,
@@ -61,7 +64,7 @@ const SETUP_HELP = [
   'Configure local or hosted mode.',
   '',
   '  --mode <local|hosted>   Required when stdin is not a TTY',
-  '  --browser <cloak|slab|absolute-path>  Local browser in local mode; Cloak stays default, SLAB is macOS alpha opt-in',
+  '  --browser <cloak|chrome|slab|absolute-path>  Local browser; Cloak is default, Chrome reuses an installed Google Chrome, SLAB is macOS alpha',
   '  --api-key <key>         Required for --mode hosted when stdin is not a TTY',
   '  --status                Show the configured mode and local browser',
   '  -h, --help',
@@ -119,12 +122,19 @@ export async function runHostedSetup(io: SetupIo = {}): Promise<number> {
           `${SETUP_USAGE}\n${SETUP_EXAMPLE}`,
         );
       }
-      const browser = parsed.browser ?? (interactive
-        ? parseLocalBrowser((await ask('Local browser [cloak/slab/absolute path] (cloak): ')).trim() || 'cloak')
-        : { kind: 'cloak' });
+      let chromeDiscovery: { executablePath: string | undefined } | undefined;
+      let browser = parsed.browser;
+      if (!browser && interactive) {
+        chromeDiscovery = { executablePath: await resolveGoogleChromeExecutable(io) };
+        const chromeStatus = chromeDiscovery.executablePath ? 'installed' : 'install required';
+        browser = parseLocalBrowser(
+          (await ask(`Local browser [cloak/chrome (${chromeStatus})/slab/absolute path] (cloak): `)).trim() || 'cloak',
+        );
+      }
+      browser ??= { kind: 'cloak' };
       const before = await (io.fetchDaemonStatus ?? fetchDaemonStatus)();
       try {
-        const selected = await validateLocalBrowser(browser, io);
+        const selected = await validateLocalBrowser(browser, io, chromeDiscovery);
         (io.saveConfig ?? saveWebcmdConfig)(makeLocalConfig(io.now?.() ?? new Date(), selected), io);
         if (before) await restartConfiguredDaemon(selected, io);
       } catch (err) {
@@ -204,7 +214,11 @@ function canPrompt(io: SetupIo): boolean {
   return process.stdin.isTTY === true && process.stdout.isTTY === true;
 }
 
-async function validateLocalBrowser(browser: LocalBrowserConfig, io: SetupIo): Promise<LocalBrowserConfig> {
+async function validateLocalBrowser(
+  browser: LocalBrowserSelection,
+  io: SetupIo,
+  chromeDiscovery?: { executablePath: string | undefined },
+): Promise<LocalBrowserConfig> {
   if (browser.kind === 'cloak') {
     await (io.resolveCloakPackage ?? (() => import.meta.resolve('cloakbrowser')))();
     return browser;
@@ -215,10 +229,31 @@ async function validateLocalBrowser(browser: LocalBrowserConfig, io: SetupIo): P
     await (io.access ?? access)(executablePath, constants.X_OK);
     return { kind: 'custom', executablePath };
   }
+  if (browser.kind === 'chrome') {
+    const executablePath = 'executablePath' in browser
+      ? browser.executablePath
+      : chromeDiscovery
+        ? chromeDiscovery.executablePath
+        : await resolveGoogleChromeExecutable(io);
+    if (!executablePath) {
+      throw new Error(
+        `Google Chrome is not installed. Install it from https://www.google.com/chrome/, then rerun ${CLI_COMMAND} setup --mode local --browser chrome.`,
+      );
+    }
+    return { kind: 'chrome', executablePath };
+  }
   if ((io.platform ?? process.platform) !== 'darwin') throw new Error('SLAB setup is only supported on macOS.');
   await (io.installSlabMacos ?? (() => installSlabMacos(createSlabInstallerIo(), { launchAfterInstall: true })))();
   if (!await waitForSlabHello(io)) throw new Error('SLAB did not report its control protocol after launch.');
   return browser;
+}
+
+function resolveGoogleChromeExecutable(io: SetupIo): Promise<string | undefined> {
+  return (io.resolveGoogleChromeExecutable ?? (() => findInstalledGoogleChrome({
+    platform: io.platform ?? process.platform,
+    env: io.env ?? process.env,
+    homeDir: io.homeDir,
+  })))();
 }
 
 async function waitForSlabHello(io: SetupIo, timeoutMs = 60_000): Promise<boolean> {
@@ -269,9 +304,9 @@ export async function getSetupStatus(io: SetupIo = {}): Promise<SetupStatus> {
   return status;
 }
 
-function parseSetupArgs(argv: readonly string[]): { help?: true; status?: true; mode?: SetupMode; browser?: LocalBrowserConfig; apiKey?: string } {
+function parseSetupArgs(argv: readonly string[]): { help?: true; status?: true; mode?: SetupMode; browser?: LocalBrowserSelection; apiKey?: string } {
   let mode: SetupMode | undefined;
-  let browser: LocalBrowserConfig | undefined;
+  let browser: LocalBrowserSelection | undefined;
   let apiKey: string | undefined;
   let status: true | undefined;
   for (let i = 0; i < argv.length; i++) {
@@ -319,14 +354,16 @@ function parseSetupArgs(argv: readonly string[]): { help?: true; status?: true; 
   return { ...(status ? { status } : {}), mode, browser, apiKey };
 }
 
-function parseLocalBrowser(value: string | undefined): LocalBrowserConfig {
+function parseLocalBrowser(value: string | undefined): LocalBrowserSelection {
   if (!value || value.startsWith('-')) {
     throw new ArgumentError('--browser requires a value.', `${SETUP_USAGE}\n${SETUP_EXAMPLE}`);
   }
-  if (value === 'cloak' || value === 'slab') return { kind: value };
+  if (value === 'cloak') return { kind: 'cloak' };
+  if (value === 'chrome') return { kind: 'chrome' };
+  if (value === 'slab') return { kind: 'slab' };
   if (isAbsolute(value)) return { kind: 'custom', executablePath: value };
   throw new ArgumentError(
-    `--browser must be cloak, slab, or an absolute path (got: "${value}").`,
+    `--browser must be cloak, chrome, slab, or an absolute path (got: "${value}").`,
     `${SETUP_USAGE}\n${SETUP_EXAMPLE}`,
   );
 }

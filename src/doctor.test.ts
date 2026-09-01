@@ -227,6 +227,19 @@ describe('doctor report rendering', () => {
     expect(text).toContain('[OK] Selected browser: custom (/Applications/Brave Browser.app/Contents/MacOS/Brave Browser)');
   });
 
+  it('renders the selected browser as Google Chrome', () => {
+    const executablePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+    const text = strip(renderBrowserDoctorReport({
+      daemonRunning: true,
+      runtimeConnected: true,
+      runtimeName: 'chrome',
+      selectedBrowser: { kind: 'chrome', executablePath },
+      issues: [],
+    }));
+
+    expect(text).toContain(`[OK] Selected browser: Google Chrome (${executablePath})`);
+  });
+
   it('renders the selected browser as SLAB alpha', () => {
     const text = strip(renderBrowserDoctorReport({
       daemonRunning: true,
@@ -394,6 +407,29 @@ describe('doctor report rendering', () => {
         installed: true,
         path: managedBinaryPath,
       });
+      expect(mockEnsureBinary).not.toHaveBeenCalled();
+      expect(mockBinaryInfo).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+      fs.rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('uses the configured Google Chrome executable for doctor checks', async () => {
+    const configDir = writeLocalConfig({
+      kind: 'chrome',
+      executablePath: managedBinaryPath,
+    });
+    mockGetDaemonHealth.mockResolvedValueOnce({ state: 'ready', status: { runtimeConnected: true, runtimeName: 'chrome' } });
+
+    try {
+      const report = await runBrowserDoctor();
+
+      expect(report.selectedBrowser).toEqual({
+        kind: 'chrome',
+        executablePath: managedBinaryPath,
+      });
+      expect(report.binary).toMatchObject({ installed: true, path: managedBinaryPath });
       expect(mockEnsureBinary).not.toHaveBeenCalled();
       expect(mockBinaryInfo).not.toHaveBeenCalled();
     } finally {
