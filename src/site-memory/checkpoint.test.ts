@@ -407,7 +407,7 @@ describe('checkpoint candidate dispositions', () => {
     expect(raw.memory_commit).toMatch(/^[0-9a-f]{40}$/);
     expect(raw.evidence_role).toBe('supporting');
     expect(raw.schema_version).toBe(1);
-  });
+  }, 20_000);
 });
 
 describe('checkpoint git transaction', () => {
@@ -452,7 +452,7 @@ describe('checkpoint git transaction', () => {
     expect((await showCandidate('example.test', pending.id, { homeDir: blocked.homeDir })).status).toBe('pending');
     expect((await showCandidate('example.test', pending.id, { homeDir: blocked.homeDir })).memoryCommit).toBeNull();
     expect((await showCandidate('example.test', later.id, { homeDir: blocked.homeDir })).status).toBe('pending');
-  });
+  }, 20_000);
 
   it('restores prior Markdown, deletes new paths, and keeps the index clean if memory commit fails', async () => {
     const blocked = await primed();

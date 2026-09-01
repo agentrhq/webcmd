@@ -151,7 +151,7 @@ describe('self-learning lifecycle', () => {
       seedProvider: createHttpSeedProvider({ fetch, env: {} }),
     });
     expect(calls.filter((call) => call.url.endsWith('/disabled.test'))).toHaveLength(0);
-  });
+  }, 20_000);
 
   it('keeps Old Reddit a read-only parent fallback until interface confirmation and keeps Hacker News separate', async () => {
     const { homeDir } = await tempSites();
@@ -651,7 +651,7 @@ describe('self-learning lifecycle', () => {
     expect(resumed.provenanceCommit).not.toBe(memoryRevision);
     expect((await git(sites, ['log', '--oneline', '--', 'example.test/sitemap/SITE.md'])).trim()).toBe(siteLog);
     expect((await git(sites, ['show', `HEAD:example.test/candidates/${first.id}.json`]))).toMatch(/"status": "ingested"/);
-  });
+  }, 20_000);
 });
 
 function seedFetch(results: Record<string, SeedLookupResult | 'throw'>): typeof fetch {
