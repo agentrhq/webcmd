@@ -171,7 +171,6 @@ describe('CloakSessionManager', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
-    vi.unstubAllEnvs();
   });
 
   it('launches one persistent context per profile and reuses named sessions', async () => {
@@ -188,56 +187,6 @@ describe('CloakSessionManager', () => {
     expect(first.page).toBe(second.page);
     expect(launchPersistentContext).toHaveBeenCalledTimes(1);
     expect(launchPersistentContext.mock.calls[0][0]).toMatchObject({ headless: false });
-  });
-
-  it('passes the configured executable and namespace through to Cloak', async () => {
-    const browserPath = '/opt/chromium-fork/chrome';
-    vi.stubEnv('CLOAKBROWSER_BINARY_PATH', '/opt/cloak/chrome');
-    const launched = fakeContext();
-    const launchPersistentContext = vi.fn().mockResolvedValue(launched.context);
-    const manager = new CloakSessionManager({
-      baseDir: '/tmp/webcmd-test',
-      executablePath: browserPath,
-      profileNamespace: 'custom-chromium-12345678',
-      launchPersistentContext,
-    });
-
-    await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser' });
-
-    expect(launchPersistentContext).toHaveBeenCalledWith(expect.objectContaining({
-      userDataDir: path.join(
-        '/tmp/webcmd-test',
-        'custom-chromium-12345678',
-        'profiles',
-        'default',
-      ),
-      launchOptions: { executablePath: browserPath },
-    }));
-    expect(process.env.CLOAKBROWSER_BINARY_PATH).toBe(browserPath);
-  });
-
-  it('uses the normal macOS launcher for a configured custom app-bundle executable', async () => {
-    vi.stubEnv('CLOAKBROWSER_BINARY_PATH', '');
-    const launched = fakeContext();
-    const launchPersistentContext = vi.fn().mockResolvedValue(launched.context);
-    const launchBackgroundPersistentContext = vi.fn().mockResolvedValue(launched.context);
-    const manager = new CloakSessionManager({
-      baseDir: '/tmp/webcmd-test',
-      executablePath: '/Applications/ChromiumFork.app/Contents/MacOS/ChromiumFork',
-      platform: 'darwin',
-      launchPersistentContext,
-      launchBackgroundPersistentContext,
-    });
-
-    await manager.getPage({
-      profileId: 'default',
-      session: 'work',
-      surface: 'browser',
-      windowMode: 'background',
-    });
-
-    expect(launchPersistentContext).toHaveBeenCalledOnce();
-    expect(launchBackgroundPersistentContext).not.toHaveBeenCalled();
   });
 
   it('correlates created targets and isolates Sessions into owned windows', async () => {

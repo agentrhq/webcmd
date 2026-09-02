@@ -70,7 +70,7 @@ webcmd --profile work \
 webcmd --profile work session close work-project-k7
 ```
 
-Local browser commands use the browser selected by `webcmd setup --mode local --browser ...`. Cloak stays bundled and default, `--browser chrome` reuses an installed Google Chrome, `--browser slab` is the macOS alpha opt-in, and an absolute path selects a compatible local Chromium fork. If Google Chrome is unavailable, setup links to the official installer and leaves the existing selection unchanged. Hosted browser commands use Webcmd Cloud and Browser Use; `web fetch` still runs locally.
+Local browser commands use Cloak. Hosted browser commands use Webcmd Cloud and Browser Use; `web fetch` still runs locally.
 
 ## Browser Programs
 
@@ -140,7 +140,7 @@ Ordinary `curl` is neither required nor automatically authenticated.
 | --- | --- |
 | `list` | Show registered core, legacy user, plugin, and external commands. |
 | `setup` | Choose local or hosted mode interactively. |
-| `doctor` | Diagnose the selected local browser runtime and daemon connectivity. |
+| `doctor` | Diagnose browser bridge and daemon connectivity. |
 | `daemon` | Manage the local Webcmd daemon: status, stop, and restart. |
 | `artifact` | Download a hosted execution artifact to `--output`. |
 | `browser` | Agent-facing browser runtime for exploration and verification. |
@@ -184,8 +184,6 @@ webcmd profile list -f json
 ```
 
 Each keeps its human-readable report as the `table` rendering, which stays the default. Pass another format to get the underlying result object instead — the validation report for `validate`, the verify report for `verify`, the diagnostic report for `doctor`, and a row set for `profile list`.
-
-`webcmd setup --status` returns the configured local `browser` selection in JSON. `webcmd doctor` reports the live `Runtime` plus a `Selected browser` line so you can tell whether local mode is using bundled Cloak, installed Google Chrome, macOS-alpha SLAB, or a custom absolute executable path.
 
 `daemon status -f json` returns `{ "running": false }` when no daemon is reachable, and otherwise reports `running`, `stale`, `pid`, `version`, `uptimeMs`, `runtimeConnected`, `profiles`, `memoryMB`, and `port`.
 

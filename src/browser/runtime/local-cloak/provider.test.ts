@@ -165,11 +165,6 @@ describe('LocalCloakRuntimeProvider', () => {
     });
   });
 
-  it('reports the configured custom runtime name', async () => {
-    const provider = new LocalCloakRuntimeProvider({ baseDir: '/tmp/webcmd-test', runtimeName: 'custom' });
-    await expect(provider.status()).resolves.toMatchObject({ runtimeName: 'custom' });
-  });
-
   it('discards a temporary Session record after closing it', async () => {
     const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-provider-session-'));
     try {

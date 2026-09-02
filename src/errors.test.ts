@@ -133,7 +133,7 @@ describe('toEnvelope', () => {
   });
 
   it('keeps Session window conflicts on the structured temporary-failure contract', async () => {
-    const { SessionWindowConflictError } = await import('./browser/runtime/local-slab/session-manager.js');
+    const { SessionWindowConflictError } = await import('./browser/runtime/local-cloak/session-manager.js');
 
     expect(toEnvelope(new SessionWindowConflictError('page_1', 'session_a', 'session_b')).error)
       .toMatchObject({ code: 'SESSION_WINDOW_CONFLICT', exitCode: 75 });

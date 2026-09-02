@@ -116,7 +116,7 @@ describe('createProfile', () => {
     expect(createProfile('eval-a')).toEqual({ contextId: 'eval-a', alias: 'eval-a', created: true });
     expect(createProfile('eval-a')).toEqual({ contextId: 'eval-a', alias: 'eval-a', created: false });
     expect(loadProfileConfig().aliases['eval-a']).toBe('eval-a');
-    expect(fs.existsSync(path.join(configDir, 'cloak', 'profiles', 'eval-a'))).toBe(false);
+    expect(fs.existsSync(path.join(configDir, 'cloak', 'profiles', 'eval-a'))).toBe(true);
   });
 
   it('rejects an invalid alias', () => {
@@ -174,7 +174,7 @@ describe('setDefaultProfile membership', () => {
       setDefaultProfile('__audit_nope__', []);
     } catch (err) {
       expect((err as ArgumentError).message).toBe(
-        'No profile matches "__audit_nope__". No browser profiles are available.',
+        'No profile matches "__audit_nope__". No Cloak profiles are available.',
       );
       expect((err as ArgumentError).hint).toContain('webcmd profile list');
     }

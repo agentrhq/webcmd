@@ -56,11 +56,10 @@ describe('browserCommandCatalog', () => {
     expect(() => browserOptionValueParser('verify', 'trace')?.('invalid')).toThrow(/off, on, retain-on-failure/);
   });
 
-  it('allows either stable page selector for bind and limits run to program options', () => {
+  it('requires a stable page id for bind and limits run to program options', () => {
     const commands = new Map(browserCommandCatalog.map(command => [command.command, command]));
     expect(commands.get('bind')?.options).toEqual([
-      expect.objectContaining({ name: 'page', required: false }),
-      expect.objectContaining({ name: 'targetId', required: false }),
+      expect.objectContaining({ name: 'page', required: true }),
       expect.objectContaining({ name: 'verbose', type: 'boolean' }),
     ]);
     expect(commands.get('run')?.options.map(option => option.name)).toEqual([
@@ -72,9 +71,6 @@ describe('browserCommandCatalog', () => {
       'noSnapshotDiff',
       'verbose',
     ]);
-    expect(browserOptionFlags(commands.get('bind')!.options[1]!, 'bind')).toBe('--target-id <id>');
-    expect(browserOptionValueParser('bind', 'targetId')?.(' target-123 ')).toBe('target-123');
-    expect(() => browserOptionValueParser('bind', 'targetId')?.('   ')).toThrow(/non-empty id/);
   });
 
   it('includes snapshot as the read-only browser inspection command', () => {

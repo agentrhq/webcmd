@@ -3,11 +3,9 @@ import { EXIT_CODES } from './errors.js';
 import { log } from './logger.js';
 import { PKG_VERSION } from './version.js';
 import { createDaemonServer } from './daemon/server.js';
-import { loadWebcmdConfig } from './hosted/config.js';
-import { createConfiguredLocalBrowserRuntimeProvider } from './browser/runtime/configured-provider.js';
+import { LocalCloakRuntimeProvider } from './browser/runtime/local-cloak/provider.js';
 
-const config = loadWebcmdConfig();
-const provider = createConfiguredLocalBrowserRuntimeProvider(config.mode === 'local' ? config : undefined);
+const provider = new LocalCloakRuntimeProvider();
 const daemon = createDaemonServer(provider, { port: DEFAULT_DAEMON_PORT, host: '127.0.0.1', version: PKG_VERSION });
 
 daemon.listen().then(() => {

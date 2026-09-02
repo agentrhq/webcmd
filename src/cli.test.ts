@@ -1253,7 +1253,7 @@ name: 'search',
         usage: 'webcmd browser bind [options]',
         positionals: [],
       });
-      expect(bind.command_options.map((option: any) => option.name)).toEqual(['page', 'targetId', 'verbose', 'format', 'json']);
+      expect(bind.command_options.map((option: any) => option.name)).toEqual(['page', 'verbose', 'format', 'json']);
       expect(data.structured_help).toMatchObject({
         formats: ['yaml', 'json'],
         usage: 'webcmd browser --help -f yaml',
@@ -2214,17 +2214,13 @@ describe('browser raw session commands', () => {
     expect(mockListExistingBrowserTabs).toHaveBeenCalledWith('work-k7', {});
   });
 
-  it('binds an explicit stable page id or CDP target id', async () => {
+  it('binds only an explicit stable page id', async () => {
     const program = createProgram('', '');
 
     await program.parseAsync(['node', 'webcmd', '--session', 'work-k7', 'browser', 'bind', '--page', 'page-123']);
 
     expect(mockSendCommand).toHaveBeenCalledWith('bind', {
       session: 'work-k7', surface: 'browser', page: 'page-123',
-    });
-    await program.parseAsync(['node', 'webcmd', '--session', 'work-k7', 'browser', 'bind', '--target-id', 'target-123']);
-    expect(mockSendCommand).toHaveBeenLastCalledWith('bind', {
-      session: 'work-k7', surface: 'browser', targetId: 'target-123',
     });
     await expect(program.parseAsync(['node', 'webcmd', '--session', 'work-k7', 'browser', 'bind', '--index', '0']))
       .rejects.toThrow(/process\.exit unexpectedly called/);

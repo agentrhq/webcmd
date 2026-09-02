@@ -19,11 +19,4 @@ describe('cloak profile resolution', () => {
     expect(resolveCloakProfileDir('work', { baseDir: '/tmp/webcmd' }))
       .toBe(path.join('/tmp/webcmd', 'cloak', 'profiles', 'work'));
   });
-
-  it('isolates profiles for a custom browser binary', () => {
-    expect(resolveCloakProfileDir('default', {
-      baseDir: '/tmp/webcmd',
-      profileNamespace: 'chromiumfish',
-    })).toBe(path.join('/tmp/webcmd', 'chromiumfish', 'profiles', 'default'));
-  });
 });

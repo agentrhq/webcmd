@@ -29,7 +29,6 @@ describe('hosted config', () => {
     expect(loadWebcmdConfig({ env: { WEBCMD_CONFIG_DIR: tempDir } as NodeJS.ProcessEnv })).toEqual({
       mode: 'local',
       updatedAt: '1970-01-01T00:00:00.000Z',
-      browser: { kind: 'cloak' },
     });
   });
 
@@ -135,44 +134,8 @@ describe('hosted config', () => {
     expect(makeLocalConfig(new Date('2026-07-08T00:00:00.000Z'))).toEqual({
       mode: 'local',
       updatedAt: '2026-07-08T00:00:00.000Z',
-      browser: { kind: 'cloak' },
     });
     expect(defaultHostedApiBaseUrl({ WEBCMD_CLOUD_API_URL: 'https://cloud.example.com/' } as NodeJS.ProcessEnv))
       .toBe('https://cloud.example.com');
-  });
-
-  it('round-trips each local browser choice', async () => {
-    tempDir = await mkdtemp(join(tmpdir(), 'webcmd-config-browser-'));
-    const env = { WEBCMD_CONFIG_DIR: tempDir } as NodeJS.ProcessEnv;
-    const updatedAt = '2026-08-31T00:00:00.000Z';
-
-    for (const browser of [
-      { kind: 'cloak' } as const,
-      { kind: 'chrome', executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' } as const,
-      { kind: 'slab' } as const,
-      { kind: 'custom', executablePath: '/Applications/Chrome.app/Contents/MacOS/Google Chrome' } as const,
-    ]) {
-      saveWebcmdConfig({ mode: 'local', updatedAt, browser }, { env });
-      expect(loadWebcmdConfig({ env })).toEqual({ mode: 'local', updatedAt, browser });
-    }
-  });
-
-  it('defaults old or invalid local browser data to Cloak', () => {
-    expect(loadWebcmdConfig({
-      readFileSync: (() => '{"mode":"local","updatedAt":"2026-08-31T00:00:00.000Z"}') as never,
-    })).toMatchObject({ mode: 'local', browser: { kind: 'cloak' } });
-
-    for (const browser of [
-      { kind: 'custom' },
-      { kind: 'custom', executablePath: '' },
-      { kind: 'custom', executablePath: 'relative/browser' },
-      { kind: 'chrome' },
-      { kind: 'chrome', executablePath: 'relative/browser' },
-      { kind: 'other' },
-    ]) {
-      expect(loadWebcmdConfig({
-        readFileSync: (() => JSON.stringify({ mode: 'local', updatedAt: '2026-08-31T00:00:00.000Z', browser })) as never,
-      })).toMatchObject({ mode: 'local', browser: { kind: 'cloak' } });
-    }
   });
 });

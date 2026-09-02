@@ -35,8 +35,6 @@ export interface BrowserRuntimeCommand {
   id: string;
   action: BrowserRuntimeAction;
   page?: string;
-  /** Native CDP target id used only to explicitly acquire an observed SLAB page. */
-  targetId?: string;
   code?: string;
   session?: string;
   /** Raw human Session name. Normalized only by the local Session store. */

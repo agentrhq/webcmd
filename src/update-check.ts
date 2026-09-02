@@ -117,7 +117,7 @@ function buildUpdateNotices({ cliVersion, cache, now }: NoticeInputs): NoticeLin
   ) {
     lines.extension =
       `\n  Runtime update available: v${currentExtensionVersion} → v${latestExtensionVersion}\n` +
-      `  Update the ${PRODUCT_DISPLAY_NAME} Cloak runtime from official release artifacts.\n`;
+      `  Update the ${PRODUCT_DISPLAY_NAME} Cloak runtime from AgentR release artifacts.\n`;
   }
   return lines;
 }

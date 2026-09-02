@@ -8,6 +8,7 @@ export default defineConfig({
         test: {
           name: 'unit',
           include: ['src/**/*.test.ts'],
+          exclude: ['src/browser/runtime/local-cloak/browser-run.test.ts'],
           sequence: { groupOrder: 0 },
         },
       },
@@ -31,7 +32,6 @@ export default defineConfig({
             'tests/e2e/plugin-management.test.ts',
             'tests/e2e/adapter-authoring-parity.test.ts',
             'tests/e2e/article-download-pipeline.test.ts',
-            'tests/e2e/slab-alpha-install.test.ts',
             'tests/e2e/cloak-runtime.test.ts',
             'tests/e2e/cloak-session-concurrency.test.ts',
             'tests/e2e/browser-run.test.ts',

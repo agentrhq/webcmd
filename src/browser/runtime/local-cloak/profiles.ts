@@ -4,7 +4,6 @@ import os from 'node:os';
 
 export interface CloakProfileDirOptions {
   baseDir?: string;
-  profileNamespace?: string;
 }
 
 export function normalizeProfileId(value: string | undefined | null): string {
@@ -21,5 +20,5 @@ export function getWebcmdConfigDir(): string {
 
 export function resolveCloakProfileDir(profileId: string, opts: CloakProfileDirOptions = {}): string {
   const safeProfileId = normalizeProfileId(profileId);
-  return path.join(opts.baseDir ?? getWebcmdConfigDir(), opts.profileNamespace ?? 'cloak', 'profiles', safeProfileId);
+  return path.join(opts.baseDir ?? getWebcmdConfigDir(), 'cloak', 'profiles', safeProfileId);
 }

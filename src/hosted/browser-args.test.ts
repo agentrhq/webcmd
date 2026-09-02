@@ -38,23 +38,15 @@ describe('hosted browser argument surface', () => {
     expect(() => parse(['--session', 'session_work', 'browser', 'fork', 'linkedin/search'])).toThrow();
   });
 
-  it('requires exactly one supported page selector for bind', () => {
+  it('requires a stable page id for bind', () => {
     expect(parse(['--session', 'session_work', 'browser', 'bind', '--page', 'page-123'])).toMatchObject({
       commandName: 'bind',
       session: 'session_work',
       options: { page: 'page-123' },
     });
-    expect(parse(['--session', 'session_work', 'browser', 'bind', '--target-id', 'target-123'])).toMatchObject({
-      commandName: 'bind',
-      session: 'session_work',
-      options: { targetId: 'target-123' },
-    });
     expect(() => parse(['--session', 'session_work', 'browser', 'bind'])).toThrow(CommanderStructuralError);
     expect(() => parse(['--session', 'session_work', 'browser', 'bind', '--index', '0'])).toThrow(CommanderStructuralError);
     expect(() => parse(['--session', 'session_work', 'browser', 'bind', '--page', '   '])).toThrow(CommanderStructuralError);
-    expect(() => parse(['--session', 'session_work', 'browser', 'bind', '--target-id', '   '])).toThrow(CommanderStructuralError);
-    expect(() => parse(['--session', 'session_work', 'browser', 'bind', '--page', 'page-123', '--target-id', 'target-123']))
-      .toThrow(CommanderStructuralError);
   });
 
   it('accepts only run program options', () => {

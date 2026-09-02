@@ -135,7 +135,7 @@ export function browserOptionFlags(option: HostedArgumentContract, commandPath?:
   const longName = option.name.replace(/[A-Z]/g, character => `-${character.toLowerCase()}`);
   if (option.name === 'verbose') return '-v, --verbose';
   if (option.type === 'boolean') return `--${longName}`;
-  const valueName = option.name === 'page' || option.name === 'targetId' ? 'id'
+  const valueName = option.name === 'page' ? 'id'
     : option.name === 'file' ? 'path'
       : option.name === 'timeout' && commandPath === 'run' ? 'seconds'
         : option.name === 'maxOutput' ? 'characters'
@@ -152,11 +152,11 @@ export function browserOptionValueParser(
   commandPath: string,
   optionName: string,
 ): ((value: string) => unknown) | undefined {
-  if (commandPath === 'bind' && (optionName === 'page' || optionName === 'targetId')) {
+  if (commandPath === 'bind' && optionName === 'page') {
     return (value: string): string => {
-      const id = value.trim();
-      if (!id) throw new InvalidArgumentError(`--${optionName === 'targetId' ? 'target-id' : 'page'} must be a non-empty id`);
-      return id;
+      const page = value.trim();
+      if (!page) throw new InvalidArgumentError('--page must be a non-empty stable page id');
+      return page;
     };
   }
   if (optionName === 'snapshotMode' && commandPath === 'run') return runSnapshotModeParser;
@@ -180,8 +180,7 @@ export const browserCommandCatalog: readonly HostedBrowserCommandContract[] = [
   ], 'require-existing'),
   command('init', 'Generate an adapter scaffold. Does not take --session.', 'init', [adapterNamePositional], [], 'sessionless'),
   command('bind', 'Bind this session to an existing page', 'bind', [], [
-    option('page', 'Stable page id returned by tabs'),
-    option('targetId', 'Native CDP target id for an explicitly acquired page'),
+    option('page', 'Stable page id returned by tabs', { required: true }),
     verboseFlag(),
   ], 'require-existing'),
   command('verify', 'Verify an adapter against its fixture. Does not take --session.', 'verify', [adapterNamePositional], [
