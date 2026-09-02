@@ -47,6 +47,14 @@ export interface SlabReplacementIo {
   rm(path: string): Promise<void>;
 }
 
+export async function verifySlabApp(
+  io: Pick<SlabInstallerIo, 'execFile' | 'bundleId'>,
+  appPath: string,
+): Promise<void> {
+  await io.execFile('codesign', ['--verify', '--deep', '--strict', '--identifier', SLAB_BUNDLE_ID, appPath]);
+  if (await io.bundleId(appPath) !== SLAB_BUNDLE_ID) throw new Error('SLAB installer bundle identifier mismatch');
+}
+
 function parseManifest(value: unknown): SlabReleaseManifest {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('SLAB installer release manifest is invalid');
   const manifest = value as Partial<SlabReleaseManifest>;
@@ -169,8 +177,7 @@ export async function installSlabMacos(io: SlabInstallerIo = createSlabInstaller
     stagingPath = posix.join(applicationsDir, '.SLAB.app.webcmd-staging');
     await io.rm(stagingPath);
     await io.execFile('ditto', [posix.join(mountPath, 'SLAB.app'), stagingPath]);
-    await io.execFile('codesign', ['--verify', '--deep', '--strict', '--identifier', SLAB_BUNDLE_ID, stagingPath]);
-    if (await io.bundleId(stagingPath) !== SLAB_BUNDLE_ID) throw new Error('SLAB installer bundle identifier mismatch');
+    await verifySlabApp(io, stagingPath);
     await clearQuarantine(io, stagingPath);
     await io.replaceApp(stagingPath, appPath);
     stagingPath = undefined;

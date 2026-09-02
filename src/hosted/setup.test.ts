@@ -255,23 +255,29 @@ describe('webcmd setup', () => {
     expect(messages.join('')).toContain('https://www.google.com/chrome/');
   });
 
-  it('reinstalls an existing SLAB app through the signed installer path', async () => {
+  it('reuses an existing SLAB app without downloading it again', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-slab-reuse-'));
     const events: string[] = [];
+    const installSlabMacos = vi.fn();
 
     await expect(runHostedSetup({
       env: { WEBCMD_CONFIG_DIR: tempDir },
       argv: ['--mode', 'local', '--browser', 'slab'],
       isTTY: false,
       platform: 'darwin',
-      installSlabMacos: async () => { events.push('install'); return { platform: 'darwin', appPath: '/Applications/SLAB.app', executablePath: '/Applications/SLAB.app/Contents/MacOS/SLAB' }; },
+      homeDir: '/Users/me',
+      existsSync: candidate => candidate === '/Applications/SLAB.app/Contents/MacOS/SLAB',
+      installSlabMacos,
+      verifySlabApp: async () => { events.push('verify'); },
+      launchSlabApp: async () => { events.push('launch'); },
       inspectSlabStatus: async () => { events.push('hello'); return 'installed-running'; },
       fetchDaemonStatus: async () => null,
       saveConfig: (config, configIo) => { events.push('save'); saveWebcmdConfig(config, configIo); },
       write: () => undefined,
     })).resolves.toBe(0);
 
-    expect(events).toEqual(['install', 'hello', 'save']);
+    expect(installSlabMacos).not.toHaveBeenCalled();
+    expect(events).toEqual(['verify', 'launch', 'hello', 'save']);
   });
 
   it('rejects SLAB when it does not answer its control protocol after install', async () => {
@@ -284,6 +290,7 @@ describe('webcmd setup', () => {
       argv: ['--mode', 'local', '--browser', 'slab'],
       isTTY: false,
       platform: 'darwin',
+      existsSync: () => false,
       installSlabMacos: async () => ({ platform: 'darwin', appPath: '/Applications/SLAB.app', executablePath: '/Applications/SLAB.app/Contents/MacOS/SLAB' }),
       inspectSlabStatus: async () => 'installed-not-running',
       wait: async () => undefined,
@@ -303,6 +310,7 @@ describe('webcmd setup', () => {
       argv: ['--mode', 'local', '--browser', 'slab'],
       isTTY: false,
       platform: 'darwin',
+      existsSync: () => false,
       installSlabMacos: async () => { events.push('install'); return { platform: 'darwin', appPath: '/Applications/SLAB.app', executablePath: '/Applications/SLAB.app/Contents/MacOS/SLAB' }; },
       inspectSlabStatus: async () => { events.push('hello'); return 'installed-running'; },
       fetchDaemonStatus: async () => null,
@@ -323,6 +331,7 @@ describe('webcmd setup', () => {
       argv: ['--mode', 'local', '--browser', 'slab'],
       isTTY: false,
       platform: 'darwin',
+      existsSync: () => false,
       installSlabMacos: async () => { events.push('install'); return { platform: 'darwin', appPath: '/Applications/SLAB.app', executablePath: '/Applications/SLAB.app/Contents/MacOS/SLAB' }; },
       inspectSlabStatus: async () => { events.push('hello'); return statuses.shift() ?? 'installed-running'; },
       wait: async () => { events.push('wait'); },
@@ -346,6 +355,7 @@ describe('webcmd setup', () => {
       argv: ['--mode', 'local', '--browser', 'slab'],
       isTTY: false,
       platform: 'darwin',
+      existsSync: () => false,
       installSlabMacos: async () => ({ platform: 'darwin', appPath: '/Applications/SLAB.app', executablePath: '/Applications/SLAB.app/Contents/MacOS/SLAB' }),
       inspectSlabStatus: async () => statuses.shift() ?? 'installed-running',
       wait: async () => undefined,
@@ -365,6 +375,7 @@ describe('webcmd setup', () => {
       argv: ['--mode', 'local', '--browser', 'slab'],
       isTTY: false,
       platform: 'darwin',
+      existsSync: () => false,
       installSlabMacos: async () => { throw new Error('download failed'); },
       fetchDaemonStatus: async () => daemonStatus('cloak'),
       restartDaemon,

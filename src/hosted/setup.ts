@@ -1,6 +1,7 @@
 import { createInterface } from 'node:readline/promises';
 import { stdin as defaultInput, stdout as defaultOutput } from 'node:process';
 import { constants, existsSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { access, realpath, stat } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
 import { CLI_COMMAND } from '../brand.js';
@@ -10,8 +11,9 @@ import { writeToStream } from '../stream-write.js';
 import { fetchDaemonStatus, type DaemonStatus } from '../browser/daemon-transport.js';
 import { restartDaemon, type DaemonRestartResult } from '../browser/daemon-lifecycle.js';
 import { findInstalledGoogleChrome } from '../browser/google-chrome.js';
-import { createSlabInstallerIo, installSlabMacos } from '../slab/install.js';
-import type { SlabInstallation } from '../slab/installation.js';
+import { createSlabInstallerIo, installSlabMacos, verifySlabApp } from '../slab/install.js';
+import { findSlabInstallation, type SlabInstallation } from '../slab/installation.js';
+import { createSlabLaunchIo } from '../slab/launch.js';
 import { inspectSlabStatus, slabStatusHasHello, type SlabSetupStatus } from '../slab/status.js';
 import { HostedClient } from './client.js';
 import {
@@ -46,6 +48,8 @@ export interface SetupIo extends ConfigIo, HostedCredentialIo {
   stat?: (path: string) => Promise<{ isFile(): boolean }>;
   access?: (path: string, mode: number) => Promise<void>;
   installSlabMacos?: () => Promise<SlabInstallation>;
+  verifySlabApp?: (appPath: string) => Promise<void>;
+  launchSlabApp?: (appPath: string) => Promise<void>;
   inspectSlabStatus?: () => Promise<SlabSetupStatus>;
   wait?: (ms: number) => Promise<void>;
   fetchDaemonStatus?: () => Promise<DaemonStatus | null>;
@@ -243,7 +247,17 @@ async function validateLocalBrowser(
     return { kind: 'chrome', executablePath };
   }
   if ((io.platform ?? process.platform) !== 'darwin') throw new Error('SLAB setup is only supported on macOS.');
-  await (io.installSlabMacos ?? (() => installSlabMacos(createSlabInstallerIo(), { launchAfterInstall: true })))();
+  const installation = findSlabInstallation({
+    platform: io.platform ?? process.platform,
+    homeDir: io.homeDir ?? homedir(),
+    existsSync: io.existsSync ?? existsSync,
+  });
+  if (installation) {
+    await (io.verifySlabApp ?? (appPath => verifySlabApp(createSlabInstallerIo(), appPath)))(installation.appPath);
+    await (io.launchSlabApp ?? createSlabLaunchIo().launch)(installation.appPath);
+  } else {
+    await (io.installSlabMacos ?? (() => installSlabMacos(createSlabInstallerIo(), { launchAfterInstall: true })))();
+  }
   if (!await waitForSlabHello(io)) throw new Error('SLAB did not report its control protocol after launch.');
   return browser;
 }
