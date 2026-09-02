@@ -28,7 +28,7 @@ webcmd doctor
 webcmd skills add
 ```
 
-When `webcmd skills add` prompts, choose the `agents` provider. It links skills into `~/.agents/skills/` (user) or `.agents/skills/` (project), both of which Pi scans for skills on startup alongside its own `~/.pi/agent/skills/` and `.pi/skills/` directories. Pi then surfaces `webcmd-usage` and `webcmd-browser` as skills.
+When `webcmd skills add` prompts, choose the `agents` provider. It links skills into `~/.agents/skills/` (user) or `.agents/skills/` (project), both of which Pi scans for skills on startup alongside its own `~/.pi/agent/skills/` and `.pi/skills/` directories. Pi then surfaces `webcmd-browser` as a skill.
 
 To install into Pi's own skill directories instead, pass a custom path:
 
@@ -72,4 +72,3 @@ To remove one outright, delete its folder — for example `~/.pi/agent/skills/pi
 
 * [`start.md`](../../start.md) — common setup, [auth profiles and human handoff](../../start.md#auth-profiles-and-human-handoff), and [security](../../start.md#security).
 * [`webcmd-browser`](../../skills/webcmd-browser/SKILL.md) — the raw browser session surface.
-* [`webcmd-usage`](../../skills/webcmd-usage/SKILL.md) — adapter-first usage rules.

@@ -12,7 +12,7 @@ import * as readline from 'node:readline/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Command, Option } from 'commander';
 import { findPackageRoot, getBuiltEntryCandidates } from './package-paths.js';
-import { type CliCommand, getRegistry } from './registry.js';
+import { getRegistry } from './registry.js';
 // Side-effect import: registers client-owned `web fetch` in the core registry
 // so it reaches help, `list`, completions and manifests without a plugin.
 import './fetch/command.js';
@@ -63,16 +63,12 @@ import { BrowserRunError } from './browser/run/types.js';
 import { classifyCommandOrigin, formatCommandOrigin } from './command-origin.js';
 import { readOverrideRecords, removeOverrideRecords } from './override-provenance.js';
 import { clearDaemonRunContext, generateRunId, isUnknownOutcomeError, runWithDaemonRunContext } from './session-lease.js';
-import { createLocalSiteMemoryBackend, registerSiteCommands } from './site-memory/commands.js';
+import { createLocalLearningBackend, createLocalSiteMemoryBackend, registerSiteCommands } from './site-memory/commands.js';
 import { resolveAdapterSourcePath, splitAdapterCommandKey } from './adapter-source.js';
 
 const CLI_FILE = fileURLToPath(import.meta.url);
 const FOLLOW_POLL_MS = 1_000;
 const externalRootCommands = new WeakSet<Command>();
-
-function getBrowserCacheDir(): string {
-  return process.env.WEBCMD_CACHE_DIR || path.join(os.homedir(), '.webcmd', 'cache');
-}
 
 function parsePositiveIntOption(value: string | undefined, _label: string, fallback: number): number {
   const parsed = value === undefined ? fallback : Number.parseInt(value, 10);
@@ -326,144 +322,6 @@ export type SiteMemoryReport = {
   notes: { present: boolean; path: string };
 };
 
-export type SitemapAvailability = {
-  site: string;
-  available: true;
-  source: 'local' | 'global' | 'local+global';
-  hint: string;
-  paths: {
-    local?: string;
-    global?: string;
-  };
-};
-
-type SitemapHintState = {
-  seenSites: string[];
-  updatedAt: string;
-};
-
-type SitemapAvailabilityOptions = {
-  homeDir?: string;
-  packageRoot?: string;
-  registry?: Map<string, CliCommand>;
-  fileExists?: (candidate: string) => boolean;
-};
-
-const SITEMAP_HINT =
-  'Site sitemap available. For navigation context, use the webcmd-browser-sitemap skill; treat browser state as truth if it disagrees.';
-
-function siteNameCandidatesFromUrl(url: string, registry: Map<string, CliCommand> = getRegistry()): string[] {
-  let host: string;
-  try {
-    host = new URL(url).hostname.toLowerCase().replace(/^www\./, '');
-  } catch {
-    return [];
-  }
-
-  const scored = new Map<string, number>();
-  for (const command of registry.values()) {
-    if (!command.domain) continue;
-    let domainHost = command.domain.toLowerCase().trim();
-    try {
-      domainHost = new URL(domainHost.includes('://') ? domainHost : `https://${domainHost}`).hostname.toLowerCase();
-    } catch {
-      domainHost = domainHost.split('/')[0] ?? domainHost;
-    }
-    domainHost = domainHost.replace(/^www\./, '');
-    if (!domainHost) continue;
-    if (host === domainHost || host.endsWith(`.${domainHost}`)) {
-      scored.set(command.site, Math.max(scored.get(command.site) ?? 0, domainHost.length));
-    }
-  }
-
-  const registrySites = [...scored.entries()]
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .map(([site]) => site);
-
-  const hostParts = host.split('.').filter(Boolean);
-  const fallback = hostParts.length >= 2 ? hostParts[hostParts.length - 2] : hostParts[0];
-  return [...new Set([...registrySites, ...(fallback ? [fallback] : [])])];
-}
-
-function firstExistingSitemapPath(paths: string[], fileExists: (candidate: string) => boolean): string | undefined {
-  return paths.find((candidate) => fileExists(candidate));
-}
-
-function sitemapPathsForSite(site: string, opts: Required<Pick<SitemapAvailabilityOptions, 'homeDir' | 'packageRoot' | 'fileExists'>>): { local?: string; global?: string } {
-  const safeSite = site.replace(/[^a-zA-Z0-9_-]+/g, '-');
-  if (!safeSite) return {};
-  const localBase = path.join(opts.homeDir, '.webcmd', 'sites', safeSite);
-  return {
-    local: firstExistingSitemapPath([
-      path.join(localBase, 'sitemap'),
-      path.join(localBase, 'sitemap.md'),
-    ], opts.fileExists),
-    global: firstExistingSitemapPath([
-      path.join(opts.packageRoot, 'sitemaps', safeSite),
-      path.join(opts.packageRoot, 'sitemaps', `${safeSite}.md`),
-    ], opts.fileExists),
-  };
-}
-
-export function resolveSitemapAvailabilityForUrl(url: string, options: SitemapAvailabilityOptions = {}): SitemapAvailability | null {
-  const homeDir = options.homeDir ?? os.homedir();
-  const packageRoot = options.packageRoot ?? findPackageRoot(CLI_FILE);
-  const registry = options.registry ?? getRegistry();
-  const fileExists = options.fileExists ?? fs.existsSync;
-
-  for (const site of siteNameCandidatesFromUrl(url, registry)) {
-    const paths = sitemapPathsForSite(site, { homeDir, packageRoot, fileExists });
-    if (!paths.local && !paths.global) continue;
-    const source = paths.local && paths.global ? 'local+global' : paths.local ? 'local' : 'global';
-    return {
-      site,
-      available: true,
-      source,
-      hint: SITEMAP_HINT,
-      paths,
-    };
-  }
-  return null;
-}
-
-function getBrowserSitemapHintStatePath(scope: string): string {
-  const safeScope = scope.replace(/[^a-zA-Z0-9_-]+/g, '_');
-  return path.join(getBrowserCacheDir(), 'browser-sitemap-hints', `${safeScope}.json`);
-}
-
-function loadBrowserSitemapHintState(scope: string): SitemapHintState {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(getBrowserSitemapHintStatePath(scope), 'utf-8')) as SitemapHintState;
-    if (parsed && typeof parsed === 'object' && Array.isArray(parsed.seenSites)) {
-      return {
-        seenSites: parsed.seenSites.filter((site) => typeof site === 'string'),
-        updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : new Date(0).toISOString(),
-      };
-    }
-  } catch {
-    // First command in this browser session has no hint cache yet.
-  }
-  return { seenSites: [], updatedAt: new Date(0).toISOString() };
-}
-
-function markBrowserSitemapHintSeen(scope: string, site: string): void {
-  const state = loadBrowserSitemapHintState(scope);
-  if (!state.seenSites.includes(site)) state.seenSites.push(site);
-  const target = getBrowserSitemapHintStatePath(scope);
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.writeFileSync(target, JSON.stringify({ seenSites: state.seenSites, updatedAt: new Date().toISOString() }), 'utf-8');
-}
-
-function sitemapHintForBrowserUrl(url: string, scope: string, opts: { oncePerSession: boolean }): SitemapAvailability | null {
-  const sitemap = resolveSitemapAvailabilityForUrl(url);
-  if (!sitemap) return null;
-  if (!opts.oncePerSession) return sitemap;
-  const state = loadBrowserSitemapHintState(scope);
-  if (state.seenSites.includes(sitemap.site)) return null;
-  markBrowserSitemapHintSeen(scope, sitemap.site);
-  return sitemap;
-}
-
 export function checkSiteMemory(site: string): SiteMemoryReport {
   const siteDir = path.join(os.homedir(), '.webcmd', 'sites', site);
   const endpointsPath = path.join(siteDir, 'endpoints.json');
@@ -696,7 +554,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
     .name('webcmd')
     .description('Make any website your CLI. Zero setup. AI-powered.');
   configureRootCommandSurface(program);
-  registerSiteCommands(program, createLocalSiteMemoryBackend());
+  registerSiteCommands(program, createLocalSiteMemoryBackend(), undefined, {}, createLocalLearningBackend());
   const siteCmd = program.commands.find(command => command.name() === 'site')!;
   // Snapshot before applyRootSubcommandSummaries() rewrites .description() to a child-name listing.
   const originalSiteDescription = siteCmd.description();

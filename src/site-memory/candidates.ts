@@ -1,0 +1,471 @@
+import { randomUUID } from 'node:crypto';
+import { readdir, unlink } from 'node:fs/promises';
+import { join } from 'node:path';
+import { collectEnvironment } from './environment.js';
+import { openSitesRepository, type SitesRepository } from './git-store.js';
+import { containedRelativePath, listProductKeys, readProductFile, sitesRoot, writeProductFile, type LocalStoreOptions } from './local-store.js';
+import {
+  CANDIDATE_KINDS,
+  type Candidate,
+  type CandidateEnvironment,
+  type CandidateStatus,
+  type CandidateSummary,
+  type ProductManifest,
+} from './model.js';
+import { canonicalProductKey, parseProductManifest, resolveProduct } from './product-resolver.js';
+
+export const SEARCH_CANDIDATE_LIMIT = 20;
+
+const SECRET_KEY = /^(password|passwd|secret|token|cookie|cookies|authorization|api[_-]?key|set-cookie)$/i;
+const SECRET_TEXT = /(password\s*[:=]|secret\s*[:=]|api[_-]?key|authorization\s*:|bearer\s+\S+|cookie\s*[:=]|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)/i;
+const KINDS = new Set<string>(CANDIDATE_KINDS);
+const STATUSES = new Set<CandidateStatus>(['pending', 'ingested', 'rejected']);
+const CANDIDATE_FIELDS = new Set([
+  'schema_version', 'id', 'domain', 'hostname', 'observed_at', 'observed_date_utc',
+  'kind', 'claim', 'evidence', 'consequence', 'environment', 'status',
+  'evidence_role', 'memory_commit', 'reviewed_at', 'rejection_reason',
+]);
+const ENV_FIELDS = new Set(['machine', 'local_ip', 'public_ip', 'os', 'browser_version', 'webcmd_version']);
+const CALLER_ENV_FIELDS = new Set(['machine', 'localIp', 'publicIp', 'os', 'browserVersion', 'webcmdVersion']);
+
+export interface AddCandidateInput extends LocalStoreOptions {
+  product: string;
+  hostname?: string;
+  kind: string;
+  claim: string;
+  evidence: string;
+  consequence: string;
+  observedAt?: string;
+  environment?: Candidate['environment'];
+  browserVersion?: string;
+  webcmdVersion?: string;
+  fetch?: typeof fetch;
+}
+
+export async function addCandidate(input: AddCandidateInput): Promise<CandidateSummary> {
+  rejectSecrets(input);
+  if (!KINDS.has(input.kind)) throw new Error(`Invalid candidate kind: ${input.kind}`);
+  const product = canonicalProductKey(input.product);
+  const host = canonicalProductKey(input.hostname ?? input.product);
+  const observedAt = input.observedAt ?? new Date().toISOString();
+  const observed = new Date(observedAt);
+  if (Number.isNaN(observed.getTime())) throw new Error(`Invalid observedAt: ${observedAt}`);
+  const environment = input.environment === undefined
+    ? await collectEnvironment({
+      browserVersion: input.browserVersion,
+      webcmdVersion: input.webcmdVersion,
+      fetch: input.fetch,
+    })
+    : decodeCallerEnvironment(input.environment);
+  const id = `${compactUtc(observed)}-${randomUUID()}`;
+  const candidate: Candidate = {
+    schemaVersion: 1,
+    id,
+    domain: host.registrableDomain,
+    hostname: host.hostname,
+    observedAt,
+    observedDateUtc: observed.toISOString().slice(0, 10),
+    kind: input.kind,
+    claim: requiredText(input.claim, 'claim'),
+    evidence: requiredText(input.evidence, 'evidence'),
+    consequence: requiredText(input.consequence, 'consequence'),
+    environment,
+    status: 'pending',
+    evidenceRole: null,
+    memoryCommit: null,
+    reviewedAt: null,
+    rejectionReason: null,
+  };
+  const relative = candidatePath(id);
+  const repo = await openSitesRepository(input);
+  await repo.withRepositoryLock(async () => {
+    await assertCaptureAuthorized(product.key, host.key, input);
+    try {
+      await recoverInterruptedProvenance(product.key, repo, input);
+      await writeProductFile(product.key, relative, `${JSON.stringify(encodeCandidate(candidate), null, 2)}\n`, input);
+      await repo.commit([`${product.key}/${relative}`], `capture candidate ${id}`);
+    } catch (err) {
+      await unlinkProductFile(product.key, relative, input);
+      throw err;
+    }
+  });
+  return toSummary(candidate);
+}
+
+export async function searchCandidates(
+  product: string,
+  query: string,
+  limit = SEARCH_CANDIDATE_LIMIT,
+  opts: LocalStoreOptions = {},
+): Promise<CandidateSummary[]> {
+  const cap = boundedSearchLimit(limit);
+  const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const ranked = (await loadCandidates(product, opts))
+    .filter((candidate) => candidate.status === 'pending')
+    .map((candidate) => ({ candidate, score: fieldMatches(candidate, tokens) }))
+    .filter((entry) => tokens.length === 0 || entry.score > 0)
+    .sort((a, b) => b.score - a.score || a.candidate.observedAt.localeCompare(b.candidate.observedAt) || a.candidate.id.localeCompare(b.candidate.id));
+  return ranked.slice(0, cap).map((entry) => toSummary(entry.candidate));
+}
+
+export async function listCandidates(product: string, opts: LocalStoreOptions = {}): Promise<CandidateSummary[]> {
+  return (await loadCandidates(product, opts)).map(toSummary);
+}
+
+export async function showCandidate(product: string, id: string, opts: LocalStoreOptions = {}): Promise<Candidate> {
+  return readCandidateRecord(product, id, opts);
+}
+
+export async function readCandidateRecord(product: string, id: string, opts: LocalStoreOptions = {}): Promise<Candidate> {
+  const key = canonicalProductKey(product).key;
+  const body = await readProductFile(key, candidatePath(id), opts);
+  if (body === null) throw new Error(`Candidate ${id} was not found.`);
+  return parseCandidate(body, id);
+}
+
+export async function updateCandidateRecord(product: string, candidate: Candidate, opts: LocalStoreOptions = {}): Promise<void> {
+  const key = canonicalProductKey(product).key;
+  await writeProductFile(key, candidatePath(candidate.id), `${JSON.stringify(encodeCandidate(candidate), null, 2)}\n`, opts);
+}
+
+export async function recoverInterruptedProvenance(
+  product: string,
+  repo: SitesRepository,
+  opts: LocalStoreOptions = {},
+): Promise<void> {
+  const key = canonicalProductKey(product).key;
+  const head = await repo.revision();
+  if (!head) return;
+  const prefix = `${key}/candidates/`;
+  const recoverable: string[] = [];
+  for (const path of await repo.dirtyPaths(`${key}/candidates`)) {
+    if (!path.startsWith(prefix) || !path.endsWith('.json') || path.slice(prefix.length).includes('/')) continue;
+    const id = path.slice(prefix.length, -'.json'.length);
+    let candidate: Candidate;
+    try {
+      candidate = await readCandidateRecord(key, id, opts);
+    } catch {
+      continue;
+    }
+    const committed = await repo.showAtHead(path);
+    if (committed == null) continue;
+    let previous: Candidate;
+    try {
+      previous = parseCandidate(committed, id);
+    } catch {
+      continue;
+    }
+    if (!await isInterruptedProvenanceRecord(candidate, previous, repo)) continue;
+    recoverable.push(path);
+  }
+  if (recoverable.length === 0) return;
+  await repo.commit(recoverable, `checkpoint provenance ${key}`);
+}
+
+async function isInterruptedProvenanceRecord(
+  worktree: Candidate,
+  committed: Candidate,
+  repo: SitesRepository,
+): Promise<boolean> {
+  if (committed.status !== 'pending') return false;
+  if (!sameExceptProvenance(worktree, committed)) return false;
+  if (worktree.status === 'ingested') {
+    return worktree.memoryCommit !== null && await repo.isAncestor(worktree.memoryCommit);
+  }
+  return worktree.status === 'rejected';
+}
+
+function sameExceptProvenance(worktree: Candidate, committed: Candidate): boolean {
+  const left = encodeCandidate(worktree);
+  const right = encodeCandidate(committed);
+  for (const field of ['status', 'evidence_role', 'memory_commit', 'reviewed_at', 'rejection_reason']) {
+    delete left[field];
+    delete right[field];
+  }
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+async function assertCaptureAuthorized(productKey: string, hostname: string, opts: LocalStoreOptions): Promise<void> {
+  const resolution = resolveProduct(hostname, await loadManifests(opts));
+  if (resolution.status === 'provisional-fallback') {
+    throw new Error('Provisional parent fallback is read-only until classified.');
+  }
+  if (resolution.product.key !== productKey) {
+    throw new Error(`Candidate product must be ${resolution.product.key}.`);
+  }
+  const target = parseProductManifest(await readProductFile(productKey, 'manifest.json', opts));
+  if (!target || target.product.key !== productKey) {
+    throw new Error('Candidate capture requires a valid product manifest.');
+  }
+}
+
+async function loadManifests(opts: LocalStoreOptions): Promise<ProductManifest[]> {
+  const manifests: ProductManifest[] = [];
+  for (const key of await listProductKeys(opts)) {
+    const parsed = parseProductManifest(await readProductFile(key, 'manifest.json', opts));
+    if (parsed && parsed.product.key === key) manifests.push(parsed);
+  }
+  return manifests;
+}
+
+function candidatePath(id: string): string {
+  if (!id || id.includes('/') || id.includes('\\') || id === '.' || id === '..' || id.startsWith('.')) {
+    throw new Error(`Invalid site memory path: ${id}`);
+  }
+  return `candidates/${id}.json`;
+}
+
+async function loadCandidates(product: string, opts: LocalStoreOptions): Promise<Candidate[]> {
+  const key = canonicalProductKey(product).key;
+  const names = await candidateFileNames(key, opts);
+  const loaded = await Promise.all(names.map(async (name) => {
+    const body = await readProductFile(key, `candidates/${name}`, opts);
+    return body ? parseCandidate(body, name.slice(0, -'.json'.length)) : null;
+  }));
+  return loaded.filter((candidate): candidate is Candidate => candidate !== null);
+}
+
+async function candidateFileNames(productKey: string, opts: LocalStoreOptions): Promise<string[]> {
+  try {
+    return (await readdir(join(sitesRoot(opts), productKey, 'candidates'))).filter((name) => name.endsWith('.json')).sort();
+  } catch (err) {
+    if (isEnoent(err)) return [];
+    throw err;
+  }
+}
+
+function encodeCandidate(candidate: Candidate): Record<string, unknown> {
+  return {
+    schema_version: candidate.schemaVersion,
+    id: candidate.id,
+    domain: candidate.domain,
+    hostname: candidate.hostname,
+    observed_at: candidate.observedAt,
+    observed_date_utc: candidate.observedDateUtc,
+    kind: candidate.kind,
+    claim: candidate.claim,
+    evidence: candidate.evidence,
+    consequence: candidate.consequence,
+    environment: encodeEnvironment(candidate.environment),
+    status: candidate.status,
+    evidence_role: candidate.evidenceRole,
+    memory_commit: candidate.memoryCommit,
+    reviewed_at: candidate.reviewedAt,
+    rejection_reason: candidate.rejectionReason,
+  };
+}
+
+function encodeEnvironment(env: CandidateEnvironment): Record<string, string> {
+  const encoded: Record<string, string> = {};
+  if (env.machine !== undefined) encoded.machine = env.machine;
+  if (env.localIp !== undefined) encoded.local_ip = env.localIp;
+  if (env.publicIp !== undefined) encoded.public_ip = env.publicIp;
+  if (env.os !== undefined) encoded.os = env.os;
+  if (env.browserVersion !== undefined) encoded.browser_version = env.browserVersion;
+  if (env.webcmdVersion !== undefined) encoded.webcmd_version = env.webcmdVersion;
+  return encoded;
+}
+
+function parseCandidate(body: string, expectedId: string): Candidate {
+  let value: unknown;
+  try {
+    value = JSON.parse(body);
+  } catch {
+    throw new Error('Invalid candidate JSON.');
+  }
+  return decodeCandidate(value, expectedId);
+}
+
+function decodeCandidate(value: unknown, expectedId: string): Candidate {
+  const raw = knownObject(value, CANDIDATE_FIELDS, 'JSON');
+  const id = requiredString(raw.id, 'id');
+  if (id !== expectedId) throw new Error('Invalid candidate id mismatch.');
+  const kind = requiredString(raw.kind, 'kind');
+  if (!KINDS.has(kind)) throw new Error(`Invalid candidate kind: ${kind}`);
+  const status = requiredString(raw.status, 'status');
+  if (!STATUSES.has(status as CandidateStatus)) throw new Error(`Invalid candidate status: ${status}`);
+  if (raw.schema_version !== 1) throw new Error('Invalid candidate schema_version.');
+  const evidenceRole = raw.evidence_role === null || raw.evidence_role === 'supporting' || raw.evidence_role === 'dissenting'
+    ? raw.evidence_role
+    : null;
+  if (raw.evidence_role !== evidenceRole) throw new Error('Invalid candidate evidence_role.');
+  const observedAt = requiredString(raw.observed_at, 'observed_at');
+  const observed = new Date(observedAt);
+  if (Number.isNaN(observed.getTime())) throw new Error('Invalid candidate observed_at.');
+  const observedDateUtc = requiredString(raw.observed_date_utc, 'observed_date_utc');
+  if (observedDateUtc !== observed.toISOString().slice(0, 10)) throw new Error('Invalid candidate observed_date_utc.');
+  const hostname = requiredCanonicalHost(raw.hostname, 'hostname');
+  const domain = requiredCanonicalHost(raw.domain, 'domain');
+  const memoryCommit = nullableString(raw.memory_commit, 'memory_commit');
+  const reviewedAt = nullableString(raw.reviewed_at, 'reviewed_at');
+  const rejectionReason = nullableString(raw.rejection_reason, 'rejection_reason');
+  assertStatusMetadata(status as CandidateStatus, evidenceRole, memoryCommit, reviewedAt, rejectionReason);
+  return {
+    schemaVersion: 1,
+    id,
+    domain,
+    hostname,
+    observedAt,
+    observedDateUtc,
+    kind,
+    claim: requiredText(requiredString(raw.claim, 'claim'), 'claim'),
+    evidence: requiredText(requiredString(raw.evidence, 'evidence'), 'evidence'),
+    consequence: requiredText(requiredString(raw.consequence, 'consequence'), 'consequence'),
+    environment: decodeEnvironment(raw.environment),
+    status: status as CandidateStatus,
+    evidenceRole,
+    memoryCommit,
+    reviewedAt,
+    rejectionReason,
+  };
+}
+
+function requiredCanonicalHost(value: unknown, field: 'hostname' | 'domain'): string {
+  const text = requiredString(value, field);
+  let identity;
+  try {
+    identity = canonicalProductKey(text);
+  } catch {
+    throw new Error(`Invalid candidate ${field}.`);
+  }
+  const expected = field === 'domain' ? identity.registrableDomain : identity.hostname;
+  if (expected !== text) throw new Error(`Invalid candidate ${field}.`);
+  return text;
+}
+
+function assertStatusMetadata(
+  status: CandidateStatus,
+  evidenceRole: 'supporting' | 'dissenting' | null,
+  memoryCommit: string | null,
+  reviewedAt: string | null,
+  rejectionReason: string | null,
+): void {
+  if (status === 'pending') {
+    if (evidenceRole !== null || memoryCommit !== null || reviewedAt !== null || rejectionReason !== null) {
+      throw new Error('Invalid candidate status.');
+    }
+    return;
+  }
+  if (status === 'ingested') {
+    if ((evidenceRole !== 'supporting' && evidenceRole !== 'dissenting') || memoryCommit === null || reviewedAt === null || rejectionReason !== null) {
+      throw new Error('Invalid candidate status.');
+    }
+    return;
+  }
+  if (evidenceRole !== null || memoryCommit !== null || reviewedAt === null || rejectionReason === null) {
+    throw new Error('Invalid candidate status.');
+  }
+}
+
+function decodeEnvironment(value: unknown): CandidateEnvironment {
+  const raw = knownObject(value, ENV_FIELDS, 'environment');
+  return {
+    ...optionalString(raw, 'machine', 'machine'),
+    ...optionalString(raw, 'local_ip', 'localIp'),
+    ...optionalString(raw, 'public_ip', 'publicIp'),
+    ...optionalString(raw, 'os', 'os'),
+    ...optionalString(raw, 'browser_version', 'browserVersion'),
+    ...optionalString(raw, 'webcmd_version', 'webcmdVersion'),
+  };
+}
+
+function decodeCallerEnvironment(value: unknown): CandidateEnvironment {
+  const raw = knownObject(value, CALLER_ENV_FIELDS, 'environment');
+  return {
+    ...optionalString(raw, 'machine', 'machine'),
+    ...optionalString(raw, 'localIp', 'localIp'),
+    ...optionalString(raw, 'publicIp', 'publicIp'),
+    ...optionalString(raw, 'os', 'os'),
+    ...optionalString(raw, 'browserVersion', 'browserVersion'),
+    ...optionalString(raw, 'webcmdVersion', 'webcmdVersion'),
+  };
+}
+
+function knownObject(value: unknown, allowed: Set<string>, label: string): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`Invalid candidate ${label}.`);
+  const obj = value as Record<string, unknown>;
+  for (const key of Object.keys(obj)) {
+    if (SECRET_KEY.test(key)) throw new Error('Candidate evidence cannot include secret-bearing fields.');
+    if (!allowed.has(key)) throw new Error(`Invalid candidate ${label}.`);
+  }
+  return obj;
+}
+
+function optionalString(obj: Record<string, unknown>, from: string, to: keyof CandidateEnvironment): CandidateEnvironment {
+  const value = obj[from];
+  if (value === undefined) return {};
+  if (typeof value !== 'string' || !value) throw new Error('Invalid candidate environment.');
+  if (SECRET_TEXT.test(value)) throw new Error('Candidate evidence cannot include secret-bearing fields.');
+  return { [to]: value };
+}
+
+function requiredString(value: unknown, field: string): string {
+  if (typeof value !== 'string' || !value) throw new Error(`Invalid candidate ${field}.`);
+  return value;
+}
+
+function nullableString(value: unknown, field: string): string | null {
+  if (value === null) return null;
+  if (typeof value !== 'string' || !value) throw new Error(`Invalid candidate ${field}.`);
+  return value;
+}
+
+function boundedSearchLimit(limit: number): number {
+  if (!Number.isInteger(limit) || limit < 1) throw new Error(`Invalid search limit: ${limit}`);
+  return Math.min(limit, SEARCH_CANDIDATE_LIMIT);
+}
+
+function fieldMatches(candidate: Candidate, tokens: string[]): number {
+  const fields = [candidate.claim, candidate.kind, candidate.hostname, candidate.consequence].map((value) => value.toLowerCase());
+  let score = 0;
+  for (const token of tokens) {
+    for (const field of fields) {
+      if (field.includes(token)) score += 1;
+    }
+  }
+  return score;
+}
+
+function toSummary(candidate: Candidate): CandidateSummary {
+  return {
+    id: candidate.id,
+    domain: candidate.domain,
+    hostname: candidate.hostname,
+    observedAt: candidate.observedAt,
+    observedDateUtc: candidate.observedDateUtc,
+    kind: candidate.kind,
+    claim: candidate.claim,
+    consequence: candidate.consequence,
+    status: candidate.status,
+  };
+}
+
+function rejectSecrets(input: object): void {
+  for (const key of Object.keys(input)) {
+    if (SECRET_KEY.test(key)) throw new Error('Candidate evidence cannot include secret-bearing fields.');
+  }
+}
+
+function requiredText(value: string, field: string): string {
+  if (!value.trim()) throw new Error(`Invalid candidate ${field}.`);
+  if (SECRET_TEXT.test(value)) throw new Error('Candidate evidence cannot include secret-bearing fields.');
+  return value;
+}
+
+function compactUtc(date: Date): string {
+  return date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+}
+
+async function unlinkProductFile(productKey: string, path: string, opts: LocalStoreOptions): Promise<void> {
+  const productRoot = join(sitesRoot(opts), productKey);
+  const relative = containedRelativePath(productRoot, path);
+  try {
+    await unlink(join(productRoot, ...relative.split('/')));
+  } catch (err) {
+    if (!isEnoent(err)) throw err;
+  }
+}
+
+function isEnoent(err: unknown): boolean {
+  return err instanceof Error && 'code' in err && err.code === 'ENOENT';
+}

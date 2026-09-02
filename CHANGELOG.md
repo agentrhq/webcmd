@@ -17,6 +17,22 @@
 - Hosted command lists retain excluded commands as `LOCAL` rows and return a local-only error instead of plugin-install guidance.
 - Local auth commands initialize user CLI compatibility shims, and hosted auth uses the same native grammar, flags, choices, and help as local mode.
 
+## [0.7.11](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.10...webcmd-v0.7.11) (2026-08-31)
+
+### Fixes
+- Hosted help now includes `--workspace <id>`, `WEBCMD_WORKSPACE`, and the `session` and `site` command groups.
+- Unknown site commands now suggest using `webcmd browser init <site>/<command>` to author the missing command.
+- Hosted `webcmd list` output now reports command origins consistently as `builtin`, `plugin:<name>`, `local`, or `override:<plugin>`.
+- Fixed browser runs hanging after popup or download events fired. `page.waitForEvent('popup')` and `page.waitForEvent('download')` now resolve correctly, while event-specific timeouts are honored when no event occurs.
+
+### Adapters
+- Moved 123 community adapters to the standalone [`agentrhq/webcmd-plugins`](https://github.com/agentrhq/webcmd-plugins) repository without behavioral changes.
+- Preserved compatibility for existing official source identifiers by normalizing legacy `agentrhq/webcmd` sources to the new repository.
+- The standalone community plugin catalog requires Webcmd 0.7.11 or newer.
+
+### Contributors
+[@ankitranjan7](https://github.com/ankitranjan7)
+
 ## [0.7.10](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.9...webcmd-v0.7.10) (2026-08-28)
 
 ### Highlights

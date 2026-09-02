@@ -49,14 +49,16 @@
           {
             "group": "Agent Harnesses",
             "pages": [
-              "agents/cursor",
-              "agents/opencode",
+              "agents/aider",
               "agents/claude-code",
+              "agents/cline",
               "agents/codex-cli",
+              "agents/cursor",
+              "agents/custom-sdk",
               "agents/hermes",
-              "agents/pi",
               "agents/openclaw",
-              "agents/custom-sdk"
+              "agents/opencode",
+              "agents/pi"
             ]
           },
           {

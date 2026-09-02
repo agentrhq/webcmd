@@ -1,6 +1,6 @@
 ---
 title: Quickstart
-description: Install Webcmd and its agent skills, then complete your first task with webcmd-usage.
+description: Install Webcmd and its one bundled skill, webcmd-browser, then complete your first task.
 ---
 
 # Quickstart
@@ -12,8 +12,8 @@ In Codex, open **Plugins**, choose **Add plugin marketplace**, and enter either
 from that marketplace, then start a new task. On first use, the plugin installs
 the npm CLI automatically if `webcmd` is missing.
 
-The plugin includes all seven bundled Webcmd skills. Do not also add those
-skills with `webcmd skills add` in Codex.
+The plugin includes exactly one bundled skill, `webcmd-browser`. Do not also add
+that skill with `webcmd skills add` in Codex.
 
 ## Install the Claude Code Plugin
 
@@ -22,8 +22,8 @@ claude plugin marketplace add agentrhq/webcmd
 claude plugin install webcmd@webcmd
 ```
 
-This installs all seven bundled Webcmd skills. Do not also add those skills
-with `webcmd skills add` in Claude Code.
+This installs exactly one bundled skill, `webcmd-browser`. Do not also add that
+skill with `webcmd skills add` in Claude Code.
 
 ## Other Agents or Plugin-Free Setup
 
@@ -41,12 +41,12 @@ skills path.
 ## Ask Your Agent
 
 ```text
-Use the webcmd-usage skill to find the best way to research the latest discussions about browser automation across Hacker News and Reddit. Reuse existing adapters where possible and return a concise comparison with source links.
+Use webcmd to research the latest discussions about browser automation across Hacker News and Reddit. Reuse existing adapters where possible, or load `webcmd-browser` for live browser work, and return a concise comparison with source links.
 ```
 
 ## What Happens Next
 
-`webcmd-usage` first checks whether an existing adapter can complete the task. When a specialized workflow is needed, it chooses the relevant skill; then it returns the result or creates a reusable command for later agents.
+The agent first checks whether an existing adapter can complete the task. Adapter, search, fetch, and plugin commands remain on the CLI. When live browser work is needed, it loads `webcmd-browser`.
 
 ## Try Another Prompt
 

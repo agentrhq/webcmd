@@ -1,5 +1,5 @@
 ---
-title: OpenClaw Agent
+title: OpenClaw
 sidebarTitle: OpenClaw
 ---
 
@@ -28,7 +28,7 @@ webcmd doctor
 webcmd skills add
 ```
 
-When `webcmd skills add` prompts, choose the `agents` provider. It installs into `~/.agents/skills/` (user) or `.agents/skills/` (project), both of which OpenClaw checks for skills. OpenClaw then surfaces `webcmd-usage` and `webcmd-browser` as skills.
+When `webcmd skills add` prompts, choose the `agents` provider. It installs into `~/.agents/skills/` (user) or `.agents/skills/` (project), both of which OpenClaw checks for skills. OpenClaw then surfaces `webcmd-browser` as a skill.
 
 Restart the Gateway (or start a new session) after installing skills.
 
@@ -88,4 +88,3 @@ Or remove it entirely — CLI, `browser.request` gateway method, and agent tool 
 
 * [`start.md`](../../start.md) — common setup, [auth profiles and human handoff](../../start.md#auth-profiles-and-human-handoff), and [security](../../start.md#security).
 * [`webcmd-browser`](../../skills/webcmd-browser/SKILL.md) — the raw browser session surface.
-* [`webcmd-usage`](../../skills/webcmd-usage/SKILL.md) — adapter-first usage rules.

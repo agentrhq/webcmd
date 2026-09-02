@@ -87,9 +87,11 @@ webcmd skills add
 ```
 
 When prompted, choose Claude, Codex, another supported harness, or a custom
-skills path.
+skills path. That install is exactly one skill, `webcmd-browser`. Adapter,
+search, fetch, and plugin commands remain on the CLI; they are outside the
+default installed browser skill.
 
-In your agent harness, load or tag `webcmd-usage`, then describe the outcome you want.
+Load or tag `webcmd-browser` only for live browser work. Existing adapter, search, fetch, and plugin CLI operations do not require that skill.
 
 ```text
 Use webcmd to research the latest discussions about browser automation across Hacker News and Reddit, then return a concise comparison with source links.
@@ -159,6 +161,8 @@ Webcmd Cloud can run supported commands and browser sessions on hosted infrastru
 ## Community
 
 Site adapters live in [`agentrhq/webcmd-plugins`](https://github.com/agentrhq/webcmd-plugins). Search and install them with:
+
+Use Webcmd 0.7.11 or newer for compatibility with the standalone plugin catalog.
 
 ```bash
 webcmd plugin search <site> -f json

@@ -25,7 +25,7 @@ claude plugin marketplace add agentrhq/webcmd
 claude plugin install webcmd@webcmd
 ```
 
-This installs all seven bundled Webcmd skills. Do not also add those skills with `webcmd skills add`; running both leaves two copies that can sit at different versions.
+This installs exactly one bundled skill, `webcmd-browser`. Do not also add that skill with `webcmd skills add`; running both leaves two copies that can sit at different versions.
 
 Plugin updates are version-gated, not commit-gated. Run `claude plugin update webcmd@webcmd` to pick up a new release; it is separate from `webcmd update`, which upgrades only the npm CLI.
 
@@ -39,7 +39,7 @@ webcmd doctor
 webcmd skills add
 ```
 
-When `webcmd skills add` prompts, choose the `claude` provider. It installs into `~/.claude/skills/` (user) or `.claude/skills/` (project), which Claude Code reads on startup. Claude Code then surfaces `webcmd-usage` and `webcmd-browser` as skills when a task matches their descriptions.
+When `webcmd skills add` prompts, choose the `claude` provider. It installs into `~/.claude/skills/` (user) or `.claude/skills/` (project), which Claude Code reads on startup. Claude Code then surfaces `webcmd-browser` as a skill when a task matches its description.
 
 Restart Claude Code (or start a new session) after installing skills.
 
@@ -94,4 +94,3 @@ Denying these tools does not affect the Bash tool, which is how `webcmd` is driv
 
 * [`start.md`](../../start.md) — common setup, [auth profiles and human handoff](../../start.md#auth-profiles-and-human-handoff), and [security](../../start.md#security).
 * [`webcmd-browser`](../../skills/webcmd-browser/SKILL.md) — the raw browser session surface.
-* [`webcmd-usage`](../../skills/webcmd-usage/SKILL.md) — adapter-first usage rules.

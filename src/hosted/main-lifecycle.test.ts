@@ -197,18 +197,10 @@ describe('hosted CLI process lifecycle', () => {
     const body = JSON.parse(result.stdout) as {
       skills: Array<{ name: string; stableLink: string; destination?: string }>;
     };
-    expect(body.skills.map(skill => skill.name)).toEqual([
-      'smart-search',
-      'webcmd-adapter-author',
-      'webcmd-autofix',
-      'webcmd-browser',
-      'webcmd-browser-sitemap',
-      'webcmd-sitemap-author',
-      'webcmd-usage',
-    ]);
+    expect(body.skills.map(skill => skill.name)).toEqual(['webcmd-browser']);
     expect(body.skills.every(skill => skill.destination?.startsWith(installDir))).toBe(true);
-    await expect(readFile(path.join(installDir, 'webcmd-usage', 'SKILL.md'), 'utf8'))
-      .resolves.toContain('webcmd-usage');
+    await expect(readFile(path.join(installDir, 'webcmd-browser', 'SKILL.md'), 'utf8'))
+      .resolves.toContain('webcmd-browser');
     await expect(readFile(fixture.discoverySentinel, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
     expect(fixture.requests).toEqual([]);
   }, 20_000);

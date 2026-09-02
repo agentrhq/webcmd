@@ -70,7 +70,7 @@ vi.mock('node:child_process', async () => {
 });
 
 import { handleProgramParseError } from './cli-error-report.js';
-import { createProgram, findPackageRoot, loadAntigravityServe, normalizeVerifyRows, renderVerifyPreview, resolveBrowserVerifyInvocation, resolveSitemapAvailabilityForUrl, selectFreshByTimestamp } from './cli.js';
+import { createProgram, findPackageRoot, loadAntigravityServe, normalizeVerifyRows, renderVerifyPreview, resolveBrowserVerifyInvocation, selectFreshByTimestamp } from './cli.js';
 
 const realHome = process.env.HOME;
 const realConfigDir = process.env.WEBCMD_CONFIG_DIR;
@@ -1549,71 +1549,22 @@ describe('selectFreshByTimestamp', () => {
   });
 });
 
-describe('resolveSitemapAvailabilityForUrl', () => {
-  function registryFor(site: string, domain: string): Map<string, any> {
-    return new Map([[`${site}:read`, {
-      site,
-      name: 'read',
-      access: 'read',
-      description: 'read',
-      domain,
-      browser: false,
-      args: [],
-    }]]);
-  }
-
-  it('detects local sitemap overlays using adapter registry domain matches', () => {
-    const homeDir = path.join(os.tmpdir(), 'webcmd-sitemap-home');
-    const packageRoot = path.join(os.tmpdir(), 'webcmd-sitemap-package');
-    const localSitemap = path.join(homeDir, '.webcmd', 'sites', 'hackernews', 'sitemap');
-    const exists = new Set([localSitemap]);
-
-    const report = resolveSitemapAvailabilityForUrl('https://news.ycombinator.com/item?id=1', {
-      homeDir,
-      packageRoot,
-      registry: registryFor('hackernews', 'news.ycombinator.com'),
-      fileExists: (candidate) => exists.has(candidate),
-    });
-
-    expect(report).toMatchObject({
-      site: 'hackernews',
-      available: true,
-      source: 'local',
-      paths: { local: localSitemap },
-    });
-    expect(report?.hint).toContain('webcmd-browser-sitemap');
-  });
-
-  it('reports global+local when both sitemap layers exist', () => {
-    const homeDir = path.join(os.tmpdir(), 'webcmd-sitemap-home');
-    const packageRoot = path.join(os.tmpdir(), 'webcmd-sitemap-package');
-    const localSitemap = path.join(homeDir, '.webcmd', 'sites', 'twitter', 'sitemap.md');
-    const globalSitemap = path.join(packageRoot, 'sitemaps', 'twitter');
-    const exists = new Set([localSitemap, globalSitemap]);
-
-    const report = resolveSitemapAvailabilityForUrl('https://x.com/webcmd', {
-      homeDir,
-      packageRoot,
-      registry: registryFor('twitter', 'x.com'),
-      fileExists: (candidate) => exists.has(candidate),
-    });
-
-    expect(report).toMatchObject({
-      site: 'twitter',
-      source: 'local+global',
-      paths: { local: localSitemap, global: globalSitemap },
-    });
-  });
-
-  it('returns null when no sitemap layer exists', () => {
-    const report = resolveSitemapAvailabilityForUrl('https://example.com/', {
-      homeDir: path.join(os.tmpdir(), 'webcmd-sitemap-home'),
-      packageRoot: path.join(os.tmpdir(), 'webcmd-sitemap-package'),
-      registry: new Map(),
-      fileExists: () => false,
-    });
-
-    expect(report).toBeNull();
+describe('local learning command registration', () => {
+  it('registers site memory context, candidate, and checkpoint on the local program', () => {
+    const program = createProgram('', '');
+    for (const path of [
+      ['site', 'memory', 'context'],
+      ['site', 'memory', 'candidate', 'add'],
+      ['site', 'memory', 'candidate', 'search'],
+      ['site', 'memory', 'candidate', 'show'],
+      ['site', 'memory', 'candidate', 'list'],
+      ['site', 'memory', 'checkpoint'],
+      ['site', 'memory', 'classify'],
+    ]) {
+      let command: ReturnType<typeof createProgram> | undefined = program;
+      for (const segment of path) command = command?.commands.find(child => child.name() === segment) as typeof program | undefined;
+      expect(command, path.join(' ')).toBeDefined();
+    }
   });
 });
 

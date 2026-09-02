@@ -9,8 +9,6 @@ import { addWebcmdSkills, listWebcmdSkills, removeWebcmdSkills, updateWebcmdSkil
 function makePackageRoot(label = 'current'): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), `webcmd-skills-${label}-`));
   fs.mkdirSync(path.join(root, 'skills', 'webcmd-browser'), { recursive: true });
-  fs.mkdirSync(path.join(root, 'skills', 'webcmd-autofix'), { recursive: true });
-  fs.mkdirSync(path.join(root, 'skills', 'smart-search'), { recursive: true });
   fs.writeFileSync(path.join(root, 'package.json'), '{"name":"@agentrhq/webcmd"}\n');
   fs.writeFileSync(path.join(root, 'skills', 'webcmd-browser', 'SKILL.md'), [
     '---',
@@ -24,20 +22,6 @@ function makePackageRoot(label = 'current'): string {
     'Body.',
     '',
   ].join('\n'));
-  fs.writeFileSync(path.join(root, 'skills', 'webcmd-autofix', 'SKILL.md'), [
-    '---',
-    'name: webcmd-autofix',
-    'description: Fix adapters: keep scope narrow',
-    '---',
-    '',
-  ].join('\n'));
-  fs.writeFileSync(path.join(root, 'skills', 'smart-search', 'SKILL.md'), [
-    '---',
-    'name: smart-search',
-    'description: Search skill',
-    '---',
-    '',
-  ].join('\n'));
   return root;
 }
 
@@ -49,47 +33,63 @@ function bundledSkill(name: string): string {
   return fs.readFileSync(path.join(process.cwd(), 'skills', name, 'SKILL.md'), 'utf8');
 }
 
+function bundledReference(name: string): string {
+  const file = path.join(process.cwd(), 'skills', 'webcmd-browser', 'references', name);
+  return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+}
+
+const RETIRED_SKILLS = [
+  'smart-search',
+  'webcmd-adapter-author',
+  'webcmd-autofix',
+  'webcmd-browser-sitemap',
+  'webcmd-sitemap-author',
+  'webcmd-usage',
+] as const;
+
+const PRODUCT_ROOTS = [
+  'src',
+  'scripts',
+  'skills',
+  'mcp-skills',
+  'skill-src',
+  'docs',
+  'README.md',
+  'PRIVACY.md',
+  '.codex-plugin',
+  'benchmarks',
+  'start.md',
+  'Makefile',
+];
+
+function productFiles(): string[] {
+  const files: string[] = [];
+  const collect = (absolute: string) => {
+    const stat = fs.statSync(absolute);
+    if (stat.isFile()) {
+      if (/\.(?:ts|mjs|js|md|mdx|json|py)$/.test(absolute) || path.basename(absolute) === 'Makefile') files.push(absolute);
+      return;
+    }
+    for (const entry of fs.readdirSync(absolute, { withFileTypes: true })) {
+      if (entry.name === 'node_modules' || entry.name === 'dist') continue;
+      collect(path.join(absolute, entry.name));
+    }
+  };
+  for (const root of PRODUCT_ROOTS) {
+    const absolute = path.join(process.cwd(), root);
+    if (fs.existsSync(absolute)) collect(absolute);
+  }
+  return files;
+}
+
+function withoutRetiredList(file: string, text: string): string {
+  if (file.endsWith(`${path.sep}skills.test.ts`)) {
+    return text.replace(/const RETIRED_SKILLS = \[[\s\S]*?\] as const;/, '');
+  }
+  return text;
+}
+
 describe('webcmd skills content', () => {
-  it('keeps smart search on live discovery and explicit browser Sessions', () => {
-    const skill = bundledSkill('smart-search');
-    const browser = bundledSkill('webcmd-browser');
-    const skills = [skill, browser];
-    const sessionId = 'work-project-k7';
-    const sessionWorkflow = [
-      'webcmd --profile work session create "Work Project"',
-      `webcmd --profile work --session ${sessionId} browser run --stdin`,
-      `webcmd --profile work --session ${sessionId} browser snapshot --snapshot-mode read`,
-      `webcmd --profile work session close ${sessionId}`,
-    ];
-    expect(skill).toContain('webcmd list --tag search -f json');
-    expect(skill).toContain('webcmd plugin search');
-    expect(skill).toContain('webcmd plugin install');
-    expect(skill).toContain('webcmd web fetch --url');
-    expect(skill).toContain('first-choice Webcmd fetch path');
-    expect(skill).toContain('FETCH_BLOCKED');
-    expect(skill).toContain('FETCH_REQUIRES_BROWSER');
-    for (const guide of skills) {
-      const normalizedGuide = guide.replaceAll(/\\\n\s*/g, ' ').replaceAll(/ {2,}/g, ' ');
-      for (const command of sessionWorkflow) {
-        expect(normalizedGuide).toContain(command);
-      }
-      expect(guide).toMatch(/web fetch.*(?:remains|runs).*local/i);
-      expect(guide).toMatch(/web fetch.*never opens a browser/i);
-      expect(guide).toMatch(/local.*Cloak[\s\S]{0,160}hosted.*Webcmd Cloud.*Browser Use/i);
-      expect(guide).not.toMatch(/fetch-browser|web read|--browser/i);
-    }
-    expect(skill).toContain('Search Summary');
-    expect(skill).toMatch(/at most three.*plugin/i);
-    expect(skill).toMatch(/up to five.*candidate/i);
-    expect(skill).toMatch(/three.*URL.*default/i);
-    expect(skill).toMatch(/two.*browser.*Session/i);
-    expect(skill).toContain('## Site-named fast path');
-    expect(skill).toMatch(/cost order is mandatory when the request does not name a site/i);
-    expect(skill).not.toContain('references/sources-');
-    for (const name of ['ai', 'info', 'media', 'other', 'shopping', 'social', 'tech', 'travel']) {
-      expect(fs.existsSync(path.join(process.cwd(), 'skills', 'smart-search', 'references', `sources-${name}.md`))).toBe(false);
-    }
-  });
   it('keeps bundled skill frontmatter valid yaml', () => {
     const skillsRoot = path.join(process.cwd(), 'skills');
     const skillNames = fs.readdirSync(skillsRoot, { withFileTypes: true })
@@ -107,13 +107,9 @@ describe('webcmd skills content', () => {
   it('lists bundled skills', () => {
     const root = makePackageRoot();
 
-    expect(listWebcmdSkills(root).map((skill) => skill.name)).toEqual([
-      'smart-search',
-      'webcmd-autofix',
-      'webcmd-browser',
-    ]);
-    expect(listWebcmdSkills(root).find((skill) => skill.name === 'webcmd-autofix')?.description)
-      .toBe('Fix adapters: keep scope narrow');
+    expect(listWebcmdSkills(root).map((skill) => skill.name)).toEqual(['webcmd-browser']);
+    expect(listWebcmdSkills(root)[0]?.description).toBe('Browser control skill current');
+    expect(listWebcmdSkills(process.cwd()).map((skill) => skill.name)).toEqual(['webcmd-browser']);
   });
 
   it('keeps the expected installable skill set', () => {
@@ -122,82 +118,188 @@ describe('webcmd skills content', () => {
       .map((entry) => entry.name)
       .sort();
 
-    expect(skills).toEqual([
-      'smart-search',
-      'webcmd-adapter-author',
-      'webcmd-autofix',
-      'webcmd-browser',
-      'webcmd-browser-sitemap',
-      'webcmd-sitemap-author',
-      'webcmd-usage',
-    ]);
+    expect(skills).toEqual(['webcmd-browser']);
   });
 
-  it('enforces mode-neutral authentication and human handoff policy', () => {
-    const usage = bundledSkill('webcmd-usage');
-    const autofix = bundledSkill('webcmd-autofix');
-    const author = bundledSkill('webcmd-adapter-author');
-    const skills = [usage, autofix, author];
-    const handoffSkills = [usage, autofix];
-    const autofixAuthRequired = autofix.match(/^- \*\*`AUTH_REQUIRED`\*\*[\s\S]*?(?=\n- \*\*)/m)?.[0] ?? '';
-    const autofixAuthRequiredRow = autofix.split('\n')
-      .find((line) => line.startsWith('| AUTH_REQUIRED |')) ?? '';
-
-    expect(usage).toContain('AUTH_REQUIRED');
-    expect(usage).toContain('action_required');
-    expect(autofix).toContain('webcmd <site> login');
-    expect(author).toContain('registerSiteAuthCommands');
-    for (const skill of handoffSkills) {
-      expect(skill).toContain('handoff.status');
-      expect(skill).toContain('handoff.viewUrl');
-      expect(skill).toContain('handoff.verifyCommand');
-      expect(skill).toContain('Webcmd browser:');
-      expect(skill).not.toMatch(/\bhosted\b|\blocal mode\b|\blocally\b/i);
-    }
-    for (const skill of [usage]) {
-      expect(skill).toContain('already_logged_in');
-      expect(skill).toContain('in_progress');
-      expect(skill).toContain('action_url');
-      expect(skill).toContain('view_url');
-      expect(skill).toMatch(/in_progress[^\n]*(?:do not ask the user|do not wait for user confirmation)/i);
-      expect(skill).toMatch(/(?:action_url|view_url|handoff\.viewUrl|Webcmd browser:)[\s\S]{0,300}user/i);
-    }
-    for (const skill of skills) {
-      expect(skill).toContain('action_required');
-      expect(skill).toContain('verify_command');
-      expect(skill).toMatch(/verify_command[\s\S]{0,250}verification must succeed[\s\S]{0,250}retry/i);
-      expect(skill).toMatch(/verify_command[\s\S]{0,250}user[\s\S]{0,250}(?:done|complet)/i);
-      expect(skill).toMatch(/CAPTCHA[\s\S]{0,250}(?:human handoff|stop(?:s)? automation)/i);
-      expect(skill).toMatch(/(?:must not|never).*?(?:password|secret|credential)/i);
-    }
-    for (const skill of [usage, autofix]) {
-      expect(skill).toMatch(/(?:no (?:site )?login command|without a verifier)[\s\S]{0,500}fresh browser state[\s\S]{0,500}(?:identity check|post-action state)[\s\S]{0,250}before (?:any )?retry/i);
-    }
-    expect(autofixAuthRequired).toMatch(/if (?:a|the) site login command exists[\s\S]*webcmd <site> login[\s\S]*returned `verify_command`[\s\S]*verification must succeed[\s\S]*retry/i);
-    expect(autofixAuthRequired).toMatch(/no site login command[\s\S]*stop (?:browser )?writes[\s\S]*visible browser[\s\S]*fresh browser state[\s\S]*(?:identity check|post-action state)[\s\S]*before retry[\s\S]*report alone is not verification/i);
-    expect(autofixAuthRequiredRow).toMatch(/conditional[^|]*Safety Boundaries|no site login command/i);
-    expect(autofix).toMatch(/CAPTCHA[\s\S]{0,250}stop automation[\s\S]{0,250}verification must succeed/i);
-  });
-
-  it('teaches the run-first Playwright lifecycle and preserves the adapter API boundary', () => {
+  it('triggers on live browser tasks and routes detail to exactly four references', () => {
     const browser = bundledSkill('webcmd-browser');
-    const usage = bundledSkill('webcmd-usage');
-    const author = bundledSkill('webcmd-adapter-author');
-    const browserRunReference = fs.readFileSync(
-      path.join(
-        process.cwd(),
-        'skills',
-        'webcmd-browser',
-        'references',
-        'browser-run-playwright.md',
-      ),
-      'utf8',
-    );
-    const siteReconReference = fs.readFileSync(
-      path.join(process.cwd(), 'skills', 'webcmd-adapter-author', 'references', 'site-recon.md'),
-      'utf8',
-    );
-    expect(usage).toMatch(/existing adapter command first[\s\S]{0,220}load `webcmd-browser`[\s\S]{0,120}root `--session <session-id>`/i);
+    const end = browser.indexOf('\n---', 4);
+    const frontmatter = yaml.load(browser.slice(4, end)) as { description?: string };
+    const refs = fs.readdirSync(path.join(process.cwd(), 'skills', 'webcmd-browser', 'references')).sort();
+
+    expect(frontmatter.description).toMatch(/live browser/i);
+    expect(frontmatter.description).not.toMatch(/adapter|plugin|search|fetch|repair|router/i);
+    expect(refs).toEqual([
+      'browser-run-playwright.md',
+      'candidate-schema.md',
+      'git-lifecycle.md',
+      'sitemap-memory.md',
+    ]);
+    expect(browser).toContain('references/browser-run-playwright.md');
+    expect(browser).toContain('references/candidate-schema.md');
+    expect(browser).toContain('references/git-lifecycle.md');
+    expect(browser).toContain('references/sitemap-memory.md');
+    for (const retired of RETIRED_SKILLS) {
+      expect(browser).not.toContain(retired);
+    }
+  });
+
+  it('requires site memory context before any live browser action', () => {
+    const browser = bundledSkill('webcmd-browser');
+    const contextAt = browser.indexOf('webcmd site memory context');
+    const runAt = browser.indexOf('browser run');
+    const snapshotAt = browser.indexOf('browser snapshot');
+    const tabsAt = browser.indexOf('browser tabs');
+
+    expect(browser).toContain('webcmd site memory context');
+    expect(browser).toContain('--task-id');
+    expect(contextAt).toBeGreaterThanOrEqual(0);
+    expect(contextAt).toBeLessThan(runAt);
+    expect(contextAt).toBeLessThan(snapshotAt);
+    expect(contextAt).toBeLessThan(tabsAt);
+  });
+
+  it('teaches selective candidates, no trivial capture, immediate warnings, and the candidate schema', () => {
+    const schema = bundledReference('candidate-schema.md');
+    const browser = bundledSkill('webcmd-browser');
+
+    expect(browser).toContain('webcmd site memory candidate add');
+    expect(schema).toContain('action_space');
+    expect(schema).toContain('better_path');
+    expect(schema).toContain('access');
+    expect(schema).toContain('high_consequence');
+    expect(schema).toContain('repeated_mistake');
+    expect(schema).toContain('--claim');
+    expect(schema).toContain('--evidence');
+    expect(schema).toContain('--consequence');
+    expect(schema).toMatch(/high_consequence[\s\S]{0,240}immediate/i);
+    expect(schema).toMatch(/trivial|no-op/i);
+    expect(schema).toMatch(/do not (?:capture|record)|never (?:capture|record)/i);
+    expect(schema).toMatch(/secret/i);
+    expect(schema).not.toContain('trivial_success');
+  });
+
+  it('teaches post-capture inspection and ingestion judgment', () => {
+    const schema = bundledReference('candidate-schema.md');
+
+    expect(schema).toMatch(/after capture[\s\S]{0,120}(?:search|inspect)|(?:search|inspect)[\s\S]{0,120}after capture/i);
+    expect(schema).toMatch(/semantically related pending/i);
+    expect(schema).toContain('observed_date_utc');
+    expect(schema).toMatch(/two distinct/i);
+    expect(schema).toMatch(/judgment[\s\S]{0,80}not automatic|not automatic[\s\S]{0,80}judgment/i);
+    expect(schema).toMatch(/high_consequence[\s\S]{0,220}silent/i);
+    expect(schema).toMatch(/conflict[\s\S]{0,180}later[- ]date/i);
+    expect(schema).toContain('direct_correction');
+    expect(schema).toMatch(/factual memory[\s\S]{0,80}stale|stale[\s\S]{0,80}factual memory/i);
+    expect(schema).toMatch(/inferred[\s\S]{0,80}(?:causal|risk)[\s\S]{0,80}remain candidates/i);
+    expect(schema).toContain('evidenceRole');
+    expect(schema).toMatch(/supporting[\s\S]{0,60}dissenting|dissenting[\s\S]{0,60}supporting/i);
+    expect(schema).toMatch(/reject only/i);
+    expect(schema).toMatch(/wrong[\s\S]{0,40}transient[\s\S]{0,40}private[\s\S]{0,40}useless/i);
+    expect(schema).toMatch(/unrelated[\s\S]{0,40}pending/i);
+  });
+
+  it('keeps normal task output silent about routine memory I/O', () => {
+    const browser = bundledSkill('webcmd-browser');
+    const body = browser.replace(/^---[\s\S]*?---\s*/, '');
+
+    expect(browser).toMatch(/task-focused/i);
+    expect(browser).toMatch(/do not routinely announce/i);
+    expect(browser).toMatch(/memory reads|reads, writes, or checkpoints/i);
+    expect(browser).toMatch(/request[\s\S]{0,80}verbose[\s\S]{0,80}retention failure|verbose[\s\S]{0,80}retention failure/i);
+    expect(body.split(/\s+/).filter(Boolean).length).toBeLessThan(2300);
+  });
+
+  it('names per-reference triggers, classify-before-write, and the 500/200 rewrite rule', () => {
+    const browser = bundledSkill('webcmd-browser');
+    const sitemap = bundledReference('sitemap-memory.md');
+    const schema = bundledReference('candidate-schema.md');
+    const git = bundledReference('git-lifecycle.md');
+
+    expect(browser).toMatch(/sitemap-memory\.md[\s\S]{0,220}(?:provisional-fallback|classif|draftPath)/i);
+    expect(browser).toMatch(/candidate-schema\.md[\s\S]{0,220}(?:qualifying|candidate)/i);
+    expect(browser).toMatch(/git-lifecycle\.md[\s\S]{0,220}(?:checkpoint|500)/i);
+    expect(browser).toMatch(/browser-run-playwright\.md[\s\S]{0,220}(?:run|QuickJS)/i);
+    expect(sitemap).toMatch(/provisional-fallback/);
+    expect(sitemap).toMatch(/site memory classify/);
+    expect(sitemap).toMatch(/same-product|same product/);
+    expect(sitemap).toMatch(/--distinct|distinct product/);
+    expect(sitemap).toMatch(/before any write/i);
+    expect(sitemap).toMatch(/candidate add/);
+    expect(sitemap).toMatch(/does not make an exact draft|does not taint/i);
+    expect(schema).toMatch(/provisional-fallback[\s\S]{0,160}classif/i);
+    expect(git).toMatch(/does not take a hostname|rerun context, then checkpoint/i);
+    expect(sitemap).toMatch(/do not (?:write|edit|touch).*~\/\.webcmd|never (?:write|edit).*~\/\.webcmd/i);
+    expect(sitemap).toMatch(/never (?:run |use )?git|do not (?:run |use )?git/i);
+    expect(git).toMatch(/500/);
+    expect(git).toMatch(/200/);
+    expect(git).toMatch(/even if only a reference|reference path was requested/i);
+  });
+
+  it('teaches checkpoint lifecycle, one conflict retry, and never direct Git', () => {
+    const git = bundledReference('git-lifecycle.md');
+
+    expect(git).toContain('webcmd site memory checkpoint');
+    expect(git).toContain('--expected-revision');
+    expect(git).toContain('--task-id');
+    expect(git).toContain('candidate_ingestion');
+    expect(git).toContain('direct_correction');
+    expect(git).toContain('major_rewrite');
+    expect(git).toContain('SITE_MEMORY_CONFLICT');
+    expect(git).toContain('Retry webcmd site memory context, then checkpoint once.');
+    expect(git).toMatch(/exactly one retry/i);
+    expect(git).toMatch(/compare[\s\S]{0,120}siteMarkdown[\s\S]{0,120}(?:preserved )?draft/i);
+    expect(git).toMatch(/re-?apply|reconcil/i);
+    expect(git).toMatch(/refreshed content/i);
+    expect(git).toMatch(/never (?:run |use )?git|do not (?:run |use )?git/i);
+    expect(git).not.toMatch(/\bgit add\b|\bgit commit\b/);
+  });
+
+  it('teaches rerunning context after capture and before draft edits', () => {
+    const git = bundledReference('git-lifecycle.md');
+
+    expect(git).toMatch(/after(?: the)? final candidate|after capture/i);
+    expect(git).toMatch(/same task id|same --task-id|--task-id <(?:id|same-id)>/i);
+    expect(git).toMatch(/before editing|before you edit|before draft/i);
+    expect(git).toMatch(/does not destroy|will not destroy|before any draft edit/i);
+    expect(git).toMatch(/does not (?:overwrite|destroy)/i);
+    expect(git).toMatch(/did not publish|does not publish|never (?:claim|report).{0,40}published/i);
+    expect(git).toContain('webcmd site memory context');
+  });
+
+  it('keeps session, profile, auth, CAPTCHA, payment, write, and fresh-state safety', () => {
+    const browser = bundledSkill('webcmd-browser');
+
+    expect(browser).toContain('webcmd profile create work');
+    expect(browser).toMatch(/Profiles are cookie jars[\s\S]{0,180}sessions are browser workspaces\/windows/i);
+    expect(browser).toMatch(/Parallel agents use separate sessions/i);
+    expect(browser).toContain('SESSION_BUSY');
+    expect(browser).toContain('SESSION_REQUIRED');
+    expect(browser).toContain('SESSION_PAUSED_FOR_HUMAN_HANDOFF');
+    expect(browser).toContain('webcmd session close <session-id> --force');
+    expect(browser).toMatch(/handoff is scoped to (?:its|the) Session/i);
+    expect(browser).toMatch(/(?:verify_command|handoff\.verifyCommand)[\s\S]{0,200}verbatim[\s\S]{0,120}`--session`/i);
+    expect(browser).toMatch(/(?:cannot be closed|close is blocked|do not close)[\s\S]{0,100}handoff|handoff[\s\S]{0,100}(?:cannot be closed|close is blocked|do not close)/i);
+    expect(browser).toContain('Never ask for or type passwords');
+    expect(browser).toContain('CAPTCHA');
+    expect(browser).toMatch(/payment/i);
+    expect(browser).toContain("The user's report alone is not verification");
+    expect(browser).toContain('Do not reuse observations across a page transition');
+    expect(browser).toContain('timeout warns that side effects may have occurred');
+    expect(browser).toMatch(/fresh (?:JavaScript scope|snapshot|browser state)/i);
+  });
+
+  it('teaches the run-first Playwright lifecycle and QuickJS guidance', () => {
+    const browser = bundledSkill('webcmd-browser');
+    const browserRunReference = bundledReference('browser-run-playwright.md');
+    const sessionWorkflow = [
+      'webcmd --profile work session create "Work Project"',
+      'webcmd --profile work --session work-project-k7 browser run --stdin',
+      'webcmd --profile work --session work-project-k7 browser snapshot --snapshot-mode read',
+      'webcmd --profile work session close work-project-k7',
+    ];
+    const normalized = browser.replaceAll(/\\\n\s*/g, ' ').replaceAll(/ {2,}/g, ' ');
+
     expect(browser).toMatch(/`tabs`, `bind --page`, `snapshot`, and `run`/i);
     expect(browser).toContain('webcmd --session <session-id> browser tabs');
     expect(browser).toContain('webcmd --session <session-id> browser bind --page');
@@ -216,97 +318,31 @@ describe('webcmd skills content', () => {
     expect(browser).toContain('--no-snapshot-diff');
     expect(browser).not.toContain('page.snapshotForAI()');
     expect(browser).not.toContain('--snapshot-diff');
-    expect(browserRunReference).toMatch(/QuickJS/);
-    expect(browserRunReference).toMatch(/page\.evaluate/);
-    expect(browserRunReference).toMatch(/artifact/i);
-    expect(browserRunReference).toContain("writeArtifact(");
-    expect(browserRunReference).toMatch(/errors/i);
-    expect(browserRunReference).toMatch(/snapshot behavior/i);
-    expect(browserRunReference).toContain('--snapshot-mode act|tree');
-    expect(browserRunReference).toMatch(/timing/i);
-    expect(author).toContain('webcmd browser init');
-    expect(author).toContain('webcmd browser verify');
-    expect(author).toContain('IPage');
-    expect(author).toMatch(/Browser-run’s Playwright-style `page`[\s\S]{0,240}adapter `func\(page,args\)` are different contracts/i);
     expect(browser).not.toContain('browser.currentPage()');
     expect(browser).not.toContain('--observe');
     expect(browser).not.toContain('--tab');
     expect(browser).not.toMatch(/webcmd browser \S+ (?:open|state|click|type|select|find|extract|network)/i);
+    for (const command of sessionWorkflow) {
+      expect(normalized).toContain(command);
+    }
+    expect(browserRunReference).toMatch(/QuickJS/);
+    expect(browserRunReference).toMatch(/page\.evaluate/);
+    expect(browserRunReference).toMatch(/artifact/i);
+    expect(browserRunReference).toContain('writeArtifact(');
+    expect(browserRunReference).toMatch(/errors/i);
+    expect(browserRunReference).toMatch(/snapshot behavior/i);
+    expect(browserRunReference).toContain('--snapshot-mode act|tree');
+    expect(browserRunReference).toMatch(/timing/i);
     expect(browserRunReference).not.toContain('browser.currentPage()');
     expect(browserRunReference).not.toContain('--observe');
     expect(browserRunReference).not.toContain('--tab');
-    expect(siteReconReference).toContain("webcmd --session <session-id> browser run --stdin <<'JS'");
-    expect(siteReconReference).toContain('page.waitForResponse(');
-    expect(siteReconReference).not.toMatch(/webcmd browser \S+ (?:open|state|click|type|select|find|extract|network|wait|eval)/i);
   });
 
-  it('teaches CLI-based hosted adapter authoring', () => {
-    const author = bundledSkill('webcmd-adapter-author');
-    const adapterTemplate = fs.readFileSync(
-      path.join(process.cwd(), 'skills', 'webcmd-adapter-author', 'references', 'adapter-template.md'),
-      'utf8',
-    );
-    const jsdomFixturePattern = fs.readFileSync(
-      path.join(process.cwd(), 'skills', 'webcmd-adapter-author', 'references', 'jsdom-fixture-pattern.md'),
-      'utf8',
-    );
-
-    expect(author).toContain('webcmd site memory');
-    expect(author).toContain('webcmd adapter source');
-    expect(author).toContain('webcmd browser init');
-    expect(author).toContain('webcmd browser verify');
-    expect(adapterTemplate).toContain('webcmd site fixture get');
-    expect(adapterTemplate).toContain('webcmd site fixture put');
-    expect(adapterTemplate).not.toContain('~/.webcmd/');
-    expect(jsdomFixturePattern).toContain('webcmd site sample add');
-    expect(jsdomFixturePattern).not.toContain('~/.webcmd/');
-  });
-
-  it('distinguishes local adapter path lookup from hosted source reads and writes', () => {
-    const author = bundledSkill('webcmd-adapter-author');
-    const autofix = bundledSkill('webcmd-autofix');
-    const community = fs.readFileSync(path.join(process.cwd(), 'docs', 'publish-community-plugin.mdx'), 'utf8');
-
-    for (const instruction of [author, community]) {
-      expect(instruction).toMatch(/local(?:ly)?[\s\S]{0,180}adapter path[\s\S]{0,180}(?:edit|patch)/i);
-      expect(instruction).toMatch(/hosted[\s\S]{0,180}adapter source get\|put/i);
-    }
-    expect(autofix).toMatch(/adapter path[\s\S]{0,180}patch that file/i);
-    expect(autofix).toMatch(/WebCMD Cloud[\s\S]{0,180}adapter source get[\s\S]{0,180}adapter source put/i);
-  });
-
-  it('keeps raw browser and handoff work scoped to explicit Sessions', () => {
-    const usage = bundledSkill('webcmd-usage');
+  it('keeps browser behavioral policy while dropping adapter, plugin, search, fetch, and repair language', () => {
     const browser = bundledSkill('webcmd-browser');
-    const autofix = bundledSkill('webcmd-autofix');
-
-    expect(usage).toContain('--workspace <id>');
-    expect(usage).toContain('WEBCMD_WORKSPACE');
-    expect(usage).toContain('webcmd --profile work session create "Work Project" -f json');
-    expect(usage).toContain('first-choice Webcmd fetch path');
-    expect(usage).toContain('webcmd profile create work');
-    expect(usage).toContain('webcmd --profile work --session work-project-k7 browser');
-    expect(usage).toContain('SESSION_BUSY');
-    expect(usage).toContain('SESSION_REQUIRED');
-    expect(usage).toMatch(/Adapter commands without `--session`[\s\S]{0,200}`adapter-default` Session/i);
-    expect(browser).toContain('webcmd profile create work');
-    expect(browser).toMatch(/Profiles are cookie jars[\s\S]{0,180}sessions are browser workspaces\/windows/i);
-    expect(browser).toMatch(/Parallel agents use separate sessions/i);
-    expect(browser).toContain('SESSION_BUSY');
-    expect(browser).toContain('SESSION_PAUSED_FOR_HUMAN_HANDOFF');
-    expect(browser).toContain('webcmd session close <session-id> --force');
-    for (const skill of [usage, browser, autofix]) {
-      expect(skill).toMatch(/handoff is scoped to (?:its|the) Session/i);
-      expect(skill).toMatch(/(?:verify_command|handoff\.verifyCommand)[\s\S]{0,200}verbatim[\s\S]{0,120}`--session`/i);
-      expect(skill).toMatch(/(?:cannot be closed|close is blocked|do not close)[\s\S]{0,100}handoff|handoff[\s\S]{0,100}(?:cannot be closed|close is blocked|do not close)/i);
-    }
-  });
-
-  it('keeps browser behavioral policy while pruning removed command instructions', () => {
-    const browser = bundledSkill('webcmd-browser');
+    const sitemap = bundledReference('sitemap-memory.md');
 
     for (const heading of [
-      '## Adapter fallback gate',
       '## Prerequisites',
       '## Session lifecycle',
       '## Mental model',
@@ -317,25 +353,17 @@ describe('webcmd skills content', () => {
     ]) {
       expect(browser).toContain(heading);
     }
-
-    for (const required of [
-      'Absence from truncated output never proves that no adapter exists',
-      'Create a named browser Session before raw browser work',
-      'fresh JavaScript scope',
-      'persistent browser state',
-      'Never ask for or type passwords',
-      'CAPTCHA',
-      "The user's report alone is not verification",
-      'Do not submit forms via',
-      'Do not reuse observations across a page transition',
-      'Screenshots are for humans, not for agents',
-      'timeout warns that side effects may have occurred',
-    ]) {
-      expect(browser).toContain(required);
-    }
-
+    expect(browser).not.toContain('## Adapter fallback gate');
+    expect(browser).toContain('Create a named browser Session before raw browser work');
+    expect(browser).toContain('Do not submit forms via');
+    expect(browser).toContain('Screenshots are for humans, not for agents');
     expect(browser).not.toMatch(/webcmd browser \S+ (?:open|state|click|type|select|find|extract|network|wait|eval|frames|screenshot|scroll|back|keys)\b/i);
     expect(browser).not.toMatch(/^### (?:Inspect|Get|Interact|Wait|Extract|Network)$/m);
+    expect(browser).not.toMatch(/webcmd (?:list|plugin|web fetch)\b/);
+    expect(browser).not.toMatch(/FETCH_BLOCKED|FETCH_REQUIRES_BROWSER|first-choice Webcmd fetch path/i);
+    expect(browser).not.toMatch(/adapter first|IPage|registerSiteAuthCommands/i);
+    expect(sitemap).toMatch(/prior (?:knowledge|context)|not (?:ground )?truth/i);
+    expect(sitemap).toMatch(/trust (?:the )?(?:live )?(?:browser|page|reality)/i);
   });
 
   it('adds bundled skills once and refreshes them after package updates', () => {
@@ -350,7 +378,7 @@ describe('webcmd skills content', () => {
       provider: 'codex',
       scope: 'project',
     });
-    expect(added.skills.map((skill) => skill.name)).toEqual(['smart-search', 'webcmd-autofix', 'webcmd-browser']);
+    expect(added.skills.map((skill) => skill.name)).toEqual(['webcmd-browser']);
     for (const skill of added.skills) {
       expect(skill.source).toBe(path.join(firstRoot, 'skills', skill.name));
       expect(skill.stableLink).toBe(path.join(homeDir, '.webcmd', 'skills', skill.name));
@@ -375,8 +403,6 @@ describe('webcmd skills content', () => {
 
     expect(added.provider).toBeUndefined();
     expect(added.skills.map((skill) => skill.destination)).toEqual([
-      path.join(customPath, 'smart-search'),
-      path.join(customPath, 'webcmd-autofix'),
       path.join(customPath, 'webcmd-browser'),
     ]);
     for (const skill of added.skills) {
@@ -387,7 +413,7 @@ describe('webcmd skills content', () => {
   it('refuses to replace real files or directories', () => {
     const packageRoot = makePackageRoot();
     const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-home-'));
-    const stablePath = path.join(homeDir, '.webcmd', 'skills', 'smart-search');
+    const stablePath = path.join(homeDir, '.webcmd', 'skills', 'webcmd-browser');
     fs.mkdirSync(stablePath, { recursive: true });
 
     expect(() => updateWebcmdSkill({ packageRoot, homeDir })).toThrow(ArgumentError);
@@ -407,7 +433,7 @@ describe('webcmd skills content', () => {
 
     const result = removeWebcmdSkills({ packageRoot, homeDir, cwd, customPath });
 
-    expect(result.removed).toHaveLength(24);
+    expect(result.removed).toHaveLength(8);
     for (const linkPath of result.removed) {
       expect(() => fs.lstatSync(linkPath)).toThrow();
     }
@@ -419,11 +445,90 @@ describe('webcmd skills content', () => {
     const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-home-'));
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-project-'));
     const added = addWebcmdSkills({ packageRoot, homeDir, cwd, provider: 'agents', scope: 'user' });
-    const blocker = path.join(cwd, '.codex', 'skills', 'smart-search');
+    const blocker = path.join(cwd, '.codex', 'skills', 'webcmd-browser');
     fs.mkdirSync(blocker, { recursive: true });
 
     expect(() => removeWebcmdSkills({ packageRoot, homeDir, cwd })).toThrow(ArgumentError);
     expect(fs.lstatSync(added.skills[0].destination!).isSymbolicLink()).toBe(true);
     expect(fs.lstatSync(blocker).isDirectory()).toBe(true);
+  });
+
+  it('mentions retired skill names only in RETIRED_SKILLS', () => {
+    const hits: string[] = [];
+    for (const file of productFiles()) {
+      const text = withoutRetiredList(file, fs.readFileSync(file, 'utf8'));
+      for (const retired of RETIRED_SKILLS) {
+        if (text.includes(retired)) hits.push(`${path.relative(process.cwd(), file)}: ${retired}`);
+      }
+    }
+    expect(hits).toEqual([]);
+  });
+});
+
+describe('public copy', () => {
+  it('describes the bundled install as exactly one skill, webcmd-browser', () => {
+    const readme = fs.readFileSync(path.join(process.cwd(), 'README.md'), 'utf8');
+    const skills = fs.readFileSync(path.join(process.cwd(), 'docs', 'skills.mdx'), 'utf8');
+    const quickstart = fs.readFileSync(path.join(process.cwd(), 'docs', 'quickstart.mdx'), 'utf8');
+    const plugin = JSON.parse(fs.readFileSync(path.join(process.cwd(), '.codex-plugin', 'plugin.json'), 'utf8')) as {
+      interface: { longDescription: string };
+    };
+
+    expect(readme).toContain('webcmd-browser');
+    expect(readme).toMatch(/exactly one skill|one skill/i);
+    expect(readme).toMatch(/only for live browser work/i);
+    expect(readme).toMatch(/do not require that skill/i);
+    expect(skills).toContain('webcmd-browser');
+    expect(skills).toMatch(/exactly one skill|one bundled skill/i);
+    expect(quickstart).toContain('webcmd-browser');
+    expect(quickstart).toMatch(/exactly one skill|one bundled skill/i);
+    expect(plugin.interface.longDescription).toMatch(/webcmd-browser|one skill/i);
+    const codex = fs.readFileSync(path.join(process.cwd(), 'docs', 'agents', 'codex-cli.md'), 'utf8');
+    expect(codex).toMatch(/exactly one (bundled )?skill/i);
+    expect(codex).toContain('webcmd-browser');
+  });
+
+  it('does not claim seven bundled skills in public copy', () => {
+    const stale = /all seven|seven bundled|seven Webcmd skills/i;
+    const hits: string[] = [];
+    for (const file of productFiles()) {
+      if (file.endsWith(`${path.sep}skills.test.ts`)) continue;
+      if (stale.test(fs.readFileSync(file, 'utf8'))) hits.push(path.relative(process.cwd(), file));
+    }
+    expect(hits).toEqual([]);
+  });
+
+  it('documents local seed lookup, provenance, clean break, and invisible learning', () => {
+    const privacy = fs.readFileSync(path.join(process.cwd(), 'PRIVACY.md'), 'utf8');
+    const memory = fs.readFileSync(path.join(process.cwd(), 'docs', 'browser-and-sitemap-memory.mdx'), 'utf8');
+    const localCloud = fs.readFileSync(path.join(process.cwd(), 'docs', 'local-or-cloud.mdx'), 'utf8');
+
+    const intro = privacy.slice(0, privacy.indexOf('\n## '));
+    expect(intro).toMatch(/page contents/i);
+    expect(intro).toMatch(/cookies/i);
+    expect(intro).toMatch(/does not send/i);
+    expect(intro).toMatch(/except|seed lookup/i);
+    expect(privacy).toMatch(/unauthenticated GET/i);
+    expect(privacy).toContain('/v1/site-memory/seeds/');
+    expect(privacy).not.toMatch(/default(?: base)?(?: is|:)[^\n]*api\.webcmd\.dev/i);
+    expect(privacy).toMatch(/WEBCMD_GLOBAL_MEMORY_URL[^\n]*(?:enables|configured)/i);
+    expect(privacy).toMatch(/absent|no URL|not configured|without a(?:n)?(?: configured)? URL/i);
+    expect(privacy).toMatch(/local-only|no request|does not (?:make|send|perform) (?:a |the )?seed/i);
+    expect(privacy).toMatch(/2-second timeout|2 second timeout/i);
+    expect(privacy).toMatch(/no retry/i);
+    expect(privacy).toContain('WEBCMD_GLOBAL_MEMORY=off');
+    expect(privacy).toMatch(/WEBCMD_GLOBAL_MEMORY=off[^\n]*(?:configured|even|overrides|disables)/i);
+    expect(privacy).toContain('WEBCMD_GLOBAL_MEMORY_URL');
+    expect(privacy).toMatch(/api\.ipify\.org|ipify/i);
+    expect(privacy).toContain('WEBCMD_CANDIDATE_PUBLIC_IP=off');
+    expect(privacy).toMatch(/no credentials|unauthenticated|without credentials/i);
+    expect(privacy).toContain('~/.webcmd/sites');
+    expect(privacy).toMatch(/never (?:uploaded|pushed)|is never uploaded/i);
+    expect(privacy).toMatch(/never pushes/i);
+    expect(privacy).toContain('sitemap/SITE.md');
+    expect(memory).toMatch(/invisible|do not routinely announce|normal output/i);
+    expect(memory).toMatch(/request|verbose|retention failure/i);
+    expect(localCloud).toMatch(/self-learning|site memory/i);
+    expect(localCloud).toMatch(/browser-operation-only|browser operation only|browser-only/i);
   });
 });

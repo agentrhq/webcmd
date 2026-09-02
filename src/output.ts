@@ -138,7 +138,7 @@ export function formatErrorEnvelope(envelope: ErrorEnvelope, opts: ErrorRenderOp
   ) {
     const key = opts.cmdName.includes('/') ? opts.cmdName : opts.cmdName.replace(/\s+/, '/');
     const runnable = opts.cmdName.replace('/', ' ');
-    output += `# AutoFix: load webcmd-autofix; webcmd adapter path ${key}; re-run with --trace=retain-on-failure\n`;
+    output += `# AutoFix: webcmd adapter path ${key}; re-run with --trace=retain-on-failure\n`;
     output += `# webcmd ${runnable} --trace retain-on-failure\n`;
   }
   return output;
