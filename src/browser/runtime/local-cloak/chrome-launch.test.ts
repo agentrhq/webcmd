@@ -41,6 +41,7 @@ describe('chromeLaunchArgs', () => {
   it('uses an explicit nonzero loopback port without automation transports', () => {
     const args = chromeLaunchArgs([
       '--fingerprint=123', '--enable-automation', '--remote-debugging-pipe', '--remote-debugging-port=0', '--headless',
+      '--remote-debugging-address=0.0.0.0', '--headless=old',
     ], '/profiles/work', 43123);
     expect(args).toContain('--remote-debugging-address=127.0.0.1');
     expect(args).toContain('--remote-debugging-port=43123');
@@ -49,6 +50,8 @@ describe('chromeLaunchArgs', () => {
     expect(args).not.toContain('--remote-debugging-pipe');
     expect(args).not.toContain('--enable-automation');
     expect(args).not.toContain('--headless');
+    expect(args).not.toContain('--headless=old');
+    expect(args).not.toContain('--remote-debugging-address=0.0.0.0');
   });
 });
 
@@ -92,5 +95,19 @@ describe('launchChromePersistentContext', () => {
     await expect(launchChromePersistentContext({ userDataDir: '/profiles/work', headless: false }, deps))
       .rejects.toThrow('Opening in existing browser session');
     expect(deps.launch).not.toHaveBeenCalled();
+  });
+
+  it('uses the directly launched pid when a platform wrapper changes the process command', async () => {
+    const { browser, context } = runtime();
+    const deps = dependencies(browser);
+    vi.mocked(deps.launch).mockResolvedValue(987);
+    vi.mocked(deps.findProcesses).mockResolvedValue([]);
+
+    const result = await launchChromePersistentContext({ userDataDir: '/profiles/work', headless: false }, deps);
+
+    expect(result).toBe(context);
+    expect(deps.listenerOwnedBy).toHaveBeenCalledWith(43123, 987, 'darwin');
+    await result.close();
+    expect(deps.terminate).toHaveBeenCalledWith(987, 'darwin', false);
   });
 });

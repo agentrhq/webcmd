@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { execFile } from 'node:child_process';
+import path from 'node:path';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
@@ -53,9 +54,23 @@ export async function findExactChromeProcesses(
   const matches = commands.flatMap(({ pid, command }) => {
     if (pid === process.pid) return [];
     if (matchChromeProcessCommand(command, identity)) return [pid];
-    return matchChromeProcessCommand(command, canonicalIdentity) ? [pid] : [];
+    if (matchChromeProcessCommand(command, canonicalIdentity)) return [pid];
+    return platform === 'linux' && linuxWrapperProcessMatches(pid, command, canonicalIdentity) ? [pid] : [];
   });
   return [...new Set(matches)];
+}
+
+function linuxWrapperProcessMatches(pid: number, command: string, identity: ChromeProcessIdentity): boolean {
+  if (extractArgumentValue(command, '--user-data-dir') !== identity.userDataDir) return false;
+  if (identity.port !== undefined
+    && extractArgumentValue(command, '--remote-debugging-port') !== String(identity.port)) return false;
+  let actualExecutable = '';
+  try { actualExecutable = fs.realpathSync.native(`/proc/${pid}/exe`); } catch { return false; }
+  const configuredName = path.basename(identity.executablePath).toLowerCase();
+  const actualName = path.basename(actualExecutable).toLowerCase();
+  return path.dirname(actualExecutable) === path.dirname(identity.executablePath)
+    && /^google-chrome(?:-stable)?$/u.test(configuredName)
+    && actualName === 'chrome';
 }
 
 export async function listenerBelongsToProcess(

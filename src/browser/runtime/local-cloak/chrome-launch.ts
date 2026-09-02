@@ -22,7 +22,7 @@ export interface ChromeLaunchDependencies {
   buildLaunchOptions: typeof buildLaunchOptions;
   humanizeBrowser: typeof humanizeBrowser;
   allocatePort(): Promise<number>;
-  launch(executablePath: string, args: string[], platform: NodeJS.Platform): Promise<void>;
+  launch(executablePath: string, args: string[], platform: NodeJS.Platform): Promise<number | undefined>;
   findProcesses(identity: ChromeProcessIdentity, platform: NodeJS.Platform): Promise<number[]>;
   listenerOwnedBy(port: number, pid: number, platform: NodeJS.Platform): Promise<boolean>;
   endpointReady(endpoint: string): Promise<boolean>;
@@ -54,12 +54,12 @@ export async function allocateNonzeroLoopbackPort(): Promise<number> {
 }
 
 export function chromeLaunchArgs(baseArgs: readonly string[], userDataDir: string, port: number): string[] {
-  const filtered = baseArgs.filter(arg => ![
-    '--enable-automation',
-    '--headless',
-    '--headless=new',
-    '--remote-debugging-pipe',
-  ].includes(arg) && !arg.startsWith('--remote-debugging-port=') && !arg.startsWith('--user-data-dir='));
+  const filtered = baseArgs.filter(arg => arg !== '--enable-automation'
+    && !arg.startsWith('--headless')
+    && arg !== '--remote-debugging-pipe'
+    && !arg.startsWith('--remote-debugging-port=')
+    && !arg.startsWith('--remote-debugging-address=')
+    && !arg.startsWith('--user-data-dir='));
   return [
     ...filtered,
     `--user-data-dir=${userDataDir}`,
@@ -69,20 +69,22 @@ export function chromeLaunchArgs(baseArgs: readonly string[], userDataDir: strin
   ];
 }
 
-async function launchProcess(executablePath: string, args: string[], platform: NodeJS.Platform): Promise<void> {
+async function launchProcess(executablePath: string, args: string[], platform: NodeJS.Platform): Promise<number | undefined> {
   if (platform === 'darwin') {
     const marker = `${path.sep}Contents${path.sep}MacOS${path.sep}`;
     const index = executablePath.lastIndexOf(marker);
     if (index < 0) throw new Error(`Configured Chrome executable is not inside a macOS app bundle: ${executablePath}`);
     await execFileAsync('/usr/bin/open', ['-g', '-n', executablePath.slice(0, index), '--args', ...args]);
-    return;
+    return undefined;
   }
   const child = spawn(executablePath, args, { detached: false, stdio: 'ignore', windowsHide: true });
   await new Promise<void>((resolve, reject) => {
     child.once('error', reject);
     child.once('spawn', resolve);
   });
+  const pid = child.pid;
   child.unref();
+  return pid;
 }
 
 async function endpointReady(endpoint: string): Promise<boolean> {
@@ -136,13 +138,15 @@ export async function launchChromePersistentContext(
     const identity = { executablePath, userDataDir: options.userDataDir, port };
     let browser: Browser | undefined;
     let pids: number[] = [];
+    let launchedPid: number | undefined;
     try {
       const args = chromeLaunchArgs(launchOptions.args ?? [], options.userDataDir, port);
-      await deps.launch(executablePath, args, deps.platform);
+      launchedPid = await deps.launch(executablePath, args, deps.platform);
       const endpoint = `http://127.0.0.1:${port}`;
       const deadline = deps.now() + READINESS_TIMEOUT_MS;
       while (deps.now() < deadline) {
         pids = await deps.findProcesses(identity, deps.platform);
+        if (launchedPid && !pids.includes(launchedPid)) pids.push(launchedPid);
         if (pids.length === 1
           && await deps.endpointReady(endpoint)
           && await deps.listenerOwnedBy(port, pids[0], deps.platform)) break;
@@ -171,7 +175,7 @@ export async function launchChromePersistentContext(
     } catch (error) {
       lastError = error;
       await browser?.close().catch(() => {});
-      await terminateOwnedProcesses(deps, identity, pids);
+      await terminateOwnedProcesses(deps, identity, launchedPid ? [...pids, launchedPid] : pids);
     }
   }
   throw new Error(`Failed to launch Webcmd-managed Chrome after ${MAX_LAUNCH_ATTEMPTS} attempts`, { cause: lastError });
