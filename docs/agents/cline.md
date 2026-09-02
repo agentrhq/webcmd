@@ -34,7 +34,7 @@ For a project-scoped setup that travels with the repo:
 webcmd skills add --path .cline/skills --scope project
 ```
 
-Cline also discovers skills in `~/.cline/skills/`, `.cline/skills/`, and `.claude/skills/`. It loads skill metadata at startup and activates `webcmd-usage` and `webcmd-browser` on demand through its `use_skill` tool.
+Cline also discovers skills in `~/.cline/skills/`, `.cline/skills/`, and `.claude/skills/`. It loads skill metadata at startup and activates `webcmd-browser` on demand through its `use_skill` tool.
 
 Restart Cline (or start a new task) after installing skills. In the extension, confirm they appear under the Skills tab (scale icon in the Cline panel).
 
@@ -92,4 +92,3 @@ Check for browser or scraping MCP servers in `.cline/mcp.json` — they overlap 
 * [Cline documentation](https://docs.cline.bot/cline-overview) — installation, providers, and the core workflow.
 * [`start.md`](../../start.md) — common setup, [auth profiles and human handoff](../../start.md#auth-profiles-and-human-handoff), and [security](../../start.md#security).
 * [`webcmd-browser`](../../skills/webcmd-browser/SKILL.md) — the raw browser session surface.
-* [`webcmd-usage`](../../skills/webcmd-usage/SKILL.md) — adapter-first usage rules.

@@ -30,11 +30,10 @@ webcmd skills add
 
 When `webcmd skills add` prompts, choose the `agents` provider. It installs into `~/.agents/skills/` (user) or `.agents/skills/` (project).
 
-Then add those skill files to Aider's `read` list in `.aider.conf.yml` at your repo root or home directory:
+Then add the skill file to Aider's `read` list in `.aider.conf.yml` at your repo root or home directory:
 
 ```yaml
 read:
-  - ~/.agents/skills/webcmd-usage/SKILL.md
   - ~/.agents/skills/webcmd-browser/SKILL.md
 ```
 
@@ -44,7 +43,6 @@ For a project-scoped setup, use `.agents/skills/` paths relative to the repo:
 
 ```yaml
 read:
-  - .agents/skills/webcmd-usage/SKILL.md
   - .agents/skills/webcmd-browser/SKILL.md
 ```
 
@@ -93,4 +91,3 @@ Aider has no search index. When you need to discover URLs, find them yourself or
 * [Aider documentation](https://aider.chat/docs/) — installation, usage, LLM configuration, and in-chat commands.
 * [`start.md`](../../start.md) — common setup, [auth profiles and human handoff](../../start.md#auth-profiles-and-human-handoff), and [security](../../start.md#security).
 * [`webcmd-browser`](../../skills/webcmd-browser/SKILL.md) — the raw browser session surface.
-* [`webcmd-usage`](../../skills/webcmd-usage/SKILL.md) — adapter-first usage rules.
