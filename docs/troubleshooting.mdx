@@ -147,6 +147,10 @@ Useful environment variables:
 
 `webcmd setup --mode local --browser chrome` uses an existing normal Google
 Chrome installation and keeps its profiles under `~/.webcmd/chrome/profiles`.
+Webcmd launches that Chrome through an explicit nonzero CDP port bound to
+loopback. In a normal headed launch this avoids the native WebDriver signal
+caused by Playwright's debugging pipe; it does not remove every possible
+automation fingerprint.
 Interactive setup labels Chrome as `installed` or `install required`. Webcmd
 does not install Chrome automatically; when it is missing and selected, setup
 links to `https://www.google.com/chrome/` and preserves the current browser

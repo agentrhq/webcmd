@@ -12,6 +12,7 @@
 
 ### Changed
 
+- Installed Google Chrome now uses a Webcmd-owned explicit nonzero loopback CDP port instead of Playwright's debugging pipe. Normal headed Chrome therefore retains its native `navigator.webdriver === false` value; Cloak, SLAB, and custom executables are unchanged.
 - `WEBCMD_BROWSER_BINARY_PATH` can select a compatible Chromium executable for local browser Sessions; it takes precedence over the existing `CLOAKBROWSER_BINARY_PATH` override and isolates each browser build's profile data from managed Cloak profiles.
 - Hosted help and completion advertise Cloud-owned core commands only when the authenticated manifest advertises them.
 - Hosted command lists retain excluded commands as `LOCAL` rows and return a local-only error instead of plugin-install guidance.

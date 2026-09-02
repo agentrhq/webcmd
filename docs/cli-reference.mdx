@@ -70,7 +70,7 @@ webcmd --profile work \
 webcmd --profile work session close work-project-k7
 ```
 
-Local browser commands use the browser selected by `webcmd setup --mode local --browser ...`. Cloak stays bundled and default, `--browser chrome` reuses an installed Google Chrome, `--browser slab` is the macOS alpha opt-in, and an absolute path selects a compatible local Chromium fork. If Google Chrome is unavailable, setup links to the official installer and leaves the existing selection unchanged. Hosted browser commands use Webcmd Cloud and Browser Use; `web fetch` still runs locally.
+Local browser commands use the browser selected by `webcmd setup --mode local --browser ...`. Cloak stays bundled and default, `--browser chrome` reuses an installed Google Chrome through a Webcmd-owned nonzero loopback CDP endpoint, `--browser slab` is the macOS alpha opt-in, and an absolute path selects a compatible local Chromium fork. The Chrome transport preserves the browser's native `navigator.webdriver` value in a normal headed launch; it is not a claim that Chrome is generally undetectable. If Google Chrome is unavailable, setup links to the official installer and leaves the existing selection unchanged. Hosted browser commands use Webcmd Cloud and Browser Use; `web fetch` still runs locally.
 
 ## Browser Programs
 
