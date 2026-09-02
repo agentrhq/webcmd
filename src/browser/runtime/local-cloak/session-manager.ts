@@ -16,6 +16,8 @@ import { log } from '../../../logger.js';
 import { CliError, EXIT_CODES } from '../../../errors.js';
 import { isClosedContextError } from '../../run/types.js';
 import { configureCloakBrowserBinary } from '../../browser-binary.js';
+import { activateChromeContext, launchChromePersistentContext } from './chrome-launch.js';
+import { findExactChromeProcesses, terminateChromeProcessTree } from './chrome-process.js';
 
 const UNRESOLVED = Symbol('unresolved');
 const TARGET_PAGE_MATCH_TIMEOUT_MS = 1_000;
@@ -45,6 +47,7 @@ export function resolveCloakBrowserVersion(): string | undefined {
 }
 
 export type LaunchPersistentContext = typeof cloakLaunchPersistentContext;
+export type LaunchChromePersistentContext = typeof launchChromePersistentContext;
 export type RecoverLockedProfile = (userDataDir: string) => Promise<boolean>;
 
 export interface SessionKeyInput {
@@ -159,8 +162,10 @@ export interface CloakSessionManagerOptions {
   baseDir?: string;
   profileNamespace?: string;
   executablePath?: string;
+  runtimeKind?: 'cloak' | 'chrome' | 'custom';
   launchPersistentContext?: LaunchPersistentContext;
   launchBackgroundPersistentContext?: LaunchPersistentContext;
+  launchChromePersistentContext?: LaunchChromePersistentContext;
   activateBackgroundContext?: typeof activateDarwinBackgroundContext;
   recoverLockedProfile?: RecoverLockedProfile;
   platform?: NodeJS.Platform;
@@ -200,6 +205,7 @@ export class CloakSessionManager {
 
   private readonly launchPersistentContext: LaunchPersistentContext;
   private readonly launchBackgroundPersistentContext: LaunchPersistentContext;
+  private readonly launchChromePersistentContext: LaunchChromePersistentContext;
   private readonly activateBackgroundContext: typeof activateDarwinBackgroundContext;
   private readonly platform: NodeJS.Platform;
   private readonly recoverLockedProfile: RecoverLockedProfile;
@@ -224,9 +230,14 @@ export class CloakSessionManager {
   constructor(private readonly opts: CloakSessionManagerOptions = {}) {
     this.launchPersistentContext = opts.launchPersistentContext ?? cloakLaunchPersistentContext;
     this.launchBackgroundPersistentContext = opts.launchBackgroundPersistentContext ?? launchDarwinBackgroundPersistentContext;
-    this.activateBackgroundContext = opts.activateBackgroundContext ?? activateDarwinBackgroundContext;
+    this.launchChromePersistentContext = opts.launchChromePersistentContext ?? launchChromePersistentContext;
+    this.activateBackgroundContext = opts.activateBackgroundContext
+      ?? (opts.runtimeKind === 'chrome' ? activateChromeContext : activateDarwinBackgroundContext);
     this.platform = opts.platform ?? process.platform;
-    this.recoverLockedProfile = opts.recoverLockedProfile ?? recoverLockedCloakProfile;
+    this.recoverLockedProfile = opts.recoverLockedProfile
+      ?? (opts.runtimeKind === 'chrome' && opts.executablePath
+        ? userDataDir => recoverLockedChromeProfile(opts.executablePath!, userDataDir, this.platform)
+        : recoverLockedCloakProfile);
     this.hasActiveHandoff = opts.hasActiveHandoff ?? (() => false);
   }
 
@@ -744,9 +755,11 @@ export class CloakSessionManager {
     // DevToolsActivePort file. Compatible Chromium forks may be app bundles but
     // not implement that contract, so custom executables use Playwright's
     // normal persistent launcher instead.
-    const launchPersistentContext = this.platform === 'darwin' && windowMode === 'background' && !this.opts.executablePath
-      ? this.launchBackgroundPersistentContext
-      : this.launchPersistentContext;
+    const launchPersistentContext = this.opts.runtimeKind === 'chrome'
+      ? this.launchChromePersistentContext
+      : this.platform === 'darwin' && windowMode === 'background' && !this.opts.executablePath
+        ? this.launchBackgroundPersistentContext
+        : this.launchPersistentContext;
     let context: BrowserContext;
     try {
       context = await launchPersistentContext(launchOptions);
@@ -1394,6 +1407,26 @@ async function recoverLockedCloakProfile(userDataDir: string): Promise<boolean> 
 
   signalPids(await findExactCloakProfileProcesses(userDataDir), 'SIGKILL');
   return waitForProfileProcessesToExit(userDataDir, 1500);
+}
+
+async function recoverLockedChromeProfile(
+  executablePath: string,
+  userDataDir: string,
+  platform: NodeJS.Platform,
+): Promise<boolean> {
+  const identity = { executablePath, userDataDir };
+  const initial = await findExactChromeProcesses(identity, platform);
+  if (initial.length === 0) return false;
+  for (const pid of initial) await terminateChromeProcessTree(pid, platform, false);
+  const deadline = Date.now() + 2500;
+  while (Date.now() < deadline) {
+    await new Promise<void>(resolve => setTimeout(resolve, 100));
+    if ((await findExactChromeProcesses(identity, platform)).length === 0) return true;
+  }
+  for (const pid of await findExactChromeProcesses(identity, platform)) {
+    await terminateChromeProcessTree(pid, platform, true);
+  }
+  return (await findExactChromeProcesses(identity, platform)).length === 0;
 }
 
 async function waitForProfileProcessesToExit(userDataDir: string, timeoutMs: number): Promise<boolean> {

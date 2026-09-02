@@ -7,6 +7,7 @@ import {
   CloakSessionManager,
   resolveCloakBrowserVersion,
 } from './session-manager.js';
+import type { LaunchChromePersistentContext } from './session-manager.js';
 
 export interface LocalCloakRuntimeProviderOptions {
   baseDir?: string;
@@ -15,6 +16,7 @@ export interface LocalCloakRuntimeProviderOptions {
   runtimeName?: 'cloak' | 'chrome' | 'custom';
   launchPersistentContext?: LaunchPersistentContext;
   launchBackgroundPersistentContext?: LaunchPersistentContext;
+  launchChromePersistentContext?: LaunchChromePersistentContext;
 }
 
 export class LocalCloakRuntimeProvider implements BrowserRuntimeProvider {
@@ -31,8 +33,10 @@ export class LocalCloakRuntimeProvider implements BrowserRuntimeProvider {
       baseDir: opts.baseDir,
       profileNamespace: opts.profileNamespace,
       executablePath: opts.executablePath,
+      runtimeKind: opts.runtimeName,
       launchPersistentContext: opts.launchPersistentContext,
       launchBackgroundPersistentContext: opts.launchBackgroundPersistentContext,
+      launchChromePersistentContext: opts.launchChromePersistentContext,
       hasActiveHandoff: profileId => this.sessions.list(profileId, 100).some(session => (
         Boolean(session.handoff) && Date.parse(session.handoff!.expiresAt) > Date.now()
       )),

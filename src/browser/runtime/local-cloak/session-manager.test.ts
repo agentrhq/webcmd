@@ -586,6 +586,33 @@ describe('CloakSessionManager', () => {
     expect(launchPersistentContext).toHaveBeenCalledTimes(normalCalls);
   });
 
+  it('selects the dedicated launcher only for runtime kind chrome', async () => {
+    const chromeRuntime = fakeContext();
+    const customRuntime = fakeContext();
+    const launchChromePersistentContext = vi.fn().mockResolvedValue(chromeRuntime.context);
+    const launchPersistentContext = vi.fn().mockResolvedValue(customRuntime.context);
+    const chrome = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      runtimeKind: 'chrome',
+      executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      launchChromePersistentContext,
+      launchPersistentContext,
+    });
+    const custom = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      runtimeKind: 'custom',
+      executablePath: '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
+      launchChromePersistentContext,
+      launchPersistentContext,
+    });
+
+    await chrome.getPage({ profileId: 'chrome', session: 'work', surface: 'browser' });
+    await custom.getPage({ profileId: 'custom', session: 'work', surface: 'browser' });
+
+    expect(launchChromePersistentContext).toHaveBeenCalledOnce();
+    expect(launchPersistentContext).toHaveBeenCalledOnce();
+  });
+
   it('reactivates a background-launched context for foreground tab selection', async () => {
     const launched = fakeContext();
     const activateBackgroundContext = vi.fn().mockResolvedValue(undefined);
