@@ -17,6 +17,15 @@
 - Hosted command lists retain excluded commands as `LOCAL` rows and return a local-only error instead of plugin-install guidance.
 - Local auth commands initialize user CLI compatibility shims, and hosted auth uses the same native grammar, flags, choices, and help as local mode.
 
+## [0.8.0](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.11...webcmd-v0.8.0) (2026-09-02)
+
+
+### Features
+
+* **browser:** restore runtime rollout with SLAB reuse ([#479](https://github.com/agentrhq/webcmd/issues/479)) ([ae87b4a](https://github.com/agentrhq/webcmd/commit/ae87b4a8aae700c57af8dc5f1a41684d6aa5b160))
+* **browser:** support custom Chromium binaries with isolated profiles ([#462](https://github.com/agentrhq/webcmd/issues/462)) ([fde64e2](https://github.com/agentrhq/webcmd/commit/fde64e295575b02ccfaed15dfd78156d642c3806))
+* **site-memory:** add local self-learning browser memory ([#475](https://github.com/agentrhq/webcmd/issues/475)) ([018b723](https://github.com/agentrhq/webcmd/commit/018b7239ceb413691034497c35a3016a4a2654b5))
+
 ## [0.7.11](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.10...webcmd-v0.7.11) (2026-08-31)
 
 ### Fixes
