@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { access, mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { posix } from 'node:path';
 import { promisify } from 'node:util';
 import { execFile as execFileCallback } from 'node:child_process';
 import { formatBytes } from '../download/progress.js';
@@ -142,9 +142,9 @@ export async function installSlabMacos(io: SlabInstallerIo = createSlabInstaller
   const manifest = parseManifest(await responseJson(manifestResponse));
   if (!await io.verifyManifest(manifest)) throw new Error('SLAB installer release signature verification failed');
 
-  const tempPath = await io.mkdtemp(join(io.tempDir, 'webcmd-slab-'));
-  const dmgPath = join(tempPath, 'SLAB.dmg');
-  const mountPath = join(tempPath, 'mount');
+  const tempPath = await io.mkdtemp(posix.join(io.tempDir, 'webcmd-slab-'));
+  const dmgPath = posix.join(tempPath, 'SLAB.dmg');
+  const mountPath = posix.join(tempPath, 'mount');
   let stagingPath: string | undefined;
   let mounted = false;
 
@@ -162,20 +162,20 @@ export async function installSlabMacos(io: SlabInstallerIo = createSlabInstaller
     try {
       await io.access(applicationsDir, constants.W_OK);
     } catch {
-      applicationsDir = join(io.homeDir, 'Applications');
+      applicationsDir = posix.join(io.homeDir, 'Applications');
       await io.mkdir(applicationsDir);
     }
-    const appPath = join(applicationsDir, 'SLAB.app');
-    stagingPath = join(applicationsDir, '.SLAB.app.webcmd-staging');
+    const appPath = posix.join(applicationsDir, 'SLAB.app');
+    stagingPath = posix.join(applicationsDir, '.SLAB.app.webcmd-staging');
     await io.rm(stagingPath);
-    await io.execFile('ditto', [join(mountPath, 'SLAB.app'), stagingPath]);
+    await io.execFile('ditto', [posix.join(mountPath, 'SLAB.app'), stagingPath]);
     await io.execFile('codesign', ['--verify', '--deep', '--strict', '--identifier', SLAB_BUNDLE_ID, stagingPath]);
     if (await io.bundleId(stagingPath) !== SLAB_BUNDLE_ID) throw new Error('SLAB installer bundle identifier mismatch');
     await clearQuarantine(io, stagingPath);
     await io.replaceApp(stagingPath, appPath);
     stagingPath = undefined;
     if (options.launchAfterInstall) await io.execFile('open', [appPath]);
-    return { platform: 'darwin', appPath, executablePath: join(appPath, 'Contents', 'MacOS', 'SLAB') };
+    return { platform: 'darwin', appPath, executablePath: posix.join(appPath, 'Contents', 'MacOS', 'SLAB') };
   } finally {
     try {
       if (mounted) await io.execFile('hdiutil', ['detach', mountPath]);
@@ -198,7 +198,7 @@ export function createSlabInstallerIo(): SlabInstallerIo {
     rm: async path => { await rm(path, { recursive: true, force: true }); },
     access,
     bundleId: async appPath => {
-      const result = await execFile('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleIdentifier', join(appPath, 'Contents', 'Info.plist')]);
+      const result = await execFile('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleIdentifier', posix.join(appPath, 'Contents', 'Info.plist')]);
       return result.stdout.trim();
     },
     replaceApp: (source, destination) => replaceSlabAppAtomically({ rename, rm: async path => { await rm(path, { recursive: true, force: true }); } }, source, destination),

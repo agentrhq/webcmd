@@ -24,6 +24,9 @@ const command = (id: string, action: 'run' | 'snapshot' | 'tabs' | 'bind' | 'clo
   ...extra,
 });
 
+const describeWithPlaywrightChromium = fs.existsSync(chromium.executablePath()) ? describe : describe.skip;
+
+describeWithPlaywrightChromium('local Cloak browser run', () => {
 beforeAll(async () => {
   browser = await chromium.launch({ headless: true });
 });
@@ -51,7 +54,6 @@ afterAll(async () => {
   await browser.close();
 });
 
-describe('local Cloak browser run', () => {
   it('returns a bounded redacted snapshot for the current page', async () => {
     await manager.getPage({ profileId: 'default', session: 'work', surface: 'browser' });
     const result = await dispatchCloakAction(manager, command('snapshot-1', 'snapshot'));

@@ -95,7 +95,7 @@ function closed(transport: ConnectOverCDPTransport): Promise<string | undefined>
   });
 }
 
-describe('CdpIpcTransport', () => {
+describe.skipIf(process.platform === 'win32')('CdpIpcTransport', () => {
   it('authenticates, reassembles split frames, and delivers multiple CDP objects', async () => {
     const harness = await listen();
     const transport = await connectAuthenticated(harness);

@@ -1,4 +1,4 @@
-import { join } from 'node:path';
+import { posix } from 'node:path';
 
 export interface SlabInstallation {
   platform: NodeJS.Platform;
@@ -18,9 +18,9 @@ export function findSlabInstallation(io: SlabInstallationIo): SlabInstallation |
 
   for (const appPath of [
     '/Applications/SLAB.app',
-    join(io.homeDir, 'Applications', 'SLAB.app'),
+    posix.join(io.homeDir, 'Applications', 'SLAB.app'),
   ]) {
-    const executablePath = join(appPath, 'Contents', 'MacOS', 'SLAB');
+    const executablePath = posix.join(appPath, 'Contents', 'MacOS', 'SLAB');
     if (io.existsSync(executablePath)) return { platform: io.platform, appPath, executablePath };
   }
 
@@ -32,5 +32,5 @@ export function isSlabInstalled(io: SlabInstallationIo): boolean {
 }
 
 export function slabControlEndpoint(homeDir: string): string {
-  return join(homeDir, '.slab', 'run', 'slab-bridge.sock');
+  return posix.join(homeDir, '.slab', 'run', 'slab-bridge.sock');
 }

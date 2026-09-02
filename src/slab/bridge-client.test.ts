@@ -111,7 +111,7 @@ function sizedHello(id: string, targetBytes: number): string {
   return `${make(pad)}\n`;
 }
 
-describe('SlabBridgeClient', () => {
+describe.skipIf(process.platform === 'win32')('SlabBridgeClient', () => {
   it('reassembles fragmented JSONL responses', async () => {
     const harness = await listen((socket) => {
       collectRequests(socket, harness.requests, (req) => {
