@@ -3,8 +3,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { ENV_PREFIX } from '../brand.js';
-import { ArgumentError } from '../errors.js';
-import { createProfile, loadProfileConfig, profileListRows, profileRouteParams, resolveProfileSelection, setDefaultProfile } from './profile.js';
+import { ArgumentError, ConfigError } from '../errors.js';
+import { commitSlabProfileEnsure, createProfile, loadProfileConfig, prepareSlabProfileEnsure, profileListRows, profileRouteParams, renameProviderProfile, resolveProfileSelection, rotateSlabProfileEnsure, setDefaultProfile } from './profile.js';
 
 describe('profile selection', () => {
   let configDir: string;
@@ -121,6 +121,63 @@ describe('createProfile', () => {
 
   it('rejects an invalid alias', () => {
     expect(() => createProfile('../nope')).toThrow(ArgumentError);
+  });
+
+  it('fails closed instead of erasing a corrupt provider config', () => {
+    const target = path.join(configDir, 'browser-profiles-v2.json');
+    fs.writeFileSync(target, '{not-json');
+    expect(() => loadProfileConfig('slab')).toThrow(ConfigError);
+    expect(fs.readFileSync(target, 'utf8')).toBe('{not-json');
+  });
+
+  it('never exposes legacy cloak aliases through other providers', () => {
+    fs.writeFileSync(path.join(configDir, 'browser-profiles.json'), JSON.stringify({ version: 1, aliases: { work: 'cloak-work' } }));
+    expect(loadProfileConfig('cloak').aliases).toEqual({ work: 'cloak-work' });
+    expect(loadProfileConfig('chrome').aliases).toEqual({});
+    expect(loadProfileConfig('custom').aliases).toEqual({});
+    expect(loadProfileConfig('slab').aliases).toEqual({});
+  });
+
+  it('keeps SLAB aliases separate and repairs with one stable ensure key', async () => {
+    createProfile('work');
+    expect(loadProfileConfig('slab').aliases).toEqual({});
+    const first = await prepareSlabProfileEnsure('work');
+    const retry = await prepareSlabProfileEnsure('work');
+    expect(retry.idempotencyKey).toBe(first.idempotencyKey);
+    expect(loadProfileConfig('slab').aliases).toEqual({});
+    await commitSlabProfileEnsure('work', first.idempotencyKey, 'Profile 7');
+    expect(loadProfileConfig('slab').aliases).toEqual({ work: 'Profile 7' });
+    expect(loadProfileConfig('cloak').aliases).toEqual({ work: 'work' });
+  });
+
+  it('rotates an explicitly repair-required SLAB key and moves it when renamed', async () => {
+    const pending = await prepareSlabProfileEnsure('work');
+    await commitSlabProfileEnsure('work', pending.idempotencyKey, 'Profile 7');
+    const repair = await rotateSlabProfileEnsure('work', pending.idempotencyKey);
+    expect(repair.idempotencyKey).not.toBe(pending.idempotencyKey);
+    expect(loadProfileConfig('slab').aliases).toEqual({});
+    await commitSlabProfileEnsure('work', repair.idempotencyKey, 'Profile 8');
+    await renameProviderProfile('slab', 'Profile 8', 'renamed');
+    expect(loadProfileConfig('slab').aliases).toEqual({ renamed: 'Profile 8' });
+    expect((await prepareSlabProfileEnsure('renamed')).idempotencyKey).toBe(repair.idempotencyKey);
+  });
+
+  it('clears a colliding stale ensure when an unaliased native profile takes its alias', async () => {
+    const stale = await prepareSlabProfileEnsure('work');
+    await commitSlabProfileEnsure('work', stale.idempotencyKey, 'Profile old');
+    await renameProviderProfile('slab', 'Profile new', 'work');
+    expect(loadProfileConfig('slab').aliases).toEqual({ work: 'Profile new' });
+    expect((await prepareSlabProfileEnsure('work')).idempotencyKey).not.toBe(stale.idempotencyKey);
+  });
+
+  it('moves the source ensure over a colliding target alias', async () => {
+    const source = await prepareSlabProfileEnsure('source');
+    await commitSlabProfileEnsure('source', source.idempotencyKey, 'Profile source');
+    const target = await prepareSlabProfileEnsure('target');
+    await commitSlabProfileEnsure('target', target.idempotencyKey, 'Profile target');
+    await renameProviderProfile('slab', 'Profile source', 'target');
+    expect(loadProfileConfig('slab').aliases).toEqual({ target: 'Profile source' });
+    expect((await prepareSlabProfileEnsure('target')).idempotencyKey).toBe(source.idempotencyKey);
   });
 });
 

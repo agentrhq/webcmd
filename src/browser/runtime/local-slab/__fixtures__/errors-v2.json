@@ -1,0 +1,38 @@
+{
+  "INVALID_REQUEST": {
+    "request": { "id": "error-invalid-v2", "method": "attach", "params": { "protocolVersion": { "min": 2, "max": 2 }, "profileId": "default" } },
+    "response": { "id": "error-invalid-v2", "ok": false, "error": { "code": "INVALID_REQUEST", "message": "Invalid JSON, framing, shape, size, or params" } }
+  },
+  "INCOMPATIBLE_PROTOCOL": {
+    "request": { "id": "error-protocol-v2", "method": "hello", "params": { "protocolVersion": { "min": 3, "max": 3 }, "clientVersion": "webcmd/0.7.3" } },
+    "response": { "id": "error-protocol-v2", "ok": false, "error": { "code": "INCOMPATIBLE_PROTOCOL", "message": "Client range does not include a supported revision" } }
+  },
+  "PROFILE_NOT_FOUND": {
+    "request": { "id": "error-profile-v2", "method": "attach", "params": { "protocolVersion": { "min": 2, "max": 2 }, "profileId": "missing-profile" } },
+    "response": { "id": "error-profile-v2", "ok": false, "error": { "code": "PROFILE_NOT_FOUND", "message": "Requested profile is unavailable" } }
+  },
+  "ATTACH_FAILED": {
+    "request": { "id": "error-attach-v2", "method": "attach", "params": { "protocolVersion": { "min": 2, "max": 2 }, "profileId": "default" } },
+    "response": { "id": "error-attach-v2", "ok": false, "error": { "code": "ATTACH_FAILED", "message": "Browser could not create the attachment" } }
+  },
+  "AUTHENTICATION_FAILED": {
+    "request": { "id": "error-auth-v2", "method": "attach", "params": { "protocolVersion": { "min": 2, "max": 2 }, "profileId": "default" } },
+    "response": { "id": "error-auth-v2", "ok": false, "error": { "code": "AUTHENTICATION_FAILED", "message": "CDP IPC credential was missing or wrong" } }
+  },
+  "CONNECTION_NOT_FOUND": {
+    "request": { "id": "error-connection-v2", "method": "attach", "params": { "protocolVersion": { "min": 2, "max": 2 }, "profileId": "default" } },
+    "response": { "id": "error-connection-v2", "ok": false, "error": { "code": "CONNECTION_NOT_FOUND", "message": "A non-release operation referenced an unknown lease" } }
+  },
+  "PROFILE_CREATE_FAILED": {
+    "request": { "id": "error-create-v2", "method": "createProfile", "params": { "protocolVersion": { "min": 2, "max": 2 }, "idempotencyKey": "webcmd:failed", "displayName": "failed" } },
+    "response": { "id": "error-create-v2", "ok": false, "error": { "code": "PROFILE_CREATE_FAILED", "message": "Chromium could not initialize the profile" } }
+  },
+  "PROFILE_GONE": {
+    "request": { "id": "error-gone-v2", "method": "attach", "params": { "protocolVersion": { "min": 2, "max": 2 }, "profileId": "Profile 1" } },
+    "response": { "id": "error-gone-v2", "ok": false, "error": { "code": "PROFILE_GONE", "message": "Profile was removed during attachment" } }
+  },
+  "PROFILE_REPAIR_REQUIRED": {
+    "request": { "id": "error-repair-v2", "method": "createProfile", "params": { "protocolVersion": { "min": 2, "max": 2 }, "idempotencyKey": "webcmd:repair", "displayName": "repair" } },
+    "response": { "id": "error-repair-v2", "ok": false, "error": { "code": "PROFILE_REPAIR_REQUIRED", "message": "Saved profile mapping conflicts with native state" } }
+  }
+}

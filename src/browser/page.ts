@@ -237,11 +237,12 @@ export class Page extends BasePage {
     return result.page;
   }
 
-  async closeTab(target?: number | string): Promise<void> {
+  async closeTab(target?: number | string, options: { force?: boolean } = {}): Promise<void> {
     const params: Record<string, unknown> = { op: 'close', ...this._sessionOpts() };
     if (typeof target === 'number') params.index = target;
     else if (typeof target === 'string') params.page = target;
     else if (this._page !== undefined) params.page = this._page;
+    if (options.force === true) params.force = true;
 
     const result = await sendCommand('tabs', params) as { closed?: string } | null;
     const closedPage = typeof result?.closed === 'string' ? result.closed : undefined;

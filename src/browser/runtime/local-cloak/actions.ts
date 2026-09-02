@@ -464,8 +464,12 @@ export async function dispatchCloakAction(manager: CloakSessionManager, command:
         if (!command.cdpMethod) return invalidRequest(command, 'Missing cdpMethod');
         const lease = await resolveLease(manager, command);
         const session = await lease.context.newCDPSession(lease.page);
-        const data = await session.send(command.cdpMethod as any, command.cdpParams ?? {});
-        return { id: command.id, ok: true, data, page: lease.pageId };
+        try {
+          const data = await session.send(command.cdpMethod as any, command.cdpParams ?? {});
+          return { id: command.id, ok: true, data, page: lease.pageId };
+        } finally {
+          await session.detach().catch(() => {});
+        }
       }
       case 'frames': {
         const lease = await resolveLease(manager, command);

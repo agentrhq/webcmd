@@ -25,7 +25,8 @@ export type BrowserRuntimeAction =
   | 'session-list'
   | 'session-close'
   | 'session-handoff-start'
-  | 'session-handoff-clear';
+  | 'session-handoff-clear'
+  | 'profile-ensure';
 
 export type BrowserSurface = 'browser' | 'adapter';
 export type SiteSessionMode = 'ephemeral' | 'persistent';
@@ -69,7 +70,7 @@ export interface BrowserRuntimeCommand {
   timeout?: number;
   /** Absolute command deadline in epoch milliseconds. Preferred by newer daemons. */
   deadlineAt?: number;
-  /** Force Session lifecycle actions such as close past active work/handoff guards. */
+  /** Force this command's destructive close; Session and exact-page close interpret it independently. */
   force?: boolean;
   /** Remove an explicit Session record after closing it. Internal probes only. */
   discard?: boolean;
@@ -102,6 +103,8 @@ export interface BrowserRuntimeCommand {
   /** Site and expiry payload for internal Session handoff controls. */
   site?: string;
   expiresAt?: string;
+  alias?: string;
+  idempotencyKey?: string;
 }
 
 export interface BrowserRuntimeResult {

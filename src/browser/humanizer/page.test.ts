@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { HumanConfig } from './config.js';
 import * as humanizer from './index.js';
-import { humanizePage } from './page.js';
+import { disposeHumanizedPage, humanizePage } from './page.js';
 
 const FAST_HUMAN_CONFIG: Partial<HumanConfig> = {
   initial_cursor_x: [0, 0],
@@ -41,6 +41,7 @@ const FAST_HUMAN_CONFIG: Partial<HumanConfig> = {
 
 function fakeCdpSession() {
   return {
+    detach: vi.fn().mockResolvedValue(undefined),
     send: vi.fn(async (method: string) => {
       if (method === 'Page.getFrameTree') return { frameTree: { frame: { id: 'frame-1' } } };
       if (method === 'Page.createIsolatedWorld') return { executionContextId: 7 };
@@ -201,6 +202,56 @@ afterEach(() => {
 });
 
 describe('humanizePage', () => {
+  it('awaits an exactly-once disposer that restores Page, mouse, keyboard, and Frame wrappers and detaches stealth CDP', async () => {
+    const childFrame = fakeFrame();
+    const mainFrame = fakeFrame();
+    mainFrame.childFrames.mockReturnValue([childFrame]);
+    const owned = fakePage({ mainFrame });
+    const pageClick = owned.page.click;
+    const mouseMove = owned.page.mouse.move;
+    const keyboardType = owned.page.keyboard.type;
+    const pageDollar = owned.page.$;
+    const pageDollars = owned.page.$$;
+    const pageWaitForSelector = owned.page.waitForSelector;
+    const frameClick = childFrame.click;
+    const frameDollar = childFrame.$;
+
+    humanizePage(owned.page as any, FAST_HUMAN_CONFIG);
+    await (owned.page as any)._stealth.getCdpSession();
+
+    await Promise.all([
+      disposeHumanizedPage(owned.page as any),
+      disposeHumanizedPage(owned.page as any),
+    ]);
+
+    expect(owned.page.click).toBe(pageClick);
+    expect(owned.page.mouse.move).toBe(mouseMove);
+    expect(owned.page.keyboard.type).toBe(keyboardType);
+    expect(owned.page.$).toBe(pageDollar);
+    expect(owned.page.$$).toBe(pageDollars);
+    expect(owned.page.waitForSelector).toBe(pageWaitForSelector);
+    expect(childFrame.click).toBe(frameClick);
+    expect(childFrame.$).toBe(frameDollar);
+    expect((childFrame as any)._humanPatched).toBeUndefined();
+    expect(owned.cdp.detach).toHaveBeenCalledOnce();
+  });
+
+  it('restores Frame wrappers added after navigation', async () => {
+    const mainFrame = fakeFrame();
+    const owned = fakePage({ mainFrame });
+    humanizePage(owned.page as any, FAST_HUMAN_CONFIG);
+    const lateFrame = fakeFrame();
+    const lateClick = lateFrame.click;
+    mainFrame.childFrames.mockReturnValue([lateFrame]);
+
+    await owned.page.goto('https://example.test/');
+    expect(lateFrame.click).not.toBe(lateClick);
+    mainFrame.childFrames.mockReturnValue([]);
+    await disposeHumanizedPage(owned.page as any);
+
+    expect(lateFrame.click).toBe(lateClick);
+    expect((lateFrame as any)._humanPatched).toBeUndefined();
+  });
   it('patches only the supplied Page once without touching its context, browser, or other pages', () => {
     const owned = fakePage();
     const human = fakePage();
@@ -363,5 +414,9 @@ describe('humanizePage', () => {
     expect(rawOwnedHandleClick).not.toHaveBeenCalled();
     expect(owned.page.mouse.down).toHaveBeenCalledOnce();
     expect(owned.page.mouse.up).toHaveBeenCalledOnce();
+
+    await disposeHumanizedPage(owned.page as any);
+    expect(patchedHandle.click).toBe(rawOwnedHandleClick);
+    expect((patchedHandle as any)._humanPatched).toBeUndefined();
   });
 });

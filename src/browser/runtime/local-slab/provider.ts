@@ -8,11 +8,13 @@ import type { SlabHelloResult } from '../../../slab/protocol.js';
 import { dispatchSlabAction, resolveSlabCommandProfileId } from './actions.js';
 import type { AttachSlabProfile } from './session-manager.js';
 import { SlabSessionManager } from './session-manager.js';
+import { ensureSlabProfile } from '../../../slab/control-bridge.js';
 
 export interface LocalSlabRuntimeProviderOptions {
   baseDir?: string;
   attachProfile?: AttachSlabProfile;
   statusBridge?: () => Promise<Pick<SlabBridgeClient, 'close' | 'hello'>>;
+  ensureProfile?: typeof ensureSlabProfile;
 }
 
 export function createLocalBrowserRuntimeProvider(opts: LocalSlabRuntimeProviderOptions = {}): LocalSlabRuntimeProvider {
@@ -73,7 +75,7 @@ export class LocalSlabRuntimeProvider implements BrowserRuntimeProvider {
       ...(requestedProfile && !selectedProfile?.runtimeConnected ? { profileDisconnected: true } : {}),
       pending: 0,
       commandResultUnknown: 0,
-      sessions: await this.listSessions({ profileId: opts.contextId }),
+      sessions: await this.listSessions({ profileId: opts.contextId, includeDiscovered: false }),
     };
   }
 
@@ -82,7 +84,19 @@ export class LocalSlabRuntimeProvider implements BrowserRuntimeProvider {
   }
 
   async createSession(command: BrowserRuntimeCommand): Promise<BrowserSessionRecord> {
-    return this.sessions.create(this.resolveProfileId(command), command.sessionName ?? '');
+    const profileId = this.resolveProfileId(command);
+    const hello = await this.nativeStatus();
+    if (hello.protocolVersion >= 2 && !hello.profiles.some(profile => profile.id === profileId)) {
+      throw Object.assign(
+        new Error(`SLAB Profile "${profileId}" no longer exists. Run webcmd profile create to repair it explicitly.`),
+        { code: 'PROFILE_GONE' },
+      );
+    }
+    return this.sessions.create(profileId, command.sessionName ?? '');
+  }
+
+  async ensureProfile(input: { alias: string; idempotencyKey: string }) {
+    return (this.opts.ensureProfile ?? ensureSlabProfile)(input);
   }
 
   async requireSession(command: BrowserRuntimeCommand): Promise<BrowserSessionRecord> {
@@ -108,11 +122,15 @@ export class LocalSlabRuntimeProvider implements BrowserRuntimeProvider {
     return this.sessions.clearHandoff(this.resolveProfileId(command), command.sessionId!);
   }
 
-  async listSessions(input: { profileId?: string; limit?: number }): Promise<BrowserSessionListRow[]> {
-    return this.sessions.list(input.profileId, input.limit).map((session) => ({
+  async listSessions(input: { profileId?: string; limit?: number; includeDiscovered?: boolean }): Promise<BrowserSessionListRow[]> {
+    const managed: BrowserSessionListRow[] = this.sessions.list(input.profileId, input.limit).map((session) => ({
       ...session,
+      rowKind: 'session' as const,
       runtimeState: this.manager.hasSession(session.profileId, session.id) ? 'active' : 'idle',
     }));
+    if (input.includeDiscovered === false || !input.profileId || managed.length >= (input.limit ?? 20)) return managed;
+    const discovered = await this.manager.discoveredWindows(input.profileId);
+    return [...managed, ...discovered].slice(0, input.limit ?? 20);
   }
 
   async closeSession(command: BrowserRuntimeCommand): Promise<{ closed: boolean; alreadyIdle: boolean; session: string }> {

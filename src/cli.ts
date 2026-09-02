@@ -46,7 +46,8 @@ import { daemonRestart, daemonStatus, daemonStop } from './commands/daemon.js';
 import { enableVerbose, isVerbose, log } from './logger.js';
 import { BrowserCommandError, listExistingBrowserTabs, releaseSiteSessionLease, sendCommand } from './browser/daemon-client.js';
 import { fetchDaemonStatus } from './browser/daemon-transport.js';
-import { aliasForContextId, createProfile, loadProfileConfig, normalizeContextId, ProfileNotFoundError, profileListRows, profileRouteParams, renameProfile, resolveKnownProfile, resolveProfileSelection, setDefaultProfile, type ProfileSelection } from './browser/profile.js';
+import { aliasForContextId, commitSlabProfileEnsure, createProviderProfile, loadProfileConfig, normalizeContextId, prepareSlabProfileEnsure, ProfileNotFoundError, profileListRows, profileRouteParams, renameProviderProfile, resolveKnownProfile, resolveProfileSelection, rotateSlabProfileEnsure, setProviderDefaultProfile, type ProfileProvider, type ProfileSelection } from './browser/profile.js';
+import { loadWebcmdConfig } from './hosted/config.js';
 import { formatDaemonVersion, isDaemonStale } from './browser/daemon-version.js';
 import { DEFAULT_BROWSER_CONNECT_TIMEOUT } from './browser/config.js';
 import { CLI_COMMAND, PACKAGE_NAME } from './brand.js';
@@ -68,6 +69,15 @@ import { resolveAdapterSourcePath, splitAdapterCommandKey } from './adapter-sour
 
 const CLI_FILE = fileURLToPath(import.meta.url);
 const FOLLOW_POLL_MS = 1_000;
+
+function selectedProfileProvider(): ProfileProvider {
+  const config = loadWebcmdConfig();
+  return config.mode === 'local' ? config.browser.kind : 'cloak';
+}
+function selectedProfileProviderLabel(): string {
+  const provider = selectedProfileProvider();
+  return provider === 'slab' ? 'SLAB' : provider === 'cloak' ? 'Cloak' : provider === 'chrome' ? 'Chrome' : 'custom browser';
+}
 const externalRootCommands = new WeakSet<Command>();
 
 function parsePositiveIntOption(value: string | undefined, _label: string, fallback: number): number {
@@ -458,7 +468,7 @@ async function requireKnownProfileId(command?: Command): Promise<string> {
 }
 
 function formatHandoff(row: BrowserSessionListRow): string {
-  return row.handoff ? `${row.handoff.site} until ${row.handoff.expiresAt}` : '';
+  return row.rowKind !== 'discovered' && row.handoff ? `${row.handoff.site} until ${row.handoff.expiresAt}` : '';
 }
 
 function sessionCreateOutput(data: unknown): unknown {
@@ -797,7 +807,11 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
       // `profileId` is a column because these rows are scoped to the selected
       // Profile. Without it the table reads as every Session on the machine,
       // which is what led agents to act on Sessions from unrelated Profiles.
-      await renderOutput(output, { fmt, fmtExplicit: outputFormatIsExplicit(command), columns: ['id', 'profileId', 'kind', 'runtimeState', 'handoff'] });
+      await renderOutput(output, {
+        fmt,
+        fmtExplicit: outputFormatIsExplicit(command),
+        columns: ['rowKind', 'id', 'profileId', 'kind', 'runtimeState', 'window', 'page', 'tabCount', 'ownership', 'title', 'url', 'handoff'],
+      });
     });
 
   const sessionCloseCmd = addOutputFormatOption(sessionCmd
@@ -1280,10 +1294,14 @@ cli({
 
   browser.addCommand(withBrowserVerbose(new Command('close')
     .description('Close or detach this browser session')
-    .action(rawBrowserAction((session, routing) => sendCommand('close-window', {
+    .addOption(new Option('--page <id>', 'Stable page id to close exactly').argParser(browserOptionValueParser('close', 'page')!))
+    .option('--force', 'Allow destructive closure of a human-adopted tab')
+    .action(rawBrowserAction((session, routing, opts) => sendCommand('close-window', {
       session,
       surface: 'browser',
       ...routing,
+      ...(typeof opts.page === 'string' && opts.page.trim() ? { page: opts.page.trim() } : {}),
+      ...(opts.force === true ? { force: true } : {}),
     })))));
   // ── Built-in: doctor / completion ──────────────────────────────────────────
 
@@ -1916,7 +1934,7 @@ cli({
 
   const profileListCmd = addOutputFormatOption(profileCmd
     .command('list')
-    .description('List Chrome and Chromium profiles available through the Cloak runtime'));
+    .description(`List profiles available through the ${selectedProfileProviderLabel()} runtime`));
   profileListCmd.action(async (opts: { format?: string }, command: Command) => {
       const fmt = resolveCommandOutputFormat(command, opts.format);
       if (fmt === null) return;
@@ -1961,13 +1979,13 @@ cli({
         return;
       }
       if (profiles.length === 0) {
-        console.log('No Cloak runtime profiles are active.');
+        console.log(`No ${selectedProfileProviderLabel()} runtime profiles are active.`);
         console.log('Run a browser-backed command or webcmd <site> login to create one.');
         return;
       }
 
       const knownContextIds = new Set(profiles.map((profile) => profile.contextId));
-      console.log('Available Cloak profiles');
+      console.log(`Available ${selectedProfileProviderLabel()} profiles`);
       console.log();
       for (const profile of profiles) {
         const alias = aliasForContextId(config, profile.contextId);
@@ -1995,10 +2013,29 @@ cli({
 
   profileCmd
     .command('create')
-    .description('Create a Cloak profile alias')
+    .description(`Create a ${selectedProfileProviderLabel()} profile alias`)
     .argument('<alias>', 'Local alias, e.g. work or personal')
     .action(async (alias: string, _opts: unknown, command: Command) => {
-      const result = createProfile(alias);
+      const provider = selectedProfileProvider();
+      if (provider === 'slab') {
+        let pending = await prepareSlabProfileEnsure(alias);
+        let ensured: { profile: { id: string; displayName: string }; created: boolean };
+        try {
+          ensured = await sendCommand('profile-ensure', pending) as typeof ensured;
+        } catch (error) {
+          if (!(error instanceof BrowserCommandError) || error.code !== 'PROFILE_REPAIR_REQUIRED') throw error;
+          pending = await rotateSlabProfileEnsure(pending.alias, pending.idempotencyKey);
+          ensured = await sendCommand('profile-ensure', pending) as typeof ensured;
+        }
+        await commitSlabProfileEnsure(pending.alias, pending.idempotencyKey, ensured.profile.id);
+        await emitActionResult(command, { ok: true, action: 'create', alias: pending.alias, contextId: ensured.profile.id, created: ensured.created }, () => {
+          console.log(ensured.created
+            ? `Profile ${pending.alias} created (contextId: ${ensured.profile.id}).`
+            : `Profile ${pending.alias} already exists (contextId: ${ensured.profile.id}).`);
+        });
+        return;
+      }
+      const result = await createProviderProfile(provider, alias);
       await emitActionResult(command, {
         ok: true,
         action: 'create',
@@ -2014,12 +2051,12 @@ cli({
 
   profileCmd
     .command('rename')
-    .description('Assign a local alias to an available Cloak profile')
+    .description(`Assign a local alias to an available ${selectedProfileProviderLabel()} profile`)
     .argument('<contextId>', 'Profile contextId from webcmd profile list')
     .argument('<alias>', 'Local alias, e.g. work or personal')
     .action(async (contextId: string, alias: string, _opts: unknown, command: Command) => {
       try {
-        renameProfile(contextId, alias);
+        await renameProviderProfile(selectedProfileProvider(), contextId, alias);
         await emitActionResult(command, { ok: true, action: 'rename', contextId, alias }, () => {
           console.log(`Profile ${contextId} is now aliased as ${alias}.`);
         });
@@ -2031,7 +2068,7 @@ cli({
 
   profileCmd
     .command('use')
-    .description('Set the default Cloak profile for future commands')
+    .description(`Set the default ${selectedProfileProviderLabel()} profile for future commands`)
     .argument('<profile>', 'Profile alias or contextId from webcmd profile list')
     .action(async (profile: string, _opts: unknown, command: Command) => {
       const status = await fetchDaemonStatus();
@@ -2039,14 +2076,14 @@ cli({
       const connected = status && !isDaemonStale(status, PKG_VERSION) && Array.isArray(status.profiles)
         ? status.profiles
         : [];
-      const next = setDefaultProfile(profile, profileListRows(config, connected));
+      const defaultContextId = await setProviderDefaultProfile(selectedProfileProvider(), profile, profileListRows(config, connected));
       await emitActionResult(command, {
         ok: true,
         action: 'use',
         profile,
-        defaultContextId: next.defaultContextId ?? profile,
+        defaultContextId,
       }, () => {
-        console.log(`Default Cloak profile: ${next.defaultContextId ?? profile}`);
+        console.log(`Default ${selectedProfileProviderLabel()} profile: ${defaultContextId}`);
       });
     });
 

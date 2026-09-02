@@ -1438,7 +1438,7 @@ name: 'search',
       expect(data.commands.map((cmd: any) => cmd.name)).toEqual(['create', 'list', 'rename', 'use']);
       const list = data.commands.find((cmd: any) => cmd.name === 'list');
       expect(list).toMatchObject({
-        description: 'List Chrome and Chromium profiles available through the Cloak runtime',
+        description: 'List profiles available through the Cloak runtime',
       });
       const rename = data.commands.find((cmd: any) => cmd.name === 'rename');
       expect(rename).toMatchObject({
@@ -2371,6 +2371,14 @@ describe('browser raw session commands', () => {
     const program = createProgram('', '');
     await program.parseAsync(['node', 'webcmd', '--session', 'work-k7', 'browser', 'close']);
     expect(mockSendCommand).toHaveBeenCalledWith('close-window', { session: 'work-k7', surface: 'browser' });
+  });
+
+  it('routes exact-page force only on browser close', async () => {
+    const program = createProgram('', '');
+    await program.parseAsync(['node', 'webcmd', '--session', 'work-k7', 'browser', 'close', '--page', 'page-7', '--force']);
+    expect(mockSendCommand).toHaveBeenCalledWith('close-window', {
+      session: 'work-k7', surface: 'browser', page: 'page-7', force: true,
+    });
   });
 });
 

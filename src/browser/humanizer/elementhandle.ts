@@ -27,6 +27,25 @@ import {
   CHECKS_CLICK, CHECKS_HOVER, CHECKS_INPUT, CHECKS_FOCUS, CHECKS_CHECK,
 } from './actionability.js';
 
+const patchedHandles = new WeakMap<Page, Map<ElementHandle, Map<PropertyKey, PropertyDescriptor | undefined>>>();
+const ELEMENT_HANDLE_KEYS = [
+  '$', '$$', 'waitForSelector', 'click', 'dblclick', 'hover', 'type', 'fill',
+  'press', 'selectOption', 'check', 'uncheck', 'setChecked', 'tap', 'focus',
+  'scrollIntoViewIfNeeded', '_humanPatched',
+] as const;
+
+export function restorePatchedElementHandles(page: Page): void {
+  const handles = patchedHandles.get(page);
+  if (!handles) return;
+  for (const [handle, descriptors] of handles) {
+    for (const [key, descriptor] of descriptors) {
+      if (descriptor) Object.defineProperty(handle, key, descriptor);
+      else Reflect.deleteProperty(handle, key);
+    }
+  }
+  patchedHandles.delete(page);
+}
+
 // --- Platform-aware select-all shortcut ---
 const SELECT_ALL = process.platform === 'darwin' ? 'Meta+a' : 'Control+a';
 
@@ -92,6 +111,9 @@ export function patchSingleElementHandle(
   stealth: any,
 ): void {
   if ((el as any)._humanPatched) return;
+  const handles = patchedHandles.get(page) ?? new Map();
+  handles.set(el, new Map(ELEMENT_HANDLE_KEYS.map(key => [key, Object.getOwnPropertyDescriptor(el, key)])));
+  patchedHandles.set(page, handles);
   (el as any)._humanPatched = true;
 
   // Save originals

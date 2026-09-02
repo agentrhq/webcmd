@@ -37,13 +37,14 @@ Until `doctor` is green, browser commands may fail.
 - Create a named profile first: `webcmd profile create <profile>`. If an explicit profile returns `PROFILE_NOT_FOUND`, create it, then retry session creation.
 - Raw browser commands require the returned readable ID at the root: `webcmd --profile <profile> --session <session-id> browser ...`.
 - Profiles are cookie jars and auth scope; Sessions are browser workspaces/windows within a Profile. Session IDs are immutable and Profile-scoped. Parallel agents use separate Sessions.
-- `webcmd session list` shows sessions and their handoff/runtime state; close finished work with `webcmd session close <session-id>`. Close is blocked while that Session has a live handoff.
+- `webcmd session list` shows durable sessions and, with SLAB, unbound live windows as `discovered` rows. Discovered window/page IDs are temporary; list again after browser or daemon restart.
+- Close finished work with `webcmd session close <session-id>`. It closes an agent-created window but only detaches a human window explicitly bound through SLAB. Close is blocked while that Session has a live handoff.
 - Browser state in the bound page persists between calls, but each `run` gets a fresh JavaScript scope.
-- `webcmd --session <session-id> browser tabs` lists existing pages without creating a new one.
-- `webcmd --session <session-id> browser bind --page <page-id>` explicitly attaches the session to an existing page.
+- `webcmd --session <session-id> browser tabs` lists owned pages and discoverable unowned SLAB tabs without creating, focusing, or claiming a page.
+- `webcmd --session <session-id> browser bind --page <page-id>` explicitly claims the selected tab's complete SLAB window, including sibling tabs.
 - If the user manually signs in or changes the visible tab, re-bind or inspect with a fresh snapshot before continuing.
 
-Raw browser commands require an explicit readable selector. Local browser commands use Cloak; hosted browser commands use Webcmd Cloud and Browser Use.
+Raw browser commands require an explicit readable selector. Local browser commands use the configured browser runtime; hosted browser commands use Webcmd Cloud and Browser Use.
 
 ```bash
 webcmd site memory context https://example.com/ --task-id task-1 -f json
@@ -70,15 +71,16 @@ webcmd --profile work session close work-project-k7
 
 ## Command surface
 
-The raw surface is `tabs`, `bind --page`, `snapshot`, and `run`; close through `webcmd session close`.
+The raw surface is `tabs`, `bind --page`, `snapshot`, `run`, and `close`. Close a whole Session through `webcmd session close`; close one exact agent-owned tab with `browser close --page <page-id>`. A human-adopted tab requires command-local `--force`.
 
 Common calls:
 
-1. `webcmd --session <session-id> browser tabs` lists existing pages and is read-only.
-2. `webcmd --session <session-id> browser bind --page page-123` is an explicit bind that selects one page.
+1. `webcmd --session <session-id> browser tabs` lists existing pages and is read-only. In SLAB, unowned human tabs are discoverable but remain untouched.
+2. `webcmd --session <session-id> browser bind --page page-123` explicitly binds the complete containing window. Re-list if a temporary discovered ID is stale.
 3. `webcmd --session <session-id> browser snapshot --snapshot-mode act` inspects actionable controls. Use `--snapshot-mode tree` for fuller page structure or `--snapshot-mode read` for readable article/content text.
 4. `webcmd --session <session-id> browser run --stdin` runs one JavaScript program with fresh JavaScript scope and persistent browser state in the bound page.
 5. `webcmd session close <session-id>` closes the session when finished.
+6. `webcmd --session <session-id> browser close --page <page-id> --force` destructively closes exactly one adopted human tab; omit `--force` for agent-owned tabs.
 
 | command | use |
 | --- | --- |
