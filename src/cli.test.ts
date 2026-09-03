@@ -1304,6 +1304,14 @@ name: 'search',
     }
   });
 
+  it('describes session close cleanup consistently with its discard behavior', () => {
+    const program = createProgram('', '');
+    const session = program.commands.find(cmd => cmd.name() === 'session')!;
+    const close = session.commands.find(cmd => cmd.name() === 'close')!;
+
+    expect(close.description()).toBe('Close a browser Session runtime and discard its durable record');
+  });
+
   it('renders plugin namespace structured help with positional + option leaves', () => {
     const argv = process.argv;
     try {

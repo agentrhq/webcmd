@@ -816,7 +816,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
 
   const sessionCloseCmd = addOutputFormatOption(sessionCmd
     .command('close')
-    .description('Close a browser Session runtime without deleting its durable record')
+    .description('Close a browser Session runtime and discard its durable record')
     .argument('[session-id]', 'Existing readable Session ID from `webcmd session create <name>` (or pass the root `--session <id>` selector)')
     .option('--force', 'Close even while the Session is busy or paused for handoff'), 'yaml');
   sessionCloseCmd.action(async (positionalSessionId: string | undefined, opts: { format?: string; force?: boolean }, command) => {
