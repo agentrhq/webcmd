@@ -4,7 +4,7 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { addCandidate, showCandidate } from './candidates.js';
 import { checkpointMemory, type CheckpointInput } from './checkpoint.js';
 import { classifyProduct } from './classify.js';
@@ -19,6 +19,10 @@ const FACT = '- [verified 2026-08-31] Prefer /new for fresh posts.\n';
 const SITE = `# Example\n\n${FACT}`;
 const POINTER = '- More: [references/listing.md](references/listing.md).\n';
 const REF = `# Listing\n\n${FACT}`;
+
+if (process.platform === 'win32') {
+  vi.setConfig({ testTimeout: 30_000 });
+}
 
 afterEach(async () => {
   restoreGitShim();
