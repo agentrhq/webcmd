@@ -71,7 +71,7 @@ webcmd --profile work session close work-project-k7
 
 ## Command surface
 
-The raw surface is `tabs`, `bind --page`, `snapshot`, `run`, and `close`. Close a whole Session through `webcmd session close`; close one exact agent-owned tab with `browser close --page <page-id>`. A human-adopted tab requires command-local `--force`.
+The raw surface is `tabs`, `bind --page`, `snapshot`, and `run`. Close a whole Session through `webcmd session close`; close one tab with `browser close --page <page-id>`. A human-adopted tab requires `--force`.
 
 Common calls:
 
@@ -174,7 +174,7 @@ when applicable. Do not close that Session during the live handoff.
 2. If the site exposes a login command, run `webcmd <site> login`.
 3. `already_logged_in` is verified; continue.
 4. `in_progress` means no current user action, so do not ask the user, wait for confirmation, or poll.
-5. `action_required` is a hard stop. Give the user its instructions and any returned `action_url` or `view_url`. If Webcmd returned no URL, use the current visible browser.
+5. `action_required` is a hard stop. Give the user its instructions and any returned `action_url` or `view_url`. If Webcmd returned no URL, use the visible browser.
 6. Never ask for or type passwords, OTPs, recovery codes, cookies, credentials, or session secrets. Never echo or store them.
 7. Run the returned `verify_command` or `handoff.verifyCommand` only after the user reports done; verification must succeed before retrying.
 8. Without a verifier, take a fresh snapshot and verify the intended identity check or post-action state before any retry, especially for write commands. The user's report alone is not verification.
