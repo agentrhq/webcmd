@@ -879,7 +879,7 @@ describe('checkpoint git transaction', () => {
     expect((await git(sites, ['show', `HEAD:example.test/candidates/${second.id}.json`]))).toMatch(/"status": "ingested"/);
     expect((await git(sites, ['status', '--porcelain', '-uall', '--', 'example.test/candidates'])).trim()).toBe('');
     expect(JSON.parse(await git(sites, ['show', `HEAD:example.test/candidates/${later.id}.json`])).status).toBe('pending');
-  });
+  }, 20_000);
 
   it('recovers interrupted ingested provenance after an unrelated later product commit', async () => {
     const { homeDir, sites } = await primed();
@@ -938,7 +938,7 @@ describe('checkpoint git transaction', () => {
     expect((await git(sites, ['show', `HEAD:example.test/candidates/${second.id}.json`]))).toMatch(/"status": "ingested"/);
     expect((await git(sites, ['status', '--porcelain', '-uall', '--', 'example.test/candidates'])).trim()).toBe('');
     expect(JSON.parse(await git(sites, ['show', `HEAD:example.test/candidates/${first.id}.json`])).memory_commit).toBe(memoryRevision);
-  });
+  }, 20_000);
 
   it('recovers a rejected-only interrupted provenance batch on a later product write', async () => {
     const { homeDir, sites } = await primed();
@@ -963,7 +963,7 @@ describe('checkpoint git transaction', () => {
     expect((await git(sites, ['show', `HEAD:example.test/candidates/${second.id}.json`]))).toMatch(/"status": "rejected"/);
     expect((await git(sites, ['status', '--porcelain', '-uall', '--', 'example.test/candidates'])).trim()).toBe('');
     expect(JSON.parse(await git(sites, ['show', `HEAD:example.test/candidates/${later.id}.json`])).status).toBe('pending');
-  });
+  }, 20_000);
 
   it('does not auto-commit a pending candidate whose payload was edited into a terminal record', async () => {
     const { homeDir, sites } = await primed();

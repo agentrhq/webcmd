@@ -32,8 +32,9 @@ describe('provider Profile config transactions', () => {
   it('serializes mutations made by independent processes', async () => {
     const run = promisify(execFile);
     const moduleUrl = new URL('./profile.ts', import.meta.url).href;
-    const executable = path.resolve('node_modules/.bin/tsx');
-    await Promise.all(Array.from({ length: 6 }, (_, index) => run(executable, [
+    await Promise.all(Array.from({ length: 6 }, (_, index) => run(process.execPath, [
+      '--import',
+      'tsx',
       '--eval',
       `import { createProviderProfile } from ${JSON.stringify(moduleUrl)}; void createProviderProfile('cloak', ${JSON.stringify(`worker-${index}`)});`,
     ], {
