@@ -131,9 +131,7 @@ export class SlabBridgeClient {
     if (this.negotiatedVersion === undefined) return Promise.reject(new Error('SLAB control hello is required before attach.'));
     const profileId = typeof profile === 'string' ? profile : profile.id;
     return this.request('attach', {
-      protocolVersion: this.negotiatedVersion === undefined
-        ? { min: SLAB_PROTOCOL_MIN_VERSION, max: SLAB_PROTOCOL_VERSION }
-        : { min: this.negotiatedVersion, max: this.negotiatedVersion },
+      protocolVersion: negotiatedProtocolVersionParam(this.negotiatedVersion),
       profileId,
     }) as Promise<SlabAttachResult>;
   }
@@ -141,9 +139,7 @@ export class SlabBridgeClient {
   release(connectionId: string): Promise<null> {
     if (this.negotiatedVersion === undefined) return Promise.reject(new Error('SLAB control hello is required before release.'));
     return this.request('release', {
-      protocolVersion: this.negotiatedVersion === undefined
-        ? { min: SLAB_PROTOCOL_MIN_VERSION, max: SLAB_PROTOCOL_VERSION }
-        : { min: this.negotiatedVersion, max: this.negotiatedVersion },
+      protocolVersion: negotiatedProtocolVersionParam(this.negotiatedVersion),
       connectionId,
     }) as Promise<null>;
   }
@@ -248,4 +244,8 @@ export class SlabBridgeClient {
     }
     this.socket.destroy();
   }
+}
+
+function negotiatedProtocolVersionParam(revision: number): number | { min: number; max: number } {
+  return revision === 1 ? 1 : { min: revision, max: revision };
 }

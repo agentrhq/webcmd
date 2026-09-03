@@ -839,6 +839,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
             contextId: profileId,
             session: sessionId,
             force: opts.force === true,
+            discard: true,
           });
           await renderOutput(data, { fmt, fmtExplicit: outputFormatIsExplicit(command) });
           return;
@@ -847,7 +848,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
         }
       }
       if (opts.force === true) {
-        const data = await sendCommand('session-close', { contextId: profileId, session: sessionId, force: true });
+        const data = await sendCommand('session-close', { contextId: profileId, session: sessionId, force: true, discard: true });
         await renderOutput(data, { fmt, fmtExplicit: outputFormatIsExplicit(command) });
         return;
       }

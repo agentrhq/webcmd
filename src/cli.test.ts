@@ -2563,6 +2563,7 @@ describe('browser Session lifecycle commands', () => {
       contextId: 'default',
       session: 'work-project-k7',
       force: false,
+      discard: true,
     });
     expect(JSON.parse(consoleLogSpy.mock.calls.flat().join('\n'))).toMatchObject({
       closed: false,

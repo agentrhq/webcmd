@@ -197,6 +197,10 @@ function daemonShuttingDownError(): Error & { code: 'DAEMON_SHUTTING_DOWN' } {
   return Object.assign(new Error('The browser daemon is shutting down.'), { code: 'DAEMON_SHUTTING_DOWN' as const });
 }
 
+function isBlankStartupUrl(url: string): boolean {
+  return url === 'about:blank' || url === 'chrome://newtab/' || url === 'chrome://new-tab-page/';
+}
+
 export class SlabSessionManager {
   readonly networkCapture = new SlabNetworkCapture();
 
@@ -1122,7 +1126,7 @@ export class SlabSessionManager {
     windowMode?: BrowserWindowMode,
   ): Promise<PlaywrightPage> {
     const openerEntry = this.openEntries(session)[0]?.[1];
-    if (!openerEntry) return this.createWindowPage(runtime, windowMode);
+    if (!openerEntry) return await this.claimSoleBlankStartupPage(runtime) ?? this.createWindowPage(runtime, windowMode);
     await this.assertOwnedWindow(runtime, session.id, openerEntry);
     const opener = openerEntry.page;
     const openerWindowId = await this.windowIdForTarget(runtime, openerEntry.targetId, opener);
@@ -1137,6 +1141,16 @@ export class SlabSessionManager {
     const page = await openedPage;
     if (page) return page;
     throw new Error(`SLAB could not create another tab in Session ${session.id} without opening a second window.`);
+  }
+
+  private async claimSoleBlankStartupPage(runtime: ProfileRuntime): Promise<PlaywrightPage | undefined> {
+    if (runtime.targetPages.size > 0 || [...runtime.sessions.values()].some(session => session.windowIds.size > 0)) {
+      return undefined;
+    }
+    const unowned = (await this.discoverPages(runtime))
+      .filter(candidate => runtime.windowOwners.get(candidate.windowId) === undefined);
+    if (unowned.length !== 1 || !isBlankStartupUrl(unowned[0]!.url)) return undefined;
+    return await this.findPageByTargetId(runtime, unowned[0]!.targetId);
   }
 
   private async waitForContextPageForSession(
@@ -1217,11 +1231,37 @@ export class SlabSessionManager {
       return page;
     }
     return new Promise<PlaywrightPage>((resolve, reject) => {
-      const timer = setTimeout(() => {
+      let settled = false;
+      let interval: ReturnType<typeof setInterval> | undefined;
+      const finish = (page: PlaywrightPage) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (interval) clearInterval(interval);
         this.targetPageWaiters.get(runtime)?.delete(targetId);
-        reject(new Error(`Timed out waiting for SLAB target ${targetId}`));
+        resolve(page);
+      };
+      const fail = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        if (interval) clearInterval(interval);
+        this.targetPageWaiters.get(runtime)?.delete(targetId);
+        reject(error);
+      };
+      const poll = () => {
+        void this.findPageByTargetId(runtime, targetId)
+          .then(found => {
+            if (found && !pageIsClosed(found)) finish(found);
+          })
+          .catch(() => {});
+      };
+      const timer = setTimeout(() => {
+        fail(new Error(`Timed out waiting for SLAB target ${targetId}`));
       }, TARGET_PAGE_MATCH_TIMEOUT_MS);
-      this.targetPageWaiters.get(runtime)!.set(targetId, { resolve, reject, timer });
+      interval = setInterval(poll, 50);
+      interval.unref?.();
+      this.targetPageWaiters.get(runtime)!.set(targetId, { resolve: finish, reject: fail, timer });
+      poll();
     });
   }
 
@@ -1233,6 +1273,9 @@ export class SlabSessionManager {
     // owned unless bindPage subsequently registers the exact matching target.
     for (const page of runtime.context.pages()) {
       if (pageIsClosed(page)) continue;
+      const cachedTargetId = this.pageTargetIds.get(page);
+      if (cachedTargetId === targetId) return page;
+      if (cachedTargetId) continue;
       const probe = await runtime.context.newCDPSession(page).catch(() => undefined);
       if (!probe) continue;
       try {

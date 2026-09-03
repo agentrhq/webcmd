@@ -13,6 +13,7 @@ function fakeAttachedProfile() {
   let targetCounter = 0;
   let windowCounter = 0;
   let beforeTargetCreate: (() => void) | undefined;
+  let emitCreatedPageEvents = true;
   const pageCdpSessions = new WeakMap<object, any[]>();
   let context: any;
 
@@ -115,7 +116,7 @@ function fakeAttachedProfile() {
         if (!(params as any)?.hidden) beforeTargetCreate?.();
         const page = makePage();
         pages.push(page);
-        queueMicrotask(() => emit('page', page));
+        if (emitCreatedPageEvents) queueMicrotask(() => emit('page', page));
         return { targetId: targetIds.get(page) };
       }
       if (method === 'Browser.getWindowForTarget') return { windowId: windowIds.get(params?.targetId ?? '') };
@@ -193,6 +194,7 @@ function fakeAttachedProfile() {
       return page;
     },
     setBeforeTargetCreate: (listener: (() => void) | undefined) => { beforeTargetCreate = listener; },
+    setEmitCreatedPageEvents: (value: boolean) => { emitCreatedPageEvents = value; },
     cdpSessionsFor: (page: object) => pageCdpSessions.get(page) ?? [],
     emitPageOnly: (page: object) => emit('page', page),
     emitPage: (page: object) => {
@@ -298,6 +300,38 @@ describe('SlabSessionManager ownership', () => {
     expect(second.page.close).not.toHaveBeenCalled();
     expect(await manager.listPages(b)).toEqual(expect.arrayContaining([
       expect.objectContaining({ page: second.pageId, ownership: 'session' }),
+    ]));
+  });
+
+  it('claims a sole blank startup page for the first agent Session and closes it cleanly', async () => {
+    const attached = fakeAttachedProfile();
+    await attached.humanPage.close();
+    const manager = new SlabSessionManager({ attachProfile: vi.fn().mockResolvedValue(attached.attachment) });
+    const input = { profileId: 'default', session: 'agent', sessionId: 'agent', surface: 'browser' as const };
+
+    const lease = await manager.getPage(input);
+
+    expect(lease.page).toBe(attached.humanBlank);
+    expect(await manager.listPages(input)).toEqual([
+      expect.objectContaining({ page: lease.pageId, ownership: 'session', provenance: 'agent-created' }),
+    ]);
+
+    await manager.closeSession('default', 'agent');
+    expect(attached.humanBlank.close).toHaveBeenCalledOnce();
+    expect(await manager.listPages(input)).toEqual([]);
+  });
+
+  it('claims a created target that appears in context pages without a page event', async () => {
+    const attached = fakeAttachedProfile();
+    attached.setEmitCreatedPageEvents(false);
+    const manager = new SlabSessionManager({ attachProfile: vi.fn().mockResolvedValue(attached.attachment) });
+    const input = { profileId: 'default', session: 'agent', sessionId: 'agent', surface: 'browser' as const };
+
+    const lease = await manager.getPage(input);
+
+    expect(manager.pageIdFor(lease.page)).toBe(lease.pageId);
+    expect(await manager.listPages(input)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ page: lease.pageId, ownership: 'session' }),
     ]));
   });
 
