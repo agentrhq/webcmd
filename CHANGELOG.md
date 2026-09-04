@@ -18,6 +18,29 @@
 - Hosted command lists retain excluded commands as `LOCAL` rows and return a local-only error instead of plugin-install guidance.
 - Local auth commands initialize user CLI compatibility shims, and hosted auth uses the same native grammar, flags, choices, and help as local mode.
 
+## [0.8.1](https://github.com/agentrhq/webcmd/compare/webcmd-v0.8.0...webcmd-v0.8.1) (2026-09-04)
+
+
+### Features
+
+* **browser:** import Chrome cookies during local setup ([#485](https://github.com/agentrhq/webcmd/issues/485)) ([3f5cdfd](https://github.com/agentrhq/webcmd/commit/3f5cdfd4ceba851eebaea325ee11eb7da3ac5ed1))
+* **skills:** carry the learning loop in the browser skill ([b92c356](https://github.com/agentrhq/webcmd/commit/b92c356c851976d6c40a6537d2427b2cf1add324))
+
+
+### Bug Fixes
+
+* **browser:** keep installed Chrome profile loaded on macOS ([#487](https://github.com/agentrhq/webcmd/issues/487)) ([9c8aca3](https://github.com/agentrhq/webcmd/commit/9c8aca32c6ba764c2859b1c2c21d2fcdeb77a23c))
+* **cli:** update help text formatting and structure ([#486](https://github.com/agentrhq/webcmd/issues/486)) ([b56da44](https://github.com/agentrhq/webcmd/commit/b56da4437586a357a26bdea7b472cdd1ad22993b))
+* **skills:** correct candidate qualification and completion rules ([e75c53a](https://github.com/agentrhq/webcmd/commit/e75c53a35f6fdc8923a817a6785fe76b8b2e3007))
+* **skills:** keep failed learning recoverable, not rolled back ([14e5fa6](https://github.com/agentrhq/webcmd/commit/14e5fa6b2bc3b524a7087c4e3ea8413d0173cb23))
+* **skills:** keep learning failures out of normal output ([72b06dd](https://github.com/agentrhq/webcmd/commit/72b06dd262f1f45bff53ba4d09ad2593c218a419))
+* **skills:** keep recurrence capture behind the qualification bar ([5f092e4](https://github.com/agentrhq/webcmd/commit/5f092e454ded4dc6dc55a0f8d120701ecacf9d91))
+
+
+### Miscellaneous Chores
+
+* release webcmd 0.8.1 ([c38b9df](https://github.com/agentrhq/webcmd/commit/c38b9dfe10c0c12f6881e3fd6193e5fb701bd493))
+
 ## [0.8.0](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.11...webcmd-v0.8.0) (2026-09-02)
 
 
