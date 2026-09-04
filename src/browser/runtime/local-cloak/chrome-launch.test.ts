@@ -42,7 +42,7 @@ describe('chromeLaunchArgs', () => {
     const args = chromeLaunchArgs([
       '--fingerprint=123', '--enable-automation', '--remote-debugging-pipe', '--remote-debugging-port=0', '--headless',
       '--remote-debugging-address=0.0.0.0', '--headless=old',
-    ], '/profiles/work', 43123);
+    ], '/profiles/work', 43123, 'linux');
     expect(args).toContain('--remote-debugging-address=127.0.0.1');
     expect(args).toContain('--remote-debugging-port=43123');
     expect(args).toContain('--user-data-dir=/profiles/work');
@@ -52,6 +52,13 @@ describe('chromeLaunchArgs', () => {
     expect(args).not.toContain('--headless');
     expect(args).not.toContain('--headless=old');
     expect(args).not.toContain('--remote-debugging-address=0.0.0.0');
+    expect(args).not.toContain('--disable-features=DestroyProfileOnBrowserClose');
+  });
+
+  it('keeps the profile loaded after its last visible window closes on macOS', () => {
+    const args = chromeLaunchArgs(['--fingerprint=123'], '/profiles/work', 43123, 'darwin');
+
+    expect(args).toContain('--disable-features=DestroyProfileOnBrowserClose');
   });
 });
 

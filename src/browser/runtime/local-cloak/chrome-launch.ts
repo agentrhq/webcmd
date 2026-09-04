@@ -53,7 +53,12 @@ export async function allocateNonzeroLoopbackPort(): Promise<number> {
   return port;
 }
 
-export function chromeLaunchArgs(baseArgs: readonly string[], userDataDir: string, port: number): string[] {
+export function chromeLaunchArgs(
+  baseArgs: readonly string[],
+  userDataDir: string,
+  port: number,
+  platform: NodeJS.Platform,
+): string[] {
   const filtered = baseArgs.filter(arg => arg !== '--enable-automation'
     && !arg.startsWith('--headless')
     && arg !== '--remote-debugging-pipe'
@@ -62,6 +67,7 @@ export function chromeLaunchArgs(baseArgs: readonly string[], userDataDir: strin
     && !arg.startsWith('--user-data-dir='));
   return [
     ...filtered,
+    ...(platform === 'darwin' ? ['--disable-features=DestroyProfileOnBrowserClose'] : []),
     `--user-data-dir=${userDataDir}`,
     '--remote-debugging-address=127.0.0.1',
     `--remote-debugging-port=${port}`,
@@ -140,7 +146,7 @@ export async function launchChromePersistentContext(
     let pids: number[] = [];
     let launchedPid: number | undefined;
     try {
-      const args = chromeLaunchArgs(launchOptions.args ?? [], options.userDataDir, port);
+      const args = chromeLaunchArgs(launchOptions.args ?? [], options.userDataDir, port, deps.platform);
       launchedPid = await deps.launch(executablePath, args, deps.platform);
       const endpoint = `http://127.0.0.1:${port}`;
       const deadline = deps.now() + READINESS_TIMEOUT_MS;
