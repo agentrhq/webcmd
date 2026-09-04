@@ -92,13 +92,14 @@ export function chromeUserDataDir(opts: ChromeCookieImportOptions = {}): string 
   const platform = opts.platform ?? process.platform;
   const env = opts.env ?? process.env;
   const homeDir = opts.homeDir ?? os.homedir();
+  const platformPath = pathForPlatform(platform);
 
-  if (platform === 'darwin') return path.join(homeDir, 'Library', 'Application Support', 'Google', 'Chrome');
+  if (platform === 'darwin') return platformPath.join(homeDir, 'Library', 'Application Support', 'Google', 'Chrome');
   if (platform === 'win32') {
     const base = env.LOCALAPPDATA;
-    return base ? path.win32.join(base, 'Google', 'Chrome', 'User Data') : undefined;
+    return base ? platformPath.join(base, 'Google', 'Chrome', 'User Data') : undefined;
   }
-  if (platform === 'linux') return path.join(homeDir, '.config', 'google-chrome');
+  if (platform === 'linux') return platformPath.join(homeDir, '.config', 'google-chrome');
   return undefined;
 }
 
@@ -106,17 +107,26 @@ const PROFILE_FOLDER_PATTERN = /^(Default|Profile \d+)$/;
 
 // Chrome moved cookies into a Network/ subfolder for a few releases before
 // reverting; check both so this works across the versions users actually have.
-function findCookiesFile(profileDir: string, existsSync: typeof fs.existsSync): string | undefined {
-  return [path.join(profileDir, 'Cookies'), path.join(profileDir, 'Network', 'Cookies')]
+function pathForPlatform(platform: NodeJS.Platform): typeof path.posix {
+  return platform === 'win32' ? path.win32 : path.posix;
+}
+
+function findCookiesFile(
+  profileDir: string,
+  existsSync: typeof fs.existsSync,
+  platformPath: typeof path.posix,
+): string | undefined {
+  return [platformPath.join(profileDir, 'Cookies'), platformPath.join(profileDir, 'Network', 'Cookies')]
     .find(candidate => existsSync(candidate));
 }
 
 function readProfileDisplayNames(
   userDataDir: string,
   readFileSync: (path: string, encoding: 'utf-8') => string,
+  platformPath: typeof path.posix,
 ): Record<string, string> {
   try {
-    const raw = readFileSync(path.join(userDataDir, 'Local State'), 'utf-8');
+    const raw = readFileSync(platformPath.join(userDataDir, 'Local State'), 'utf-8');
     const cache = (JSON.parse(raw) as { profile?: { info_cache?: Record<string, { name?: unknown }> } })
       .profile?.info_cache ?? {};
     const names: Record<string, string> = {};
@@ -135,6 +145,8 @@ function readProfileDisplayNames(
  * Chrome install just yields an empty list.
  */
 export function listChromeCookieSources(opts: ChromeCookieImportOptions = {}): ChromeCookieSource[] {
+  const platform = opts.platform ?? process.platform;
+  const platformPath = pathForPlatform(platform);
   const userDataDir = chromeUserDataDir(opts);
   const existsSync = opts.existsSync ?? fs.existsSync;
   const readFileSync = opts.readFileSync ?? fs.readFileSync;
@@ -149,11 +161,11 @@ export function listChromeCookieSources(opts: ChromeCookieImportOptions = {}): C
   } catch {
     return [];
   }
-  const names = readProfileDisplayNames(userDataDir, readFileSync);
+  const names = readProfileDisplayNames(userDataDir, readFileSync, platformPath);
   return folders.map(folder => ({
     folder,
     name: names[folder] ?? folder,
-    cookiesPath: findCookiesFile(path.join(userDataDir, folder), existsSync),
+    cookiesPath: findCookiesFile(platformPath.join(userDataDir, folder), existsSync, platformPath),
   }));
 }
 

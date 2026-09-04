@@ -81,8 +81,8 @@ describe('Chrome cookie import', () => {
       homeDir: '/Users/test',
       existsSync: (candidate) => [
         userDataDir,
-        path.join(userDataDir, 'Default', 'Cookies'),
-        path.join(userDataDir, 'Profile 1', 'Network', 'Cookies'),
+        path.posix.join(userDataDir, 'Default', 'Cookies'),
+        path.posix.join(userDataDir, 'Profile 1', 'Network', 'Cookies'),
       ].includes(candidate as string),
       listProfileFolders: (dir) => {
         expect(dir).toBe(userDataDir);
@@ -94,10 +94,36 @@ describe('Chrome cookie import', () => {
     });
 
     expect(sources).toEqual([
-      { folder: 'Default', name: 'Person 1', cookiesPath: path.join(userDataDir, 'Default', 'Cookies') },
-      { folder: 'Profile 1', name: 'Work', cookiesPath: path.join(userDataDir, 'Profile 1', 'Network', 'Cookies') },
+      { folder: 'Default', name: 'Person 1', cookiesPath: path.posix.join(userDataDir, 'Default', 'Cookies') },
+      { folder: 'Profile 1', name: 'Work', cookiesPath: path.posix.join(userDataDir, 'Profile 1', 'Network', 'Cookies') },
       { folder: 'Profile 2', name: 'Profile 2', cookiesPath: undefined },
     ]);
+  });
+
+  it('uses Windows separators throughout profile discovery when targeting Windows', () => {
+    const userDataDir = 'C:\\Users\\test\\AppData\\Local\\Google\\Chrome\\User Data';
+    const defaultCookies = path.win32.join(userDataDir, 'Default', 'Cookies');
+    const localState = path.win32.join(userDataDir, 'Local State');
+    const readFileSync = vi.fn((candidate: string) => {
+      expect(candidate).toBe(localState);
+      return JSON.stringify({ profile: { info_cache: { Default: { name: 'Personal' } } } });
+    });
+
+    const sources = listChromeCookieSources({
+      platform: 'win32',
+      env: { LOCALAPPDATA: 'C:\\Users\\test\\AppData\\Local' },
+      existsSync: candidate => candidate === userDataDir || candidate === defaultCookies,
+      listProfileFolders: dir => {
+        expect(dir).toBe(userDataDir);
+        return ['Default'];
+      },
+      readFileSync,
+    });
+
+    expect(sources).toEqual([
+      { folder: 'Default', name: 'Personal', cookiesPath: defaultCookies },
+    ]);
+    expect(readFileSync).toHaveBeenCalledOnce();
   });
 
   it('returns an empty list when Chrome is not installed', () => {
