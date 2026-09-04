@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { SLAB_ERROR_CODES } from './protocol.js';
 
 const LOCAL_FIXTURES = join(dirname(fileURLToPath(import.meta.url)), '../browser/runtime/local-slab/__fixtures__');
 const FIXTURE_FILES = [
@@ -11,6 +12,9 @@ const FIXTURE_FILES = [
   'attach.response.json',
   'release.response.json',
   'errors.json',
+  'errors-v2.json',
+  'hello-v2.response.json',
+  'create-profile-v2.response.json',
 ] as const;
 const CONNECTION_ID = '00000000-0000-4000-8000-000000000000';
 const PROFILE_ID = 'default';
@@ -30,10 +34,12 @@ function keysOf(value: unknown): string[] {
 }
 
 function findSiblingFixtures(): string | null {
+  const explicit = process.env.WEBCMD_SLAB_CONTRACT_DIR;
+  if (explicit) return explicit;
   let dir = dirname(fileURLToPath(import.meta.url));
   for (let i = 0; i < 8; i += 1) {
     const parent = dirname(dir);
-    const candidate = join(parent, 'slab-browser/.worktrees/slab-macos-first-alpha/protocol/fixtures');
+    const candidate = join(parent, 'SLAB/protocol/fixtures');
     if (existsSync(join(candidate, 'hello.response.json'))) return candidate;
     if (parent === dir) break;
     dir = parent;
@@ -52,6 +58,9 @@ describe('SLAB protocol fixture parity', () => {
     const attach = await loadLocal('attach.response.json');
     const release = await loadLocal('release.response.json');
     const errors = await loadLocal('errors.json');
+    const errorsV2 = await loadLocal('errors-v2.json');
+    const helloV2 = await loadLocal('hello-v2.response.json');
+    const create = await loadLocal('create-profile-v2.response.json');
 
     expect(keysOf(hello.parsed)).toEqual(['request', 'response']);
     const helloDoc = hello.parsed as {
@@ -73,7 +82,11 @@ describe('SLAB protocol fixture parity', () => {
     expect(helloDoc.response.ok).toBe(true);
     expect(keysOf(helloDoc.response.result)).toEqual(['browserPid', 'browserVersion', 'profiles', 'protocolVersion']);
     expect(helloDoc.response.result.protocolVersion).toBe(1);
-    expect(helloDoc.response.result.profiles).toEqual([{ id: PROFILE_ID, displayName: 'Default' }]);
+    expect(helloDoc.response.result.profiles).toEqual([{ id: PROFILE_ID, displayName: 'default' }]);
+
+    const helloV2Doc = helloV2.parsed as { request: { params: { protocolVersion: { min: number; max: number } } }; response: { result: { protocolVersion: number } } };
+    expect(helloV2Doc.request.params.protocolVersion).toEqual({ min: 1, max: 2 });
+    expect(helloV2Doc.response.result.protocolVersion).toBe(2);
 
     const attachDoc = attach.parsed as {
       request: { id: string; params: { profileId: string } };
@@ -116,19 +129,35 @@ describe('SLAB protocol fixture parity', () => {
       expect(errorDoc[code].response.error.code).toBe(code);
       expect(errorDoc[code].response.error.message).not.toContain(CREDENTIAL);
     }
+    const errorV2Doc = errorsV2.parsed as Record<string, { response: { error: { code: string; message: string } } }>;
+    expect(Object.keys(errorV2Doc)).toEqual([...SLAB_ERROR_CODES]);
+    for (const code of SLAB_ERROR_CODES) {
+      expect(errorV2Doc[code].response.error.code).toBe(code);
+      expect(errorV2Doc[code].response.error.message).not.toContain(CREDENTIAL);
+    }
+    const createDoc = create.parsed as { request: { method: string; params: { protocolVersion: { min: number; max: number } } }; response: { result: { created: boolean; profile: { id: string } } }; retried: { response: { result: { created: boolean; profile: { id: string } } } } };
+    expect(createDoc.request.method).toBe('createProfile');
+    expect(createDoc.request.params.protocolVersion).toEqual({ min: 2, max: 2 });
+    expect(createDoc.response.result.created).toBe(true);
+    expect(createDoc.retried.response.result).toEqual({ profile: createDoc.response.result.profile, created: false });
   });
 
-  it('matches sibling fixture bytes and parsed values when the worktree is present', async () => {
+  it.skipIf(process.env.WEBCMD_STRICT_SLAB_CONTRACT !== '1' && !process.env.WEBCMD_SLAB_CONTRACT_DIR)(
+    'matches sibling fixture bytes and parsed values (opt-in: SLAB sibling contract comparison)', async () => {
     const sibling = findSiblingFixtures();
+    expect(sibling, 'Strict SLAB contract comparison requested, but no current sibling fixtures were found; set WEBCMD_SLAB_CONTRACT_DIR.').not.toBeNull();
     for (const name of FIXTURE_FILES) {
       const local = await loadLocal(name);
       const localHash = createHash('sha256').update(local.bytes).digest('hex');
       expect(localHash).toMatch(/^[0-9a-f]{64}$/);
-      if (!sibling) continue;
-      const remoteBytes = await readFile(join(sibling, name));
+      const remoteBytes = await readFile(join(sibling!, name));
       expect(createHash('sha256').update(remoteBytes).digest('hex'), name).toBe(localHash);
       expect(JSON.parse(remoteBytes.toString('utf8')), name).toEqual(local.parsed);
     }
-    if (sibling) expect(existsSync(sibling)).toBe(true);
+    const v2Schema = JSON.parse(await readFile(join(dirname(sibling!), 'bridge-v2.schema.json'), 'utf8')) as {
+      $defs: { error: { properties: { code: { enum: string[] } } } };
+    };
+    expect(v2Schema.$defs.error.properties.code.enum).toEqual([...SLAB_ERROR_CODES]);
+    expect(existsSync(sibling!)).toBe(true);
   });
 });

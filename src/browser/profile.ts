@@ -2,8 +2,10 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { CLI_COMMAND, CONFIG_DIR_NAME, ENV_PREFIX } from '../brand.js';
-import { ArgumentError, CliError, EXIT_CODES } from '../errors.js';
+import { ArgumentError, CliError, ConfigError, EXIT_CODES } from '../errors.js';
 import { normalizeProfileId } from './runtime/local-cloak/profiles.js';
+import { randomUUID } from 'node:crypto';
+import { loadWebcmdConfig, type LocalBrowserConfig } from '../hosted/config.js';
 
 export const DEFAULT_CONTEXT_ID = 'default';
 
@@ -13,9 +15,117 @@ export type ProfileConfig = {
   aliases: Record<string, string>;
 };
 
+export type ProfileProvider = LocalBrowserConfig['kind'];
+type ProviderState = { aliases: Record<string, string>; defaultContextId?: string };
+type ProfileConfigV2 = {
+  version: 2;
+  providers: Record<ProfileProvider, ProviderState>;
+  slabEnsures: Record<string, { idempotencyKey: string; nativeProfileId?: string }>;
+};
+
 function profileConfigPath(): string {
   const baseDir = process.env[`${ENV_PREFIX}_CONFIG_DIR`] || path.join(os.homedir(), CONFIG_DIR_NAME);
   return path.join(baseDir, 'browser-profiles.json');
+}
+
+function providerConfigPath(): string { return profileConfigPath().replace(/\.json$/, '-v2.json'); }
+function activeProvider(): ProfileProvider {
+  const config = loadWebcmdConfig();
+  return config.mode === 'local' ? config.browser.kind : 'cloak';
+}
+
+function emptyV2(): ProfileConfigV2 {
+  return { version: 2, providers: { cloak: { aliases: {} }, chrome: { aliases: {} }, custom: { aliases: {} }, slab: { aliases: {} } }, slabEnsures: {} };
+}
+
+function loadV2(): ProfileConfigV2 {
+  try {
+    const value = JSON.parse(fs.readFileSync(providerConfigPath(), 'utf8')) as ProfileConfigV2;
+    if (value.version !== 2 || !value.providers || !value.slabEnsures
+      || !['cloak', 'chrome', 'custom', 'slab'].every(provider => {
+        const state = value.providers[provider as ProfileProvider];
+        return state && typeof state === 'object' && state.aliases && typeof state.aliases === 'object'
+          && Object.entries(state.aliases).every(([alias, id]) => alias.trim() && typeof id === 'string' && id.trim())
+          && (state.defaultContextId === undefined || typeof state.defaultContextId === 'string');
+      })
+      || Object.entries(value.slabEnsures).some(([alias, ensure]) => !alias.trim()
+        || !ensure || typeof ensure !== 'object'
+        || typeof ensure.idempotencyKey !== 'string' || !ensure.idempotencyKey.trim()
+        || (ensure.nativeProfileId !== undefined && typeof ensure.nativeProfileId !== 'string'))
+    ) throw new ConfigError('browser-profiles-v2.json has an unsupported schema.');
+    return value;
+  } catch (error) {
+    if (['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) return emptyV2();
+    if (error instanceof ConfigError) throw error;
+    throw new ConfigError(`Could not read browser-profiles-v2.json: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+function saveV2(value: ProfileConfigV2): void {
+  const target = providerConfigPath();
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  const temporary = `${target}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    const fd = fs.openSync(temporary, 'wx', 0o600);
+    try { fs.writeFileSync(fd, `${JSON.stringify(value, null, 2)}\n`); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    fs.renameSync(temporary, target);
+    try { fs.chmodSync(target, 0o600); } catch {}
+    try { const directory = fs.openSync(path.dirname(target), 'r'); try { fs.fsyncSync(directory); } finally { fs.closeSync(directory); } } catch {}
+  } finally { try { fs.unlinkSync(temporary); } catch {} }
+}
+
+async function withConfigLock<T>(mutate: (value: ProfileConfigV2) => T): Promise<T> {
+  const lock = `${providerConfigPath()}.lock`;
+  const token = randomUUID();
+  const startedAt = Date.now();
+  const configuredTimeout = Number(process.env[`${ENV_PREFIX}_PROFILE_LOCK_TIMEOUT_MS`]);
+  const timeoutMs = Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 5_000;
+  fs.mkdirSync(path.dirname(lock), { recursive: true });
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      const fd = fs.openSync(lock, 'wx', 0o600);
+      try {
+        fs.writeFileSync(fd, JSON.stringify({ pid: process.pid, createdAt: Date.now(), token }));
+        const value = loadV2();
+        if (Object.keys(value.providers.cloak.aliases).length === 0 && !value.providers.cloak.defaultContextId) {
+          try {
+            const legacy = JSON.parse(fs.readFileSync(profileConfigPath(), 'utf8')) as Partial<ProfileConfig>;
+            if (legacy.version === 1 && legacy.aliases && typeof legacy.aliases === 'object') {
+              value.providers.cloak.aliases = Object.fromEntries(Object.entries(legacy.aliases).filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
+              if (typeof legacy.defaultContextId === 'string' && legacy.defaultContextId.trim()) value.providers.cloak.defaultContextId = legacy.defaultContextId.trim();
+            }
+          } catch {}
+        }
+        const result = mutate(value);
+        saveV2(value);
+        return result;
+      } finally {
+        fs.closeSync(fd);
+        try {
+          const current = JSON.parse(fs.readFileSync(lock, 'utf8')) as { token?: string };
+          if (current.token === token) fs.unlinkSync(lock);
+        } catch {}
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      try {
+        const owner = JSON.parse(fs.readFileSync(lock, 'utf8')) as { pid?: number; createdAt?: number };
+        let alive = true;
+        if (owner.pid) try { process.kill(owner.pid, 0); } catch { alive = false; }
+        const age = Date.now() - (owner.createdAt ?? 0);
+        // Age is only evidence that a dead owner's lock is stale. A live owner may
+        // legitimately be delayed; stealing its lock would permit concurrent writers.
+        if (!alive && age > 1_000) { fs.unlinkSync(lock); continue; }
+      } catch {
+        // An unreadable or malformed lock has no demonstrably dead recorded PID.
+        // Fail closed after the bounded wait rather than deleting another writer's lock.
+      }
+      if (Date.now() - startedAt >= timeoutMs) {
+        throw new ConfigError('Profile configuration is locked by another live process. Retry after that operation finishes.');
+      }
+      await new Promise(resolve => setTimeout(resolve, Math.min(5 + attempt * 2, 50)));
+    }
+  }
 }
 
 export function normalizeContextId(value: string | undefined | null): string | undefined {
@@ -27,7 +137,13 @@ export function emptyProfileConfig(): ProfileConfig {
   return { version: 1, aliases: {} };
 }
 
-export function loadProfileConfig(): ProfileConfig {
+export function loadProfileConfig(provider: ProfileProvider = activeProvider()): ProfileConfig {
+  const v2 = loadV2();
+  const providerState = v2.providers[provider];
+  if (providerState && (Object.keys(providerState.aliases).length > 0 || providerState.defaultContextId || provider === 'slab')) {
+    return { version: 1, aliases: { ...providerState.aliases }, ...(providerState.defaultContextId ? { defaultContextId: providerState.defaultContextId } : {}) };
+  }
+  if (provider !== 'cloak') return emptyProfileConfig();
   try {
     const raw = fs.readFileSync(profileConfigPath(), 'utf-8');
     const parsed = JSON.parse(raw) as Partial<ProfileConfig>;
@@ -68,6 +184,102 @@ export function resolveProfileSelection(profile?: string): ProfileSelection | un
   const preferred = normalizeContextId(config.defaultContextId);
   if (preferred) return { contextId: config.aliases[preferred] ?? preferred, source: 'preferred' };
   return undefined;
+}
+
+export async function prepareSlabProfileEnsure(alias: string): Promise<{ alias: string; idempotencyKey: string }> {
+  const name = normalizeContextId(alias);
+  if (!name) throw new ArgumentError('profile alias is required');
+  try { normalizeProfileId(name); } catch {
+    throw new ArgumentError(`Invalid profile alias "${name}". Use letters, numbers, ".", "_" or "-".`);
+  }
+  return withConfigLock(value => {
+    const existing = value.slabEnsures[name];
+    const idempotencyKey = existing?.idempotencyKey ?? randomUUID();
+    value.slabEnsures[name] = { ...existing, idempotencyKey };
+    return { alias: name, idempotencyKey };
+  });
+}
+
+export async function commitSlabProfileEnsure(alias: string, idempotencyKey: string, nativeProfileId: string): Promise<void> {
+  await withConfigLock(value => {
+    const existing = value.slabEnsures[alias];
+    if (existing && existing.idempotencyKey !== idempotencyKey) throw new Error('SLAB Profile ensure identity changed concurrently.');
+    value.slabEnsures[alias] = { idempotencyKey, nativeProfileId };
+    value.providers.slab.aliases[alias] = nativeProfileId;
+  });
+}
+
+export async function rotateSlabProfileEnsure(alias: string, expectedIdempotencyKey: string): Promise<{ alias: string; idempotencyKey: string }> {
+  return withConfigLock(value => {
+    const existing = value.slabEnsures[alias];
+    if (!existing || existing.idempotencyKey !== expectedIdempotencyKey) {
+      throw new ConfigError(`SLAB Profile repair identity changed for alias "${alias}".`);
+    }
+    const idempotencyKey = randomUUID();
+    value.slabEnsures[alias] = { idempotencyKey };
+    delete value.providers.slab.aliases[alias];
+    return { alias, idempotencyKey };
+  });
+}
+
+export async function createProviderProfile(provider: Exclude<ProfileProvider, 'slab'>, alias: string): Promise<{ contextId: string; alias: string; created: boolean }> {
+  const name = normalizeContextId(alias);
+  if (!name) throw new ArgumentError('profile alias is required');
+  let contextId: string;
+  try { contextId = normalizeProfileId(name); } catch {
+    throw new ArgumentError(`Invalid profile alias "${name}". Use letters, numbers, ".", "_" or "-".`);
+  }
+  return withConfigLock(value => {
+    const existing = value.providers[provider].aliases[name];
+    if (existing) return { contextId: existing, alias: name, created: false };
+    value.providers[provider].aliases[name] = contextId;
+    return { contextId, alias: name, created: true };
+  });
+}
+
+export async function renameProviderProfile(provider: ProfileProvider, contextId: string, alias: string): Promise<void> {
+  const normalizedContextId = normalizeContextId(contextId);
+  const normalizedAlias = normalizeContextId(alias);
+  if (!normalizedContextId || !normalizedAlias) throw new ArgumentError('profile contextId and alias are required');
+  try { normalizeProfileId(normalizedAlias); } catch {
+    throw new ArgumentError(`Invalid profile alias "${normalizedAlias}". Use letters, numbers, ".", "_" or "-".`);
+  }
+  await withConfigLock(value => {
+    const state = value.providers[provider];
+    let movedEnsure: ProfileConfigV2['slabEnsures'][string] | undefined;
+    for (const [existingAlias, existingId] of Object.entries(state.aliases)) {
+      if (existingId !== normalizedContextId) continue;
+      delete state.aliases[existingAlias];
+      if (provider === 'slab' && existingAlias !== normalizedAlias) {
+        const ensure = value.slabEnsures[existingAlias];
+        if (ensure) {
+          movedEnsure = { ...ensure, nativeProfileId: normalizedContextId };
+          delete value.slabEnsures[existingAlias];
+        }
+      }
+    }
+    if (provider === 'slab') {
+      delete value.slabEnsures[normalizedAlias];
+      if (movedEnsure) value.slabEnsures[normalizedAlias] = movedEnsure;
+    }
+    state.aliases[normalizedAlias] = normalizedContextId;
+  });
+}
+
+export async function setProviderDefaultProfile(provider: ProfileProvider, profile: string, rows: ProfileListRow[]): Promise<string> {
+  const name = normalizeContextId(profile);
+  const match = name ? resolveKnownProfile(name, rows) : undefined;
+  if (!name) throw new ArgumentError('profile is required');
+  if (!match) {
+    const labels = knownProfileLabels(rows);
+    const usage = `usage: ${CLI_COMMAND} profile use <alias|contextId>`;
+    throw new ArgumentError(
+      labels.length ? `No profile matches "${name}". Valid profiles: ${labels.join(', ')}` : `No profile matches "${name}". No browser profiles are available.`,
+      labels.length ? `${usage}\nexample: ${CLI_COMMAND} profile use ${labels[0]}` : `${usage}\nRun ${CLI_COMMAND} profile list, or create one with a browser-backed command.`,
+    );
+  }
+  await withConfigLock(value => { value.providers[provider].defaultContextId = match.contextId; });
+  return match.contextId;
 }
 
 export function profileRouteParams(

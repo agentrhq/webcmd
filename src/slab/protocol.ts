@@ -1,6 +1,7 @@
 import { inspect } from 'node:util';
 
-export const SLAB_PROTOCOL_VERSION = 1;
+export const SLAB_PROTOCOL_MIN_VERSION = 1;
+export const SLAB_PROTOCOL_VERSION = 2;
 export const SLAB_MAX_CONTROL_LINE_BYTES = 64 * 1024;
 
 export const SLAB_ERROR_CODES = [
@@ -10,17 +11,23 @@ export const SLAB_ERROR_CODES = [
   'ATTACH_FAILED',
   'AUTHENTICATION_FAILED',
   'CONNECTION_NOT_FOUND',
+  'PROFILE_CREATE_FAILED',
+  'PROFILE_GONE',
+  'PROFILE_REPAIR_REQUIRED',
 ] as const;
 
 export type SlabErrorCode = (typeof SLAB_ERROR_CODES)[number];
 
 export const SLAB_ERROR_MESSAGES: Record<SlabErrorCode, string> = {
   INVALID_REQUEST: 'Invalid JSON, framing, shape, size, or params',
-  INCOMPATIBLE_PROTOCOL: 'Client range does not include v1',
+  INCOMPATIBLE_PROTOCOL: 'Client range does not include a supported revision',
   PROFILE_NOT_FOUND: 'Requested profile is unavailable',
   ATTACH_FAILED: 'Browser could not create the attachment',
   AUTHENTICATION_FAILED: 'CDP IPC credential was missing or wrong',
   CONNECTION_NOT_FOUND: 'A non-release operation referenced an unknown lease',
+  PROFILE_CREATE_FAILED: 'Chromium could not initialize the profile',
+  PROFILE_GONE: 'Profile was removed during attachment',
+  PROFILE_REPAIR_REQUIRED: 'Saved profile mapping conflicts with native state',
 };
 
 const SUCCESS_KEYS = ['id', 'ok', 'result'] as const;
@@ -30,6 +37,7 @@ const HELLO_RESULT_KEYS = ['protocolVersion', 'browserVersion', 'browserPid', 'p
 const ATTACH_RESULT_KEYS = ['connectionId', 'profile', 'transport'] as const;
 const TRANSPORT_KEYS = ['kind', 'endpoint', 'credential'] as const;
 const PROFILE_KEYS = ['id', 'displayName'] as const;
+const CREATE_PROFILE_RESULT_KEYS = ['profile', 'created'] as const;
 
 export class SlabCredential {
   readonly #value: string;
@@ -65,6 +73,13 @@ export interface SlabHelloResult {
   browserVersion: string;
   browserPid: number;
   profiles: SlabProfileInfo[];
+}
+
+export interface SlabProtocolRange { min: number; max: number }
+
+export interface SlabCreateProfileResult {
+  profile: SlabProfileInfo;
+  created: boolean;
 }
 
 export interface SlabAttachTransport {
@@ -147,34 +162,48 @@ export function parseControlResponse(line: string): SlabControlResponse {
 function parseProfile(value: unknown): SlabProfileInfo {
   if (!isPlainObject(value)) throw new SlabProtocolShapeError('response has unknown fields');
   assertExactKeys(value, PROFILE_KEYS);
-  if (typeof value.id !== 'string' || typeof value.displayName !== 'string') {
+  if (typeof value.id !== 'string' || value.id.length === 0
+    || typeof value.displayName !== 'string' || value.displayName.length === 0) {
     throw new SlabProtocolShapeError('response has unknown fields');
   }
   return { id: value.id, displayName: value.displayName };
 }
 
-export function parseHelloResult(value: unknown): SlabHelloResult {
+export function parseHelloResult(
+  value: unknown,
+  supported: SlabProtocolRange = { min: SLAB_PROTOCOL_MIN_VERSION, max: SLAB_PROTOCOL_VERSION },
+): SlabHelloResult {
   if (!isPlainObject(value)) throw new SlabProtocolShapeError('response has unknown fields');
   assertExactKeys(value, HELLO_RESULT_KEYS);
-  if (value.protocolVersion !== SLAB_PROTOCOL_VERSION) {
-    throw new SlabProtocolShapeError('response has unknown fields');
+  if (typeof value.protocolVersion !== 'number' || !Number.isInteger(value.protocolVersion)
+    || value.protocolVersion < supported.min || value.protocolVersion > supported.max) {
+    throw new SlabProtocolShapeError('negotiated protocol version is outside the supported range');
   }
   if (typeof value.browserVersion !== 'string' || typeof value.browserPid !== 'number' || !Number.isInteger(value.browserPid)) {
     throw new SlabProtocolShapeError('response has unknown fields');
   }
   if (!Array.isArray(value.profiles)) throw new SlabProtocolShapeError('response has unknown fields');
   return {
-    protocolVersion: SLAB_PROTOCOL_VERSION,
+    protocolVersion: value.protocolVersion,
     browserVersion: value.browserVersion,
     browserPid: value.browserPid,
     profiles: value.profiles.map(parseProfile),
   };
 }
 
+export function parseCreateProfileResult(value: unknown): SlabCreateProfileResult {
+  if (!isPlainObject(value)) throw new SlabProtocolShapeError('response has unknown fields');
+  assertExactKeys(value, CREATE_PROFILE_RESULT_KEYS);
+  if (typeof value.created !== 'boolean') throw new SlabProtocolShapeError('response has unknown fields');
+  return { profile: parseProfile(value.profile), created: value.created };
+}
+
 export function parseAttachResult(value: unknown): SlabAttachResult {
   if (!isPlainObject(value)) throw new SlabProtocolShapeError('response has unknown fields');
   assertExactKeys(value, ATTACH_RESULT_KEYS);
-  if (typeof value.connectionId !== 'string') throw new SlabProtocolShapeError('response has unknown fields');
+  if (typeof value.connectionId !== 'string' || value.connectionId.length === 0) {
+    throw new SlabProtocolShapeError('response has unknown fields');
+  }
   if (!isPlainObject(value.transport)) throw new SlabProtocolShapeError('response has unknown fields');
   assertExactKeys(value.transport, TRANSPORT_KEYS);
   if (value.transport.kind !== 'cdp-ipc') throw new SlabProtocolShapeError('response has unknown fields');

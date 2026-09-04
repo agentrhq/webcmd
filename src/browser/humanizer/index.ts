@@ -59,18 +59,29 @@ const SELECT_ALL = process.platform === 'darwin' ? 'Meta+a' : 'Control+a';
  */
 class StealthEval {
   private cdp: CDPSession | null = null;
+  private cdpPromise: Promise<CDPSession> | null = null;
   private contextId: number | null = null;
   private page: Page;
+  private disposed = false;
 
   constructor(page: Page) {
     this.page = page;
   }
 
   private async ensureCdp(): Promise<CDPSession> {
-    if (!this.cdp) {
-      this.cdp = await this.page.context().newCDPSession(this.page);
+    if (this.disposed) throw new Error('Humanizer has been disposed.');
+    if (this.cdp) return this.cdp;
+    if (!this.cdpPromise) {
+      this.cdpPromise = this.page.context().newCDPSession(this.page).then(async cdp => {
+        if (this.disposed) {
+          await cdp.detach().catch(() => {});
+          throw new Error('Humanizer has been disposed.');
+        }
+        this.cdp = cdp;
+        return cdp;
+      });
     }
-    return this.cdp;
+    return this.cdpPromise;
   }
 
   private async createWorld(): Promise<number> {
@@ -141,6 +152,17 @@ class StealthEval {
   async getCdpSession(): Promise<CDPSession> {
     return this.ensureCdp();
   }
+
+  async dispose(): Promise<void> {
+    this.disposed = true;
+    const cdp = this.cdp;
+    const pending = this.cdpPromise;
+    this.cdp = null;
+    this.cdpPromise = null;
+    this.contextId = null;
+    if (cdp) await cdp.detach().catch(() => {});
+    else await pending?.catch(() => {});
+  }
 }
 
 
@@ -152,6 +174,20 @@ class CursorState {
   x = 0;
   y = 0;
   initialized = false;
+}
+
+const patchedFrames = new WeakMap<Page, Set<Frame>>();
+
+export function restorePatchedFrames(page: Page): void {
+  for (const frame of patchedFrames.get(page) ?? []) {
+    const descriptors = (frame as any)._humanRestoreDescriptors as Map<PropertyKey, PropertyDescriptor | undefined> | undefined;
+    if (!descriptors) continue;
+    for (const [key, descriptor] of descriptors) {
+      if (descriptor) Object.defineProperty(frame, key, descriptor);
+      else Reflect.deleteProperty(frame, key);
+    }
+  }
+  patchedFrames.delete(page);
 }
 
 export function createCursorState(): CursorState {
@@ -681,6 +717,17 @@ function patchSingleFrame(
   stealth: StealthEval,
 ): void {
   if ((frame as any)._humanPatched) return;
+  const frameKeys = [
+    'click', 'dblclick', 'hover', 'type', 'fill', 'check', 'uncheck',
+    'selectOption', 'press', 'pressSequentially', 'tap', 'clear', 'dragAndDrop',
+    '$', '$$', 'waitForSelector', '_humanPatched', '_humanRestoreDescriptors',
+  ] as const;
+  (frame as any)._humanRestoreDescriptors = new Map(
+    frameKeys.map(key => [key, Object.getOwnPropertyDescriptor(frame, key)]),
+  );
+  const frames = patchedFrames.get(page) ?? new Set<Frame>();
+  frames.add(frame);
+  patchedFrames.set(page, frames);
   (frame as any)._humanPatched = true;
 
   // Save originals for methods that need fallback

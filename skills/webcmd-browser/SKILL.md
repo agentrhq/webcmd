@@ -65,13 +65,14 @@ Do not capture trivial successes, ordinary dead ends, isolated transient errors,
 - Create a named profile first: `webcmd profile create <profile>`. If an explicit profile returns `PROFILE_NOT_FOUND`, create it, then retry session creation.
 - Raw browser commands require the returned readable ID at the root: `webcmd --profile <profile> --session <session-id> browser ...`.
 - Profiles are cookie jars and auth scope; Sessions are browser workspaces/windows within a Profile. Session IDs are immutable and Profile-scoped. Parallel agents use separate Sessions.
-- `webcmd session list` shows sessions and their handoff/runtime state; close finished work with `webcmd session close <session-id>`. Close is blocked while that Session has a live handoff.
+- `webcmd session list` shows durable sessions and SLAB's unbound windows as temporary `discovered` rows. Re-list after browser or daemon restart.
+- `webcmd session close <session-id>` closes agent windows but only detaches bound human SLAB windows. Live handoffs block close.
 - Browser state in the bound page persists between calls, but each `run` gets a fresh JavaScript scope.
-- `webcmd --session <session-id> browser tabs` lists existing pages without creating a new one.
-- `webcmd --session <session-id> browser bind --page <page-id>` explicitly attaches the session to an existing page.
-- If the user manually signs in or changes the visible tab, re-bind or inspect with a fresh snapshot before continuing.
+- `webcmd --session <session-id> browser tabs` lists pages; unowned SLAB tabs remain unfocused and unclaimed.
+- `webcmd --session <session-id> browser bind --page <page-id>` explicitly binds the complete SLAB window, including sibling tabs.
+- After human tab changes, re-bind or take a fresh snapshot.
 
-Raw browser commands require an explicit readable selector. Local browser commands use Cloak; hosted browser commands use Webcmd Cloud and Browser Use.
+Raw browser commands require an explicit readable selector. Local uses the configured runtime; hosted uses Webcmd Cloud.
 
 ```bash
 webcmd profile create work
@@ -98,13 +99,13 @@ webcmd --profile work session close work-project-k7
 
 ## Command surface
 
-The raw surface is `tabs`, `bind --page`, `snapshot`, and `run`; close through `webcmd session close`.
+The raw surface is `tabs`, `bind --page`, `snapshot`, and `run`. Use `session close` for a Session or `browser close --page` for one tab (`--force` for adopted human tabs).
 
 Common calls:
 
-1. `webcmd --session <session-id> browser tabs` lists existing pages and is read-only.
-2. `webcmd --session <session-id> browser bind --page page-123` is an explicit bind that selects one page.
-3. `webcmd --session <session-id> browser snapshot --snapshot-mode act` inspects actionable controls; `--snapshot-mode tree` gives fuller structure and `--snapshot-mode read` readable text.
+1. `webcmd --session <session-id> browser tabs` lists pages read-only.
+2. `webcmd --session <session-id> browser bind --page page-123` binds its window.
+3. `webcmd --session <session-id> browser snapshot --snapshot-mode act` inspects controls; use `tree` for structure or `read` for text.
 4. `webcmd --session <session-id> browser run --stdin` runs one JavaScript program with fresh JavaScript scope and persistent browser state in the bound page.
 5. `webcmd session close <session-id>` closes the session when finished.
 
@@ -169,7 +170,7 @@ when applicable. Do not close that Session during the live handoff.
 2. If the site exposes a login command, run `webcmd <site> login`.
 3. `already_logged_in` is verified; continue.
 4. `in_progress` means no current user action, so do not ask the user, wait for confirmation, or poll.
-5. `action_required` is a hard stop. Give the user its instructions and any returned `action_url` or `view_url`. If Webcmd returned no URL, use the current visible browser.
+5. `action_required` is a hard stop. Give the user its instructions and any returned `action_url` or `view_url`. If Webcmd returned no URL, use the visible browser.
 6. Never ask for or type passwords, OTPs, recovery codes, cookies, credentials, or session secrets. Never echo or store them.
 7. Run the returned `verify_command` or `handoff.verifyCommand` only after the user reports done; verification must succeed before retrying.
 8. Without a verifier, take a fresh snapshot and verify the intended identity check or post-action state before any retry, especially for write commands. The user's report alone is not verification.

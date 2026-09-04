@@ -72,6 +72,10 @@ function helloOk(id: string, browserVersion = '152.0.7977.65'): string {
   })}\n`;
 }
 
+function helloV2Ok(id: string): string {
+  return `${JSON.stringify({ id, ok: true, result: { protocolVersion: 2, browserVersion: '152.0.7977.65', browserPid: 1234, profiles: [] } })}\n`;
+}
+
 function attachOk(id: string, credential = CREDENTIAL): string {
   return `${JSON.stringify({
     id,
@@ -112,6 +116,60 @@ function sizedHello(id: string, targetBytes: number): string {
 }
 
 describe.skipIf(process.platform === 'win32')('SlabBridgeClient', () => {
+  it('negotiates revision 2 before creating a Profile', async () => {
+    const harness = await listen((socket) => {
+      collectRequests(socket, harness.requests, (req) => {
+        socket.write(req.method === 'hello' ? helloV2Ok(req.id) : `${JSON.stringify({ id: req.id, ok: true, result: { profile: { id: 'Profile 1', displayName: 'Work' }, created: true } })}\n`);
+      });
+    });
+    const client = await SlabBridgeClient.connect(harness.endpoint);
+    await client.hello();
+    await expect(client.createProfile('Work', 'stable-key')).resolves.toMatchObject({ created: true, profile: { id: 'Profile 1' } });
+    expect(harness.requests.map(request => (request as { method: string }).method)).toEqual(['hello', 'createProfile']);
+    await client.close();
+  });
+
+  it('sends the exact negotiated v2 range object for attach and release', async () => {
+    const harness = await listen((socket) => collectRequests(socket, harness.requests, (req) => {
+      socket.write(req.method === 'hello' ? helloV2Ok(req.id) : req.method === 'attach' ? attachOk(req.id) : releaseOk(req.id));
+    }));
+    const client = await SlabBridgeClient.connect(harness.endpoint);
+    await client.hello();
+    const attachment = await client.attach('default');
+    await client.release(attachment.connectionId);
+    const [, attach, release] = harness.requests as Array<{ params: { protocolVersion: unknown } }>;
+    expect(attach.params.protocolVersion).toEqual({ min: 2, max: 2 });
+    expect(release.params.protocolVersion).toEqual({ min: 2, max: 2 });
+    await client.close();
+  });
+
+  it('does not probe revision 1 with createProfile', async () => {
+    const harness = await listen((socket) => collectRequests(socket, harness.requests, req => socket.write(helloOk(req.id))));
+    const client = await SlabBridgeClient.connect(harness.endpoint);
+    await client.hello();
+    await expect(client.createProfile('Work', 'stable-key')).rejects.toMatchObject({ code: 'SLAB_UPGRADE_REQUIRED' });
+    expect(harness.requests.map(request => (request as { method: string }).method)).toEqual(['hello']);
+    await client.close();
+  });
+  it('requires hello before lease operations and validates native v2 limits before writing', async () => {
+    const harness = await listen((socket) => collectRequests(socket, harness.requests, req => socket.write(
+      req.method === 'hello'
+        ? helloV2Ok(req.id)
+        : `${JSON.stringify({ id: req.id, ok: true, result: { profile: { id: 'Profile 1', displayName: 'valid' }, created: true } })}\n`,
+    )));
+    const client = await SlabBridgeClient.connect(harness.endpoint);
+    await expect(client.attach('default')).rejects.toThrow(/hello.*required/i);
+    await expect(client.release('connection')).rejects.toThrow(/hello.*required/i);
+    await client.hello();
+    await expect(client.createProfile('x'.repeat(129), 'key')).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+    await expect(client.createProfile('🙂'.repeat(128), 'valid-key')).resolves.toMatchObject({ created: true });
+    await expect(client.createProfile('🙂'.repeat(129), 'key')).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+    await expect(client.createProfile('\ud800', 'key')).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+    await expect(client.createProfile('work', 'x'.repeat(257))).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+    await expect(client.createProfile('work', 'bad key')).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+    expect(harness.requests).toHaveLength(2);
+    await client.close();
+  });
   it('reassembles fragmented JSONL responses', async () => {
     const harness = await listen((socket) => {
       collectRequests(socket, harness.requests, (req) => {
@@ -328,10 +386,13 @@ describe.skipIf(process.platform === 'win32')('SlabBridgeClient', () => {
     for (const code of codes) {
       const harness = await listen((socket) => {
         collectRequests(socket, harness.requests, (req) => {
-          socket.write(errorLine(req.id, code, `secret ${CREDENTIAL} raw={"ok":false}`));
+          socket.write(req.method === 'hello'
+            ? helloOk(req.id)
+            : errorLine(req.id, code, `secret ${CREDENTIAL} raw={"ok":false}`));
         });
       });
       const client = await SlabBridgeClient.connect(harness.endpoint);
+      await client.hello();
       const error = await client.attach('default').then(
         () => {
           throw new Error(`expected ${code}`);
@@ -356,6 +417,7 @@ describe.skipIf(process.platform === 'win32')('SlabBridgeClient', () => {
       });
     });
     const client = await SlabBridgeClient.connect(harness.endpoint);
+    await client.hello();
     const lease = await client.attach('default');
     expect(lease.transport.kind).toBe('cdp-ipc');
     expect(lease.transport.credential).toBeInstanceOf(SlabCredential);

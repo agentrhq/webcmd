@@ -1304,6 +1304,14 @@ name: 'search',
     }
   });
 
+  it('describes session close cleanup consistently with its discard behavior', () => {
+    const program = createProgram('', '');
+    const session = program.commands.find(cmd => cmd.name() === 'session')!;
+    const close = session.commands.find(cmd => cmd.name() === 'close')!;
+
+    expect(close.description()).toBe('Close a browser Session runtime and discard its durable record');
+  });
+
   it('renders plugin namespace structured help with positional + option leaves', () => {
     const argv = process.argv;
     try {
@@ -1438,7 +1446,7 @@ name: 'search',
       expect(data.commands.map((cmd: any) => cmd.name)).toEqual(['create', 'list', 'rename', 'use']);
       const list = data.commands.find((cmd: any) => cmd.name === 'list');
       expect(list).toMatchObject({
-        description: 'List Chrome and Chromium profiles available through the Cloak runtime',
+        description: 'List profiles available through the Cloak runtime',
       });
       const rename = data.commands.find((cmd: any) => cmd.name === 'rename');
       expect(rename).toMatchObject({
@@ -2372,6 +2380,14 @@ describe('browser raw session commands', () => {
     await program.parseAsync(['node', 'webcmd', '--session', 'work-k7', 'browser', 'close']);
     expect(mockSendCommand).toHaveBeenCalledWith('close-window', { session: 'work-k7', surface: 'browser' });
   });
+
+  it('routes exact-page force only on browser close', async () => {
+    const program = createProgram('', '');
+    await program.parseAsync(['node', 'webcmd', '--session', 'work-k7', 'browser', 'close', '--page', 'page-7', '--force']);
+    expect(mockSendCommand).toHaveBeenCalledWith('close-window', {
+      session: 'work-k7', surface: 'browser', page: 'page-7', force: true,
+    });
+  });
 });
 
 describe('browser Session lifecycle commands', () => {
@@ -2555,6 +2571,7 @@ describe('browser Session lifecycle commands', () => {
       contextId: 'default',
       session: 'work-project-k7',
       force: false,
+      discard: true,
     });
     expect(JSON.parse(consoleLogSpy.mock.calls.flat().join('\n'))).toMatchObject({
       closed: false,

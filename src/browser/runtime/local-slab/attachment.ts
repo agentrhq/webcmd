@@ -41,20 +41,37 @@ export async function attachSlabProfile(profileId: string, options: AttachSlabPr
     const context = browser.contexts()[0];
     if (!context) throw new Error('SLAB attachment returned no persistent browser context.');
     const connectedTransport = transport;
+    let closed = false;
+    const closeLocal = async () => {
+      if (closed) return;
+      closed = true;
+      connectedTransport.close();
+      await bridge.close().catch(() => {});
+    };
     return {
       profileId: attachment.profile.id,
       browserVersion: browser.version(),
       context,
       browser,
-      closeTransport: () => connectedTransport.close(),
+      closeTransport: () => { void closeLocal(); },
       release: async () => {
+        if (closed) return;
         connectedTransport.close();
-        await bridge.release(attachment.connectionId);
+        try {
+          await bridge.release(attachment.connectionId);
+        } finally {
+          closed = true;
+          await bridge.close().catch(() => {});
+        }
       },
     };
   } catch (error) {
     transport?.close();
-    await bridge.release(attachment.connectionId).catch(() => {});
+    try {
+      await bridge.release(attachment.connectionId).catch(() => {});
+    } finally {
+      await bridge.close().catch(() => {});
+    }
     throw error;
   }
 }

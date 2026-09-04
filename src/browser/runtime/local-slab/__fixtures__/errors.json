@@ -22,7 +22,7 @@
       "id": "error-protocol-1",
       "method": "hello",
       "params": {
-        "protocolVersion": { "min": 2, "max": 2 },
+        "protocolVersion": { "min": 3, "max": 3 },
         "clientVersion": "webcmd/0.7.3"
       }
     },
@@ -31,7 +31,7 @@
       "ok": false,
       "error": {
         "code": "INCOMPATIBLE_PROTOCOL",
-        "message": "Client range does not include v1"
+        "message": "Client range does not include a supported revision"
       }
     }
   },

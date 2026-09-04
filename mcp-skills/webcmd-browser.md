@@ -9,8 +9,16 @@ action, and close it when finished. IDs are immutable and Profile-scoped. Raw
 browser commands require an explicit readable selector. Each invocation has a
 240-second wall-clock budget.
 
+With SLAB, `session list` includes unbound live windows as `discovered` rows and
+`browser tabs` lists their pages without claiming them. Bind an exact returned
+page with `browser bind --page <page-id>`; this claims its complete window.
+Discovered IDs expire when the browser attachment or daemon restarts, so list
+again after a stale-ID failure. Closing an adopted human Session detaches Webcmd
+and leaves the human window open.
+
     { "argv": ["--profile", "work", "session", "create", "Work Project", "-f", "json"] }
     { "argv": ["--profile", "work", "--session", "work-project-k7", "browser", "tabs", "-f", "json"] }
+    { "argv": ["--profile", "work", "--session", "work-project-k7", "browser", "bind", "--page", "page-123", "-f", "json"] }
     { "argv": ["--profile", "work", "--session", "work-project-k7", "browser", "snapshot", "--snapshot-mode", "act", "-f", "json"] }
     { "argv": ["--profile", "work", "session", "close", "work-project-k7"] }
 

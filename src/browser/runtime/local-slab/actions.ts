@@ -363,6 +363,7 @@ export async function dispatchSlabAction(manager: SlabSessionManager, command: B
             session: command.session,
             surface: command.surface,
             pageId: command.page,
+            force: command.force,
           });
           return { id: command.id, ok: true, data: { closed: Boolean(closed), page: closed ?? command.page, session: command.session } };
         } else {
@@ -425,6 +426,7 @@ export async function dispatchSlabAction(manager: SlabSessionManager, command: B
               surface: command.surface,
               pageId: command.page,
               index: command.index,
+              force: command.force,
             });
             if (!closed) return { id: command.id, ok: false, errorCode: 'runtime_command_failed', error: 'Tab not found' };
             return { id: command.id, ok: true, data: { closed } };
@@ -464,8 +466,12 @@ export async function dispatchSlabAction(manager: SlabSessionManager, command: B
         if (!command.cdpMethod) return invalidRequest(command, 'Missing cdpMethod');
         const lease = await resolveLease(manager, command);
         const session = await lease.context.newCDPSession(lease.page);
-        const data = await session.send(command.cdpMethod as any, command.cdpParams ?? {});
-        return { id: command.id, ok: true, data, page: lease.pageId };
+        try {
+          const data = await session.send(command.cdpMethod as any, command.cdpParams ?? {});
+          return { id: command.id, ok: true, data, page: lease.pageId };
+        } finally {
+          await session.detach().catch(() => {});
+        }
       }
       case 'frames': {
         const lease = await resolveLease(manager, command);
@@ -539,7 +545,7 @@ export async function dispatchSlabAction(manager: SlabSessionManager, command: B
       err instanceof Error
       && 'code' in err
       && typeof err.code === 'string'
-      && (err.code.startsWith('BROWSER_RUN_') || err.code === 'SESSION_WINDOW_CONFLICT')
+      && (err.code.startsWith('BROWSER_RUN_') || err.code === 'SESSION_WINDOW_CONFLICT' || err.code === 'ADOPTED_TAB_FORCE_REQUIRED')
     ) {
       const hint = 'hint' in err && typeof err.hint === 'string'
         ? err.hint

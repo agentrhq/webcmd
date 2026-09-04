@@ -209,6 +209,8 @@ export const browserCommandCatalog: readonly HostedBrowserCommandContract[] = [
     verboseFlag(),
   ], 'require-existing'),
   command('close', 'Close or detach this browser session', 'close-window', [], [
+    option('page', 'Stable page id to close exactly'),
+    flag('force', 'Allow destructive closure of a human-adopted tab'),
     verboseFlag(),
   ], 'close-existing'),
 ] as const;

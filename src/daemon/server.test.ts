@@ -5,7 +5,7 @@ import { DAEMON_HEADER_NAME } from '../constants.js';
 import type { BrowserRuntimeCommand, BrowserRuntimeResult, BrowserRuntimeStatus } from '../browser/protocol.js';
 import type { BrowserSessionListRow, BrowserSessionRecord } from '../browser/sessions.js';
 import type { BrowserRuntimeProvider } from '../browser/runtime/provider.js';
-import { createDaemonServer } from './server.js';
+import { createDaemonServer, ensureProfileCoalesced } from './server.js';
 
 class FakeProvider implements BrowserRuntimeProvider {
   commands: BrowserRuntimeCommand[] = [];
@@ -117,6 +117,43 @@ class FakeProvider implements BrowserRuntimeProvider {
       }));
   }
 }
+
+describe('profile ensure coalescing', () => {
+  const result = (alias: string) => ({ profile: { id: alias, displayName: alias }, created: true });
+
+  it('coalesces only the same provider, alias, and idempotency key', async () => {
+    let resolve!: (value: ReturnType<typeof result>) => void;
+    const operation = new Promise<ReturnType<typeof result>>(done => { resolve = done; });
+    const ensureProfile = vi.fn(() => operation);
+    const provider = { ensureProfile } as unknown as BrowserRuntimeProvider;
+    const first = ensureProfileCoalesced(provider, 'work', 'key-1');
+    const second = ensureProfileCoalesced(provider, 'work', 'key-1');
+    expect(ensureProfile).toHaveBeenCalledOnce();
+    await expect(ensureProfileCoalesced(provider, 'work', 'key-2')).rejects.toMatchObject({ code: 'PROFILE_ENSURE_CONFLICT' });
+    resolve(result('work'));
+    await expect(Promise.all([first, second])).resolves.toHaveLength(2);
+  });
+
+  it('does not coalesce different aliases or provider instances and retries after failure', async () => {
+    let brokenAttempts = 0;
+    const firstEnsure = vi.fn(async ({ alias }: { alias: string }) => {
+      if (alias === 'broken' && ++brokenAttempts === 1) throw new Error('boom');
+      return result(alias);
+    });
+    const secondEnsure = vi.fn(async ({ alias }: { alias: string }) => result(alias));
+    const first = { ensureProfile: firstEnsure } as unknown as BrowserRuntimeProvider;
+    const second = { ensureProfile: secondEnsure } as unknown as BrowserRuntimeProvider;
+    await Promise.all([
+      ensureProfileCoalesced(first, 'work', 'key-work'),
+      ensureProfileCoalesced(first, 'personal', 'key-personal'),
+      ensureProfileCoalesced(second, 'work', 'key-work'),
+    ]);
+    await expect(ensureProfileCoalesced(first, 'broken', 'key-broken')).rejects.toThrow('boom');
+    await expect(ensureProfileCoalesced(first, 'broken', 'key-broken')).resolves.toMatchObject({ profile: { id: 'broken' } });
+    expect(firstEnsure).toHaveBeenCalledTimes(4);
+    expect(secondEnsure).toHaveBeenCalledOnce();
+  });
+});
 
 describe('createDaemonServer', () => {
   const servers: Array<{ close: () => Promise<void> }> = [];

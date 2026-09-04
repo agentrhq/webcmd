@@ -3,6 +3,7 @@ import { StringDecoder } from 'node:string_decoder';
 import { PKG_VERSION } from '../version.js';
 import {
   parseAttachResult,
+  parseCreateProfileResult,
   parseControlResponse,
   parseHelloResult,
   parseReleaseResult,
@@ -10,9 +11,11 @@ import {
   SLAB_ERROR_MESSAGES,
   SLAB_MAX_CONTROL_LINE_BYTES,
   SLAB_PROTOCOL_VERSION,
+  SLAB_PROTOCOL_MIN_VERSION,
   type SlabAttachResult,
   type SlabErrorCode,
   type SlabHelloResult,
+  type SlabCreateProfileResult,
 } from './protocol.js';
 
 export interface SlabBridgeClientOptions {
@@ -37,8 +40,27 @@ interface PendingRequest {
   timer?: ReturnType<typeof setTimeout>;
 }
 
+function isValidDisplayName(value: string): boolean {
+  if (!value) return false;
+  let count = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    const unit = value.charCodeAt(index);
+    if (unit >= 0xd800 && unit <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return false;
+      index += 1;
+    } else if (unit >= 0xdc00 && unit <= 0xdfff) {
+      return false;
+    }
+    count += 1;
+    if (count > 128) return false;
+  }
+  return true;
+}
+
 function parseResultForMethod(method: string, result: unknown): unknown {
   if (method === 'hello') return parseHelloResult(result);
+  if (method === 'createProfile') return parseCreateProfileResult(result);
   if (method === 'attach') return parseAttachResult(result);
   if (method === 'release') return parseReleaseResult(result);
   throw new Error('SLAB control response has unknown fields');
@@ -53,6 +75,7 @@ export class SlabBridgeClient {
   private pendingBytes = Buffer.alloc(0);
   private nextId = 0;
   private closed = false;
+  private negotiatedVersion?: number;
 
   private constructor(socket: Socket, options: SlabBridgeClientOptions = {}) {
     this.socket = socket;
@@ -77,23 +100,46 @@ export class SlabBridgeClient {
   }
 
   hello(): Promise<SlabHelloResult> {
-    return this.request('hello', {
-      protocolVersion: { min: SLAB_PROTOCOL_VERSION, max: SLAB_PROTOCOL_VERSION },
+    return (this.request('hello', {
+      protocolVersion: { min: SLAB_PROTOCOL_MIN_VERSION, max: SLAB_PROTOCOL_VERSION },
       clientVersion: this.clientVersion,
-    }) as Promise<SlabHelloResult>;
+    }) as Promise<SlabHelloResult>).then(result => {
+      this.negotiatedVersion = result.protocolVersion;
+      return result;
+    });
+  }
+
+  createProfile(displayName: string, idempotencyKey: string): Promise<SlabCreateProfileResult> {
+    if ((this.negotiatedVersion ?? 0) < 2) {
+      return Promise.reject(Object.assign(
+        new Error('Installed SLAB does not support native Profile creation; update SLAB and retry.'),
+        { code: 'SLAB_UPGRADE_REQUIRED' },
+      ));
+    }
+    if (!isValidDisplayName(displayName)
+      || !/^[A-Za-z0-9:._-]{1,256}$/.test(idempotencyKey)) {
+      return Promise.reject(new SlabProtocolError('INVALID_REQUEST'));
+    }
+    return this.request('createProfile', {
+      protocolVersion: { min: 2, max: 2 },
+      displayName,
+      idempotencyKey,
+    }) as Promise<SlabCreateProfileResult>;
   }
 
   attach(profile: string | { id: string }): Promise<SlabAttachResult> {
+    if (this.negotiatedVersion === undefined) return Promise.reject(new Error('SLAB control hello is required before attach.'));
     const profileId = typeof profile === 'string' ? profile : profile.id;
     return this.request('attach', {
-      protocolVersion: { min: SLAB_PROTOCOL_VERSION, max: SLAB_PROTOCOL_VERSION },
+      protocolVersion: negotiatedProtocolVersionParam(this.negotiatedVersion),
       profileId,
     }) as Promise<SlabAttachResult>;
   }
 
   release(connectionId: string): Promise<null> {
+    if (this.negotiatedVersion === undefined) return Promise.reject(new Error('SLAB control hello is required before release.'));
     return this.request('release', {
-      protocolVersion: { min: SLAB_PROTOCOL_VERSION, max: SLAB_PROTOCOL_VERSION },
+      protocolVersion: negotiatedProtocolVersionParam(this.negotiatedVersion),
       connectionId,
     }) as Promise<null>;
   }
@@ -198,4 +244,8 @@ export class SlabBridgeClient {
     }
     this.socket.destroy();
   }
+}
+
+function negotiatedProtocolVersionParam(revision: number): number | { min: number; max: number } {
+  return revision === 1 ? 1 : { min: revision, max: revision };
 }
