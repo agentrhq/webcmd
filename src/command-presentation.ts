@@ -60,12 +60,150 @@ export interface RootHelpPresentation {
   usage?: readonly string[];
   commands: readonly RootHelpCommand[];
   options: readonly RootHelpOption[];
-  /** Commander-generated body retained by local mode for byte-compatible layout. */
+  /**
+   * @deprecated Ignored by formatRootHelp. Kept so older callers that still
+   * attach Commander base text compile until they drop the field.
+   */
   baseText?: string;
   groups?: readonly RootHelpGroup[];
+  examples?: readonly string[];
+  agents?: readonly string[];
   footer?: readonly string[];
   localOnlyCommands?: readonly RootHelpCommand[];
   localOnlyExplanation?: string;
+}
+
+export interface FormatRootHelpOptions {
+  /** Force ANSI color on/off. Defaults to TTY + NO_COLOR/FORCE_COLOR rules. */
+  color?: boolean;
+  /** Terminal width for wrapping dynamic lists. Defaults to process.stdout.columns. */
+  columns?: number;
+}
+
+/** Banner from ascii.md — WEB (white) + CMD (#56C5FF) when color is on. */
+export const ROOT_HELP_BANNER_PARTS = [
+  ['ㅤㅤㅤㅤㅤㅤㅤㅤㅤㅤㅤㅤㅤㅤㅤ', 'ㅤㅤㅤㅤㅤㅤㅤㅤㅤㅤㅤㅤㅤㅤㅤ'],
+  ['██╗    ██╗███████╗██████╗  ', '██████╗███╗   ███╗██████╗'],
+  ['██║    ██║██╔════╝██╔══██╗', '██╔════╝████╗ ████║██╔══██╗'],
+  ['██║ █╗ ██║█████╗  ██████╔╝', '██║     ██╔████╔██║██║  ██║'],
+  ['██║███╗██║██╔══╝  ██╔══██╗', '██║     ██║╚██╔╝██║██║  ██║'],
+  ['╚███╔███╔╝███████╗██████╔╝', '╚██████╗██║ ╚═╝ ██║██████╔╝'],
+  [' ╚══╝╚══╝ ╚══════╝╚═════╝  ', '╚═════╝╚═╝     ╚═╝╚═════╝'],
+] as const;
+
+export const ROOT_HELP_BANNER = ROOT_HELP_BANNER_PARTS
+  .map(([web, cmd]) => `${web}${cmd}`)
+  .join('\n');
+
+interface RootHelpCommandSection {
+  title: string;
+  order: readonly string[];
+}
+
+const ROOT_HELP_COMMAND_SECTIONS: readonly RootHelpCommandSection[] = [
+  { title: 'CORE', order: ['site', 'list', 'web'] },
+  { title: 'BROWSER', order: ['browser', 'session', 'profile', 'tab'] },
+  { title: 'SYSTEM', order: ['auth', 'daemon', 'doctor', 'update', 'setup', 'artifact'] },
+  { title: 'EXTENSIONS', order: ['skills', 'plugin', 'adapter', 'external'] },
+  { title: 'DEVELOPMENT', order: ['validate', 'verify', 'convention-audit'] },
+  { title: 'COMPLETION', order: ['completion'] },
+];
+
+/** Brand accent from docs theme (`colors.light`). */
+const ACCENT_RGB = { r: 0x56, g: 0xc5, b: 0xff } as const;
+
+const ANSI = {
+  reset: '\u001b[0m',
+  bold: '\u001b[1m',
+  dim: '\u001b[2m',
+  white: '\u001b[97m',
+  accent: `\u001b[38;2;${ACCENT_RGB.r};${ACCENT_RGB.g};${ACCENT_RGB.b}m`,
+} as const;
+
+function formatRootHelpBanner(color: boolean): string {
+  if (!color) return ROOT_HELP_BANNER;
+  return ROOT_HELP_BANNER_PARTS
+    .map(([web, cmd]) => `${paint(web, true, ANSI.white)}${paint(cmd, true, ANSI.accent)}`)
+    .join('\n');
+}
+
+function rootHelpColorEnabled(explicit?: boolean): boolean {
+  if (explicit !== undefined) return explicit;
+  if (process.env.NO_COLOR !== undefined && process.env.NO_COLOR !== '') return false;
+  if (process.env.FORCE_COLOR === '0') return false;
+  if (process.env.FORCE_COLOR !== undefined && process.env.FORCE_COLOR !== '') return true;
+  return process.stdout.isTTY === true;
+}
+
+function paint(text: string, enabled: boolean, ...codes: string[]): string {
+  if (!enabled || codes.length === 0) return text;
+  return `${codes.join('')}${text}${ANSI.reset}`;
+}
+
+function commandRootName(name: string): string {
+  return name.trim().split(/\s+/, 1)[0] ?? name;
+}
+
+function sortCommandsForSection(
+  commands: readonly RootHelpCommand[],
+  preferredOrder: readonly string[],
+): RootHelpCommand[] {
+  const rank = new Map(preferredOrder.map((name, index) => [name, index]));
+  return [...commands].sort((left, right) => {
+    const leftRoot = commandRootName(left.name);
+    const rightRoot = commandRootName(right.name);
+    const leftRank = rank.get(leftRoot) ?? Number.MAX_SAFE_INTEGER;
+    const rightRank = rank.get(rightRoot) ?? Number.MAX_SAFE_INTEGER;
+    if (leftRank !== rightRank) return leftRank - rightRank;
+    return left.name.localeCompare(right.name);
+  });
+}
+
+function groupRootHelpCommands(
+  commands: readonly RootHelpCommand[],
+): { title: string; commands: RootHelpCommand[] }[] {
+  const remaining = new Map<string, RootHelpCommand[]>();
+  for (const command of commands) {
+    const root = commandRootName(command.name);
+    const bucket = remaining.get(root) ?? [];
+    bucket.push(command);
+    remaining.set(root, bucket);
+  }
+
+  const sections: { title: string; commands: RootHelpCommand[] }[] = [];
+  for (const section of ROOT_HELP_COMMAND_SECTIONS) {
+    const matched: RootHelpCommand[] = [];
+    for (const name of section.order) {
+      const items = remaining.get(name);
+      if (!items) continue;
+      matched.push(...items);
+      remaining.delete(name);
+    }
+    if (matched.length) sections.push({ title: section.title, commands: sortCommandsForSection(matched, section.order) });
+  }
+
+  if (remaining.size > 0) {
+    const other = [...remaining.values()].flat().sort((a, b) => a.name.localeCompare(b.name));
+    sections.push({ title: 'OTHER', commands: other });
+  }
+  return sections;
+}
+
+function defaultRootHelpExamples(): string[] {
+  return [
+    `${CLI_COMMAND} list`,
+    `${CLI_COMMAND} <site> --help`,
+    `${CLI_COMMAND} --session <session-id> browser tabs`,
+    `${CLI_COMMAND} github whoami -f yaml`,
+  ];
+}
+
+function defaultRootHelpAgents(): string[] {
+  return [
+    `${CLI_COMMAND} <site> --help -f yaml`,
+    `${CLI_COMMAND} list -f yaml`,
+    `${CLI_COMMAND} <site> <command> -f yaml`,
+  ];
 }
 
 export interface CommandListPresentation {
@@ -162,52 +300,87 @@ export function toPresentableCommand(command: PresentableCommandSource): Present
   };
 }
 
-export function formatRootHelp(presentation: RootHelpPresentation): string {
-  if (presentation.baseText !== undefined) {
-    const baseText = presentation.baseText.replace(/\n+$/, '');
-    const groups = (presentation.groups ?? []).filter((group) => group.items.length > 0);
-    if (groups.length === 0) return `${baseText}\n`;
-
-    const tail: string[] = [];
-    for (const group of groups) {
-      tail.push(`${group.label}:`, wrapCommaList(group.items), '');
-    }
-    if (presentation.footer?.length) tail.push(...presentation.footer);
-    return `${baseText}\n\n${tail.join('\n')}\n`;
-  }
-
+export function formatRootHelp(
+  presentation: RootHelpPresentation,
+  opts: FormatRootHelpOptions = {},
+): string {
+  const color = rootHelpColorEnabled(opts.color);
+  const wrapWidth = Math.max(opts.columns ?? process.stdout.columns ?? 100, 40);
   const usage = presentation.usage ?? [
+    `${CLI_COMMAND} [options] [command]`,
     `${CLI_COMMAND} <site> <command> [args] [options]`,
     `${CLI_COMMAND} list [options]`,
   ];
+  const examples = presentation.examples ?? defaultRootHelpExamples();
+  const agents = presentation.agents ?? defaultRootHelpAgents();
+  const sectionHeading = (title: string): string => paint(title, color, ANSI.bold, ANSI.accent);
+  const dim = (text: string): string => paint(text, color, ANSI.dim);
+
+  // Visible spacer between the ASCII banner and the tagline (Hangul filler).
+  const banner = formatRootHelpBanner(color).replace(/(?:\r?\n[ \t]*)+$/g, '');
   const lines: string[] = [
-    'Usage:',
+    banner,
+    'ㅤ',
+    `  ${paint(presentation.description, color, ANSI.dim)}`,
+    '',
+    sectionHeading('USAGE'),
     ...usage.map((entry) => `  ${entry}`),
     '',
-    presentation.description,
-    '',
-    'Options:',
-    ...formatRows(presentation.options.map((option) => [option.flags, option.description])),
-    '',
-    'Commands:',
-    ...formatRows(presentation.commands.map((command) => [command.name, command.description])),
   ];
 
-  if (presentation.localOnlyCommands?.length) {
-    lines.push(
-      '',
-      'Local-only commands:',
-      ...formatRows(presentation.localOnlyCommands.map((command) => [command.name, command.description])),
-    );
-    if (presentation.localOnlyExplanation) lines.push('', presentation.localOnlyExplanation);
+  for (const section of groupRootHelpCommands(presentation.commands)) {
+    lines.push(sectionHeading(section.title));
+    lines.push(...formatStyledRows(
+      section.commands.map((command) => ({ left: command.name, right: command.description })),
+      { color, emphasizeLeft: true },
+    ));
+    lines.push('');
   }
+
+  if (presentation.options.length) {
+    lines.push(sectionHeading('GLOBAL OPTIONS'));
+    lines.push(...formatStyledRows(
+      presentation.options.map((option) => ({ left: option.flags, right: option.description })),
+      { color, emphasizeLeft: true },
+    ));
+    lines.push('');
+  }
+
+  if (presentation.localOnlyCommands?.length) {
+    lines.push(sectionHeading('LOCAL-ONLY'));
+    lines.push(...formatStyledRows(
+      presentation.localOnlyCommands.map((command) => ({ left: command.name, right: command.description })),
+      { color, emphasizeLeft: true },
+    ));
+    if (presentation.localOnlyExplanation) lines.push(`  ${dim(presentation.localOnlyExplanation)}`);
+    lines.push('');
+  }
+
   for (const group of presentation.groups ?? []) {
     if (group.items.length === 0) continue;
-    lines.push('', `${group.label}:`, wrapCommaList(group.items));
+    lines.push(sectionHeading(group.label));
+    lines.push(wrapCommaList(group.items, { width: wrapWidth, indent: '  ' }));
+    lines.push('');
   }
-  if (presentation.footer?.length) lines.push('', ...presentation.footer);
-  lines.push('');
-  return lines.join('\n');
+
+  if (examples.length) {
+    lines.push(sectionHeading('EXAMPLES'));
+    for (const example of examples) lines.push(`  ${example}`);
+    lines.push('');
+  }
+
+  if (agents.length) {
+    lines.push(sectionHeading('AGENTS'));
+    for (const tip of agents) lines.push(`  ${tip}`);
+    lines.push('');
+  }
+
+  if (presentation.footer?.length) {
+    for (const line of presentation.footer) lines.push(line);
+    lines.push('');
+  }
+
+  return `${lines.join('\n').replace(/\n+$/, '')}\n`;
 }
 
 export function commandListRows(
@@ -639,6 +812,20 @@ function formatRows(rows: readonly (readonly [string, string])[]): string[] {
   if (rows.length === 0) return [];
   const width = Math.min(Math.max(...rows.map(([left]) => left.length)), 34);
   return rows.map(([left, right]) => `  ${left.padEnd(width + 2)}${right}`);
+}
+
+function formatStyledRows(
+  rows: readonly { left: string; right: string }[],
+  opts: { color: boolean; emphasizeLeft?: boolean },
+): string[] {
+  if (rows.length === 0) return [];
+  const width = Math.min(Math.max(...rows.map((row) => row.left.length), 0), 34);
+  return rows.map((row) => {
+    const padded = row.left.padEnd(width + 2);
+    const left = opts.emphasizeLeft ? paint(padded, opts.color, ANSI.bold) : padded;
+    const right = paint(row.right, opts.color, ANSI.dim);
+    return `  ${left}${right}`;
+  });
 }
 
 function formatArgHelp(arg: Arg): string {
