@@ -509,3 +509,46 @@ describe('commanderAdapter error envelope output', () => {
     stderrSpy.mockRestore();
   });
 });
+
+describe('registering an adapter that shadows a shared flag', () => {
+  // The reported crash: registration happens while the CLI is being built, so
+  // one plugin command with an argument named `json` aborted startup for every
+  // command — `list`, `doctor`, and even `plugin uninstall`.
+  const shadowing: CliCommand = {
+    site: 'linkedin',
+    name: 'thread-snapshot',
+    access: 'read',
+    description: 'Snapshot a thread',
+    browser: true,
+    args: [
+      { name: 'thread-url', required: true, help: 'Thread URL' },
+      { name: 'json', type: 'bool', default: false, help: 'Return only the snapshot string' },
+    ],
+    func: vi.fn(),
+  };
+
+  it('registers without throwing', () => {
+    const program = new Command();
+    const siteCmd = program.command('linkedin');
+    expect(() => registerCommandToProgram(siteCmd, shadowing)).not.toThrow();
+  });
+
+  it('leaves the adapter owning the flag', () => {
+    const program = new Command();
+    const siteCmd = program.command('linkedin');
+    registerCommandToProgram(siteCmd, shadowing);
+    const registered = siteCmd.commands.find((child) => child.name() === 'thread-snapshot')!;
+    const jsonOptions = registered.options.filter((option) => option.long === '--json');
+    expect(jsonOptions).toHaveLength(1);
+    expect(jsonOptions[0]!.description).toBe('Return only the snapshot string');
+  });
+
+  it('does not disturb sibling commands that shadow nothing', () => {
+    const program = new Command();
+    const siteCmd = program.command('linkedin');
+    registerCommandToProgram(siteCmd, shadowing);
+    registerCommandToProgram(siteCmd, { ...shadowing, name: 'timeline', args: [] });
+    const timeline = siteCmd.commands.find((child) => child.name() === 'timeline')!;
+    expect(timeline.options.map((option) => option.long)).toContain('--json');
+  });
+});

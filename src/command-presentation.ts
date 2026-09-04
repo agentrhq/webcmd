@@ -583,31 +583,55 @@ export function siteHelpData(site: string, commands: readonly PresentableCommand
 }
 
 export function commandHelpData(command: PresentableCommand): Record<string, unknown> {
+  const shadowed = shadowedCommonOptions(command);
+  const unshadowed = <T extends { name: string }>(options: readonly T[]): T[] =>
+    options.filter((option) => !shadowed.has(option.name));
   return {
     site: command.site,
     ...compactCommand(command),
-    common_options: COMMON_OPTIONS.map(compactCommonOption),
-    ...(command.browser ? { browser_common_options: BROWSER_COMMON_OPTIONS.map(compactCommonOption) } : {}),
+    common_options: unshadowed(COMMON_OPTIONS).map(compactCommonOption),
+    ...(command.browser ? { browser_common_options: unshadowed(BROWSER_COMMON_OPTIONS).map(compactCommonOption) } : {}),
     output_formats: ['table', 'plain', 'yaml', 'json', 'md', 'csv'],
   };
 }
 
-export function formatCommonOptionsHelp(): string {
-  const rows = COMMON_OPTIONS.map((option) => {
-    const details: string[] = [option.help];
-    if ('default' in option) details.push(`default: ${option.default}`);
-    if ('choices' in option) details.push(`choices: ${option.choices.join(', ')}`);
-    return [option.flags, details.join('  ')] as [string, string];
-  });
+/**
+ * Names of shared options this command shadows with an argument of its own.
+ *
+ * An adapter argument named after a shared flag keeps that flag — webcmd skips
+ * registering its own (see `addSharedOption` in command-surface.ts). Help has
+ * to skip it too, or it advertises a flag that is not registered and lists the
+ * same flag twice with two different meanings.
+ */
+function shadowedCommonOptions(command?: PresentableCommand): Set<string> {
+  if (!command) return new Set();
+  return new Set(commandOptions(command).map((arg) => arg.name));
+}
+
+function formatCommonOptionRows(
+  options: typeof COMMON_OPTIONS | typeof BROWSER_COMMON_OPTIONS,
+  command?: PresentableCommand,
+): Array<[string, string]> {
+  const shadowed = shadowedCommonOptions(command);
+  return options
+    .filter((option) => !shadowed.has(option.name))
+    .map((option) => {
+      const details: string[] = [option.help];
+      if ('default' in option) details.push(`default: ${option.default}`);
+      if ('choices' in option) details.push(`choices: ${option.choices.join(', ')}`);
+      return [option.flags, details.join('  ')] as [string, string];
+    });
+}
+
+export function formatCommonOptionsHelp(command?: PresentableCommand): string {
+  const rows = formatCommonOptionRows(COMMON_OPTIONS, command);
+  if (rows.length === 0) return '';
   return ['Common options:', ...formatRows(rows)].join('\n');
 }
 
-export function formatBrowserCommonOptionsHelp(): string {
-  const rows = BROWSER_COMMON_OPTIONS.map((option) => {
-    const details: string[] = [option.help];
-    if ('choices' in option) details.push(`choices: ${option.choices.join(', ')}`);
-    return [option.flags, details.join('  ')] as [string, string];
-  });
+export function formatBrowserCommonOptionsHelp(command?: PresentableCommand): string {
+  const rows = formatCommonOptionRows(BROWSER_COMMON_OPTIONS, command);
+  if (rows.length === 0) return '';
   return ['Browser common options:', ...formatRows(rows)].join('\n');
 }
 
@@ -650,8 +674,12 @@ export function formatCommandHelp(command: PresentableCommand): string {
   ] as [string, string]);
   if (optionRows.length) lines.push('Command options:', ...formatRows(optionRows), '');
 
-  lines.push(formatCommonOptionsHelp(), '');
-  if (command.browser) lines.push(formatBrowserCommonOptionsHelp(), '');
+  const commonOptionsHelp = formatCommonOptionsHelp(command);
+  if (commonOptionsHelp) lines.push(commonOptionsHelp, '');
+  if (command.browser) {
+    const browserOptionsHelp = formatBrowserCommonOptionsHelp(command);
+    if (browserOptionsHelp) lines.push(browserOptionsHelp, '');
+  }
 
   const meta = [
     `Access: ${command.access}`,
