@@ -210,6 +210,38 @@ describe('webcmd skills content', () => {
     expect(body.split(/\s+/).filter(Boolean).length).toBeLessThan(2300);
   });
 
+  it('carries the whole learning loop in the main file', () => {
+    const browser = bundledSkill('webcmd-browser');
+    const sitemap = bundledReference('sitemap-memory.md');
+
+    expect(browser).toContain('webcmd site memory candidate add');
+    expect(browser).toContain('webcmd site memory checkpoint');
+    expect(browser).toMatch(/capture a candidate when/i);
+    expect(browser).toMatch(/better path[\s\S]{0,200}access fact[\s\S]{0,200}high-consequence/i);
+    expect(browser).toMatch(/do not capture[\s\S]{0,160}trivial/i);
+    expect(browser).toMatch(/never explore to learn|do not crawl/i);
+    expect(browser).toMatch(/naturally produced|naturally encountered/i);
+    expect(browser).toMatch(/account names[\s\S]{0,160}organization/i);
+    expect(browser).toMatch(/untrusted evidence/i);
+    expect(browser).toMatch(/learning never fails the task/i);
+    expect(browser).toMatch(/readOnly[\s\S]{0,240}continue the browser task/i);
+    expect(browser).toMatch(/do not roll back[\s\S]{0,120}recoverable state/i);
+    expect(browser).toMatch(/say nothing about it[\s\S]{0,120}high-consequence warning failed to persist/i);
+    expect(bundledReference('sitemap-memory.md')).toMatch(/end that section with a pointer[\s\S]{0,160}does not duplicate/i);
+    expect(sitemap).toMatch(/readOnly[\s\S]{0,200}skip candidate capture/i);
+  });
+
+  it('keeps candidate qualification and completion rules consistent', () => {
+    const schema = bundledReference('candidate-schema.md');
+
+    expect(schema).toMatch(/materially useful reusable observation/i);
+    expect(schema).not.toMatch(/wait for a real consequence/i);
+    expect(schema).toMatch(/action_space[\s\S]{0,80}access[\s\S]{0,80}better_path[\s\S]{0,120}does not need anything to have gone wrong/i);
+    expect(schema).toMatch(/never deleted/i);
+    expect(schema).toMatch(/do not reopen[\s\S]{0,120}major rewrite/i);
+    expect(schema).toMatch(/same thing happens again[\s\S]{0,120}new pending candidate/i);
+  });
+
   it('names per-reference triggers, classify-before-write, and the 500/200 rewrite rule', () => {
     const browser = bundledSkill('webcmd-browser');
     const sitemap = bundledReference('sitemap-memory.md');
