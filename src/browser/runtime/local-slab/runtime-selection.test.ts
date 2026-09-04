@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 function fakeAttachedProfile() {
   const listeners = new Map<string, Set<(...args: unknown[]) => void>>();
@@ -165,5 +168,35 @@ describe('local browser runtime selection', () => {
       profileDisconnected: true,
       profiles: [],
     });
+  });
+
+  it('allows an unloaded Profile Session record and provisions only through explicit ensure', async () => {
+    const { createLocalBrowserRuntimeProvider } = await import('./provider.js');
+    const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-slab-profile-'));
+    const close = vi.fn().mockResolvedValue(undefined);
+    try {
+      const provider = createLocalBrowserRuntimeProvider({
+        baseDir,
+        statusBridge: vi.fn().mockResolvedValue({
+          close,
+          hello: vi.fn().mockResolvedValue({
+            protocolVersion: 1,
+            browserVersion: '152.0.7977.65',
+            browserPid: 1234,
+            profiles: [{ id: 'default', displayName: 'Default' }],
+          }),
+        }),
+      });
+
+      await expect(provider.createSession({
+        id: 'create-work',
+        action: 'session-create',
+        contextId: 'work',
+        sessionName: 'Work',
+      })).resolves.toMatchObject({ profileId: 'work' });
+      expect(close).toHaveBeenCalledOnce();
+    } finally {
+      fs.rmSync(baseDir, { recursive: true, force: true });
+    }
   });
 });

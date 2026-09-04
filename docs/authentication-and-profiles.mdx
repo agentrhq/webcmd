@@ -20,6 +20,13 @@ windows/workspaces within a profile; separate Sessions let multiple agents use
 the same profile in parallel. Use a named profile when work and personal
 accounts, customers, or environments must stay separate.
 
+When SLAB is the local runtime, a Session may create its own browser window or
+explicitly bind an existing human window. `browser tabs` discovers unbound
+windows without changing them, and binding one tab claims the complete
+containing window. Normal Session close detaches an adopted human window rather
+than closing it. Discovery IDs are live-runtime identities; list again after a
+browser or daemon restart.
+
 ## Hosted Profiles
 
 Webcmd Cloud scopes every hosted profile to a workspace. A workspace is an ambient container the CLI resolves once per invocation: the `--workspace <id>` flag if present, otherwise the `WEBCMD_WORKSPACE` environment variable, otherwise an implicit default workspace. Within that workspace, `--profile <name>` selects a persona; an unset or default profile lazily creates that workspace's own `default` profile the first time it is used.

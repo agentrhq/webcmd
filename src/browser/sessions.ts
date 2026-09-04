@@ -23,9 +23,26 @@ export interface BrowserSessionRecord {
   handoff?: { site: string; expiresAt: string };
 }
 
-export interface BrowserSessionListRow extends BrowserSessionRecord {
+export interface ManagedBrowserSessionListRow extends BrowserSessionRecord {
+  rowKind?: 'session';
   runtimeState: 'idle' | 'active';
+  provenance?: 'agent-created' | 'human-adopted';
+  window?: string;
 }
+
+export interface DiscoveredBrowserWindowListRow {
+  rowKind: 'discovered';
+  profileId: string;
+  runtimeState: 'available';
+  window: string;
+  page: string;
+  tabCount: number;
+  title: string;
+  url: string;
+  ownership: 'unowned';
+}
+
+export type BrowserSessionListRow = ManagedBrowserSessionListRow | DiscoveredBrowserWindowListRow;
 
 export interface LocalBrowserSessionStoreOptions {
   baseDir?: string;
@@ -106,7 +123,7 @@ export class LocalBrowserSessionStore {
     return { ...record };
   }
 
-  list(profileId?: string, limit = 20): BrowserSessionListRow[] {
+  list(profileId?: string, limit = 20): ManagedBrowserSessionListRow[] {
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
       throw new CliError('INVALID_SESSION_LIMIT', 'Session list limit must be an integer from 1 to 100.', undefined, EXIT_CODES.USAGE_ERROR);
     }
@@ -114,7 +131,7 @@ export class LocalBrowserSessionStore {
       .filter((row) => profileId === undefined || row.profileId === profileId)
       .sort((left, right) => right.lastUsedAt.localeCompare(left.lastUsedAt) || left.id.localeCompare(right.id))
       .slice(0, limit);
-    return rows.map((row) => ({ ...row, runtimeState: 'idle' as const }));
+    return rows.map((row) => ({ ...row, rowKind: 'session' as const, runtimeState: 'idle' as const }));
   }
 
   markHandoff(profileId: string, sessionId: string, handoff: { site: string; expiresAt: string }): BrowserSessionRecord {

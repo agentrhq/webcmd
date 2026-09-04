@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
@@ -13,6 +13,9 @@ import { openSitesRepository } from './git-store.js';
 import { listSiteMemory, readProductFile, showSiteMemory, writeProductFile } from './local-store.js';
 import type { CandidateDisposition, SeedLookupResult } from './model.js';
 import { createHttpSeedProvider } from './seed-client.js';
+import { GIT_TEST_TIMEOUT_MS, removeTempDirs } from './__fixtures__/git-test-support.js';
+
+vi.setConfig({ testTimeout: GIT_TEST_TIMEOUT_MS });
 
 const run = promisify(execFile);
 const tempHomes: string[] = [];
@@ -30,7 +33,7 @@ const CLOCK = {
 
 afterEach(async () => {
   restoreGitShim();
-  await Promise.all(tempHomes.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+  await removeTempDirs(tempHomes);
 });
 
 describe('self-learning lifecycle', () => {

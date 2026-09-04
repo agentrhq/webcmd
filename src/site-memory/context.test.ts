@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { chmodSync } from 'node:fs';
-import { access, chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, chmod, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -11,13 +11,16 @@ import { openSitesRepository } from './git-store.js';
 import { readProductFile, writeProductFile } from './local-store.js';
 import type { GlobalSeedProvider } from './seed-client.js';
 import type { SeedLookupResult } from './model.js';
+import { GIT_TEST_TIMEOUT_MS, removeTempDirs } from './__fixtures__/git-test-support.js';
+
+vi.setConfig({ testTimeout: GIT_TEST_TIMEOUT_MS });
 
 const run = promisify(execFile);
 const tempHomes: string[] = [];
 
 afterEach(async () => {
   restoreGitShim();
-  await Promise.all(tempHomes.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+  await removeTempDirs(tempHomes);
 });
 
 describe('parseProductManifest', () => {

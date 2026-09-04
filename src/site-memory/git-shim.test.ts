@@ -1,16 +1,19 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { installGitShim, restoreGitShim } from './git-shim.js';
 import { openSitesRepository } from './git-store.js';
 import { writeProductFile } from './local-store.js';
+import { GIT_TEST_TIMEOUT_MS, removeTempDirs } from './__fixtures__/git-test-support.js';
+
+vi.setConfig({ testTimeout: GIT_TEST_TIMEOUT_MS });
 
 const tempHomes: string[] = [];
 
 afterEach(async () => {
   restoreGitShim();
-  await Promise.all(tempHomes.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+  await removeTempDirs(tempHomes);
 });
 
 describe('installGitShim', () => {

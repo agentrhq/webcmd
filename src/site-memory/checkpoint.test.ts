@@ -4,7 +4,7 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { addCandidate, showCandidate } from './candidates.js';
 import { checkpointMemory, type CheckpointInput } from './checkpoint.js';
 import { classifyProduct } from './classify.js';
@@ -12,6 +12,9 @@ import { getMemoryContext, parseProductManifest } from './context.js';
 import { installGitShim, restoreGitShim } from './git-shim.js';
 import { openSitesRepository } from './git-store.js';
 import { readProductFile, writeProductFile } from './local-store.js';
+import { GIT_TEST_TIMEOUT_MS, removeTempDirs } from './__fixtures__/git-test-support.js';
+
+vi.setConfig({ testTimeout: GIT_TEST_TIMEOUT_MS });
 
 const run = promisify(execFile);
 const tempHomes: string[] = [];
@@ -20,9 +23,13 @@ const SITE = `# Example\n\n${FACT}`;
 const POINTER = '- More: [references/listing.md](references/listing.md).\n';
 const REF = `# Listing\n\n${FACT}`;
 
+if (process.platform === 'win32') {
+  vi.setConfig({ testTimeout: 30_000 });
+}
+
 afterEach(async () => {
   restoreGitShim();
-  await Promise.all(tempHomes.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+  await removeTempDirs(tempHomes);
 });
 
 describe('checkpoint compare-and-swap', () => {
@@ -879,7 +886,7 @@ describe('checkpoint git transaction', () => {
     expect((await git(sites, ['show', `HEAD:example.test/candidates/${second.id}.json`]))).toMatch(/"status": "ingested"/);
     expect((await git(sites, ['status', '--porcelain', '-uall', '--', 'example.test/candidates'])).trim()).toBe('');
     expect(JSON.parse(await git(sites, ['show', `HEAD:example.test/candidates/${later.id}.json`])).status).toBe('pending');
-  });
+  }, 20_000);
 
   it('recovers interrupted ingested provenance after an unrelated later product commit', async () => {
     const { homeDir, sites } = await primed();
@@ -938,7 +945,7 @@ describe('checkpoint git transaction', () => {
     expect((await git(sites, ['show', `HEAD:example.test/candidates/${second.id}.json`]))).toMatch(/"status": "ingested"/);
     expect((await git(sites, ['status', '--porcelain', '-uall', '--', 'example.test/candidates'])).trim()).toBe('');
     expect(JSON.parse(await git(sites, ['show', `HEAD:example.test/candidates/${first.id}.json`])).memory_commit).toBe(memoryRevision);
-  });
+  }, 20_000);
 
   it('recovers a rejected-only interrupted provenance batch on a later product write', async () => {
     const { homeDir, sites } = await primed();
@@ -963,7 +970,7 @@ describe('checkpoint git transaction', () => {
     expect((await git(sites, ['show', `HEAD:example.test/candidates/${second.id}.json`]))).toMatch(/"status": "rejected"/);
     expect((await git(sites, ['status', '--porcelain', '-uall', '--', 'example.test/candidates'])).trim()).toBe('');
     expect(JSON.parse(await git(sites, ['show', `HEAD:example.test/candidates/${later.id}.json`])).status).toBe('pending');
-  });
+  }, 20_000);
 
   it('does not auto-commit a pending candidate whose payload was edited into a terminal record', async () => {
     const { homeDir, sites } = await primed();

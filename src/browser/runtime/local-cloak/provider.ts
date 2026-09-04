@@ -87,7 +87,7 @@ export class LocalCloakRuntimeProvider implements BrowserRuntimeProvider {
     return this.sessions.clearHandoff(this.resolveProfileId(command), command.sessionId!);
   }
 
-  async listSessions(input: { profileId?: string; limit?: number }): Promise<BrowserSessionListRow[]> {
+  async listSessions(input: { profileId?: string; limit?: number; includeDiscovered?: boolean }): Promise<BrowserSessionListRow[]> {
     return this.sessions.list(input.profileId, input.limit).map((session) => ({
       ...session,
       runtimeState: this.manager.hasSession(session.profileId, session.id) ? 'active' : 'idle',

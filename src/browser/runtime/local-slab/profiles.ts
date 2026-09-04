@@ -8,7 +8,7 @@ export interface SlabProfileDirOptions {
 
 export function normalizeProfileId(value: string | undefined | null): string {
   const id = value?.trim() || 'default';
-  if (!/^[A-Za-z0-9._-]+$/.test(id) || id === '.' || id === '..') {
+  if (/[/\\\0-\x1F\x7F]/.test(id) || id === '.' || id === '..') {
     throw new Error(`Invalid profile id: ${value ?? ''}`);
   }
   return id;

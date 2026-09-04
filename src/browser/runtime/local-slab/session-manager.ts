@@ -5,8 +5,9 @@ import { SlabNetworkCapture } from './network.js';
 import { log } from '../../../logger.js';
 import { CliError, EXIT_CODES } from '../../../errors.js';
 import { isClosedContextError } from '../../run/types.js';
-import { humanizePage } from '../../humanizer/page.js';
+import { disposeHumanizedPage, humanizePage } from '../../humanizer/page.js';
 import { attachSlabProfile, type AttachedSlabProfile } from './attachment.js';
+import type { DiscoveredBrowserWindowListRow } from '../../sessions.js';
 
 const TARGET_PAGE_MATCH_TIMEOUT_MS = 1_000;
 export const PROFILE_IDLE_TIMEOUT_MS = 60_000;
@@ -52,6 +53,9 @@ type PageEntry = {
   adapterSite?: string;
   idleTimeout?: number;
   idleTimer?: ReturnType<typeof setTimeout>;
+  windowId: number;
+  provenance: 'agent-created' | 'human-adopted';
+  closeListener?: () => void;
 };
 
 export interface SlabPageLease {
@@ -69,10 +73,22 @@ export interface SlabTabInfo {
   title: string;
   url: string;
   profileId: string;
-  session: string;
-  sessionId: string;
+  session?: string;
+  sessionId?: string;
   surface: BrowserSurface;
   selected: boolean;
+  window: string;
+  ownership: 'session' | 'unowned';
+  provenance?: 'agent-created' | 'human-adopted';
+  targetId?: string;
+}
+
+interface DiscoveredPage {
+  pageId: string;
+  windowId: number;
+  targetId: string;
+  title: string;
+  url: string;
 }
 
 interface ProfileRuntime {
@@ -94,6 +110,8 @@ interface ProfileRuntime {
   disposed: boolean;
   releasePromise?: Promise<void>;
   lastSeenAt: number;
+  generation: number;
+  discoveredPages: Map<string, DiscoveredPage>;
 }
 
 interface SessionRuntime {
@@ -123,6 +141,17 @@ export class SessionWindowConflictError extends CliError {
   }
 }
 
+export class AdoptedTabForceRequiredError extends CliError {
+  constructor(pageId: string) {
+    super(
+      'ADOPTED_TAB_FORCE_REQUIRED',
+      `Closing adopted human tab ${pageId} is destructive and requires --force.`,
+      'Detach the Session normally to leave the human window open.',
+      EXIT_CODES.USAGE_ERROR,
+    );
+  }
+}
+
 export class SlabAttachmentLostError extends Error {
   readonly code = 'SLAB_ATTACHMENT_LOST';
 
@@ -136,9 +165,11 @@ export interface SlabSessionManagerOptions {
   baseDir?: string;
   attachProfile?: AttachSlabProfile;
   hasActiveHandoff?: (profileId: string) => boolean;
+  humanize?: typeof humanizePage;
 }
 
 let pageCounter = 0;
+let attachmentGeneration = 0;
 
 export function resolveLeaseKey(input: SessionKeyInput): string {
   const surface = input.surface === 'adapter' ? 'adapter' : 'browser';
@@ -166,11 +197,16 @@ function daemonShuttingDownError(): Error & { code: 'DAEMON_SHUTTING_DOWN' } {
   return Object.assign(new Error('The browser daemon is shutting down.'), { code: 'DAEMON_SHUTTING_DOWN' as const });
 }
 
+function isBlankStartupUrl(url: string): boolean {
+  return url === 'about:blank' || url === 'chrome://newtab/' || url === 'chrome://new-tab-page/';
+}
+
 export class SlabSessionManager {
   readonly networkCapture = new SlabNetworkCapture();
 
   private readonly attachProfile: AttachSlabProfile;
   private readonly hasActiveHandoff: (profileId: string) => boolean;
+  private readonly humanize: typeof humanizePage;
   private readonly profiles = new Map<string, ProfileRuntime>();
   private readonly detachedSessions = new Map<string, Set<string>>();
   private readonly profileLaunches = new Map<string, Promise<ProfileRuntime>>();
@@ -179,9 +215,8 @@ export class SlabSessionManager {
   private readonly pageCreationQueues = new Map<string, Promise<void>>();
   private readonly pageTargetIds = new WeakMap<PlaywrightPage, string>();
   private readonly pageTargetIdPromises = new WeakMap<PlaywrightPage, Promise<string>>();
-  private readonly pageCdpSessions = new WeakMap<PlaywrightPage, CDPSession>();
-  private readonly pageCdpDetaches = new WeakMap<PlaywrightPage, Promise<void>>();
   private readonly pendingTargetPages = new WeakMap<ProfileRuntime, Map<string, PlaywrightPage>>();
+  private readonly pendingTargetCloseListeners = new WeakMap<ProfileRuntime, Map<string, { page: PlaywrightPage; listener: () => void }>>();
   private readonly targetPageWaiters = new WeakMap<ProfileRuntime, Map<string, {
     resolve(page: PlaywrightPage): void;
     reject(error: Error): void;
@@ -193,6 +228,7 @@ export class SlabSessionManager {
   constructor(private readonly opts: SlabSessionManagerOptions = {}) {
     this.attachProfile = opts.attachProfile ?? attachSlabProfile;
     this.hasActiveHandoff = opts.hasActiveHandoff ?? (() => false);
+    this.humanize = opts.humanize ?? humanizePage;
   }
 
   profileStatuses() {
@@ -207,6 +243,28 @@ export class SlabSessionManager {
 
   activeProfileIds(): string[] {
     return [...this.profiles.keys()];
+  }
+
+  async discoveredWindows(profileIdInput: string | undefined): Promise<DiscoveredBrowserWindowListRow[]> {
+    const profileId = normalizeProfileId(profileIdInput);
+    const runtime = await this.getProfileRuntime(profileId);
+    const pages = (await this.discoverPages(runtime))
+      .filter(page => runtime.windowOwners.get(page.windowId) === undefined);
+    const byWindow = new Map<number, DiscoveredPage[]>();
+    for (const page of pages) byWindow.set(page.windowId, [...(byWindow.get(page.windowId) ?? []), page]);
+    const rows: DiscoveredBrowserWindowListRow[] = [...byWindow.entries()].map(([windowId, tabs]) => ({
+      rowKind: 'discovered',
+      profileId,
+      runtimeState: 'available',
+      window: this.windowIdentity(runtime, windowId),
+      page: tabs[0]!.pageId,
+      tabCount: tabs.length,
+      title: tabs[0]!.title,
+      url: tabs[0]!.url,
+      ownership: 'unowned',
+    }));
+    this.scheduleProfileIdle(profileId, runtime);
+    return rows;
   }
 
   async runWithProfileActivity<T>(profileIdInput: string | undefined, task: () => Promise<T>): Promise<T> {
@@ -267,15 +325,21 @@ export class SlabSessionManager {
         }
       }
       const acquired = await this.acquireSessionPage(profileId, sessionId, input.windowMode);
-      const entry = await this.registerOwnedPage(acquired.runtime, acquired.session, acquired.page, {
-        leaseKey,
-        session,
-        surface,
-        siteSession: input.siteSession,
-        sessionKind: input.sessionKind,
-        adapterSite: input.adapterSite,
-        idleTimeout: input.idleTimeout,
-      });
+      let entry: PageEntry;
+      try {
+        entry = await this.registerOwnedPage(acquired.runtime, acquired.session, acquired.page, {
+          leaseKey,
+          session,
+          surface,
+          siteSession: input.siteSession,
+          sessionKind: input.sessionKind,
+          adapterSite: input.adapterSite,
+          idleTimeout: input.idleTimeout,
+        });
+      } catch (error) {
+        if (!pageIsClosed(acquired.page)) await acquired.page.close().catch(() => {});
+        throw error;
+      }
       if (existing && freshPage && existing !== entry) await this.removeEntry(acquired.runtime, sessionRuntime, existing, true);
       this.selectEntry(acquired.session, entry);
       acquired.runtime.lastSeenAt = Date.now();
@@ -385,14 +449,12 @@ export class SlabSessionManager {
     const sessionId = requireSessionId(input);
     this.assertSessionAttached(profileId, sessionId);
     const surface = input.surface ? normalizeSurface(input.surface) : undefined;
-    const runtime = this.profiles.get(profileId);
-    if (!runtime) return [];
+    const runtime = await this.getProfileRuntime(profileId);
     const sessionRuntime = runtime.sessions.get(sessionId);
-    if (!sessionRuntime) return [];
-    const entries = this.openEntries(sessionRuntime)
+    const entries = (sessionRuntime ? this.openEntries(sessionRuntime) : [])
       .filter(([, entry]) => !surface || entry.surface === surface);
     await Promise.all(entries.map(([, entry]) => this.assertOwnedWindow(runtime, sessionId, entry)));
-    return Promise.all(entries.map(async ([, entry], index) => ({
+    const owned = await Promise.all(entries.map(async ([, entry], index) => ({
       id: entry.pageId,
       page: entry.pageId,
       index,
@@ -402,8 +464,29 @@ export class SlabSessionManager {
       session: entry.session,
       sessionId,
       surface: entry.surface,
-      selected: sessionRuntime.selectedPageId === entry.pageId,
+      selected: sessionRuntime?.selectedPageId === entry.pageId,
+      window: this.windowIdentity(runtime, entry.windowId),
+      ownership: 'session' as const,
+      provenance: entry.provenance,
+      targetId: entry.targetId,
     })));
+    const discovered = await this.discoverPages(runtime);
+    const unowned = discovered
+      .filter(candidate => runtime.windowOwners.get(candidate.windowId) === undefined)
+      .map((candidate, index) => ({
+        id: candidate.pageId,
+        page: candidate.pageId,
+        index: owned.length + index,
+        title: candidate.title,
+        url: candidate.url,
+        profileId,
+        surface: 'browser' as const,
+        selected: false,
+        window: this.windowIdentity(runtime, candidate.windowId),
+        ownership: 'unowned' as const,
+        targetId: candidate.targetId,
+      }));
+    return [...owned, ...unowned];
   }
 
   async newPage(input: NewPageInput): Promise<SlabPageLease> {
@@ -440,14 +523,20 @@ export class SlabSessionManager {
       if (!pageIsClosed(acquired.page)) await acquired.page.close().catch(() => {});
       throw new Error('Target page, context or browser has been closed');
     }
-    const entry = await this.registerOwnedPage(acquired.runtime, acquired.sessionRuntime, acquired.page, {
-      session,
-      surface,
-      siteSession: input.siteSession,
-      sessionKind: input.sessionKind,
-      adapterSite: input.adapterSite,
-      idleTimeout: input.idleTimeout,
-    });
+    let entry: PageEntry;
+    try {
+      entry = await this.registerOwnedPage(acquired.runtime, acquired.sessionRuntime, acquired.page, {
+        session,
+        surface,
+        siteSession: input.siteSession,
+        sessionKind: input.sessionKind,
+        adapterSite: input.adapterSite,
+        idleTimeout: input.idleTimeout,
+      });
+    } catch (error) {
+      if (!pageIsClosed(acquired.page)) await acquired.page.close().catch(() => {});
+      throw error;
+    }
     const leaseKey = entry.leaseKey;
     this.refreshIdleTimer(acquired.runtime, acquired.sessionRuntime, leaseKey, entry);
     this.selectEntry(acquired.sessionRuntime, entry);
@@ -513,11 +602,14 @@ export class SlabSessionManager {
     const sessionId = requireSessionId(input);
     this.assertSessionAttached(profileId, sessionId);
     const surface = normalizeSurface(input.surface);
-    const runtime = this.profiles.get(profileId);
-    if (!runtime) return null;
+    const runtime = await this.getProfileRuntime(profileId);
+    return this.withPageCreationLock(profileId, async () => {
+      if (runtime.disposed || this.profiles.get(profileId) !== runtime) {
+        throw new SlabAttachmentLostError();
+      }
     const existingSession = runtime.sessions.get(sessionId);
-    const sessionRuntime = existingSession ?? this.getSessionRuntime(runtime, sessionId);
-    const targetId = input.targetId?.trim();
+    const discovered = input.pageId ? runtime.discoveredPages.get(input.pageId) : undefined;
+    const targetId = input.targetId?.trim() ?? discovered?.targetId;
     const existingEntry = input.pageId
       ? this.findEntryByPageId(runtime, input.pageId)?.[1]
       : targetId
@@ -525,10 +617,47 @@ export class SlabSessionManager {
         : existingSession && this.openEntries(existingSession)[input.index ?? -1]?.[1];
     const page = existingEntry?.page ?? (targetId ? await this.findPageByTargetId(runtime, targetId) : undefined);
     if (!page || pageIsClosed(page)) return null;
+    const selectedTargetId = await this.targetIdForPage(runtime, page);
+    const windowId = await this.windowIdForTarget(runtime, selectedTargetId, page);
+    if (discovered && discovered.windowId !== windowId) return null;
+    const owner = runtime.windowOwners.get(windowId);
+    if (owner !== undefined && owner !== sessionId) {
+      throw new SessionWindowConflictError(input.pageId ?? targetId ?? 'unknown', sessionId, owner);
+    }
+    if (existingSession && existingSession.windowIds.size > 0 && !existingSession.windowIds.has(windowId)) {
+      throw new SessionWindowConflictError(input.pageId ?? targetId ?? 'unknown', sessionId, sessionId);
+    }
+    const sessionRuntime = existingSession ?? this.getSessionRuntime(runtime, sessionId);
     const canonicalKey = resolveLeaseKey(input);
     const currentCanonical = sessionRuntime.pages.get(canonicalKey);
+    const sessionPagesSnapshot = new Map(sessionRuntime.pages);
+    const windowIdsSnapshot = new Set(sessionRuntime.windowIds);
+    const windowOwnersSnapshot = new Map(runtime.windowOwners);
+    const targetPagesSnapshot = new Map(runtime.targetPages);
+    const entrySnapshots = new Map([...runtime.targetPages.values()].map(entry => [entry, {
+      value: { ...entry, idleTimer: undefined },
+      hadIdleTimer: entry.idleTimer !== undefined,
+    }]));
+    const selectedPageIdSnapshot = sessionRuntime.selectedPageId;
+    const restoreTransaction = () => {
+      sessionRuntime.pages.clear();
+      for (const [key, value] of sessionPagesSnapshot) sessionRuntime.pages.set(key, value);
+      sessionRuntime.windowIds.clear();
+      for (const id of windowIdsSnapshot) sessionRuntime.windowIds.add(id);
+      runtime.windowOwners.clear();
+      for (const [id, value] of windowOwnersSnapshot) runtime.windowOwners.set(id, value);
+      runtime.targetPages.clear();
+      for (const [id, value] of targetPagesSnapshot) runtime.targetPages.set(id, value);
+      sessionRuntime.selectedPageId = selectedPageIdSnapshot;
+      for (const [entry, snapshot] of entrySnapshots) {
+        this.clearIdleTimer(entry);
+        Object.assign(entry, snapshot.value);
+        if (snapshot.hadIdleTimer) this.refreshIdleTimer(runtime, sessionRuntime, entry.leaseKey, entry);
+      }
+      if (!existingSession && sessionPagesSnapshot.size === 0) runtime.sessions.delete(sessionId);
+    };
 
-    if (input.windowMode !== 'background') {
+    if (input.windowMode === 'foreground') {
       await page.bringToFront?.().catch(() => {});
     }
 
@@ -540,21 +669,72 @@ export class SlabSessionManager {
       this.refreshIdleTimer(runtime, sessionRuntime, preservedKey, currentCanonical);
     }
 
-    const owned = await this.registerOwnedPage(runtime, sessionRuntime, page, {
-      leaseKey: canonicalKey,
-      session,
-      surface,
-      siteSession: input.siteSession,
-      sessionKind: input.sessionKind,
-      adapterSite: input.adapterSite,
-      idleTimeout: input.idleTimeout,
-    });
+    const siblings: PlaywrightPage[] = [];
+    for (const candidate of runtime.context.pages()) {
+      if (pageIsClosed(candidate)) continue;
+      const candidateTargetId = await this.targetIdForPageInWindow(runtime, candidate, windowId);
+      if (!candidateTargetId) continue;
+      if (candidateTargetId === runtime.anchorTargetId) continue;
+      siblings.push(candidate);
+    }
+    const newlyHumanized: PlaywrightPage[] = [];
+    try {
+      for (const sibling of siblings) {
+        if (!(sibling as unknown as { _original?: unknown })._original) {
+          this.humanize(sibling);
+          newlyHumanized.push(sibling);
+        }
+      }
+    } catch (error) {
+      await Promise.all(newlyHumanized.map(sibling => disposeHumanizedPage(sibling)));
+      await Promise.all(siblings.map(sibling => this.detachPageCdp(sibling)));
+      restoreTransaction();
+      throw error;
+    }
+    let owned: PageEntry | undefined;
+    const registered: PageEntry[] = [];
+    try {
+      for (const sibling of siblings) {
+        if (pageIsClosed(sibling)) throw new Error('SLAB bind target disappeared during window adoption.');
+        const entry = await this.registerOwnedPage(runtime, sessionRuntime, sibling, {
+        ...(sibling === page ? { leaseKey: canonicalKey } : {}),
+        session,
+        surface,
+        siteSession: input.siteSession,
+        sessionKind: input.sessionKind,
+        adapterSite: input.adapterSite,
+        idleTimeout: input.idleTimeout,
+        provenance: [...runtime.targetPages.values()].find(candidate => candidate.page === sibling)?.provenance ?? 'human-adopted',
+        humanize: false,
+      });
+        registered.push(entry);
+        if (sibling === page) owned = entry;
+      }
+    } catch (error) {
+      for (const entry of registered) {
+        if (!entrySnapshots.has(entry)) await this.removeEntry(runtime, sessionRuntime, entry, false);
+      }
+      await Promise.all(newlyHumanized.map(sibling => disposeHumanizedPage(sibling)));
+      await Promise.all(siblings.map(sibling => this.detachPageCdp(sibling)));
+      restoreTransaction();
+      throw error;
+    }
+    if (!owned) {
+      for (const entry of registered) {
+        if (!entrySnapshots.has(entry)) await this.removeEntry(runtime, sessionRuntime, entry, false);
+      }
+      await Promise.all(newlyHumanized.map(sibling => disposeHumanizedPage(sibling)));
+      await Promise.all(siblings.map(sibling => this.detachPageCdp(sibling)));
+      restoreTransaction();
+      return null;
+    }
     this.selectEntry(sessionRuntime, owned);
     runtime.lastSeenAt = Date.now();
     return { profileId, leaseKey: canonicalKey, context: runtime.context, page: owned.page, pageId: owned.pageId };
+    });
   }
 
-  async closePage(input: Pick<SessionKeyInput, 'profileId' | 'session' | 'sessionId' | 'surface'> & { pageId?: string; index?: number }): Promise<string | null> {
+  async closePage(input: Pick<SessionKeyInput, 'profileId' | 'session' | 'sessionId' | 'surface'> & { pageId?: string; index?: number; force?: boolean }): Promise<string | null> {
     const profileId = normalizeProfileId(input.profileId);
     const sessionId = requireSessionId(input);
     this.assertSessionAttached(profileId, sessionId);
@@ -567,7 +747,10 @@ export class SlabSessionManager {
     if (!match) return null;
     const [, entry] = match;
     await this.assertOwnedWindow(runtime, sessionId, entry);
-    await this.removeEntry(runtime, sessionRuntime, entry, true);
+    if (entry.provenance === 'human-adopted' && input.force !== true) {
+      throw new AdoptedTabForceRequiredError(entry.pageId);
+    }
+    await this.removeEntry(runtime, sessionRuntime, entry, true, input.force === true);
     runtime.lastSeenAt = Date.now();
     return entry.pageId;
   }
@@ -589,7 +772,7 @@ export class SlabSessionManager {
     ));
     await Promise.all(entries.map(([, entry]) => this.assertOwnedWindow(runtime, sessionId, entry)));
     for (const [, entry] of entries) {
-      if (entry.siteSession === 'persistent') continue;
+      if (entry.siteSession === 'persistent' || entry.provenance === 'human-adopted') continue;
       await this.removeEntry(runtime, sessionRuntime, entry, true);
     }
   }
@@ -694,21 +877,14 @@ export class SlabSessionManager {
       closing: false,
       disposed: false,
       lastSeenAt: Date.now(),
+      generation: ++attachmentGeneration,
+      discoveredPages: new Map(),
     };
     this.pendingTargetPages.set(runtime, new Map());
+    this.pendingTargetCloseListeners.set(runtime, new Map());
     this.targetPageWaiters.set(runtime, new Map());
     this.attachRuntimeLifecycle(profileId, runtime);
-    if (cdp) {
-      try {
-        runtime.anchorTargetId = (await cdp.send('Target.createTarget', {
-          url: 'about:blank',
-          hidden: true,
-          background: true,
-        }) as { targetId: string }).targetId;
-      } catch (error) {
-        this.warnKeeperFallback(profileId, runtime, error);
-      }
-    } else {
+    if (!cdp) {
       this.warnKeeperFallback(profileId, runtime, keeperError ?? new Error('browser connection unavailable'));
     }
     if (this.shuttingDown) {
@@ -725,28 +901,34 @@ export class SlabSessionManager {
     const detached = this.detachedSessions.get(profileId) ?? new Set<string>();
     for (const sessionId of runtime.sessions.keys()) detached.add(sessionId);
     if (detached.size > 0) this.detachedSessions.set(profileId, detached);
-    void this.releaseRuntime(runtime, false).catch(error => {
+    void this.releaseRuntime(runtime, false, true).catch(error => {
       log.warn(`SLAB Profile ${profileId} release failed: ${errorMessage(error)}`);
     });
-    this.cleanupRuntime(runtime);
   }
 
-  private cleanupRuntime(runtime: ProfileRuntime): void {
+  private async cleanupRuntime(runtime: ProfileRuntime): Promise<void> {
     if (runtime.disposed) return;
     runtime.disposed = true;
     this.cancelProfileIdle(runtime);
+    const humanizerDisposals: Promise<void>[] = [];
     for (const entry of runtime.targetPages.values()) {
       if (entry.idleTimer) clearTimeout(entry.idleTimer);
       this.networkCapture.stop(entry.page);
+      humanizerDisposals.push(disposeHumanizedPage(entry.page));
     }
     runtime.targetPages.clear();
+    runtime.discoveredPages.clear();
     runtime.sessions.clear();
     runtime.windowOwners.clear();
+    this.pendingTargetPages.get(runtime)?.clear();
+    for (const { page, listener } of this.pendingTargetCloseListeners.get(runtime)?.values() ?? []) page.off('close', listener);
+    this.pendingTargetCloseListeners.get(runtime)?.clear();
     for (const waiter of this.targetPageWaiters.get(runtime)?.values() ?? []) {
       clearTimeout(waiter.timer);
       waiter.reject(new Error('Target page, context or browser has been closed'));
     }
     this.targetPageWaiters.get(runtime)?.clear();
+    await Promise.all(humanizerDisposals);
   }
 
   private attachRuntimeLifecycle(profileId: string, runtime: ProfileRuntime): void {
@@ -755,7 +937,7 @@ export class SlabSessionManager {
       void this.handleContextPage(runtime, page).catch(() => {});
     });
     const onCdpEvent = (runtime.cdp as (CDPSession & {
-      on?: (event: string, listener: (payload: { targetId: string }) => void) => void;
+      on?: (event: string, listener: (payload: any) => void) => void;
     }) | undefined)?.on;
     onCdpEvent?.call(runtime.cdp, 'Target.targetDestroyed', ({ targetId }: { targetId: string }) => {
       this.queueAnchorRepair(profileId, runtime, targetId);
@@ -782,6 +964,19 @@ export class SlabSessionManager {
       }) as { targetId: string }).targetId;
     } catch (error) {
       this.warnKeeperFallback(profileId, runtime, error);
+    }
+  }
+
+  private async ensureKeeper(runtime: ProfileRuntime): Promise<void> {
+    if (runtime.anchorTargetId || runtime.useParkingKeeper || !runtime.cdp) return;
+    try {
+      runtime.anchorTargetId = (await runtime.cdp.send('Target.createTarget', {
+        url: 'about:blank',
+        hidden: true,
+        background: true,
+      }) as { targetId: string }).targetId;
+    } catch (error) {
+      this.warnKeeperFallback(runtime.profileId, runtime, error);
     }
   }
 
@@ -851,7 +1046,9 @@ export class SlabSessionManager {
       try {
         if (closePages) {
           await Promise.all([...runtime.targetPages.values()].map(entry => (
-            pageIsClosed(entry.page) ? undefined : entry.page.close().catch(() => {})
+            pageIsClosed(entry.page) || entry.provenance === 'human-adopted'
+              ? undefined
+              : entry.page.close().catch(() => {})
           )));
         }
         await this.closeParkingPage(runtime);
@@ -866,7 +1063,7 @@ export class SlabSessionManager {
         if (releaseNative) await runtime.attachment.release();
         else runtime.attachment.closeTransport();
       } finally {
-        this.cleanupRuntime(runtime);
+        await this.cleanupRuntime(runtime);
       }
     })();
     return runtime.releasePromise;
@@ -929,7 +1126,7 @@ export class SlabSessionManager {
     windowMode?: BrowserWindowMode,
   ): Promise<PlaywrightPage> {
     const openerEntry = this.openEntries(session)[0]?.[1];
-    if (!openerEntry) return this.createWindowPage(runtime, windowMode);
+    if (!openerEntry) return await this.claimSoleBlankStartupPage(runtime) ?? this.createWindowPage(runtime, windowMode);
     await this.assertOwnedWindow(runtime, session.id, openerEntry);
     const opener = openerEntry.page;
     const openerWindowId = await this.windowIdForTarget(runtime, openerEntry.targetId, opener);
@@ -943,7 +1140,17 @@ export class SlabSessionManager {
     }
     const page = await openedPage;
     if (page) return page;
-    return this.createWindowPage(runtime, windowMode);
+    throw new Error(`SLAB could not create another tab in Session ${session.id} without opening a second window.`);
+  }
+
+  private async claimSoleBlankStartupPage(runtime: ProfileRuntime): Promise<PlaywrightPage | undefined> {
+    if (runtime.targetPages.size > 0 || [...runtime.sessions.values()].some(session => session.windowIds.size > 0)) {
+      return undefined;
+    }
+    const unowned = (await this.discoverPages(runtime))
+      .filter(candidate => runtime.windowOwners.get(candidate.windowId) === undefined);
+    if (unowned.length !== 1 || !isBlankStartupUrl(unowned[0]!.url)) return undefined;
+    return await this.findPageByTargetId(runtime, unowned[0]!.targetId);
   }
 
   private async waitForContextPageForSession(
@@ -1005,6 +1212,7 @@ export class SlabSessionManager {
   }
 
   private async createWindowPage(runtime: ProfileRuntime, windowMode?: BrowserWindowMode, newWindow = true): Promise<PlaywrightPage> {
+    await this.ensureKeeper(runtime);
     if (!runtime.cdp) return runtime.context.newPage();
     const result = await runtime.cdp.send('Target.createTarget', {
       url: 'about:blank',
@@ -1019,16 +1227,41 @@ export class SlabSessionManager {
     const pending = this.pendingTargetPages.get(runtime)!;
     const page = pending.get(targetId);
     if (page) {
-      pending.delete(targetId);
-      pending.clear();
+      this.clearPendingTargetPage(runtime, targetId, page);
       return page;
     }
     return new Promise<PlaywrightPage>((resolve, reject) => {
-      const timer = setTimeout(() => {
+      let settled = false;
+      let interval: ReturnType<typeof setInterval> | undefined;
+      const finish = (page: PlaywrightPage) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (interval) clearInterval(interval);
         this.targetPageWaiters.get(runtime)?.delete(targetId);
-        reject(new Error(`Timed out waiting for SLAB target ${targetId}`));
+        resolve(page);
+      };
+      const fail = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        if (interval) clearInterval(interval);
+        this.targetPageWaiters.get(runtime)?.delete(targetId);
+        reject(error);
+      };
+      const poll = () => {
+        void this.findPageByTargetId(runtime, targetId)
+          .then(found => {
+            if (found && !pageIsClosed(found)) finish(found);
+          })
+          .catch(() => {});
+      };
+      const timer = setTimeout(() => {
+        fail(new Error(`Timed out waiting for SLAB target ${targetId}`));
       }, TARGET_PAGE_MATCH_TIMEOUT_MS);
-      this.targetPageWaiters.get(runtime)!.set(targetId, { resolve, reject, timer });
+      interval = setInterval(poll, 50);
+      interval.unref?.();
+      this.targetPageWaiters.get(runtime)!.set(targetId, { resolve: finish, reject: fail, timer });
+      poll();
     });
   }
 
@@ -1040,13 +1273,70 @@ export class SlabSessionManager {
     // owned unless bindPage subsequently registers the exact matching target.
     for (const page of runtime.context.pages()) {
       if (pageIsClosed(page)) continue;
-      if (await this.targetIdForPage(runtime, page).catch(() => undefined) === targetId) return page;
+      const cachedTargetId = this.pageTargetIds.get(page);
+      if (cachedTargetId === targetId) return page;
+      if (cachedTargetId) continue;
+      const probe = await runtime.context.newCDPSession(page).catch(() => undefined);
+      if (!probe) continue;
+      try {
+        const { targetInfo } = await probe.send('Target.getTargetInfo') as { targetInfo: { targetId: string } };
+        if (targetInfo.targetId === targetId) {
+          this.pageTargetIds.set(page, targetId);
+          page.once('close', () => this.pageTargetIds.delete(page));
+          return page;
+        }
+      } finally {
+        await probe.detach().catch(() => {});
+      }
     }
     return undefined;
   }
 
+  private windowIdentity(runtime: ProfileRuntime, windowId: number): string {
+    return `slab-window-${runtime.generation}-${windowId}`;
+  }
+
+  private async discoverPages(runtime: ProfileRuntime): Promise<DiscoveredPage[]> {
+    if (!runtime.cdp) return [];
+    const { targetInfos = [] } = await runtime.cdp.send('Target.getTargets') as {
+      targetInfos: Array<{ targetId: string; type: string; title?: string; url?: string }>;
+    };
+    const live = new Set(targetInfos.map(target => target.targetId));
+    for (const [pageId, page] of runtime.discoveredPages) {
+      if (!live.has(page.targetId)) runtime.discoveredPages.delete(pageId);
+    }
+    const result: DiscoveredPage[] = [];
+    for (const target of targetInfos) {
+      if (target.type !== 'page' || target.targetId === runtime.anchorTargetId) continue;
+      if (target.url?.startsWith('devtools://') || target.url?.startsWith('chrome-extension://')) continue;
+      const windowId = await this.windowIdForTarget(runtime, target.targetId).catch(() => undefined);
+      if (windowId === undefined) continue;
+      let page = [...runtime.discoveredPages.values()].find(candidate => candidate.targetId === target.targetId);
+      if (!page) {
+        page = {
+          pageId: `slab-page-${runtime.generation}-${++pageCounter}`,
+          windowId,
+          targetId: target.targetId,
+          title: target.title ?? '',
+          url: target.url ?? '',
+        };
+        runtime.discoveredPages.set(page.pageId, page);
+      } else {
+        page.windowId = windowId;
+        page.title = target.title ?? '';
+        page.url = target.url ?? '';
+      }
+      result.push(page);
+    }
+    return result;
+  }
+
   private async handleContextPage(runtime: ProfileRuntime, page: PlaywrightPage): Promise<void> {
-    const targetId = await this.targetIdForPage(runtime, page);
+    // Context `page` events include pre-existing human tabs. Resolve the exact
+    // target with a short-lived page probe, which targetIdForPage always
+    // detaches; an unowned observation must not leave a debugger attached.
+    const targetId = await this.targetIdForPage(runtime, page).catch(() => undefined);
+    if (!targetId) return;
     if (targetId === runtime.anchorTargetId) {
       page.once('close', () => {
         this.queueAnchorRepair(runtime.profileId, runtime, targetId);
@@ -1056,50 +1346,79 @@ export class SlabSessionManager {
     const waiter = this.targetPageWaiters.get(runtime)?.get(targetId);
     if (waiter) {
       this.targetPageWaiters.get(runtime)!.delete(targetId);
-      this.pendingTargetPages.get(runtime)?.clear();
+      this.clearPendingTargetPage(runtime, targetId);
       clearTimeout(waiter.timer);
       waiter.resolve(page);
     } else {
-      this.pendingTargetPages.get(runtime)?.set(targetId, page);
+      this.rememberPendingTargetPage(runtime, targetId, page);
     }
 
-    const opener = await page.opener().catch(() => null);
-    const openerEntry = opener && [...runtime.targetPages.values()].find(entry => entry.page === opener);
-    if (!openerEntry?.sessionId) return;
-    const session = runtime.sessions.get(openerEntry.sessionId);
-    if (!session) return;
-    this.pendingTargetPages.get(runtime)?.delete(targetId);
-    await this.registerOwnedPage(runtime, session, page, {
-      session: openerEntry.session,
-      surface: openerEntry.surface,
-      siteSession: openerEntry.siteSession,
-      sessionKind: openerEntry.sessionKind,
-      adapterSite: openerEntry.adapterSite,
-      idleTimeout: openerEntry.idleTimeout,
-    });
+    try {
+      await this.withPageCreationLock(runtime.profileId, async () => {
+        if (runtime.disposed || this.profiles.get(runtime.profileId) !== runtime) return;
+        const windowId = await this.windowIdForTarget(runtime, targetId);
+        const windowOwner = runtime.windowOwners.get(windowId);
+        const ownedSession = windowOwner ? runtime.sessions.get(windowOwner) : undefined;
+        const ownedTemplate = ownedSession ? this.openEntries(ownedSession)[0]?.[1] : undefined;
+        const opener = await page.opener().catch(() => null);
+        const openerTargetId = opener
+          ? undefined
+          : await this.openerTargetIdForTarget(runtime, targetId).catch(() => undefined);
+        const openerEntry = ownedTemplate ?? (opener
+          ? [...runtime.targetPages.values()].find(entry => entry.page === opener)
+          : openerTargetId ? runtime.targetPages.get(openerTargetId) : undefined);
+        if (!openerEntry?.sessionId) return;
+        const session = runtime.sessions.get(openerEntry.sessionId);
+        if (!session) return;
+        this.clearPendingTargetPage(runtime, targetId, page);
+        await this.registerOwnedPage(runtime, session, page, {
+          session: openerEntry.session,
+          surface: openerEntry.surface,
+          siteSession: openerEntry.siteSession,
+          sessionKind: openerEntry.sessionKind,
+          adapterSite: openerEntry.adapterSite,
+          idleTimeout: openerEntry.idleTimeout,
+          provenance: openerEntry.provenance,
+        });
+      });
+    } finally {
+      this.clearPendingTargetPage(runtime, targetId, page);
+    }
   }
 
   private async registerOwnedPage(
     runtime: ProfileRuntime,
     session: SessionRuntime,
     page: PlaywrightPage,
-    input: Pick<PageEntry, 'session' | 'surface' | 'siteSession' | 'sessionKind' | 'adapterSite' | 'idleTimeout'> & { leaseKey?: string },
+    input: Pick<PageEntry, 'session' | 'surface' | 'siteSession' | 'sessionKind' | 'adapterSite' | 'idleTimeout'> & {
+      leaseKey?: string;
+      provenance?: 'agent-created' | 'human-adopted';
+      humanize?: boolean;
+    },
   ): Promise<PageEntry> {
     const targetId = await this.targetIdForPage(runtime, page);
-    this.pendingTargetPages.get(runtime)?.delete(targetId);
+    this.clearPendingTargetPage(runtime, targetId, page);
     const windowId = await this.windowIdForTarget(runtime, targetId, page);
     const owner = runtime.windowOwners.get(windowId);
     if (owner !== undefined && owner !== session.id) {
       throw new SessionWindowConflictError(runtime.targetPages.get(targetId)?.pageId ?? 'unknown', session.id, owner);
     }
-    runtime.windowOwners.set(windowId, session.id);
-    session.windowIds.add(windowId);
-
+    if (session.windowIds.size > 0 && !session.windowIds.has(windowId)) {
+      throw new SessionWindowConflictError(runtime.targetPages.get(targetId)?.pageId ?? 'unknown', session.id, session.id);
+    }
     let entry = runtime.targetPages.get(targetId);
+    const priorEntry = entry ? { ...entry, idleTimer: undefined } : undefined;
+    const priorHadIdleTimer = entry?.idleTimer !== undefined;
+    const priorSessionPages = new Map(session.pages);
+    const priorWindowIds = new Set(session.windowIds);
+    const priorOwner = runtime.windowOwners.get(windowId);
     const wasOwned = Boolean(entry?.sessionId);
     if (entry?.sessionId && entry.sessionId !== session.id) {
       throw new SessionWindowConflictError(entry.pageId, session.id, entry.sessionId);
     }
+    try {
+    runtime.windowOwners.set(windowId, session.id);
+    session.windowIds.add(windowId);
     if (!entry) {
       const pageId = nextPageId();
       entry = {
@@ -1114,6 +1433,8 @@ export class SlabSessionManager {
         sessionKind: input.sessionKind,
         adapterSite: input.adapterSite,
         idleTimeout: input.idleTimeout,
+        windowId,
+        provenance: input.provenance ?? this.openEntries(session)[0]?.[1].provenance ?? 'agent-created',
       };
       runtime.targetPages.set(targetId, entry);
       this.attachPageLifecycle(runtime, entry);
@@ -1129,28 +1450,52 @@ export class SlabSessionManager {
       entry.sessionKind = input.sessionKind;
       entry.adapterSite = input.adapterSite;
       entry.idleTimeout = input.idleTimeout;
+      entry.windowId = windowId;
+      entry.provenance = input.provenance ?? entry.provenance;
       entry.leaseKey = input.leaseKey ?? (entry.leaseKey.startsWith('unowned\u0000') ? `page\u0000${entry.pageId}` : entry.leaseKey);
     }
     session.pages.set(entry.leaseKey, entry);
-    humanizePage(page);
+    if (input.humanize !== false) this.humanize(page);
     this.cancelProfileIdle(runtime);
     this.refreshIdleTimer(runtime, session, entry.leaseKey, entry);
     if (!wasOwned) for (const listener of this.sessionPageListeners.get(session) ?? []) listener(page);
     await this.closeParkingPage(runtime);
     return entry;
+    } catch (error) {
+      if (entry?.idleTimer) clearTimeout(entry.idleTimer);
+      session.pages.clear();
+      for (const [key, value] of priorSessionPages) session.pages.set(key, value);
+      session.windowIds.clear();
+      for (const id of priorWindowIds) session.windowIds.add(id);
+      if (priorOwner === undefined) runtime.windowOwners.delete(windowId);
+      else runtime.windowOwners.set(windowId, priorOwner);
+      if (priorEntry && entry) {
+        Object.assign(entry, priorEntry);
+        entry.idleTimer = undefined;
+        if (priorHadIdleTimer) this.refreshIdleTimer(runtime, session, entry.leaseKey, entry);
+      } else if (entry) {
+        runtime.targetPages.delete(targetId);
+        if (entry.closeListener) entry.page.off('close', entry.closeListener);
+        await disposeHumanizedPage(entry.page);
+      }
+      throw error;
+    }
   }
 
   private attachPageLifecycle(runtime: ProfileRuntime, entry: PageEntry): void {
-    entry.page.once('close', () => {
-      runtime.targetPages.delete(entry.targetId);
-      if (entry.sessionId) {
-        const session = runtime.sessions.get(entry.sessionId);
-        if (session?.pages.get(entry.leaseKey) === entry) session.pages.delete(entry.leaseKey);
-      }
-      this.clearIdleTimer(entry);
+    const closeListener = () => {
       if (runtime.parkingPage === entry.page) runtime.parkingPage = undefined;
-      this.scheduleProfileIdle(runtime.profileId, runtime);
-    });
+      const session = entry.sessionId ? runtime.sessions.get(entry.sessionId) : undefined;
+      if (session) void this.removeEntry(runtime, session, entry, false);
+      else {
+        runtime.targetPages.delete(entry.targetId);
+        this.clearIdleTimer(entry);
+        void this.detachPageCdp(entry.page);
+        this.scheduleProfileIdle(runtime.profileId, runtime);
+      }
+    };
+    entry.closeListener = closeListener;
+    entry.page.on('close', closeListener);
   }
 
   private async targetIdForPage(runtime: ProfileRuntime, page: PlaywrightPage): Promise<string> {
@@ -1160,14 +1505,15 @@ export class SlabSessionManager {
     if (pending) return pending;
     const correlation = (async () => {
       const session = await runtime.context.newCDPSession(page);
-      const { targetInfo } = await session.send('Target.getTargetInfo') as { targetInfo: { targetId: string } };
-      this.pageTargetIds.set(page, targetInfo.targetId);
-      this.pageCdpSessions.set(page, session);
-      page.once('close', () => {
-        this.pageTargetIds.delete(page);
-        void this.detachPageCdp(page);
-      });
-      return targetInfo.targetId;
+      try {
+        const { targetInfo } = await session.send('Target.getTargetInfo') as { targetInfo: { targetId: string } };
+        if (!targetInfo?.targetId) throw new Error('SLAB page target identity is unavailable.');
+        this.pageTargetIds.set(page, targetInfo.targetId);
+        page.once('close', () => this.pageTargetIds.delete(page));
+        return targetInfo.targetId;
+      } finally {
+        await session.detach().catch(() => {});
+      }
     })();
     this.pageTargetIdPromises.set(page, correlation);
     try {
@@ -1177,10 +1523,43 @@ export class SlabSessionManager {
     }
   }
 
+  private async targetIdForPageInWindow(
+    runtime: ProfileRuntime,
+    page: PlaywrightPage,
+    expectedWindowId: number,
+  ): Promise<string | undefined> {
+    const cached = this.pageTargetIds.get(page);
+    if (cached) {
+      return await this.windowIdForTarget(runtime, cached, page).catch(() => undefined) === expectedWindowId
+        ? cached
+        : undefined;
+    }
+    const probe = await runtime.context.newCDPSession(page);
+    try {
+      const { targetInfo } = await probe.send('Target.getTargetInfo') as { targetInfo: { targetId: string } };
+      const windowId = await (runtime.cdp ?? probe).send('Browser.getWindowForTarget', {
+        targetId: targetInfo.targetId,
+      }).then(result => (result as { windowId: number }).windowId);
+      if (windowId !== expectedWindowId) return undefined;
+      this.pageTargetIds.set(page, targetInfo.targetId);
+      page.once('close', () => this.pageTargetIds.delete(page));
+      return targetInfo.targetId;
+    } finally {
+      await probe.detach().catch(() => {});
+    }
+  }
+
+  private async openerTargetIdForTarget(runtime: ProfileRuntime, targetId: string): Promise<string | undefined> {
+    if (!runtime.cdp) return undefined;
+    const { targetInfo } = await runtime.cdp.send('Target.getTargetInfo', { targetId }) as {
+      targetInfo: { openerId?: string };
+    };
+    return targetInfo.openerId;
+  }
+
   private async windowIdForTarget(runtime: ProfileRuntime, targetId: string, page?: PlaywrightPage): Promise<number> {
     const entry = runtime.targetPages.get(targetId);
-    const targetPage = page ?? entry?.page;
-    const cdp = runtime.cdp ?? (targetPage ? this.pageCdpSessions.get(targetPage) : undefined);
+    const cdp = runtime.cdp;
     if (!cdp) throw new Error('SLAB page has no CDP session.');
     const { windowId } = await cdp.send('Browser.getWindowForTarget', { targetId }) as { windowId: number };
     return windowId;
@@ -1222,7 +1601,7 @@ export class SlabSessionManager {
 
   private refreshIdleTimer(runtime: ProfileRuntime, session: SessionRuntime, leaseKey: string, entry: PageEntry): void {
     this.clearIdleTimer(entry);
-    if (!entry.idleTimeout || entry.idleTimeout <= 0 || entry.siteSession === 'persistent') return;
+    if (!entry.idleTimeout || entry.idleTimeout <= 0 || entry.siteSession === 'persistent' || entry.provenance === 'human-adopted') return;
     entry.idleTimer = setTimeout(() => {
       void this.expireLease(runtime, session, leaseKey, entry);
     }, entry.idleTimeout);
@@ -1235,8 +1614,9 @@ export class SlabSessionManager {
     if (entry.siteSession !== 'persistent') await this.removeEntry(runtime, session, entry, true);
   }
 
-  private async removeEntry(runtime: ProfileRuntime, session: SessionRuntime, entry: PageEntry, close: boolean): Promise<void> {
-    const shouldPark = close && runtime.useParkingKeeper
+  private async removeEntry(runtime: ProfileRuntime, session: SessionRuntime, entry: PageEntry, close: boolean, force = false): Promise<void> {
+    const destructiveClose = close && (entry.provenance === 'agent-created' || force);
+    const shouldPark = destructiveClose && runtime.useParkingKeeper
       && [...runtime.targetPages.values()].every(candidate => candidate === entry || pageIsClosed(candidate.page));
     const parkingWindowId = shouldPark
       ? await this.windowIdForTarget(runtime, entry.targetId, entry.page).catch(() => undefined)
@@ -1246,7 +1626,13 @@ export class SlabSessionManager {
     this.clearIdleTimer(entry);
     this.clearSelectedPage(session, entry);
     this.networkCapture.stop(entry.page);
-    if (close && !pageIsClosed(entry.page)) {
+    if (entry.closeListener) {
+      entry.page.off('close', entry.closeListener);
+      entry.closeListener = undefined;
+    }
+    await this.detachPageCdp(entry.page);
+    await disposeHumanizedPage(entry.page);
+    if (destructiveClose && !pageIsClosed(entry.page)) {
       if (shouldPark) {
         await entry.page.goto('about:blank', { waitUntil: 'load' }).catch(() => {});
         entry.sessionId = undefined;
@@ -1264,6 +1650,14 @@ export class SlabSessionManager {
         if (!pageIsClosed(entry.page)) await entry.page.close().catch(() => {});
       }
     }
+    const windowStillOwned = [...runtime.targetPages.values()].some(candidate => (
+      candidate.sessionId === session.id && candidate.windowId === entry.windowId && !pageIsClosed(candidate.page)
+    ));
+    if (!windowStillOwned) {
+      runtime.windowOwners.delete(entry.windowId);
+      session.windowIds.delete(entry.windowId);
+    }
+    if (session.pages.size === 0) runtime.sessions.delete(session.id);
     this.scheduleProfileIdle(runtime.profileId, runtime);
   }
 
@@ -1275,12 +1669,26 @@ export class SlabSessionManager {
     await this.detachPageCdp(parkingPage);
   }
 
-  private detachPageCdp(page: PlaywrightPage): Promise<void> {
-    const existing = this.pageCdpDetaches.get(page);
-    if (existing) return existing;
-    const detach = this.pageCdpSessions.get(page)?.detach().catch(() => {}) ?? Promise.resolve();
-    this.pageCdpDetaches.set(page, detach);
-    return detach;
+  private detachPageCdp(_page: PlaywrightPage): Promise<void> {
+    return Promise.resolve();
+  }
+
+  private rememberPendingTargetPage(runtime: ProfileRuntime, targetId: string, page: PlaywrightPage): void {
+    this.clearPendingTargetPage(runtime, targetId);
+    this.pendingTargetPages.get(runtime)?.set(targetId, page);
+    const forget = () => this.clearPendingTargetPage(runtime, targetId, page);
+    page.on('close', forget);
+    this.pendingTargetCloseListeners.get(runtime)?.set(targetId, { page, listener: forget });
+  }
+
+  private clearPendingTargetPage(runtime: ProfileRuntime, targetId: string, expectedPage?: PlaywrightPage): void {
+    const pending = this.pendingTargetPages.get(runtime);
+    if (expectedPage && pending?.get(targetId) !== expectedPage) return;
+    pending?.delete(targetId);
+    const closeListeners = this.pendingTargetCloseListeners.get(runtime);
+    const closeListener = closeListeners?.get(targetId);
+    if (closeListener) closeListener.page.off('close', closeListener.listener);
+    closeListeners?.delete(targetId);
   }
 
   private clearIdleTimer(entry: PageEntry): void {

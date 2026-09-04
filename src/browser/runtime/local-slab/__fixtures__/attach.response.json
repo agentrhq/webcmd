@@ -12,7 +12,7 @@
     "ok": true,
     "result": {
       "connectionId": "00000000-0000-4000-8000-000000000000",
-      "profile": { "id": "default", "displayName": "Default" },
+      "profile": { "id": "default", "displayName": "default" },
       "transport": {
         "kind": "cdp-ipc",
         "endpoint": "/Users/test/.slab/run/AAAAAAAAAAA.sock",

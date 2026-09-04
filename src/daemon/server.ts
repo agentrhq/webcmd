@@ -92,7 +92,41 @@ function waitForCommandResult(
 const UNRESOLVED_SESSION_LIFECYCLE_ACTIONS = new Set<BrowserRuntimeCommand['action']>([
   'session-create',
   'session-list',
+  'profile-ensure',
 ]);
+
+type ProfileEnsureResult = { profile: { id: string; displayName: string }; created: boolean };
+const profileEnsures = new WeakMap<BrowserRuntimeProvider, Map<string, {
+  idempotencyKey: string;
+  operation: Promise<ProfileEnsureResult>;
+}>>();
+
+/** @internal Exported for deterministic concurrency contract tests. */
+export async function ensureProfileCoalesced(provider: BrowserRuntimeProvider, alias: string, idempotencyKey: string) {
+  const key = alias.trim();
+  let providerEnsures = profileEnsures.get(provider);
+  if (!providerEnsures) {
+    providerEnsures = new Map();
+    profileEnsures.set(provider, providerEnsures);
+  }
+  const existing = providerEnsures.get(key);
+  if (existing) {
+    if (existing.idempotencyKey !== idempotencyKey) {
+      throw new CliError(
+        'PROFILE_ENSURE_CONFLICT',
+        `Profile ensure for alias "${key}" is already in progress with a different idempotency key.`,
+      );
+    }
+    return existing.operation;
+  }
+  const operation = provider.ensureProfile!({ alias: key, idempotencyKey });
+  providerEnsures.set(key, { idempotencyKey, operation });
+  try {
+    return await operation;
+  } finally {
+    if (providerEnsures.get(key)?.operation === operation) providerEnsures.delete(key);
+  }
+}
 
 function commandProfileId(provider: BrowserRuntimeProvider, command: BrowserRuntimeCommand): string | undefined {
   return provider.resolveProfileId?.(command)
@@ -180,6 +214,17 @@ async function handleSessionLifecycle(
   command: BrowserRuntimeCommand,
 ): Promise<BrowserRuntimeResult | null> {
   switch (command.action) {
+    case 'profile-ensure': {
+      if (!command.alias?.trim() || !command.idempotencyKey?.trim()) {
+        return { id: command.id, ok: false, errorCode: 'invalid_request', error: 'Profile ensure requires alias and idempotencyKey.' };
+      }
+      const ensured = provider.ensureProfile
+        ? await ensureProfileCoalesced(provider, command.alias.trim(), command.idempotencyKey.trim())
+        : undefined;
+      return ensured ? { id: command.id, ok: true, data: ensured } : {
+        id: command.id, ok: false, errorCode: 'PROFILE_ENSURE_UNSUPPORTED', error: 'Selected browser runtime does not support eager Profile creation.',
+      };
+    }
     case 'session-create': {
       const session = await provider.createSession?.(command);
       return session ? { id: command.id, ok: true, data: session } : null;
