@@ -4,16 +4,16 @@ import { constants, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { access, realpath, stat } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
-import { CLI_COMMAND } from '../brand.js';
+import { CLI_COMMAND, ENV_PREFIX } from '../brand.js';
 import { ArgumentError, getErrorMessage, toEnvelope } from '../errors.js';
 import { formatErrorEnvelope } from '../output.js';
 import { writeToStream } from '../stream-write.js';
 import { fetchDaemonStatus, type DaemonStatus } from '../browser/daemon-transport.js';
 import { restartDaemon, type DaemonRestartResult } from '../browser/daemon-lifecycle.js';
 import {
-  findChromeCookieSource,
   findInstalledGoogleChrome,
   importChromeCookies,
+  listChromeCookieSources,
   type ChromeCookieSource,
 } from '../browser/google-chrome.js';
 import { resolveCloakProfileDir } from '../browser/runtime/local-cloak/profiles.js';
@@ -50,7 +50,7 @@ export interface SetupIo extends ConfigIo, HostedCredentialIo {
   isTTY?: boolean;
   resolveCloakPackage?: () => string | Promise<string>;
   resolveGoogleChromeExecutable?: () => Promise<string | undefined>;
-  findChromeCookieSource?: (source: string) => ChromeCookieSource | undefined;
+  listChromeCookieSources?: () => ChromeCookieSource[];
   importChromeCookies?: typeof importChromeCookies;
   realpath?: (path: string) => Promise<string>;
   stat?: (path: string) => Promise<{ isFile(): boolean }>;
@@ -77,8 +77,8 @@ const SETUP_HELP = [
   '',
   '  --mode <local|hosted>   Required when stdin is not a TTY',
   '  --browser <cloak|chrome|slab|absolute-path>  Local browser; Cloak is default, Chrome reuses an installed Google Chrome, SLAB is macOS alpha',
-  '  --chrome-profile <name>          Chrome profile to import cookies from (folder or display name; default: Default)',
-  '  --import-chrome-cookies          With --browser chrome, import that profile\'s cookies without prompting',
+  '  --chrome-profile <name>          Import only this Chrome profile (folder or display name)',
+  '  --import-chrome-cookies          With --browser chrome, import all Chrome profiles without prompting',
   '  --no-import-chrome-cookies       With --browser chrome, skip cookie import without prompting',
   '  --api-key <key>         Required for --mode hosted when stdin is not a TTY',
   '  --status                Show the configured mode and local browser',
@@ -295,9 +295,9 @@ function resolveGoogleChromeExecutable(io: SetupIo): Promise<string | undefined>
 }
 
 /**
- * Offers to copy cookies from an installed Chrome profile into the separate,
- * webcmd-managed profile that `--browser chrome` launches with (so `chrome`
- * reuses the Chrome binary but starts from a blank profile otherwise).
+ * Offers to copy cookies from installed Chrome profiles into separate,
+ * webcmd-managed profiles that `--browser chrome` launches with (so `chrome`
+ * reuses the Chrome binary but starts from blank profiles otherwise).
  * Best-effort: any failure here is reported but never fails setup, since the
  * chrome browser selection itself already succeeded.
  */
@@ -310,39 +310,83 @@ async function maybeImportChromeCookies(
 ): Promise<void> {
   if (parsed.importChromeCookies === false) return;
 
-  const sourceName = parsed.chromeProfile ?? 'Default';
-  let source: ChromeCookieSource | undefined;
+  let mappings: Array<{ source: ChromeCookieSource; profileId: string }>;
   try {
-    source = (io.findChromeCookieSource ?? (name => findChromeCookieSource(name, {
-      platform: io.platform ?? process.platform,
-      env: io.env ?? process.env,
-      homeDir: io.homeDir,
-    })))(sourceName);
+    const discovered = (io.listChromeCookieSources ?? (() => listChromeCookieSources(chromeCookieImportOptions(io))))();
+    const discoveredMappings = mapChromeSourcesToWebcmdProfiles(discovered);
+    if (parsed.chromeProfile) {
+      const target = parsed.chromeProfile.trim();
+      const selected = discoveredMappings.find(({ source }) => source.folder === target || source.name === target);
+      mappings = selected?.source.cookiesPath ? [selected] : [];
+    } else {
+      mappings = discoveredMappings.filter(({ source }) => source.cookiesPath);
+    }
   } catch (err) {
-    await write(`Could not look for a Chrome profile to import cookies from: ${getErrorMessage(err)}\n`);
+    await write(`Could not look for Chrome profiles to import cookies from: ${getErrorMessage(err)}\n`);
     return;
   }
 
-  if (!source?.cookiesPath) {
+  if (mappings.length === 0) {
     if (parsed.importChromeCookies === true) {
-      await write(`No cookies found for Chrome profile "${sourceName}"; skipping import.\n`);
+      await write(parsed.chromeProfile
+        ? `No cookies found for Chrome profile "${parsed.chromeProfile}"; skipping import.\n`
+        : 'No Chrome profiles with cookies found; skipping import.\n');
     }
     return;
   }
 
   if (parsed.importChromeCookies !== true) {
     if (!interactive) return;
-    const answer = (await ask(`Import cookies from Chrome profile "${source.name}" so webcmd starts signed in? [Y/n] `)).trim().toLowerCase();
+    const prompt = parsed.chromeProfile
+      ? `Import cookies from Chrome profile "${mappings[0].source.name}" so webcmd starts signed in? [Y/n] `
+      : `Import cookies from ${mappings.length} Chrome ${mappings.length === 1 ? 'profile' : 'profiles'} so webcmd starts signed in? [Y/n] `;
+    const answer = (await ask(prompt)).trim().toLowerCase();
     if (answer.startsWith('n')) return;
   }
 
-  try {
-    const targetUserDataDir = resolveCloakProfileDir('default', { profileNamespace: 'chrome' });
-    (io.importChromeCookies ?? importChromeCookies)(source, targetUserDataDir);
-    await write(`Imported cookies from Chrome profile "${source.name}".\n`);
-  } catch (err) {
-    await write(`Could not import Chrome cookies: ${getErrorMessage(err)}\n`);
+  for (const { source, profileId } of mappings) {
+    try {
+      const targetUserDataDir = resolveCloakProfileDir(profileId, {
+        baseDir: io.env?.[`${ENV_PREFIX}_CONFIG_DIR`],
+        profileNamespace: 'chrome',
+      });
+      const result = (io.importChromeCookies ?? importChromeCookies)(source, targetUserDataDir);
+      if (result.imported) {
+        await write(`Chrome "${source.name}" (${source.folder}) -> webcmd --profile ${profileId}\n`);
+      }
+    } catch (err) {
+      await write(`Could not import cookies from Chrome profile "${source.name}": ${getErrorMessage(err)}\n`);
+    }
   }
+}
+
+function chromeCookieImportOptions(io: SetupIo) {
+  return {
+    platform: io.platform ?? process.platform,
+    env: io.env ?? process.env,
+    homeDir: io.homeDir,
+  };
+}
+
+function mapChromeSourcesToWebcmdProfiles(sources: ChromeCookieSource[]): Array<{ source: ChromeCookieSource; profileId: string }> {
+  const used = new Set<string>(['default']);
+  return sources.map(source => {
+    if (source.folder === 'Default') return { source, profileId: 'default' };
+    const base = chromeProfileSlug(source.name) || chromeProfileSlug(source.folder) || 'chrome-profile';
+    let profileId = base;
+    for (let suffix = 2; used.has(profileId); suffix += 1) profileId = `${base}-${suffix}`;
+    used.add(profileId);
+    return { source, profileId };
+  });
+}
+
+function chromeProfileSlug(value: string): string {
+  return value
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
 }
 
 async function waitForSlabHello(io: SetupIo, timeoutMs = 60_000): Promise<boolean> {

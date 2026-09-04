@@ -267,25 +267,33 @@ describe('webcmd setup', () => {
       argv: ['--mode', 'local', '--browser', 'chrome', '--import-chrome-cookies'],
       isTTY: false,
       resolveGoogleChromeExecutable: async () => executablePath,
-      findChromeCookieSource: (name) => name === 'Default'
-        ? { folder: 'Default', name: 'Person 1', cookiesPath: '/real-chrome/Default/Cookies' }
-        : undefined,
+      listChromeCookieSources: () => [
+        { folder: 'Default', name: 'Person 1', cookiesPath: '/real-chrome/Default/Cookies' },
+        { folder: 'Profile 1', name: 'Work', cookiesPath: '/real-chrome/Profile 1/Cookies' },
+      ],
       importChromeCookies,
       fetchDaemonStatus: async () => null,
       write: message => { messages.push(message); },
     })).resolves.toBe(0);
 
-    expect(importChromeCookies).toHaveBeenCalledWith(
+    expect(importChromeCookies).toHaveBeenNthCalledWith(
+      1,
       { folder: 'Default', name: 'Person 1', cookiesPath: '/real-chrome/Default/Cookies' },
       expect.stringContaining(join('chrome', 'profiles', 'default')),
     );
-    expect(messages.join('')).toContain('Imported cookies from Chrome profile "Person 1"');
+    expect(importChromeCookies).toHaveBeenNthCalledWith(
+      2,
+      { folder: 'Profile 1', name: 'Work', cookiesPath: '/real-chrome/Profile 1/Cookies' },
+      expect.stringContaining(join('chrome', 'profiles', 'work')),
+    );
+    expect(messages.join('')).toContain('Chrome "Person 1" (Default) -> webcmd --profile default');
+    expect(messages.join('')).toContain('Chrome "Work" (Profile 1) -> webcmd --profile work');
   });
 
   it('skips Chrome cookie import with --no-import-chrome-cookies', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-chrome-cookies-skip-'));
     const executablePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-    const findChromeCookieSource = vi.fn();
+    const listChromeCookieSources = vi.fn();
     const importChromeCookies = vi.fn();
 
     await expect(runHostedSetup({
@@ -293,13 +301,13 @@ describe('webcmd setup', () => {
       argv: ['--mode', 'local', '--browser', 'chrome', '--no-import-chrome-cookies'],
       isTTY: false,
       resolveGoogleChromeExecutable: async () => executablePath,
-      findChromeCookieSource,
+      listChromeCookieSources,
       importChromeCookies,
       fetchDaemonStatus: async () => null,
       write: () => undefined,
     })).resolves.toBe(0);
 
-    expect(findChromeCookieSource).not.toHaveBeenCalled();
+    expect(listChromeCookieSources).not.toHaveBeenCalled();
     expect(importChromeCookies).not.toHaveBeenCalled();
   });
 
@@ -314,14 +322,14 @@ describe('webcmd setup', () => {
       argv: ['--mode', 'local', '--browser', 'chrome', '--import-chrome-cookies'],
       isTTY: false,
       resolveGoogleChromeExecutable: async () => executablePath,
-      findChromeCookieSource: () => undefined,
+      listChromeCookieSources: () => [],
       importChromeCookies,
       fetchDaemonStatus: async () => null,
       write: message => { messages.push(message); },
     })).resolves.toBe(0);
 
     expect(importChromeCookies).not.toHaveBeenCalled();
-    expect(messages.join('')).toContain('No cookies found for Chrome profile "Default"; skipping import.');
+    expect(messages.join('')).toContain('No Chrome profiles with cookies found; skipping import.');
   });
 
   it('prompts to import Chrome cookies interactively and honors a "no" answer', async () => {
@@ -338,35 +346,117 @@ describe('webcmd setup', () => {
         return answers.shift() ?? '';
       },
       resolveGoogleChromeExecutable: async () => '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-      findChromeCookieSource: () => ({ folder: 'Default', name: 'Person 1', cookiesPath: '/real-chrome/Default/Cookies' }),
+      listChromeCookieSources: () => [
+        { folder: 'Default', name: 'Person 1', cookiesPath: '/real-chrome/Default/Cookies' },
+        { folder: 'Profile 1', name: 'Work', cookiesPath: '/real-chrome/Profile 1/Cookies' },
+      ],
       importChromeCookies,
       fetchDaemonStatus: async () => null,
       write: () => undefined,
     })).resolves.toBe(0);
 
-    expect(prompts).toContain('Import cookies from Chrome profile "Person 1" so webcmd starts signed in? [Y/n] ');
+    expect(prompts).toContain('Import cookies from 2 Chrome profiles so webcmd starts signed in? [Y/n] ');
     expect(importChromeCookies).not.toHaveBeenCalled();
   });
 
   it('imports a named --chrome-profile', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-chrome-cookies-named-'));
-    const findChromeCookieSource = vi.fn((name: string) => name === 'Work'
-      ? { folder: 'Profile 1', name: 'Work', cookiesPath: '/real-chrome/Profile 1/Cookies' }
-      : undefined);
-    const importChromeCookies = vi.fn(() => ({ imported: true }));
+    const listChromeCookieSources = vi.fn(() => [
+      { folder: 'Default', name: 'Personal', cookiesPath: '/real-chrome/Default/Cookies' },
+      { folder: 'Profile 1', name: 'Work', cookiesPath: '/real-chrome/Profile 1/Cookies' },
+    ]);
+    const importChromeCookies = vi.fn((_source: unknown, target: string) => ({ imported: true, destPath: target }));
 
     await expect(runHostedSetup({
       env: { WEBCMD_CONFIG_DIR: tempDir },
       argv: ['--mode', 'local', '--browser', 'chrome', '--chrome-profile', 'Work', '--import-chrome-cookies'],
       isTTY: false,
       resolveGoogleChromeExecutable: async () => '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-      findChromeCookieSource,
+      listChromeCookieSources,
       importChromeCookies,
       fetchDaemonStatus: async () => null,
       write: () => undefined,
     })).resolves.toBe(0);
 
-    expect(findChromeCookieSource).toHaveBeenCalledWith('Work');
+    expect(listChromeCookieSources).toHaveBeenCalledOnce();
+    expect(importChromeCookies).toHaveBeenCalledWith(
+      { folder: 'Profile 1', name: 'Work', cookiesPath: '/real-chrome/Profile 1/Cookies' },
+      expect.stringContaining(join('chrome', 'profiles', 'work')),
+    );
+  });
+
+  it('keeps a colliding profile slug stable when importing that Chrome folder by name', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-chrome-cookies-named-collision-'));
+    const importChromeCookies = vi.fn((_source: unknown, target: string) => ({ imported: true, destPath: target }));
+
+    await expect(runHostedSetup({
+      env: { WEBCMD_CONFIG_DIR: tempDir },
+      argv: ['--mode', 'local', '--browser', 'chrome', '--chrome-profile', 'Profile 2', '--import-chrome-cookies'],
+      isTTY: false,
+      resolveGoogleChromeExecutable: async () => '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      listChromeCookieSources: () => [
+        { folder: 'Default', name: 'Personal', cookiesPath: '/real-chrome/Default/Cookies' },
+        { folder: 'Profile 1', name: 'Work!', cookiesPath: '/real-chrome/Profile 1/Cookies' },
+        { folder: 'Profile 2', name: 'Work', cookiesPath: '/real-chrome/Profile 2/Cookies' },
+      ],
+      importChromeCookies,
+      fetchDaemonStatus: async () => null,
+      write: () => undefined,
+    })).resolves.toBe(0);
+
+    expect(importChromeCookies).toHaveBeenCalledWith(
+      { folder: 'Profile 2', name: 'Work', cookiesPath: '/real-chrome/Profile 2/Cookies' },
+      expect.stringContaining(join('chrome', 'profiles', 'work-2')),
+    );
+  });
+
+  it('creates deterministic unique webcmd profile slugs when Chrome display names collide', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-chrome-cookies-collisions-'));
+    const importChromeCookies = vi.fn((_source: unknown, target: string) => ({ imported: true, destPath: target }));
+    const messages: string[] = [];
+
+    await expect(runHostedSetup({
+      env: { WEBCMD_CONFIG_DIR: tempDir },
+      argv: ['--mode', 'local', '--browser', 'chrome', '--import-chrome-cookies'],
+      isTTY: false,
+      resolveGoogleChromeExecutable: async () => '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      listChromeCookieSources: () => [
+        { folder: 'Default', name: 'Your Chrome', cookiesPath: '/real-chrome/Default/Cookies' },
+        { folder: 'Profile 1', name: 'Work!', cookiesPath: '/real-chrome/Profile 1/Cookies' },
+        { folder: 'Profile 2', name: 'Work', cookiesPath: '/real-chrome/Profile 2/Cookies' },
+        { folder: 'Profile 3', name: '仕事', cookiesPath: '/real-chrome/Profile 3/Cookies' },
+      ],
+      importChromeCookies,
+      fetchDaemonStatus: async () => null,
+      write: message => { messages.push(message); },
+    })).resolves.toBe(0);
+
+    const targets = importChromeCookies.mock.calls.map(([, target]) => target);
+    expect(targets[0]).toContain(join('chrome', 'profiles', 'default'));
+    expect(targets[1]).toContain(join('chrome', 'profiles', 'work'));
+    expect(targets[2]).toContain(join('chrome', 'profiles', 'work-2'));
+    expect(targets[3]).toContain(join('chrome', 'profiles', 'profile-3'));
+    expect(messages.join('')).toContain('Chrome "仕事" (Profile 3) -> webcmd --profile profile-3');
+  });
+
+  it('skips Chrome people without a cookie database during an all-profile import', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-chrome-cookies-partial-'));
+    const importChromeCookies = vi.fn(() => ({ imported: true }));
+
+    await expect(runHostedSetup({
+      env: { WEBCMD_CONFIG_DIR: tempDir },
+      argv: ['--mode', 'local', '--browser', 'chrome', '--import-chrome-cookies'],
+      isTTY: false,
+      resolveGoogleChromeExecutable: async () => '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      listChromeCookieSources: () => [
+        { folder: 'Default', name: 'Your Chrome', cookiesPath: '/real-chrome/Default/Cookies' },
+        { folder: 'Profile 1', name: 'Empty' },
+      ],
+      importChromeCookies,
+      fetchDaemonStatus: async () => null,
+      write: () => undefined,
+    })).resolves.toBe(0);
+
     expect(importChromeCookies).toHaveBeenCalledOnce();
   });
 
@@ -644,6 +734,8 @@ describe('webcmd setup', () => {
 
     expect(messages.join('')).toContain('--browser <cloak|chrome|slab|absolute-path>');
     expect(messages.join('')).toContain('Cloak is default, Chrome reuses an installed Google Chrome');
+    expect(messages.join('')).toContain('Import only this Chrome profile');
+    expect(messages.join('')).toContain('import all Chrome profiles without prompting');
   });
 
   it('reports the configured custom browser without probing SLAB', async () => {
