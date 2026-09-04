@@ -2295,6 +2295,7 @@ describe('findOverridesNeedingReconcile', () => {
       yours: path.join(clisDir, 'linkedin', 'search.js'),
       upstream: pluginFile,
       base: path.join(clisDir, '.base', 'linkedin', 'search.js'),
+      changedDependencies: [],
     }]);
   });
 
@@ -2313,6 +2314,45 @@ describe('findOverridesNeedingReconcile', () => {
     fs.rmSync(path.join(clisDir, '.base', 'linkedin', 'search.js'), { force: true });
     fs.writeFileSync(pluginFile, '// upstream moved again\n', 'utf-8');
     expect(pluginModule.findOverridesNeedingReconcile(['linkedin'])[0]!.base).toBeNull();
+  });
+
+  it('reports an override whose copied dependency changed upstream, naming the file', () => {
+    // The fork runs its own copy of shared.js. Without this, a command whose
+    // real logic lives in a helper could go stale forever without a word.
+    const helper = path.join(pluginsDir, 'linkedin', 'shared.js');
+    fs.writeFileSync(helper, '// shared v1\n', 'utf-8');
+    fs.writeFileSync(path.join(pluginsDir, 'linkedin', 'timeline.js'), "import './shared.js';\n", 'utf-8');
+    createAdapterOverride('linkedin/timeline');
+
+    fs.writeFileSync(helper, '// shared v2\n', 'utf-8');
+
+    const needs = pluginModule.findOverridesNeedingReconcile(['linkedin']);
+    expect(needs.map((need) => need.commandKey)).toContain('linkedin/timeline');
+    expect(needs.find((need) => need.commandKey === 'linkedin/timeline')!.changedDependencies)
+      .toEqual(['shared.js']);
+  });
+
+  it('reports a copied dependency that was deleted upstream', () => {
+    const helper = path.join(pluginsDir, 'linkedin', 'shared.js');
+    fs.writeFileSync(helper, '// shared v1\n', 'utf-8');
+    fs.writeFileSync(path.join(pluginsDir, 'linkedin', 'timeline.js'), "import './shared.js';\n", 'utf-8');
+    createAdapterOverride('linkedin/timeline');
+
+    fs.rmSync(helper);
+
+    expect(pluginModule.findOverridesNeedingReconcile(['linkedin'])
+      .find((need) => need.commandKey === 'linkedin/timeline')!.changedDependencies)
+      .toEqual(['shared.js']);
+  });
+
+  it('does NOT report an override whose copied dependency is unchanged upstream', () => {
+    fs.writeFileSync(path.join(pluginsDir, 'linkedin', 'shared.js'), '// shared v1\n', 'utf-8');
+    fs.writeFileSync(path.join(pluginsDir, 'linkedin', 'timeline.js'), "import './shared.js';\n", 'utf-8');
+    createAdapterOverride('linkedin/timeline');
+
+    expect(pluginModule.findOverridesNeedingReconcile(['linkedin'])
+      .map((need) => need.commandKey))
+      .not.toContain('linkedin/timeline');
   });
 });
 

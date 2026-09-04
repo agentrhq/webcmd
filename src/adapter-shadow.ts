@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { readOverrideRecords } from './override-provenance.js';
+import { readOverrideRecords, type OverrideRecord } from './override-provenance.js';
 
 export type AdapterShadow = {
   name: string;
@@ -49,6 +49,29 @@ function assertPluginsDirUsable(pluginsDir: string): void {
   }
 }
 
+/**
+ * Files in `clis/<site>/` that webcmd copied there itself, as part of a
+ * tracked fork's import closure.
+ *
+ * These shadow a plugin file by construction — an override cannot load
+ * without them — so reporting them as unexplained local adapters would turn
+ * every fork of a command with a sibling import into a `doctor` warning
+ * telling the user to reset the fork they just made. `adapter reset <site>`
+ * removes them along with the override, and `plugin update` already reports
+ * upstream drift in them through the owning record.
+ */
+function copiedDependencyFiles(
+  provenance: Record<string, OverrideRecord>,
+  site: string,
+): Set<string> {
+  const files = new Set<string>();
+  for (const record of Object.values(provenance)) {
+    if (record.plugin !== site) continue;
+    for (const dependency of record.dependencies ?? []) files.add(dependency.path);
+  }
+  return files;
+}
+
 export function findShadowedUserAdapters(opts: AdapterShadowOptions = {}): AdapterShadow[] {
   const userClisDir = opts.userClisDir ?? path.join(os.homedir(), '.webcmd', 'clis');
   const pluginsDir = opts.pluginsDir ?? path.join(os.homedir(), '.webcmd', 'plugins');
@@ -61,9 +84,11 @@ export function findShadowedUserAdapters(opts: AdapterShadowOptions = {}): Adapt
     const site = siteEntry.name;
     const userSiteDir = path.join(userClisDir, site);
     const pluginSiteDir = path.join(pluginsDir, site);
+    const copiedDependencies = copiedDependencyFiles(provenance, site);
 
     for (const commandEntry of readdirOrEmpty(userSiteDir)) {
       if (!commandEntry.isFile() || !commandEntry.name.endsWith('.js')) continue;
+      if (copiedDependencies.has(commandEntry.name)) continue;
       const userPath = path.join(userSiteDir, commandEntry.name);
       const pluginPath = path.join(pluginSiteDir, commandEntry.name);
       if (!fs.existsSync(pluginPath)) continue;

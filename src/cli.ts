@@ -541,10 +541,16 @@ async function handleAdapterOverride(commandKey: string, _opts: unknown, command
       plugin: result.plugin,
       overridePath: result.overridePath,
       basePath: result.basePath,
+      dependencies: result.dependencies,
     }, () => {
       console.log(`✅ Override created for ${result.commandKey}`);
       console.log(`     yours: ${result.overridePath}`);
       console.log(`     base:  ${result.basePath}`);
+      if (result.dependencies.length > 0) {
+        // The fork is more than one file. Say so, or the extra files look
+        // like clutter the user is free to delete.
+        console.log(`     also copied (imported by your command): ${result.dependencies.join(', ')}`);
+      }
       console.log();
       console.log(`  Your copy now takes precedence over plugin "${result.plugin}".`);
       console.log(`  "${CLI_COMMAND} plugin update" keeps updating the plugin copy, not your override,`);
@@ -1346,6 +1352,12 @@ cli({
       } else {
         console.log(`       base:     unavailable (merge base was deleted)`);
       }
+      if (need.changedDependencies.length > 0) {
+        // Named individually: the drift is in a file the user never asked to
+        // fork, so "your override is stale" is not actionable without saying
+        // which copied file moved upstream.
+        console.log(`       also changed upstream: ${need.changedDependencies.join(', ')}`);
+      }
     }
     console.log(`     Your override still takes precedence. Merge the upstream change, or run`);
     console.log(`     ${CLI_COMMAND} adapter reset <plugin> to drop the override.`);
@@ -1747,10 +1759,20 @@ cli({
         const records = readOverrideRecords();
         const reconcile = new Set((await import('./plugin.js')).findOverridesNeedingReconcile().map(({ commandKey }) => commandKey));
         const failures = new Map(getAdapterLoadFailures().map(failure => [failure.file, failure.error]));
+        // Files an override copied to stay loadable are not adapters the user
+        // wrote. Listing them as `user adapter` invites a reset of a file the
+        // fork needs, so name the override that owns each one instead.
+        const dependencyOwners = new Map<string, string>();
+        for (const [commandKey, record] of Object.entries(records)) {
+          for (const dependency of record.dependencies ?? []) {
+            dependencyOwners.set(`${record.plugin}/${dependency.path}`, commandKey);
+          }
+        }
         const adapters: Array<{
           command: string;
-          kind: 'user' | 'override';
+          kind: 'user' | 'override' | 'dependency';
           plugin: string | null;
+          requiredBy: string | null;
           reconciliationNeeded: boolean;
           orphaned: boolean;
           loadError: string | null;
@@ -1761,23 +1783,45 @@ cli({
             const command = `${site}/${file.slice(0, -3)}`;
             const record = records[command];
             const loadError = failures.get(path.join(USER_CLIS, site, file)) ?? null;
-            adapters.push(record
-              ? {
-                  command,
-                  kind: 'override',
-                  plugin: record.plugin,
-                  reconciliationNeeded: reconcile.has(command),
-                  orphaned: !fs.existsSync(path.join(pluginsDir, record.plugin)),
-                  loadError,
-                }
-              : { command, kind: 'user', plugin: null, reconciliationNeeded: false, orphaned: false, loadError });
+            const owner = dependencyOwners.get(`${site}/${file}`);
+            if (record) {
+              adapters.push({
+                command,
+                kind: 'override',
+                plugin: record.plugin,
+                requiredBy: null,
+                reconciliationNeeded: reconcile.has(command),
+                orphaned: !fs.existsSync(path.join(pluginsDir, record.plugin)),
+                loadError,
+              });
+            } else if (owner) {
+              adapters.push({
+                command,
+                kind: 'dependency',
+                plugin: site,
+                requiredBy: owner,
+                reconciliationNeeded: false,
+                orphaned: false,
+                loadError,
+              });
+            } else {
+              adapters.push({
+                command,
+                kind: 'user',
+                plugin: null,
+                requiredBy: null,
+                reconciliationNeeded: false,
+                orphaned: false,
+                loadError,
+              });
+            }
           }
         }
         if (fmt !== 'table') {
           renderOutput(adapters, {
             fmt,
             fmtExplicit: outputFormatIsExplicit(adapterStatusCmd),
-            columns: ['command', 'kind', 'plugin', 'reconciliationNeeded', 'orphaned', 'loadError'],
+            columns: ['command', 'kind', 'plugin', 'requiredBy', 'reconciliationNeeded', 'orphaned', 'loadError'],
             title: `${CLI_COMMAND}/adapter-status`,
             source: `${CLI_COMMAND} adapter status`,
           });
@@ -1790,6 +1834,8 @@ cli({
             const failure = adapter.loadError ? ` (failed to load: ${adapter.loadError})` : '';
             if (adapter.kind === 'user') {
               console.log(`    user adapter: ${adapter.command}${failure}`);
+            } else if (adapter.kind === 'dependency') {
+              console.log(`    copied for override: ${adapter.command} (imported by ${adapter.requiredBy})${failure}`);
             } else if (adapter.orphaned) {
               console.log(`    orphaned override: ${adapter.command} (plugin ${adapter.plugin} is not installed)${failure}`);
             } else {

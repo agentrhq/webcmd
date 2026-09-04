@@ -130,6 +130,7 @@ describe('plugin update reconciliation reporting', () => {
       yours: '/tmp/home/.webcmd/clis/beta/search.js',
       upstream: '/tmp/home/.webcmd/plugins/beta/search.js',
       base: '/tmp/home/.webcmd/clis/.base/beta/search.js',
+      changedDependencies: [],
     }]);
     const discover = vi.spyOn(discoveryModule, 'discoverPlugins').mockResolvedValue();
 
@@ -348,10 +349,61 @@ describe('override reporting surfaces', () => {
     await createProgram('', userClis, pluginsDir)
       .parseAsync(['node', 'webcmd', 'adapter', 'status', '--format', 'json']);
     expect(JSON.parse(stdoutSpy.mock.calls.flat().join('\n'))).toEqual([
-      { command: 'linkedin/search', kind: 'override', plugin: 'linkedin', reconciliationNeeded: true, orphaned: false, loadError: null },
-      { command: 'local/run', kind: 'user', plugin: null, reconciliationNeeded: false, orphaned: false, loadError: null },
-      { command: 'old/search', kind: 'override', plugin: 'old', reconciliationNeeded: false, orphaned: true, loadError: null },
+      { command: 'linkedin/search', kind: 'override', plugin: 'linkedin', requiredBy: null, reconciliationNeeded: true, orphaned: false, loadError: null },
+      { command: 'local/run', kind: 'user', plugin: null, requiredBy: null, reconciliationNeeded: false, orphaned: false, loadError: null },
+      { command: 'old/search', kind: 'override', plugin: 'old', requiredBy: null, reconciliationNeeded: false, orphaned: true, loadError: null },
     ]);
+  });
+
+  it('reports a file copied for an override as a dependency, not a user adapter', async () => {
+    // An override copies its import closure into clis/. Reported as
+    // `user adapter`, those copies read as junk the user can delete — which
+    // breaks the override that needs them.
+    const userClis = path.join(home, '.webcmd', 'clis');
+    const pluginsDir = path.join(home, '.webcmd', 'plugins');
+    const upstream = path.join(pluginsDir, 'linkedin', 'timeline.js');
+    fs.mkdirSync(path.dirname(upstream), { recursive: true });
+    fs.mkdirSync(path.join(userClis, 'linkedin'), { recursive: true });
+    fs.writeFileSync(upstream, '// upstream\n');
+    fs.writeFileSync(path.join(userClis, 'linkedin', 'timeline.js'), '// override\n');
+    fs.writeFileSync(path.join(userClis, 'linkedin', 'shared.js'), '// copied helper\n');
+    fs.writeFileSync(path.join(home, '.webcmd', 'override-provenance.json'), JSON.stringify({
+      'linkedin/timeline': {
+        plugin: 'linkedin', commitHash: null, sourcePath: upstream, sourceSha256: 'abc',
+        basePath: '/tmp/base.js', createdAt: '2026-08-09T00:00:00.000Z',
+        dependencies: [{ path: 'shared.js', sha256: 'def' }],
+      },
+    }));
+
+    await createProgram('', userClis, pluginsDir)
+      .parseAsync(['node', 'webcmd', 'adapter', 'status', '--format', 'json']);
+    expect(JSON.parse(stdoutSpy.mock.calls.flat().join('\n'))).toMatchObject([
+      { command: 'linkedin/shared', kind: 'dependency', plugin: 'linkedin', requiredBy: 'linkedin/timeline' },
+      { command: 'linkedin/timeline', kind: 'override', requiredBy: null },
+    ]);
+  });
+
+  it('names the override that imports a copied file in adapter status', async () => {
+    const userClis = path.join(home, '.webcmd', 'clis');
+    const pluginsDir = path.join(home, '.webcmd', 'plugins');
+    const upstream = path.join(pluginsDir, 'linkedin', 'timeline.js');
+    fs.mkdirSync(path.dirname(upstream), { recursive: true });
+    fs.mkdirSync(path.join(userClis, 'linkedin'), { recursive: true });
+    fs.writeFileSync(upstream, '// upstream\n');
+    fs.writeFileSync(path.join(userClis, 'linkedin', 'timeline.js'), '// override\n');
+    fs.writeFileSync(path.join(userClis, 'linkedin', 'shared.js'), '// copied helper\n');
+    fs.writeFileSync(path.join(home, '.webcmd', 'override-provenance.json'), JSON.stringify({
+      'linkedin/timeline': {
+        plugin: 'linkedin', commitHash: null, sourcePath: upstream, sourceSha256: 'abc',
+        basePath: '/tmp/base.js', createdAt: '2026-08-09T00:00:00.000Z',
+        dependencies: [{ path: 'shared.js', sha256: 'def' }],
+      },
+    }));
+
+    await createProgram('', userClis, pluginsDir)
+      .parseAsync(['node', 'webcmd', 'adapter', 'status']);
+    expect(stdoutSpy.mock.calls.flat().join('\n'))
+      .toContain('copied for override: linkedin/shared (imported by linkedin/timeline)');
   });
 
   it('reports an empty adapter status as JSON', async () => {

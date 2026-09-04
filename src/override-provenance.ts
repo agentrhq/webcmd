@@ -16,6 +16,17 @@ import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 import { isRecord } from './utils.js';
 
+/**
+ * A file the forked command imports, copied alongside it so the override can
+ * load. `path` is relative to both the plugin directory it came from and the
+ * override directory it was copied into, so one string locates the upstream
+ * file, the user's copy, and the base copy.
+ */
+export interface OverrideDependency {
+  path: string;
+  sha256: string;
+}
+
 export interface OverrideRecord {
   plugin: string;
   commitHash: string | null;
@@ -23,6 +34,12 @@ export interface OverrideRecord {
   sourceSha256: string;
   basePath: string;
   createdAt: string;
+  /**
+   * Optional: records written before overrides copied their import closure
+   * have no dependencies key, and must keep loading rather than being
+   * rejected as malformed.
+   */
+  dependencies?: OverrideDependency[];
 }
 
 function resolveHomeDir(homeDir?: string): string {
@@ -37,6 +54,15 @@ export function getOverrideStorePath(homeDir?: string): string {
 /** Path to the fork-time base copy for a given "<site>/<command>" key. */
 export function getBaseCopyPath(commandKey: string, homeDir?: string): string {
   return path.join(resolveHomeDir(homeDir), '.webcmd', 'clis', '.base', `${commandKey}.js`);
+}
+
+/**
+ * Path to the fork-time base copy of a dependency copied alongside a fork.
+ * `relPath` is the record's dependency path, mirrored under the same
+ * `.base/<site>/` root the command file's base copy lives in.
+ */
+export function getBaseDependencyPath(site: string, relPath: string, homeDir?: string): string {
+  return path.join(resolveHomeDir(homeDir), '.webcmd', 'clis', '.base', site, ...relPath.split('/'));
 }
 
 /**
@@ -75,6 +101,13 @@ export function readOverrideRecords(homeDir?: string): Record<string, OverrideRe
   return parsed as Record<string, OverrideRecord>;
 }
 
+function isValidDependencyList(value: unknown): value is OverrideDependency[] {
+  return (
+    Array.isArray(value) &&
+    value.every((entry) => isRecord(entry) && typeof entry.path === 'string' && typeof entry.sha256 === 'string')
+  );
+}
+
 function isValidOverrideRecord(value: unknown): value is OverrideRecord {
   if (!isRecord(value)) return false;
   return (
@@ -83,7 +116,8 @@ function isValidOverrideRecord(value: unknown): value is OverrideRecord {
     typeof value.sourcePath === 'string' &&
     typeof value.sourceSha256 === 'string' &&
     typeof value.basePath === 'string' &&
-    typeof value.createdAt === 'string'
+    typeof value.createdAt === 'string' &&
+    (value.dependencies === undefined || isValidDependencyList(value.dependencies))
   );
 }
 
@@ -111,10 +145,19 @@ export function removeOverrideRecords(site: string, homeDir?: string): string[] 
   for (const key of Object.keys(records)) {
     if (key !== site && !key.startsWith(prefix)) continue;
     removed.push(key);
+    const record = records[key]!;
     delete records[key];
     try {
       fs.rmSync(getBaseCopyPath(key, homeDir), { force: true });
     } catch {}
+    // The command's own base copy is not the whole fork: the files copied to
+    // make it loadable have base copies too, and leaving them behind would
+    // leak stale bytes into the next fork of the same plugin.
+    for (const dependency of record.dependencies ?? []) {
+      try {
+        fs.rmSync(getBaseDependencyPath(record.plugin, dependency.path, homeDir), { force: true });
+      } catch {}
+    }
   }
 
   if (removed.length > 0) writeOverrideRecords(records, homeDir);

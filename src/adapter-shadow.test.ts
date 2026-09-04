@@ -90,6 +90,67 @@ describe('adapter shadow detection', () => {
     });
   });
 
+  it('does not report a file the override itself copied to stay loadable', () => {
+    // Forking a command copies its import closure into clis/. Reporting those
+    // copies as unexplained local adapters would make doctor tell the user to
+    // reset the override they just created.
+    withTempDirs(({ userClisDir, pluginsDir, homeDir }) => {
+      fs.mkdirSync(path.join(userClisDir, 'linkedin'), { recursive: true });
+      fs.mkdirSync(path.join(pluginsDir, 'linkedin'), { recursive: true });
+      for (const dir of [path.join(userClisDir, 'linkedin'), path.join(pluginsDir, 'linkedin')]) {
+        fs.writeFileSync(path.join(dir, 'search.js'), '', 'utf-8');
+        fs.writeFileSync(path.join(dir, 'shared.js'), '', 'utf-8');
+      }
+      fs.mkdirSync(path.join(homeDir, '.webcmd'), { recursive: true });
+      fs.writeFileSync(
+        path.join(homeDir, '.webcmd', 'override-provenance.json'),
+        JSON.stringify({
+          'linkedin/search': {
+            plugin: 'linkedin',
+            commitHash: null,
+            sourcePath: path.join(pluginsDir, 'linkedin', 'search.js'),
+            sourceSha256: 'abc',
+            basePath: path.join(userClisDir, '.base', 'linkedin', 'search.js'),
+            createdAt: new Date().toISOString(),
+            dependencies: [{ path: 'shared.js', sha256: 'def' }],
+          },
+        }),
+        'utf-8',
+      );
+
+      expect(findShadowedUserAdapters({ userClisDir, pluginsDir, homeDir }).map((s) => s.name))
+        .toEqual(['linkedin/search']);
+    });
+  });
+
+  it('still reports a local file that merely shares a name with another override dependency', () => {
+    withTempDirs(({ userClisDir, pluginsDir, homeDir }) => {
+      fs.mkdirSync(path.join(userClisDir, 'twitter'), { recursive: true });
+      fs.mkdirSync(path.join(pluginsDir, 'twitter'), { recursive: true });
+      fs.writeFileSync(path.join(userClisDir, 'twitter', 'shared.js'), '', 'utf-8');
+      fs.writeFileSync(path.join(pluginsDir, 'twitter', 'shared.js'), '', 'utf-8');
+      fs.mkdirSync(path.join(homeDir, '.webcmd'), { recursive: true });
+      fs.writeFileSync(
+        path.join(homeDir, '.webcmd', 'override-provenance.json'),
+        JSON.stringify({
+          'linkedin/search': {
+            plugin: 'linkedin',
+            commitHash: null,
+            sourcePath: path.join(pluginsDir, 'linkedin', 'search.js'),
+            sourceSha256: 'abc',
+            basePath: path.join(userClisDir, '.base', 'linkedin', 'search.js'),
+            createdAt: new Date().toISOString(),
+            dependencies: [{ path: 'shared.js', sha256: 'def' }],
+          },
+        }),
+        'utf-8',
+      );
+
+      expect(findShadowedUserAdapters({ userClisDir, pluginsDir, homeDir }).map((s) => s.name))
+        .toEqual(['twitter/shared']);
+    });
+  });
+
   it('yields no shadows when the plugins dir does not exist yet (no plugins installed)', () => {
     withTempDirs(({ userClisDir, pluginsDir, homeDir }) => {
       fs.mkdirSync(userClisDir, { recursive: true });
