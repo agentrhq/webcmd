@@ -1,23 +1,26 @@
 import { execFile } from 'node:child_process';
 import { chmodSync } from 'node:fs';
-import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { addCandidate, listCandidates, searchCandidates, showCandidate } from './candidates.js';
 import { classifyProduct } from './classify.js';
 import { installGitShim, restoreGitShim } from './git-shim.js';
 import { openSitesRepository } from './git-store.js';
 import { listSiteMemory, readProductFile, showSiteMemory, writeProductFile } from './local-store.js';
 import type { Candidate } from './model.js';
+import { GIT_TEST_TIMEOUT_MS, removeTempDirs } from './__fixtures__/git-test-support.js';
+
+vi.setConfig({ testTimeout: GIT_TEST_TIMEOUT_MS });
 
 const run = promisify(execFile);
 const tempHomes: string[] = [];
 
 afterEach(async () => {
   restoreGitShim();
-  await Promise.all(tempHomes.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+  await removeTempDirs(tempHomes);
 });
 
 describe('candidate capture', () => {

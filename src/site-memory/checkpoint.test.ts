@@ -12,6 +12,9 @@ import { getMemoryContext, parseProductManifest } from './context.js';
 import { installGitShim, restoreGitShim } from './git-shim.js';
 import { openSitesRepository } from './git-store.js';
 import { readProductFile, writeProductFile } from './local-store.js';
+import { GIT_TEST_TIMEOUT_MS, removeTempDirs } from './__fixtures__/git-test-support.js';
+
+vi.setConfig({ testTimeout: GIT_TEST_TIMEOUT_MS });
 
 const run = promisify(execFile);
 const tempHomes: string[] = [];
@@ -26,7 +29,7 @@ if (process.platform === 'win32') {
 
 afterEach(async () => {
   restoreGitShim();
-  await Promise.all(tempHomes.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+  await removeTempDirs(tempHomes);
 });
 
 describe('checkpoint compare-and-swap', () => {

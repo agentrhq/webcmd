@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   addFieldMapping,
   addResponseSample,
@@ -23,6 +23,9 @@ import {
   showSiteMemory,
   writeProductFile,
 } from './local-store.js';
+import { GIT_TEST_TIMEOUT_MS, removeTempDirs } from './__fixtures__/git-test-support.js';
+
+vi.setConfig({ testTimeout: GIT_TEST_TIMEOUT_MS });
 
 const tempHomes: string[] = [];
 const base = { site: 'example.test' };
@@ -34,7 +37,7 @@ afterEach(async () => {
   else process.env.HOME = originalHome;
   if (originalUserProfile === undefined) delete process.env.USERPROFILE;
   else process.env.USERPROFILE = originalUserProfile;
-  await Promise.all(tempHomes.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+  await removeTempDirs(tempHomes);
   await rm(join(process.cwd(), '.webcmd/sites/no-home.test'), { recursive: true, force: true });
 });
 
