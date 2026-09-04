@@ -67,7 +67,7 @@ it('lets explicit --format win over --json in structured help', () => {
 });
 
 describe('formatRootAdapterHelpText', () => {
-  it('renders all three sections in External / App / Site order when populated', () => {
+  it('renders all three sections in SITES / APP / EXTERNAL order when populated', () => {
     const text = formatRootAdapterHelpText({
       external: [
         { name: 'gh', label: 'gh' },
@@ -76,12 +76,12 @@ describe('formatRootAdapterHelpText', () => {
       apps: ['chatwise', 'codex'],
       sites: ['youtube'],
     });
-    expect(text).toContain('External CLIs (2):');
-    expect(text).toContain('App adapters (2):');
-    expect(text).toContain('Site adapters (1):');
+    expect(text).toContain('EXTERNAL CLIs (2)');
+    expect(text).toContain('APP ADAPTERS (2)');
+    expect(text).toContain('SITES (1)');
     expect(text).toContain('vercel');
-    expect(text.indexOf('External CLIs')).toBeLessThan(text.indexOf('App adapters'));
-    expect(text.indexOf('App adapters')).toBeLessThan(text.indexOf('Site adapters'));
+    expect(text.indexOf('SITES')).toBeLessThan(text.indexOf('APP ADAPTERS'));
+    expect(text.indexOf('APP ADAPTERS')).toBeLessThan(text.indexOf('EXTERNAL CLIs'));
   });
 
   it('omits empty sections instead of rendering a (0) header', () => {
@@ -90,9 +90,9 @@ describe('formatRootAdapterHelpText', () => {
       apps: [],
       sites: ['youtube'],
     });
-    expect(text).not.toContain('External CLIs');
-    expect(text).not.toContain('App adapters');
-    expect(text).toContain('Site adapters (1):');
+    expect(text).not.toContain('EXTERNAL CLIs');
+    expect(text).not.toContain('APP ADAPTERS');
+    expect(text).toContain('SITES (1)');
   });
 
   it('returns empty string when all groups are empty', () => {

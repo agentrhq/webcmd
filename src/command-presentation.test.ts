@@ -8,6 +8,7 @@ import {
   formatRootHelp,
   formatSiteHelp,
   getCommandCompletionCandidates,
+  ROOT_HELP_BANNER,
   toPresentableCommand,
   type RootHelpPresentation,
 } from './command-presentation.js';
@@ -73,7 +74,100 @@ describe('shared command presentation', () => {
     };
     const hosted: RootHelpPresentation = JSON.parse(JSON.stringify(local)) as RootHelpPresentation;
 
-    expect(formatRootHelp(hosted)).toBe(formatRootHelp(local));
+    expect(formatRootHelp(hosted, { color: false })).toBe(formatRootHelp(local, { color: false }));
+  });
+
+  it('groups root commands, shows the banner, and keeps dynamic adapter lists', () => {
+    const help = formatRootHelp({
+      description: 'Make any website your CLI. Zero setup. AI-powered.',
+      usage: ['webcmd [options] [command]'],
+      commands: [
+        { name: 'list', description: 'List all available CLI commands' },
+        { name: 'site', description: 'Read and write per-site memory' },
+        { name: 'browser', description: 'Browser control' },
+        { name: 'session', description: 'Create, list, and close browser Sessions' },
+        { name: 'profile', description: 'Manage browser profiles' },
+        { name: 'auth', description: 'Inspect authentication status' },
+        { name: 'daemon', description: 'Manage the local Webcmd daemon' },
+        { name: 'doctor', description: 'Diagnose readiness' },
+        { name: 'update', description: 'Update the CLI' },
+        { name: 'skills', description: 'Manage bundled skills' },
+        { name: 'plugin', description: 'Manage plugins' },
+        { name: 'adapter', description: 'Manage adapters' },
+        { name: 'external', description: 'Manage external CLIs' },
+        { name: 'validate', description: 'Validate definitions' },
+        { name: 'verify', description: 'Smoke-test adapters' },
+        { name: 'convention-audit', description: 'Audit conventions' },
+        { name: 'completion <shell>', description: 'Output a shell completion script' },
+        { name: 'setup', description: 'Configure local or hosted mode' },
+      ],
+      options: [
+        { flags: '-V, --version', description: 'Output the version number' },
+        { flags: '--profile <name>', description: 'Browser profile/context alias' },
+        { flags: '--session <session-id>', description: 'Existing readable Session ID' },
+        { flags: '-h, --help', description: 'Display help for command' },
+      ],
+      groups: [
+        { label: 'SITES (2)', items: ['github', 'youtube'] },
+        { label: 'EXTERNAL CLIs (1)', items: ['gh'] },
+      ],
+    }, { color: false, columns: 80 });
+
+    expect(help).toContain(ROOT_HELP_BANNER);
+    expect(help).toContain('CORE');
+    expect(help).toContain('BROWSER');
+    expect(help).toContain('SYSTEM');
+    expect(help).toContain('EXTENSIONS');
+    expect(help).toContain('DEVELOPMENT');
+    expect(help).toContain('COMPLETION');
+    expect(help).toContain('GLOBAL OPTIONS');
+    expect(help).toContain('EXTERNAL CLIs (1)');
+    expect(help).toContain('SITES (2)');
+    expect(help).toContain('EXAMPLES');
+    expect(help).toContain('AGENTS');
+    expect(help.indexOf('CORE')).toBeLessThan(help.indexOf('BROWSER'));
+    expect(help.indexOf('BROWSER')).toBeLessThan(help.indexOf('SYSTEM'));
+    expect(help.indexOf('GLOBAL OPTIONS')).toBeLessThan(help.indexOf('SITES (2)'));
+    expect(help.indexOf('SITES (2)')).toBeLessThan(help.indexOf('EXTERNAL CLIs (1)'));
+    expect(help.indexOf('EXTERNAL CLIs (1)')).toBeLessThan(help.indexOf('EXAMPLES'));
+    expect(help).not.toMatch(/\u001b\[/);
+  });
+
+  it('puts a visible Hangul-filler spacer between the banner and the tagline', () => {
+    const description = 'Make any website your CLI. Zero setup. AI-powered.';
+    const help = formatRootHelp({
+      description,
+      commands: [{ name: 'list', description: 'List all available CLI commands' }],
+      options: [{ flags: '-h, --help', description: 'Display help for command' }],
+    }, { color: false });
+
+    expect(help.startsWith(`${ROOT_HELP_BANNER}\nㅤ\n  ${description}\n`)).toBe(true);
+  });
+
+  it('colors only CMD in the banner accent and leaves WEB white', () => {
+    const help = formatRootHelp({
+      description: 'Make any website your CLI. Zero setup. AI-powered.',
+      commands: [{ name: 'list', description: 'List all available CLI commands' }],
+      options: [{ flags: '-h, --help', description: 'Display help for command' }],
+    }, { color: true });
+
+    expect(help).toContain('\u001b[97m██╗    ██╗███████╗██████╗  \u001b[0m');
+    expect(help).toContain('\u001b[38;2;86;197;255m██████╗███╗   ███╗██████╗\u001b[0m');
+    expect(help).not.toMatch(/\u001b\[38;2;86;197;255m██╗    ██╗/);
+  });
+
+  it('degrades ANSI color cleanly when color is disabled', () => {
+    const presentation: RootHelpPresentation = {
+      description: 'Make any website your CLI. Zero setup. AI-powered.',
+      commands: [{ name: 'list', description: 'List all available CLI commands' }],
+      options: [{ flags: '-h, --help', description: 'Display help for command' }],
+    };
+    const plain = formatRootHelp(presentation, { color: false });
+    const colored = formatRootHelp(presentation, { color: true });
+
+    expect(plain).not.toMatch(/\u001b\[/);
+    expect(colored).toMatch(/\u001b\[/);
+    expect(colored.replace(/\u001b\[[0-9;]*m/g, '')).toBe(plain);
   });
 
   it('normalizes local and hosted metadata to byte-identical site and command help', () => {

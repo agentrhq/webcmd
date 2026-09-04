@@ -641,11 +641,16 @@ describe('createProgram root help descriptions', () => {
   it('renders the actual local root through the shared root presentation seam', () => {
     const program = createProgram('', '');
     const presentation = getInstalledRootHelpPresentation(program);
-    const commanderHelp = program.createHelp();
+    const help = program.helpInformation();
 
     expect(presentation).toBeDefined();
-    expect(presentation!.baseText).toBe(commanderHelp.formatHelp(program, commanderHelp));
-    expect(program.helpInformation()).toBe(formatRootHelp(presentation!));
+    expect(presentation!.baseText).toBeUndefined();
+    expect(help).toBe(formatRootHelp(presentation!));
+    expect(help).toContain('CORE');
+    expect(help).toContain('BROWSER');
+    expect(help).toContain('GLOBAL OPTIONS');
+    expect(help).toContain('EXAMPLES');
+    expect(help).toContain('AGENTS');
   });
 
   it('guides an absent site to explicit plugin search and install without side effects', async () => {
@@ -723,9 +728,9 @@ describe('createProgram root help descriptions', () => {
       const program = createProgram('', '');
       const help = program.helpInformation();
 
-      expect(help).toContain('Site adapters (2):');
+      expect(help).toContain('SITES (2)');
       expect(help).toContain('reddit, youtube');
-      expect(help).toContain("webcmd <site> --help -f yaml");
+      expect(help).toContain('webcmd <site> --help -f yaml');
       expect(help).not.toMatch(/\n  reddit\s+hot/);
       expect(help).not.toMatch(/\n  youtube\s+search/);
     } finally {
@@ -762,13 +767,13 @@ describe('createProgram root help descriptions', () => {
       const help = program.helpInformation();
 
       // Two separate sections, each with own count
-      expect(help).toContain('App adapters (1):');
-      expect(help).toMatch(/App adapters \(1\):\n {2}chatwise/);
-      expect(help).toContain('Site adapters (1):');
-      expect(help).toMatch(/Site adapters \(1\):\n {2}youtube/);
+      expect(help).toContain('APP ADAPTERS (1)');
+      expect(help).toMatch(/APP ADAPTERS \(1\)\n {2}chatwise/);
+      expect(help).toContain('SITES (1)');
+      expect(help).toMatch(/SITES \(1\)\n {2}youtube/);
 
-      // App adapters appear before Site adapters (External CLIs are absent here)
-      expect(help.indexOf('App adapters')).toBeLessThan(help.indexOf('Site adapters'));
+      // Sites appear before app adapters in the redesigned root help
+      expect(help.indexOf('SITES')).toBeLessThan(help.indexOf('APP ADAPTERS'));
     } finally {
       registry.clear();
       for (const [key, value] of snapshot) registry.set(key, value);

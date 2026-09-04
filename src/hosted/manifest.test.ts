@@ -190,7 +190,7 @@ describe('hosted manifest helpers', () => {
     expect(stdout.text()).toContain('completion');
     expect(stdout.text()).toMatch(/profile\s+Manage hosted browser profiles/);
     expect(stdout.text()).toContain('--profile <name>');
-    expect(stdout.text()).toContain('Local-only commands:');
+    expect(stdout.text()).toContain('LOCAL-ONLY');
   });
 
   it('completes private hosted manifest commands without local discovery', async () => {
