@@ -13,7 +13,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Command } from 'commander';
 import { CLI_COMMAND } from './brand.js';
-import { HOSTED_ROOT_HELP } from './completion-shared.js';
+import { HOSTED_ONLY_COMMAND_HELP, HOSTED_ROOT_HELP } from './completion-shared.js';
 import { getAdapterLoadFailures, missingPluginGuidance, PLUGINS_DIR, USER_CLIS_DIR } from './discovery.js';
 import { WEBCMD_ROOT_COMMANDS } from './hooks.js';
 
@@ -136,6 +136,15 @@ export function unknownRootCommandMessage(
   const canonical = CANONICAL_ROOT[name.toLowerCase()];
   if (canonical) return `Unknown command "${name}".\nDid you mean: ${canonical}`;
 
+  // An exact hosted-command name is stronger evidence than any edit-distance
+  // guess below it, so this is settled before suggestions run.
+  if (isHostedOnlyRootCommand(name.toLowerCase())) {
+    return [
+      `"${name}" is a hosted-mode command and this installation is in local mode.`,
+      HOSTED_ONLY_COMMAND_HELP,
+    ].join('\n');
+  }
+
   const suggestions = suggestCommands(name, commandCandidates(program));
   if (suggestions.length > 0) return `Unknown command "${name}".\n${formatSuggestions(suggestions)}`;
 
@@ -162,6 +171,24 @@ export function unknownSiteCommandHint(site: string, commandName: string): strin
 export function isReservedRootCommand(name: string): boolean {
   return WEBCMD_ROOT_COMMANDS.has(name)
     || HOSTED_ROOT_HELP.commands.some(command => command.name.split(/\s/, 1)[0] === name);
+}
+
+/**
+ * A command hosted mode serves that local mode never registers.
+ *
+ * Derived rather than listed, so a hosted command added later is covered
+ * without touching this file. Today that is `artifact`, which the CLI reference
+ * lists among the top-level commands: locally it resolved to "Site is not
+ * installed. Search: webcmd plugin search artifact" — a hunt for a plugin that
+ * cannot exist.
+ */
+export function isHostedOnlyRootCommand(name: string): boolean {
+  if (WEBCMD_ROOT_COMMANDS.has(name)) return false;
+  // `setup` chooses the mode, so both modes serve it. It is absent from
+  // WEBCMD_ROOT_COMMANDS only because main.ts answers it before Commander sees
+  // the argv at all, which would otherwise read here as hosted-only.
+  if (name === 'setup') return false;
+  return HOSTED_ROOT_HELP.commands.some(command => command.name.split(/\s/, 1)[0] === name);
 }
 
 /** Message for an unknown subcommand inside a namespace. Caller writes it to stderr. */

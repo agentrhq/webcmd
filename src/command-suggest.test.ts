@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { handleProgramParseError } from './cli-error-report.js';
 import { createProgram } from './cli.js';
-import { editDistance, isReservedRootCommand, unknownRootCommandMessage, unknownSubcommandMessage } from './command-suggest.js';
+import { editDistance, isHostedOnlyRootCommand, isReservedRootCommand, unknownRootCommandMessage, unknownSubcommandMessage } from './command-suggest.js';
 import { HOSTED_ROOT_HELP } from './completion-shared.js';
 import { WEBCMD_ROOT_COMMANDS } from './hooks.js';
 
@@ -41,6 +41,23 @@ describe('unknown root command', () => {
     expect(message).toContain('Did you mean: webcmd plugin search <query>');
   });
 
+  it('names hosted-only mode instead of sending artifact to a plugin hunt', () => {
+    const message = unknownRootCommandMessage(createProgram('', ''), 'artifact');
+
+    expect(message).toContain('"artifact" is a hosted-mode command');
+    expect(message).toContain('choose hosted mode');
+    // the plugin does not exist, so the old advice could only waste a turn
+    expect(message).not.toContain('plugin search');
+    expect(message).not.toContain('is not installed');
+  });
+
+  it('answers the same way regardless of the case typed', () => {
+    const message = unknownRootCommandMessage(createProgram('', ''), 'Artifact');
+
+    expect(message).toContain('"Artifact" is a hosted-mode command');
+    expect(message).not.toContain('plugin search');
+  });
+
   it('still guides a genuinely unknown token to plugin search', () => {
     const message = unknownRootCommandMessage(createProgram('', ''), 'zzzqqqwww');
 
@@ -74,6 +91,24 @@ describe('reserved roots', () => {
     expect(isReservedRootCommand('setup')).toBe(true);
     expect(isReservedRootCommand('tab')).toBe(false);
     expect(isReservedRootCommand('github')).toBe(false);
+  });
+});
+
+describe('hosted-only roots', () => {
+  it('is exactly the hosted surface local mode does not register', () => {
+    // derived, not listed: a hosted command added later is covered for free
+    for (const name of WEBCMD_ROOT_COMMANDS) expect(isHostedOnlyRootCommand(name)).toBe(false);
+    expect(isHostedOnlyRootCommand('artifact')).toBe(true);
+    expect(isHostedOnlyRootCommand('github')).toBe(false);
+  });
+
+  it('never claims a locally served command is hosted-only', () => {
+    // `web` ships in both surfaces; calling it hosted-only would be a new lie
+    expect(isHostedOnlyRootCommand('web')).toBe(false);
+    expect(isHostedOnlyRootCommand('browser')).toBe(false);
+    expect(isHostedOnlyRootCommand('doctor')).toBe(false);
+    // `setup` is served locally by main.ts before Commander parses argv
+    expect(isHostedOnlyRootCommand('setup')).toBe(false);
   });
 });
 
