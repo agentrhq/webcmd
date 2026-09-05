@@ -1,4 +1,4 @@
-import { Command, type Argument as CommanderArgument, type Option as CommanderOption } from 'commander';
+import { Command, Help, type Argument as CommanderArgument, type Option as CommanderOption } from 'commander';
 import yaml from 'js-yaml';
 import type { CliCommand } from './registry.js';
 import { CLI_COMMAND } from './brand.js';
@@ -398,6 +398,32 @@ export function commanderGroupHelpData(
       usage: `${commanderPath(groupCommand).join(' ')} --help -f yaml`,
     },
   };
+}
+
+/**
+ * Child commands Commander would list in `--help`, minus its auto-generated
+ * `help [command]` entry. That entry is not a registered child, so restricting
+ * the default result to `command.commands` drops it while keeping Commander's
+ * own hidden-command filtering.
+ */
+export function visibleChildCommands(command: Command): Command[] {
+  return new Help().visibleCommands(command).filter(child => command.commands.includes(child));
+}
+
+/**
+ * Namespace help lists every registered child plus Commander's auto-generated
+ * `help [command]`, which duplicates the `-h, --help` option one line above it.
+ * The root presentation already omits that entry; mirror it on namespaces and
+ * their groups. `webcmd <namespace> help <command>` keeps working — it is only
+ * dropped from the advertised command list.
+ */
+export function hideAutoHelpCommands(namespaceRoot: Command): void {
+  const configure = (command: Command): void => {
+    if (command.commands.length === 0) return;
+    command.configureHelp({ visibleCommands: visibleChildCommands });
+    for (const child of command.commands) configure(child);
+  };
+  configure(namespaceRoot);
 }
 
 export function installCommanderNamespaceStructuredHelp(

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { Command } from 'commander';
 import {
   classifyAdapter,
   commandHelpData,
@@ -6,7 +7,9 @@ import {
   formatRootAdapterHelpText,
   formatSiteHelpText,
   getRequestedHelpFormat,
+  hideAutoHelpCommands,
   siteHelpData,
+  visibleChildCommands,
 } from './help.js';
 import {
   commandHelpData as sharedCommandHelpData,
@@ -122,5 +125,50 @@ describe('shared presentation delegation', () => {
 
     expect(siteHelpData('github', [presentableFixture])).toEqual(sharedSiteHelpData('github', [presentable]));
     expect(commandHelpData(presentableFixture)).toEqual(sharedCommandHelpData(presentable));
+  });
+});
+
+describe('namespace help command listing', () => {
+  function namespace(): Command {
+    const root = new Command('root');
+    root.command('child').description('Child command').action(() => {});
+    const group = root.command('group').description('Group command');
+    group.command('leaf').description('Leaf command').action(() => {});
+    return root;
+  }
+
+  it('lists registered children only, without Commander\'s auto help entry', () => {
+    const root = namespace();
+    expect(root.helpInformation()).toMatch(/^\s+help \[command\]/m);
+
+    hideAutoHelpCommands(root);
+
+    const help = root.helpInformation();
+    expect(help).toMatch(/^\s+child\s+Child command$/m);
+    expect(help).not.toMatch(/^\s+help \[command\]/m);
+    expect(visibleChildCommands(root).map(command => command.name())).toEqual(['child', 'group']);
+  });
+
+  it('applies to nested groups and leaves the help command dispatchable', () => {
+    const root = namespace();
+    hideAutoHelpCommands(root);
+    const group = root.commands.find(command => command.name() === 'group')!;
+    expect(group.helpInformation()).not.toMatch(/^\s+help \[command\]/m);
+
+    let out = '';
+    const configure = (command: Command): void => {
+      command.exitOverride().configureOutput({ writeOut: value => { out += value; } });
+      for (const child of command.commands) configure(child);
+    };
+    configure(root);
+    expect(() => root.parse(['help', 'child'], { from: 'user' }))
+      .toThrow(expect.objectContaining({ code: 'commander.help' }));
+    expect(out).toContain('Child command');
+  });
+
+  it('ignores commands that have no children', () => {
+    const leaf = new Command('leaf').description('Leaf command');
+    expect(() => hideAutoHelpCommands(leaf)).not.toThrow();
+    expect(visibleChildCommands(leaf)).toEqual([]);
   });
 });
