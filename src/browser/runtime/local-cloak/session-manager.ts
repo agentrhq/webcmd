@@ -13,7 +13,7 @@ import { CloakNetworkCapture } from './network.js';
 import { findPackageRoot } from '../../../package-paths.js';
 import { findExactCloakProfileProcesses } from './process-matcher.js';
 import { log } from '../../../logger.js';
-import { CliError, EXIT_CODES } from '../../../errors.js';
+import { BrowserConnectError, CliError, EXIT_CODES } from '../../../errors.js';
 import { isClosedContextError } from '../../run/types.js';
 import { configureCloakBrowserBinary } from '../../browser-binary.js';
 import { activateChromeContext, launchChromePersistentContext } from './chrome-launch.js';
@@ -474,6 +474,7 @@ export class CloakSessionManager {
           return this.newPageAttempt(input, 1);
         }
         if (!pageIsClosed(acquired.page)) await acquired.page.close().catch(() => {});
+        if (isClosedContextError(error)) throw this.browserDisconnectedError(profileId, error);
         throw error;
       }
     }
@@ -504,7 +505,8 @@ export class CloakSessionManager {
       await lease.page.goto(url, { waitUntil });
       return lease;
     } catch (error) {
-      if (attempt !== 0 || !isClosedContextError(error)) throw error;
+      if (!isClosedContextError(error)) throw error;
+      if (attempt !== 0) throw this.browserDisconnectedError(profileId, error);
       if (runtime?.context === lease.context) this.invalidateProfileRuntime(profileId, runtime);
       if (!pageIsClosed(lease.page)) await lease.page.close().catch(() => {});
       return this.navigatePageAttempt(input, url, waitUntil, 1);
@@ -738,6 +740,37 @@ export class CloakSessionManager {
     });
   }
 
+  /**
+   * Name why the browser went away instead of forwarding Playwright's
+   * "Target page, context or browser has been closed", which reads the same
+   * whether the browser crashed, was closed by hand, or was never allowed to
+   * start (webcmd#225). Another live profile is the one cause we can check, so
+   * it decides the hint rather than being asserted blindly.
+   */
+  private browserDisconnectedError(profileId: string, cause: unknown): BrowserConnectError {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    const others = [...this.profiles.keys()].filter((id) => id !== profileId);
+    const hint = others.length > 0
+      ? `Profile ${others.join(', ')} still has a browser open. CloakBrowser's free tier runs one browser at a time and exits a second launch with code ${CLOAK_SESSION_CAP_EXIT_CODE}. Close the other profile, or set CLOAKBROWSER_LICENSE_KEY for a tier with more sessions.`
+      : 'The browser closed on its own before the request finished. Run `webcmd daemon restart`; on macOS, WEBCMD_WINDOW=foreground avoids the background launch path.';
+    return new BrowserConnectError(
+      `Browser profile ${profileId} disconnected during navigation: ${detail}`,
+      hint,
+      'profile-disconnected',
+    );
+  }
+
+  private sessionCapError(profileId: string, cause: unknown): BrowserConnectError {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    const others = [...this.profiles.keys()].filter((id) => id !== profileId);
+    const running = others.length > 0 ? ` Profile ${others.join(', ')} is already running.` : '';
+    return new BrowserConnectError(
+      `CloakBrowser exited with code ${CLOAK_SESSION_CAP_EXIT_CODE} while launching profile ${profileId}: ${detail}`,
+      `That exit code means the CloakBrowser session limit was reached.${running} Close the other profile, or set CLOAKBROWSER_LICENSE_KEY for a tier with more sessions.`,
+      'profile-disconnected',
+    );
+  }
+
   private async launchProfileRuntime(profileId: string, windowMode?: BrowserWindowMode): Promise<ProfileRuntime> {
     const userDataDir = resolveCloakProfileDir(profileId, {
       baseDir: this.opts.baseDir,
@@ -764,6 +797,7 @@ export class CloakSessionManager {
     try {
       context = await launchPersistentContext(launchOptions);
     } catch (err) {
+      if (isCloakSessionCapError(err)) throw this.sessionCapError(profileId, err);
       if (!isProfileAlreadyInUseError(err) || !(await this.recoverLockedProfile(userDataDir))) throw err;
       context = await launchPersistentContext(launchOptions);
     }
@@ -1389,6 +1423,24 @@ function requireSession(session: string | undefined): string {
 
 function requireSessionId(input: Pick<SessionKeyInput, 'session' | 'sessionId'>): string {
   return input.sessionId?.trim() || requireSession(input.session);
+}
+
+/**
+ * CloakBrowser's free tier runs one browser at a time. A second launch exits
+ * with this code, which Playwright reports as a target that closed — the same
+ * message an externally closed or crashed browser produces (webcmd#225).
+ */
+const CLOAK_SESSION_CAP_EXIT_CODE = 76;
+
+/**
+ * Matches both Playwright launch text ("exited with code 76") and process
+ * traces ("exitCode=76"). The trailing guard keeps 760 and 7600 out.
+ */
+const CLOAK_SESSION_CAP_PATTERN = /exit(?:ed|code)?[ =:]+(?:with )?(?:code[ =:]+)?76(?![0-9])/i;
+
+function isCloakSessionCapError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return CLOAK_SESSION_CAP_PATTERN.test(message);
 }
 
 function isProfileAlreadyInUseError(err: unknown): boolean {
