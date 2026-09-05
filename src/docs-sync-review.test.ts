@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   MAX_DIFF_CHARACTERS,
+  REVIEW_JSON_SCHEMA,
   buildReviewPrompts,
   classifyPullRequest,
   createDeferredResult,
@@ -265,6 +266,50 @@ describe('review context', () => {
 
     expect(result.truncated).toBe(true);
     expect(result.diffText).toContain('[patch unavailable]');
+  });
+
+  it('names the response keys the validator reads', () => {
+    const context: PullRequestReviewContext = {
+      number: 72,
+      title: 'Add profile option',
+      body: null,
+      draft: false,
+      headSha: 'abc123',
+      labels: [],
+      files: [{ path: 'src/cli.ts', status: 'modified', patch: '+  .option("--profile <name>")' }],
+    };
+
+    const [result] = buildReviewPrompts(context, []);
+
+    // The schema-less fallback rung has only the prompt to go on, so the keys
+    // validateGeminiReview reads must be stated there too.
+    expect(result.prompt).toContain('"verdict"');
+    expect(result.prompt).toContain('"summary"');
+    expect(result.prompt).toContain('"findings"');
+    expect(result.prompt).toContain('"suggestedPath"');
+    expect(result.prompt).toContain('"behaviorChange"');
+  });
+});
+
+describe('REVIEW_JSON_SCHEMA', () => {
+  it('describes every key the validator requires', () => {
+    expect(REVIEW_JSON_SCHEMA.required).toEqual(['verdict', 'summary', 'findings']);
+    expect(REVIEW_JSON_SCHEMA.properties.findings.items.required).toEqual([
+      'surface',
+      'behaviorChange',
+      'changedPath',
+      'evidence',
+      'suggestedPath',
+      'reason',
+    ]);
+  });
+
+  it('stays inside the strict structured-output subset', () => {
+    // strict: true rejects array length keywords; validateGeminiReview caps the
+    // findings list instead.
+    expect(JSON.stringify(REVIEW_JSON_SCHEMA)).not.toContain('maxItems');
+    expect(REVIEW_JSON_SCHEMA.additionalProperties).toBe(false);
+    expect(REVIEW_JSON_SCHEMA.properties.findings.items.additionalProperties).toBe(false);
   });
 });
 

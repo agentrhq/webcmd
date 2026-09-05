@@ -80,7 +80,7 @@ export const REVIEW_JSON_SCHEMA = {
     },
     findings: {
       type: 'array',
-      maxItems: 5,
+      description: 'At most 5 findings; an empty array when no documentation update is needed.',
       items: {
         type: 'object',
         additionalProperties: false,
@@ -311,6 +311,9 @@ export function buildReviewPrompts(
       'Use no_update_needed only when the supplied changes require no README, docs, or skill update.',
       'Use review_suggested when context or evidence is ambiguous or incomplete.',
       'Use likely_missing only when an exact changed-file excerpt supports a specific missing documentation update.',
+      'Respond with a JSON object using exactly these keys: {"verdict": "no_update_needed" | "review_suggested" | "likely_missing", "summary": string, "findings": array}.',
+      'Each finding uses exactly these keys: {"surface": "readme" | "docs" | "skill", "behaviorChange": string, "changedPath": string, "evidence": string, "suggestedPath": string, "reason": string}.',
+      'Return at most 5 findings, and an empty findings array when the verdict is no_update_needed.',
       '',
       'BEGIN UNTRUSTED PULL REQUEST DATA',
       `PR: #${context.number}`,
