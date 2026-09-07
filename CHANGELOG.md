@@ -18,6 +18,24 @@
 - Hosted command lists retain excluded commands as `LOCAL` rows and return a local-only error instead of plugin-install guidance.
 - Local auth commands initialize user CLI compatibility shims, and hosted auth uses the same native grammar, flags, choices, and help as local mode.
 
+## [0.8.2](https://github.com/agentrhq/webcmd/compare/webcmd-v0.8.1...webcmd-v0.8.2) (2026-09-07)
+
+
+### Features
+
+* drop hosted mode from webcmd setup ([#493](https://github.com/agentrhq/webcmd/issues/493)) ([71afb5b](https://github.com/agentrhq/webcmd/commit/71afb5b0c0ea1ae6aeec77da63d015f1bb13a9e6))
+
+
+### Bug Fixes
+
+* prune stale stable-root skill symlinks on add/update ([#495](https://github.com/agentrhq/webcmd/issues/495)) ([60c1edc](https://github.com/agentrhq/webcmd/commit/60c1edcb94b83dee6e9d6ea49b6b71561c0e5ffb))
+* scope skills remove to one provider/scope, like skills add ([#492](https://github.com/agentrhq/webcmd/issues/492)) ([3be5f95](https://github.com/agentrhq/webcmd/commit/3be5f953f37a25a1a1c0adb972be5f95a659d6c0))
+
+
+### Miscellaneous Chores
+
+* force release version to 0.8.2 ([88abd34](https://github.com/agentrhq/webcmd/commit/88abd3449e468b957e067db6148e91e40a2f22f1))
+
 ## [0.8.1](https://github.com/agentrhq/webcmd/compare/webcmd-v0.8.0...webcmd-v0.8.1) (2026-09-04)
 
 ### Highlights
