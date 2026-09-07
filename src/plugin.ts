@@ -1463,6 +1463,11 @@ export interface OverrideReconcileNeed {
   yours: string;
   upstream: string;
   base: string | null;
+  /**
+   * Files copied alongside the fork whose upstream bytes have changed since,
+   * relative to the plugin directory. Empty when only the command file drifted.
+   */
+  changedDependencies: string[];
 }
 
 /**
@@ -1473,6 +1478,12 @@ export interface OverrideReconcileNeed {
  * override on every unrelated update. Comparing the file's own sha256
  * against the override record's sourceSha256 only flags overrides whose
  * actual upstream content changed.
+ *
+ * A fork owns the files it copied to stay loadable, so upstream changes in
+ * those are reported too. Without that, a fork of a command whose real logic
+ * lives in `./shared.js` would keep running its fork-time copy of that helper
+ * and never be told upstream moved — the same silent staleness this check
+ * exists to prevent, just one import away.
  */
 export function findOverridesNeedingReconcile(pluginNames?: string[]): OverrideReconcileNeed[] {
   const homeDir = getHomeDir();
@@ -1484,7 +1495,19 @@ export function findOverridesNeedingReconcile(pluginNames?: string[]): OverrideR
     // Plugin was uninstalled: no upstream to reconcile against. Task 7's
     // `adapter status` surfaces these separately as orphaned.
     if (!fs.existsSync(record.sourcePath)) continue;
-    if (fileSha256(record.sourcePath) === record.sourceSha256) continue;
+
+    const pluginDir = path.dirname(record.sourcePath);
+    const changedDependencies = (record.dependencies ?? [])
+      .filter((dependency) => {
+        const upstreamPath = path.join(pluginDir, ...dependency.path.split('/'));
+        // A dependency deleted upstream is a change the user must see, not one to skip.
+        if (!fs.existsSync(upstreamPath)) return true;
+        return fileSha256(upstreamPath) !== dependency.sha256;
+      })
+      .map((dependency) => dependency.path);
+
+    const commandChanged = fileSha256(record.sourcePath) !== record.sourceSha256;
+    if (!commandChanged && changedDependencies.length === 0) continue;
 
     needs.push({
       commandKey,
@@ -1492,6 +1515,7 @@ export function findOverridesNeedingReconcile(pluginNames?: string[]): OverrideR
       yours: path.join(homeDir, '.webcmd', 'clis', `${commandKey}.js`),
       upstream: record.sourcePath,
       base: fs.existsSync(record.basePath) ? record.basePath : null,
+      changedDependencies,
     });
   }
 
