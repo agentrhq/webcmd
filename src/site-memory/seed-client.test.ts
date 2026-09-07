@@ -81,7 +81,10 @@ describe('global seed client', () => {
 
     expect(result).toEqual({ status: 'lookup-failed' });
     expect(calls).toBe(1);
-    expect(Date.now() - started).toBeGreaterThanOrEqual(2000);
+    // A few ms of scheduler slack under CI is expected: AbortSignal.timeout's
+    // internal timer can fire a hair before the full duration has elapsed
+    // relative to Date.now()'s millisecond sampling.
+    expect(Date.now() - started).toBeGreaterThanOrEqual(1990);
     expect(Date.now() - started).toBeLessThan(4000);
   });
 
