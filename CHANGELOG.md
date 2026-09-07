@@ -20,21 +20,16 @@
 
 ## [0.8.2](https://github.com/agentrhq/webcmd/compare/webcmd-v0.8.1...webcmd-v0.8.2) (2026-09-07)
 
+### Improvements
+- `webcmd setup` now exclusively configures local browser mode. The hosted/local prompt and the `--mode` and `--api-key` options have been removed. Browser selection, Chrome cookie import, status reporting, and daemon restart behavior remain available.
+- On first access to a product without local site memory, Webcmd now requests a seed from `https://api.webcmd.dev` by default. The unauthenticated request sends only the resolved product/domain, uses a two-second timeout, and is not retried. Set `WEBCMD_GLOBAL_MEMORY=off` to disable lookups; `WEBCMD_GLOBAL_MEMORY_URL` remains available as a developer or test override.
 
-### Features
+### Fixes
+- `webcmd skills remove` now removes skills from only one provider and scope—or one custom `--path`—instead of scanning every supported location. It supports `--provider` and `--scope`, prompts for them interactively when needed, and includes them in JSON output. Stable links under `~/.webcmd/skills` are no longer removed by this command.
+- `webcmd skills add` and `webcmd skills update` now prune stale symlinks from `~/.webcmd/skills` while preserving user-owned entries that are not symlinks.
 
-* drop hosted mode from webcmd setup ([#493](https://github.com/agentrhq/webcmd/issues/493)) ([71afb5b](https://github.com/agentrhq/webcmd/commit/71afb5b0c0ea1ae6aeec77da63d015f1bb13a9e6))
-
-
-### Bug Fixes
-
-* prune stale stable-root skill symlinks on add/update ([#495](https://github.com/agentrhq/webcmd/issues/495)) ([60c1edc](https://github.com/agentrhq/webcmd/commit/60c1edcb94b83dee6e9d6ea49b6b71561c0e5ffb))
-* scope skills remove to one provider/scope, like skills add ([#492](https://github.com/agentrhq/webcmd/issues/492)) ([3be5f95](https://github.com/agentrhq/webcmd/commit/3be5f953f37a25a1a1c0adb972be5f95a659d6c0))
-
-
-### Miscellaneous Chores
-
-* force release version to 0.8.2 ([88abd34](https://github.com/agentrhq/webcmd/commit/88abd3449e468b957e067db6148e91e40a2f22f1))
+### Contributors
+[@ankitranjan7](https://github.com/ankitranjan7)
 
 ## [0.8.1](https://github.com/agentrhq/webcmd/compare/webcmd-v0.8.0...webcmd-v0.8.1) (2026-09-04)
 
