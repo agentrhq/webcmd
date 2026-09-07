@@ -38,6 +38,8 @@ export interface WebcmdSkillAddResult {
 }
 
 export interface WebcmdSkillRemoveResult {
+  provider?: SkillProvider;
+  scope?: SkillScope;
   removed: string[];
 }
 
@@ -95,33 +97,23 @@ export function updateWebcmdSkill(options: WebcmdSkillOptions = {}): WebcmdSkill
 }
 
 export function removeWebcmdSkills(options: WebcmdSkillOptions = {}): WebcmdSkillRemoveResult {
-  const homeDir = options.homeDir ?? os.homedir();
-  const cwd = options.cwd ?? process.cwd();
-  const roots = new Set([
-    ...['.agents', '.codex', '.claude'].flatMap((dir) => [
-      path.join(homeDir, dir, 'skills'),
-      path.join(cwd, dir, 'skills'),
-    ]),
-    ...(options.customPath === undefined ? [] : [expandHomePath(options.customPath)]),
-    path.join(homeDir, '.webcmd', 'skills'),
-  ]);
+  const provider = options.customPath === undefined ? normalizeProvider(options.provider) : undefined;
+  const scope = normalizeScope(options.scope);
   const skills = listWebcmdSkills(options.packageRoot);
   const removed: string[] = [];
 
-  for (const root of roots) {
-    for (const skill of skills) {
-      const linkPath = path.join(root, skill.name);
-      const current = safeLstat(linkPath);
-      if (!current) continue;
-      if (!current.isSymbolicLink()) {
-        throw new ArgumentError(`Refusing to remove non-symlink path: ${linkPath}`, 'Remove it manually if it is no longer needed.');
-      }
-      removed.push(linkPath);
+  for (const skill of skills) {
+    const linkPath = destinationFor(skill.name, provider, scope, options);
+    const current = safeLstat(linkPath);
+    if (!current) continue;
+    if (!current.isSymbolicLink()) {
+      throw new ArgumentError(`Refusing to remove non-symlink path: ${linkPath}`, 'Remove it manually if it is no longer needed.');
     }
+    removed.push(linkPath);
   }
 
   for (const linkPath of removed) fs.unlinkSync(linkPath);
-  return { removed };
+  return { provider, scope, removed };
 }
 
 function updateStableSkillLinks(options: WebcmdSkillOptions): WebcmdSkillLink[] {
