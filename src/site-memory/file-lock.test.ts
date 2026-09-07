@@ -72,6 +72,40 @@ describe('site memory file lock', () => {
       .resolves.toBe('written');
   });
 
+  it('does not steal a stale lock from a same-host owner that is still alive', async () => {
+    const target = await tempTarget();
+    const lockPath = lockPathFor(target);
+    await writeFile(lockPath, `${JSON.stringify({ pid: process.pid, host: hostname(), token: 'still-working' })}\n`);
+    const past = new Date(Date.now() - 60_000);
+    await utimes(lockPath, past, past);
+
+    await expect(withFileLock(target, async () => 'written', { staleMs: 10_000, timeoutMs: 50 }))
+      .rejects.toMatchObject({ code: 'SITE_MEMORY_BUSY' });
+
+    await expect(readFile(lockPath, 'utf8')).resolves.toContain('still-working');
+  });
+
+  it('does not let two critical sections overlap when one runs longer than staleMs', async () => {
+    const target = await tempTarget();
+    let insideFirst = false;
+    let overlapped = false;
+
+    const first = withFileLock(target, async () => {
+      insideFirst = true;
+      await new Promise((resolve) => { setTimeout(resolve, 120); });
+      insideFirst = false;
+    }, { staleMs: 30, timeoutMs: 5_000 });
+
+    await new Promise((resolve) => { setTimeout(resolve, 60); });
+
+    const second = withFileLock(target, async () => {
+      if (insideFirst) overlapped = true;
+    }, { staleMs: 30, timeoutMs: 5_000 });
+
+    await Promise.all([first, second]);
+    expect(overlapped).toBe(false);
+  });
+
   it('reports a live holder as SITE_MEMORY_BUSY instead of writing anyway', async () => {
     const target = await tempTarget();
     await writeFile(lockPathFor(target), `${JSON.stringify({ pid: process.pid, host: hostname(), token: 'held' })}\n`);
