@@ -2,11 +2,13 @@ import { Command, Option } from 'commander';
 import {
   BROWSER_RUN_HELP_TEXT,
   browserCommandCatalog,
+  browserHelpGroup,
   browserOptionFlags,
   browserOptionValueParser,
 } from '../browser/command-catalog.js';
 import { addOutputFormatOption, CommanderStructuralError } from '../command-surface.js';
 import { CliError, EXIT_CODES } from '../errors.js';
+import { hideAutoHelpCommands } from '../help.js';
 import { configureRootCommandSurface } from '../root-command-surface.js';
 import { requireSessionIdShape } from '../browser/session-identifiers.js';
 
@@ -71,7 +73,10 @@ export function parseHostedBrowserStructure(argv: readonly string[]): ParsedHost
     }
 
     const leafName = parts.at(-1)!;
-    const leaf = parent.command(leafName).description(contract.description);
+    const leaf = parent
+      .command(leafName)
+      .description(contract.description)
+      .helpGroup(browserHelpGroup(contract.command));
     for (const alias of contract.aliases) leaf.alias(alias);
     for (const positional of contract.positionals) {
       const suffix = positional.variadic ? '...' : '';
@@ -115,6 +120,8 @@ export function parseHostedBrowserStructure(argv: readonly string[]): ParsedHost
       };
     });
   }
+
+  hideAutoHelpCommands(browser);
 
   let stderr = '';
   let stdout = '';

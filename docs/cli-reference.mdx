@@ -134,6 +134,12 @@ webcmd artifact download <download-url> --output <local-path>
 `--output` is required. Webcmd authenticates to the configured Cloud API.
 Ordinary `curl` is neither required nor automatically authenticated.
 
+`browser --help` lists that surface plus `close` under **Browser session
+commands**, and the adapter authoring commands `init` and `verify` under
+**Adapter authoring commands**. Forking an installed plugin command is
+`webcmd adapter override <site>/<command>` (alias: `webcmd adapter fork`);
+`webcmd browser fork` was removed.
+
 ## Top-Level Commands
 
 | Command | Purpose |
@@ -148,7 +154,7 @@ Ordinary `curl` is neither required nor automatically authenticated.
 | `profile` | List, rename, and select browser runtime profiles. |
 | `auth` | Inspect website login status, and refresh logged-in site sessions. |
 | `plugin` | Install, update, list, create, and uninstall plugins. |
-| `adapter` | Inspect or remove legacy adapters in `~/.webcmd/clis/`. |
+| `adapter` | Inspect, fork, or remove legacy adapters in `~/.webcmd/clis/`. |
 | `external` | Register or install external local CLIs. |
 | `validate` | Validate adapter definitions. |
 | `verify` | Validate and smoke test an adapter. |

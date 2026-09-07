@@ -1,7 +1,14 @@
 import type { Command } from 'commander';
 import { describe, expect, it } from 'vitest';
 import { createProgram } from '../cli.js';
-import { browserCommandCatalog, browserOptionFlags, browserOptionValueParser } from './command-catalog.js';
+import {
+  BROWSER_AUTHORING_HELP_GROUP,
+  BROWSER_SESSION_HELP_GROUP,
+  browserCommandCatalog,
+  browserHelpGroup,
+  browserOptionFlags,
+  browserOptionValueParser,
+} from './command-catalog.js';
 
 function browserCommand(): Command {
   const browser = createProgram('', '').commands.find(command => command.name() === 'browser');
@@ -27,14 +34,16 @@ describe('browserCommandCatalog', () => {
   });
 
   it('keeps adapter authoring separate from the raw session catalog', () => {
+    // Registration order drives help-group order, so the raw session surface the
+    // namespace is named for comes first.
     expect(browserCommand().commands.map(command => command.name())).toEqual([
-      'init',
-      'verify',
       'tabs',
       'bind',
       'run',
       'snapshot',
       'close',
+      'init',
+      'verify',
     ]);
   });
 
@@ -93,7 +102,7 @@ describe('browserCommandCatalog', () => {
     for (const leaf of ['tabs', 'bind', 'run', 'snapshot', 'close']) {
       expect(optionNames(leaf)).toContain('verbose');
     }
-    for (const leaf of ['init', 'fork', 'verify']) {
+    for (const leaf of ['init', 'verify']) {
       expect(optionNames(leaf)).not.toContain('verbose');
     }
   });
@@ -119,5 +128,39 @@ describe('browserCommandCatalog', () => {
     expect(parse?.('tree')).toBe('tree');
     expect(browserOptionValueParser('snapshot', 'snapshotMode')?.('read')).toBe('read');
     expect(() => parse?.('full')).toThrow('--snapshot-mode for snapshot must be act, tree, or read');
+  });
+});
+
+describe('browser namespace help presentation', () => {
+  it('groups every catalogued command as session control or adapter authoring', () => {
+    const groups = new Map(browserCommandCatalog.map(command => [command.command, browserHelpGroup(command.command)]));
+
+    expect([...groups].filter(([, group]) => group === BROWSER_SESSION_HELP_GROUP).map(([name]) => name))
+      .toEqual(['tabs', 'bind', 'run', 'snapshot', 'close']);
+    expect([...groups].filter(([, group]) => group === BROWSER_AUTHORING_HELP_GROUP).map(([name]) => name))
+      .toEqual(['init', 'verify']);
+  });
+
+  it('leads with the raw session surface and drops the auto help entry', () => {
+    const help = browserCommand().helpInformation();
+
+    expect(help).toContain(BROWSER_SESSION_HELP_GROUP);
+    expect(help).toContain(BROWSER_AUTHORING_HELP_GROUP);
+    expect(help.indexOf(BROWSER_SESSION_HELP_GROUP)).toBeLessThan(help.indexOf(BROWSER_AUTHORING_HELP_GROUP));
+    expect(help).not.toMatch(/^\s+help \[command\]/m);
+  });
+
+  it('does not register fork under browser; its local home is "webcmd adapter fork"', () => {
+    const program = createProgram('', '');
+    const browser = program.commands.find(command => command.name() === 'browser')!;
+    const adapter = program.commands.find(command => command.name() === 'adapter')!;
+    const override = adapter.commands.find(command => command.name() === 'override')!;
+
+    expect(browser.commands.map(command => command.name())).not.toContain('fork');
+    // The namespace summary the root help renders must not advertise it either.
+    expect(browser.description()).toBe('bind, close, init, run, snapshot, tabs, verify');
+
+    expect(override.aliases()).toContain('fork');
+    expect(adapter.helpInformation()).toMatch(/^\s+override\|fork /m);
   });
 });
