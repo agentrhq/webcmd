@@ -5,6 +5,7 @@ export interface GlobalSeedProvider {
 }
 
 const LOOKUP_TIMEOUT_MS = 2000;
+export const DEFAULT_GLOBAL_MEMORY_URL = 'https://api.webcmd.dev';
 
 export function createHttpSeedProvider(options: {
   fetch?: typeof fetch;
@@ -15,8 +16,8 @@ export function createHttpSeedProvider(options: {
 
   return {
     async lookup(productKey, signal) {
-      const baseUrl = env.WEBCMD_GLOBAL_MEMORY_URL?.trim();
-      if (env.WEBCMD_GLOBAL_MEMORY === 'off' || !baseUrl) return { status: 'unattempted' };
+      if (env.WEBCMD_GLOBAL_MEMORY === 'off') return { status: 'unattempted' };
+      const baseUrl = env.WEBCMD_GLOBAL_MEMORY_URL?.trim() || DEFAULT_GLOBAL_MEMORY_URL;
 
       const base = baseUrl.replace(/\/+$/, '');
       const url = `${base}/v1/site-memory/seeds/${encodeURIComponent(productKey)}`;

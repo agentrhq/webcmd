@@ -5,12 +5,15 @@ const urlEnv = { WEBCMD_GLOBAL_MEMORY_URL: 'https://api.webcmd.dev' };
 
 describe('global seed client', () => {
   it.each([{}, { WEBCMD_GLOBAL_MEMORY_URL: '   ' }])(
-    'does not fetch without a configured remote URL',
+    'uses the official default URL without a non-empty override',
     async (env) => {
-      const fetch = vi.fn();
+      const fetch = vi.fn(async (input: RequestInfo | URL) => {
+        expect(String(input)).toBe('https://api.webcmd.dev/v1/site-memory/seeds/example.test');
+        return jsonResponse({ revision: 'seed-1', site: '# Example\n' });
+      });
       await expect(createHttpSeedProvider({ fetch, env }).lookup('example.test'))
-        .resolves.toEqual({ status: 'unattempted' });
-      expect(fetch).not.toHaveBeenCalled();
+        .resolves.toEqual({ status: 'available', revision: 'seed-1', site: '# Example\n' });
+      expect(fetch).toHaveBeenCalledTimes(1);
     },
   );
 
@@ -78,7 +81,10 @@ describe('global seed client', () => {
 
     expect(result).toEqual({ status: 'lookup-failed' });
     expect(calls).toBe(1);
-    expect(Date.now() - started).toBeGreaterThanOrEqual(2000);
+    // A few ms of scheduler slack under CI is expected: AbortSignal.timeout's
+    // internal timer can fire a hair before the full duration has elapsed
+    // relative to Date.now()'s millisecond sampling.
+    expect(Date.now() - started).toBeGreaterThanOrEqual(1990);
     expect(Date.now() - started).toBeLessThan(4000);
   });
 

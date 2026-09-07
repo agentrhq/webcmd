@@ -10,9 +10,9 @@ Trace artifacts, cache files, plugins, user adapters, and site memory are stored
 
 ## Local site-memory seed lookup
 
-`WEBCMD_GLOBAL_MEMORY_URL` enables a public unauthenticated GET `<base>/v1/site-memory/seeds/<punycode-product-key>` on first access when no local memory exists. The request uses a 2-second timeout and no retry. It discloses the resolved product/domain.
+Webcmd defaults to a public unauthenticated GET `https://api.webcmd.dev/v1/site-memory/seeds/<punycode-product-key>` on first access when no local product memory exists. The request discloses only the resolved product/domain; it sends no credentials, page contents, local memory, or candidate evidence. `WEBCMD_GLOBAL_MEMORY=off` disables the request. `WEBCMD_GLOBAL_MEMORY_URL` is only a developer/test override.
 
-With no URL configured, learning is local-only and Webcmd makes no seed request. `WEBCMD_GLOBAL_MEMORY=off` disables even a configured URL.
+The lookup uses a 2-second timeout and no retry, and never refreshes initialized memory.
 
 ## Candidate public-IP provenance
 

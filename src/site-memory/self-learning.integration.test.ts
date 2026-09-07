@@ -75,7 +75,7 @@ describe('self-learning lifecycle', () => {
       url: 'https://local.test/',
       taskId: 'task-local',
       homeDir,
-      seedProvider: createHttpSeedProvider({ fetch: localFetch, env: {} }),
+      seedProvider: createHttpSeedProvider({ fetch: localFetch, env: { WEBCMD_GLOBAL_MEMORY: 'off' } }),
     });
 
     expect(seeded.manifest?.seed).toEqual({ status: 'available', revision: 'seed-1' });

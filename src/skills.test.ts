@@ -572,10 +572,10 @@ describe('public copy', () => {
     expect(intro).toMatch(/except|seed lookup/i);
     expect(privacy).toMatch(/unauthenticated GET/i);
     expect(privacy).toContain('/v1/site-memory/seeds/');
-    expect(privacy).not.toMatch(/default(?: base)?(?: is|:)[^\n]*api\.webcmd\.dev/i);
-    expect(privacy).toMatch(/WEBCMD_GLOBAL_MEMORY_URL[^\n]*(?:enables|configured)/i);
-    expect(privacy).toMatch(/absent|no URL|not configured|without a(?:n)?(?: configured)? URL/i);
-    expect(privacy).toMatch(/local-only|no request|does not (?:make|send|perform) (?:a |the )?seed/i);
+    expect(privacy).toMatch(/defaults?[^\n]*api\.webcmd\.dev/i);
+    expect(privacy).toMatch(/WEBCMD_GLOBAL_MEMORY_URL[^\n]*(?:developer|test)[^\n]*override/i);
+    expect(privacy).toMatch(/no local product memory/i);
+    expect(privacy).toMatch(/never refresh(?:es)? initialized memory/i);
     expect(privacy).toMatch(/2-second timeout|2 second timeout/i);
     expect(privacy).toMatch(/no retry/i);
     expect(privacy).toContain('WEBCMD_GLOBAL_MEMORY=off');
