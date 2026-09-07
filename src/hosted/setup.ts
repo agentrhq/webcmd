@@ -21,9 +21,7 @@ import { createSlabInstallerIo, installSlabMacos, verifySlabApp } from '../slab/
 import { findSlabInstallation, type SlabInstallation } from '../slab/installation.js';
 import { createSlabLaunchIo } from '../slab/launch.js';
 import { inspectSlabStatus, slabStatusHasHello, type SlabSetupStatus } from '../slab/status.js';
-import { HostedClient } from './client.js';
 import {
-  defaultHostedApiBaseUrl,
   getConfigPath,
   loadWebcmdConfig,
   makeLocalConfig,
@@ -32,18 +30,12 @@ import {
   type LocalBrowserConfig,
   type WebcmdConfig,
 } from './config.js';
-import {
-  makeStoredHostedConfig,
-  storeHostedApiKey,
-  type HostedCredentialBackend,
-  type HostedCredentialIo,
-} from './credentials.js';
 
-export interface SetupIo extends ConfigIo, HostedCredentialIo {
+export interface SetupIo extends ConfigIo {
   input?: NodeJS.ReadableStream;
   output?: NodeJS.WritableStream;
   stderr?: NodeJS.WritableStream;
-  fetchImpl?: typeof fetch;
+  platform?: NodeJS.Platform;
   question?: (prompt: string) => Promise<string>;
   write?: (message: string) => void | Promise<void>;
   argv?: readonly string[];
@@ -68,24 +60,21 @@ export interface SetupIo extends ConfigIo, HostedCredentialIo {
 type SetupMode = 'local' | 'hosted';
 type LocalBrowserSelection = LocalBrowserConfig | { kind: 'chrome' };
 
-const SETUP_USAGE = `usage: ${CLI_COMMAND} setup --mode <local|hosted> [--browser <cloak|chrome|slab|absolute-path>] [--chrome-profile <name>] [--import-chrome-cookies|--no-import-chrome-cookies] [--api-key <key>]`;
-const SETUP_EXAMPLE = `example: ${CLI_COMMAND} setup --mode local`;
+const SETUP_USAGE = `usage: ${CLI_COMMAND} setup [--browser <cloak|chrome|slab|absolute-path>] [--chrome-profile <name>] [--import-chrome-cookies|--no-import-chrome-cookies]`;
+const SETUP_EXAMPLE = `example: ${CLI_COMMAND} setup`;
 const SETUP_HELP = [
   `${CLI_COMMAND} setup`,
   '',
-  'Configure local or hosted mode.',
+  'Configure local browser mode.',
   '',
-  '  --mode <local|hosted>   Required when stdin is not a TTY',
   '  --browser <cloak|chrome|slab|absolute-path>  Local browser; Cloak is default, Chrome reuses an installed Google Chrome, SLAB is macOS alpha',
   '  --chrome-profile <name>          Import only this Chrome profile (folder or display name)',
   '  --import-chrome-cookies          With --browser chrome, import all Chrome profiles without prompting',
   '  --no-import-chrome-cookies       With --browser chrome, skip cookie import without prompting',
-  '  --api-key <key>         Required for --mode hosted when stdin is not a TTY',
   '  --status                Show the configured mode and local browser',
   '  -h, --help',
   '',
   SETUP_EXAMPLE,
-  `example: ${CLI_COMMAND} setup --mode hosted --api-key <key>`,
   '',
 ].join('\n');
 
@@ -114,116 +103,37 @@ export async function runHostedSetup(io: SetupIo = {}): Promise<number> {
     }
 
     const interactive = canPrompt(io);
-    let mode = parsed.mode;
-    if (!mode) {
-      if (!interactive) {
-        throw new ArgumentError(
-          'setup requires --mode when stdin is not a TTY.',
-          `${SETUP_USAGE}\n${SETUP_EXAMPLE}`,
-        );
-      }
-      await write('Webcmd setup\n');
-      mode = (await ask('Use hosted Webcmd Cloud or local Webcmd? [hosted/local] ')).trim().toLowerCase().startsWith('l')
-        ? 'local'
-        : 'hosted';
-    } else {
-      await write('Webcmd setup\n');
-    }
+    await write('Webcmd setup\n');
 
-    if (mode === 'local') {
-      if (parsed.apiKey) {
-        throw new ArgumentError(
-          '--api-key is only valid with --mode hosted.',
-          `${SETUP_USAGE}\n${SETUP_EXAMPLE}`,
-        );
-      }
-      if ((parsed.chromeProfile || parsed.importChromeCookies !== undefined) && parsed.browser && parsed.browser.kind !== 'chrome') {
-        throw new ArgumentError(
-          '--chrome-profile and --import-chrome-cookies are only valid with --browser chrome.',
-          `${SETUP_USAGE}\n${SETUP_EXAMPLE}`,
-        );
-      }
-      let chromeDiscovery: { executablePath: string | undefined } | undefined;
-      let browser = parsed.browser;
-      if (!browser && interactive) {
-        chromeDiscovery = { executablePath: await resolveGoogleChromeExecutable(io) };
-        const chromeStatus = chromeDiscovery.executablePath ? 'installed' : 'install required';
-        browser = parseLocalBrowser(
-          (await ask(`Local browser [cloak/chrome (${chromeStatus})/slab/absolute path] (cloak): `)).trim() || 'cloak',
-        );
-      }
-      browser ??= { kind: 'cloak' };
-      const before = await (io.fetchDaemonStatus ?? fetchDaemonStatus)();
-      try {
-        const selected = await validateLocalBrowser(browser, io, chromeDiscovery);
-        if (selected.kind === 'chrome') await maybeImportChromeCookies(parsed, io, interactive, ask, write);
-        (io.saveConfig ?? saveWebcmdConfig)(makeLocalConfig(io.now?.() ?? new Date(), selected), io);
-        if (before) await restartConfiguredDaemon(selected, io);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        await write(`Local browser setup failed: ${message}\n`);
-        if (err instanceof DaemonRestartError) await write('Run `webcmd daemon restart` to apply the selected browser.\n');
-        return 1;
-      }
-      await write('Webcmd is now configured for local mode.\n');
-      return 0;
-    }
-
-    if (parsed.browser) {
-      throw new ArgumentError(
-        '--browser is only valid with --mode local.',
-        `${SETUP_USAGE}\n${SETUP_EXAMPLE}`,
-      );
-    }
-    if (parsed.chromeProfile || parsed.importChromeCookies !== undefined) {
+    if ((parsed.chromeProfile || parsed.importChromeCookies !== undefined) && parsed.browser && parsed.browser.kind !== 'chrome') {
       throw new ArgumentError(
         '--chrome-profile and --import-chrome-cookies are only valid with --browser chrome.',
         `${SETUP_USAGE}\n${SETUP_EXAMPLE}`,
       );
     }
-
-    let apiKey = parsed.apiKey?.trim();
-    if (!apiKey) {
-      if (!interactive) {
-        throw new ArgumentError(
-          'setup --mode hosted requires --api-key when stdin is not a TTY.',
-          `${SETUP_USAGE}\nexample: ${CLI_COMMAND} setup --mode hosted --api-key <key>`,
-        );
-      }
-      apiKey = (await ask('Webcmd API key: ')).trim();
-      if (!apiKey) {
-        await write('A Webcmd API key is required for hosted mode.\n');
-        return 2;
-      }
+    let chromeDiscovery: { executablePath: string | undefined } | undefined;
+    let browser = parsed.browser;
+    if (!browser && interactive) {
+      chromeDiscovery = { executablePath: await resolveGoogleChromeExecutable(io) };
+      const chromeStatus = chromeDiscovery.executablePath ? 'installed' : 'install required';
+      browser = parseLocalBrowser(
+        (await ask(`Local browser [cloak/chrome (${chromeStatus})/slab/absolute path] (cloak): `)).trim() || 'cloak',
+      );
     }
-
-    const apiBaseUrl = defaultHostedApiBaseUrl(io.env ?? process.env);
-    let accountLabel: string | undefined;
+    browser ??= { kind: 'cloak' };
+    const before = await (io.fetchDaemonStatus ?? fetchDaemonStatus)();
     try {
-      const me = await new HostedClient({
-        apiBaseUrl,
-        apiKey,
-        fetchImpl: io.fetchImpl,
-      }).getMe();
-      accountLabel = hostedAccountLabel(me);
+      const selected = await validateLocalBrowser(browser, io, chromeDiscovery);
+      if (selected.kind === 'chrome') await maybeImportChromeCookies(parsed, io, interactive, ask, write);
+      (io.saveConfig ?? saveWebcmdConfig)(makeLocalConfig(io.now?.() ?? new Date(), selected), io);
+      if (before) await restartConfiguredDaemon(selected, io);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      await write(`Warning: could not verify API key yet: ${message}\n`);
+      await write(`Local browser setup failed: ${message}\n`);
+      if (err instanceof DaemonRestartError) await write('Run `webcmd daemon restart` to apply the selected browser.\n');
+      return 1;
     }
-    const credential = await storeHostedApiKey(apiKey, io);
-    const config = makeStoredHostedConfig({
-      apiBaseUrl,
-      apiKeyRef: credential.apiKeyRef,
-      credentialBackend: credential.credentialBackend,
-      now: io.now?.() ?? new Date(),
-    });
-    saveWebcmdConfig(config, io);
-    if (accountLabel) await write(`Verified Webcmd Cloud account: ${accountLabel}\n`);
-    if (credential.credentialBackend === 'file-fallback') {
-      await write('Warning: OS credential storage was unavailable; API key stored in a protected Webcmd credentials file.\n');
-    }
-    await write(`Credential backend: ${credentialBackendLabel(credential.credentialBackend)}.\n`);
-    await write('Webcmd is now configured for hosted mode.\n');
+    await write('Webcmd is now configured for local mode.\n');
     return 0;
   } catch (err) {
     if (err instanceof ArgumentError) {
@@ -265,7 +175,7 @@ async function validateLocalBrowser(
         : await resolveGoogleChromeExecutable(io);
     if (!executablePath) {
       throw new Error(
-        `Google Chrome is not installed. Install it from https://www.google.com/chrome/, then rerun ${CLI_COMMAND} setup --mode local --browser chrome.`,
+        `Google Chrome is not installed. Install it from https://www.google.com/chrome/, then rerun ${CLI_COMMAND} setup --browser chrome.`,
       );
     }
     return { kind: 'chrome', executablePath };
@@ -440,15 +350,11 @@ export async function getSetupStatus(io: SetupIo = {}): Promise<SetupStatus> {
 function parseSetupArgs(argv: readonly string[]): {
   help?: true;
   status?: true;
-  mode?: SetupMode;
   browser?: LocalBrowserSelection;
-  apiKey?: string;
   chromeProfile?: string;
   importChromeCookies?: boolean;
 } {
-  let mode: SetupMode | undefined;
   let browser: LocalBrowserSelection | undefined;
-  let apiKey: string | undefined;
   let status: true | undefined;
   let chromeProfile: string | undefined;
   let importChromeCookies: boolean | undefined;
@@ -475,30 +381,6 @@ function parseSetupArgs(argv: readonly string[]): {
       chromeProfile = value;
       continue;
     }
-    if (token === '--mode' || token.startsWith('--mode=')) {
-      const value = token.startsWith('--mode=') ? token.slice('--mode='.length) : argv[++i];
-      if (value !== 'local' && value !== 'hosted') {
-        throw new ArgumentError(
-          `--mode must be one of: local, hosted${value ? ` (got: "${value}")` : ''}.`,
-          `${SETUP_USAGE}\n${SETUP_EXAMPLE}`,
-        );
-      }
-      mode = value;
-      continue;
-    }
-
-    if (token === '--api-key' || token.startsWith('--api-key=')) {
-      const value = token.startsWith('--api-key=') ? token.slice('--api-key='.length) : argv[++i];
-      if (!value || value.startsWith('-')) {
-        throw new ArgumentError(
-          '--api-key requires a value.',
-          `${SETUP_USAGE}\nexample: ${CLI_COMMAND} setup --mode hosted --api-key <key>`,
-        );
-      }
-      apiKey = value;
-      continue;
-    }
-
     if (token === '--browser' || token.startsWith('--browser=')) {
       const value = token.startsWith('--browser=') ? token.slice('--browser='.length) : argv[++i];
       browser = parseLocalBrowser(value);
@@ -507,10 +389,10 @@ function parseSetupArgs(argv: readonly string[]): {
 
     throw new ArgumentError(
       `unknown flag ${token} for \`setup\``,
-      `valid flags for \`setup\`: --mode, --browser, --chrome-profile, --import-chrome-cookies, --no-import-chrome-cookies, --api-key, --status, --help\n${SETUP_USAGE}`,
+      `valid flags for \`setup\`: --browser, --chrome-profile, --import-chrome-cookies, --no-import-chrome-cookies, --status, --help\n${SETUP_USAGE}`,
     );
   }
-  return { ...(status ? { status } : {}), mode, browser, apiKey, chromeProfile, importChromeCookies };
+  return { ...(status ? { status } : {}), browser, chromeProfile, importChromeCookies };
 }
 
 function parseLocalBrowser(value: string | undefined): LocalBrowserSelection {
@@ -527,16 +409,4 @@ function parseLocalBrowser(value: string | undefined): LocalBrowserSelection {
   );
 }
 
-function hostedAccountLabel(body: unknown): string | undefined {
-  if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined;
-  const user = (body as { user?: unknown }).user;
-  if (!user || typeof user !== 'object' || Array.isArray(user)) return undefined;
-  const record = user as { email?: unknown; id?: unknown };
-  if (typeof record.email === 'string' && record.email.trim()) return record.email.trim();
-  if (typeof record.id === 'string' && record.id.trim()) return record.id.trim();
-  return undefined;
-}
 
-function credentialBackendLabel(backend: HostedCredentialBackend): string {
-  return backend === 'os' ? 'OS credential store' : 'protected file fallback';
-}

@@ -38,7 +38,7 @@ const HOSTED_CLIENT_ROOT_COMMANDS: readonly RootHelpCommand[] = [
   { name: 'plugin', description: 'Manage Webcmd plugins' },
   { name: 'profile', description: 'Manage hosted browser profiles' },
   { name: 'session', description: 'Create, list, and close browser Sessions' },
-  { name: 'setup', description: 'Configure local or hosted mode' },
+  { name: 'setup', description: 'Configure local browser mode' },
   { name: 'site', description: 'Read and write per-site memory: notes, endpoints, field maps, fixtures' },
   { name: 'skills', description: 'Manage bundled Webcmd skills on this computer' },
   { name: 'update', description: 'Update the installed Webcmd CLI on this computer' },

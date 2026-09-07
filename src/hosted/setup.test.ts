@@ -6,7 +6,6 @@ import { Writable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getConfigPath, makeLocalConfig, saveWebcmdConfig } from './config.js';
-import { getHostedCredentialPath } from './credentials.js';
 import { runHostedSetup } from './setup.js';
 import type { SlabSetupStatus } from '../slab/status.js';
 
@@ -21,7 +20,7 @@ afterEach(async () => {
 describe('webcmd setup', () => {
   it('writes local mode from interactive answer', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-'));
-    const answers = ['local', 'cloak'];
+    const answers = ['cloak'];
     const messages: string[] = [];
     const env = { WEBCMD_CONFIG_DIR: tempDir } as NodeJS.ProcessEnv;
 
@@ -46,7 +45,7 @@ describe('webcmd setup', () => {
   it('shows installed Chrome in the interactive browser prompt and reuses its detection', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-interactive-chrome-'));
     const env = { WEBCMD_CONFIG_DIR: tempDir } as NodeJS.ProcessEnv;
-    const answers = ['local', 'chrome'];
+    const answers = ['chrome'];
     const prompts: string[] = [];
     const executablePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
     const resolveGoogleChromeExecutable = vi.fn(async () => executablePath);
@@ -73,7 +72,7 @@ describe('webcmd setup', () => {
     tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-interactive-chrome-missing-'));
     const env = { WEBCMD_CONFIG_DIR: tempDir } as NodeJS.ProcessEnv;
     saveWebcmdConfig(makeLocalConfig(new Date('2026-08-31T00:00:00.000Z')), { env });
-    const answers = ['local', 'chrome'];
+    const answers = ['chrome'];
     const prompts: string[] = [];
     const messages: string[] = [];
     const resolveGoogleChromeExecutable = vi.fn(async () => undefined);
@@ -95,56 +94,7 @@ describe('webcmd setup', () => {
     expect(JSON.parse(await readFile(getConfigPath({ env }), 'utf8'))).toMatchObject({ browser: { kind: 'cloak' } });
   });
 
-  it('writes hosted mode and validates with /v1/me', async () => {
-    tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-'));
-    const answers = ['hosted', 'wcmd_live_test'];
-    const env = {
-      WEBCMD_CONFIG_DIR: tempDir,
-      WEBCMD_CREDENTIAL_BACKEND: 'file',
-    } as NodeJS.ProcessEnv;
-    const requests: Array<{ url: string; authorization: string | null }> = [];
-    const prompts: string[] = [];
-    const messages: string[] = [];
-
-    const code = await runHostedSetup({
-      env,
-      platform: 'linux',
-      now: () => new Date('2026-07-08T00:00:00.000Z'),
-      question: async (prompt) => {
-        prompts.push(prompt);
-        return answers.shift() ?? '';
-      },
-      fetchImpl: async (url, init) => {
-        requests.push({
-          url: String(url),
-          authorization: new Headers(init?.headers).get('authorization'),
-        });
-        return new Response(JSON.stringify({ ok: true, user: { id: 'user_demo' } }), { status: 200 });
-      },
-      write: (message) => { messages.push(message); },
-    });
-
-    expect(code).toBe(0);
-    expect(prompts).toEqual([
-      'Use hosted Webcmd Cloud or local Webcmd? [hosted/local] ',
-      'Webcmd API key: ',
-    ]);
-    expect(requests).toEqual([{ url: 'https://api.webcmd.dev/v1/me', authorization: 'Bearer wcmd_live_test' }]);
-    expect(JSON.parse(await readFile(getConfigPath({ env }), 'utf8'))).toMatchObject({
-      mode: 'hosted',
-      hosted: {
-        apiBaseUrl: 'https://api.webcmd.dev',
-        apiKeyRef: expect.stringMatching(/^wcmd_cred_/),
-        credentialBackend: 'file-fallback',
-      },
-    });
-    expect(await readFile(getConfigPath({ env }), 'utf8')).not.toContain('wcmd_live_test');
-    expect(await readFile(getHostedCredentialPath({ env }), 'utf8')).toContain('wcmd_live_test');
-    expect(messages.join('')).toContain('Verified Webcmd Cloud account: user_demo');
-    expect(messages.join('')).toContain('Credential backend: protected file fallback.');
-  });
-
-  it('writes local mode from --mode without prompting', async () => {
+  it('writes local mode without prompting', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-flags-'));
     const messages: string[] = [];
     const env = { WEBCMD_CONFIG_DIR: tempDir } as NodeJS.ProcessEnv;
@@ -154,7 +104,7 @@ describe('webcmd setup', () => {
       env,
       platform: 'linux',
       now: () => new Date('2026-07-08T00:00:00.000Z'),
-      argv: ['--mode', 'local'],
+      argv: [],
       isTTY: false,
       question,
       fetchDaemonStatus: async () => null,
@@ -178,7 +128,7 @@ describe('webcmd setup', () => {
 
     await expect(runHostedSetup({
       env,
-      argv: ['--mode', 'local', '--browser', 'cloak'],
+      argv: ['--browser', 'cloak'],
       isTTY: false,
       now: () => new Date('2026-08-31T00:00:00.000Z'),
       resolveCloakPackage: async () => { events.push('validate'); return 'file:///cloakbrowser/index.js'; },
@@ -203,7 +153,7 @@ describe('webcmd setup', () => {
 
     await expect(runHostedSetup({
       env,
-      argv: ['--mode', 'local', '--browser', '/Applications/Chrome.app/Contents/MacOS/Google Chrome'],
+      argv: ['--browser', '/Applications/Chrome.app/Contents/MacOS/Google Chrome'],
       isTTY: false,
       realpath: async () => '/private/Applications/Chrome.app/Contents/MacOS/Google Chrome',
       stat: async () => ({ isFile: () => true }),
@@ -225,7 +175,7 @@ describe('webcmd setup', () => {
 
     await expect(runHostedSetup({
       env,
-      argv: ['--mode', 'local', '--browser', 'chrome'],
+      argv: ['--browser', 'chrome'],
       isTTY: false,
       resolveGoogleChromeExecutable: async () => executablePath,
       fetchDaemonStatus: async () => null,
@@ -244,7 +194,7 @@ describe('webcmd setup', () => {
 
     await expect(runHostedSetup({
       env: { WEBCMD_CONFIG_DIR: tempDir },
-      argv: ['--mode', 'local', '--browser', 'chrome'],
+      argv: ['--browser', 'chrome'],
       isTTY: false,
       resolveGoogleChromeExecutable: async () => undefined,
       fetchDaemonStatus: async () => null,
@@ -264,7 +214,7 @@ describe('webcmd setup', () => {
 
     await expect(runHostedSetup({
       env,
-      argv: ['--mode', 'local', '--browser', 'chrome', '--import-chrome-cookies'],
+      argv: ['--browser', 'chrome', '--import-chrome-cookies'],
       isTTY: false,
       resolveGoogleChromeExecutable: async () => executablePath,
       listChromeCookieSources: () => [
@@ -298,7 +248,7 @@ describe('webcmd setup', () => {
 
     await expect(runHostedSetup({
       env: { WEBCMD_CONFIG_DIR: tempDir },
-      argv: ['--mode', 'local', '--browser', 'chrome', '--no-import-chrome-cookies'],
+      argv: ['--browser', 'chrome', '--no-import-chrome-cookies'],
       isTTY: false,
       resolveGoogleChromeExecutable: async () => executablePath,
       listChromeCookieSources,
@@ -319,7 +269,7 @@ describe('webcmd setup', () => {
 
     await expect(runHostedSetup({
       env: { WEBCMD_CONFIG_DIR: tempDir },
-      argv: ['--mode', 'local', '--browser', 'chrome', '--import-chrome-cookies'],
+      argv: ['--browser', 'chrome', '--import-chrome-cookies'],
       isTTY: false,
       resolveGoogleChromeExecutable: async () => executablePath,
       listChromeCookieSources: () => [],
@@ -335,7 +285,7 @@ describe('webcmd setup', () => {
   it('prompts to import Chrome cookies interactively and honors a "no" answer', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-chrome-cookies-prompt-'));
     const env = { WEBCMD_CONFIG_DIR: tempDir } as NodeJS.ProcessEnv;
-    const answers = ['local', 'chrome', 'n'];
+    const answers = ['chrome', 'n'];
     const prompts: string[] = [];
     const importChromeCookies = vi.fn();
 
@@ -369,7 +319,7 @@ describe('webcmd setup', () => {
 
     await expect(runHostedSetup({
       env: { WEBCMD_CONFIG_DIR: tempDir },
-      argv: ['--mode', 'local', '--browser', 'chrome', '--chrome-profile', 'Work', '--import-chrome-cookies'],
+      argv: ['--browser', 'chrome', '--chrome-profile', 'Work', '--import-chrome-cookies'],
       isTTY: false,
       resolveGoogleChromeExecutable: async () => '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
       listChromeCookieSources,
@@ -391,7 +341,7 @@ describe('webcmd setup', () => {
 
     await expect(runHostedSetup({
       env: { WEBCMD_CONFIG_DIR: tempDir },
-      argv: ['--mode', 'local', '--browser', 'chrome', '--chrome-profile', 'Profile 2', '--import-chrome-cookies'],
+      argv: ['--browser', 'chrome', '--chrome-profile', 'Profile 2', '--import-chrome-cookies'],
       isTTY: false,
       resolveGoogleChromeExecutable: async () => '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
       listChromeCookieSources: () => [
@@ -417,7 +367,7 @@ describe('webcmd setup', () => {
 
     await expect(runHostedSetup({
       env: { WEBCMD_CONFIG_DIR: tempDir },
-      argv: ['--mode', 'local', '--browser', 'chrome', '--import-chrome-cookies'],
+      argv: ['--browser', 'chrome', '--import-chrome-cookies'],
       isTTY: false,
       resolveGoogleChromeExecutable: async () => '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
       listChromeCookieSources: () => [
@@ -445,7 +395,7 @@ describe('webcmd setup', () => {
 
     await expect(runHostedSetup({
       env: { WEBCMD_CONFIG_DIR: tempDir },
-      argv: ['--mode', 'local', '--browser', 'chrome', '--import-chrome-cookies'],
+      argv: ['--browser', 'chrome', '--import-chrome-cookies'],
       isTTY: false,
       resolveGoogleChromeExecutable: async () => '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
       listChromeCookieSources: () => [
@@ -466,7 +416,7 @@ describe('webcmd setup', () => {
 
     await expect(runHostedSetup({
       env: { WEBCMD_CONFIG_DIR: tempDir },
-      argv: ['--mode', 'local', '--browser', 'cloak', '--chrome-profile', 'Work'],
+      argv: ['--browser', 'cloak', '--chrome-profile', 'Work'],
       isTTY: false,
       fetchDaemonStatus: async () => null,
       write: message => { messages.push(message); },
@@ -483,7 +433,7 @@ describe('webcmd setup', () => {
 
     await expect(runHostedSetup({
       env: { WEBCMD_CONFIG_DIR: tempDir },
-      argv: ['--mode', 'local', '--browser', 'slab'],
+      argv: ['--browser', 'slab'],
       isTTY: false,
       platform: 'darwin',
       homeDir: '/Users/me',
@@ -508,7 +458,7 @@ describe('webcmd setup', () => {
 
     await expect(runHostedSetup({
       env,
-      argv: ['--mode', 'local', '--browser', 'slab'],
+      argv: ['--browser', 'slab'],
       isTTY: false,
       platform: 'darwin',
       existsSync: () => false,
@@ -528,7 +478,7 @@ describe('webcmd setup', () => {
 
     await expect(runHostedSetup({
       env: { WEBCMD_CONFIG_DIR: tempDir },
-      argv: ['--mode', 'local', '--browser', 'slab'],
+      argv: ['--browser', 'slab'],
       isTTY: false,
       platform: 'darwin',
       existsSync: () => false,
@@ -549,7 +499,7 @@ describe('webcmd setup', () => {
 
     await expect(runHostedSetup({
       env: { WEBCMD_CONFIG_DIR: tempDir },
-      argv: ['--mode', 'local', '--browser', 'slab'],
+      argv: ['--browser', 'slab'],
       isTTY: false,
       platform: 'darwin',
       existsSync: () => false,
@@ -573,7 +523,7 @@ describe('webcmd setup', () => {
 
     await expect(runHostedSetup({
       env: { WEBCMD_CONFIG_DIR: tempDir },
-      argv: ['--mode', 'local', '--browser', 'slab'],
+      argv: ['--browser', 'slab'],
       isTTY: false,
       platform: 'darwin',
       existsSync: () => false,
@@ -593,7 +543,7 @@ describe('webcmd setup', () => {
 
     await expect(runHostedSetup({
       env,
-      argv: ['--mode', 'local', '--browser', 'slab'],
+      argv: ['--browser', 'slab'],
       isTTY: false,
       platform: 'darwin',
       existsSync: () => false,
@@ -611,7 +561,7 @@ describe('webcmd setup', () => {
     const restartDaemon = vi.fn();
 
     await expect(runHostedSetup({
-      argv: ['--mode', 'local'],
+      argv: [],
       isTTY: false,
       resolveCloakPackage: async () => 'file:///cloakbrowser/index.js',
       fetchDaemonStatus: async () => daemonStatus('cloak'),
@@ -627,7 +577,7 @@ describe('webcmd setup', () => {
     const restartDaemon = vi.fn(async () => ({ previousStatus: daemonStatus('cloak'), status: daemonStatus('custom'), stopped: true, spawned: true }));
 
     await expect(runHostedSetup({
-      argv: ['--mode', 'local', '--browser', '/custom/browser'],
+      argv: ['--browser', '/custom/browser'],
       isTTY: false,
       realpath: async () => '/custom/browser',
       stat: async () => ({ isFile: () => true }),
@@ -644,7 +594,7 @@ describe('webcmd setup', () => {
     const restartDaemon = vi.fn();
 
     await expect(runHostedSetup({
-      argv: ['--mode', 'local'],
+      argv: [],
       isTTY: false,
       resolveCloakPackage: async () => 'file:///cloakbrowser/index.js',
       fetchDaemonStatus: async () => null,
@@ -661,7 +611,7 @@ describe('webcmd setup', () => {
 
     await expect(runHostedSetup({
       env: { WEBCMD_CONFIG_DIR: tempDir },
-      argv: ['--mode', 'local'],
+      argv: [],
       isTTY: false,
       resolveCloakPackage: async () => 'file:///cloakbrowser/index.js',
       fetchDaemonStatus: async () => daemonStatus('custom'),
@@ -680,7 +630,7 @@ describe('webcmd setup', () => {
 
     await expect(runHostedSetup({
       env,
-      argv: ['--mode', 'local'],
+      argv: [],
       isTTY: false,
       resolveCloakPackage: async () => 'file:///cloakbrowser/index.js',
       fetchDaemonStatus: async () => daemonStatus('custom'),
@@ -696,7 +646,7 @@ describe('webcmd setup', () => {
     const installSlabMacos = vi.fn();
 
     await expect(runHostedSetup({
-      argv: ['--mode', 'local', '--browser', 'slab'],
+      argv: ['--browser', 'slab'],
       isTTY: false,
       platform: 'linux',
       installSlabMacos,
@@ -707,9 +657,8 @@ describe('webcmd setup', () => {
   });
 
   it.each([
-    [['--mode', 'local', '--browser'], '--browser requires a value.'],
-    [['--mode', 'local', '--browser', 'relative/browser'], '--browser must be cloak, chrome, slab, or an absolute path'],
-    [['--mode', 'hosted', '--browser', 'slab', '--api-key', 'wcmd_live_test'], '--browser is only valid with --mode local.'],
+    [['--browser'], '--browser requires a value.'],
+    [['--browser', 'relative/browser'], '--browser must be cloak, chrome, slab, or an absolute path'],
   ])('rejects invalid browser arguments from %j', async (argv, message) => {
     const stderr = collectStderr();
 
@@ -732,10 +681,14 @@ describe('webcmd setup', () => {
       write: message => { messages.push(message); },
     })).resolves.toBe(0);
 
-    expect(messages.join('')).toContain('--browser <cloak|chrome|slab|absolute-path>');
-    expect(messages.join('')).toContain('Cloak is default, Chrome reuses an installed Google Chrome');
-    expect(messages.join('')).toContain('Import only this Chrome profile');
-    expect(messages.join('')).toContain('import all Chrome profiles without prompting');
+    const help = messages.join('');
+    expect(help).toContain('Configure local browser mode.');
+    expect(help).toContain('--browser <cloak|chrome|slab|absolute-path>');
+    expect(help).toContain('Cloak is default, Chrome reuses an installed Google Chrome');
+    expect(help).toContain('Import only this Chrome profile');
+    expect(help).toContain('import all Chrome profiles without prompting');
+    expect(help).not.toContain('--mode');
+    expect(help).not.toContain('--api-key');
   });
 
   it('reports the configured custom browser without probing SLAB', async () => {
@@ -779,44 +732,9 @@ describe('webcmd setup', () => {
     expect(installSlabMacos).not.toHaveBeenCalled();
   });
 
-  it('rejects non-TTY setup without --mode and never prompts', async () => {
-    tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-nontty-'));
-    const messages: string[] = [];
-    const stderr = collectStderr();
-
-    const code = await runHostedSetup({
-      env: { WEBCMD_CONFIG_DIR: tempDir },
-      argv: [],
-      isTTY: false,
-      stderr: stderr.stream,
-      write: (message) => { messages.push(message); },
-    });
-
-    expect(code).toBe(2);
-    expect(messages.join('')).toBe('');
-    expect(stderr.text()).toContain('setup requires --mode when stdin is not a TTY.');
-    expect(stderr.text()).toContain('example: webcmd setup --mode local');
-  });
-
-  it('rejects non-TTY hosted setup without --api-key', async () => {
-    tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-hosted-key-'));
-    const stderr = collectStderr();
-
-    const code = await runHostedSetup({
-      env: { WEBCMD_CONFIG_DIR: tempDir },
-      argv: ['--mode', 'hosted'],
-      isTTY: false,
-      stderr: stderr.stream,
-      write: () => undefined,
-    });
-
-    expect(code).toBe(2);
-    expect(stderr.text()).toContain('setup --mode hosted requires --api-key');
-  });
-
   it('persists flag-driven local setup before the real CLI process completes', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-process-'));
-    const child = spawn(process.execPath, ['--import', 'tsx', 'src/main.ts', 'setup', '--mode', 'local'], {
+    const child = spawn(process.execPath, ['--import', 'tsx', 'src/main.ts', 'setup'], {
       cwd: packageRoot,
       env: { ...process.env, WEBCMD_CONFIG_DIR: tempDir, WEBCMD_NO_UPDATE_CHECK: '1' },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -845,7 +763,9 @@ describe('webcmd setup', () => {
       env: { ...process.env, WEBCMD_CONFIG_DIR: tempDir, WEBCMD_NO_UPDATE_CHECK: '1' },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+    const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
+    child.stdout.on('data', chunk => stdout.push(Buffer.from(chunk)));
     child.stderr.on('data', chunk => stderr.push(Buffer.from(chunk)));
 
     const status = await new Promise<number | null>((resolve, reject) => {
@@ -863,15 +783,16 @@ describe('webcmd setup', () => {
       });
     });
 
-    expect(status).toBe(2);
-    expect(Buffer.concat(stderr).toString('utf8')).toContain('setup requires --mode when stdin is not a TTY.');
+    expect(status).toBe(0);
+    expect(Buffer.concat(stderr).toString('utf8')).toBe('');
+    expect(Buffer.concat(stdout).toString('utf8')).toContain('Webcmd is now configured for local mode.');
   }, 12_000);
 
   it('does not resolve until all caller-owned output writes complete', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-slow-output-'));
     const output = new SetupControlledWritable();
     let settled = false;
-    const answers = ['local', 'cloak'];
+    const answers = ['cloak'];
 
     const run = runHostedSetup({
       env: { WEBCMD_CONFIG_DIR: tempDir },
