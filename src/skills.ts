@@ -123,12 +123,23 @@ function updateStableSkillLinks(options: WebcmdSkillOptions): WebcmdSkillLink[] 
     throw new ArgumentError(`No Webcmd skills found: ${skillsRoot}`, 'Install a package that includes skills/*/SKILL.md.');
   }
 
-  return skills.map((skill) => {
+  const stableRoot = path.join(options.homeDir ?? os.homedir(), '.webcmd', 'skills');
+  const currentNames = new Set(skills.map((skill) => skill.name));
+  const links = skills.map((skill) => {
     const source = path.join(skillsRoot, skill.name);
-    const stableLink = path.join(options.homeDir ?? os.homedir(), '.webcmd', 'skills', skill.name);
+    const stableLink = path.join(stableRoot, skill.name);
     replaceDirectorySymlink(source, stableLink);
     return { name: skill.name, source, stableLink };
   });
+
+  if (fs.existsSync(stableRoot)) {
+    for (const entry of fs.readdirSync(stableRoot, { withFileTypes: true })) {
+      if (currentNames.has(entry.name)) continue;
+      if (entry.isSymbolicLink()) fs.unlinkSync(path.join(stableRoot, entry.name));
+    }
+  }
+
+  return links;
 }
 
 function destinationFor(name: string, provider: SkillProvider | undefined, scope: SkillScope, options: WebcmdSkillOptions): string {

@@ -451,6 +451,33 @@ describe('webcmd skills content', () => {
     expect(() => updateWebcmdSkill({ packageRoot, homeDir })).toThrow(ArgumentError);
   });
 
+  it('prunes stale stable-root skill symlinks', () => {
+    const packageRoot = makePackageRoot();
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-home-'));
+    const staleLink = path.join(homeDir, '.webcmd', 'skills', 'some-retired-skill');
+    fs.mkdirSync(path.dirname(staleLink), { recursive: true });
+    fs.symlinkSync('/tmp', staleLink, 'dir');
+
+    const added = addWebcmdSkills({ packageRoot, homeDir });
+
+    expect(() => fs.lstatSync(staleLink)).toThrow();
+    expect(added.skills.map((skill) => skill.name)).toEqual(['webcmd-browser']);
+    expect(fs.lstatSync(added.skills[0].stableLink).isSymbolicLink()).toBe(true);
+    expect(real(added.skills[0].stableLink)).toBe(real(added.skills[0].source));
+  });
+
+  it('leaves non-symlink stable-root entries untouched', () => {
+    const packageRoot = makePackageRoot();
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-home-'));
+    const leftover = path.join(homeDir, '.webcmd', 'skills', 'user-owned-skill');
+    fs.mkdirSync(leftover, { recursive: true });
+    fs.writeFileSync(path.join(leftover, 'keep.txt'), 'keep');
+
+    expect(() => addWebcmdSkills({ packageRoot, homeDir })).not.toThrow();
+    expect(fs.statSync(leftover).isDirectory()).toBe(true);
+    expect(fs.readFileSync(path.join(leftover, 'keep.txt'), 'utf8')).toBe('keep');
+  });
+
   it('removes bundled skill links from one provider and scope at a time', () => {
     const packageRoot = makePackageRoot();
     const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-home-'));
