@@ -451,25 +451,55 @@ describe('webcmd skills content', () => {
     expect(() => updateWebcmdSkill({ packageRoot, homeDir })).toThrow(ArgumentError);
   });
 
-  it('removes bundled skill links from every supported location', () => {
+  it('removes bundled skill links from one provider and scope at a time', () => {
     const packageRoot = makePackageRoot();
     const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-home-'));
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-project-'));
     const customPath = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-custom-skills-'));
+    const destinations = {
+      agentsUser: path.join(homeDir, '.agents', 'skills', 'webcmd-browser'),
+      agentsProject: path.join(cwd, '.agents', 'skills', 'webcmd-browser'),
+      codexUser: path.join(homeDir, '.codex', 'skills', 'webcmd-browser'),
+      custom: path.join(customPath, 'webcmd-browser'),
+      stable: path.join(homeDir, '.webcmd', 'skills', 'webcmd-browser'),
+    };
 
-    for (const provider of ['agents', 'codex', 'claude']) {
-      addWebcmdSkills({ packageRoot, homeDir, cwd, provider, scope: 'user' });
-      addWebcmdSkills({ packageRoot, homeDir, cwd, provider, scope: 'project' });
-    }
+    addWebcmdSkills({ packageRoot, homeDir, cwd, provider: 'agents', scope: 'user' });
+    addWebcmdSkills({ packageRoot, homeDir, cwd, provider: 'agents', scope: 'project' });
+    addWebcmdSkills({ packageRoot, homeDir, cwd, provider: 'codex', scope: 'user' });
     addWebcmdSkills({ packageRoot, homeDir, cwd, customPath });
 
-    const result = removeWebcmdSkills({ packageRoot, homeDir, cwd, customPath });
+    const removedUser = removeWebcmdSkills({ packageRoot, homeDir, cwd, provider: 'agents', scope: 'user' });
+    expect(removedUser).toMatchObject({ provider: 'agents', scope: 'user' });
+    expect(removedUser.removed).toEqual([destinations.agentsUser]);
+    expect(() => fs.lstatSync(destinations.agentsUser)).toThrow();
+    expect(fs.lstatSync(destinations.agentsProject).isSymbolicLink()).toBe(true);
+    expect(fs.lstatSync(destinations.codexUser).isSymbolicLink()).toBe(true);
+    expect(fs.lstatSync(destinations.custom).isSymbolicLink()).toBe(true);
+    expect(fs.lstatSync(destinations.stable).isSymbolicLink()).toBe(true);
 
-    expect(result.removed).toHaveLength(8);
-    for (const linkPath of result.removed) {
-      expect(() => fs.lstatSync(linkPath)).toThrow();
-    }
-    expect(removeWebcmdSkills({ packageRoot, homeDir, cwd, customPath })).toEqual({ removed: [] });
+    const removedProject = removeWebcmdSkills({ packageRoot, homeDir, cwd, provider: 'agents', scope: 'project' });
+    expect(removedProject).toEqual({
+      provider: 'agents',
+      scope: 'project',
+      removed: [destinations.agentsProject],
+    });
+    expect(fs.lstatSync(destinations.codexUser).isSymbolicLink()).toBe(true);
+    expect(fs.lstatSync(destinations.custom).isSymbolicLink()).toBe(true);
+    expect(fs.lstatSync(destinations.stable).isSymbolicLink()).toBe(true);
+
+    const removedCustom = removeWebcmdSkills({ packageRoot, homeDir, cwd, customPath });
+    expect(removedCustom.provider).toBeUndefined();
+    expect(removedCustom.scope).toBe('user');
+    expect(removedCustom.removed).toEqual([destinations.custom]);
+    expect(fs.lstatSync(destinations.codexUser).isSymbolicLink()).toBe(true);
+    expect(fs.lstatSync(destinations.stable).isSymbolicLink()).toBe(true);
+
+    expect(removeWebcmdSkills({ packageRoot, homeDir, cwd, provider: 'agents', scope: 'user' })).toEqual({
+      provider: 'agents',
+      scope: 'user',
+      removed: [],
+    });
   });
 
   it('refuses removal before deleting any links when a destination is not a symlink', () => {
@@ -480,7 +510,7 @@ describe('webcmd skills content', () => {
     const blocker = path.join(cwd, '.codex', 'skills', 'webcmd-browser');
     fs.mkdirSync(blocker, { recursive: true });
 
-    expect(() => removeWebcmdSkills({ packageRoot, homeDir, cwd })).toThrow(ArgumentError);
+    expect(() => removeWebcmdSkills({ packageRoot, homeDir, cwd, provider: 'codex', scope: 'project' })).toThrow(ArgumentError);
     expect(fs.lstatSync(added.skills[0].destination!).isSymbolicLink()).toBe(true);
     expect(fs.lstatSync(blocker).isDirectory()).toBe(true);
   });

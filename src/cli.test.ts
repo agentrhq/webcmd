@@ -2080,6 +2080,38 @@ describe('structured output for data-returning built-ins', () => {
     expect(JSON.parse(stdout())).toEqual(bare);
   });
 
+  it('removes skills for --provider and --scope without prompting', async () => {
+    const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-skills-project-'));
+    const previousCwd = process.cwd();
+    process.chdir(projectDir);
+    try {
+      await createProgram('', '').parseAsync(['node', 'webcmd', 'skills', 'add', '--provider', 'codex', '--scope', 'project', '--json']);
+      const added = JSON.parse(stdout()) as { skills: Array<{ destination: string }> };
+      consoleLogSpy.mockClear();
+
+      await createProgram('', '').parseAsync(['node', 'webcmd', 'skills', 'remove', '--provider', 'codex', '--scope', 'project', '--json']);
+      const removed = JSON.parse(stdout());
+
+      expect(removed).toMatchObject({ provider: 'codex', scope: 'project' });
+      expect(removed.removed).toEqual(added.skills.map((skill) => skill.destination));
+      for (const linkPath of removed.removed) {
+        expect(() => fs.lstatSync(linkPath)).toThrow();
+      }
+    } finally {
+      process.chdir(previousCwd);
+      fs.rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects skills remove --provider custom without --path as a JSON error', async () => {
+    const stderr = await captureStderr(async () => {
+      await createProgram('', '').parseAsync(['node', 'webcmd', 'skills', 'remove', '--provider', 'custom', '--json']);
+    });
+
+    expect(process.exitCode).toBe(EXIT_CODES.USAGE_ERROR);
+    expect(stderr).toContain('Custom skill provider requires --path.');
+  });
+
   it('renders daemon status as JSON', async () => {
     vi.mocked(fetch).mockResolvedValue(daemonStatusResponse());
 
