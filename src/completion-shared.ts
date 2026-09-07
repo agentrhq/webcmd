@@ -26,6 +26,8 @@ export const BUILTIN_COMMANDS = [
 ];
 
 export const LOCAL_ONLY_COMMAND_HELP = 'Run `webcmd setup` and choose local mode to use local-only commands.';
+/** Mirror of {@link LOCAL_ONLY_COMMAND_HELP} for a hosted command reached from local mode. */
+export const HOSTED_ONLY_COMMAND_HELP = 'Run `webcmd setup` and choose hosted mode to use hosted-only commands.';
 
 const HOSTED_CLIENT_ROOT_COMMANDS: readonly RootHelpCommand[] = [
   { name: 'adapter', description: 'Manage hosted adapter sources and overrides' },
