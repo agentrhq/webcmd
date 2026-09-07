@@ -9,11 +9,14 @@
  * marker the filesystem can see: `open(..., 'wx')` creates the lock file only
  * when it does not already exist, atomically, on every platform we support.
  *
- * Abandoned locks never wedge site memory. A lock whose owner process is gone
- * is broken on the next attempt, and any lock older than `staleMs` is broken
- * regardless — the critical section itself is a small read plus a rename, which
- * takes milliseconds. `timeoutMs` is deliberately longer than `staleMs` so an
- * abandoned lock is always broken rather than surfaced to the user as an error.
+ * Abandoned locks never wedge site memory. A lock whose owner process is
+ * confirmed gone is broken on the next attempt. A lock older than `staleMs`
+ * is broken too, but only when we cannot confirm the owner is still alive on
+ * this host — a same-host owner that `process.kill(pid, 0)` finds alive is
+ * still working, no matter how long its critical section has run, and is
+ * never stolen on staleness alone. `timeoutMs` is deliberately longer than
+ * `staleMs` so a genuinely abandoned lock is broken rather than surfaced to
+ * the user as an error.
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
@@ -116,8 +119,13 @@ async function breakIfAbandoned(lockPath: string, staleMs: number): Promise<bool
   const before = await statOrUndefined(lockPath);
   if (!before) return true;
   const owner = await readOwner(lockPath);
+  const checkable = owner.host === hostname() && isActionablePid(owner.pid);
+  const ownerAlive = checkable && isPidAlive(owner.pid);
+  // A same-host owner we can confirm is still alive is still working, no matter
+  // how long its critical section has run — staleness alone never steals its lock.
+  if (ownerAlive) return false;
+  const ownerGone = checkable && !ownerAlive;
   const expired = Date.now() - before.mtimeMs > staleMs;
-  const ownerGone = owner.host === hostname() && isActionablePid(owner.pid) && !isPidAlive(owner.pid);
   if (!expired && !ownerGone) return false;
 
   const after = await statOrUndefined(lockPath);
