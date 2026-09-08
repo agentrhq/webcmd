@@ -8,6 +8,7 @@ import { restorePatchedElementHandles } from './elementhandle.js';
 
 const humanizedPages = new WeakSet<Page>();
 const pageSnapshots = new WeakMap<Page, {
+  abortController: AbortController;
   page: Map<PropertyKey, PropertyDescriptor | undefined>;
   mouse: Map<PropertyKey, PropertyDescriptor | undefined>;
   keyboard: Map<PropertyKey, PropertyDescriptor | undefined>;
@@ -44,7 +45,9 @@ function currentFrames(page: Page): object[] {
 export function humanizePage(page: Page, config?: Partial<HumanConfig>): Page {
   if (humanizedPages.has(page)) return page;
   disposalPromises.delete(page);
+  const abortController = new AbortController();
   pageSnapshots.set(page, {
+    abortController,
     page: new Map(PAGE_KEYS.map(key => [key, Object.getOwnPropertyDescriptor(page, key)])),
     mouse: new Map(MOUSE_KEYS.map(key => [key, Object.getOwnPropertyDescriptor(page.mouse, key)])),
     keyboard: new Map(KEYBOARD_KEYS.map(key => [key, Object.getOwnPropertyDescriptor(page.keyboard, key)])),
@@ -53,7 +56,7 @@ export function humanizePage(page: Page, config?: Partial<HumanConfig>): Page {
       descriptors: new Map(FRAME_KEYS.map(key => [key, Object.getOwnPropertyDescriptor(frame, key)])),
     })),
   });
-  patchPage(page, resolveConfig('default', config), createCursorState());
+  patchPage(page, resolveConfig('default', config), createCursorState(), abortController.signal);
   humanizedPages.add(page);
   return page;
 }
@@ -86,6 +89,7 @@ export function disposeHumanizedPage(page: Page): Promise<void> {
   const existing = disposalPromises.get(page);
   if (existing) return existing;
   const dispose = (async () => {
+    pageSnapshots.get(page)?.abortController.abort();
     const stealth = (page as unknown as { _stealth?: { dispose?: () => Promise<void> } })._stealth;
     await stealth?.dispose?.();
     restoreHumanizedPage(page);

@@ -338,6 +338,27 @@ describe('humanizePage', () => {
     expect(owned.page.keyboard.up.mock.calls.map(([key]) => key)).toEqual(['a', 'b', 'c']);
   });
 
+  it('cancels in-flight keyboard typing when the Page is disposed', async () => {
+    const owned = fakePage();
+    humanizePage(owned.page as any, {
+      ...FAST_HUMAN_CONFIG,
+      typing_delay: 10_000,
+      typing_delay_spread: 0,
+    });
+
+    const type = owned.page.keyboard.type('hello');
+    await vi.waitFor(() => expect(owned.page.keyboard.down).toHaveBeenCalledOnce());
+    await disposeHumanizedPage(owned.page as any);
+
+    await expect(Promise.race([
+      type.then(() => 'settled', () => 'settled'),
+      new Promise(resolve => setTimeout(() => resolve('timed out'), 50)),
+    ])).resolves.toBe('settled');
+    expect(owned.page.keyboard.down).toHaveBeenCalledOnce();
+    expect(owned.page.keyboard.up).toHaveBeenCalledOnce();
+    expect(owned.cdp.send).not.toHaveBeenCalledWith('Input.dispatchKeyEvent', expect.anything());
+  });
+
   it('suppresses mistypes when Page type extracts a password target through CDP', async () => {
     mockRandom([0]);
     const selector = 'input[data-label="a\\b"]';

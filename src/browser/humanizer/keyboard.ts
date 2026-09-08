@@ -111,6 +111,7 @@ export async function humanType(
   cdpSession?: CDPSession | null,
   target?: HumanTypeTarget,
   random: () => number = Math.random,
+  signal?: AbortSignal,
 ): Promise<void> {
   const chars = [...text]; // Handle emoji surrogate pairs correctly
 
@@ -119,10 +120,10 @@ export async function humanType(
 
     // Non-ASCII characters (Cyrillic, CJK, emoji) — use insertText
     if (!isAscii(ch)) {
-      await sleep(randRange(cfg.key_hold));
+      await sleep(randRange(cfg.key_hold), signal);
       await raw.insertText(ch);
       if (i < chars.length - 1) {
-        await interCharDelay(cfg, random);
+        await interCharDelay(cfg, random, signal);
       }
       continue;
     }
@@ -132,41 +133,41 @@ export async function humanType(
       && random() < cfg.mistype_chance
       && /^[a-zA-Z0-9]$/.test(ch)) {
       const wrong = getNearbyKey(ch, random);
-      await typeNormalChar(raw, wrong, cfg);
-      await sleep(randRange(cfg.mistype_delay_notice));
+      await typeNormalChar(raw, wrong, cfg, signal);
+      await sleep(randRange(cfg.mistype_delay_notice), signal);
       await raw.down('Backspace');
-      await sleep(randRange(cfg.key_hold));
+      await sleep(randRange(cfg.key_hold), signal);
       await raw.up('Backspace');
-      await sleep(randRange(cfg.mistype_delay_correct));
+      await sleep(randRange(cfg.mistype_delay_correct), signal);
     }
 
     if (isUpperCase(ch)) {
-      await typeShiftedChar(raw, ch, cfg);
+      await typeShiftedChar(raw, ch, cfg, signal);
     } else if (SHIFT_SYMBOLS.has(ch)) {
-      await typeShiftSymbol(page, raw, ch, cfg, cdpSession);
+      await typeShiftSymbol(page, raw, ch, cfg, cdpSession, signal);
     } else {
-      await typeNormalChar(raw, ch, cfg);
+      await typeNormalChar(raw, ch, cfg, signal);
     }
 
     if (i < chars.length - 1) {
-      await interCharDelay(cfg, random);
+      await interCharDelay(cfg, random, signal);
     }
   }
 }
 
-async function typeNormalChar(raw: RawKeyboard, ch: string, cfg: HumanConfig): Promise<void> {
+async function typeNormalChar(raw: RawKeyboard, ch: string, cfg: HumanConfig, signal?: AbortSignal): Promise<void> {
   await raw.down(ch);
-  await sleep(randRange(cfg.key_hold));
+  await sleep(randRange(cfg.key_hold), signal);
   await raw.up(ch);
 }
 
-async function typeShiftedChar(raw: RawKeyboard, ch: string, cfg: HumanConfig): Promise<void> {
+async function typeShiftedChar(raw: RawKeyboard, ch: string, cfg: HumanConfig, signal?: AbortSignal): Promise<void> {
   await raw.down('Shift');
-  await sleep(randRange(cfg.shift_down_delay));
+  await sleep(randRange(cfg.shift_down_delay), signal);
   await raw.down(ch);
-  await sleep(randRange(cfg.key_hold));
+  await sleep(randRange(cfg.key_hold), signal);
   await raw.up(ch);
-  await sleep(randRange(cfg.shift_up_delay));
+  await sleep(randRange(cfg.shift_up_delay), signal);
   await raw.up('Shift');
 }
 
@@ -186,6 +187,7 @@ async function typeShiftSymbol(
   ch: string,
   cfg: HumanConfig,
   cdpSession?: CDPSession | null,
+  signal?: AbortSignal,
 ): Promise<void> {
   if (cdpSession) {
     // --- Stealth path: CDP Input.dispatchKeyEvent ---
@@ -193,7 +195,7 @@ async function typeShiftSymbol(
     const keyCode = SHIFT_SYMBOL_KEYCODES[ch] || 0;
 
     await raw.down('Shift');
-    await sleep(randRange(cfg.shift_down_delay));
+    await sleep(randRange(cfg.shift_down_delay), signal);
 
     await cdpSession.send('Input.dispatchKeyEvent', {
       type: 'keyDown',
@@ -204,7 +206,7 @@ async function typeShiftSymbol(
       text: ch,
       unmodifiedText: ch,
     });
-    await sleep(randRange(cfg.key_hold));
+    await sleep(randRange(cfg.key_hold), signal);
 
     await cdpSession.send('Input.dispatchKeyEvent', {
       type: 'keyUp',
@@ -214,12 +216,12 @@ async function typeShiftSymbol(
       windowsVirtualKeyCode: keyCode,
     });
 
-    await sleep(randRange(cfg.shift_up_delay));
+    await sleep(randRange(cfg.shift_up_delay), signal);
     await raw.up('Shift');
   } else {
     // --- Fallback path: page.evaluate (detectable) ---
     await raw.down('Shift');
-    await sleep(randRange(cfg.shift_down_delay));
+    await sleep(randRange(cfg.shift_down_delay), signal);
     await raw.insertText(ch);
     await page.evaluate((key: string) => {
       const el = document.activeElement;
@@ -228,16 +230,16 @@ async function typeShiftSymbol(
         el.dispatchEvent(new KeyboardEvent('keyup', { key, bubbles: true }));
       }
     }, ch);
-    await sleep(randRange(cfg.shift_up_delay));
+    await sleep(randRange(cfg.shift_up_delay), signal);
     await raw.up('Shift');
   }
 }
 
-async function interCharDelay(cfg: HumanConfig, random: () => number): Promise<void> {
+async function interCharDelay(cfg: HumanConfig, random: () => number, signal?: AbortSignal): Promise<void> {
   if (random() < cfg.typing_pause_chance) {
-    await sleep(randRange(cfg.typing_pause_range));
+    await sleep(randRange(cfg.typing_pause_range), signal);
   } else {
     const delay = cfg.typing_delay + (random() - 0.5) * 2 * cfg.typing_delay_spread;
-    await sleep(Math.max(10, delay));
+    await sleep(Math.max(10, delay), signal);
   }
 }
