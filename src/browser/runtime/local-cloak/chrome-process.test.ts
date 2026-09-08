@@ -22,4 +22,26 @@ describe('matchChromeProcessCommand', () => {
       identity,
     )).toBe(false);
   });
+
+  it('requires an exact --profile-directory match when the identity specifies one', () => {
+    const command = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --user-data-dir=/Users/test/Chrome --profile-directory=webcmd-work --no-startup-window';
+    expect(matchChromeProcessCommand(command, {
+      executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      userDataDir: '/Users/test/Chrome',
+      profileDirectory: 'webcmd-work',
+    })).toBe(true);
+    expect(matchChromeProcessCommand(command, {
+      executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      userDataDir: '/Users/test/Chrome',
+      profileDirectory: 'someone-else',
+    })).toBe(false);
+  });
+
+  it('does not require --profile-directory when the identity omits it', () => {
+    const command = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --user-data-dir=/Users/test/Chrome';
+    expect(matchChromeProcessCommand(command, {
+      executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      userDataDir: '/Users/test/Chrome',
+    })).toBe(true);
+  });
 });

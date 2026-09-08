@@ -9,6 +9,7 @@ export interface ChromeProcessIdentity {
   executablePath: string;
   userDataDir: string;
   port?: number;
+  profileDirectory?: string;
 }
 
 function commandStartsWithExecutable(command: string, executablePath: string): boolean {
@@ -20,6 +21,8 @@ function commandStartsWithExecutable(command: string, executablePath: string): b
 export function matchChromeProcessCommand(command: string, identity: ChromeProcessIdentity): boolean {
   if (!commandStartsWithExecutable(command.trim(), identity.executablePath)) return false;
   if (extractArgumentValue(command, '--user-data-dir') !== identity.userDataDir) return false;
+  if (identity.profileDirectory !== undefined
+    && extractArgumentValue(command, '--profile-directory') !== identity.profileDirectory) return false;
   return identity.port === undefined
     || extractArgumentValue(command, '--remote-debugging-port') === String(identity.port);
 }
