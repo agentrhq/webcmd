@@ -359,6 +359,25 @@ describe('humanizePage', () => {
     expect(owned.cdp.send).not.toHaveBeenCalledWith('Input.dispatchKeyEvent', expect.anything());
   });
 
+  it('does not fall back to Frame check when disposal aborts the human click', async () => {
+    const childFrame = fakeFrame();
+    const mainFrame = fakeFrame();
+    mainFrame.childFrames.mockReturnValue([childFrame]);
+    const owned = fakePage({ mainFrame });
+    const rawFrameCheck = childFrame.check;
+
+    humanizePage(owned.page as any, {
+      ...FAST_HUMAN_CONFIG,
+      click_aim_delay_button: [10_000, 10_000],
+    });
+    const check = childFrame.check('#checkbox');
+    await new Promise(resolve => setTimeout(resolve, 20));
+    await disposeHumanizedPage(owned.page as any);
+
+    await expect(check).rejects.toThrow(/abort/i);
+    expect(rawFrameCheck).not.toHaveBeenCalled();
+  });
+
   it('suppresses mistypes when Page type extracts a password target through CDP', async () => {
     mockRandom([0]);
     const selector = 'input[data-label="a\\b"]';
@@ -444,9 +463,27 @@ describe('humanizePage', () => {
     const patchedHandle = await owned.page.$('#password');
     await patchedHandle.fill('a', { force: true });
 
-    expect(handle.evaluate).toHaveBeenCalledTimes(2);
-    expect(passwordInput.getAttribute).toHaveBeenCalledWith('type');
-    expect(passwordInput.getAttribute).toHaveBeenCalledWith('autocomplete');
+    expect(handle.evaluate).toHaveBeenCalledOnce();
+    expect(owned.page.keyboard.down).toHaveBeenCalledWith('a');
+    expect(owned.page.keyboard.down).not.toHaveBeenCalledWith('Backspace');
+  });
+
+  it('does not evaluate the ElementHandle target in the main world when CDP is available', async () => {
+    mockRandom([0]);
+    const textInput = {
+      tagName: 'INPUT',
+      getAttribute: vi.fn((name: string) => name === 'type' ? 'text' : null),
+      isContentEditable: false,
+    };
+    const handle = fakeElement(undefined, textInput);
+    const owned = fakePage();
+    owned.page.$.mockResolvedValue(handle);
+
+    humanizePage(owned.page as any, { ...FAST_HUMAN_CONFIG, mistype_chance: 1 });
+    const patchedHandle = await owned.page.$('#name');
+    await patchedHandle.fill('a', { force: true });
+
+    expect(handle.evaluate).toHaveBeenCalledTimes(1);
     expect(owned.page.keyboard.down).toHaveBeenCalledWith('a');
     expect(owned.page.keyboard.down).not.toHaveBeenCalledWith('Backspace');
   });
@@ -466,7 +503,7 @@ describe('humanizePage', () => {
     const patchedHandle = await owned.page.$('#name');
     await patchedHandle.fill('a', { force: true, sensitive: true });
 
-    expect(handle.evaluate).toHaveBeenLastCalledWith(expect.any(Function), true);
+    expect(handle.evaluate).toHaveBeenCalledOnce();
     expect(owned.page.keyboard.down).toHaveBeenCalledWith('a');
     expect(owned.page.keyboard.down).not.toHaveBeenCalledWith('Backspace');
   });

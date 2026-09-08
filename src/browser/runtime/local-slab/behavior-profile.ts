@@ -1,4 +1,4 @@
-import { chmod, mkdir, open, readFile, rename, unlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { DEFAULT_CONFIG, type HumanConfig } from '../../humanizer/config.js';
 import { resolveSlabProfileDir } from './profiles.js';
@@ -69,6 +69,7 @@ const TRAIT_BOUNDS: Record<NumericTrait, Bounds> = {
 
 const LOCK_RETRY_MS = 50;
 const LOCK_TIMEOUT_MS = 5_000;
+const STALE_LOCK_MS = 60_000;
 
 export async function loadOrCreateBehaviorProfile(
   profileId: string,
@@ -100,7 +101,7 @@ export async function loadOrCreateBehaviorProfile(
     const waited = await tryLoad(behaviorPath);
     if (waited.kind === 'valid') return waited.document;
     if (waited.kind === 'future') throw futureVersionError();
-    throw new Error(`Timed out waiting to initialize behavior profile "${profileId}"`);
+    throw new Error(`Timed out waiting for lock "${lockPath}" to initialize behavior profile "${profileId}"`);
   }
 
   try {
@@ -169,6 +170,15 @@ async function acquireLock(lockPath: string, behaviorPath: string): Promise<bool
       return true;
     } catch (error: unknown) {
       if (!isCode(error, 'EEXIST')) throw error;
+      try {
+        const lock = await stat(lockPath);
+        if (Date.now() - lock.mtimeMs > STALE_LOCK_MS) {
+          await unlink(lockPath);
+          continue;
+        }
+      } catch (staleError: unknown) {
+        if (!isCode(staleError, 'ENOENT')) throw staleError;
+      }
       if (Date.now() >= deadline) return false;
       await delay(LOCK_RETRY_MS);
       const existing = await tryLoad(behaviorPath);

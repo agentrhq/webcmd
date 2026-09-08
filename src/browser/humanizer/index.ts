@@ -898,14 +898,20 @@ function patchSingleFrame(
     const locator = firstFrameLocator(frame, selector);
     if (typeof locator.isChecked !== 'function') return origFrameCheck(selector, options);
     const checked = await locator.isChecked();
-    if (!checked) await frameClick(selector, options).catch(() => origFrameCheck(selector, options));
+    if (!checked) await frameClick(selector, options).catch(error => {
+      if (signal?.aborted) throw error;
+      return origFrameCheck(selector, options);
+    });
   };
 
   (frame as any).uncheck = async (selector: string, options?: HumanActionOptions) => {
     const locator = firstFrameLocator(frame, selector);
     if (typeof locator.isChecked !== 'function') return origFrameUncheck(selector, options);
     const checked = await locator.isChecked();
-    if (checked) await frameClick(selector, options).catch(() => origFrameUncheck(selector, options));
+    if (checked) await frameClick(selector, options).catch(error => {
+      if (signal?.aborted) throw error;
+      return origFrameUncheck(selector, options);
+    });
   };
 
   (frame as any).selectOption = async (selector: string, values: any, options?: HumanActionOptions) => {
@@ -938,7 +944,10 @@ function patchSingleFrame(
   };
 
   (frame as any).tap = async (selector: string, options?: HumanActionOptions) => {
-    await frameClick(selector, options).catch(() => origFrameTap?.(selector, options));
+    await frameClick(selector, options).catch(error => {
+      if (signal?.aborted) throw error;
+      return origFrameTap?.(selector, options);
+    });
   };
 
   (frame as any).clear = async (selector: string, options?: HumanActionOptions) => {

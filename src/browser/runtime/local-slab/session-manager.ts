@@ -1490,6 +1490,7 @@ export class SlabSessionManager {
     if (runtime.behavior) return runtime.behavior;
     try {
       runtime.behavior = await loadOrCreateBehaviorProfile(runtime.profileId, { baseDir: this.opts.baseDir });
+      if (runtime.behavior.warning) log.warn(runtime.behavior.warning);
       return runtime.behavior;
     } catch (error) {
       throw new Error(

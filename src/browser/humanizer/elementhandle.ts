@@ -49,6 +49,10 @@ export function restorePatchedElementHandles(page: Page): void {
 // --- Platform-aware select-all shortcut ---
 const SELECT_ALL = process.platform === 'darwin' ? 'Meta+a' : 'Control+a';
 
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw signal.reason ?? new Error('Humanizer has been disposed.');
+}
+
 
 // ============================================================================
 // Stealth ElementHandle input check — uses CDP DOM.describeNode
@@ -85,9 +89,31 @@ async function isInputElementHandle(
 }
 
 async function elementHumanTypeTarget(
+  cdp: CDPSession | null,
   el: ElementHandle,
   sensitive?: boolean,
 ): Promise<HumanTypeTarget | undefined> {
+  if (cdp) {
+    const objectId = (el as any)._objectId ?? (el as any)._impl?._objectId;
+    if (!objectId) return undefined;
+    try {
+      const result = await cdp.send('DOM.describeNode', { objectId, depth: 0 });
+      const node = (result as any).node;
+      const attributes = new Map<string, string>();
+      for (let index = 0; index < (node?.attributes?.length ?? 0); index += 2) {
+        attributes.set(node.attributes[index], node.attributes[index + 1]);
+      }
+      return {
+        tag: node?.nodeName?.toLowerCase(),
+        type: attributes.get('type') ?? null,
+        autocomplete: attributes.get('autocomplete') ?? null,
+        contentEditable: attributes.get('contenteditable') === 'true',
+        sensitive: Boolean(sensitive),
+      };
+    } catch {
+      return undefined;
+    }
+  }
   return el.evaluate((node: Element, sensitive: boolean) => ({
     tag: node.tagName.toLowerCase(),
     type: node.getAttribute('type'),
@@ -200,7 +226,10 @@ export function patchSingleElementHandle(
       );
       cursor.x = cursorX;
       cursor.y = cursorY;
-    } catch { /* let boundingBox() decide */ }
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      // Let boundingBox() decide whether to proceed or fall back.
+    }
 
     const box = await el.boundingBox();
     if (!box) return null;
@@ -236,7 +265,10 @@ export function patchSingleElementHandle(
     const remainingMs = () => Math.max(0, deadline - Date.now());
     if (!force) await ensureActionableHandle(el, CHECKS_CLICK, remainingMs(), force);
     const info = await moveToElement(callCfg);
-    if (!info) return origElClick(options);
+    if (!info) {
+      throwIfAborted(signal);
+      return origElClick(options);
+    }
     if (!force) await checkPointerEventsHandle(el, cursor.x, cursor.y, Math.min(remainingMs(), 5000));
     await humanClick(raw, info.isInp, callCfg, signal);
   };
@@ -258,7 +290,10 @@ export function patchSingleElementHandle(
     const remainingMs = () => Math.max(0, deadline - Date.now());
     if (!force) await ensureActionableHandle(el, CHECKS_CLICK, remainingMs(), force);
     const info = await moveToElement(callCfg);
-    if (!info) return origElDblclick(options);
+    if (!info) {
+      throwIfAborted(signal);
+      return origElDblclick(options);
+    }
     if (!force) await checkPointerEventsHandle(el, cursor.x, cursor.y, Math.min(remainingMs(), 5000));
     await raw.down({ clickCount: 2 });
     await sleep(rand(30, 60), signal);
@@ -279,7 +314,10 @@ export function patchSingleElementHandle(
     const remainingMs = () => Math.max(0, deadline - Date.now());
     if (!force) await ensureActionableHandle(el, CHECKS_HOVER, remainingMs(), force);
     const info = await moveToElement(callCfg);
-    if (!info) return origElHover(options);
+    if (!info) {
+      throwIfAborted(signal);
+      return origElHover(options);
+    }
   };
 
   // --- el.type() ---
@@ -294,13 +332,16 @@ export function patchSingleElementHandle(
     const remainingMs = () => Math.max(0, deadline - Date.now());
     if (!force) await ensureActionableHandle(el, CHECKS_INPUT, remainingMs(), force);
     const info = await moveToElement(callCfg);
-    if (!info) return origElType(text, options);
+    if (!info) {
+      throwIfAborted(signal);
+      return origElType(text, options);
+    }
     if (!force) await checkPointerEventsHandle(el, cursor.x, cursor.y, Math.min(remainingMs(), 5000));
     await humanClick(raw, info.isInp, callCfg, signal);
     await sleep(rand(100, 250), signal);
     let cdpSession: CDPSession | null = null;
     try { cdpSession = await stealth?.getCdpSession(); } catch {}
-    const target = await elementHumanTypeTarget(el, options?.sensitive);
+    const target = await elementHumanTypeTarget(cdpSession, el, options?.sensitive);
     await humanType(page, rawKb, text, callCfg, cdpSession, target, undefined, signal);
   };
 
@@ -316,7 +357,10 @@ export function patchSingleElementHandle(
     const remainingMs = () => Math.max(0, deadline - Date.now());
     if (!force) await ensureActionableHandle(el, CHECKS_INPUT, remainingMs(), force);
     const info = await moveToElement(callCfg);
-    if (!info) return origElFill(value, options);
+    if (!info) {
+      throwIfAborted(signal);
+      return origElFill(value, options);
+    }
     if (!force) await checkPointerEventsHandle(el, cursor.x, cursor.y, Math.min(remainingMs(), 5000));
     await humanClick(raw, info.isInp, callCfg, signal);
     await sleep(rand(100, 250), signal);
@@ -326,7 +370,7 @@ export function patchSingleElementHandle(
     await sleep(rand(50, 150), signal);
     let cdpSession: CDPSession | null = null;
     try { cdpSession = await stealth?.getCdpSession(); } catch {}
-    const target = await elementHumanTypeTarget(el, options?.sensitive);
+    const target = await elementHumanTypeTarget(cdpSession, el, options?.sensitive);
     await humanType(page, rawKb, value, callCfg, cdpSession, target, undefined, signal);
   };
 
@@ -350,7 +394,10 @@ export function patchSingleElementHandle(
     const remainingMs = () => Math.max(0, deadline - Date.now());
     if (!force) await ensureActionableHandle(el, CHECKS_FOCUS, remainingMs(), force);
     const info = await moveToElement();
-    if (!info) return origElSelectOption(values, options);
+    if (!info) {
+      throwIfAborted(signal);
+      return origElSelectOption(values, options);
+    }
     await humanClick(raw, false, cfg, signal);
     await sleep(rand(100, 300), signal);
     return origElSelectOption(values, options);
@@ -374,7 +421,10 @@ export function patchSingleElementHandle(
       if (checked) return;
     } catch {}
     const info = await moveToElement();
-    if (!info) return origElCheck(options);
+    if (!info) {
+      throwIfAborted(signal);
+      return origElCheck(options);
+    }
     if (!force) await checkPointerEventsHandle(el, cursor.x, cursor.y, Math.min(remainingMs(), 5000));
     await humanClick(raw, info.isInp, cfg, signal);
   };
@@ -397,7 +447,10 @@ export function patchSingleElementHandle(
       if (!checked) return;
     } catch {}
     const info = await moveToElement();
-    if (!info) return origElUncheck(options);
+    if (!info) {
+      throwIfAborted(signal);
+      return origElUncheck(options);
+    }
     if (!force) await checkPointerEventsHandle(el, cursor.x, cursor.y, Math.min(remainingMs(), 5000));
     await humanClick(raw, info.isInp, cfg, signal);
   };
@@ -421,7 +474,10 @@ export function patchSingleElementHandle(
         if (current === checked) return;
       } catch {}
       const info = await moveToElement();
-      if (!info) return origElSetChecked(checked, options);
+      if (!info) {
+        throwIfAborted(signal);
+        return origElSetChecked(checked, options);
+      }
       if (!force) await checkPointerEventsHandle(el, cursor.x, cursor.y, Math.min(remainingMs(), 5000));
       await humanClick(raw, info.isInp, cfg, signal);
     };
@@ -437,7 +493,10 @@ export function patchSingleElementHandle(
     trial?: boolean;
   }) => {
     const info = await moveToElement();
-    if (!info) return origElTap(options);
+    if (!info) {
+      throwIfAborted(signal);
+      return origElTap(options);
+    }
     await humanClick(raw, info.isInp, cfg, signal);
   };
 
@@ -468,7 +527,8 @@ export function patchSingleElementHandle(
         );
         cursor.x = cursorX;
         cursor.y = cursorY;
-      } catch {
+      } catch (error) {
+        if (signal?.aborted) throw error;
         return origElScrollIntoViewIfNeeded(options);
       }
     };

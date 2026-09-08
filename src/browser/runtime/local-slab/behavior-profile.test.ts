@@ -1,9 +1,10 @@
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   BEHAVIOR_FILENAME,
+  BEHAVIOR_LOCK,
   BEHAVIOR_SCHEMA_VERSION,
   loadOrCreateBehaviorProfile,
 } from './behavior-profile.js';
@@ -62,6 +63,31 @@ describe('SLAB behavior profiles', () => {
 
     expect(second.traits).toEqual(first.traits);
   });
+
+  it('recovers from an abandoned behavior lock older than one minute', async () => {
+    const baseDir = await createBaseDir();
+    const profileDir = resolveSlabProfileDir('default', { baseDir });
+    await mkdir(profileDir, { recursive: true });
+    const lockPath = path.join(profileDir, BEHAVIOR_LOCK);
+    await writeFile(lockPath, '');
+    const stale = new Date(Date.now() - 61_000);
+    await utimes(lockPath, stale, stale);
+
+    await expect(loadOrCreateBehaviorProfile('default', { baseDir })).resolves.toMatchObject({
+      profileId: 'default',
+      schemaVersion: BEHAVIOR_SCHEMA_VERSION,
+    });
+  });
+
+  it('names the blocking lock file when initialization times out', async () => {
+    const baseDir = await createBaseDir();
+    const profileDir = resolveSlabProfileDir('default', { baseDir });
+    await mkdir(profileDir, { recursive: true });
+    await writeFile(path.join(profileDir, BEHAVIOR_LOCK), '');
+
+    await expect(loadOrCreateBehaviorProfile('default', { baseDir }))
+      .rejects.toThrow(/behavior\.lock/);
+  }, 10_000);
 
   it('retains existing trait values and samples only missing allowlisted fields', async () => {
     const baseDir = await createBaseDir();

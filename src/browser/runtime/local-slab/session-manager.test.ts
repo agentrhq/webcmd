@@ -5,6 +5,7 @@ import { dispatchSlabAction } from './actions.js';
 import { SlabSessionManager } from './session-manager.js';
 import { humanizePage } from '../../humanizer/page.js';
 import { loadOrCreateBehaviorProfile } from './behavior-profile.js';
+import { log } from '../../../logger.js';
 
 vi.mock('./behavior-profile.js', async (importOriginal) => ({
   ...await importOriginal<typeof import('./behavior-profile.js')>(),
@@ -260,6 +261,22 @@ describe('SlabSessionManager ownership', () => {
     expect(loadBehaviorProfile).toHaveBeenCalledWith('default', { baseDir: undefined });
     expect(humanize).toHaveBeenCalled();
     expect(humanize.mock.calls.every(([, config]) => config === behaviorTraits)).toBe(true);
+  });
+
+  it('warns when a corrupt behavior profile was regenerated', async () => {
+    const attached = fakeAttachedProfile();
+    const warn = vi.spyOn(log, 'warn').mockImplementation(() => undefined);
+    loadBehaviorProfile.mockResolvedValue({
+      ...behaviorDocument,
+      warning: 'Regenerated malformed behavior profile document.',
+    });
+    const manager = new SlabSessionManager({ attachProfile: vi.fn().mockResolvedValue(attached.attachment) });
+    const input = { profileId: 'default', session: 'agent', sessionId: 'agent', surface: 'browser' as const };
+
+    await manager.getPage(input);
+
+    expect(warn).toHaveBeenCalledWith('Regenerated malformed behavior profile document.');
+    warn.mockRestore();
   });
 
   it('does not load behavior while discovering pages', async () => {
