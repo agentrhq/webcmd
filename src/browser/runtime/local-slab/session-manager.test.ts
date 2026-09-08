@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { dispatchSlabAction } from './actions.js';
 import { SlabSessionManager } from './session-manager.js';
@@ -234,6 +236,13 @@ async function flushPageEvent(): Promise<void> {
 }
 
 describe('SlabSessionManager ownership', () => {
+  it('does not enable Playwright tracing or snapshots for agent sessions', () => {
+    const source = readFileSync(fileURLToPath(new URL('./session-manager.ts', import.meta.url)), 'utf8');
+
+    expect(source).not.toMatch(/\btracing\.start\b/);
+    expect(source).not.toMatch(/\bsnapshots\s*:\s*true\b/);
+  });
+
   it('loads one behavior profile for owned pages and passes its traits to humanize', async () => {
     const attached = fakeAttachedProfile();
     const humanize = vi.fn((page: any, _config?: any) => page);
