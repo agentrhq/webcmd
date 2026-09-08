@@ -80,7 +80,7 @@ export type HumanActionOptions = Partial<HumanConfig> & {
 // Default preset
 // ---------------------------------------------------------------------------
 
-const DEFAULT_CONFIG: HumanConfig = {
+export const DEFAULT_CONFIG: Readonly<HumanConfig> = {
   // Keyboard
   typing_delay: 70,
   typing_delay_spread: 40,
