@@ -18,6 +18,8 @@ import { isClosedContextError } from '../../run/types.js';
 import { configureCloakBrowserBinary } from '../../browser-binary.js';
 import { activateChromeContext, launchChromePersistentContext } from './chrome-launch.js';
 import { findExactChromeProcesses, terminateChromeProcessTree } from './chrome-process.js';
+import { chromeUserDataDir, exportCookiesToNativeChrome as defaultExportCookies, ensureNativeProfileDirectory as defaultEnsureNativeProfileDirectory } from '../../google-chrome.js';
+import { registerNativeChromeProfile as defaultRegisterNativeChromeProfile } from './chrome-profile-export.js';
 
 const UNRESOLVED = Symbol('unresolved');
 const TARGET_PAGE_MATCH_TIMEOUT_MS = 1_000;
@@ -170,6 +172,10 @@ export interface CloakSessionManagerOptions {
   recoverLockedProfile?: RecoverLockedProfile;
   platform?: NodeJS.Platform;
   hasActiveHandoff?: (profileId: string) => boolean;
+  syncToChrome?: boolean;
+  ensureNativeProfileDirectory?: typeof defaultEnsureNativeProfileDirectory;
+  exportCookiesToNativeChrome?: typeof defaultExportCookies;
+  registerNativeChromeProfile?: typeof defaultRegisterNativeChromeProfile;
 }
 
 let pageCounter = 0;
@@ -210,6 +216,10 @@ export class CloakSessionManager {
   private readonly platform: NodeJS.Platform;
   private readonly recoverLockedProfile: RecoverLockedProfile;
   private readonly hasActiveHandoff: (profileId: string) => boolean;
+  private readonly ensureNativeProfileDirectory: typeof defaultEnsureNativeProfileDirectory;
+  private readonly exportCookiesToNativeChrome: typeof defaultExportCookies;
+  private readonly registerNativeChromeProfile: typeof defaultRegisterNativeChromeProfile;
+  private readonly syncExportsInFlight = new Set<string>();
   private readonly profiles = new Map<string, ProfileRuntime>();
   private readonly profileLaunches = new Map<string, Promise<ProfileRuntime>>();
   private readonly profileLifecycleQueues = new Map<string, Promise<void>>();
@@ -239,6 +249,9 @@ export class CloakSessionManager {
         ? userDataDir => recoverLockedChromeProfile(opts.executablePath!, userDataDir, this.platform)
         : recoverLockedCloakProfile);
     this.hasActiveHandoff = opts.hasActiveHandoff ?? (() => false);
+    this.ensureNativeProfileDirectory = opts.ensureNativeProfileDirectory ?? defaultEnsureNativeProfileDirectory;
+    this.exportCookiesToNativeChrome = opts.exportCookiesToNativeChrome ?? defaultExportCookies;
+    this.registerNativeChromeProfile = opts.registerNativeChromeProfile ?? defaultRegisterNativeChromeProfile;
   }
 
   profileStatuses() {
@@ -950,6 +963,32 @@ export class CloakSessionManager {
     } finally {
       if (timeout) clearTimeout(timeout);
       this.cleanupRuntime(runtime);
+      this.scheduleChromeExport(runtime.profileId, runtime);
+    }
+  }
+
+  private scheduleChromeExport(profileId: string, runtime: ProfileRuntime): void {
+    if (this.opts.runtimeKind !== 'chrome' || this.opts.syncToChrome !== true) return;
+    if (this.syncExportsInFlight.has(profileId)) return;
+    this.syncExportsInFlight.add(profileId);
+    this.exportProfileToChrome(profileId, runtime).finally(() => {
+      this.syncExportsInFlight.delete(profileId);
+    });
+  }
+
+  private async exportProfileToChrome(profileId: string, runtime: ProfileRuntime): Promise<void> {
+    const nativeUserDataDir = chromeUserDataDir({ platform: this.platform });
+    if (!nativeUserDataDir) return;
+    let created: boolean;
+    try {
+      ({ created } = this.ensureNativeProfileDirectory(nativeUserDataDir, profileId));
+    } catch {
+      return; // Name collision with a real native profile — logged by the caller of ensureNativeProfileDirectory itself; skip silently here.
+    }
+    const cookiesPath = path.join(runtime.userDataDir, 'Default', 'Cookies');
+    this.exportCookiesToNativeChrome({ cookiesPath }, path.join(nativeUserDataDir, profileId));
+    if (created && this.opts.executablePath) {
+      await this.registerNativeChromeProfile(this.opts.executablePath, nativeUserDataDir, profileId);
     }
   }
 
