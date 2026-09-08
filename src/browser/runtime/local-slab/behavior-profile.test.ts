@@ -63,6 +63,24 @@ describe('SLAB behavior profiles', () => {
     expect(second.traits).toEqual(first.traits);
   });
 
+  it('retains existing trait values and samples only missing allowlisted fields', async () => {
+    const baseDir = await createBaseDir();
+    const profileDir = resolveSlabProfileDir('default', { baseDir });
+    await mkdir(profileDir, { recursive: true });
+    const partial = {
+      schemaVersion: 1,
+      profileId: 'default',
+      traits: { typing_delay: 91, idle_between_actions: false },
+    };
+    await writeFile(path.join(profileDir, BEHAVIOR_FILENAME), JSON.stringify(partial));
+
+    const loaded = await loadOrCreateBehaviorProfile('default', { baseDir, random: () => 0.5 });
+
+    expect(loaded.traits.typing_delay).toBe(91);
+    expect(loaded.traits.typing_delay_spread).toEqual(expect.any(Number));
+    expect(loaded.warning).toBeUndefined();
+  });
+
   it('moves a malformed current document aside and regenerates it once', async () => {
     const baseDir = await createBaseDir();
     const profileDir = resolveSlabProfileDir('default', { baseDir });

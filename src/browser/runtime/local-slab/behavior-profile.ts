@@ -108,6 +108,11 @@ export async function loadOrCreateBehaviorProfile(
     const afterLock = await tryLoad(behaviorPath);
     if (afterLock.kind === 'valid') return afterLock.document;
     if (afterLock.kind === 'future') throw futureVersionError();
+    if (afterLock.kind === 'partial') {
+      const document = migrateBehaviorDocument(afterLock.document, random);
+      await persist(behaviorPath, document, profileId);
+      return document;
+    }
     if (afterLock.kind === 'invalid' && afterLock.raw !== undefined) {
       try {
         await rename(behaviorPath, `${behaviorPath}.corrupt-${now()}`);
@@ -133,6 +138,7 @@ type LoadResult =
   | { kind: 'missing' }
   | { kind: 'invalid'; raw?: string }
   | { kind: 'future' }
+  | { kind: 'partial'; document: unknown }
   | { kind: 'valid'; document: BehaviorDocument };
 
 async function tryLoad(behaviorPath: string): Promise<LoadResult> {
@@ -147,7 +153,8 @@ async function tryLoad(behaviorPath: string): Promise<LoadResult> {
   try {
     const document: unknown = JSON.parse(raw);
     if (hasFutureSchema(document)) return { kind: 'future' };
-    return isBehaviorDocument(document) ? { kind: 'valid', document } : { kind: 'invalid', raw };
+    if (isBehaviorDocument(document)) return { kind: 'valid', document };
+    return isMigratableBehaviorDocument(document) ? { kind: 'partial', document } : { kind: 'invalid', raw };
   } catch {
     return { kind: 'invalid', raw };
   }
@@ -194,6 +201,28 @@ function sampleTraits(random: () => number): BehaviorTraits {
   return traits as BehaviorTraits;
 }
 
+export function migrateBehaviorDocument(raw: unknown, random: () => number = Math.random): BehaviorDocument {
+  if (!isMigratableBehaviorDocument(raw)) throw new Error('Cannot migrate invalid behavior profile document');
+
+  const existingTraits = raw.traits as Record<string, unknown>;
+  const traits: Record<string, number | [number, number] | false> = {
+    idle_between_actions: false,
+  };
+  for (const key of Object.keys(TRAIT_BOUNDS) as NumericTrait[]) {
+    const existing = existingTraits[key];
+    if (existing !== undefined) {
+      traits[key] = existing as number | [number, number];
+      continue;
+    }
+    const defaultValue = DEFAULT_CONFIG[key];
+    traits[key] = Array.isArray(defaultValue)
+      ? sampleTuple(defaultValue, TRAIT_BOUNDS[key], random)
+      : sampleNumber(defaultValue, TRAIT_BOUNDS[key], random);
+  }
+
+  return { schemaVersion: BEHAVIOR_SCHEMA_VERSION, profileId: raw.profileId as string, traits: traits as BehaviorTraits };
+}
+
 function sampleTuple(value: [number, number], bounds: Bounds, random: () => number): [number, number] {
   const first = sampleNumber(value[0], bounds, random);
   const second = sampleNumber(value[1], bounds, random);
@@ -207,19 +236,29 @@ function sampleNumber(value: number, bounds: Bounds, random: () => number): numb
 }
 
 function isBehaviorDocument(value: unknown): value is BehaviorDocument {
+  return isMigratableBehaviorDocument(value)
+    && Object.keys((value as BehaviorDocument).traits).length === Object.keys(TRAIT_BOUNDS).length + 1;
+}
+
+function isMigratableBehaviorDocument(value: unknown): value is Record<string, unknown> & {
+  schemaVersion: typeof BEHAVIOR_SCHEMA_VERSION;
+  profileId: string;
+  traits: Record<string, unknown>;
+} {
   if (!value || typeof value !== 'object') return false;
   const document = value as Record<string, unknown>;
   if (document.schemaVersion !== BEHAVIOR_SCHEMA_VERSION || typeof document.profileId !== 'string') return false;
   if (!document.traits || typeof document.traits !== 'object') return false;
   const traits = document.traits as Record<string, unknown>;
-  const keys = Object.keys(traits).sort();
   const allowedKeys = [...Object.keys(TRAIT_BOUNDS), 'idle_between_actions'].sort();
-  if (keys.length !== allowedKeys.length || keys.some((key, index) => key !== allowedKeys[index])) return false;
+  if (Object.keys(traits).some(key => !allowedKeys.includes(key))) return false;
   if (traits.idle_between_actions !== false) return false;
-  return (Object.keys(TRAIT_BOUNDS) as NumericTrait[]).every(key => {
-    const bounds = TRAIT_BOUNDS[key];
+  return Object.keys(traits).every(key => {
+    if (key === 'idle_between_actions') return true;
+    const numericKey = key as NumericTrait;
+    const bounds = TRAIT_BOUNDS[numericKey];
     const trait = traits[key];
-    return Array.isArray(DEFAULT_CONFIG[key])
+    return Array.isArray(DEFAULT_CONFIG[numericKey])
       ? Array.isArray(trait)
         && trait.length === 2
         && trait.every(item => isBoundedNumber(item, bounds))
