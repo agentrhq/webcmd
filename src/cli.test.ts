@@ -1982,6 +1982,37 @@ describe('profile list', () => {
     expect(output).not.toContain(`Webcmd ${'extension'}`);
     expect(output).not.toContain('webcmd daemon restart');
   });
+
+  it('lists disconnected saved aliases when no runtime profiles are connected', async () => {
+    fs.mkdirSync(process.env.WEBCMD_CONFIG_DIR!, { recursive: true });
+    fs.writeFileSync(path.join(process.env.WEBCMD_CONFIG_DIR!, 'browser-profiles.json'), JSON.stringify({
+      version: 1,
+      aliases: { work: 'ctx_work' },
+    }));
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ok: true,
+        pid: 123,
+        uptime: 1,
+        daemonVersion: PKG_VERSION,
+        runtimeConnected: false,
+        runtimeName: 'Cloak',
+        profiles: [],
+        pending: 0,
+        memoryMB: 20,
+        port: 9777,
+      }),
+    } as Response);
+    const program = createProgram('', '');
+
+    await program.parseAsync(['node', 'webcmd', 'profile', 'list']);
+
+    const output = stdoutSpy.mock.calls.flat().join('\n');
+    expect(output).toContain('Disconnected saved profiles:');
+    expect(output).toContain('ctx_work work — not connected');
+    expect(output).not.toContain('No Cloak runtime profiles are active');
+  });
 });
 
 describe('structured output for data-returning built-ins', () => {
