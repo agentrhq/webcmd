@@ -2,10 +2,13 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
   chromeUserDataDir,
+  ensureNativeProfileDirectory,
+  exportCookiesToNativeChrome,
   findChromeCookieSource,
   findInstalledGoogleChrome,
   googleChromeCandidates,
   importChromeCookies,
+  isProfileRegisteredInLocalState,
   listChromeCookieSources,
 } from './google-chrome.js';
 
@@ -174,5 +177,78 @@ describe('Chrome cookie import', () => {
     const result = importChromeCookies({ folder: 'Default', name: 'Default' }, '/webcmd/chrome/profiles/default', { copyFileSync });
     expect(copyFileSync).not.toHaveBeenCalled();
     expect(result).toEqual({ imported: false });
+  });
+});
+
+describe('ensureNativeProfileDirectory', () => {
+  it('creates a fresh directory, marks it, and reports it created', () => {
+    const written: Record<string, string> = {};
+    const mkdirSync = vi.fn();
+    const writeFileSync = vi.fn((filePath: string, content: string) => { written[filePath] = content; });
+
+    const result = ensureNativeProfileDirectory('/Users/test/Chrome', 'webcmd-work', {
+      existsSync: () => false,
+      mkdirSync: mkdirSync as unknown as typeof import('node:fs').mkdirSync,
+      writeFileSync: writeFileSync as unknown as typeof import('node:fs').writeFileSync,
+    });
+
+    expect(result).toEqual({ created: true });
+    expect(mkdirSync).toHaveBeenCalledWith('/Users/test/Chrome/webcmd-work', { recursive: true });
+    expect(Object.keys(written)).toEqual(['/Users/test/Chrome/webcmd-work/.webcmd-exported-profile']);
+  });
+
+  it('reports not created when reusing a directory it made before', () => {
+    const dir = '/Users/test/Chrome/webcmd-work';
+    const sentinel = `${dir}/.webcmd-exported-profile`;
+    const mkdirSync = vi.fn();
+
+    const result = ensureNativeProfileDirectory('/Users/test/Chrome', 'webcmd-work', {
+      existsSync: (p: string) => p === dir || p === sentinel,
+      mkdirSync: mkdirSync as unknown as typeof import('node:fs').mkdirSync,
+    });
+
+    expect(result).toEqual({ created: false });
+    expect(mkdirSync).not.toHaveBeenCalled();
+  });
+
+  it('refuses to reuse a directory it did not create', () => {
+    const dir = '/Users/test/Chrome/Default';
+    expect(() => ensureNativeProfileDirectory('/Users/test/Chrome', 'Default', {
+      existsSync: (p: string) => p === dir,
+    })).toThrow(/already exists.*was not created by webcmd/s);
+  });
+});
+
+describe('exportCookiesToNativeChrome', () => {
+  it('copies the webcmd profile Cookies file and its journal into the native folder', () => {
+    const written: Record<string, string> = {};
+    const copyFileSync = vi.fn((from: string, to: string) => { written[to] = from; });
+
+    const result = exportCookiesToNativeChrome(
+      { cookiesPath: '/Users/test/.webcmd/chrome/profiles/work/Default/Cookies' },
+      '/Users/test/Chrome/webcmd-work',
+      {
+        existsSync: (p: string) => p === '/Users/test/.webcmd/chrome/profiles/work/Default/Cookies'
+          || p === '/Users/test/.webcmd/chrome/profiles/work/Default/Cookies-journal',
+        copyFileSync: copyFileSync as unknown as typeof import('node:fs').copyFileSync,
+      },
+    );
+
+    expect(result).toEqual({ exported: true });
+    expect(written['/Users/test/Chrome/webcmd-work/Cookies']).toBe('/Users/test/.webcmd/chrome/profiles/work/Default/Cookies');
+    expect(written['/Users/test/Chrome/webcmd-work/Cookies-journal']).toBe('/Users/test/.webcmd/chrome/profiles/work/Default/Cookies-journal');
+  });
+});
+
+describe('isProfileRegisteredInLocalState', () => {
+  it('reports true once the profile-directory key appears in Local State', () => {
+    const readFileSync = () => JSON.stringify({ profile: { info_cache: { 'webcmd-work': { name: 'Work' } } } });
+    expect(isProfileRegisteredInLocalState('/Users/test/Chrome', 'webcmd-work', { readFileSync })).toBe(true);
+    expect(isProfileRegisteredInLocalState('/Users/test/Chrome', 'someone-else', { readFileSync })).toBe(false);
+  });
+
+  it('reports false when Local State is missing or unreadable', () => {
+    const readFileSync = () => { throw new Error('ENOENT'); };
+    expect(isProfileRegisteredInLocalState('/Users/test/Chrome', 'webcmd-work', { readFileSync })).toBe(false);
   });
 });
