@@ -32,6 +32,8 @@ describe('SLAB behavior profiles', () => {
 
     expect(created.schemaVersion).toBe(BEHAVIOR_SCHEMA_VERSION);
     expect(loaded.traits).toEqual(created.traits);
+    expect(created.warning).toBeUndefined();
+    expect(loaded.warning).toBeUndefined();
     const raw = JSON.parse(await readFile(
       path.join(baseDir, 'slab', 'profiles', 'Profile 1', BEHAVIOR_FILENAME),
       'utf8',
@@ -74,6 +76,7 @@ describe('SLAB behavior profiles', () => {
     });
 
     expect(document.schemaVersion).toBe(BEHAVIOR_SCHEMA_VERSION);
+    expect(document.warning).toMatch(/regenerated.*malformed/i);
     expect(await readFile(path.join(profileDir, 'behavior.json.corrupt-123'), 'utf8'))
       .toBe('{"schemaVersion":1,"traits":');
   });

@@ -16,6 +16,7 @@ export type BehaviorDocument = {
   schemaVersion: typeof BEHAVIOR_SCHEMA_VERSION;
   profileId: string;
   traits: BehaviorTraits;
+  warning?: string;
 };
 
 type Bounds = readonly [number, number];
@@ -103,6 +104,7 @@ export async function loadOrCreateBehaviorProfile(
   }
 
   try {
+    let warning: string | undefined;
     const afterLock = await tryLoad(behaviorPath);
     if (afterLock.kind === 'valid') return afterLock.document;
     if (afterLock.kind === 'future') throw futureVersionError();
@@ -112,6 +114,7 @@ export async function loadOrCreateBehaviorProfile(
       } catch (error) {
         throw persistError(profileId, error);
       }
+      warning = 'Regenerated malformed behavior profile document.';
     }
 
     const document: BehaviorDocument = {
@@ -120,7 +123,7 @@ export async function loadOrCreateBehaviorProfile(
       traits: sampleTraits(random),
     };
     await persist(behaviorPath, document, profileId);
-    return document;
+    return warning ? { ...document, warning } : document;
   } finally {
     await unlink(lockPath).catch(() => undefined);
   }
