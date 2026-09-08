@@ -20,16 +20,20 @@
 
 ## [0.8.3](https://github.com/agentrhq/webcmd/compare/webcmd-v0.8.2...webcmd-v0.8.3) (2026-09-08)
 
+### Highlights
+- Added `webcmd setup --browser chrome --sync-to-chrome` to automatically copy profile cookies into a webcmd-managed native Chrome profile when the browser runtime closes. The profile is registered with Chrome in the background and can then be opened directly in Chrome.
+- Added persistent, versioned agent behavior settings for each native SLAB profile, providing consistent humanized browser interactions across daemon sessions.
 
-### Features
+### Improvements
+- Humanized input now avoids intentional mistypes in sensitive fields such as passwords, payment fields, and one-time-code inputs.
+- Disposing an agent page now cancels in-progress humanized input and delays immediately.
+- Playwright tracing snapshots are disabled on agent-controlled pages.
 
-* **chrome:** export webcmd Chrome profiles to native Chrome ([#500](https://github.com/agentrhq/webcmd/issues/500)) ([11b3afe](https://github.com/agentrhq/webcmd/commit/11b3afeb058f26541fc90aadfbbb7a1a35feb012))
-* persist per-SLAB-profile agent behavior and route humanizer input ([#499](https://github.com/agentrhq/webcmd/issues/499)) ([d98a48c](https://github.com/agentrhq/webcmd/commit/d98a48c6205dd24679283bef4cab546b92562979))
+### Fixes
+- Browser network-capture waits now use monotonic elapsed time, preventing premature timeouts when the system clock changes.
 
-
-### Bug Fixes
-
-* **browser:** use monotonic capture timeout ([#488](https://github.com/agentrhq/webcmd/issues/488)) ([b6be9b2](https://github.com/agentrhq/webcmd/commit/b6be9b25b785c2d19e47bc3207cd4b76306e5ff7))
+### Contributors
+[@AcidicSoil](https://github.com/AcidicSoil) | [@ankitranjan7](https://github.com/ankitranjan7) | [@rishabhraj36](https://github.com/rishabhraj36)
 
 ## [0.8.2](https://github.com/agentrhq/webcmd/compare/webcmd-v0.8.1...webcmd-v0.8.2) (2026-09-07)
 
