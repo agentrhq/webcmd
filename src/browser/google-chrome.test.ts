@@ -203,7 +203,7 @@ describe('ensureNativeProfileDirectory', () => {
     const mkdirSync = vi.fn();
 
     const result = ensureNativeProfileDirectory('/Users/test/Chrome', 'webcmd-work', {
-      existsSync: (p: string) => p === dir || p === sentinel,
+      existsSync: candidate => candidate === dir || candidate === sentinel,
       mkdirSync: mkdirSync as unknown as typeof import('node:fs').mkdirSync,
     });
 
@@ -214,7 +214,7 @@ describe('ensureNativeProfileDirectory', () => {
   it('refuses to reuse a directory it did not create', () => {
     const dir = '/Users/test/Chrome/Default';
     expect(() => ensureNativeProfileDirectory('/Users/test/Chrome', 'Default', {
-      existsSync: (p: string) => p === dir,
+      existsSync: candidate => candidate === dir,
     })).toThrow(/already exists.*was not created by webcmd/s);
   });
 });
@@ -228,8 +228,8 @@ describe('exportCookiesToNativeChrome', () => {
       { cookiesPath: '/Users/test/.webcmd/chrome/profiles/work/Default/Cookies' },
       '/Users/test/Chrome/webcmd-work',
       {
-        existsSync: (p: string) => p === '/Users/test/.webcmd/chrome/profiles/work/Default/Cookies'
-          || p === '/Users/test/.webcmd/chrome/profiles/work/Default/Cookies-journal',
+        existsSync: candidate => candidate === '/Users/test/.webcmd/chrome/profiles/work/Default/Cookies'
+          || candidate === '/Users/test/.webcmd/chrome/profiles/work/Default/Cookies-journal',
         copyFileSync: copyFileSync as unknown as typeof import('node:fs').copyFileSync,
       },
     );

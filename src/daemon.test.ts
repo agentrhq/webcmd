@@ -89,7 +89,7 @@ describe('daemon command dispatch', () => {
 
 describe('sweepOrphanedRegistrationTriggers', () => {
   it('terminates any Chrome process carrying --no-startup-window, since only webcmd ever passes that flag', async () => {
-    const findProcesses = vi.fn(async (platform: NodeJS.Platform) => {
+    const findProcesses = vi.fn(async (platform?: NodeJS.Platform) => {
       expect(platform).toBe('darwin');
       return [123, 456];
     });
