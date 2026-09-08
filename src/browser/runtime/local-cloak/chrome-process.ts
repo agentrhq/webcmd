@@ -63,6 +63,14 @@ export async function findExactChromeProcesses(
   return [...new Set(matches)];
 }
 
+/** Matches any Chrome process carrying --no-startup-window — real users never pass that flag; only webcmd's registration trigger does. */
+export async function findNoStartupWindowChromeProcesses(platform: NodeJS.Platform = process.platform): Promise<number[]> {
+  const commands = await processCommands(platform);
+  return commands.flatMap(({ pid, command }) => (
+    pid !== process.pid && command.includes(' --no-startup-window') ? [pid] : []
+  ));
+}
+
 function linuxWrapperProcessMatches(pid: number, command: string, identity: ChromeProcessIdentity): boolean {
   if (extractArgumentValue(command, '--user-data-dir') !== identity.userDataDir) return false;
   if (identity.port !== undefined

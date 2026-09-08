@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   COMMAND_RESULT_UNKNOWN_CODE,
@@ -9,6 +9,7 @@ import {
   commandResultUnknownMessage,
   getResponseCorsHeaders,
 } from './daemon-utils.js';
+import { sweepOrphanedRegistrationTriggers } from './daemon.js';
 
 describe('getResponseCorsHeaders', () => {
   it('allows the packaged runtime origin to read /ping', () => {
@@ -83,5 +84,20 @@ describe('daemon command dispatch', () => {
       status: 408,
       countAsCommandResultUnknown: true,
     });
+  });
+});
+
+describe('sweepOrphanedRegistrationTriggers', () => {
+  it('terminates any Chrome process carrying --no-startup-window, since only webcmd ever passes that flag', async () => {
+    const findProcesses = vi.fn(async (platform: NodeJS.Platform) => {
+      expect(platform).toBe('darwin');
+      return [123, 456];
+    });
+    const terminate = vi.fn().mockResolvedValue(undefined);
+
+    await sweepOrphanedRegistrationTriggers({ findProcesses, terminate, platform: 'darwin' });
+
+    expect(terminate).toHaveBeenCalledWith(123, 'darwin', true);
+    expect(terminate).toHaveBeenCalledWith(456, 'darwin', true);
   });
 });
