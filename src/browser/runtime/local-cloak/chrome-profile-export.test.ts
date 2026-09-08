@@ -11,6 +11,7 @@ function deps(overrides: Partial<RegisterNativeChromeProfileDeps> = {}): Registe
     delay: vi.fn().mockImplementation(async (ms: number) => { now += ms; }),
     now: vi.fn(() => now),
     platform: 'darwin',
+    setDisplayName: vi.fn(),
     ...overrides,
   };
 }
@@ -74,5 +75,57 @@ describe('registerNativeChromeProfile', () => {
 
     expect(result).toEqual({ registered: true });
     expect(d.terminate).not.toHaveBeenCalled();
+  });
+
+  it('sets the Chrome display name to the alias after killing a spawned registration process', async () => {
+    const d = deps({
+      isRegistered: vi.fn().mockReturnValue(true),
+      findProcesses: vi.fn().mockResolvedValue([4242]),
+    });
+
+    await registerNativeChromeProfile(
+      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      '/Users/test/Chrome',
+      'test1',
+      d,
+    );
+
+    expect(d.delay).toHaveBeenCalledWith(300);
+    expect(d.setDisplayName).toHaveBeenCalledWith('/Users/test/Chrome', 'test1', 'test1');
+  });
+
+  // Known limitation: Chrome already running absorbed the request, so the name write is best-effort and may not stick.
+  it('still attempts setDisplayName when no process was spawned (absorbed into existing Chrome; best-effort, may not stick)', async () => {
+    const d = deps({
+      isRegistered: vi.fn().mockReturnValue(true),
+      findProcesses: vi.fn().mockResolvedValue([]),
+    });
+
+    await registerNativeChromeProfile(
+      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      '/Users/test/Chrome',
+      'test1',
+      d,
+    );
+
+    expect(d.delay).not.toHaveBeenCalledWith(300);
+    expect(d.setDisplayName).toHaveBeenCalledWith('/Users/test/Chrome', 'test1', 'test1');
+  });
+
+  it('does not set the display name when registration never succeeded', async () => {
+    const d = deps({
+      isRegistered: vi.fn().mockReturnValue(false),
+      findProcesses: vi.fn().mockResolvedValue([9]),
+    });
+
+    const result = await registerNativeChromeProfile(
+      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      '/Users/test/Chrome',
+      'test1',
+      d,
+    );
+
+    expect(result).toEqual({ registered: false });
+    expect(d.setDisplayName).not.toHaveBeenCalled();
   });
 });

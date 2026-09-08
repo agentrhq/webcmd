@@ -288,3 +288,35 @@ export function isProfileRegisteredInLocalState(
     return false;
   }
 }
+
+export interface SetProfileDisplayNameOptions {
+  readFileSync?: typeof fs.readFileSync;
+  writeFileSync?: typeof fs.writeFileSync;
+}
+
+/**
+ * Sets a native Chrome profile's display name in Local State to exactly
+ * `name`. Best-effort and silent on any failure — this is cosmetic only;
+ * the profile still works correctly with Chrome's own generic name if this
+ * fails or never runs.
+ */
+export function setProfileDisplayName(
+  userDataDir: string,
+  profileDirectory: string,
+  name: string,
+  opts: SetProfileDisplayNameOptions = {},
+): void {
+  const readFileSync = opts.readFileSync ?? fs.readFileSync;
+  const writeFileSync = opts.writeFileSync ?? fs.writeFileSync;
+  try {
+    const localStatePath = path.join(userDataDir, 'Local State');
+    const raw = readFileSync(localStatePath, 'utf-8');
+    const parsed = JSON.parse(raw) as { profile?: { info_cache?: Record<string, { name?: unknown }> } };
+    const entry = parsed.profile?.info_cache?.[profileDirectory];
+    if (!entry) return;
+    entry.name = name;
+    writeFileSync(localStatePath, JSON.stringify(parsed), 'utf-8');
+  } catch {
+    // Missing/unreadable/malformed Local State: leave the generic name in place.
+  }
+}

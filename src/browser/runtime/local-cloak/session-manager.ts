@@ -25,6 +25,7 @@ const UNRESOLVED = Symbol('unresolved');
 const TARGET_PAGE_MATCH_TIMEOUT_MS = 1_000;
 export const PROFILE_IDLE_TIMEOUT_MS = 60_000;
 export const PROFILE_CLOSE_TIMEOUT_MS = 3_000;
+export const CHROME_SYNC_EXPORT_DEBOUNCE_MS = 3_000;
 let cachedCloakBrowserVersion: string | undefined | typeof UNRESOLVED = UNRESOLVED;
 
 /**
@@ -220,6 +221,7 @@ export class CloakSessionManager {
   private readonly exportCookiesToNativeChrome: typeof defaultExportCookies;
   private readonly registerNativeChromeProfile: typeof defaultRegisterNativeChromeProfile;
   private readonly syncExportsInFlight = new Set<string>();
+  private readonly chromeSyncExportTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly profiles = new Map<string, ProfileRuntime>();
   private readonly profileLaunches = new Map<string, Promise<ProfileRuntime>>();
   private readonly profileLifecycleQueues = new Map<string, Promise<void>>();
@@ -278,6 +280,7 @@ export class CloakSessionManager {
       if (runtime) {
         runtime.activeCommands = count;
         this.cancelProfileIdle(runtime);
+        this.cancelChromeSyncExport(profileId);
       }
     });
     try {
@@ -291,6 +294,7 @@ export class CloakSessionManager {
         if (runtime) {
           runtime.activeCommands = count;
           this.scheduleProfileIdle(profileId, runtime);
+          this.scheduleChromeSyncExport(profileId, runtime);
         }
       });
     }
@@ -718,6 +722,8 @@ export class CloakSessionManager {
 
   async shutdown(): Promise<void> {
     this.shuttingDown = true;
+    for (const timer of this.chromeSyncExportTimers.values()) clearTimeout(timer);
+    this.chromeSyncExportTimers.clear();
     while (this.profileLaunches.size > 0) {
       await Promise.allSettled([...this.profileLaunches.values()]);
     }
@@ -837,6 +843,7 @@ export class CloakSessionManager {
     if (runtime.disposed) return;
     runtime.disposed = true;
     this.cancelProfileIdle(runtime);
+    this.cancelChromeSyncExport(runtime.profileId);
     for (const entry of runtime.targetPages.values()) {
       if (entry.idleTimer) clearTimeout(entry.idleTimer);
       this.networkCapture.stop(entry.page);
@@ -964,6 +971,25 @@ export class CloakSessionManager {
       if (timeout) clearTimeout(timeout);
       this.cleanupRuntime(runtime);
       this.scheduleChromeExport(runtime.profileId, runtime);
+    }
+  }
+
+  private scheduleChromeSyncExport(profileId: string, runtime: ProfileRuntime): void {
+    if (this.opts.runtimeKind !== 'chrome' || this.opts.syncToChrome !== true) return;
+    this.cancelChromeSyncExport(profileId);
+    const timer = setTimeout(() => {
+      this.chromeSyncExportTimers.delete(profileId);
+      this.scheduleChromeExport(profileId, runtime);
+    }, CHROME_SYNC_EXPORT_DEBOUNCE_MS);
+    timer.unref?.();
+    this.chromeSyncExportTimers.set(profileId, timer);
+  }
+
+  private cancelChromeSyncExport(profileId: string): void {
+    const timer = this.chromeSyncExportTimers.get(profileId);
+    if (timer) {
+      clearTimeout(timer);
+      this.chromeSyncExportTimers.delete(profileId);
     }
   }
 
