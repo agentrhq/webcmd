@@ -10,6 +10,31 @@ import type { Page, CDPSession } from 'playwright-core';
 import { RawKeyboard } from './mouse.js';
 import { HumanConfig, rand, randRange, sleep } from './config.js';
 
+export interface HumanTypeTarget {
+  tag: string;
+  type?: string | null;
+  autocomplete?: string | null;
+  contentEditable?: boolean;
+  sensitive?: boolean;
+}
+
+export function shouldAllowIntentionalMistype(target?: HumanTypeTarget): boolean {
+  if (!target || target.sensitive || target.contentEditable) return false;
+
+  const tag = target.tag.toLowerCase();
+  if (tag !== 'textarea'
+    && (tag !== 'input' || !['text', 'search', 'email', 'url', 'tel'].includes((target.type ?? 'text').toLowerCase()))) {
+    return false;
+  }
+
+  return !(target.autocomplete ?? '').toLowerCase().split(/\s+/).some(token =>
+    token.includes('password')
+    || token === 'one-time-code'
+    || token === 'webauthn'
+    || token.startsWith('cc-'),
+  );
+}
+
 const SHIFT_SYMBOLS = new Set([
   '@', '#', '!', '$', '%', '^', '&', '*', '(', ')',
   '_', '+', '{', '}', '|', ':', '"', '<', '>', '?', '~',
@@ -56,11 +81,11 @@ function isAscii(ch: string): boolean {
   return code !== undefined && code < 128;
 }
 
-function getNearbyKey(ch: string): string {
+function getNearbyKey(ch: string, random: () => number): string {
   const lower = ch.toLowerCase();
   if (lower in NEARBY_KEYS) {
     const neighbors = NEARBY_KEYS[lower];
-    const wrong = neighbors[Math.floor(Math.random() * neighbors.length)];
+    const wrong = neighbors[Math.floor(random() * neighbors.length)];
     return ch === ch.toUpperCase() && ch !== ch.toLowerCase() ? wrong.toUpperCase() : wrong;
   }
   return ch;
@@ -84,6 +109,8 @@ export async function humanType(
   text: string,
   cfg: HumanConfig,
   cdpSession?: CDPSession | null,
+  target?: HumanTypeTarget,
+  random: () => number = Math.random,
 ): Promise<void> {
   const chars = [...text]; // Handle emoji surrogate pairs correctly
 
@@ -95,14 +122,16 @@ export async function humanType(
       await sleep(randRange(cfg.key_hold));
       await raw.insertText(ch);
       if (i < chars.length - 1) {
-        await interCharDelay(cfg);
+        await interCharDelay(cfg, random);
       }
       continue;
     }
 
     // Mistype chance — only for ASCII alphanumeric
-    if (Math.random() < cfg.mistype_chance && /^[a-zA-Z0-9]$/.test(ch)) {
-      const wrong = getNearbyKey(ch);
+    if (shouldAllowIntentionalMistype(target)
+      && random() < cfg.mistype_chance
+      && /^[a-zA-Z0-9]$/.test(ch)) {
+      const wrong = getNearbyKey(ch, random);
       await typeNormalChar(raw, wrong, cfg);
       await sleep(randRange(cfg.mistype_delay_notice));
       await raw.down('Backspace');
@@ -120,7 +149,7 @@ export async function humanType(
     }
 
     if (i < chars.length - 1) {
-      await interCharDelay(cfg);
+      await interCharDelay(cfg, random);
     }
   }
 }
@@ -204,11 +233,11 @@ async function typeShiftSymbol(
   }
 }
 
-async function interCharDelay(cfg: HumanConfig): Promise<void> {
-  if (Math.random() < cfg.typing_pause_chance) {
+async function interCharDelay(cfg: HumanConfig, random: () => number): Promise<void> {
+  if (random() < cfg.typing_pause_chance) {
     await sleep(randRange(cfg.typing_pause_range));
   } else {
-    const delay = cfg.typing_delay + (Math.random() - 0.5) * 2 * cfg.typing_delay_spread;
+    const delay = cfg.typing_delay + (random() - 0.5) * 2 * cfg.typing_delay_spread;
     await sleep(Math.max(10, delay));
   }
 }

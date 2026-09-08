@@ -20,7 +20,7 @@ import type { Page, Frame, ElementHandle, CDPSession } from 'playwright-core';
 import type { HumanConfig, HumanActionOptions } from './config.js';
 import { rand, randRange, sleep, mergeConfig } from './config.js';
 import { RawMouse, RawKeyboard, humanMove, humanClick, clickTarget, humanIdle } from './mouse.js';
-import { humanType } from './keyboard.js';
+import { humanType, type HumanTypeTarget } from './keyboard.js';
 import { humanScrollIntoView } from './scroll.js';
 import {
   ensureActionableHandle, checkPointerEventsHandle,
@@ -82,6 +82,19 @@ async function isInputElementHandle(
   } catch {
     return false;
   }
+}
+
+async function elementHumanTypeTarget(
+  el: ElementHandle,
+  sensitive?: boolean,
+): Promise<HumanTypeTarget | undefined> {
+  return el.evaluate((node: Element, sensitive: boolean) => ({
+    tag: node.tagName.toLowerCase(),
+    type: node.getAttribute('type'),
+    autocomplete: node.getAttribute('autocomplete'),
+    contentEditable: (node as HTMLElement).isContentEditable,
+    sensitive,
+  }), Boolean(sensitive)).catch(() => undefined);
 }
 
 
@@ -286,7 +299,8 @@ export function patchSingleElementHandle(
     await sleep(rand(100, 250));
     let cdpSession: CDPSession | null = null;
     try { cdpSession = await stealth?.getCdpSession(); } catch {}
-    await humanType(page, rawKb, text, callCfg, cdpSession);
+    const target = await elementHumanTypeTarget(el, options?.sensitive);
+    await humanType(page, rawKb, text, callCfg, cdpSession, target);
   };
 
   // --- el.fill() ---
@@ -311,7 +325,8 @@ export function patchSingleElementHandle(
     await sleep(rand(50, 150));
     let cdpSession: CDPSession | null = null;
     try { cdpSession = await stealth?.getCdpSession(); } catch {}
-    await humanType(page, rawKb, value, callCfg, cdpSession);
+    const target = await elementHumanTypeTarget(el, options?.sensitive);
+    await humanType(page, rawKb, value, callCfg, cdpSession, target);
   };
 
   // --- el.press() ---

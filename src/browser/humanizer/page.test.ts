@@ -334,7 +334,7 @@ describe('humanizePage', () => {
     const interCharacterDelays = timeoutSpy.mock.calls
       .map(([, ms]) => Number(ms))
       .filter(ms => ms >= 10);
-    expect(interCharacterDelays).toEqual([10, 30]);
+    expect(interCharacterDelays).toEqual([28, 20]);
     expect(owned.page.keyboard.down.mock.calls.map(([key]) => key)).toEqual(['a', 'b', 'c']);
     expect(owned.page.keyboard.up.mock.calls.map(([key]) => key)).toEqual(['a', 'b', 'c']);
   });

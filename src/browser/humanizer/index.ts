@@ -26,7 +26,7 @@ import type { Browser, BrowserContext, Page, Frame, CDPSession } from 'playwrigh
 import type { HumanConfig, HumanActionOptions } from './config.js';
 import { resolveConfig, mergeConfig, rand, randRange, sleep } from './config.js';
 import { RawMouse, RawKeyboard, humanMove, humanClick, clickTarget, humanIdle } from './mouse.js';
-import { humanType } from './keyboard.js';
+import { humanType, type HumanTypeTarget } from './keyboard.js';
 import { scrollToElement, humanScrollIntoView } from './scroll.js';
 import { patchPageElementHandles, patchFrameElementHandles, patchSingleElementHandle } from './elementhandle.js';
 import {
@@ -234,6 +234,44 @@ async function isInputElement(
     return tag === 'input' || tag === 'textarea'
       || el.getAttribute('contenteditable') === 'true';
   }, selector).catch(() => false);
+}
+
+async function selectorHumanTypeTarget(
+  stealth: StealthEval | null,
+  page: Page,
+  selector: string,
+  sensitive?: boolean,
+): Promise<HumanTypeTarget | undefined> {
+  if (stealth) {
+    try {
+      const escaped = JSON.stringify(selector);
+      return await stealth.evaluate(`
+        (() => {
+          const el = document.querySelector(${escaped});
+          return el ? {
+            tag: el.tagName.toLowerCase(),
+            type: el.getAttribute('type'),
+            autocomplete: el.getAttribute('autocomplete'),
+            contentEditable: el.isContentEditable,
+            sensitive: ${Boolean(sensitive)},
+          } : undefined;
+        })()
+      `);
+    } catch {
+      // Fall through to page.evaluate.
+    }
+  }
+
+  return page.evaluate(({ selector, sensitive }) => {
+    const el = document.querySelector(selector);
+    return el ? {
+      tag: el.tagName.toLowerCase(),
+      type: el.getAttribute('type'),
+      autocomplete: el.getAttribute('autocomplete'),
+      contentEditable: (el as HTMLElement).isContentEditable,
+      sensitive,
+    } : undefined;
+  }, { selector, sensitive: Boolean(sensitive) }).catch(() => undefined);
 }
 
 /**
@@ -466,7 +504,8 @@ export function patchPage(page: Page, cfg: HumanConfig, cursor: CursorState): vo
     await humanClickFn(selector, { _skipChecks: true, timeout: remainingMs(), force, human_config: options?.human_config } as any);
     await sleep(rand(100, 250));
     const cdp = await ensureCdp();
-    await humanType(page, rawKb, text, callCfg, cdp);
+    const target = await selectorHumanTypeTarget(stealth, page, selector, options?.sensitive);
+    await humanType(page, rawKb, text, callCfg, cdp, target);
   };
 
   // --- fill (clears existing content first) ---
@@ -486,7 +525,8 @@ export function patchPage(page: Page, cfg: HumanConfig, cursor: CursorState): vo
     await originals.keyboardPress('Backspace');
     await sleep(rand(50, 150));
     const cdp = await ensureCdp();
-    await humanType(page, rawKb, value, callCfg, cdp);
+    const target = await selectorHumanTypeTarget(stealth, page, selector, options?.sensitive);
+    await humanType(page, rawKb, value, callCfg, cdp, target);
   };
 
   // --- clear ---
@@ -584,7 +624,8 @@ export function patchPage(page: Page, cfg: HumanConfig, cursor: CursorState): vo
     }
     await sleep(rand(100, 250));
     const cdp = await ensureCdp();
-    await humanType(page, rawKb, text, callCfg, cdp);
+    const target = await selectorHumanTypeTarget(stealth, page, selector, options?.sensitive);
+    await humanType(page, rawKb, text, callCfg, cdp, target);
   };
 
   // --- tap ---
@@ -691,6 +732,20 @@ function patchFrames(
 function firstFrameLocator(frame: Frame, selector: string): any {
   const locator = frame.locator(selector) as any;
   return typeof locator.first === 'function' ? locator.first() : locator;
+}
+
+async function frameHumanTypeTarget(
+  frame: Frame,
+  selector: string,
+  sensitive?: boolean,
+): Promise<HumanTypeTarget | undefined> {
+  return firstFrameLocator(frame, selector).evaluate((el: Element, sensitive: boolean) => ({
+    tag: el.tagName.toLowerCase(),
+    type: el.getAttribute('type'),
+    autocomplete: el.getAttribute('autocomplete'),
+    contentEditable: (el as HTMLElement).isContentEditable,
+    sensitive,
+  }), Boolean(sensitive)).catch(() => undefined);
 }
 
 async function isFrameInputElement(frame: Frame, selector: string): Promise<boolean> {
@@ -810,7 +865,8 @@ function patchSingleFrame(
     await frameClick(selector, options);
     await sleep(rand(100, 250));
     const cdp = await getFrameCdp();
-    await humanType(page, rawKb, text, callCfg, cdp).catch(() => origFrameType(selector, text, options));
+    const target = await frameHumanTypeTarget(frame, selector, options?.sensitive);
+    await humanType(page, rawKb, text, callCfg, cdp, target).catch(() => origFrameType(selector, text, options));
   };
 
   (frame as any).fill = async (selector: string, value: string, options?: HumanActionOptions) => {
@@ -823,7 +879,8 @@ function patchSingleFrame(
     await originals.keyboardPress('Backspace');
     await sleep(rand(50, 150));
     const cdp = await getFrameCdp();
-    await humanType(page, rawKb, value, callCfg, cdp).catch(() => origFrameFill(selector, value, options));
+    const target = await frameHumanTypeTarget(frame, selector, options?.sensitive);
+    await humanType(page, rawKb, value, callCfg, cdp, target).catch(() => origFrameFill(selector, value, options));
   };
 
   (frame as any).check = async (selector: string, options?: HumanActionOptions) => {
@@ -861,7 +918,8 @@ function patchSingleFrame(
     }
     await sleep(rand(100, 250));
     const cdp = await getFrameCdp();
-    await humanType(page, rawKb, text, callCfg, cdp).catch(() => origFramePressSequentially?.(selector, text, options));
+    const target = await frameHumanTypeTarget(frame, selector, options?.sensitive);
+    await humanType(page, rawKb, text, callCfg, cdp, target).catch(() => origFramePressSequentially?.(selector, text, options));
   };
 
   (frame as any).tap = async (selector: string, options?: HumanActionOptions) => {
