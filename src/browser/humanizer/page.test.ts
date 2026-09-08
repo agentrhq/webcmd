@@ -340,21 +340,28 @@ describe('humanizePage', () => {
 
   it('suppresses mistypes when Page type extracts a password target through CDP', async () => {
     mockRandom([0]);
-    const cdp = fakeCdpSession(expression => expression.includes('autocomplete') ? {
-      tag: 'input',
-      type: 'password',
-      autocomplete: null,
-      contentEditable: false,
-      sensitive: false,
-    } : false);
+    const selector = 'input[data-label="a\\b"]';
+    const passwordInput = {
+      tagName: 'INPUT',
+      getAttribute: vi.fn((name: string) => name === 'type' ? 'password' : null),
+      isContentEditable: false,
+    };
+    const document = { querySelector: vi.fn((receivedSelector: string) => {
+      expect(receivedSelector).toBe(selector);
+      return passwordInput;
+    }) };
+    const cdp = fakeCdpSession(expression => Function('document', `return (${expression})`)(document));
     const owned = fakePage({ cdp });
 
     humanizePage(owned.page as any, { ...FAST_HUMAN_CONFIG, mistype_chance: 1 });
-    await owned.page.type('#password', 'a', { force: true });
+    await owned.page.type(selector, 'a', { force: true });
 
     expect(cdp.send).toHaveBeenCalledWith('Runtime.evaluate', expect.objectContaining({
       expression: expect.stringContaining('autocomplete'),
     }));
+    expect(document.querySelector).toHaveBeenCalledWith(selector);
+    expect(passwordInput.getAttribute).toHaveBeenCalledWith('type');
+    expect(passwordInput.getAttribute).toHaveBeenCalledWith('autocomplete');
     expect(owned.page.keyboard.down).toHaveBeenCalledWith('a');
     expect(owned.page.keyboard.down).not.toHaveBeenCalledWith('Backspace');
   });
@@ -401,7 +408,7 @@ describe('humanizePage', () => {
     expect(owned.page.keyboard.down).toHaveBeenCalledWith('a');
   });
 
-  it('fails closed when ElementHandle fill cannot extract a target', async () => {
+  it('suppresses mistypes when ElementHandle fill extracts a password target', async () => {
     mockRandom([0]);
     const passwordInput = {
       tagName: 'INPUT',
@@ -409,9 +416,6 @@ describe('humanizePage', () => {
       isContentEditable: false,
     };
     const handle = fakeElement(undefined, passwordInput);
-    handle.evaluate
-      .mockImplementationOnce(async (fn: unknown) => (fn as (node: typeof passwordInput) => unknown)(passwordInput))
-      .mockRejectedValueOnce(new Error('detached'));
     const owned = fakePage();
     owned.page.$.mockResolvedValue(handle);
 
@@ -420,6 +424,28 @@ describe('humanizePage', () => {
     await patchedHandle.fill('a', { force: true });
 
     expect(handle.evaluate).toHaveBeenCalledTimes(2);
+    expect(passwordInput.getAttribute).toHaveBeenCalledWith('type');
+    expect(passwordInput.getAttribute).toHaveBeenCalledWith('autocomplete');
+    expect(owned.page.keyboard.down).toHaveBeenCalledWith('a');
+    expect(owned.page.keyboard.down).not.toHaveBeenCalledWith('Backspace');
+  });
+
+  it('passes caller sensitivity through ElementHandle fill for text inputs', async () => {
+    mockRandom([0]);
+    const textInput = {
+      tagName: 'INPUT',
+      getAttribute: vi.fn((name: string) => name === 'type' ? 'text' : null),
+      isContentEditable: false,
+    };
+    const handle = fakeElement(undefined, textInput);
+    const owned = fakePage();
+    owned.page.$.mockResolvedValue(handle);
+
+    humanizePage(owned.page as any, { ...FAST_HUMAN_CONFIG, mistype_chance: 1 });
+    const patchedHandle = await owned.page.$('#name');
+    await patchedHandle.fill('a', { force: true, sensitive: true });
+
+    expect(handle.evaluate).toHaveBeenLastCalledWith(expect.any(Function), true);
     expect(owned.page.keyboard.down).toHaveBeenCalledWith('a');
     expect(owned.page.keyboard.down).not.toHaveBeenCalledWith('Backspace');
   });
