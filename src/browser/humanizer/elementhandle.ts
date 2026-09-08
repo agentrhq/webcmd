@@ -20,7 +20,7 @@ import type { Page, Frame, ElementHandle, CDPSession } from 'playwright-core';
 import type { HumanConfig, HumanActionOptions } from './config.js';
 import { rand, randRange, sleep, mergeConfig } from './config.js';
 import { RawMouse, RawKeyboard, humanMove, humanClick, clickTarget, humanIdle } from './mouse.js';
-import { humanType } from './keyboard.js';
+import { humanType, type HumanTypeTarget } from './keyboard.js';
 import { humanScrollIntoView } from './scroll.js';
 import {
   ensureActionableHandle, checkPointerEventsHandle,
@@ -48,6 +48,10 @@ export function restorePatchedElementHandles(page: Page): void {
 
 // --- Platform-aware select-all shortcut ---
 const SELECT_ALL = process.platform === 'darwin' ? 'Meta+a' : 'Control+a';
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw signal.reason ?? new Error('Humanizer has been disposed.');
+}
 
 
 // ============================================================================
@@ -84,6 +88,41 @@ async function isInputElementHandle(
   }
 }
 
+async function elementHumanTypeTarget(
+  cdp: CDPSession | null,
+  el: ElementHandle,
+  sensitive?: boolean,
+): Promise<HumanTypeTarget | undefined> {
+  if (cdp) {
+    const objectId = (el as any)._objectId ?? (el as any)._impl?._objectId;
+    if (!objectId) return undefined;
+    try {
+      const result = await cdp.send('DOM.describeNode', { objectId, depth: 0 });
+      const node = (result as any).node;
+      const attributes = new Map<string, string>();
+      for (let index = 0; index < (node?.attributes?.length ?? 0); index += 2) {
+        attributes.set(node.attributes[index], node.attributes[index + 1]);
+      }
+      return {
+        tag: node?.nodeName?.toLowerCase(),
+        type: attributes.get('type') ?? null,
+        autocomplete: attributes.get('autocomplete') ?? null,
+        contentEditable: attributes.get('contenteditable') === 'true',
+        sensitive: Boolean(sensitive),
+      };
+    } catch {
+      return undefined;
+    }
+  }
+  return el.evaluate((node: Element, sensitive: boolean) => ({
+    tag: node.tagName.toLowerCase(),
+    type: node.getAttribute('type'),
+    autocomplete: node.getAttribute('autocomplete'),
+    contentEditable: (node as HTMLElement).isContentEditable,
+    sensitive,
+  }), Boolean(sensitive)).catch(() => undefined);
+}
+
 
 // ============================================================================
 // CursorState type (matches index.ts)
@@ -109,6 +148,7 @@ export function patchSingleElementHandle(
   rawKb: RawKeyboard,
   originals: any,
   stealth: any,
+  signal?: AbortSignal,
 ): void {
   if ((el as any)._humanPatched) return;
   const handles = patchedHandles.get(page) ?? new Map();
@@ -139,14 +179,14 @@ export function patchSingleElementHandle(
   // --- Nested elements are also patched ---
   (el as any).$ = async (selector: string) => {
     const child = await origEl$(selector);
-    if (child) patchSingleElementHandle(child, page, cfg, cursor, raw, rawKb, originals, stealth);
+    if (child) patchSingleElementHandle(child, page, cfg, cursor, raw, rawKb, originals, stealth, signal);
     return child;
   };
 
   (el as any).$$ = async (selector: string) => {
     const children = await origEl$$(selector);
     for (const child of children) {
-      patchSingleElementHandle(child, page, cfg, cursor, raw, rawKb, originals, stealth);
+      patchSingleElementHandle(child, page, cfg, cursor, raw, rawKb, originals, stealth, signal);
     }
     return children;
   };
@@ -157,7 +197,7 @@ export function patchSingleElementHandle(
     timeout?: number;
   }) => {
     const child = await origElWaitForSelector(selector, options ?? {});
-    if (child) patchSingleElementHandle(child, page, cfg, cursor, raw, rawKb, originals, stealth);
+    if (child) patchSingleElementHandle(child, page, cfg, cursor, raw, rawKb, originals, stealth, signal);
     return child;
   };
 
@@ -182,11 +222,14 @@ export function patchSingleElementHandle(
       const { cursorX, cursorY } = await humanScrollIntoView(
         page, raw,
         () => el.boundingBox(),
-        cursor.x, cursor.y, callCfg,
+        cursor.x, cursor.y, callCfg, signal,
       );
       cursor.x = cursorX;
       cursor.y = cursorY;
-    } catch { /* let boundingBox() decide */ }
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      // Let boundingBox() decide whether to proceed or fall back.
+    }
 
     const box = await el.boundingBox();
     if (!box) return null;
@@ -195,10 +238,10 @@ export function patchSingleElementHandle(
     const target = clickTarget(box, isInp, callCfg);
 
     if (callCfg.idle_between_actions) {
-      await humanIdle(raw, cursor.x, cursor.y, callCfg);
+      await humanIdle(raw, cursor.x, cursor.y, callCfg, signal);
     }
 
-    await humanMove(raw, cursor.x, cursor.y, target.x, target.y, callCfg);
+    await humanMove(raw, cursor.x, cursor.y, target.x, target.y, callCfg, signal);
     cursor.x = target.x;
     cursor.y = target.y;
     return { box, isInp };
@@ -222,9 +265,12 @@ export function patchSingleElementHandle(
     const remainingMs = () => Math.max(0, deadline - Date.now());
     if (!force) await ensureActionableHandle(el, CHECKS_CLICK, remainingMs(), force);
     const info = await moveToElement(callCfg);
-    if (!info) return origElClick(options);
+    if (!info) {
+      throwIfAborted(signal);
+      return origElClick(options);
+    }
     if (!force) await checkPointerEventsHandle(el, cursor.x, cursor.y, Math.min(remainingMs(), 5000));
-    await humanClick(raw, info.isInp, callCfg);
+    await humanClick(raw, info.isInp, callCfg, signal);
   };
 
   // --- el.dblclick() ---
@@ -244,10 +290,13 @@ export function patchSingleElementHandle(
     const remainingMs = () => Math.max(0, deadline - Date.now());
     if (!force) await ensureActionableHandle(el, CHECKS_CLICK, remainingMs(), force);
     const info = await moveToElement(callCfg);
-    if (!info) return origElDblclick(options);
+    if (!info) {
+      throwIfAborted(signal);
+      return origElDblclick(options);
+    }
     if (!force) await checkPointerEventsHandle(el, cursor.x, cursor.y, Math.min(remainingMs(), 5000));
     await raw.down({ clickCount: 2 });
-    await sleep(rand(30, 60));
+    await sleep(rand(30, 60), signal);
     await raw.up({ clickCount: 2 });
   };
 
@@ -265,7 +314,10 @@ export function patchSingleElementHandle(
     const remainingMs = () => Math.max(0, deadline - Date.now());
     if (!force) await ensureActionableHandle(el, CHECKS_HOVER, remainingMs(), force);
     const info = await moveToElement(callCfg);
-    if (!info) return origElHover(options);
+    if (!info) {
+      throwIfAborted(signal);
+      return origElHover(options);
+    }
   };
 
   // --- el.type() ---
@@ -280,13 +332,17 @@ export function patchSingleElementHandle(
     const remainingMs = () => Math.max(0, deadline - Date.now());
     if (!force) await ensureActionableHandle(el, CHECKS_INPUT, remainingMs(), force);
     const info = await moveToElement(callCfg);
-    if (!info) return origElType(text, options);
+    if (!info) {
+      throwIfAborted(signal);
+      return origElType(text, options);
+    }
     if (!force) await checkPointerEventsHandle(el, cursor.x, cursor.y, Math.min(remainingMs(), 5000));
-    await humanClick(raw, info.isInp, callCfg);
-    await sleep(rand(100, 250));
+    await humanClick(raw, info.isInp, callCfg, signal);
+    await sleep(rand(100, 250), signal);
     let cdpSession: CDPSession | null = null;
     try { cdpSession = await stealth?.getCdpSession(); } catch {}
-    await humanType(page, rawKb, text, callCfg, cdpSession);
+    const target = await elementHumanTypeTarget(cdpSession, el, options?.sensitive);
+    await humanType(page, rawKb, text, callCfg, cdpSession, target, undefined, signal);
   };
 
   // --- el.fill() ---
@@ -301,24 +357,28 @@ export function patchSingleElementHandle(
     const remainingMs = () => Math.max(0, deadline - Date.now());
     if (!force) await ensureActionableHandle(el, CHECKS_INPUT, remainingMs(), force);
     const info = await moveToElement(callCfg);
-    if (!info) return origElFill(value, options);
+    if (!info) {
+      throwIfAborted(signal);
+      return origElFill(value, options);
+    }
     if (!force) await checkPointerEventsHandle(el, cursor.x, cursor.y, Math.min(remainingMs(), 5000));
-    await humanClick(raw, info.isInp, callCfg);
-    await sleep(rand(100, 250));
+    await humanClick(raw, info.isInp, callCfg, signal);
+    await sleep(rand(100, 250), signal);
     await originals.keyboardPress(SELECT_ALL);
-    await sleep(rand(30, 80));
+    await sleep(rand(30, 80), signal);
     await originals.keyboardPress('Backspace');
-    await sleep(rand(50, 150));
+    await sleep(rand(50, 150), signal);
     let cdpSession: CDPSession | null = null;
     try { cdpSession = await stealth?.getCdpSession(); } catch {}
-    await humanType(page, rawKb, value, callCfg, cdpSession);
+    const target = await elementHumanTypeTarget(cdpSession, el, options?.sensitive);
+    await humanType(page, rawKb, value, callCfg, cdpSession, target, undefined, signal);
   };
 
   // --- el.press() ---
   (el as any).press = async (key: string, options?: { delay?: number; noWaitAfter?: boolean; timeout?: number }) => {
-    await sleep(rand(20, 60));
+    await sleep(rand(20, 60), signal);
     await originals.keyboardDown(key);
-    await sleep(randRange(cfg.key_hold));
+    await sleep(randRange(cfg.key_hold), signal);
     await originals.keyboardUp(key);
   };
 
@@ -334,9 +394,12 @@ export function patchSingleElementHandle(
     const remainingMs = () => Math.max(0, deadline - Date.now());
     if (!force) await ensureActionableHandle(el, CHECKS_FOCUS, remainingMs(), force);
     const info = await moveToElement();
-    if (!info) return origElSelectOption(values, options);
-    await humanClick(raw, false, cfg);
-    await sleep(rand(100, 300));
+    if (!info) {
+      throwIfAborted(signal);
+      return origElSelectOption(values, options);
+    }
+    await humanClick(raw, false, cfg, signal);
+    await sleep(rand(100, 300), signal);
     return origElSelectOption(values, options);
   };
 
@@ -358,9 +421,12 @@ export function patchSingleElementHandle(
       if (checked) return;
     } catch {}
     const info = await moveToElement();
-    if (!info) return origElCheck(options);
+    if (!info) {
+      throwIfAborted(signal);
+      return origElCheck(options);
+    }
     if (!force) await checkPointerEventsHandle(el, cursor.x, cursor.y, Math.min(remainingMs(), 5000));
-    await humanClick(raw, info.isInp, cfg);
+    await humanClick(raw, info.isInp, cfg, signal);
   };
 
   // --- el.uncheck() ---
@@ -381,9 +447,12 @@ export function patchSingleElementHandle(
       if (!checked) return;
     } catch {}
     const info = await moveToElement();
-    if (!info) return origElUncheck(options);
+    if (!info) {
+      throwIfAborted(signal);
+      return origElUncheck(options);
+    }
     if (!force) await checkPointerEventsHandle(el, cursor.x, cursor.y, Math.min(remainingMs(), 5000));
-    await humanClick(raw, info.isInp, cfg);
+    await humanClick(raw, info.isInp, cfg, signal);
   };
 
   // --- el.setChecked() ---
@@ -405,9 +474,12 @@ export function patchSingleElementHandle(
         if (current === checked) return;
       } catch {}
       const info = await moveToElement();
-      if (!info) return origElSetChecked(checked, options);
+      if (!info) {
+        throwIfAborted(signal);
+        return origElSetChecked(checked, options);
+      }
       if (!force) await checkPointerEventsHandle(el, cursor.x, cursor.y, Math.min(remainingMs(), 5000));
-      await humanClick(raw, info.isInp, cfg);
+      await humanClick(raw, info.isInp, cfg, signal);
     };
   }
 
@@ -421,8 +493,11 @@ export function patchSingleElementHandle(
     trial?: boolean;
   }) => {
     const info = await moveToElement();
-    if (!info) return origElTap(options);
-    await humanClick(raw, info.isInp, cfg);
+    if (!info) {
+      throwIfAborted(signal);
+      return origElTap(options);
+    }
+    await humanClick(raw, info.isInp, cfg, signal);
   };
 
   // --- el.focus() ---
@@ -448,11 +523,12 @@ export function patchSingleElementHandle(
         const { cursorX, cursorY } = await humanScrollIntoView(
           page, raw,
           () => el.boundingBox(),
-          cursor.x, cursor.y, callCfg,
+          cursor.x, cursor.y, callCfg, signal,
         );
         cursor.x = cursorX;
         cursor.y = cursorY;
-      } catch {
+      } catch (error) {
+        if (signal?.aborted) throw error;
         return origElScrollIntoViewIfNeeded(options);
       }
     };
@@ -472,13 +548,14 @@ export function patchPageElementHandles(
   rawKb: RawKeyboard,
   originals: any,
   stealth: any,
+  signal?: AbortSignal,
 ): void {
   // Patch page.$() — only if the method exists
   if (typeof page.$ === 'function') {
     const orig$ = page.$.bind(page);
     (page as any).$ = async (selector: string) => {
       const el = await orig$(selector);
-      if (el) patchSingleElementHandle(el, page, cfg, cursor, raw, rawKb, originals, stealth);
+      if (el) patchSingleElementHandle(el, page, cfg, cursor, raw, rawKb, originals, stealth, signal);
       return el;
     };
   }
@@ -489,7 +566,7 @@ export function patchPageElementHandles(
     (page as any).$$ = async (selector: string) => {
       const els = await orig$$(selector);
       for (const el of els) {
-        patchSingleElementHandle(el, page, cfg, cursor, raw, rawKb, originals, stealth);
+        patchSingleElementHandle(el, page, cfg, cursor, raw, rawKb, originals, stealth, signal);
       }
       return els;
     };
@@ -504,7 +581,7 @@ export function patchPageElementHandles(
       timeout?: number;
     }) => {
       const el = await origWaitForSelector(selector, options ?? {});
-      if (el) patchSingleElementHandle(el, page, cfg, cursor, raw, rawKb, originals, stealth);
+      if (el) patchSingleElementHandle(el, page, cfg, cursor, raw, rawKb, originals, stealth, signal);
       return el;
     };
   }
@@ -524,13 +601,14 @@ export function patchFrameElementHandles(
   rawKb: RawKeyboard,
   originals: any,
   stealth: any,
+  signal?: AbortSignal,
 ): void {
   // Patch frame.$() — only if the method exists
   if (typeof frame.$ === 'function') {
     const origFrame$ = frame.$.bind(frame);
     (frame as any).$ = async (selector: string) => {
       const el = await origFrame$(selector);
-      if (el) patchSingleElementHandle(el, page, cfg, cursor, raw, rawKb, originals, stealth);
+      if (el) patchSingleElementHandle(el, page, cfg, cursor, raw, rawKb, originals, stealth, signal);
       return el;
     };
   }
@@ -541,7 +619,7 @@ export function patchFrameElementHandles(
     (frame as any).$$ = async (selector: string) => {
       const els = await origFrame$$(selector);
       for (const el of els) {
-        patchSingleElementHandle(el, page, cfg, cursor, raw, rawKb, originals, stealth);
+        patchSingleElementHandle(el, page, cfg, cursor, raw, rawKb, originals, stealth, signal);
       }
       return els;
     };
@@ -556,7 +634,7 @@ export function patchFrameElementHandles(
       timeout?: number;
     }) => {
       const el = await origFrameWaitForSelector(selector, options ?? {});
-      if (el) patchSingleElementHandle(el, page, cfg, cursor, raw, rawKb, originals, stealth);
+      if (el) patchSingleElementHandle(el, page, cfg, cursor, raw, rawKb, originals, stealth, signal);
       return el;
     };
   }

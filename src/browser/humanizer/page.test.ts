@@ -39,24 +39,23 @@ const FAST_HUMAN_CONFIG: Partial<HumanConfig> = {
   idle_between_actions: false,
 };
 
-function fakeCdpSession() {
+function fakeCdpSession(runtimeEvaluate?: (expression: string) => unknown) {
   return {
     detach: vi.fn().mockResolvedValue(undefined),
-    send: vi.fn(async (method: string) => {
+    send: vi.fn(async (method: string, params?: { expression?: string }) => {
       if (method === 'Page.getFrameTree') return { frameTree: { frame: { id: 'frame-1' } } };
       if (method === 'Page.createIsolatedWorld') return { executionContextId: 7 };
-      if (method === 'Runtime.evaluate') return { result: { value: false } };
+      if (method === 'Runtime.evaluate') return { result: { value: runtimeEvaluate?.(params?.expression ?? '') ?? false } };
       return {};
     }),
   };
 }
 
-function fakeLocator(boxes: Array<{ x: number; y: number; width: number; height: number }> = [{ x: 10, y: 10, width: 20, height: 10 }]) {
+function fakeLocator(
+  boxes: Array<{ x: number; y: number; width: number; height: number }> = [{ x: 10, y: 10, width: 20, height: 10 }],
+  node: any = { tagName: 'BUTTON', getAttribute: vi.fn(() => null), isContentEditable: false },
+) {
   let boxIndex = 0;
-  const node = {
-    tagName: 'BUTTON',
-    getAttribute: vi.fn(() => null),
-  };
   const locator: any = {
     first: vi.fn(() => locator),
     waitFor: vi.fn().mockResolvedValue(undefined),
@@ -66,24 +65,23 @@ function fakeLocator(boxes: Array<{ x: number; y: number; width: number; height:
     isChecked: vi.fn().mockResolvedValue(false),
     scrollIntoViewIfNeeded: vi.fn().mockResolvedValue(undefined),
     boundingBox: vi.fn(async () => boxes[Math.min(boxIndex++, boxes.length - 1)]),
-    evaluate: vi.fn(async (fn: unknown) => {
+    evaluate: vi.fn(async (fn: unknown, arg?: unknown) => {
       if (typeof fn === 'string') return { hit: true };
-      return (fn as (el: typeof node) => unknown)(node);
+      return (fn as (el: typeof node, arg?: unknown) => unknown)(node, arg);
     }),
   };
   return locator;
 }
 
-function fakeElement(box = { x: 10, y: 10, width: 20, height: 10 }) {
-  const node = {
-    tagName: 'BUTTON',
-    getAttribute: vi.fn(() => null),
-  };
+function fakeElement(
+  box = { x: 10, y: 10, width: 20, height: 10 },
+  node: any = { tagName: 'BUTTON', getAttribute: vi.fn(() => null), isContentEditable: false },
+) {
   const child = {
     boundingBox: vi.fn().mockResolvedValue(box),
-    evaluate: vi.fn(async (fn: unknown) => {
+    evaluate: vi.fn(async (fn: unknown, arg?: unknown) => {
       if (typeof fn === 'string') return { hit: true };
-      return (fn as (el: typeof node) => unknown)(node);
+      return (fn as (el: typeof node, arg?: unknown) => unknown)(node, arg);
     }),
     waitForElementState: vi.fn().mockResolvedValue(undefined),
     click: vi.fn(),
@@ -199,6 +197,7 @@ function mockRandom(values: number[]) {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe('humanizePage', () => {
@@ -334,9 +333,179 @@ describe('humanizePage', () => {
     const interCharacterDelays = timeoutSpy.mock.calls
       .map(([, ms]) => Number(ms))
       .filter(ms => ms >= 10);
-    expect(interCharacterDelays).toEqual([10, 30]);
+    expect(interCharacterDelays).toEqual([28, 20]);
     expect(owned.page.keyboard.down.mock.calls.map(([key]) => key)).toEqual(['a', 'b', 'c']);
     expect(owned.page.keyboard.up.mock.calls.map(([key]) => key)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('cancels in-flight keyboard typing when the Page is disposed', async () => {
+    const owned = fakePage();
+    humanizePage(owned.page as any, {
+      ...FAST_HUMAN_CONFIG,
+      typing_delay: 10_000,
+      typing_delay_spread: 0,
+    });
+
+    const type = owned.page.keyboard.type('hello');
+    await vi.waitFor(() => expect(owned.page.keyboard.down).toHaveBeenCalledOnce());
+    await disposeHumanizedPage(owned.page as any);
+
+    await expect(Promise.race([
+      type.then(() => 'settled', () => 'settled'),
+      new Promise(resolve => setTimeout(() => resolve('timed out'), 50)),
+    ])).resolves.toBe('settled');
+    expect(owned.page.keyboard.down).toHaveBeenCalledOnce();
+    expect(owned.page.keyboard.up).toHaveBeenCalledOnce();
+    expect(owned.cdp.send).not.toHaveBeenCalledWith('Input.dispatchKeyEvent', expect.anything());
+  });
+
+  it('does not fall back to Frame check when disposal aborts the human click', async () => {
+    const childFrame = fakeFrame();
+    const mainFrame = fakeFrame();
+    mainFrame.childFrames.mockReturnValue([childFrame]);
+    const owned = fakePage({ mainFrame });
+    const rawFrameCheck = childFrame.check;
+
+    humanizePage(owned.page as any, {
+      ...FAST_HUMAN_CONFIG,
+      click_aim_delay_button: [10_000, 10_000],
+    });
+    const check = childFrame.check('#checkbox');
+    await new Promise(resolve => setTimeout(resolve, 20));
+    await disposeHumanizedPage(owned.page as any);
+
+    await expect(check).rejects.toThrow(/abort/i);
+    expect(rawFrameCheck).not.toHaveBeenCalled();
+  });
+
+  it('suppresses mistypes when Page type extracts a password target through CDP', async () => {
+    mockRandom([0]);
+    const selector = 'input[data-label="a\\b"]';
+    const passwordInput = {
+      tagName: 'INPUT',
+      getAttribute: vi.fn((name: string) => name === 'type' ? 'password' : null),
+      isContentEditable: false,
+    };
+    const document = { querySelector: vi.fn((receivedSelector: string) => {
+      expect(receivedSelector).toBe(selector);
+      return passwordInput;
+    }) };
+    const cdp = fakeCdpSession(expression => Function('document', `return (${expression})`)(document));
+    const owned = fakePage({ cdp });
+
+    humanizePage(owned.page as any, { ...FAST_HUMAN_CONFIG, mistype_chance: 1 });
+    await owned.page.type(selector, 'a', { force: true });
+
+    expect(cdp.send).toHaveBeenCalledWith('Runtime.evaluate', expect.objectContaining({
+      expression: expect.stringContaining('autocomplete'),
+    }));
+    expect(document.querySelector).toHaveBeenCalledWith(selector);
+    expect(passwordInput.getAttribute).toHaveBeenCalledWith('type');
+    expect(passwordInput.getAttribute).toHaveBeenCalledWith('autocomplete');
+    expect(owned.page.keyboard.down).toHaveBeenCalledWith('a');
+    expect(owned.page.keyboard.down).not.toHaveBeenCalledWith('Backspace');
+  });
+
+  it('uses Page evaluate to extract a text target when CDP extraction is unavailable', async () => {
+    mockRandom([0]);
+    const textInput = {
+      tagName: 'INPUT',
+      getAttribute: vi.fn((name: string) => name === 'type' ? 'text' : null),
+      isContentEditable: false,
+    };
+    const owned = fakePage();
+    vi.stubGlobal('document', { querySelector: vi.fn(() => textInput) });
+    owned.page.evaluate.mockImplementation(async (fn: (arg: unknown) => unknown, arg: unknown) => fn(arg));
+
+    humanizePage(owned.page as any, { ...FAST_HUMAN_CONFIG, mistype_chance: 1 });
+    await owned.page.fill('#name', 'a', { force: true });
+
+    expect(owned.page.evaluate).toHaveBeenCalledOnce();
+    expect(owned.page.keyboard.down).toHaveBeenCalledWith('s');
+    expect(owned.page.keyboard.down).toHaveBeenCalledWith('Backspace');
+    expect(owned.page.keyboard.down).toHaveBeenCalledWith('a');
+  });
+
+  it('makes and corrects mistypes when Frame pressSequentially extracts a text target', async () => {
+    mockRandom([0]);
+    const textInput = {
+      tagName: 'INPUT',
+      getAttribute: vi.fn((name: string) => name === 'type' ? 'text' : null),
+      isContentEditable: false,
+    };
+    const childLocator = fakeLocator(undefined, textInput);
+    const childFrame = fakeFrame(childLocator);
+    const mainFrame = fakeFrame();
+    mainFrame.childFrames.mockReturnValue([childFrame]);
+    const owned = fakePage({ mainFrame });
+
+    humanizePage(owned.page as any, { ...FAST_HUMAN_CONFIG, mistype_chance: 1 });
+    await childFrame.pressSequentially('#name', 'a');
+
+    expect(childLocator.evaluate).toHaveBeenCalledWith(expect.any(Function), false);
+    expect(owned.page.keyboard.down).toHaveBeenCalledWith('s');
+    expect(owned.page.keyboard.down).toHaveBeenCalledWith('Backspace');
+    expect(owned.page.keyboard.down).toHaveBeenCalledWith('a');
+  });
+
+  it('suppresses mistypes when ElementHandle fill extracts a password target', async () => {
+    mockRandom([0]);
+    const passwordInput = {
+      tagName: 'INPUT',
+      getAttribute: vi.fn((name: string) => name === 'type' ? 'password' : null),
+      isContentEditable: false,
+    };
+    const handle = fakeElement(undefined, passwordInput);
+    const owned = fakePage();
+    owned.page.$.mockResolvedValue(handle);
+
+    humanizePage(owned.page as any, { ...FAST_HUMAN_CONFIG, mistype_chance: 1 });
+    const patchedHandle = await owned.page.$('#password');
+    await patchedHandle.fill('a', { force: true });
+
+    expect(handle.evaluate).toHaveBeenCalledOnce();
+    expect(owned.page.keyboard.down).toHaveBeenCalledWith('a');
+    expect(owned.page.keyboard.down).not.toHaveBeenCalledWith('Backspace');
+  });
+
+  it('does not evaluate the ElementHandle target in the main world when CDP is available', async () => {
+    mockRandom([0]);
+    const textInput = {
+      tagName: 'INPUT',
+      getAttribute: vi.fn((name: string) => name === 'type' ? 'text' : null),
+      isContentEditable: false,
+    };
+    const handle = fakeElement(undefined, textInput);
+    const owned = fakePage();
+    owned.page.$.mockResolvedValue(handle);
+
+    humanizePage(owned.page as any, { ...FAST_HUMAN_CONFIG, mistype_chance: 1 });
+    const patchedHandle = await owned.page.$('#name');
+    await patchedHandle.fill('a', { force: true });
+
+    expect(handle.evaluate).toHaveBeenCalledTimes(1);
+    expect(owned.page.keyboard.down).toHaveBeenCalledWith('a');
+    expect(owned.page.keyboard.down).not.toHaveBeenCalledWith('Backspace');
+  });
+
+  it('passes caller sensitivity through ElementHandle fill for text inputs', async () => {
+    mockRandom([0]);
+    const textInput = {
+      tagName: 'INPUT',
+      getAttribute: vi.fn((name: string) => name === 'type' ? 'text' : null),
+      isContentEditable: false,
+    };
+    const handle = fakeElement(undefined, textInput);
+    const owned = fakePage();
+    owned.page.$.mockResolvedValue(handle);
+
+    humanizePage(owned.page as any, { ...FAST_HUMAN_CONFIG, mistype_chance: 1 });
+    const patchedHandle = await owned.page.$('#name');
+    await patchedHandle.fill('a', { force: true, sensitive: true });
+
+    expect(handle.evaluate).toHaveBeenCalledOnce();
+    expect(owned.page.keyboard.down).toHaveBeenCalledWith('a');
+    expect(owned.page.keyboard.down).not.toHaveBeenCalledWith('Backspace');
   });
 
   it('uses CDP dispatchKeyEvent for shift symbols on the trusted-event path', async () => {
