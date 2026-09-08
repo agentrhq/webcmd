@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { isProfileRegisteredInLocalState } from '../../google-chrome.js';
+import { isProfileRegisteredInLocalState, setProfileDisplayName } from '../../google-chrome.js';
 import { findExactChromeProcesses, terminateChromeProcessTree } from './chrome-process.js';
 
 const execFileAsync = promisify(execFile);
@@ -16,6 +16,7 @@ export interface RegisterNativeChromeProfileDeps {
   delay(ms: number): Promise<void>;
   now(): number;
   platform: NodeJS.Platform;
+  setDisplayName(userDataDir: string, profileDirectory: string, name: string): void;
 }
 
 async function launchViaOpen(executablePath: string, args: string[]): Promise<void> {
@@ -33,6 +34,7 @@ const defaultDeps: RegisterNativeChromeProfileDeps = {
   delay: ms => new Promise(resolve => setTimeout(resolve, ms)),
   now: Date.now,
   platform: process.platform,
+  setDisplayName: setProfileDisplayName,
 };
 
 /**
@@ -65,8 +67,12 @@ export async function registerNativeChromeProfile(
     registered = deps.isRegistered(userDataDir, profileDirectory);
   }
 
-  for (const pid of await deps.findProcesses(identity, deps.platform)) {
-    await deps.terminate(pid, deps.platform, false);
-  }
+  const pids = await deps.findProcesses(identity, deps.platform);
+  for (const pid of pids) await deps.terminate(pid, deps.platform, false);
+  if (pids.length > 0) await deps.delay(300);
+  // Best-effort: if Chrome was already running, this write was absorbed into
+  // that process and Chrome may later flush its in-memory Local State and
+  // clobber the name. Cosmetic only — never fail the export over it.
+  if (registered) deps.setDisplayName(userDataDir, profileDirectory, profileDirectory);
   return { registered };
 }

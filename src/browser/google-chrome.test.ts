@@ -10,6 +10,7 @@ import {
   importChromeCookies,
   isProfileRegisteredInLocalState,
   listChromeCookieSources,
+  setProfileDisplayName,
 } from './google-chrome.js';
 
 describe('Google Chrome discovery', () => {
@@ -256,5 +257,39 @@ describe('isProfileRegisteredInLocalState', () => {
   it('reports false when Local State is missing or unreadable', () => {
     const readFileSync = () => { throw new Error('ENOENT'); };
     expect(isProfileRegisteredInLocalState(chromeRoot, 'webcmd-work', { readFileSync })).toBe(false);
+  });
+});
+
+describe('setProfileDisplayName', () => {
+  const chromeRoot = path.join('Users', 'test', 'Chrome');
+  const localStatePath = path.join(chromeRoot, 'Local State');
+
+  it('sets the name when the entry exists', () => {
+    const writeFileSync = vi.fn();
+    setProfileDisplayName(chromeRoot, 'test1', 'test1', {
+      readFileSync: (() => JSON.stringify({ profile: { info_cache: { test1: { name: 'Person 2' } } } })) as unknown as typeof import('node:fs').readFileSync,
+      writeFileSync: writeFileSync as unknown as typeof import('node:fs').writeFileSync,
+    });
+    expect(writeFileSync).toHaveBeenCalledOnce();
+    expect(writeFileSync.mock.calls[0][0]).toBe(localStatePath);
+    expect(JSON.parse(writeFileSync.mock.calls[0][1] as string).profile.info_cache.test1.name).toBe('test1');
+  });
+
+  it('leaves the file alone when the profileDirectory key is not in info_cache', () => {
+    const writeFileSync = vi.fn();
+    setProfileDisplayName(chromeRoot, 'test1', 'test1', {
+      readFileSync: (() => JSON.stringify({ profile: { info_cache: { Default: { name: 'Person 1' } } } })) as unknown as typeof import('node:fs').readFileSync,
+      writeFileSync: writeFileSync as unknown as typeof import('node:fs').writeFileSync,
+    });
+    expect(writeFileSync).not.toHaveBeenCalled();
+  });
+
+  it('does not throw when Local State is missing, unreadable, or malformed JSON', () => {
+    expect(() => setProfileDisplayName(chromeRoot, 'test1', 'test1', {
+      readFileSync: (() => { throw new Error('ENOENT'); }) as unknown as typeof import('node:fs').readFileSync,
+    })).not.toThrow();
+    expect(() => setProfileDisplayName(chromeRoot, 'test1', 'test1', {
+      readFileSync: (() => '{not json') as unknown as typeof import('node:fs').readFileSync,
+    })).not.toThrow();
   });
 });
