@@ -193,12 +193,16 @@ async function persist(behaviorPath: string, document: BehaviorDocument, profile
 function sampleTraits(random: () => number): BehaviorTraits {
   const traits: Record<string, number | [number, number] | false> = { idle_between_actions: false };
   for (const key of Object.keys(TRAIT_BOUNDS) as NumericTrait[]) {
-    const defaultValue = DEFAULT_CONFIG[key];
-    traits[key] = Array.isArray(defaultValue)
-      ? sampleTuple(defaultValue, TRAIT_BOUNDS[key], random)
-      : sampleNumber(defaultValue, TRAIT_BOUNDS[key], random);
+    traits[key] = sampleTrait(key, random);
   }
   return traits as BehaviorTraits;
+}
+
+function sampleTrait(key: NumericTrait, random: () => number): number | [number, number] {
+  const defaultValue = DEFAULT_CONFIG[key];
+  return Array.isArray(defaultValue)
+    ? sampleTuple(defaultValue, TRAIT_BOUNDS[key], random)
+    : sampleNumber(defaultValue, TRAIT_BOUNDS[key], random);
 }
 
 export function migrateBehaviorDocument(raw: unknown, random: () => number = Math.random): BehaviorDocument {
@@ -214,10 +218,7 @@ export function migrateBehaviorDocument(raw: unknown, random: () => number = Mat
       traits[key] = existing as number | [number, number];
       continue;
     }
-    const defaultValue = DEFAULT_CONFIG[key];
-    traits[key] = Array.isArray(defaultValue)
-      ? sampleTuple(defaultValue, TRAIT_BOUNDS[key], random)
-      : sampleNumber(defaultValue, TRAIT_BOUNDS[key], random);
+    traits[key] = sampleTrait(key, random);
   }
 
   return { schemaVersion: BEHAVIOR_SCHEMA_VERSION, profileId: raw.profileId as string, traits: traits as BehaviorTraits };
