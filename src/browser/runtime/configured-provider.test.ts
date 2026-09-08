@@ -55,6 +55,22 @@ describe('configured local browser provider', () => {
     });
   });
 
+  it('passes syncToChrome to Cloak when the chrome browser opted in', async () => {
+    const LocalCloakRuntimeProvider = vi.fn();
+    vi.doMock('./local-cloak/provider.js', () => ({ LocalCloakRuntimeProvider }));
+    const { createConfiguredLocalBrowserRuntimeProvider: createProvider } = await import('./configured-provider.js');
+    const executablePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+
+    createProvider(makeLocalConfig(new Date(0), { kind: 'chrome', executablePath, syncToChrome: true }));
+
+    expect(LocalCloakRuntimeProvider).toHaveBeenCalledWith({
+      executablePath,
+      profileNamespace: 'chrome',
+      runtimeName: 'chrome',
+      syncToChrome: true,
+    });
+  });
+
   it('does not fall back to Cloak when SLAB construction fails', async () => {
     const cloak = vi.fn();
     const failure = new Error('SLAB startup failed');

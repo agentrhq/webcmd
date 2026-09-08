@@ -18,5 +18,6 @@ export function createConfiguredLocalBrowserRuntimeProvider(
     executablePath,
     profileNamespace: browser.kind === 'chrome' ? 'chrome' : resolveBrowserProfileNamespace(executablePath),
     runtimeName: browser.kind,
+    ...(browser.kind === 'chrome' && browser.syncToChrome === true ? { syncToChrome: true } : {}),
   });
 }

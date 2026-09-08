@@ -17,6 +17,7 @@ export interface LocalCloakRuntimeProviderOptions {
   launchPersistentContext?: LaunchPersistentContext;
   launchBackgroundPersistentContext?: LaunchPersistentContext;
   launchChromePersistentContext?: LaunchChromePersistentContext;
+  syncToChrome?: boolean;
 }
 
 export class LocalCloakRuntimeProvider implements BrowserRuntimeProvider {
@@ -37,6 +38,7 @@ export class LocalCloakRuntimeProvider implements BrowserRuntimeProvider {
       launchPersistentContext: opts.launchPersistentContext,
       launchBackgroundPersistentContext: opts.launchBackgroundPersistentContext,
       launchChromePersistentContext: opts.launchChromePersistentContext,
+      syncToChrome: opts.syncToChrome,
       hasActiveHandoff: profileId => this.sessions.list(profileId, 100).some(session => (
         Boolean(session.handoff) && Date.parse(session.handoff!.expiresAt) > Date.now()
       )),

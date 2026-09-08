@@ -423,7 +423,41 @@ describe('webcmd setup', () => {
       stderr: new Writable({ write: (chunk, _enc, cb) => { messages.push(chunk.toString()); cb(); } }),
     })).resolves.not.toBe(0);
 
-    expect(messages.join('')).toContain('--chrome-profile and --import-chrome-cookies are only valid with --browser chrome');
+    expect(messages.join('')).toContain('--chrome-profile, --import-chrome-cookies, and --sync-to-chrome are only valid with --browser chrome');
+  });
+
+  it('persists sync-to-chrome mode with --browser chrome --sync-to-chrome', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-chrome-sync-'));
+    const env = { WEBCMD_CONFIG_DIR: tempDir } as NodeJS.ProcessEnv;
+    const executablePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+
+    await expect(runHostedSetup({
+      env,
+      argv: ['--browser', 'chrome', '--sync-to-chrome', '--no-import-chrome-cookies'],
+      resolveGoogleChromeExecutable: async () => executablePath,
+      fetchDaemonStatus: async () => null,
+      write: () => undefined,
+    })).resolves.toBe(0);
+
+    expect(JSON.parse(await readFile(getConfigPath({ env }), 'utf8'))).toMatchObject({
+      browser: { kind: 'chrome', executablePath, syncToChrome: true },
+    });
+  });
+
+  it('rejects --sync-to-chrome without --browser chrome', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-sync-invalid-'));
+    const messages: string[] = [];
+
+    await expect(runHostedSetup({
+      env: { WEBCMD_CONFIG_DIR: tempDir },
+      argv: ['--browser', 'cloak', '--sync-to-chrome'],
+      isTTY: false,
+      fetchDaemonStatus: async () => null,
+      write: message => { messages.push(message); },
+      stderr: new Writable({ write: (chunk, _enc, cb) => { messages.push(chunk.toString()); cb(); } }),
+    })).resolves.not.toBe(0);
+
+    expect(messages.join('')).toContain('--chrome-profile, --import-chrome-cookies, and --sync-to-chrome are only valid with --browser chrome');
   });
 
   it('reuses an existing SLAB app without downloading it again', async () => {
