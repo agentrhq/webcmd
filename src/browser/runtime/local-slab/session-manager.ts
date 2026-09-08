@@ -8,6 +8,7 @@ import { isClosedContextError } from '../../run/types.js';
 import { disposeHumanizedPage, humanizePage } from '../../humanizer/page.js';
 import { attachSlabProfile, type AttachedSlabProfile } from './attachment.js';
 import type { DiscoveredBrowserWindowListRow } from '../../sessions.js';
+import { loadOrCreateBehaviorProfile, type BehaviorDocument } from './behavior-profile.js';
 
 const TARGET_PAGE_MATCH_TIMEOUT_MS = 1_000;
 export const PROFILE_IDLE_TIMEOUT_MS = 60_000;
@@ -95,6 +96,7 @@ interface ProfileRuntime {
   profileId: string;
   attachment: AttachedSlabProfile;
   context: BrowserContext;
+  behavior?: BehaviorDocument;
   cdp?: CDPSession;
   sessions: Map<string, SessionRuntime>;
   windowOwners: Map<number, string>;
@@ -165,7 +167,7 @@ export interface SlabSessionManagerOptions {
   baseDir?: string;
   attachProfile?: AttachSlabProfile;
   hasActiveHandoff?: (profileId: string) => boolean;
-  humanize?: typeof humanizePage;
+  humanize?: (page: PlaywrightPage, config?: Parameters<typeof humanizePage>[1]) => PlaywrightPage;
 }
 
 let pageCounter = 0;
@@ -206,7 +208,7 @@ export class SlabSessionManager {
 
   private readonly attachProfile: AttachSlabProfile;
   private readonly hasActiveHandoff: (profileId: string) => boolean;
-  private readonly humanize: typeof humanizePage;
+  private readonly humanize: (page: PlaywrightPage, config?: Parameters<typeof humanizePage>[1]) => PlaywrightPage;
   private readonly profiles = new Map<string, ProfileRuntime>();
   private readonly detachedSessions = new Map<string, Set<string>>();
   private readonly profileLaunches = new Map<string, Promise<ProfileRuntime>>();
@@ -679,9 +681,10 @@ export class SlabSessionManager {
     }
     const newlyHumanized: PlaywrightPage[] = [];
     try {
+      const behavior = await this.ensureBehavior(runtime);
       for (const sibling of siblings) {
         if (!(sibling as unknown as { _original?: unknown })._original) {
-          this.humanize(sibling);
+          this.humanize(sibling, behavior.traits);
           newlyHumanized.push(sibling);
         }
       }
@@ -1396,6 +1399,7 @@ export class SlabSessionManager {
       humanize?: boolean;
     },
   ): Promise<PageEntry> {
+    const behavior = input.humanize !== false ? await this.ensureBehavior(runtime) : undefined;
     const targetId = await this.targetIdForPage(runtime, page);
     this.clearPendingTargetPage(runtime, targetId, page);
     const windowId = await this.windowIdForTarget(runtime, targetId, page);
@@ -1455,7 +1459,7 @@ export class SlabSessionManager {
       entry.leaseKey = input.leaseKey ?? (entry.leaseKey.startsWith('unowned\u0000') ? `page\u0000${entry.pageId}` : entry.leaseKey);
     }
     session.pages.set(entry.leaseKey, entry);
-    if (input.humanize !== false) this.humanize(page);
+    if (behavior) this.humanize(page, behavior.traits);
     this.cancelProfileIdle(runtime);
     this.refreshIdleTimer(runtime, session, entry.leaseKey, entry);
     if (!wasOwned) for (const listener of this.sessionPageListeners.get(session) ?? []) listener(page);
@@ -1479,6 +1483,18 @@ export class SlabSessionManager {
         await disposeHumanizedPage(entry.page);
       }
       throw error;
+    }
+  }
+
+  private async ensureBehavior(runtime: ProfileRuntime): Promise<BehaviorDocument> {
+    if (runtime.behavior) return runtime.behavior;
+    try {
+      runtime.behavior = await loadOrCreateBehaviorProfile(runtime.profileId, { baseDir: this.opts.baseDir });
+      return runtime.behavior;
+    } catch (error) {
+      throw new Error(
+        `Unable to load SLAB behavioral state for profile "${runtime.profileId}": ${errorMessage(error)}`,
+      );
     }
   }
 
