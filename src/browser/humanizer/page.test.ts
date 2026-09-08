@@ -39,24 +39,23 @@ const FAST_HUMAN_CONFIG: Partial<HumanConfig> = {
   idle_between_actions: false,
 };
 
-function fakeCdpSession() {
+function fakeCdpSession(runtimeEvaluate?: (expression: string) => unknown) {
   return {
     detach: vi.fn().mockResolvedValue(undefined),
-    send: vi.fn(async (method: string) => {
+    send: vi.fn(async (method: string, params?: { expression?: string }) => {
       if (method === 'Page.getFrameTree') return { frameTree: { frame: { id: 'frame-1' } } };
       if (method === 'Page.createIsolatedWorld') return { executionContextId: 7 };
-      if (method === 'Runtime.evaluate') return { result: { value: false } };
+      if (method === 'Runtime.evaluate') return { result: { value: runtimeEvaluate?.(params?.expression ?? '') ?? false } };
       return {};
     }),
   };
 }
 
-function fakeLocator(boxes: Array<{ x: number; y: number; width: number; height: number }> = [{ x: 10, y: 10, width: 20, height: 10 }]) {
+function fakeLocator(
+  boxes: Array<{ x: number; y: number; width: number; height: number }> = [{ x: 10, y: 10, width: 20, height: 10 }],
+  node: any = { tagName: 'BUTTON', getAttribute: vi.fn(() => null), isContentEditable: false },
+) {
   let boxIndex = 0;
-  const node = {
-    tagName: 'BUTTON',
-    getAttribute: vi.fn(() => null),
-  };
   const locator: any = {
     first: vi.fn(() => locator),
     waitFor: vi.fn().mockResolvedValue(undefined),
@@ -66,24 +65,23 @@ function fakeLocator(boxes: Array<{ x: number; y: number; width: number; height:
     isChecked: vi.fn().mockResolvedValue(false),
     scrollIntoViewIfNeeded: vi.fn().mockResolvedValue(undefined),
     boundingBox: vi.fn(async () => boxes[Math.min(boxIndex++, boxes.length - 1)]),
-    evaluate: vi.fn(async (fn: unknown) => {
+    evaluate: vi.fn(async (fn: unknown, arg?: unknown) => {
       if (typeof fn === 'string') return { hit: true };
-      return (fn as (el: typeof node) => unknown)(node);
+      return (fn as (el: typeof node, arg?: unknown) => unknown)(node, arg);
     }),
   };
   return locator;
 }
 
-function fakeElement(box = { x: 10, y: 10, width: 20, height: 10 }) {
-  const node = {
-    tagName: 'BUTTON',
-    getAttribute: vi.fn(() => null),
-  };
+function fakeElement(
+  box = { x: 10, y: 10, width: 20, height: 10 },
+  node: any = { tagName: 'BUTTON', getAttribute: vi.fn(() => null), isContentEditable: false },
+) {
   const child = {
     boundingBox: vi.fn().mockResolvedValue(box),
-    evaluate: vi.fn(async (fn: unknown) => {
+    evaluate: vi.fn(async (fn: unknown, arg?: unknown) => {
       if (typeof fn === 'string') return { hit: true };
-      return (fn as (el: typeof node) => unknown)(node);
+      return (fn as (el: typeof node, arg?: unknown) => unknown)(node, arg);
     }),
     waitForElementState: vi.fn().mockResolvedValue(undefined),
     click: vi.fn(),
@@ -199,6 +197,7 @@ function mockRandom(values: number[]) {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe('humanizePage', () => {
@@ -337,6 +336,92 @@ describe('humanizePage', () => {
     expect(interCharacterDelays).toEqual([28, 20]);
     expect(owned.page.keyboard.down.mock.calls.map(([key]) => key)).toEqual(['a', 'b', 'c']);
     expect(owned.page.keyboard.up.mock.calls.map(([key]) => key)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('suppresses mistypes when Page type extracts a password target through CDP', async () => {
+    mockRandom([0]);
+    const cdp = fakeCdpSession(expression => expression.includes('autocomplete') ? {
+      tag: 'input',
+      type: 'password',
+      autocomplete: null,
+      contentEditable: false,
+      sensitive: false,
+    } : false);
+    const owned = fakePage({ cdp });
+
+    humanizePage(owned.page as any, { ...FAST_HUMAN_CONFIG, mistype_chance: 1 });
+    await owned.page.type('#password', 'a', { force: true });
+
+    expect(cdp.send).toHaveBeenCalledWith('Runtime.evaluate', expect.objectContaining({
+      expression: expect.stringContaining('autocomplete'),
+    }));
+    expect(owned.page.keyboard.down).toHaveBeenCalledWith('a');
+    expect(owned.page.keyboard.down).not.toHaveBeenCalledWith('Backspace');
+  });
+
+  it('uses Page evaluate to extract a text target when CDP extraction is unavailable', async () => {
+    mockRandom([0]);
+    const textInput = {
+      tagName: 'INPUT',
+      getAttribute: vi.fn((name: string) => name === 'type' ? 'text' : null),
+      isContentEditable: false,
+    };
+    const owned = fakePage();
+    vi.stubGlobal('document', { querySelector: vi.fn(() => textInput) });
+    owned.page.evaluate.mockImplementation(async (fn: (arg: unknown) => unknown, arg: unknown) => fn(arg));
+
+    humanizePage(owned.page as any, { ...FAST_HUMAN_CONFIG, mistype_chance: 1 });
+    await owned.page.fill('#name', 'a', { force: true });
+
+    expect(owned.page.evaluate).toHaveBeenCalledOnce();
+    expect(owned.page.keyboard.down).toHaveBeenCalledWith('s');
+    expect(owned.page.keyboard.down).toHaveBeenCalledWith('Backspace');
+    expect(owned.page.keyboard.down).toHaveBeenCalledWith('a');
+  });
+
+  it('makes and corrects mistypes when Frame pressSequentially extracts a text target', async () => {
+    mockRandom([0]);
+    const textInput = {
+      tagName: 'INPUT',
+      getAttribute: vi.fn((name: string) => name === 'type' ? 'text' : null),
+      isContentEditable: false,
+    };
+    const childLocator = fakeLocator(undefined, textInput);
+    const childFrame = fakeFrame(childLocator);
+    const mainFrame = fakeFrame();
+    mainFrame.childFrames.mockReturnValue([childFrame]);
+    const owned = fakePage({ mainFrame });
+
+    humanizePage(owned.page as any, { ...FAST_HUMAN_CONFIG, mistype_chance: 1 });
+    await childFrame.pressSequentially('#name', 'a');
+
+    expect(childLocator.evaluate).toHaveBeenCalledWith(expect.any(Function), false);
+    expect(owned.page.keyboard.down).toHaveBeenCalledWith('s');
+    expect(owned.page.keyboard.down).toHaveBeenCalledWith('Backspace');
+    expect(owned.page.keyboard.down).toHaveBeenCalledWith('a');
+  });
+
+  it('fails closed when ElementHandle fill cannot extract a target', async () => {
+    mockRandom([0]);
+    const passwordInput = {
+      tagName: 'INPUT',
+      getAttribute: vi.fn((name: string) => name === 'type' ? 'password' : null),
+      isContentEditable: false,
+    };
+    const handle = fakeElement(undefined, passwordInput);
+    handle.evaluate
+      .mockImplementationOnce(async (fn: unknown) => (fn as (node: typeof passwordInput) => unknown)(passwordInput))
+      .mockRejectedValueOnce(new Error('detached'));
+    const owned = fakePage();
+    owned.page.$.mockResolvedValue(handle);
+
+    humanizePage(owned.page as any, { ...FAST_HUMAN_CONFIG, mistype_chance: 1 });
+    const patchedHandle = await owned.page.$('#password');
+    await patchedHandle.fill('a', { force: true });
+
+    expect(handle.evaluate).toHaveBeenCalledTimes(2);
+    expect(owned.page.keyboard.down).toHaveBeenCalledWith('a');
+    expect(owned.page.keyboard.down).not.toHaveBeenCalledWith('Backspace');
   });
 
   it('uses CDP dispatchKeyEvent for shift symbols on the trusted-event path', async () => {

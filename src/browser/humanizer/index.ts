@@ -245,7 +245,7 @@ async function selectorHumanTypeTarget(
   if (stealth) {
     try {
       const escaped = JSON.stringify(selector);
-      return await stealth.evaluate(`
+      const target = await stealth.evaluate(`
         (() => {
           const el = document.querySelector(${escaped});
           return el ? {
@@ -257,6 +257,7 @@ async function selectorHumanTypeTarget(
           } : undefined;
         })()
       `);
+      if (target) return target;
     } catch {
       // Fall through to page.evaluate.
     }
