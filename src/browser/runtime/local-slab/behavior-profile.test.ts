@@ -159,6 +159,8 @@ describe('SLAB behavior profiles', () => {
     await loadOrCreateBehaviorProfile('default', { baseDir });
 
     const file = await stat(path.join(resolveSlabProfileDir('default', { baseDir }), BEHAVIOR_FILENAME));
-    expect(file.mode & 0o777).toBe(0o600);
+    if (process.platform !== 'win32') {
+      expect(file.mode & 0o777).toBe(0o600);
+    }
   });
 });
