@@ -285,7 +285,7 @@ describe('webcmd setup', () => {
   it('prompts to import Chrome cookies interactively and honors a "no" answer', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-chrome-cookies-prompt-'));
     const env = { WEBCMD_CONFIG_DIR: tempDir } as NodeJS.ProcessEnv;
-    const answers = ['chrome', 'n'];
+    const answers = ['chrome', '', 'n'];
     const prompts: string[] = [];
     const importChromeCookies = vi.fn();
 
@@ -424,6 +424,124 @@ describe('webcmd setup', () => {
     })).resolves.not.toBe(0);
 
     expect(messages.join('')).toContain('--chrome-profile, --import-chrome-cookies, and --sync-to-chrome are only valid with --browser chrome');
+  });
+
+  it('prompts for sync-to-chrome interactively and persists on y', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-chrome-sync-prompt-yes-'));
+    const env = { WEBCMD_CONFIG_DIR: tempDir } as NodeJS.ProcessEnv;
+    const answers = ['chrome', 'y'];
+    const prompts: string[] = [];
+    const executablePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+
+    await expect(runHostedSetup({
+      env,
+      question: async prompt => {
+        prompts.push(prompt);
+        return answers.shift() ?? '';
+      },
+      resolveGoogleChromeExecutable: async () => executablePath,
+      listChromeCookieSources: () => [],
+      fetchDaemonStatus: async () => null,
+      write: () => undefined,
+    })).resolves.toBe(0);
+
+    expect(prompts).toContain('Export webcmd profiles to native Chrome automatically so they open directly in Chrome? [y/N] ');
+    expect(JSON.parse(await readFile(getConfigPath({ env }), 'utf8'))).toMatchObject({
+      browser: { kind: 'chrome', executablePath, syncToChrome: true },
+    });
+  });
+
+  it('omits syncToChrome when the interactive prompt is declined or left default', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-chrome-sync-prompt-no-'));
+    const env = { WEBCMD_CONFIG_DIR: tempDir } as NodeJS.ProcessEnv;
+    const answers = ['chrome', ''];
+    const prompts: string[] = [];
+    const executablePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+
+    await expect(runHostedSetup({
+      env,
+      question: async prompt => {
+        prompts.push(prompt);
+        return answers.shift() ?? '';
+      },
+      resolveGoogleChromeExecutable: async () => executablePath,
+      listChromeCookieSources: () => [],
+      fetchDaemonStatus: async () => null,
+      write: () => undefined,
+    })).resolves.toBe(0);
+
+    expect(prompts).toContain('Export webcmd profiles to native Chrome automatically so they open directly in Chrome? [y/N] ');
+    expect(JSON.parse(await readFile(getConfigPath({ env }), 'utf8')).browser).toEqual({
+      kind: 'chrome',
+      executablePath,
+    });
+  });
+
+  it('does not prompt for sync-to-chrome when --sync-to-chrome is already set', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-chrome-sync-flag-no-prompt-'));
+    const env = { WEBCMD_CONFIG_DIR: tempDir } as NodeJS.ProcessEnv;
+    const prompts: string[] = [];
+    const executablePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+
+    await expect(runHostedSetup({
+      env,
+      argv: ['--browser', 'chrome', '--sync-to-chrome', '--no-import-chrome-cookies'],
+      question: async prompt => {
+        prompts.push(prompt);
+        return '';
+      },
+      resolveGoogleChromeExecutable: async () => executablePath,
+      fetchDaemonStatus: async () => null,
+      write: () => undefined,
+    })).resolves.toBe(0);
+
+    expect(prompts).not.toContain('Export webcmd profiles to native Chrome automatically so they open directly in Chrome? [y/N] ');
+    expect(JSON.parse(await readFile(getConfigPath({ env }), 'utf8'))).toMatchObject({
+      browser: { kind: 'chrome', executablePath, syncToChrome: true },
+    });
+  });
+
+  it('does not prompt for sync-to-chrome when selecting cloak interactively', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-cloak-no-sync-prompt-'));
+    const env = { WEBCMD_CONFIG_DIR: tempDir } as NodeJS.ProcessEnv;
+    const prompts: string[] = [];
+
+    await expect(runHostedSetup({
+      env,
+      platform: 'linux',
+      question: async prompt => {
+        prompts.push(prompt);
+        return 'cloak';
+      },
+      fetchDaemonStatus: async () => null,
+      write: () => undefined,
+    })).resolves.toBe(0);
+
+    expect(prompts).not.toContain('Export webcmd profiles to native Chrome automatically so they open directly in Chrome? [y/N] ');
+  });
+
+  it('does not prompt for sync-to-chrome when selecting slab interactively', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-slab-no-sync-prompt-'));
+    const env = { WEBCMD_CONFIG_DIR: tempDir } as NodeJS.ProcessEnv;
+    const prompts: string[] = [];
+
+    await expect(runHostedSetup({
+      env,
+      platform: 'darwin',
+      homeDir: '/Users/me',
+      question: async prompt => {
+        prompts.push(prompt);
+        return 'slab';
+      },
+      existsSync: candidate => candidate === '/Applications/SLAB.app/Contents/MacOS/SLAB',
+      verifySlabApp: async () => undefined,
+      launchSlabApp: async () => undefined,
+      inspectSlabStatus: async () => 'installed-running',
+      fetchDaemonStatus: async () => null,
+      write: () => undefined,
+    })).resolves.toBe(0);
+
+    expect(prompts).not.toContain('Export webcmd profiles to native Chrome automatically so they open directly in Chrome? [y/N] ');
   });
 
   it('persists sync-to-chrome mode with --browser chrome --sync-to-chrome', async () => {

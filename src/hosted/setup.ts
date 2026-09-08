@@ -122,9 +122,14 @@ export async function runHostedSetup(io: SetupIo = {}): Promise<number> {
       );
     }
     browser ??= { kind: 'cloak' };
+    let syncToChrome = parsed.syncToChrome;
+    if (browser.kind === 'chrome' && syncToChrome === undefined && interactive) {
+      const answer = (await ask('Export webcmd profiles to native Chrome automatically so they open directly in Chrome? [y/N] ')).trim().toLowerCase();
+      syncToChrome = answer.startsWith('y');
+    }
     const before = await (io.fetchDaemonStatus ?? fetchDaemonStatus)();
     try {
-      const selected = await validateLocalBrowser(browser, io, chromeDiscovery, parsed.syncToChrome);
+      const selected = await validateLocalBrowser(browser, io, chromeDiscovery, syncToChrome);
       if (selected.kind === 'chrome') await maybeImportChromeCookies(parsed, io, interactive, ask, write);
       (io.saveConfig ?? saveWebcmdConfig)(makeLocalConfig(io.now?.() ?? new Date(), selected), io);
       if (before) await restartConfiguredDaemon(selected, io);
