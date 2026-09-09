@@ -54,10 +54,9 @@ Cline has no per-tool deny list like OpenCode. Steer it with a rule in `.clineru
 ```markdown
 # Webcmd for the open web
 
-Use Webcmd for anything on the open web — fetching, authenticated third-party sites, multi-step automation, workflows worth making reusable:
+Use Webcmd for anything on the open web — fetching, authenticated third-party sites, and multi-step browser work:
 
-- Check `webcmd list -f json` for an adapter that covers the task; use it first.
-- Otherwise run `webcmd --profile work session create "Work Project"`, then drive its returned readable ID with `webcmd --profile work --session work-project-k7 browser tabs` via `bash`.
+- Run `webcmd --profile work session create "Work Project"`, then drive its returned readable ID with `webcmd --profile work --session work-project-k7 browser tabs` via `bash`.
 - Run `webcmd doctor` first; use `webcmd --profile work session list` to inspect state and `webcmd --profile work session close work-project-k7` when finished.
 - For login walls, use Webcmd's human handoff; never type passwords, OTPs, cookies, or credentials.
 
@@ -85,7 +84,7 @@ Check for browser or scraping MCP servers in `.cline/mcp.json` — they overlap 
 | Cline still uses `fetch_web` / `web_fetch` | Confirm `.clinerules/webcmd.md` is toggled on in the Rules panel. |
 | `web_search` missing | Web Tools require the Cline provider and the Web Tools toggle in Feature Settings. Not a Webcmd problem. |
 | `webcmd` not found in Cline shell | Confirm `webcmd` is on the PATH Cline's `bash` tool uses; restart after installing the CLI. |
-| Browser Session idles or loses its window | Keep its immutable, Profile-scoped ID; `webcmd --profile work --session work-project-k7 browser tabs` reopens it. Start with `webcmd --profile work session create "Work Project"`; use `webcmd --profile work session list` and `webcmd --profile work session close work-project-k7` for lifecycle. Adapter commands without `--session` reuse `adapter-default`; raw browser commands require an explicit readable selector. |
+| Browser Session idles or loses its window | Keep its immutable, Profile-scoped ID; `webcmd --profile work --session work-project-k7 browser tabs` reopens it. Use `webcmd --profile work session list` to inspect it and `webcmd --profile work session close work-project-k7` when finished. |
 
 ## See also
 

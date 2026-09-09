@@ -124,7 +124,7 @@ After verifying Webcmd is set up and working properly, summarize the steps you t
 - Research a topic across a site and return a concise comparison with source links.
 - Collect bookmarks, messages, or profile data using a logged-in profile.
 - Check product prices, availability, or delivery options.
-- Turn a proven browser workflow into a reusable `webcmd <site>` command.
+- Reuse verified site structure from earlier browser work and refresh it when the live page changes.
 
 ## MCP-based agents
 

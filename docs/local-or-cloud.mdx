@@ -1,6 +1,6 @@
 ---
 title: Local or Cloud
-description: Choose where Webcmd runs and configure the Webcmd Cloud alpha when hosted browser infrastructure is useful.
+description: Choose where Webcmd browser Sessions run and understand which state remains local.
 ---
 
 # Local or Cloud
@@ -9,42 +9,63 @@ description: Choose where Webcmd runs and configure the Webcmd Cloud alpha when 
 
 | Choose local when | Choose Cloud alpha when |
 | --- | --- |
-| The task needs desktop apps, local tools, local adapters, or a browser on this machine. | You want Webcmd to run supported commands and browser sessions on hosted infrastructure. |
+| The task needs a browser or authenticated state on this machine. | You want browser Sessions to run on hosted infrastructure. |
 
-The CLI grammar remains the same in either mode.
+Browser Session and Profile concepts remain consistent across both environments.
 
 ## Local Mode
 
-Local mode runs Webcmd against this machine's tools, adapters, and browser. Choose it for desktop workflows or work that depends on local state. Local CLI self-learning stores sitemap memory on this machine.
+Local mode runs Webcmd against a browser on this machine. Choose it for work
+that depends on local browser state or a browser you want to inspect directly.
+Self-learning sitemap memory is stored locally.
+
+Configure the local browser with:
+
+```bash
+webcmd setup
+```
+
+Cloak is the bundled default. You can also select an installed Google Chrome,
+the macOS-alpha SLAB runtime, or a compatible browser executable:
+
+```bash
+webcmd setup --browser chrome
+webcmd setup --browser slab
+webcmd setup --browser /absolute/path/to/browser
+```
 
 ## Webcmd Cloud Alpha
 
-Webcmd Cloud alpha is for supported commands and browser sessions on hosted infrastructure. Hosted browser sessions run through Webcmd Cloud's Browser Use-backed infrastructure for browser lifecycle, proxying, and live viewport access. MCP and hosted browser documents remain browser-operation-only; they do not teach local site memory or Git.
+Webcmd Cloud alpha runs browser Sessions on hosted infrastructure with browser
+lifecycle, proxying, and live viewport access managed by Webcmd. Cloud access
+and credentials are provisioned separately; `webcmd setup` configures local
+browser mode only. Hosted browser tasks do not teach or synchronize the local
+sitemap memory stored on this machine.
 
-## Set Up Hosted Mode
-
-1. Create an account at `https://api.webcmd.dev/account/signup`.
-2. Create and copy an API key from the account page.
-3. Run `webcmd setup`, choose hosted mode, and paste the key when prompted.
-
-Hosted browser tasks are scoped to a workspace. Set `--workspace <id>` or the `WEBCMD_WORKSPACE` env var per invocation (flag wins, then env, then an implicit default workspace); the CLI sends it as the `X-Webcmd-Workspace` header. Within a workspace, `--profile <name>` selects a persona; an omitted selector or `--profile default` lazily creates that workspace's own `default` profile.
+Hosted tasks are scoped to a workspace. Set `--workspace <id>` or
+`WEBCMD_WORKSPACE` per invocation; the flag takes precedence over the
+environment variable and then the implicit default workspace. Within a
+workspace, `--profile <name>` selects an isolated browser identity.
 
 ```bash
-# Each downstream user gets their own workspace and its own lazy profiles.
-WEBCMD_WORKSPACE=user_64256 webcmd github whoami
-WEBCMD_WORKSPACE=user_64256 webcmd --profile work github whoami
+WEBCMD_WORKSPACE=user_64256 webcmd --profile work session list -f json
 ```
 
-`webcmd profile list` returns profile rows scoped to the ambient workspace. `webcmd profile delete <profile-id>` permanently removes hosted browser state. When sign-in is required, Webcmd returns a Webcmd-owned live authentication view; complete sign-in there, then let the agent continue. See [Authentication and Profiles](/authentication-and-profiles).
-
-View hosted usage on the account page.
+`webcmd profile list` returns Profiles in the active workspace.
+`webcmd profile delete <profile-id>` permanently removes the selected hosted
+browser state. When sign-in is required, Webcmd returns a live authentication
+view. See [Authentication and Profiles](/authentication-and-profiles).
 
 ## What Stays Separate
 
-Local and hosted profiles, adapters, site memory, and traces do not sync. Treat each mode as its own working environment.
+Local and hosted Profiles, Sessions, site memory, and traces do not sync. Treat
+each environment as a separate browser workspace.
 
-Local mode has no workspace concept. Local profile behavior is unchanged: an arbitrary `--profile <name>` lazily creates separate local browser state. Local `webcmd profile list`, `rename`, and `use` continue to manage that local state; they do not create or manage hosted profiles.
+Local mode has no workspace concept. An arbitrary `--profile <name>` creates
+separate local browser state lazily; `profile list`, `rename`, and `use` manage
+that local state.
 
 ## Current Boundaries
 
-Cloud is alpha. Billing is not presented as generally available; use hosted mode when its supported infrastructure fits the workflow.
+Cloud is alpha. Billing is not presented as generally available; use it only
+when hosted browser infrastructure has been enabled for your account.

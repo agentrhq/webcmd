@@ -29,7 +29,7 @@ webcmd skills add
 
 When `webcmd skills add` prompts, choose the `agents` provider. It installs into `~/.agents/skills/`, which Cursor reads on startup along with `.cursor/skills/`, `.agents/skills/`, and `~/.cursor/skills/`. Cursor then surfaces `webcmd-browser` as a skill when a task matches its description.
 
-For a project-scoped setup, copy the `webcmd-*` skill folders into the project's `.cursor/skills/` or `.agents/skills/` so the whole team gets them. Restart Cursor after installing skills.
+For a project-scoped setup, copy the `webcmd-browser` skill folder into the project's `.cursor/skills/` or `.agents/skills/` so the whole team gets it. Restart Cursor after installing skills.
 
 ### Override default tools
 
@@ -49,10 +49,9 @@ alwaysApply: true
 ---
 
 Use Webcmd for anything on the open web — fetching, authenticated
-third-party sites, multi-step automation, workflows worth making reusable:
+third-party sites, and multi-step browser work:
 
-- Check `webcmd list -f json` for an adapter that covers the task; use it first.
-- Otherwise run `webcmd --profile work session create "Work Project"`, then drive its returned readable ID with `webcmd --profile work --session work-project-k7 browser tabs` via the shell tool.
+- Run `webcmd --profile work session create "Work Project"`, then drive its returned readable ID with `webcmd --profile work --session work-project-k7 browser tabs` via the shell tool.
 - Run `webcmd doctor` first; use `webcmd --profile work session list` to inspect state and `webcmd --profile work session close work-project-k7` when finished.
 - For login walls, use Webcmd's human handoff; never type passwords, OTPs, cookies, or credentials.
 
@@ -73,11 +72,11 @@ Note that the rule is guidance, not a block. Cursor's Browser Automation has bee
 | Symptom | What to try |
 | --- | --- |
 | `webcmd doctor` is red | Fix the browser runtime first; browser commands depend on it. |
-| Skills not surfacing in Cursor | Confirm the `webcmd-*` skill folders are under `.cursor/skills/`, `.agents/skills/`, or `~/.agents/skills/`, then restart Cursor. |
+| Skills not surfacing in Cursor | Confirm the `webcmd-browser` skill folder is under `.cursor/skills/`, `.agents/skills/`, or `~/.agents/skills/`, then restart Cursor. |
 | Cursor uses its Browser tool for external sites | Confirm `.cursor/rules/webcmd-browser.mdc` has `alwaysApply: true`; for a hard block, set Browser Automation to Off. |
 | Browser Automation turns itself back on | Known behaviour — a prompt mentioning "browser" can re-enable it. Avoid the word, or turn it off in the agent window. |
 | `webcmd` not found in Cursor shell | Confirm `webcmd` is on the PATH the Cursor shell uses; restart Cursor after installing the CLI. |
-| Browser Session idles or loses its window | Keep its immutable, Profile-scoped ID; `webcmd --profile work --session work-project-k7 browser tabs` reopens it. Start with `webcmd --profile work session create "Work Project"`; use `webcmd --profile work session list` and `webcmd --profile work session close work-project-k7` for lifecycle. Adapter commands without `--session` reuse `adapter-default`; raw browser commands require an explicit readable selector. |
+| Browser Session idles or loses its window | Keep its immutable, Profile-scoped ID; `webcmd --profile work --session work-project-k7 browser tabs` reopens it. Use `webcmd --profile work session list` to inspect it and `webcmd --profile work session close work-project-k7` when finished. |
 
 ## See also
 
