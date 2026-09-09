@@ -18,6 +18,14 @@
 - Hosted command lists retain excluded commands as `LOCAL` rows and return a local-only error instead of plugin-install guidance.
 - Local auth commands initialize user CLI compatibility shims, and hosted auth uses the same native grammar, flags, choices, and help as local mode.
 
+## [0.8.4](https://github.com/agentrhq/webcmd/compare/webcmd-v0.8.3...webcmd-v0.8.4) (2026-09-08)
+
+
+### Bug Fixes
+
+* **chrome:** debounce sync-to-chrome export and set the exported profile's display name ([#504](https://github.com/agentrhq/webcmd/issues/504)) ([186b98b](https://github.com/agentrhq/webcmd/commit/186b98b30bb557e48bc5ecf086ef1bddcc562bf0))
+* show disconnected profiles in plain output, offer sync-to-chrome interactively ([#502](https://github.com/agentrhq/webcmd/issues/502)) ([1b05e6a](https://github.com/agentrhq/webcmd/commit/1b05e6a264d99e041a1da4a14bd405067d0be66b))
+
 ## [0.8.3](https://github.com/agentrhq/webcmd/compare/webcmd-v0.8.2...webcmd-v0.8.3) (2026-09-08)
 
 ### Highlights
