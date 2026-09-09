@@ -1,4 +1,4 @@
-<img width="1280" height="640" alt="Webcmd — stop paying agents to rediscover the web" src="docs/readme-hero.png" />
+<img width="1280" height="640" alt="Webcmd — stop paying agents to rediscover the web" src="docs/readme-hero-v2.png" />
 
 
 <p align="center">
@@ -23,16 +23,25 @@
 
 **Self-learning browser infra for AI agents.**
 
-Webcmd learns the navigational context of websites as agents use them, then compiles that knowledge into deterministic commands for faster, cheaper, more reliable browser automation. The goal is simple: stop making agents rediscover the same sites on every run and cut browser-agent token spend by up to 90%.
+Webcmd learns the navigational context of websites as agents use them, then
+turns that knowledge into local memory for faster, cheaper, more reliable
+browser automation. The goal is simple: stop making agents rediscover the same
+sites on every run and cut browser-agent token spend by up to 90%.
 
-On top of live browser control, Webcmd adds 3 layers of learnings. Each layer collapses cost and variance for the layer above it.
+Webcmd pairs live browser control with a self-learning memory layer:
 
 | Layer | Scenario | What Webcmd Helps With |
 | --- | --- | --- |
 | 0. Live browser control | The site is unfamiliar. | Use `webcmd browser` to inspect, click, type, extract, capture network calls, and complete the task in a real browser. |
 | 1. Sitemap memory | The site is familiar, but the action space is not fully known. | Capture an agent-facing sitemap of observed pages, states, actions, workflows, APIs, pitfalls, and fallback paths. |
-| 2. CLI authoring | The action space is known, but the path is still too variable for one fixed sequence. | Explicitly author a reusable `webcmd <site>` adapter with structured output, so future agents spend tokens on the task instead of navigation. |
-| 3. Extend existing CLIs | The workflow is deterministic enough to stop browsing. | Extend the `webcmd <site>` adapter with a tailored command so the workflow runs instantly with the least amount of tokens. |
+
+## How Self-Learning Works
+
+<img width="1672" height="941" alt="How Webcmd learns: load memory, use the live web, keep useful learnings, and help the next agent" src="docs/readme-self-learning.png" />
+
+Learning stays quiet and selective: the live browser is always truth, Webcmd
+never explores just to learn, and a memory failure never blocks the task. First
+access may use a Webcmd Cloud seed; subsequent learning stays local.
 
 For local, multi-step browser exploration, agents can send one sandboxed
 Playwright-style program to an explicit browser session:
@@ -50,8 +59,7 @@ webcmd --profile work session close work-project-k7
 Profiles are cookie jars; Sessions are independent browser windows within a
 profile, so Session IDs are immutable, Profile-scoped, and safe to reuse for
 that Session's lifetime. Parallel agents should create separate Sessions.
-Adapter commands without `--session` reuse the Profile's `adapter-default`
-Session. Raw browser commands require an explicit readable Session ID.
+Raw browser commands require an explicit readable Session ID.
 
 ## Demo
 
@@ -71,27 +79,14 @@ Webcmd requires Node.js 20.6+.
 
 ```bash
 npm install -g @agentrhq/webcmd
-```
-
-The npm package ships the Webcmd core and browser commands, but no site
-adapters. Search the plugin catalog and explicitly install the adapter you
-need:
-
-```bash
-webcmd plugin search <site> -f json
-webcmd plugin install <installSource-from-search>
-```
-
-```bash
 webcmd skills add
 ```
 
 When prompted, choose Claude, Codex, another supported harness, or a custom
-skills path. That install is exactly one skill, `webcmd-browser`. Adapter,
-search, fetch, and plugin commands remain on the CLI; they are outside the
-default installed browser skill.
+skills path. That installs exactly one skill, `webcmd-browser`.
 
-Load or tag `webcmd-browser` only for live browser work. Existing adapter, search, fetch, and plugin CLI operations do not require that skill.
+Load or tag `webcmd-browser` only for live browser work, then describe the
+outcome you want. Installation and setup commands do not require that skill.
 
 ```text
 Use webcmd to research the latest discussions about browser automation across Hacker News and Reddit, then return a concise comparison with source links.
@@ -103,22 +98,22 @@ Use webcmd to research the latest discussions about browser automation across Ha
 - “Use webcmd to find active AI infrastructure companies in the YC company directory and return the company, batch, description, location, profile URL, and source links. Keep it read-only.”
 - “Use webcmd to look up parts on Grainger by part number and return price, stock, minimum order quantity, lead time, and product URL.”
 - “Use webcmd with my logged-in `work` profile to summarize unread LinkedIn messages from the last seven days and return the sender, subject or opening text, received time, and conversation URL.”
-- “Repair `webcmd reddit popular --limit 10` and keep returning the title, subreddit, score, comment count, and URL.”
 - “Use webcmd to check Grainger part prices and SAP Ariba purchase-order status, then return a combined summary.”
 
-## See It in Action: X → CLI
+## See It in Action
 
 ```text
 Use webcmd with my logged-in `social` profile to collect my recent X bookmarks and return the author, text, and URL.
 ```
 
-The agent explores the X workflow once using the logged-in profile.
-It creates a stable command that returns the requested bookmark fields.
-Later agents reuse that command instead of repeating browser exploration; learn the pattern in [X → CLI](https://webcmd.dev/docs/x-session-cli).
+The agent uses the logged-in profile to complete the task in a real browser.
+Along the way, Webcmd quietly retains useful navigation context so later agents
+can avoid repeating the same exploration.
 
 ## Where Webcmd Works
 
-Beyond website adapters, Webcmd can work through authenticated browser sessions, APIs, desktop apps, and local tools.
+Webcmd can work through authenticated browser sessions across research, social,
+AI, shopping, and booking products.
 
 | Group | Supported surfaces | Representative outcomes |
 | --- | --- | --- |
@@ -127,8 +122,8 @@ Beyond website adapters, Webcmd can work through authenticated browser sessions,
 | AI tools | ChatGPT, Claude, Gemini, NotebookLM | Retrieve conversations, research outputs, notebooks, and generated materials from the tools you already use. |
 | shopping and bookings | Amazon, Blinkit, Zepto, BigBasket, District, Practo | Compare products, availability, prices, appointments, events, and delivery options. |
 
-This list is illustrative; availability comes from installed plugins. Ask your
-agent to search and install the relevant plugin when a site is not installed.
+This list is illustrative. Webcmd can operate other websites through the same
+live browser workflow.
 
 ## Benchmarks
 
@@ -154,20 +149,7 @@ Webcmd Cloud can run supported commands and browser sessions on hosted infrastru
 - [Prompt Cookbook](https://webcmd.dev/docs/agent-prompts)
 - [How Webcmd Works](https://webcmd.dev/docs/concepts)
 - [Local or Cloud](https://webcmd.dev/docs/local-or-cloud)
-- [Publish a Community Plugin](https://webcmd.dev/docs/publish-community-plugin)
-- [X → CLI](https://webcmd.dev/docs/x-session-cli)
 - [Command Surface](https://webcmd.dev/docs/cli-reference)
-
-## Community
-
-Site adapters live in [`agentrhq/webcmd-plugins`](https://github.com/agentrhq/webcmd-plugins). Search and install them with:
-
-Use Webcmd 0.7.11 or newer for compatibility with the standalone plugin catalog.
-
-```bash
-webcmd plugin search <site> -f json
-webcmd plugin install github:agentrhq/webcmd-plugins/<name>
-```
 
 ## Contributing
 
