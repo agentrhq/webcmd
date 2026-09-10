@@ -2010,7 +2010,7 @@ cli({
         console.log('Run: webcmd daemon restart');
         return;
       }
-      if (profiles.length === 0) {
+      if (profiles.length === 0 && Object.keys(config.aliases).length === 0 && !config.defaultContextId) {
         console.log(`No ${selectedProfileProviderLabel()} runtime profiles are active.`);
         console.log('Run a browser-backed command or webcmd <site> login to create one.');
         return;

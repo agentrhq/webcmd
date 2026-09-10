@@ -213,10 +213,10 @@ export function waitForDomStableJs(maxMs: number, quietMs: number): string {
 export function waitForCaptureJs(maxMs: number): string {
   return `
     new Promise((resolve, reject) => {
-      const deadline = Date.now() + ${maxMs};
+      const deadline = performance.now() + ${maxMs};
       const check = () => {
         if ((window.__webcmd_xhr || []).length > 0) return resolve('captured');
-        if (Date.now() > deadline) return reject(new Error('No network capture within ${maxMs / 1000}s'));
+        if (performance.now() > deadline) return reject(new Error('No network capture within ${maxMs / 1000}s'));
         setTimeout(check, 100);
       };
       check();

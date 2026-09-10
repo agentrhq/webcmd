@@ -210,3 +210,113 @@ export function importChromeCookies(
   if (existsSync(journalSource)) copyFileSync(journalSource, `${destPath}-journal`);
   return { imported: true, destPath };
 }
+
+export interface NativeProfileDirectoryOptions {
+  existsSync?: typeof fs.existsSync;
+  mkdirSync?: typeof fs.mkdirSync;
+  writeFileSync?: typeof fs.writeFileSync;
+}
+
+export const NATIVE_PROFILE_SENTINEL_FILE = '.webcmd-exported-profile';
+
+/**
+ * Ensures `<userDataDir>/<profileDirectory>` is safe for webcmd to export a
+ * profile into: either it doesn't exist yet (webcmd creates it and marks it
+ * as its own, reporting `created: true`), or it already carries webcmd's
+ * sentinel from a prior export of this same profile (`created: false`).
+ * Throws if the directory exists without the sentinel, since that means the
+ * name collides with a real native Chrome profile webcmd did not create.
+ */
+export function ensureNativeProfileDirectory(
+  userDataDir: string,
+  profileDirectory: string,
+  opts: NativeProfileDirectoryOptions = {},
+): { created: boolean } {
+  const existsSync = opts.existsSync ?? fs.existsSync;
+  const mkdirSync = opts.mkdirSync ?? fs.mkdirSync;
+  const writeFileSync = opts.writeFileSync ?? fs.writeFileSync;
+  const dir = path.join(userDataDir, profileDirectory);
+  const sentinelPath = path.join(dir, NATIVE_PROFILE_SENTINEL_FILE);
+  if (existsSync(dir)) {
+    if (existsSync(sentinelPath)) return { created: false };
+    throw new Error(
+      `Chrome profile directory "${profileDirectory}" already exists under ${userDataDir} and was not created by webcmd. `
+      + 'Choose a different profile name so an existing native Chrome profile is never reused.',
+    );
+  }
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(sentinelPath, `Created by webcmd Chrome profile export on ${new Date().toISOString()}\n`, 'utf-8');
+  return { created: true };
+}
+
+export interface ExportCookiesIo {
+  existsSync?: typeof fs.existsSync;
+  copyFileSync?: typeof fs.copyFileSync;
+}
+
+/**
+ * Copies a webcmd-managed Chrome profile's cookies into a native Chrome
+ * profile folder — the reverse direction of `importChromeCookies`. Cookies
+ * only, same scope as import: no cache, history, extensions, or passwords.
+ */
+export function exportCookiesToNativeChrome(
+  source: { cookiesPath: string },
+  nativeProfileDir: string,
+  io: ExportCookiesIo = {},
+): { exported: boolean } {
+  const existsSync = io.existsSync ?? fs.existsSync;
+  const copyFileSync = io.copyFileSync ?? fs.copyFileSync;
+  if (!existsSync(source.cookiesPath)) return { exported: false };
+  copyFileSync(source.cookiesPath, path.join(nativeProfileDir, 'Cookies'));
+  const journalSource = `${source.cookiesPath}-journal`;
+  if (existsSync(journalSource)) copyFileSync(journalSource, path.join(nativeProfileDir, 'Cookies-journal'));
+  return { exported: true };
+}
+
+/** Checks whether Chrome has registered `profileDirectory` into `Local State`. */
+export function isProfileRegisteredInLocalState(
+  userDataDir: string,
+  profileDirectory: string,
+  opts: ChromeCookieImportOptions = {},
+): boolean {
+  const readFileSync = opts.readFileSync ?? fs.readFileSync;
+  try {
+    const raw = readFileSync(path.join(userDataDir, 'Local State'), 'utf-8');
+    const cache = (JSON.parse(raw) as { profile?: { info_cache?: Record<string, unknown> } }).profile?.info_cache ?? {};
+    return Object.prototype.hasOwnProperty.call(cache, profileDirectory);
+  } catch {
+    return false;
+  }
+}
+
+export interface SetProfileDisplayNameOptions {
+  readFileSync?: typeof fs.readFileSync;
+  writeFileSync?: typeof fs.writeFileSync;
+}
+
+/**
+ * Sets a native Chrome profile's display name in Local State to exactly
+ * `name`. Best-effort and silent on any failure — this is cosmetic only;
+ * the profile still works correctly with Chrome's own generic name if this
+ * fails or never runs.
+ */
+export function setProfileDisplayName(
+  userDataDir: string,
+  profileDirectory: string,
+  name: string,
+  opts: SetProfileDisplayNameOptions = {},
+): void {
+  const readFileSync = opts.readFileSync ?? fs.readFileSync;
+  const writeFileSync = opts.writeFileSync ?? fs.writeFileSync;
+  try {
+    const localStatePath = path.join(userDataDir, 'Local State');
+    const raw = readFileSync(localStatePath, 'utf-8');
+    const parsed = JSON.parse(raw) as { profile?: { info_cache?: Record<string, { name?: unknown }> } };
+    const entry = parsed.profile?.info_cache?.[profileDirectory];
+    if (!entry) return;
+    entry.name = name;
+    writeFileSync(localStatePath, JSON.stringify(parsed), 'utf-8');
+  } catch {
+    // Missing/unreadable/malformed Local State: leave the generic name in place.
+  }
+}

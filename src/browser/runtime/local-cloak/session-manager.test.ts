@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import path from 'node:path';
 import type { BrowserContext, Page as PlaywrightPage } from 'playwright-core';
-import { CloakSessionManager, resolveLeaseKey } from './session-manager.js';
+import { CloakSessionManager, resolveLeaseKey, type CloakSessionManagerOptions } from './session-manager.js';
 import { log } from '../../../logger.js';
 import { dispatchCloakAction } from './actions.js';
 
@@ -1741,5 +1741,116 @@ describe('waitUntil plumbing', () => {
     });
 
     expect(page.goto).toHaveBeenCalledWith('https://example.com/', { waitUntil: 'load' });
+  });
+});
+
+describe('syncToChrome export on profile close', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  function chromeManager(overrides: Partial<CloakSessionManagerOptions> = {}) {
+    const launched = fakeContext();
+    const launchChromePersistentContext = vi.fn().mockResolvedValue(launched.context);
+    const ensureNativeProfileDirectory = vi.fn().mockReturnValue({ created: true });
+    const exportCookiesToNativeChrome = vi.fn().mockReturnValue({ exported: true });
+    const registerNativeChromeProfile = vi.fn().mockResolvedValue({ registered: true });
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      runtimeKind: 'chrome',
+      executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      syncToChrome: true,
+      platform: 'darwin',
+      launchChromePersistentContext,
+      ensureNativeProfileDirectory,
+      exportCookiesToNativeChrome,
+      registerNativeChromeProfile,
+      ...overrides,
+    });
+    return { manager, launched, ensureNativeProfileDirectory, exportCookiesToNativeChrome, registerNativeChromeProfile };
+  }
+
+  const key = { profileId: 'webcmd-work', session: 's1', surface: 'browser' as const };
+
+  it('exports cookies and registers the profile once its runtime fully closes', async () => {
+    const { manager, ensureNativeProfileDirectory, exportCookiesToNativeChrome, registerNativeChromeProfile } = chromeManager();
+
+    await manager.getPage({ profileId: 'webcmd-work', session: 's1', surface: 'browser' });
+    await manager.shutdown();
+
+    await vi.waitFor(() => {
+      expect(ensureNativeProfileDirectory).toHaveBeenCalledOnce();
+      expect(exportCookiesToNativeChrome).toHaveBeenCalledOnce();
+      expect(registerNativeChromeProfile).toHaveBeenCalledOnce();
+    });
+  });
+
+  it('does not call registerNativeChromeProfile on a re-export of an already-registered profile', async () => {
+    const { manager, registerNativeChromeProfile } = chromeManager({
+      ensureNativeProfileDirectory: vi.fn().mockReturnValue({ created: false }),
+    });
+
+    await manager.getPage({ profileId: 'webcmd-work', session: 's1', surface: 'browser' });
+    await manager.shutdown();
+
+    await vi.waitFor(() => expect(registerNativeChromeProfile).not.toHaveBeenCalled());
+  });
+
+  it('never calls the export helpers for a non-syncToChrome profile', async () => {
+    const { manager, exportCookiesToNativeChrome } = chromeManager({ syncToChrome: false });
+
+    await manager.getPage({ profileId: 'webcmd-work', session: 's1', surface: 'browser' });
+    await manager.shutdown();
+
+    expect(exportCookiesToNativeChrome).not.toHaveBeenCalled();
+  });
+
+  it('exports cookies ~3s after a command even while a tab is still open', async () => {
+    vi.useFakeTimers();
+    const { manager, exportCookiesToNativeChrome } = chromeManager();
+
+    await manager.runWithProfileActivity('webcmd-work', () => manager.getPage(key));
+
+    expect(exportCookiesToNativeChrome).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(exportCookiesToNativeChrome).toHaveBeenCalledOnce();
+  });
+
+  it('collapses a burst of commands on the same profile into one export', async () => {
+    vi.useFakeTimers();
+    const { manager, exportCookiesToNativeChrome } = chromeManager();
+
+    await manager.runWithProfileActivity('webcmd-work', () => manager.getPage(key));
+    await vi.advanceTimersByTimeAsync(1_000);
+    await manager.runWithProfileActivity('webcmd-work', () => manager.getPage(key));
+    await vi.advanceTimersByTimeAsync(1_000);
+    await manager.runWithProfileActivity('webcmd-work', () => manager.getPage(key));
+
+    expect(exportCookiesToNativeChrome).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(exportCookiesToNativeChrome).toHaveBeenCalledOnce();
+  });
+
+  it('does not close the browser context or pages when the debounced export fires', async () => {
+    vi.useFakeTimers();
+    const { manager, launched, exportCookiesToNativeChrome } = chromeManager();
+
+    await manager.runWithProfileActivity('webcmd-work', () => manager.getPage(key));
+    await vi.advanceTimersByTimeAsync(3_000);
+
+    expect(exportCookiesToNativeChrome).toHaveBeenCalledOnce();
+    expect(launched.context.close).not.toHaveBeenCalled();
+    expect(launched.page.close).not.toHaveBeenCalled();
+  });
+
+  it('does not export on debounce for a non-syncToChrome profile', async () => {
+    vi.useFakeTimers();
+    const { manager, exportCookiesToNativeChrome } = chromeManager({ syncToChrome: false });
+
+    await manager.runWithProfileActivity('webcmd-work', () => manager.getPage(key));
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(exportCookiesToNativeChrome).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,6 @@
 {
   "name": "@agentrhq/webcmd",
-  "version": "0.8.2",
+  "version": "0.8.4",
   "description": "Turn websites, browser sessions, desktop apps, and local tools into deterministic CLI surfaces for humans and AI agents.",
   "engines": {
     "node": ">=20.6.0"
@@ -101,7 +101,7 @@
     "cloakbrowser": "0.4.5",
     "commander": "^14.0.3",
     "impit": "0.14.3",
-    "js-yaml": "^4.3.0",
+    "js-yaml": "^4.3.2",
     "jsdom": "^29.0.2",
     "playwright-core": "1.61.1",
     "quickjs-emscripten": "0.32.0",

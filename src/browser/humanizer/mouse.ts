@@ -78,6 +78,7 @@ export async function humanMove(
   endX: number,
   endY: number,
   cfg: HumanConfig,
+  signal?: AbortSignal,
 ): Promise<void> {
   const dist = Math.hypot(endX - startX, endY - startY);
   if (dist < 1) return;
@@ -107,7 +108,7 @@ export async function humanMove(
 
     burstCounter++;
     if (burstCounter >= burstSize && i < steps) {
-      await sleep(randRange(cfg.mouse_burst_pause));
+      await sleep(randRange(cfg.mouse_burst_pause), signal);
       burstCounter = 0;
     }
   }
@@ -118,7 +119,7 @@ export async function humanMove(
     const ovX = Math.round(endX + Math.cos(angle) * overshootDist);
     const ovY = Math.round(endY + Math.sin(angle) * overshootDist);
     await raw.move(ovX, ovY);
-    await sleep(rand(30, 70));
+    await sleep(rand(30, 70), signal);
     const corrX = Math.round(endX + (Math.random() - 0.5) * 4);
     const corrY = Math.round(endY + (Math.random() - 0.5) * 4);
     await raw.move(corrX, corrY);
@@ -154,17 +155,18 @@ export async function humanClick(
   raw: RawMouse,
   isInput: boolean,
   cfg: HumanConfig,
+  signal?: AbortSignal,
 ): Promise<void> {
   const aimDelay = isInput
     ? randRange(cfg.click_aim_delay_input)
     : randRange(cfg.click_aim_delay_button);
-  await sleep(aimDelay);
+  await sleep(aimDelay, signal);
 
   const holdTime = isInput
     ? randRange(cfg.click_hold_input)
     : randRange(cfg.click_hold_button);
   await raw.down();
-  await sleep(holdTime);
+  await sleep(holdTime, signal);
   await raw.up();
 }
 
@@ -177,6 +179,7 @@ export function humanIdle(
   cx: number,
   cy: number,
   cfg: HumanConfig,
+  signal?: AbortSignal,
 ): Promise<void>;
 export function humanIdle(
   raw: RawMouse,
@@ -184,21 +187,25 @@ export function humanIdle(
   cx: number,
   cy: number,
   cfg: HumanConfig,
+  signal?: AbortSignal,
 ): Promise<void>;
 export async function humanIdle(
   raw: RawMouse,
   secondsOrCx: number,
   cxOrCy: number,
   cyOrCfg: number | HumanConfig,
-  maybeCfg?: HumanConfig,
+  maybeCfgOrSignal?: HumanConfig | AbortSignal,
+  maybeSignal?: AbortSignal,
 ): Promise<void> {
-  const hasExplicitSeconds = maybeCfg !== undefined;
+  const hasExplicitSeconds = maybeCfgOrSignal !== undefined
+    && 'idle_between_duration' in maybeCfgOrSignal;
+  const signal = hasExplicitSeconds ? maybeSignal : maybeCfgOrSignal as AbortSignal | undefined;
   const seconds = hasExplicitSeconds
     ? secondsOrCx
     : rand((cyOrCfg as HumanConfig).idle_between_duration[0], (cyOrCfg as HumanConfig).idle_between_duration[1]);
   const cx = hasExplicitSeconds ? cxOrCy : secondsOrCx;
   const cy = hasExplicitSeconds ? (cyOrCfg as number) : cxOrCy;
-  const cfg = hasExplicitSeconds ? maybeCfg! : (cyOrCfg as HumanConfig);
+  const cfg = hasExplicitSeconds ? maybeCfgOrSignal as HumanConfig : (cyOrCfg as HumanConfig);
   const endTime = Date.now() + seconds * 1000;
   let x = cx;
   let y = cy;
@@ -208,6 +215,6 @@ export async function humanIdle(
     x += dx;
     y += dy;
     await raw.move(Math.round(x), Math.round(y));
-    await sleep(randRange(cfg.idle_pause_range));
+    await sleep(randRange(cfg.idle_pause_range), signal);
   }
 }

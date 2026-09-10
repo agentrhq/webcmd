@@ -60,7 +60,7 @@ export interface SetupIo extends ConfigIo {
 type SetupMode = 'local' | 'hosted';
 type LocalBrowserSelection = LocalBrowserConfig | { kind: 'chrome' };
 
-const SETUP_USAGE = `usage: ${CLI_COMMAND} setup [--browser <cloak|chrome|slab|absolute-path>] [--chrome-profile <name>] [--import-chrome-cookies|--no-import-chrome-cookies]`;
+const SETUP_USAGE = `usage: ${CLI_COMMAND} setup [--browser <cloak|chrome|slab|absolute-path>] [--chrome-profile <name>] [--import-chrome-cookies|--no-import-chrome-cookies] [--sync-to-chrome]`;
 const SETUP_EXAMPLE = `example: ${CLI_COMMAND} setup`;
 const SETUP_HELP = [
   `${CLI_COMMAND} setup`,
@@ -71,6 +71,7 @@ const SETUP_HELP = [
   '  --chrome-profile <name>          Import only this Chrome profile (folder or display name)',
   '  --import-chrome-cookies          With --browser chrome, import all Chrome profiles without prompting',
   '  --no-import-chrome-cookies       With --browser chrome, skip cookie import without prompting',
+  '  --sync-to-chrome                 With --browser chrome, export profile cookies to native Chrome automatically so webcmd profiles open directly in native Chrome',
   '  --status                Show the configured mode and local browser',
   '  -h, --help',
   '',
@@ -105,9 +106,9 @@ export async function runHostedSetup(io: SetupIo = {}): Promise<number> {
     const interactive = canPrompt(io);
     await write('Webcmd setup\n');
 
-    if ((parsed.chromeProfile || parsed.importChromeCookies !== undefined) && parsed.browser && parsed.browser.kind !== 'chrome') {
+    if ((parsed.chromeProfile || parsed.importChromeCookies !== undefined || parsed.syncToChrome) && parsed.browser && parsed.browser.kind !== 'chrome') {
       throw new ArgumentError(
-        '--chrome-profile and --import-chrome-cookies are only valid with --browser chrome.',
+        '--chrome-profile, --import-chrome-cookies, and --sync-to-chrome are only valid with --browser chrome.',
         `${SETUP_USAGE}\n${SETUP_EXAMPLE}`,
       );
     }
@@ -121,9 +122,14 @@ export async function runHostedSetup(io: SetupIo = {}): Promise<number> {
       );
     }
     browser ??= { kind: 'cloak' };
+    let syncToChrome = parsed.syncToChrome;
+    if (browser.kind === 'chrome' && syncToChrome === undefined && interactive) {
+      const answer = (await ask('Export webcmd profiles to native Chrome automatically so they open directly in Chrome? [y/N] ')).trim().toLowerCase();
+      syncToChrome = answer.startsWith('y');
+    }
     const before = await (io.fetchDaemonStatus ?? fetchDaemonStatus)();
     try {
-      const selected = await validateLocalBrowser(browser, io, chromeDiscovery);
+      const selected = await validateLocalBrowser(browser, io, chromeDiscovery, syncToChrome);
       if (selected.kind === 'chrome') await maybeImportChromeCookies(parsed, io, interactive, ask, write);
       (io.saveConfig ?? saveWebcmdConfig)(makeLocalConfig(io.now?.() ?? new Date(), selected), io);
       if (before) await restartConfiguredDaemon(selected, io);
@@ -156,6 +162,7 @@ async function validateLocalBrowser(
   browser: LocalBrowserSelection,
   io: SetupIo,
   chromeDiscovery?: { executablePath: string | undefined },
+  syncToChrome?: boolean,
 ): Promise<LocalBrowserConfig> {
   if (browser.kind === 'cloak') {
     await (io.resolveCloakPackage ?? (() => import.meta.resolve('cloakbrowser')))();
@@ -178,7 +185,7 @@ async function validateLocalBrowser(
         `Google Chrome is not installed. Install it from https://www.google.com/chrome/, then rerun ${CLI_COMMAND} setup --browser chrome.`,
       );
     }
-    return { kind: 'chrome', executablePath };
+    return { kind: 'chrome', executablePath, ...(syncToChrome ? { syncToChrome: true } : {}) };
   }
   if ((io.platform ?? process.platform) !== 'darwin') throw new Error('SLAB setup is only supported on macOS.');
   const installation = findSlabInstallation({
@@ -353,11 +360,13 @@ function parseSetupArgs(argv: readonly string[]): {
   browser?: LocalBrowserSelection;
   chromeProfile?: string;
   importChromeCookies?: boolean;
+  syncToChrome?: boolean;
 } {
   let browser: LocalBrowserSelection | undefined;
   let status: true | undefined;
   let chromeProfile: string | undefined;
   let importChromeCookies: boolean | undefined;
+  let syncToChrome: boolean | undefined;
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i]!;
     if (token === '--help' || token === '-h') return { help: true };
@@ -371,6 +380,10 @@ function parseSetupArgs(argv: readonly string[]): {
     }
     if (token === '--no-import-chrome-cookies') {
       importChromeCookies = false;
+      continue;
+    }
+    if (token === '--sync-to-chrome') {
+      syncToChrome = true;
       continue;
     }
     if (token === '--chrome-profile' || token.startsWith('--chrome-profile=')) {
@@ -389,10 +402,10 @@ function parseSetupArgs(argv: readonly string[]): {
 
     throw new ArgumentError(
       `unknown flag ${token} for \`setup\``,
-      `valid flags for \`setup\`: --browser, --chrome-profile, --import-chrome-cookies, --no-import-chrome-cookies, --status, --help\n${SETUP_USAGE}`,
+      `valid flags for \`setup\`: --browser, --chrome-profile, --import-chrome-cookies, --no-import-chrome-cookies, --sync-to-chrome, --status, --help\n${SETUP_USAGE}`,
     );
   }
-  return { ...(status ? { status } : {}), browser, chromeProfile, importChromeCookies };
+  return { ...(status ? { status } : {}), browser, chromeProfile, importChromeCookies, syncToChrome };
 }
 
 function parseLocalBrowser(value: string | undefined): LocalBrowserSelection {

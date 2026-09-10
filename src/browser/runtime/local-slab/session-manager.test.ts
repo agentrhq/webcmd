@@ -1,7 +1,28 @@
-import { describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { dispatchSlabAction } from './actions.js';
 import { SlabSessionManager } from './session-manager.js';
 import { humanizePage } from '../../humanizer/page.js';
+import { loadOrCreateBehaviorProfile } from './behavior-profile.js';
+import { log } from '../../../logger.js';
+
+vi.mock('./behavior-profile.js', async (importOriginal) => ({
+  ...await importOriginal<typeof import('./behavior-profile.js')>(),
+  loadOrCreateBehaviorProfile: vi.fn(),
+}));
+
+const behaviorTraits = { typing_delay: 123 } as any;
+const behaviorDocument = {
+  schemaVersion: 1 as const,
+  profileId: 'default',
+  traits: behaviorTraits,
+};
+const loadBehaviorProfile = vi.mocked(loadOrCreateBehaviorProfile);
+afterEach(() => {
+  loadBehaviorProfile.mockReset();
+  loadBehaviorProfile.mockResolvedValue(behaviorDocument);
+});
 
 function fakeAttachedProfile() {
   const listeners = new Map<string, Set<(...args: unknown[]) => void>>();
@@ -216,6 +237,90 @@ async function flushPageEvent(): Promise<void> {
 }
 
 describe('SlabSessionManager ownership', () => {
+  it('does not enable Playwright tracing or snapshots for agent sessions', () => {
+    const source = readFileSync(fileURLToPath(new URL('./session-manager.ts', import.meta.url)), 'utf8');
+
+    expect(source).not.toMatch(/\btracing\.start\b/);
+    expect(source).not.toMatch(/\bsnapshots\s*:\s*true\b/);
+  });
+
+  it('loads one behavior profile for owned pages and passes its traits to humanize', async () => {
+    const attached = fakeAttachedProfile();
+    const humanize = vi.fn((page: any, _config?: any) => page);
+    loadBehaviorProfile.mockResolvedValue(behaviorDocument);
+    const manager = new SlabSessionManager({
+      attachProfile: vi.fn().mockResolvedValue(attached.attachment),
+      humanize,
+    });
+    const input = { profileId: 'default', session: 'agent', sessionId: 'agent', surface: 'browser' as const };
+
+    await manager.getPage(input);
+    await manager.getPage({ ...input, session: 'agent-2', sessionId: 'agent-2' });
+
+    expect(loadBehaviorProfile).toHaveBeenCalledTimes(1);
+    expect(loadBehaviorProfile).toHaveBeenCalledWith('default', { baseDir: undefined });
+    expect(humanize).toHaveBeenCalled();
+    expect(humanize.mock.calls.every(([, config]) => config === behaviorTraits)).toBe(true);
+  });
+
+  it('warns when a corrupt behavior profile was regenerated', async () => {
+    const attached = fakeAttachedProfile();
+    const warn = vi.spyOn(log, 'warn').mockImplementation(() => undefined);
+    loadBehaviorProfile.mockResolvedValue({
+      ...behaviorDocument,
+      warning: 'Regenerated malformed behavior profile document.',
+    });
+    const manager = new SlabSessionManager({ attachProfile: vi.fn().mockResolvedValue(attached.attachment) });
+    const input = { profileId: 'default', session: 'agent', sessionId: 'agent', surface: 'browser' as const };
+
+    await manager.getPage(input);
+
+    expect(warn).toHaveBeenCalledWith('Regenerated malformed behavior profile document.');
+    warn.mockRestore();
+  });
+
+  it('does not load behavior while discovering pages', async () => {
+    const attached = fakeAttachedProfile();
+    const humanize = vi.fn(page => page);
+    loadBehaviorProfile.mockClear();
+    const manager = new SlabSessionManager({
+      attachProfile: vi.fn().mockResolvedValue(attached.attachment),
+      humanize,
+    });
+    const input = { profileId: 'default', session: 'agent', sessionId: 'agent', surface: 'browser' as const };
+
+    await manager.listPages(input);
+    await manager.discoveredWindows('default');
+
+    expect(loadBehaviorProfile).not.toHaveBeenCalled();
+    expect(humanize).not.toHaveBeenCalled();
+  });
+
+  it('keys behavior loading by native SLAB profile id', async () => {
+    const attached = fakeAttachedProfile();
+    loadBehaviorProfile.mockResolvedValue({ ...behaviorDocument, profileId: 'Profile 1' });
+    const manager = new SlabSessionManager({ attachProfile: vi.fn().mockResolvedValue(attached.attachment) });
+
+    await manager.getPage({ profileId: 'Profile 1', session: 'agent', sessionId: 'agent', surface: 'browser' });
+
+    expect(loadBehaviorProfile).toHaveBeenCalledWith('Profile 1', { baseDir: undefined });
+  });
+
+  it('reports behavioral-state failures without humanizing an otherwise attached page', async () => {
+    const attached = fakeAttachedProfile();
+    const humanize = vi.fn(page => page);
+    loadBehaviorProfile.mockRejectedValue(new Error('storage unavailable'));
+    const attachProfile = vi.fn().mockResolvedValue(attached.attachment);
+    const manager = new SlabSessionManager({ attachProfile, humanize });
+    const input = { profileId: 'default', session: 'agent', sessionId: 'agent', surface: 'browser' as const };
+
+    await expect(manager.getPage(input)).rejects.toThrow(/behavioral state.*storage unavailable/i);
+
+    expect(attachProfile).toHaveBeenCalledOnce();
+    expect(humanize).not.toHaveBeenCalled();
+    expect(attached.attachment.release).not.toHaveBeenCalled();
+  });
+
   it('discovers unowned human tabs without creating, owning, or humanizing a page', async () => {
     const attached = fakeAttachedProfile();
     attached.moveToWindow(attached.humanBlank, attached.windowIdFor(attached.humanPage)!);

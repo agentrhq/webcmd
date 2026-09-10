@@ -149,6 +149,7 @@ describe('hosted config', () => {
     for (const browser of [
       { kind: 'cloak' } as const,
       { kind: 'chrome', executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' } as const,
+      { kind: 'chrome', executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', syncToChrome: true } as const,
       { kind: 'slab' } as const,
       { kind: 'custom', executablePath: '/Applications/Chrome.app/Contents/MacOS/Google Chrome' } as const,
     ]) {

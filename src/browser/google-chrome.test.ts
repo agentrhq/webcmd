@@ -2,11 +2,15 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
   chromeUserDataDir,
+  ensureNativeProfileDirectory,
+  exportCookiesToNativeChrome,
   findChromeCookieSource,
   findInstalledGoogleChrome,
   googleChromeCandidates,
   importChromeCookies,
+  isProfileRegisteredInLocalState,
   listChromeCookieSources,
+  setProfileDisplayName,
 } from './google-chrome.js';
 
 describe('Google Chrome discovery', () => {
@@ -174,5 +178,118 @@ describe('Chrome cookie import', () => {
     const result = importChromeCookies({ folder: 'Default', name: 'Default' }, '/webcmd/chrome/profiles/default', { copyFileSync });
     expect(copyFileSync).not.toHaveBeenCalled();
     expect(result).toEqual({ imported: false });
+  });
+});
+
+describe('ensureNativeProfileDirectory', () => {
+  const chromeRoot = path.join('Users', 'test', 'Chrome');
+
+  it('creates a fresh directory, marks it, and reports it created', () => {
+    const written: Record<string, string> = {};
+    const mkdirSync = vi.fn();
+    const writeFileSync = vi.fn((filePath: string, content: string) => { written[filePath] = content; });
+
+    const result = ensureNativeProfileDirectory(chromeRoot, 'webcmd-work', {
+      existsSync: () => false,
+      mkdirSync: mkdirSync as unknown as typeof import('node:fs').mkdirSync,
+      writeFileSync: writeFileSync as unknown as typeof import('node:fs').writeFileSync,
+    });
+
+    expect(result).toEqual({ created: true });
+    const dir = path.join(chromeRoot, 'webcmd-work');
+    expect(mkdirSync).toHaveBeenCalledWith(dir, { recursive: true });
+    expect(Object.keys(written)).toEqual([path.join(dir, '.webcmd-exported-profile')]);
+  });
+
+  it('reports not created when reusing a directory it made before', () => {
+    const dir = path.join(chromeRoot, 'webcmd-work');
+    const sentinel = path.join(dir, '.webcmd-exported-profile');
+    const mkdirSync = vi.fn();
+
+    const result = ensureNativeProfileDirectory(chromeRoot, 'webcmd-work', {
+      existsSync: candidate => candidate === dir || candidate === sentinel,
+      mkdirSync: mkdirSync as unknown as typeof import('node:fs').mkdirSync,
+    });
+
+    expect(result).toEqual({ created: false });
+    expect(mkdirSync).not.toHaveBeenCalled();
+  });
+
+  it('refuses to reuse a directory it did not create', () => {
+    const dir = path.join(chromeRoot, 'Default');
+    expect(() => ensureNativeProfileDirectory(chromeRoot, 'Default', {
+      existsSync: candidate => candidate === dir,
+    })).toThrow(/already exists.*was not created by webcmd/s);
+  });
+});
+
+describe('exportCookiesToNativeChrome', () => {
+  it('copies the webcmd profile Cookies file and its journal into the native folder', () => {
+    const written: Record<string, string> = {};
+    const copyFileSync = vi.fn((from: string, to: string) => { written[to] = from; });
+    const sourceCookies = path.join('Users', 'test', '.webcmd', 'chrome', 'profiles', 'work', 'Default', 'Cookies');
+    const nativeProfileDir = path.join('Users', 'test', 'Chrome', 'webcmd-work');
+
+    const result = exportCookiesToNativeChrome(
+      { cookiesPath: sourceCookies },
+      nativeProfileDir,
+      {
+        existsSync: candidate => candidate === sourceCookies || candidate === `${sourceCookies}-journal`,
+        copyFileSync: copyFileSync as unknown as typeof import('node:fs').copyFileSync,
+      },
+    );
+
+    expect(result).toEqual({ exported: true });
+    expect(written[path.join(nativeProfileDir, 'Cookies')]).toBe(sourceCookies);
+    expect(written[path.join(nativeProfileDir, 'Cookies-journal')]).toBe(`${sourceCookies}-journal`);
+  });
+});
+
+describe('isProfileRegisteredInLocalState', () => {
+  const chromeRoot = path.join('Users', 'test', 'Chrome');
+
+  it('reports true once the profile-directory key appears in Local State', () => {
+    const readFileSync = () => JSON.stringify({ profile: { info_cache: { 'webcmd-work': { name: 'Work' } } } });
+    expect(isProfileRegisteredInLocalState(chromeRoot, 'webcmd-work', { readFileSync })).toBe(true);
+    expect(isProfileRegisteredInLocalState(chromeRoot, 'someone-else', { readFileSync })).toBe(false);
+  });
+
+  it('reports false when Local State is missing or unreadable', () => {
+    const readFileSync = () => { throw new Error('ENOENT'); };
+    expect(isProfileRegisteredInLocalState(chromeRoot, 'webcmd-work', { readFileSync })).toBe(false);
+  });
+});
+
+describe('setProfileDisplayName', () => {
+  const chromeRoot = path.join('Users', 'test', 'Chrome');
+  const localStatePath = path.join(chromeRoot, 'Local State');
+
+  it('sets the name when the entry exists', () => {
+    const writeFileSync = vi.fn();
+    setProfileDisplayName(chromeRoot, 'test1', 'test1', {
+      readFileSync: (() => JSON.stringify({ profile: { info_cache: { test1: { name: 'Person 2' } } } })) as unknown as typeof import('node:fs').readFileSync,
+      writeFileSync: writeFileSync as unknown as typeof import('node:fs').writeFileSync,
+    });
+    expect(writeFileSync).toHaveBeenCalledOnce();
+    expect(writeFileSync.mock.calls[0][0]).toBe(localStatePath);
+    expect(JSON.parse(writeFileSync.mock.calls[0][1] as string).profile.info_cache.test1.name).toBe('test1');
+  });
+
+  it('leaves the file alone when the profileDirectory key is not in info_cache', () => {
+    const writeFileSync = vi.fn();
+    setProfileDisplayName(chromeRoot, 'test1', 'test1', {
+      readFileSync: (() => JSON.stringify({ profile: { info_cache: { Default: { name: 'Person 1' } } } })) as unknown as typeof import('node:fs').readFileSync,
+      writeFileSync: writeFileSync as unknown as typeof import('node:fs').writeFileSync,
+    });
+    expect(writeFileSync).not.toHaveBeenCalled();
+  });
+
+  it('does not throw when Local State is missing, unreadable, or malformed JSON', () => {
+    expect(() => setProfileDisplayName(chromeRoot, 'test1', 'test1', {
+      readFileSync: (() => { throw new Error('ENOENT'); }) as unknown as typeof import('node:fs').readFileSync,
+    })).not.toThrow();
+    expect(() => setProfileDisplayName(chromeRoot, 'test1', 'test1', {
+      readFileSync: (() => '{not json') as unknown as typeof import('node:fs').readFileSync,
+    })).not.toThrow();
   });
 });

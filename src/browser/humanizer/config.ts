@@ -73,6 +73,7 @@ export type HumanPreset = 'default' | 'careful';
 export type HumanActionOptions = Partial<HumanConfig> & {
   timeout?: number;
   force?: boolean;
+  sensitive?: boolean;
   human_config?: Partial<HumanConfig>;
 };
 
@@ -80,7 +81,7 @@ export type HumanActionOptions = Partial<HumanConfig> & {
 // Default preset
 // ---------------------------------------------------------------------------
 
-const DEFAULT_CONFIG: HumanConfig = {
+export const DEFAULT_CONFIG: Readonly<HumanConfig> = {
   // Keyboard
   typing_delay: 70,
   typing_delay_spread: 40,
@@ -248,7 +249,22 @@ export function randIntRange(range: [number, number]): number {
   return randInt(range[0], range[1]);
 }
 
-/** Sleep for `ms` milliseconds. */
-export function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+/** Sleep for `ms` milliseconds, unless `signal` is aborted first. */
+export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timeout);
+      signal?.removeEventListener('abort', onAbort);
+      reject(signal!.reason);
+    };
+    const timeout = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
 }

@@ -49,6 +49,25 @@ describe('waitForCaptureJs', () => {
     delete g.window;
   });
 
+  it('uses monotonic elapsed time when the wall clock jumps forward', async () => {
+    const g = globalThis as unknown as Record<string, unknown>;
+    const captured: unknown[] = [];
+    const originalDateNow = Date.now;
+    let calls = 0;
+    g.__webcmd_xhr = captured;
+    g.window = g;
+    Date.now = () => (calls++ === 0 ? 0 : 60_000);
+    try {
+      const promise = eval(waitForCaptureJs(200)) as Promise<string>;
+      setTimeout(() => captured.push({ data: 'late after wall-clock jump' }), 20);
+      await expect(promise).resolves.toBe('captured');
+    } finally {
+      Date.now = originalDateNow;
+      delete g.__webcmd_xhr;
+      delete g.window;
+    }
+  });
+
   it('resolves immediately when __webcmd_xhr already has data', async () => {
     const g = globalThis as unknown as Record<string, unknown>;
     g.__webcmd_xhr = [{ data: 'already here' }];

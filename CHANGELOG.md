@@ -18,6 +18,36 @@
 - Hosted command lists retain excluded commands as `LOCAL` rows and return a local-only error instead of plugin-install guidance.
 - Local auth commands initialize user CLI compatibility shims, and hosted auth uses the same native grammar, flags, choices, and help as local mode.
 
+## [0.8.4](https://github.com/agentrhq/webcmd/compare/webcmd-v0.8.3...webcmd-v0.8.4) (2026-09-08)
+
+### Improvements
+- `webcmd setup` now offers interactive Chrome profile syncing when Chrome is selected. The new prompt defaults to disabled and does not appear when the option was already specified.
+
+### Fixes
+- `webcmd profile list` now shows saved but disconnected profiles in plain-text output, even when no runtime profiles are currently connected.
+- Chrome profile exports now run shortly after command activity, even when tabs remain open. Rapid commands are debounced into a single export without closing browsers or pages.
+- Exported Chrome profiles now use their webcmd alias as the display name when registration succeeds. This naming update is best-effort when Chrome is already running.
+
+### Contributors
+[@ankitranjan7](https://github.com/ankitranjan7)
+
+## [0.8.3](https://github.com/agentrhq/webcmd/compare/webcmd-v0.8.2...webcmd-v0.8.3) (2026-09-08)
+
+### Highlights
+- Added `webcmd setup --browser chrome --sync-to-chrome` to automatically copy profile cookies into a webcmd-managed native Chrome profile when the browser runtime closes. The profile is registered with Chrome in the background and can then be opened directly in Chrome.
+- Added persistent, versioned agent behavior settings for each native SLAB profile, providing consistent humanized browser interactions across daemon sessions.
+
+### Improvements
+- Humanized input now avoids intentional mistypes in sensitive fields such as passwords, payment fields, and one-time-code inputs.
+- Disposing an agent page now cancels in-progress humanized input and delays immediately.
+- Playwright tracing snapshots are disabled on agent-controlled pages.
+
+### Fixes
+- Browser network-capture waits now use monotonic elapsed time, preventing premature timeouts when the system clock changes.
+
+### Contributors
+[@AcidicSoil](https://github.com/AcidicSoil) | [@ankitranjan7](https://github.com/ankitranjan7) | [@rishabhraj36](https://github.com/rishabhraj36)
+
 ## [0.8.2](https://github.com/agentrhq/webcmd/compare/webcmd-v0.8.1...webcmd-v0.8.2) (2026-09-07)
 
 ### Improvements
