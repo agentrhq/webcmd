@@ -32,15 +32,16 @@ describe('LocalBrowserSessionStore', () => {
   });
 
   it('fails after ten readable ID collisions', () => {
+    const now = new Date();
     const baseDir = tempDir();
     fs.writeFileSync(path.join(baseDir, 'browser-sessions.json'), `${JSON.stringify({
       version: 2,
-      sessions: [sessionRecord('work-project-k7', 'explicit', '2026-08-11T00:00:00.000Z')],
+      sessions: [sessionRecord('work-project-k7', 'explicit', isoAt(now))],
     })}\n`, { mode: 0o600 });
     const store = new LocalBrowserSessionStore({
       baseDir,
       suffixFactory: () => 'k7',
-      now: () => new Date('2026-08-11T00:00:00.000Z'),
+      now: () => now,
     });
 
     expect(() => store.create('work', 'Work Project')).toThrowError(
@@ -88,7 +89,7 @@ describe('LocalBrowserSessionStore', () => {
     const baseDir = tempDir();
     fs.writeFileSync(path.join(baseDir, 'browser-sessions.json'), `${JSON.stringify({
       version: 1,
-      sessions: [sessionRecord('old-k7', 'explicit', '2026-08-11T00:00:00.000Z')],
+      sessions: [sessionRecord('old-k7', 'explicit', isoAt(new Date()))],
     })}\n`, { mode: 0o600 });
 
     expect(new LocalBrowserSessionStore({ baseDir }).list('work')).toEqual([]);
@@ -108,8 +109,8 @@ describe('LocalBrowserSessionStore', () => {
   });
 
   it.each([
-    sessionRecord('adapter-default', 'explicit', '2026-08-11T00:00:00.000Z'),
-    sessionRecord('work-k7', 'adapter-default', '2026-08-11T00:00:00.000Z'),
+    sessionRecord('adapter-default', 'explicit', isoAt(new Date())),
+    sessionRecord('work-k7', 'adapter-default', isoAt(new Date())),
   ])('rejects persisted rows that violate the kind/ID invariant', (record) => {
     const baseDir = tempDir();
     fs.writeFileSync(path.join(baseDir, 'browser-sessions.json'), `${JSON.stringify({ version: 2, sessions: [record] })}\n`, { mode: 0o600 });
@@ -119,7 +120,8 @@ describe('LocalBrowserSessionStore', () => {
   });
 
   it('clears expired handoffs while resolving and listing Sessions', () => {
-    let now = new Date('2026-08-11T00:00:00.000Z');
+    let now = new Date();
+    const expiresAt = isoAt(now, 15 * 60 * 1000);
     const store = new LocalBrowserSessionStore({
       baseDir: tempDir(),
       now: () => now,
@@ -128,66 +130,75 @@ describe('LocalBrowserSessionStore', () => {
     const session = store.create('work', 'Work');
     store.markHandoff('work', session.id, {
       site: 'github',
-      expiresAt: '2026-08-11T00:15:00.000Z',
+      expiresAt,
     });
 
     expect(store.require('work', session.id).handoff).toEqual({
       site: 'github',
-      expiresAt: '2026-08-11T00:15:00.000Z',
+      expiresAt,
     });
-    now = new Date('2026-08-11T00:15:00.000Z');
+    now = new Date(now.getTime() + 15 * 60 * 1000);
 
     expect(store.require('work', session.id).handoff).toBeUndefined();
     expect(store.list('work')[0]?.handoff).toBeUndefined();
   });
 
   it('prunes explicit Sessions idle for 30 days while preserving adapter defaults and handoffs', () => {
+    const now = new Date();
+    const retentionMs = 30 * DAY_MS;
     const baseDir = tempDir();
     fs.writeFileSync(path.join(baseDir, 'browser-sessions.json'), `${JSON.stringify({
       version: 2,
       sessions: [
-        sessionRecord('old-k7', 'explicit', '2026-07-11T23:59:59.000Z'),
-        sessionRecord('boundary-k7', 'explicit', '2026-07-12T00:00:00.000Z'),
-        sessionRecord('recent-k7', 'explicit', '2026-07-12T00:00:01.000Z'),
-        sessionRecord('handoff-k7', 'explicit', '2026-07-01T00:00:00.000Z', { site: 'github', expiresAt: '2026-08-12T00:15:00.000Z' }),
-        sessionRecord('expired-handoff-k7', 'explicit', '2026-07-01T00:00:00.000Z', { site: 'github', expiresAt: '2026-08-10T00:15:00.000Z' }),
-        sessionRecord('adapter-default', 'adapter-default', '2026-07-01T00:00:00.000Z'),
+        sessionRecord('old-k7', 'explicit', isoAt(now, -retentionMs - 1000)),
+        sessionRecord('boundary-k7', 'explicit', isoAt(now, -retentionMs)),
+        sessionRecord('recent-k7', 'explicit', isoAt(now, -retentionMs + 1000)),
+        sessionRecord('handoff-k7', 'explicit', isoAt(now, -41 * DAY_MS), { site: 'github', expiresAt: isoAt(now, DAY_MS + 15 * 60 * 1000) }),
+        sessionRecord('expired-handoff-k7', 'explicit', isoAt(now, -41 * DAY_MS), { site: 'github', expiresAt: isoAt(now, -DAY_MS + 15 * 60 * 1000) }),
+        sessionRecord('adapter-default', 'adapter-default', isoAt(now, -41 * DAY_MS)),
       ],
     })}\n`, { mode: 0o600 });
 
     const rows = new LocalBrowserSessionStore({
       baseDir,
-      now: () => new Date('2026-08-11T00:00:00.000Z'),
+      now: () => now,
     }).list('work');
 
     expect(rows.map((row) => row.id)).toEqual(['recent-k7', 'adapter-default', 'handoff-k7']);
   });
 
   it('retains active Sessions and limits newest-first listings', () => {
+    const now = new Date();
     const baseDir = tempDir();
     fs.writeFileSync(path.join(baseDir, 'browser-sessions.json'), `${JSON.stringify({
       version: 2,
       sessions: [
-        sessionRecord('active-k7', 'explicit', '2026-07-01T00:00:00.000Z'),
-        sessionRecord('newest-k7', 'explicit', '2026-08-10T00:00:00.000Z'),
-        sessionRecord('middle-k7', 'explicit', '2026-08-09T00:00:00.000Z'),
+        sessionRecord('active-k7', 'explicit', isoAt(now, -41 * DAY_MS)),
+        sessionRecord('newest-k7', 'explicit', isoAt(now, -DAY_MS)),
+        sessionRecord('middle-k7', 'explicit', isoAt(now, -2 * DAY_MS)),
       ],
     })}\n`, { mode: 0o600 });
 
     const rows = new LocalBrowserSessionStore({
       baseDir,
-      now: () => new Date('2026-08-11T00:00:00.000Z'),
+      now: () => now,
       isActive: session => session.id === 'active-k7',
     }).list('work', 2);
 
     expect(rows.map((row) => row.id)).toEqual(['newest-k7', 'middle-k7']);
     expect(new LocalBrowserSessionStore({
       baseDir,
-      now: () => new Date('2026-08-11T00:00:00.000Z'),
+      now: () => now,
       isActive: session => session.id === 'active-k7',
     }).find('work', 'active-k7')).toBeDefined();
   });
 });
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function isoAt(now: Date, offsetMs = 0): string {
+  return new Date(now.getTime() + offsetMs).toISOString();
+}
 
 function sessionRecord(
   id: string,
