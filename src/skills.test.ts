@@ -590,7 +590,6 @@ describe('public copy', () => {
   it('documents local seed lookup, provenance, clean break, and invisible learning', () => {
     const privacy = fs.readFileSync(path.join(process.cwd(), 'PRIVACY.md'), 'utf8');
     const memory = fs.readFileSync(path.join(process.cwd(), 'docs', 'browser-and-sitemap-memory.mdx'), 'utf8');
-    const localCloud = fs.readFileSync(path.join(process.cwd(), 'docs', 'local-or-cloud.mdx'), 'utf8');
 
     const intro = privacy.slice(0, privacy.indexOf('\n## '));
     expect(intro).toMatch(/page contents/i);
@@ -617,7 +616,5 @@ describe('public copy', () => {
     expect(privacy).toContain('sitemap/SITE.md');
     expect(memory).toMatch(/invisible|do not routinely announce|normal output/i);
     expect(memory).toMatch(/request|verbose|retention failure/i);
-    expect(localCloud).toMatch(/self-learning|site memory/i);
-    expect(localCloud).toMatch(/browser-operation-only|browser operation only|browser-only/i);
   });
 });

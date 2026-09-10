@@ -180,7 +180,6 @@ const BROWSER_DOCUMENTATION = [
 const HOSTED_DOCUMENTATION = [
   ...BROWSER_DOCUMENTATION,
   'docs/authentication-and-profiles.mdx',
-  'docs/local-or-cloud.mdx',
 ];
 
 const HOSTED_PROFILE_PATHS = /^(?:src\/completion-shared|src\/hosted\/(?:browser-args|client|runner|types))\.ts$/;
