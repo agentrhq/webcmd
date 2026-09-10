@@ -1,52 +1,59 @@
 ---
 title: How Webcmd Works
-description: How agents reuse commands, explore unfamiliar surfaces, retain useful knowledge, and create deterministic CLIs.
+description: How agents browse live websites, retain useful structural knowledge, and recover when pages change.
 ---
 
 # How Webcmd Works
 
-Webcmd gives an agent one rule: reuse what already exists before exploring.
+Webcmd gives an agent a live browser plus memory of website structure. The
+agent completes the task against the current page while preserving useful,
+verified context for the next run.
 
 ## The Agent's Decision Flow
 
-1. Discover relevant existing adapters with `webcmd list`.
-2. Use an existing command when it already satisfies the request.
-3. Explore through a browser only when the surface is unfamiliar or broken.
-4. Retain sitemap knowledge when it will help future browser work.
-5. Create or repair an adapter when the workflow should become repeatable.
+1. Create a named browser Session in the requested Profile.
+2. Use relevant site memory as a starting point when it is available.
+3. Inspect the live page before relying on remembered structure.
+4. Navigate, extract, and verify the requested result.
+5. Retain useful structural knowledge for future browser tasks.
 
-## From Exploration to a Command
+## Live Pages Stay Authoritative
 
-Exploration is for understanding an unfamiliar surface. A verified, reusable workflow becomes an adapter command, so the next agent can use a stable CLI instead of repeating browser work.
+Memory helps an agent find likely pages, controls, and content regions without
+repeating every discovery step. It is guidance, not a recording or a fixed
+script. When the page differs from memory, the agent follows the live page and
+updates its understanding.
 
-## Adapters and Stable Output
+## Profiles, Sessions, and Tabs
 
-An adapter turns a website, app, API, or local surface into one or more commands. Site adapters are installed as plugins; the core package bundles none. Legacy private adapters in `~/.webcmd/clis/` remain discoverable, and local tools can also be exposed as external CLIs.
+A **Profile** is a browser identity and storage boundary, such as `default` or
+`work`. Use separate Profiles for accounts or environments that must not share
+sign-in state.
 
-Commands should have clear names, stable inputs, useful errors, and JSON-friendly output. Stable output is the contract that lets another agent reuse a successful workflow.
+A **Session** is a named browser workspace inside a Profile. Sessions allow
+separate agents or tasks to work without competing for the same browser window.
+Its readable ID is immutable and scoped to its Profile.
 
-```text
-Return JSON rows with id, title, status, owner, updated_at, and url. Keep those fields stable across future updates.
+```bash
+webcmd --profile work session create "Work Project" -f json
+webcmd --profile work --session work-project-k7 browser tabs
 ```
 
-## Execution Strategies
+A **tab** is one page inside that Session. Raw browser commands always receive
+the Session selector at the root of the command.
 
-The agent chooses the strategy; the human describes the outcome and constraints.
+## Observe, Act, and Verify
 
-| Strategy | Meaning |
-| --- | --- |
-| `PUBLIC` | Uses public pages or APIs. No browser or login required. |
-| `COOKIE` | Uses a logged-in browser profile for authenticated requests. |
-| `INTERCEPT` | Uses browser-derived request context, then replays a useful request. |
-| `UI` | Drives the live page UI. |
-| `LOCAL` | Talks to a local app, service, or CLI. |
+Agents use snapshots to inspect page state and small browser programs to act on
+it. An action should be followed by a relevant observation: confirm the URL,
+visible state, or extracted fields instead of assuming a click succeeded.
 
-## Profiles, Sessions, And Tabs
-
-A Profile is the browser identity and storage bucket, such as `default` or `work`. A Session is a named browser workspace inside a Profile. Create one with `webcmd --profile work session create "Work Project"`, then use its returned readable ID with `webcmd --profile work --session work-project-k7 browser tabs`. Session IDs are immutable and Profile-scoped. Adapter commands without `--session` reuse `adapter-default`; raw browser commands require an explicit readable selector. A tab is one page inside that Session.
-
-Adapter browser commands can use `siteSession: 'ephemeral'` for an isolated tab or `siteSession: 'persistent'` for a longer same-site workflow. Those adapter site-session modes are separate from raw browser Sessions.
+Read-only extraction can usually proceed without interruption. Posting,
+purchasing, submitting, deleting, applying, or communicating externally should
+follow the approval boundary in the user's request.
 
 ## What the Human Needs to Decide
 
-Describe the outcome, required fields, constraints, and any approval boundaries. The agent decides whether an existing command, browser exploration, sitemap memory, or a reusable adapter is the right path.
+Describe the outcome, required fields, Profile, constraints, and any action that
+needs approval. You do not need to describe selectors or browser steps; the
+agent determines those from the live website.

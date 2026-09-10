@@ -1,24 +1,26 @@
 ---
 title: Authentication and Profiles
-description: Ask agents to use logged-in websites without putting credentials in adapters or prompts.
+description: Let agents use logged-in websites without putting credentials in prompts or retained site memory.
 ---
 
 # Authentication and Profiles
 
 ## Ask for an Authenticated Workflow
 
-Name the profile and the outcome you need:
+Name the Profile and the outcome you need:
 
 ```text
-Use Webcmd with my `work` profile to complete this task on Acme Billing. If the profile is not authenticated, pause and give me the sign-in link or browser handoff. Never store credentials in the adapter.
+Use Webcmd with my `work` profile to complete this task on Acme Billing. If the
+profile is not authenticated, pause and give me the browser handoff. Never ask
+me to paste credentials, cookies, or one-time codes into chat.
 ```
 
 ## Named Profiles
 
-Profiles are cookie jars and authentication scope. Sessions are browser
-windows/workspaces within a profile; separate Sessions let multiple agents use
-the same profile in parallel. Use a named profile when work and personal
-accounts, customers, or environments must stay separate.
+Profiles are browser identities and authentication boundaries. Sessions are
+browser windows or workspaces within a Profile; separate Sessions let multiple
+agents use the same Profile without sharing navigation state. Use named Profiles
+when work and personal accounts, customers, or environments must stay separate.
 
 When SLAB is the local runtime, a Session may create its own browser window or
 explicitly bind an existing human window. `browser tabs` discovers unbound
@@ -29,57 +31,51 @@ browser or daemon restart.
 
 ## Hosted Profiles
 
-Webcmd Cloud scopes every hosted profile to a workspace. A workspace is an ambient container the CLI resolves once per invocation: the `--workspace <id>` flag if present, otherwise the `WEBCMD_WORKSPACE` environment variable, otherwise an implicit default workspace. Within that workspace, `--profile <name>` selects a persona; an unset or default profile lazily creates that workspace's own `default` profile the first time it is used.
+Webcmd Cloud scopes every hosted Profile to a workspace. The CLI resolves the
+workspace once per invocation: `--workspace <id>`, then the
+`WEBCMD_WORKSPACE` environment variable, then an implicit default. Within that
+workspace, `--profile <name>` selects a browser identity.
 
-### B2C
-
-A single end user runs hosted commands with no setup. The implicit default workspace and its `default` profile are created lazily on first use:
-
-```bash
-webcmd github whoami
-```
-
-Named personas inside that same workspace are also lazy:
+For an individual user, the implicit workspace and `default` Profile are
+created lazily when a hosted browser task first needs them. For a product
+serving multiple users, set `WEBCMD_WORKSPACE` per invocation so each user has
+isolated Profiles and browser state.
 
 ```bash
-webcmd --profile work github whoami
+WEBCMD_WORKSPACE=user_64256 webcmd --profile work session list -f json
 ```
 
-### B2B2C
-
-An enterprise backend puts each downstream user in their own workspace by setting `WEBCMD_WORKSPACE` per invocation. Each workspace gets its own lazily created profiles, including its own `default`, isolated from every other workspace:
-
-```bash
-WEBCMD_WORKSPACE=user_64256 webcmd github whoami
-WEBCMD_WORKSPACE=user_64256 webcmd --profile work github whoami
-```
-
-`--profile <name>` still selects a persona within the ambient workspace; it never crosses workspace boundaries.
-
-Hosted `profile list` returns profile rows; `delete` returns `{ "ok": true, "deleted": true }`. Public profile fields are `id`, `name`, `workspace`, `default`, `status`, `createdAt`, `updatedAt`, and `lastUsedAt`. `status` is `pending` while the hosted profile is being provisioned and `available` once it is ready. Cloud provider identifiers are never exposed as Webcmd API fields.
-
-Delete hosted profiles only by immutable ID:
+Hosted `profile list` returns Profiles for the active workspace. Delete a
+hosted Profile only by its immutable ID:
 
 ```bash
 webcmd profile delete profile_abc123
 ```
 
-Deletion permanently removes that hosted browser state and its saved sign-in state.
+Deletion permanently removes that hosted browser state and its saved sign-in
+state.
 
 ## When You Need to Sign In
 
-When a profile needs interactive sign-in, complete it directly in the browser;
-never share credentials through chat. The handoff belongs to the Session that
-started it. After signing in, run the returned verification command verbatim;
-it includes the Session selector when applicable. Webcmd blocks `session close`
-while that Session has a live handoff.
+Complete sign-in directly in the browser; never share credentials through
+chat. The handoff belongs to the Session that started it. After signing in, run
+the returned verification command verbatim because it includes the Session
+selector when needed. Webcmd blocks `session close` while that Session has a
+live handoff.
 
 ## Credential Safety
 
-Credentials never belong in prompts or adapter code. Ask the agent to use an authenticated profile and pause for a sign-in handoff instead of sharing passwords, cookies, or API keys.
+Credentials never belong in prompts or retained sitemap memory. Ask the agent
+to use an authenticated Profile and pause for a browser handoff instead of
+sharing passwords, cookies, API keys, recovery codes, or one-time codes.
 
 ## Local and Hosted Authentication
 
-In local mode, `webcmd <site> login` opens the foreground Webcmd browser and returns `action_required` immediately. Complete sign-in in that browser, tell the agent when you are done, and let it run the returned verification command before retrying the original task. Never send credentials, OTPs, cookies, or recovery codes through chat.
+In local mode, Webcmd opens or foregrounds the relevant browser Session when
+human authentication is required. Complete sign-in there, tell the agent when
+you are done, and let it run the returned verification command before
+continuing.
 
-Hosted mode returns a Webcmd-owned live authentication view when interactive sign-in is required. Complete the sign-in there before the agent continues.
+Hosted browser tasks return a Webcmd-owned live authentication view when
+interactive sign-in is required. Complete the sign-in there before the agent
+continues.

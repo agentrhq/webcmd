@@ -59,7 +59,7 @@ Add this to your conventions file (for example `CONVENTIONS.md`) and include it 
 
 When a task needs web content, authenticated sites, or browser automation:
 
-- Run `webcmd list -f json` first to check for an existing adapter.
+- Create a named Webcmd Session and inspect the live page before acting.
 - Use `/run webcmd ...` (or `!webcmd ...`) to drive Webcmd from the shell.
 - For interactive browser work, create a named session: `webcmd --profile work session create "Work Project"`, then pass its readable ID to later commands.
 - For login walls, use Webcmd's human handoff; never type passwords, OTPs, cookies, or credentials.
@@ -84,7 +84,7 @@ Aider has no search index. When you need to discover URLs, find them yourself or
 | Aider still uses `/web` | Add the conventions guidance above; set `detect-urls: false` to stop URL auto-detection. |
 | `/web` keeps prompting for Playwright | Expected on JS-heavy sites. Use Webcmd instead, or install Playwright per [Aider's optional setup](https://aider.chat/docs/install/optional.html). |
 | `webcmd` not found in `/run` | Confirm `webcmd` is on the PATH in the shell Aider uses; restart the terminal session. |
-| Browser Session idles or loses its window | Keep its immutable, Profile-scoped ID; `webcmd --profile work --session work-project-k7 browser tabs` reopens it. Start with `webcmd --profile work session create "Work Project"`; use `webcmd --profile work session list` and `webcmd --profile work session close work-project-k7` for lifecycle. Adapter commands without `--session` reuse `adapter-default`; raw browser commands require an explicit readable selector. |
+| Browser Session idles or loses its window | Keep its immutable, Profile-scoped ID; `webcmd --profile work --session work-project-k7 browser tabs` reopens it. Use `webcmd --profile work session list` to inspect it and `webcmd --profile work session close work-project-k7` when finished. |
 
 ## See also
 

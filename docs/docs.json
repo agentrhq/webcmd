@@ -2,7 +2,7 @@
   "$schema": "https://mintlify.com/docs.json",
   "theme": "mint",
   "name": "Webcmd",
-  "description": "An agent runtime for turning websites, apps, APIs, and local tools into deterministic CLIs.",
+  "description": "A browser for coding agents that learns how websites work as it uses them.",
   "colors": {
     "primary": "#006B9A",
     "light": "#56C5FF",
@@ -66,7 +66,6 @@
             "pages": [
               "concepts",
               "authentication-and-profiles",
-              "local-or-cloud",
               "browser-and-sitemap-memory",
               "skills"
             ]
@@ -74,15 +73,13 @@
           {
             "group": "Build and Share",
             "pages": [
-              "authoring",
-              "create-plugin",
-              "publish-community-plugin"
+              "browser-task-design"
             ]
           },
           {
             "group": "Use Cases",
             "pages": [
-              "x-session-cli"
+              "authenticated-browser-research"
             ]
           },
           {
@@ -103,11 +100,27 @@
     },
     {
       "source": "/generated-clis",
-      "destination": "/authoring"
+      "destination": "/browser-task-design"
     },
     {
       "source": "/plugins-and-skills",
       "destination": "/skills"
+    },
+    {
+      "source": "/authoring",
+      "destination": "/browser-task-design"
+    },
+    {
+      "source": "/create-plugin",
+      "destination": "/browser-task-design"
+    },
+    {
+      "source": "/publish-community-plugin",
+      "destination": "/browser-task-design"
+    },
+    {
+      "source": "/x-session-cli",
+      "destination": "/authenticated-browser-research"
     }
   ]
 }

@@ -1,0 +1,56 @@
+---
+title: Browser Task Design
+description: Write browser tasks that are safe, verifiable, and easy for agents to complete.
+---
+
+# Browser Task Design
+
+## Start With the Outcome
+
+Tell the agent what result you need rather than prescribing clicks or selectors.
+A strong task names the target, required fields, relevant Profile, and actions
+that are forbidden or require approval.
+
+```text
+Use Webcmd to find five companies hiring Forward Deployed Engineers. Return
+company, role, location, a one-sentence description, and source URL. Research
+only: do not apply, contact anyone, or change my account.
+```
+
+## Request Verifiable Results
+
+Ask for source URLs and explicit null values when information is missing. For
+time-sensitive research, request the date checked. This makes it possible to
+distinguish what the website stated from what the agent inferred.
+
+## Keep Boundaries Explicit
+
+For read-only work, say so. For actions such as submitting a form, posting,
+buying, applying, sending a message, or deleting data, state whether the agent
+may perform the action or must stop for approval.
+
+Authentication is a separate boundary. Name the Profile to use and ask the
+agent to pause for a direct browser sign-in rather than requesting secrets in
+chat.
+
+## Reuse One Session
+
+Related pages should normally be inspected inside one named Session. This
+preserves navigation state, keeps authentication scoped correctly, and makes
+the browser trail easier to inspect.
+
+## Verify Before Finishing
+
+The agent should verify the current URL, visible page state, and requested
+fields after navigation or an action. If remembered site structure conflicts
+with the live website, the live page wins and useful memory is refreshed.
+
+## Handoff Checklist
+
+A completed browser task should include:
+
+- The requested result in a consistent shape.
+- A source URL for each item or claim.
+- Clear nulls or caveats for unavailable information.
+- A note about any authentication or approval boundary encountered.
+- Confirmation that prohibited actions were not taken.

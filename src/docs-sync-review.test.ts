@@ -126,7 +126,6 @@ describe('review context', () => {
       'docs/browser-and-sitemap-memory.mdx',
       'docs/cli-reference.mdx',
       'docs/concepts.mdx',
-      'docs/local-or-cloud.mdx',
       'skills/webcmd-browser/SKILL.md',
     ]);
   });
@@ -139,7 +138,6 @@ describe('review context', () => {
       'docs/browser-and-sitemap-memory.mdx',
       'docs/cli-reference.mdx',
       'docs/concepts.mdx',
-      'docs/local-or-cloud.mdx',
       'skills/webcmd-browser/SKILL.md',
     ]);
   });

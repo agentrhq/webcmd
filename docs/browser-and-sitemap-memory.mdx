@@ -1,30 +1,44 @@
 ---
 title: Browser and Sitemap Memory
-description: How agents explore unfamiliar sites, retain useful navigation knowledge, and decide when to create an adapter.
+description: How agents explore unfamiliar sites and retain useful navigation knowledge for later tasks.
 ---
 
 # Browser and Sitemap Memory
 
-## Start With Existing Commands
-
-An agent first checks whether an installed command already covers the outcome. Reuse is faster and more reliable than rediscovering a site.
-
 ## Explore an Unfamiliar Surface
 
-When no suitable command exists or one is broken, the agent uses a browser to inspect the live surface and complete the immediate task. Live browser state is the source of truth.
+The agent starts from the current website. It inspects only the pages and UI
+needed for the requested outcome, reusing one Session for related work.
 
-## Retain Sitemap Knowledge
+## Learn While Browsing
 
-Useful, verified navigation and workflow knowledge can be retained as sitemap memory. It gives future browser work a starting point, but agents update or bypass it when the live site has changed.
+As the agent discovers useful navigation paths and page structure, Webcmd can
+retain sanitized sitemap memory locally. Future tasks use that memory as a head start:
+where relevant content usually lives, how sections relate, and which routes
+were previously useful.
 
-Learning is invisible in normal output. Diagnostics appear on request, verbose mode, or a material warning-retention failure. See [Privacy](https://github.com/agentrhq/webcmd/blob/main/PRIVACY.md) for seed lookup, local provenance, and the beta memory clean break.
+This happens during normal browser work. Learning is invisible in normal output.
+Diagnostics appear on request, verbose mode, or a material warning-retention failure.
+You do not need to ask the agent to build or maintain anything separately.
 
-## When to Create an Adapter
+## Adapt When a Site Changes
 
-Create or repair an adapter when the workflow is likely to repeat and can be verified as a stable command. Keep one-off or changing work in the browser until reuse is justified.
+The live page is always the source of truth. Before acting, the agent checks
+that remembered structure still matches the current website. If a route,
+control, or layout has changed, it explores the new surface and refreshes the
+useful knowledge rather than forcing an outdated path.
+
+## What Memory Does Not Store
+
+Sitemap memory is for reusable site structure, not secrets. Credentials,
+one-time codes, cookies, and private page contents should not be placed in
+prompts or retained as navigation knowledge. See [Privacy](https://github.com/agentrhq/webcmd/blob/main/PRIVACY.md)
+for storage, provenance, and seed-lookup details.
 
 ## Ask for the Right Outcome
 
 ```text
-Use Webcmd to complete this task on example.com. Reuse an existing adapter if one fits. Otherwise explore the site, preserve useful sitemap knowledge, and propose a reusable command only if this workflow is likely to repeat.
+Use Webcmd to complete this task on example.com. Inspect the live site, return
+the requested results with source URLs, and keep the work read-only. Reuse any
+relevant site knowledge, but verify it against the current page before acting.
 ```

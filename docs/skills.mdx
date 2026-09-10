@@ -5,14 +5,14 @@ description: The bundled install is exactly one skill, webcmd-browser, for live 
 
 # Skills
 
-The bundled install is exactly one skill, `webcmd-browser`. Load it for live browser work.
-
-Adapter, search, fetch, and plugin commands remain on the CLI. They are outside the default installed browser skill.
+The bundled install is exactly one skill, `webcmd-browser`. It teaches an agent
+how to create and manage Sessions, inspect live pages, run browser programs,
+handle sign-in handoffs, and verify results.
 
 ## Install in Codex
 
 Open **Plugins**, choose **Add plugin marketplace**, enter `agentrhq/webcmd`,
-and install **Webcmd**. The plugin bundles this same skill and installs
+and install **Webcmd**. The Codex integration bundles this skill and installs
 the npm CLI on first use if `webcmd` is missing. Start a new task after
 installation.
 
@@ -20,5 +20,11 @@ Do not also add the skill with `webcmd skills add` in Codex.
 
 ## Other Agents or Plugin-Free Setup
 
-Run `webcmd skills add` to install or refresh the bundled `webcmd-browser` skill for your agent.
-For raw browser work, agents should run `webcmd --profile work session create "Work Project"`, keep the returned immutable, Profile-scoped ID, and pass it at the root: `webcmd --profile work --session work-project-k7 browser tabs`. Adapter commands without `--session` reuse `adapter-default`; raw browser commands require an explicit readable selector.
+Run `webcmd skills add` to install or refresh `webcmd-browser` for your agent.
+For raw browser work, the agent creates a named Session, keeps its immutable,
+Profile-scoped ID, and passes it at the root of every browser command:
+
+```bash
+webcmd --profile work session create "Work Project" -f json
+webcmd --profile work --session work-project-k7 browser tabs
+```
