@@ -40,6 +40,7 @@ describe('LocalBrowserSessionStore', () => {
     const store = new LocalBrowserSessionStore({
       baseDir,
       suffixFactory: () => 'k7',
+      now: () => new Date('2026-08-11T00:00:00.000Z'),
     });
 
     expect(() => store.create('work', 'Work Project')).toThrowError(
