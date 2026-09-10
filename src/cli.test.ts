@@ -2461,6 +2461,11 @@ describe('browser raw session commands', () => {
 describe('browser Session lifecycle commands', () => {
   const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
+  function liveSession(id: string, profileId: string) {
+    const t = new Date().toISOString();
+    return { id, profileId, kind: 'explicit' as const, createdAt: t, updatedAt: t, lastUsedAt: t };
+  }
+
   beforeEach(() => {
     process.exitCode = undefined;
     consoleLogSpy.mockClear();
@@ -2502,14 +2507,7 @@ describe('browser Session lifecycle commands', () => {
     fs.mkdirSync(baseDir, { recursive: true });
     fs.writeFileSync(path.join(baseDir, 'browser-sessions.json'), JSON.stringify({
       version: 2,
-      sessions: ['default', 'work'].map((profileId) => ({
-        id: 'work-project-k7',
-        profileId,
-        kind: 'explicit',
-        createdAt: '2026-08-11T00:00:00.000Z',
-        updatedAt: '2026-08-11T00:00:00.000Z',
-        lastUsedAt: '2026-08-11T00:00:00.000Z',
-      })),
+      sessions: ['default', 'work'].map((profileId) => liveSession('work-project-k7', profileId)),
     }), { mode: 0o600 });
     await createProgram('', '').parseAsync(['node', 'webcmd', 'profile', 'create', 'work']);
     consoleLogSpy.mockClear();
@@ -2531,14 +2529,7 @@ describe('browser Session lifecycle commands', () => {
     fs.mkdirSync(baseDir, { recursive: true });
     fs.writeFileSync(path.join(baseDir, 'browser-sessions.json'), JSON.stringify({
       version: 2,
-      sessions: [{
-        id: 'work-project-k7',
-        profileId: 'work',
-        kind: 'explicit',
-        createdAt: '2026-08-11T00:00:00.000Z',
-        updatedAt: '2026-08-11T00:00:00.000Z',
-        lastUsedAt: '2026-08-11T00:00:00.000Z',
-      }],
+      sessions: [liveSession('work-project-k7', 'work')],
     }), { mode: 0o600 });
     mockSendCommand.mockRejectedValueOnce(new Error('daemon unavailable'));
 
@@ -2600,14 +2591,7 @@ describe('browser Session lifecycle commands', () => {
     fs.mkdirSync(baseDir, { recursive: true });
     fs.writeFileSync(path.join(baseDir, 'browser-sessions.json'), JSON.stringify({
       version: 2,
-      sessions: [{
-        id: 'existing-k7',
-        profileId: 'default',
-        kind: 'explicit',
-        createdAt: '2026-08-11T00:00:00.000Z',
-        updatedAt: '2026-08-11T00:00:00.000Z',
-        lastUsedAt: '2026-08-11T00:00:00.000Z',
-      }],
+      sessions: [liveSession('existing-k7', 'default')],
     }), { mode: 0o600 });
 
     await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'list', '-f', 'json']);
@@ -2623,14 +2607,7 @@ describe('browser Session lifecycle commands', () => {
     fs.mkdirSync(baseDir, { recursive: true });
     fs.writeFileSync(path.join(baseDir, 'browser-sessions.json'), JSON.stringify({
       version: 2,
-      sessions: [{
-        id: 'work-project-k7',
-        profileId: 'default',
-        kind: 'explicit',
-        createdAt: '2026-08-11T00:00:00.000Z',
-        updatedAt: '2026-08-11T00:00:00.000Z',
-        lastUsedAt: '2026-08-11T00:00:00.000Z',
-      }],
+      sessions: [liveSession('work-project-k7', 'default')],
     }), { mode: 0o600 });
 
     await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'close', 'work-project-k7', '-f', 'json']);
@@ -2654,14 +2631,7 @@ describe('browser Session lifecycle commands', () => {
     fs.mkdirSync(baseDir, { recursive: true });
     fs.writeFileSync(path.join(baseDir, 'browser-sessions.json'), JSON.stringify({
       version: 2,
-      sessions: [{
-        id: 'work-project-k7',
-        profileId: 'work',
-        kind: 'explicit',
-        createdAt: '2026-08-11T00:00:00.000Z',
-        updatedAt: '2026-08-11T00:00:00.000Z',
-        lastUsedAt: '2026-08-11T00:00:00.000Z',
-      }],
+      sessions: [liveSession('work-project-k7', 'work')],
     }), { mode: 0o600 });
 
     await expect(
