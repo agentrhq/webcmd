@@ -48,7 +48,7 @@ the next safe command.
 | `SESSION_SELECTOR_POSITION` | `--session` appears after the command name. | Move it before `browser`: `webcmd --session <id> browser ...`. |
 | `SESSION_NOT_FOUND` | The Session does not exist in the selected Profile. | Check `session list -f json` with the correct Profile or create a Session. |
 | `INVALID_SESSION_LIMIT` | `session list --limit` is outside 1–100. | Retry with a value from 1 to 100. |
-| `SESSION_BUSY` | Another command is using the same Session. | Wait for it to finish; force-close only as a last resort. |
+| `SESSION_BUSY` | Another command is using the same Session. | Wait for it to finish; if it is dead, use `webcmd session close <session-id> --force` as the last resort. |
 | `SESSION_PAUSED_FOR_HUMAN_HANDOFF` | The Session is waiting for sign-in or another human action. | Finish in the browser, then run the returned verifier. |
 | `SESSION_WINDOW_CONFLICT` | Browser-window ownership changed unexpectedly. | Inspect the Session, then close and recreate it if needed. |
 | `SESSION_CAPACITY_EXCEEDED` | The runtime reached its concurrent Session limit. | Close idle Sessions or wait for one to finish. |

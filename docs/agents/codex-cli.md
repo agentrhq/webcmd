@@ -84,7 +84,7 @@ disabled_tools = ["navigate", "screenshot"]
 | Search results look stale | `web_search` defaults to `"cached"`. Set `web_search = "live"` in `~/.codex/config.toml`, then restart `codex`. |
 | `web_search` was disabled and search stopped working | Expected. Set it back to `"live"` or `"cached"` — Webcmd does not replace search. |
 | `webcmd` not found in Codex shell | Confirm `webcmd` is on the PATH Codex uses; restart after installing the CLI. |
-| Browser Session idles or loses its window | Keep its immutable, Profile-scoped ID; `webcmd --profile work --session work-project-k7 browser tabs` reopens it. Use `webcmd --profile work session list` to inspect it and `webcmd --profile work session close work-project-k7` when finished. |
+| Browser Session idles or loses its window | Keep its immutable, Profile-scoped ID; `webcmd --profile work --session work-project-k7 browser tabs` reopens it. Start with `webcmd --profile work session create "Work Project"`; use `webcmd --profile work session list` and `webcmd --profile work session close work-project-k7` for lifecycle. |
 
 ## See also
 

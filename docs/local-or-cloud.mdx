@@ -1,6 +1,6 @@
 ---
 title: Local or Cloud
-description: Choose where Webcmd browser Sessions run and understand which state remains local.
+description: Choose where Webcmd runs browser Sessions and understand which state remains local.
 ---
 
 # Local or Cloud
@@ -39,8 +39,8 @@ webcmd setup --browser /absolute/path/to/browser
 Webcmd Cloud alpha runs browser Sessions on hosted infrastructure with browser
 lifecycle, proxying, and live viewport access managed by Webcmd. Cloud access
 and credentials are provisioned separately; `webcmd setup` configures local
-browser mode only. Hosted browser tasks do not teach or synchronize the local
-sitemap memory stored on this machine.
+browser mode only. Hosted browser tasks remain browser-operation-only; they do not teach or
+synchronize the local sitemap memory stored on this machine.
 
 Hosted tasks are scoped to a workspace. Set `--workspace <id>` or
 `WEBCMD_WORKSPACE` per invocation; the flag takes precedence over the

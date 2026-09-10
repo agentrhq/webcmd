@@ -82,7 +82,7 @@ Or remove it entirely — CLI, `browser.request` gateway method, and agent tool 
 | OpenClaw uses `browser` for external sites | Remind it that Webcmd handles the open web; for a hard block, set `browser.enabled: false`. |
 | Search stopped working | Check whether `web_search` was denied. Webcmd does not replace search — remove it from `tools.deny`. |
 | `webcmd` not found in OpenClaw exec | Confirm `webcmd` is on the PATH the Gateway's `exec` tool uses; restart after installing the CLI. |
-| Browser Session idles or loses its window | Keep its immutable, Profile-scoped ID; `webcmd --profile work --session work-project-k7 browser tabs` reopens it. Use `webcmd --profile work session list` to inspect it and `webcmd --profile work session close work-project-k7` when finished. |
+| Browser Session idles or loses its window | Keep its immutable, Profile-scoped ID; `webcmd --profile work --session work-project-k7 browser tabs` reopens it. Start with `webcmd --profile work session create "Work Project"`; use `webcmd --profile work session list` and `webcmd --profile work session close work-project-k7` for lifecycle. |
 
 ## See also
 
