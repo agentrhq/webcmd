@@ -1,7 +1,7 @@
 {
   "$schema": "https://www.schemastore.org/claude-code-marketplace.json",
   "name": "webcmd",
-  "description": "Turn websites, browser sessions, desktop apps, and local tools into deterministic CLI surfaces for humans and AI agents.",
+  "description": "Self-learning browser infrastructure for AI agents: live browser control plus local sitemap memory that makes repeat runs faster and cheaper.",
   "owner": {
     "name": "AgentRHQ",
     "url": "https://github.com/agentrhq"
@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "webcmd",
-      "description": "Webcmd CLI, browser, search, authoring, sitemap, and repair skills. Requires the @agentrhq/webcmd npm CLI.",
+      "description": "Webcmd browser skill for live, authenticated browser automation with local sitemap memory. Requires the @agentrhq/webcmd npm CLI.",
       "source": "./",
       "category": "productivity"
     }

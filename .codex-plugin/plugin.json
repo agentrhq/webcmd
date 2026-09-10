@@ -1,7 +1,7 @@
 {
   "name": "webcmd",
   "version": "0.8.4",
-  "description": "Turn websites, browser sessions, desktop apps, and local tools into deterministic CLI surfaces for humans and AI agents.",
+  "description": "Self-learning browser infrastructure for AI agents: live browser control plus local sitemap memory that makes repeat runs faster and cheaper.",
   "author": {
     "name": "AgentRHQ",
     "url": "https://github.com/agentrhq"
@@ -18,22 +18,22 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "Webcmd",
-    "shortDescription": "Agent-native CLIs for websites, apps, and local tools",
-    "longDescription": "Use Webcmd's bundled webcmd-browser skill from Codex. The npm CLI also covers adapters, search, fetch, and plugins. Requires the @agentrhq/webcmd npm CLI.",
+    "shortDescription": "Self-learning browser control for AI agents",
+    "longDescription": "Use Webcmd's bundled webcmd-browser skill from Codex to drive a real browser: inspect, click, type, extract, and capture network calls in authenticated sessions. Webcmd keeps sitemap memory locally so later runs need less exploration. Requires the @agentrhq/webcmd npm CLI.",
     "developerName": "AgentRHQ",
     "category": "Developer Tools",
     "capabilities": [
       "Instructions",
       "Browser automation",
-      "CLI workflows"
+      "Sitemap memory"
     ],
     "websiteURL": "https://webcmd.dev/",
     "defaultPrompt": [
-      "Create a Zillow rental-search plugin for WebCMD with city, max rent, and bedroom filters. Test it and show me the command.",
+      "Research agentic browser automation on Hacker News and Reddit, then return a concise comparison with source links.",
       "Compare MacBook Air M5 prices and availability on Amazon, Walmart, and Best Buy.",
       "Find and rank today’s most-discussed AI agent launches across Hacker News, Reddit, Product Hunt, and arXiv."
     ],
-    "brandColor": "#56C5FF",
+    "brandColor": "#1E88E5",
     "composerIcon": "./docs/webcmd.svg",
     "logo": "./docs/webcmd.svg"
   }

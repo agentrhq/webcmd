@@ -23,7 +23,7 @@ assert.equal(manifest.skills, './skills/');
 assert.equal(manifest.author?.name, 'AgentRHQ');
 assert.equal(manifest.interface?.developerName, 'AgentRHQ');
 const expectedDefaultPrompts = [
-  'Create a Zillow rental-search plugin for WebCMD with city, max rent, and bedroom filters. Test it and show me the command.',
+  'Research agentic browser automation on Hacker News and Reddit, then return a concise comparison with source links.',
   'Compare MacBook Air M5 prices and availability on Amazon, Walmart, and Best Buy.',
   'Find and rank today\u2019s most-discussed AI agent launches across Hacker News, Reddit, Product Hunt, and arXiv.',
 ];
