@@ -63,7 +63,7 @@ Raw browser commands require an explicit readable Session ID.
 
 ## Demo
 
-https://github.com/user-attachments/assets/04eceadc-d398-4303-984d-ae3197bfa664
+https://github.com/user-attachments/assets/8a801d45-9f9d-499b-b40a-48ccd8bbec44
 
 ## Quick Start
 
