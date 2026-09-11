@@ -494,3 +494,65 @@ describe('complete Commander structural grammar and precedence parity', () => {
     expect(captureSharedSurface(argv)).toEqual(captureReferenceSurface(argv));
   });
 });
+
+describe('shared options an adapter shadows', () => {
+  // linkedin/thread-snapshot ships exactly this: an argument named `json`.
+  // Registering webcmd's own `--json` alias on top of it made Commander throw
+  // while the CLI was still being built, so every command crashed at startup
+  // — including the `plugin uninstall` needed to remove the plugin.
+  const shadowing = {
+    command: 'demo/snapshot',
+    browser: true,
+    defaultFormat: 'table',
+    args: [
+      { name: 'thread-url', required: true, type: 'string' },
+      { name: 'json', type: 'boolean', default: false },
+    ],
+  } satisfies CommandSurfaceMetadata;
+
+  it.each(['json', 'format', 'trace', 'verbose', 'window', 'site-session', 'keep-tab'])(
+    'registers a command whose argument is named %s without throwing',
+    (name) => {
+      const metadataFor = {
+        command: `demo/${name}-arg`,
+        browser: true,
+        args: [{ name, type: 'boolean', default: false }],
+      } satisfies CommandSurfaceMetadata;
+      expect(() => configureCommandSurface(new Command('demo'), metadataFor)).not.toThrow();
+    },
+  );
+
+  it('registers every shared option when nothing collides', () => {
+    const command = new Command('demo');
+    configureCommandSurface(command, { command: 'demo/plain', browser: true, args: [] });
+    const flags = command.options.map((option) => option.long);
+    expect(flags).toEqual(expect.arrayContaining([
+      '--format', '--json', '--trace', '--verbose', '--window', '--site-session', '--keep-tab',
+    ]));
+  });
+
+  it('keeps the adapter argument rather than webcmd’s alias when they collide', () => {
+    const command = new Command('demo');
+    configureCommandSurface(command, shadowing);
+    const jsonOptions = command.options.filter((option) => option.long === '--json');
+    expect(jsonOptions).toHaveLength(1);
+    expect(jsonOptions[0]!.description).not.toBe('Alias of --format json');
+  });
+
+  it('does not treat a shadowed --json as a request for JSON output', () => {
+    // Argv preprocessing already resolves this collision in the adapter's
+    // favour, so format resolution has to agree or --json means two things.
+    expect(parseCommandSurface(shadowing, ['--thread-url', 'https://example.com/t/1', '--json']))
+      .toMatchObject({ format: 'table', formatExplicit: false });
+  });
+
+  it('passes a shadowed --json through to the adapter', () => {
+    const parsed = parseCommandSurface(shadowing, ['--thread-url', 'https://example.com/t/1', '--json']);
+    expect(parsed.args.json).toBe(true);
+  });
+
+  it('still honours -f json on a command that shadows --json', () => {
+    expect(parseCommandSurface(shadowing, ['--thread-url', 'https://example.com/t/1', '-f', 'json']))
+      .toMatchObject({ format: 'json', formatExplicit: true });
+  });
+});

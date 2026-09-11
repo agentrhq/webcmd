@@ -1,4 +1,4 @@
-import { Command, CommanderError } from 'commander';
+import { Command, CommanderError, Option } from 'commander';
 import { isReservedRootCommand, unknownSiteCommandHint } from './command-suggest.js';
 import { ArgumentError, CliError, EXIT_CODES, type ErrorEnvelope } from './errors.js';
 import type { Arg, CliCommand, CommandArgs } from './registry.js';
@@ -232,15 +232,16 @@ export function configureCommandSurface(command: Command, metadata: CommandSurfa
     else command.option(flag, arg.help ?? '');
   }
 
-  addOutputFormatOption(command)
-    .option('--trace <mode>', `Trace capture: ${TRACE_MODES.join(', ')}`, 'off')
-    .option('-v, --verbose', 'Debug output', false);
+  // Every shared option below is guarded: the adapter's own arguments are
+  // registered first, and any of these names may collide with one of them.
+  addOutputFormatOption(command);
+  addSharedOption(command, '--trace <mode>', `Trace capture: ${TRACE_MODES.join(', ')}`, 'off');
+  addSharedOption(command, '-v, --verbose', 'Debug output', false);
 
   if (metadata.browser) {
-    command
-      .option('--window <mode>', `Browser window mode: ${BROWSER_WINDOW_MODES.join(' or ')} (default: background)`)
-      .option('--site-session <mode>', `Adapter site session lifecycle: ${SITE_SESSION_MODES.join(' or ')}`)
-      .option('--keep-tab <bool>', 'Keep the browser tab lease after the command finishes');
+    addSharedOption(command, '--window <mode>', `Browser window mode: ${BROWSER_WINDOW_MODES.join(' or ')} (default: background)`);
+    addSharedOption(command, '--site-session <mode>', `Adapter site session lifecycle: ${SITE_SESSION_MODES.join(' or ')}`);
+    addSharedOption(command, '--keep-tab <bool>', 'Keep the browser tab lease after the command finishes');
   }
 }
 
@@ -448,11 +449,64 @@ export function resolveOutputFormat(raw: string | undefined): OutputFormat | nul
   }
 }
 
+/** Long and short flags already registered on `command`. */
+function registeredFlags(command: Command): Set<string> {
+  const flags = new Set<string>();
+  for (const option of command.options) {
+    if (option.short) flags.add(option.short);
+    if (option.long) flags.add(option.long);
+  }
+  return flags;
+}
+
+/**
+ * Commands where webcmd — not the adapter — owns `--json`.
+ *
+ * An adapter may declare an argument named `json`, in which case the flag
+ * means whatever that adapter says it means and must not be read as
+ * `--format json`. Argv preprocessing already resolves the collision this way
+ * (`knownCommandOptions` lets adapter args overwrite the shared entries), so
+ * format resolution has to agree, or `--json` would silently do two things.
+ */
+const WEBCMD_OWNS_JSON_ALIAS = new WeakSet<Command>();
+
+/**
+ * Add a shared option unless the command already declares one of its flags.
+ *
+ * Commander throws on a duplicate flag, and these options are registered
+ * while the CLI is being built, so one adapter argument named after a shared
+ * flag used to abort startup for *every* command — including the
+ * `plugin uninstall` needed to remove the offending plugin. An adapter that
+ * names a flag keeps it; webcmd drops its own rather than refusing to run.
+ */
+function addSharedOption(
+  command: Command,
+  flags: string,
+  description: string,
+  defaultValue?: unknown,
+): boolean {
+  const option = new Option(flags, description);
+  const taken = registeredFlags(command);
+  if ((option.short && taken.has(option.short)) || (option.long && taken.has(option.long))) return false;
+  if (defaultValue !== undefined) option.default(defaultValue);
+  command.addOption(option);
+  return true;
+}
+
 /** Register `-f/--format` plus the `--json` alias on one command. */
 export function addOutputFormatOption(command: Command, defaultFormat = 'table'): Command {
-  return command
-    .option('-f, --format <fmt>', OUTPUT_FORMAT_HELP, defaultFormat)
-    .option('--json', JSON_FORMAT_ALIAS_HELP, false);
+  const taken = registeredFlags(command);
+  if (!taken.has('--format')) {
+    command.option(
+      taken.has('-f') ? '--format <fmt>' : '-f, --format <fmt>',
+      OUTPUT_FORMAT_HELP,
+      defaultFormat,
+    );
+  }
+  if (addSharedOption(command, '--json', JSON_FORMAT_ALIAS_HELP, false)) {
+    WEBCMD_OWNS_JSON_ALIAS.add(command);
+  }
+  return command;
 }
 
 /**
@@ -472,27 +526,27 @@ export function addOutputFormatOption(command: Command, defaultFormat = 'table')
 export function ensureOutputFormatOptions(command: Command): void {
   for (const child of command.commands) {
     if (child.commands.length === 0 && (child as Command & { _allowUnknownOption?: boolean })._allowUnknownOption !== true) {
-      const flags = new Set<string>();
-      for (const option of child.options) {
-        if (option.short) flags.add(option.short);
-        if (option.long) flags.add(option.long);
-      }
-      if (!flags.has('--format')) {
-        child.option(flags.has('-f') ? '--format <fmt>' : '-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
-      }
-      if (!flags.has('--json')) child.option('--json', JSON_FORMAT_ALIAS_HELP, false);
+      addOutputFormatOption(child);
     }
     ensureOutputFormatOptions(child);
   }
 }
 
+/**
+ * True when `--json` on this command is webcmd's format alias rather than an
+ * adapter argument that happens to be named `json`.
+ */
+function jsonAliasPassed(command: Command): boolean {
+  return WEBCMD_OWNS_JSON_ALIAS.has(command) && command.getOptionValueSource('json') === 'cli';
+}
+
 export function outputFormatIsExplicit(command: Command): boolean {
-  return command.getOptionValueSource('format') === 'cli' || command.getOptionValueSource('json') === 'cli';
+  return command.getOptionValueSource('format') === 'cli' || jsonAliasPassed(command);
 }
 
 /** Resolve `--json` onto `--format json` unless `--format` was also passed. */
 export function requestedOutputFormat(command: Command, format: unknown): unknown {
-  return command.getOptionValueSource('json') === 'cli' && command.getOptionValueSource('format') !== 'cli'
+  return jsonAliasPassed(command) && command.getOptionValueSource('format') !== 'cli'
     ? 'json'
     : format;
 }

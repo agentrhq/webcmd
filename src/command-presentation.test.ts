@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Strategy, type CliCommand } from './registry.js';
 import {
+  commandHelpData,
   commandListPresentation,
   commandListRows,
   filterCommandsByTag,
@@ -259,5 +260,43 @@ describe('shared command presentation', () => {
       .toEqual(getCommandCompletionCandidates(local, ['github'], 2, builtins));
     expect(getCommandCompletionCandidates(hosted, ['github'], 2, builtins))
       .toEqual(['issue-list', 'issues']);
+  });
+});
+
+describe('help for a command that shadows a shared flag', () => {
+  const shadowing = toPresentableCommand({
+    site: 'demo',
+    name: 'snapshot',
+    access: 'read',
+    description: 'Snapshot a thread',
+    browser: false,
+    args: [{ name: 'json', type: 'bool', default: false, help: 'Return only the snapshot string' }],
+  });
+
+  it('lists the shadowed flag once, with the adapter’s meaning', () => {
+    const help = formatCommandHelp(shadowing);
+    expect(help).toContain('Return only the snapshot string');
+    // Advertising the alias would name a flag that is no longer registered.
+    expect(help).not.toContain('Alias of --format json');
+  });
+
+  it('still lists the other shared options', () => {
+    const help = formatCommandHelp(shadowing);
+    expect(help).toContain('Common options:');
+    expect(help).toContain('-f, --format <fmt>');
+  });
+
+  it('omits the shadowed flag from structured help too', () => {
+    const data = commandHelpData(shadowing) as { common_options: Array<{ name: string }> };
+    expect(data.common_options.map((option) => option.name)).not.toContain('json');
+    expect(data.common_options.map((option) => option.name)).toContain('format');
+  });
+
+  it('leaves a command that shadows nothing unchanged', () => {
+    const plain = toPresentableCommand({
+      site: 'demo', name: 'search', access: 'read', description: 'Search',
+      browser: false, args: [{ name: 'limit', type: 'int', default: 10 }],
+    });
+    expect(formatCommandHelp(plain)).toContain('Alias of --format json');
   });
 });
