@@ -35,35 +35,9 @@ Webcmd pairs live browser control with a self-learning memory layer:
 | 0. Live browser control | The site is unfamiliar. | Use `webcmd browser` to inspect, click, type, extract, capture network calls, and complete the task in a real browser. |
 | 1. Sitemap memory | The site is familiar, but the action space is not fully known. | Capture an agent-facing sitemap of observed pages, states, actions, workflows, APIs, pitfalls, and fallback paths. |
 
-## How Self-Learning Works
-
-<img width="1672" height="941" alt="How Webcmd learns: load memory, use the live web, keep useful learnings, and help the next agent" src="docs/readme-self-learning.png" />
-
-Learning stays quiet and selective: the live browser is always truth, Webcmd
-never explores just to learn, and a memory failure never blocks the task. First
-access may use a Webcmd Cloud seed; subsequent learning stays local.
-
-For local, multi-step browser exploration, agents can send one sandboxed
-Playwright-style program to an explicit browser session:
-
-```bash
-webcmd --profile work session create "Work Project" -f json
-# id: work-project-k7
-webcmd --profile work --session work-project-k7 browser tabs
-webcmd --profile work --session work-project-k7 browser run --file explore.js
-printf 'return await page.title();' \
-  | webcmd --profile work --session work-project-k7 browser run --stdin
-webcmd --profile work session close work-project-k7
-```
-
-Profiles are cookie jars; Sessions are independent browser windows within a
-profile, so Session IDs are immutable, Profile-scoped, and safe to reuse for
-that Session's lifetime. Parallel agents should create separate Sessions.
-Raw browser commands require an explicit readable Session ID.
-
 ## Demo
 
-https://github.com/user-attachments/assets/c50d7feb-b9aa-4e75-8772-ddbb0abdb5c1
+https://github.com/user-attachments/assets/bdb65307-9e2a-4d58-9175-45d59528ae37
 
 ## Quick Start
 
@@ -124,6 +98,32 @@ AI, shopping, and booking products.
 
 This list is illustrative. Webcmd can operate other websites through the same
 live browser workflow.
+
+## How Self-Learning Works
+
+<img width="1672" height="941" alt="How Webcmd learns: load memory, use the live web, keep useful learnings, and help the next agent" src="docs/readme-self-learning.png" />
+
+Learning stays quiet and selective: the live browser is always truth, Webcmd
+never explores just to learn, and a memory failure never blocks the task. First
+access may use a Webcmd Cloud seed; subsequent learning stays local.
+
+For local, multi-step browser exploration, agents can send one sandboxed
+Playwright-style program to an explicit browser session:
+
+```bash
+webcmd --profile work session create "Work Project" -f json
+# id: work-project-k7
+webcmd --profile work --session work-project-k7 browser tabs
+webcmd --profile work --session work-project-k7 browser run --file explore.js
+printf 'return await page.title();' \
+  | webcmd --profile work --session work-project-k7 browser run --stdin
+webcmd --profile work session close work-project-k7
+```
+
+Profiles are cookie jars; Sessions are independent browser windows within a
+profile, so Session IDs are immutable, Profile-scoped, and safe to reuse for
+that Session's lifetime. Parallel agents should create separate Sessions.
+Raw browser commands require an explicit readable Session ID.
 
 ## Benchmarks
 
