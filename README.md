@@ -37,7 +37,7 @@ Webcmd pairs live browser control with a self-learning memory layer:
 
 ## Demo
 
-https://github.com/user-attachments/assets/c50d7feb-b9aa-4e75-8772-ddbb0abdb5c1
+https://github.com/user-attachments/assets/bdb65307-9e2a-4d58-9175-45d59528ae37
 
 ## Quick Start
 
