@@ -1,0 +1,50 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-paper text-ink font-body antialiased;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  @apply font-display text-navy-900;
+}
+
+::selection {
+  @apply bg-rescue-100;
+}
+
+/* Custom scrollbar - subtle, not decorative-heavy */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #cfd8e6;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@keyframes rescue-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+.animate-rescue-pulse {
+  animation: rescue-pulse 1.4s ease-in-out infinite;
+}

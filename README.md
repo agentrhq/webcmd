@@ -1,160 +1,194 @@
-<img width="1280" height="640" alt="Webcmd — stop paying agents to rediscover the web" src="docs/readme-hero-v2.png" />
+# Application Rescue Agent 🛟
 
+A hackathon MVP that helps students find relevant opportunities (internships,
+scholarships, fellowships, competitions, grants, university programs) and
+**rescues** their applications before deadlines, confusing forms, or missing
+documents cost them the opportunity.
 
-<p align="center">
-  <a href="https://www.npmjs.com/package/@agentrhq/webcmd">
-    <img alt="NPM version" src="https://img.shields.io/npm/v/@agentrhq/webcmd.svg?style=for-the-badge&color=1E88E5&labelColor=000000">
-  </a>
-  <a href="https://webcmd.dev/docs">
-    <img alt="Documentation" src="https://img.shields.io/badge/docs-webcmd.dev-7C3AED.svg?style=for-the-badge&labelColor=000000">
-  </a>
-  <a href="https://github.com/agentrhq/webcmd/blob/main/LICENSE">
-    <img alt="License" src="https://img.shields.io/badge/license-Apache%202.0-1E88E5.svg?style=for-the-badge&labelColor=000000">
-  </a>
-  <a href="https://discord.gg/9YP2C9tvMp">
-    <img alt="Join the community on Discord" src="https://img.shields.io/badge/Join%20the%20community-5865F2.svg?style=for-the-badge&logo=discord&logoColor=white&labelColor=000000&logoWidth=20">
-  </a>
-  <a href="https://x.com/agentrhq">
-    <img alt="Follow AgentR on X" src="https://img.shields.io/badge/Built%20by%20%40agentrhq-000000.svg?style=for-the-badge&logo=x&logoColor=white&labelColor=000000&logoWidth=20">
-  </a>
-</p>
+> **Core flow:** Profile → Discover → Match → Apply with Rescue Agent →
+> Analyze Form → Auto-fill → Detect Missing Items → Fix → Review →
+> User Approval → Submit
 
-# Webcmd
+The Rescue Agent **never auto-submits**. It fills what it safely can, flags
+what's missing, and waits for the student to click **Approve & Submit**.
 
-**Self-learning browser infra for AI agents.**
+---
 
-Webcmd learns the navigational context of websites as agents use them, then
-turns that knowledge into local memory for faster, cheaper, more reliable
-browser automation. The goal is simple: stop making agents rediscover the same
-sites on every run and cut browser-agent token spend by up to 90%.
+## Tech stack
 
-Webcmd pairs live browser control with a self-learning memory layer:
+| Layer     | Tech                                            |
+|-----------|--------------------------------------------------|
+| Frontend  | React + Vite + Tailwind CSS + React Router        |
+| Backend   | Node.js + Express                                 |
+| Database  | MongoDB + Mongoose                                |
+| Rescue engine | `webcmdService.js` — DEMO mode (scripted) or REAL mode (Webcmd CLI) |
 
-| Layer | Scenario | What Webcmd Helps With |
-| --- | --- | --- |
-| 0. Live browser control | The site is unfamiliar. | Use `webcmd browser` to inspect, click, type, extract, capture network calls, and complete the task in a real browser. |
-| 1. Sitemap memory | The site is familiar, but the action space is not fully known. | Capture an agent-facing sitemap of observed pages, states, actions, workflows, APIs, pitfalls, and fallback paths. |
+---
 
-## Demo
+## Folder structure
 
-https://github.com/user-attachments/assets/bdb65307-9e2a-4d58-9175-45d59528ae37
-
-## Quick Start
-
-### Agent prompt
-
-```text
-Fetch and follow https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md to set up Webcmd end to end.
+```
+application-rescue-agent/
+├── backend/
+│   ├── config/db.js                  # MongoDB connection
+│   ├── models/                       # User, Profile, Opportunity, Document, Application
+│   ├── controllers/                  # Route handlers
+│   ├── routes/                       # Express routers
+│   ├── services/
+│   │   ├── matchEngine.js            # Match % scoring
+│   │   └── webcmdService.js          # Webcmd integration (DEMO/REAL)
+│   ├── seed/seed.js                  # Demo data seeder
+│   ├── server.js
+│   └── .env.example
+└── frontend/
+    ├── src/
+    │   ├── api/api.js                # Axios client for all backend endpoints
+    │   ├── components/               # Sidebar, cards, badges, progress bar, etc.
+    │   ├── pages/                    # Dashboard, Profile, Discover, OpportunityDetails,
+    │   │                             # Documents, Applications, ApplicationRescue
+    │   ├── App.jsx
+    │   └── index.css
+    ├── tailwind.config.js
+    └── vite.config.js
 ```
 
-### Manual
+---
 
-Webcmd requires Node.js 20.6+.
+## Setup
+
+### Prerequisites
+- Node.js 18+
+- A running MongoDB instance (local `mongod`, Docker, or a free MongoDB Atlas cluster)
+
+### 1. Backend
 
 ```bash
-npm install -g @agentrhq/webcmd
-webcmd skills add
+cd backend
+npm install
+cp .env.example .env
+# edit .env if your MongoDB URI or port differ from the defaults
+npm run seed     # populates demo user, profile, 15 opportunities, and document vault
+npm run dev      # starts the API on http://localhost:5000 (nodemon)
+# or: npm start
 ```
 
-When prompted, choose Claude, Codex, another supported harness, or a custom
-skills path. That installs exactly one skill, `webcmd-browser`.
-
-Load or tag `webcmd-browser` only for live browser work, then describe the
-outcome you want. Installation and setup commands do not require that skill.
-
-```text
-Use webcmd to research the latest discussions about browser automation across Hacker News and Reddit, then return a concise comparison with source links.
-```
-
-## What You Can Ask
-
-- “Use webcmd to research agentic browser automation on PubMed and return the title, authors, publication date, abstract, and URL for each result.”
-- “Use webcmd to find active AI infrastructure companies in the YC company directory and return the company, batch, description, location, profile URL, and source links. Keep it read-only.”
-- “Use webcmd to look up parts on Grainger by part number and return price, stock, minimum order quantity, lead time, and product URL.”
-- “Use webcmd with my logged-in `work` profile to summarize unread LinkedIn messages from the last seven days and return the sender, subject or opening text, received time, and conversation URL.”
-- “Use webcmd to check Grainger part prices and SAP Ariba purchase-order status, then return a combined summary.”
-
-## See It in Action
-
-```text
-Use webcmd with my logged-in `social` profile to collect my recent X bookmarks and return the author, text, and URL.
-```
-
-The agent uses the logged-in profile to complete the task in a real browser.
-Along the way, Webcmd quietly retains useful navigation context so later agents
-can avoid repeating the same exploration.
-
-## Where Webcmd Works
-
-Webcmd can work through authenticated browser sessions across research, social,
-AI, shopping, and booking products.
-
-| Group | Supported surfaces | Representative outcomes |
-| --- | --- | --- |
-| research and communities | Hacker News, Reddit, PubMed | Compare current discussions, find primary research, and return concise summaries with source links. |
-| social and professional | X/Twitter, LinkedIn, TikTok | Collect bookmarks, monitor public posts, or research people and creators with a named profile when needed. |
-| AI tools | ChatGPT, Claude, Gemini, NotebookLM | Retrieve conversations, research outputs, notebooks, and generated materials from the tools you already use. |
-| shopping and bookings | Amazon, Blinkit, Zepto, BigBasket, District, Practo | Compare products, availability, prices, appointments, events, and delivery options. |
-
-This list is illustrative. Webcmd can operate other websites through the same
-live browser workflow.
-
-## How Self-Learning Works
-
-<img width="1672" height="941" alt="How Webcmd learns: load memory, use the live web, keep useful learnings, and help the next agent" src="docs/readme-self-learning.png" />
-
-Learning stays quiet and selective: the live browser is always truth, Webcmd
-never explores just to learn, and a memory failure never blocks the task. First
-access may use a Webcmd Cloud seed; subsequent learning stays local.
-
-For local, multi-step browser exploration, agents can send one sandboxed
-Playwright-style program to an explicit browser session:
+Verify it's alive:
 
 ```bash
-webcmd --profile work session create "Work Project" -f json
-# id: work-project-k7
-webcmd --profile work --session work-project-k7 browser tabs
-webcmd --profile work --session work-project-k7 browser run --file explore.js
-printf 'return await page.title();' \
-  | webcmd --profile work --session work-project-k7 browser run --stdin
-webcmd --profile work session close work-project-k7
+curl http://localhost:5000/api/health
 ```
 
-Profiles are cookie jars; Sessions are independent browser windows within a
-profile, so Session IDs are immutable, Profile-scoped, and safe to reuse for
-that Session's lifetime. Parallel agents should create separate Sessions.
-Raw browser commands require an explicit readable Session ID.
+### 2. Frontend
 
-## Benchmarks
+```bash
+cd frontend
+npm install
+npm run dev      # starts on http://localhost:5173
+```
 
-On [BU Bench V1](https://github.com/browser-use/benchmark#bu-bench-v1), a
-100-task browser automation benchmark, Webcmd recorded the highest accuracy and
-lowest estimated controller cost per completed task, and fewest agent turns per
-completed task in this comparison.
+The Vite dev server proxies `/api/*` requests to `http://localhost:5000`
+(see `frontend/vite.config.js`), so just open **http://localhost:5173**.
 
-![BU Bench V1 comparison: webcmd leads accuracy at 67%, cost per completed task at $0.255, and agent turns per completed task at 9.8](./benchmarks/charts/bu-bench-readme.svg)
+### 3. (Optional) Build for production
 
-All tools used the same Pi controller, controller model, Codex `gpt-5.4` judge,
-and CloakBrowser engine. This is a stronger judge than the original BU Bench
-setup, whose [current runner uses Gemini 2.5 Flash](https://github.com/browser-use/benchmark/blob/main/run_eval.py#L37-L38).
-Accuracy is passed tasks out of 100. Cost and agent turns are averaged over
-completed tasks; cost excludes judge usage. See the
-[benchmark report](./benchmarks/README.md) for category results, methodology,
-architectural analysis, and reproduction steps.
+```bash
+cd frontend && npm run build     # outputs to frontend/dist
+cd backend  && npm start
+```
+Serve `frontend/dist` with any static host, or add `express.static` to
+`server.js` if you want the backend to serve the built frontend directly.
 
-## Learn More
+---
 
-Webcmd Cloud can run supported commands and browser sessions on hosted infrastructure. It is in active development and is not yet stable.
+## Environment variables (`backend/.env`)
 
-- [Prompt Cookbook](https://webcmd.dev/docs/agent-prompts)
-- [How Webcmd Works](https://webcmd.dev/docs/concepts)
-- [Local or Cloud](https://webcmd.dev/docs/local-or-cloud)
-- [Command Surface](https://webcmd.dev/docs/cli-reference)
+| Variable         | Default                                              | Notes |
+|------------------|-------------------------------------------------------|-------|
+| `MONGO_URI`      | `mongodb://127.0.0.1:27017/application_rescue_agent`   | Local or Atlas connection string |
+| `PORT`           | `5000`                                                 | Backend port |
+| `WEBCMD_MODE`    | `DEMO`                                                 | `DEMO` or `REAL` |
+| `WEBCMD_CLI_PATH`| `webcmd`                                               | Only used when `WEBCMD_MODE=REAL` |
 
-## Contributing
+---
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md).
+## Backend API reference
 
-## License
+| Method | Route                              | Description |
+|--------|-------------------------------------|--------------|
+| GET    | `/api/health`                       | Health check + current Webcmd mode |
+| GET    | `/api/profile`                      | Get the student profile |
+| POST   | `/api/profile`                      | Create/update the student profile |
+| GET    | `/api/opportunities`                | All opportunities with Match % |
+| GET    | `/api/opportunities/recommended`    | Top opportunities sorted by Match % (`?limit=`) |
+| GET    | `/api/opportunities/:id`            | Single opportunity detail |
+| GET    | `/api/documents`                    | Document vault status |
+| POST   | `/api/documents/upload`             | `{ type, fileName }` → marks a document uploaded |
+| GET    | `/api/applications`                 | All applications for the student |
+| POST   | `/api/applications`                 | `{ opportunityId }` → start/resume a Rescue application |
+| GET    | `/api/applications/:id`             | Single application detail |
+| POST   | `/api/applications/:id/analyze`     | **Runs the Rescue Agent** — opens the form, auto-fills, detects missing items |
+| POST   | `/api/applications/:id/submit`      | Explicit, user-triggered submission (blocked until "Ready for Review") |
 
-Released under the terms in [`LICENSE`](./LICENSE).
+---
+
+## How matching works
+
+`services/matchEngine.js` computes an explainable **0–100 Match %** per
+opportunity, no ML required for the MVP:
+
+- Skills overlap — 40 pts
+- Interests overlap — 20 pts
+- CGPA eligibility — 20 pts
+- Preferred opportunity type — 15 pts
+- Has experience listed — 5 pts
+
+## How the Rescue Agent works (`webcmdService.js`)
+
+This is the **only** file that knows about Webcmd, so the rest of the app
+never changes when you swap modes:
+
+- **DEMO mode** (default): a deterministic, scripted analysis against a
+  fixed demo application form (Name, Email, University, Degree, Branch,
+  Skills, Resume, Transcript, SOP). It reads the student's Profile and
+  Document Vault, fills every field it safely can, and reports the rest as
+  missing. This is 100% reliable for a live hackathon demo — no network
+  calls, no flakiness.
+- **REAL mode**: shells out to an installed **Webcmd CLI** binary
+  (`webcmd analyze --url <applyUrl> --profile <json> --json`) to actually
+  open the target form in a browser and read/fill real fields. If the CLI
+  isn't installed, times out, or returns bad output, the service logs the
+  failure and **falls back to DEMO analysis** so the flow never breaks
+  mid-demo. Adjust the CLI invocation in `runRealAnalysis()` to match your
+  actual Webcmd CLI's interface.
+
+Toggle modes via `WEBCMD_MODE` in `backend/.env` — no code changes needed.
+
+---
+
+## Demo script (what to show the judges)
+
+1. **Profile** — the seeded demo student (Ketna Sharma, B.Tech CS, VIT
+   Bhopal, CGPA 8.4) is already filled in. *"It knows me."*
+2. **Discover** — 15 real-feeling opportunities across 6 categories, each
+   with a computed Match %. Sort by best match. *"It finds the right
+   opportunity."*
+3. Open an opportunity → **Apply with Rescue Agent**.
+4. On the **Application Rescue** page, click **Run Rescue Agent** — watch
+   the Webcmd activity log stream in, fields auto-fill from the profile and
+   document vault. *"It opens the application and fills it."*
+5. **SOP** is missing on purpose → status shows **Missing Items**.
+   *"It finds what's missing."*
+6. Click **Upload now** next to SOP (or go to the **Documents** vault) →
+   Rescue Agent re-runs automatically → status flips to **Ready for
+   Review**, completion hits 100%. *"It rescues it."*
+7. Review the filled fields, then click **Approve & Submit** (with a
+   confirmation prompt). Status becomes **Submitted**. *"It gets my
+   approval, then submits it."*
+
+---
+
+## Explicit non-goals (kept simple on purpose)
+
+No complex authentication, OCR, vector database, real-time scraping,
+notifications, or microservices — this is a focused 4-hour hackathon MVP.
+The app operates as a single seeded demo user throughout (no login screen).
