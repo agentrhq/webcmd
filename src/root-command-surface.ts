@@ -43,7 +43,9 @@ export function parseHostedRootCommandSurface(argv: readonly string[]): HostedRo
   const input = [...argv];
 
   // main.ts checks an exact first-token version before its completion scan.
-  if (input[0] === '--version' || input[0] === '-V') {
+  // Commander also treats short version clusters such as -Vx/-Vh as the same
+  // root-level fast path, so keep those aligned with the actual CLI behavior.
+  if (input[0] === '--version' || input[0] === '-V' || /^-V(?:[A-Za-z-]|$)/.test(input[0] ?? '')) {
     return { kind: 'version', output: `${PKG_VERSION}\n` };
   }
   // Completion is a Webcmd root sentinel. Once a command or `--` begins the
