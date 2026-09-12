@@ -47,7 +47,7 @@ export async function runVisualVerification(
     await page2.screenshot({ path: cloneScreenshotPath, fullPage: false });
     await page2.close();
 
-    // Generate interactive split comparison slider HTML
+    // Generate interactive split comparison slider HTML (Light Theme)
     const diffHtmlPath = path.join(outputDir, 'verify.html');
     const sliderHtml = `<!DOCTYPE html>
 <html lang="en">
@@ -57,23 +57,25 @@ export async function runVisualVerification(
   <title>Visual Fidelity Verification - Webcmd</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
-    body { background: #0f172a; color: #f8fafc; padding: 24px; display: flex; flex-direction: column; align-items: center; }
-    .header { text-align: center; margin-bottom: 24px; }
-    .badge { display: inline-block; background: #10b981; color: #022c22; font-weight: 700; padding: 4px 12px; border-radius: 9999px; margin-top: 8px; }
-    .container { position: relative; width: 1200px; max-width: 95vw; height: 750px; border-radius: 12px; overflow: hidden; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); border: 1px solid #334155; }
+    body { background: #f8fafc; color: #0f172a; padding: 36px 20px; display: flex; flex-direction: column; align-items: center; }
+    .header { text-align: center; margin-bottom: 28px; }
+    .header h1 { font-size: 28px; font-weight: 800; color: #0f172a; letter-spacing: -0.02em; }
+    .header p { color: #64748b; font-size: 15px; margin-top: 4px; }
+    .badge { display: inline-block; background: #ecfdf5; color: #059669; border: 1px solid #a7f3d0; font-weight: 700; padding: 5px 16px; border-radius: 9999px; margin-top: 10px; font-size: 13px; }
+    .container { position: relative; width: 1200px; max-width: 95vw; height: 750px; border-radius: 16px; overflow: hidden; box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1); border: 1px solid #e2e8f0; background: #ffffff; }
     .img-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
     .slider-wrapper { position: absolute; top: 0; left: 0; width: 100%; height: 100%; overflow: hidden; }
     .slider { position: absolute; -webkit-appearance: none; appearance: none; width: 100%; height: 100%; background: transparent; outline: none; margin: 0; cursor: ew-resize; z-index: 30; }
-    .slider-line { position: absolute; top: 0; bottom: 0; width: 3px; background: #38bdf8; pointer-events: none; z-index: 20; }
-    .label { position: absolute; bottom: 16px; padding: 6px 14px; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(8px); border-radius: 6px; font-weight: 600; font-size: 14px; border: 1px solid #475569; z-index: 10; }
-    .label-left { left: 16px; color: #38bdf8; }
-    .label-right { right: 16px; color: #10b981; }
+    .slider-line { position: absolute; top: 0; bottom: 0; width: 3px; background: #0284c7; pointer-events: none; z-index: 20; box-shadow: 0 0 8px rgba(2, 132, 199, 0.4); }
+    .label { position: absolute; bottom: 20px; padding: 8px 18px; background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(10px); border-radius: 8px; font-weight: 700; font-size: 13px; border: 1px solid #cbd5e1; z-index: 10; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); }
+    .label-left { left: 20px; color: #0284c7; }
+    .label-right { right: 20px; color: #059669; }
   </style>
 </head>
 <body>
   <div class="header">
     <h1>Visual Fidelity Inspector</h1>
-    <p>Compare original website against local Webcmd clone</p>
+    <p>Drag the slider to compare original website against local Webcmd clone</p>
     <div class="badge">99.4% Match Fidelity</div>
   </div>
 

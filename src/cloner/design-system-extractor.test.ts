@@ -38,7 +38,8 @@ describe('DesignSystemExtractor', () => {
 
     // Verify tokens.json file exists
     const tokensContent = await fs.readFile(result.files.tokensJson, 'utf-8');
-    expect(tokensContent).toContain('Testsite Design System');
+    expect(tokensContent).toContain('Testsite Enterprise Design System');
+    expect(result.files.reactComponentsTsx).toBeDefined();
 
     // Clean up
     await fs.rm(testDir, { recursive: true, force: true });
