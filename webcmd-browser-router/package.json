@@ -1,0 +1,33 @@
+{
+  "name": "@webcmd/browser-router",
+  "version": "2.0.0",
+  "description": "Self-Learning, Self-Recovering Browser Router & CDP Automation for AI Workflows",
+  "main": "src/browser/cdp.js",
+  "bin": {
+    "webcmd": "./bin/webcmd.js"
+  },
+  "scripts": {
+    "demo": "node ./bin/webcmd.js demo",
+    "demo:headed": "node ./bin/webcmd.js demo --headed",
+    "ppt": "node ./bin/webcmd.js ppt",
+    "ppt:headed": "node ./bin/webcmd.js ppt --headed",
+    "serve": "node ./bin/webcmd.js serve",
+    "doctor": "node ./bin/webcmd.js doctor",
+    "sunscreen": "node ./bin/webcmd.js sunscreen",
+    "sunscreen:headed": "node ./bin/webcmd.js sunscreen --headed",
+    "test": "node tests/test-adaptive.js && node tests/test-verifier.js && node tests/test-negative-verification.js && node tests/test-workflow.js && node tests/test-extension-bridge.js && node tests/test-full-lifecycle.js",
+    "benchmark": "node tests/test-benchmark-20.js"
+  },
+  "keywords": [
+    "browser-agent",
+    "self-learning",
+    "self-recovering",
+    "scrapling",
+    "cdp",
+    "puppeteer",
+    "automation",
+    "vit-bhopal-hackathon"
+  ],
+  "author": "Webcmd Team",
+  "license": "Apache-2.0"
+}

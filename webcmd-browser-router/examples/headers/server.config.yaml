@@ -1,0 +1,21 @@
+routes:
+- route: "/exit/{code}"
+  exec:
+    proc:
+      path: "bash"
+      args: ["-c", "exit ${WC_CODE:=0}"]
+  headers: {"X-Default": "This is sent by default"}
+  statusCodes:
+  - exitCode: 0
+    statusCode: 200
+    headers: {"X-Code": "200"}
+  - exitCode: 1
+    statusCode: 201
+    headers: {"X-Code": "201"}
+  - statusCode: 400
+    headers: {"X-Code": "400"}
+- route: "/*"
+  exec:
+    proc:
+      path: "echo"
+      args: ["Use 'GET /exit/{code}' to get different response headers"]

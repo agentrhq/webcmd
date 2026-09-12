@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Webcmd Agent Dashboard</title>
+  <link rel="stylesheet" href="popup.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Top Header -->
+    <header class="header">
+      <div class="brand">
+        <div class="brand-logo">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="4 17 10 11 4 5"></polyline>
+            <line x1="12" y1="19" x2="20" y2="19"></line>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <span class="brand-title">WEBCMD</span>
+          <span class="brand-badge">v2.0</span>
+        </div>
+      </div>
+      <div class="header-actions">
+        <div id="statusPill" class="status-pill offline">
+          <span class="status-dot"></span>
+          <span id="statusText">CONNECTING...</span>
+        </div>
+        <button id="profileBtn" class="profile-btn" title="Switch User / Profile">
+          <span id="profileIcon">👤</span>
+          <span id="profileLabel">Sign In</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Sign In Modal / Screen -->
+    <div id="authModal" class="modal-overlay hidden">
+      <div class="modal-card">
+        <div class="modal-header">
+          <div class="modal-icon">🔐</div>
+          <h3>Sign in to Webcmd Engine</h3>
+          <p>Access persistent cookie jars, Scrapling memory & autonomous replay</p>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="usernameInput">Operator Name</label>
+            <input type="text" id="usernameInput" placeholder="e.g. Lead Agent / Rachit" value="Operator">
+          </div>
+          <div class="form-group">
+            <label for="profileSelect">Cookie-Jar Profile</label>
+            <div class="input-with-action">
+              <select id="profileSelect">
+                <option value="default">default (Local Sandbox)</option>
+                <option value="work">work (Authenticated Session)</option>
+                <option value="hackathon-judge">hackathon-judge (Live Evaluation)</option>
+              </select>
+              <button id="addProfileBtn" class="btn-icon" title="New Profile">+</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="apiBaseInput">API Bridge URL</label>
+            <input type="text" id="apiBaseInput" value="http://127.0.0.1:9777">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="closeAuthBtn" class="btn-secondary">Cancel</button>
+          <button id="loginSubmitBtn" class="btn-primary">Connect & Save</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Active Target Tab Banner -->
+    <section class="target-card">
+      <div class="target-header">
+        <span class="target-label">ACTIVE BROWSER TARGET</span>
+        <span id="stealthShield" class="stealth-shield active" title="Anti-Bot Evasion Active">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2L3 7v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-9-5zm0 18c-4.14-1.12-7-5.36-7-9.5V8.3l7-3.89 7 3.89V10.5c0 4.14-2.86 8.38-7 9.5z"/>
+          </svg>
+          STEALTH SHIELD: ON
+        </span>
+      </div>
+      <div class="target-info">
+        <div id="targetTitle" class="target-title">Loading active page...</div>
+        <div id="targetUrl" class="target-url">about:blank</div>
+      </div>
+      <div class="target-controls">
+        <button id="inspectTabBtn" class="btn-action primary">
+          <span class="icon">🧠</span> Inspect Perception (@eN)
+        </button>
+        <button id="clearOverlaysBtn" class="btn-action secondary">
+          <span class="icon">🧹</span> Clear Badges
+        </button>
+      </div>
+    </section>
+
+    <!-- Navigation Tabs -->
+    <nav class="nav-tabs">
+      <button class="nav-tab active" data-tab="workflowsTab">
+        <span>⚡ Workflows</span>
+      </button>
+      <button class="nav-tab" data-tab="pptTab">
+        <span>🎨 Canva PPT</span>
+      </button>
+      <button class="nav-tab" data-tab="perceptionTab">
+        <span>👁️ Perception</span>
+        <span id="perceptionBadgeCount" class="tab-badge">0</span>
+      </button>
+      <button class="nav-tab" data-tab="doctorTab">
+        <span>🩺 Health</span>
+      </button>
+      <button class="nav-tab" data-tab="logsTab">
+        <span>📜 Telemetry</span>
+      </button>
+    </nav>
+
+    <!-- Tab: Autonomous Canva PPT Generator -->
+    <main id="pptTab" class="tab-content">
+      <div class="doctor-card">
+        <div class="doctor-header">
+          <h3>Groq + Canva Agent</h3>
+          <span class="badge" style="background:rgba(16,185,129,0.15); color:var(--green); font-size:10px; font-weight:700; padding:2px 6px; border-radius:4px;">⚡ 800 tokens/sec</span>
+        </div>
+        <div style="font-size:11px; color:var(--text-dim); margin-bottom:12px;">
+          Groq LPU synthesizes structured pitch decks in &lt;500ms; Webcmd agent drives Canva to build and present live slides.
+        </div>
+        <div class="form-group" style="margin-bottom:10px;">
+          <label for="pptTopicInput" style="display:block; font-size:11px; font-weight:600; color:var(--text-muted); margin-bottom:4px;">Presentation Topic</label>
+          <input type="text" id="pptTopicInput" class="search-input" style="width:100%;" placeholder="e.g. Webcmd: Autonomous Browser Infrastructure" value="Webcmd: Autonomous Browser Infrastructure">
+        </div>
+        <div style="display:flex; gap:8px; margin-bottom:12px;">
+          <label style="display:flex; align-items:center; gap:6px; font-size:11px; color:var(--text-muted); cursor:pointer;">
+            <input type="checkbox" id="pptHeadedCheck" checked>
+            <span>Launch visible browser window (--headed)</span>
+          </label>
+        </div>
+        <button id="generatePptBtn" class="btn-action primary" style="width:100%;">
+          <span class="icon">🚀</span> Launch Autonomous PPT Agent
+        </button>
+        <div id="pptStatusBox" class="terminal-container" style="display:none; margin-top:10px;">
+          <div class="terminal-body" id="pptStatusBody" style="height:100px; font-size:10px;">
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Tab 1: Workflows -->
+    <main id="workflowsTab" class="tab-content active">
+      <div class="content-toolbar">
+        <input type="text" id="workflowSearchInput" placeholder="Filter workflows by name or domain..." class="search-input">
+        <button id="refreshWorkflowsBtn" class="btn-icon" title="Refresh Workflows">🔄</button>
+      </div>
+      <div id="workflowsList" class="cards-list">
+        <div class="loading-state">Fetching learned workflows...</div>
+      </div>
+    </main>
+
+    <!-- Tab 2: Perception Elements -->
+    <main id="perceptionTab" class="tab-content">
+      <div class="content-toolbar">
+        <span id="elementsStats" class="toolbar-text">No active perception snapshot</span>
+        <button id="rescanBtn" class="btn-secondary sm">Rescan Tab</button>
+      </div>
+      <div id="elementsList" class="elements-list">
+        <div class="empty-state">
+          <div class="empty-icon">🔍</div>
+          <p>Click <strong>"Inspect Perception (@eN)"</strong> to scan interactive elements on the current webpage and project glowing visual overlays.</p>
+        </div>
+      </div>
+    </main>
+
+    <!-- Tab 3: Health & Diagnostics -->
+    <main id="doctorTab" class="tab-content">
+      <div class="doctor-card">
+        <div class="doctor-header">
+          <h3>Preflight Health Check</h3>
+          <button id="runDoctorBtn" class="btn-primary sm">Run Diagnostics</button>
+        </div>
+        <div id="doctorChecks" class="doctor-checks">
+          <div class="check-item">
+            <span class="check-icon">✓</span>
+            <div class="check-info">
+              <span class="check-name">Anti-Bot Stealth Engine</span>
+              <span class="check-desc">navigator.webdriver spoofing & WebGL masking active</span>
+            </div>
+          </div>
+          <div class="check-item">
+            <span class="check-icon">✓</span>
+            <div class="check-info">
+              <span class="check-name">Native CDP WebSocket</span>
+              <span class="check-desc">Zero-dependency Chromium automation port</span>
+            </div>
+          </div>
+          <div class="check-item">
+            <span class="check-icon">✓</span>
+            <div class="check-info">
+              <span class="check-name">Scrapling Adaptive Recovery</span>
+              <span class="check-desc">Multi-factor structural similarity relocation (threshold: 0.40)</span>
+            </div>
+          </div>
+          <div class="check-item">
+            <span class="check-icon">✓</span>
+            <div class="check-info">
+              <span class="check-name">Deterministic Action Verifier</span>
+              <span class="check-desc">State change verification with negative verification filters</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Tab 4: Live Logs & Telemetry -->
+    <main id="logsTab" class="tab-content">
+      <div class="terminal-container">
+        <div class="terminal-header">
+          <div class="terminal-dots">
+            <span></span><span></span><span></span>
+          </div>
+          <span class="terminal-title">webcmd.log</span>
+          <button id="clearLogsBtn" class="btn-link">Clear</button>
+        </div>
+        <div id="terminalBody" class="terminal-body">
+          <div class="log-line info">[System] Webcmd Extension Interface Initialized.</div>
+          <div class="log-line info">[Stealth] Anti-Detection hooks armed on active context.</div>
+          <div class="log-line">[Ready] Listening on http://127.0.0.1:9777</div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Footer Status -->
+    <footer class="footer">
+      <div class="footer-left">
+        <span id="footerProfile">Profile: default</span>
+      </div>
+      <div class="footer-right">
+        <span>VIT Bhopal Hackathon Edition</span>
+      </div>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

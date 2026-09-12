@@ -1,0 +1,24 @@
+routes:
+- route: "/hello/{name}"
+  exec:
+    shell:
+      command: |-
+        for i in $(seq $WC_REPITITION_COUNT); do echo $WC_GREETING $WC_USERNAME! Your request is coming from $WC_UA.; done
+  parameters:
+  - name: "n"                   # eg: /repeat?n=3
+    source: "query"
+    as: "WC_REPITITION_COUNT"
+    default: "1"
+  - name: "User-Agent"          # User-Agent header
+    source: "header"
+    as: "WC_UA"
+    default: "no user agent"
+  - name: "name"                # Name from route parameter {name} in line 2
+    source: "route"
+    as: "WC_USERNAME"           # change env variable name from default (WC_NAME) to custom (WC_USERNAME)
+  - name: "greeting"            # parameter without a source is a constant from value of "default"
+    default: "Hello"                     
+- route: "/*"
+  exec:
+    shell:
+      command: "echo Use 'GET /hello/<your-name>[?n=N]' to be greeted N times"

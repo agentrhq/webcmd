@@ -1,0 +1,45 @@
+{
+  "name": "@webcmd/cloner",
+  "version": "1.0.0",
+  "description": "Universal Website Cloner with Interactive Ink TUI, React TSX Synthesis, and W3C Design Tokens",
+  "main": "src/cloner.ts",
+  "bin": {
+    "webcmd-clone": "src/cli.ts"
+  },
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/cli.ts",
+    "clone": "tsx src/cli.ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "chalk": "^6.0.0",
+    "commander": "^14.0.3",
+    "gradient-string": "^3.0.0",
+    "ink": "^7.1.1",
+    "ink-select-input": "^6.2.0",
+    "ink-spinner": "^5.0.0",
+    "ink-text-input": "^6.0.0",
+    "jsdom": "^29.0.2",
+    "puppeteer": "^25.10.0",
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.2",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "tsx": "^4.19.3",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.0"
+  },
+  "keywords": [
+    "website-cloner",
+    "ink-tui",
+    "cli",
+    "react",
+    "figma-tokens",
+    "accessibility-audit"
+  ],
+  "author": "Webcmd Team",
+  "license": "Apache-2.0"
+}

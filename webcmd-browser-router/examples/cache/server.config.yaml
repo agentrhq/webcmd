@@ -1,0 +1,36 @@
+modules:
+  cache:
+    # Cache will only keep 2 entries. On third different request, the least recently used route response will be removed
+    maxResponsesCached: 2
+    # Duration to keep cache entries (2 minutes). For format refer to https://pkg.go.dev/time#ParseDuration
+    TTL: 2m
+    # See https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Cache-Control
+    controlDirectives:
+    - "public"
+    - "immutable"
+routes:
+# Don't cache, wait 2 seconds every time
+- route: "/caching/disabled"
+  exec:
+    shell:
+      command: "sleep 2 && echo Here I am!"
+# Cache
+- route: "/caching/enabled"
+  caching: true
+  exec:
+    shell:
+      command: "sleep 2 && echo Here I am!"
+# Cache with query parameters 
+- route: "/caching/enabled-params"
+  caching: true
+  exec:
+    shell:
+      command: "sleep 2 && echo Hello ${WC_NAME:=darling}, here I am!"
+  parameters:
+  - name: "name"
+    source: "query"
+- route: "/*"
+  caching: true
+  exec:
+    shell:
+      command: "echo 'GET /caching/[disabled|enabled|enabled-params?name=<>]' to test the caching module"

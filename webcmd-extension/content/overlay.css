@@ -1,0 +1,80 @@
+/* Webcmd In-Page Perception Visual Overlay */
+.webcmd-highlighted-element {
+  outline: 2px solid #00f2fe !important;
+  outline-offset: 2px !important;
+  box-shadow: 0 0 10px rgba(0, 242, 254, 0.4) !important;
+  transition: outline 0.2s ease, box-shadow 0.2s ease !important;
+}
+
+.webcmd-badge-tag {
+  position: absolute !important;
+  z-index: 2147483647 !important;
+  background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%) !important;
+  color: #00f2fe !important;
+  font-family: 'JetBrains Mono', Consolas, Monaco, monospace !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  line-height: 1 !important;
+  padding: 3px 6px !important;
+  border-radius: 4px !important;
+  border: 1px solid rgba(0, 242, 254, 0.6) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5), 0 0 8px rgba(0, 242, 254, 0.4) !important;
+  pointer-events: auto !important;
+  cursor: pointer !important;
+  user-select: none !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  animation: webcmd-pop 0.2s ease-out !important;
+}
+
+.webcmd-badge-tag:hover {
+  background: linear-gradient(135deg, #00f2fe 0%, #4facfe 100%) !important;
+  color: #0b0f19 !important;
+  transform: scale(1.1) !important;
+  border-color: #ffffff !important;
+}
+
+.webcmd-badge-role {
+  color: #a78bfa !important;
+  font-size: 9px !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+}
+
+.webcmd-badge-tag:hover .webcmd-badge-role {
+  color: #1e1b4b !important;
+}
+
+@keyframes webcmd-pop {
+  0% { transform: scale(0.5); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* Tooltip floating card */
+.webcmd-tooltip-box {
+  position: fixed !important;
+  bottom: 20px !important;
+  right: 20px !important;
+  z-index: 2147483647 !important;
+  background: rgba(15, 23, 42, 0.95) !important;
+  backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(0, 242, 254, 0.3) !important;
+  border-radius: 8px !important;
+  padding: 12px 16px !important;
+  color: #f8fafc !important;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+  font-size: 12px !important;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.7) !important;
+  max-width: 320px !important;
+  animation: webcmd-pop 0.2s ease !important;
+}
+
+.webcmd-tooltip-header {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  font-weight: 700 !important;
+  color: #00f2fe !important;
+  margin-bottom: 6px !important;
+}

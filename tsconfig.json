@@ -3,6 +3,7 @@
     "target": "ES2022",
     "module": "Node16",
     "moduleResolution": "Node16",
+    "jsx": "react-jsx",
     "outDir": "dist",
     "rootDir": ".",
     "strict": true,
@@ -13,7 +14,8 @@
     "incremental": true
   },
   "include": [
-    "src/**/*.ts"
+    "src/**/*.ts",
+    "src/**/*.tsx"
   ],
   "exclude": ["node_modules", "dist", "extension"]
 }

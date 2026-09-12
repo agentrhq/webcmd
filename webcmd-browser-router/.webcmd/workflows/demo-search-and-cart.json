@@ -1,0 +1,145 @@
+{
+  "id": "demo-search-and-cart",
+  "name": "Search Product and Add to Cart",
+  "domain": "127.0.0.1",
+  "intent": "Search for ThinkPad X1 and add to shopping cart",
+  "steps": [
+    {
+      "id": "step-navigate",
+      "action": "navigate",
+      "url": "http://127.0.0.1:8099",
+      "verify": {
+        "type": "url",
+        "expected": "http://127.0.0.1:8099"
+      }
+    },
+    {
+      "id": "step-fill-query",
+      "action": "fill",
+      "target": "#product-query",
+      "value": "ThinkPad X1",
+      "fingerprint": {
+        "tag": "input",
+        "role": "textbox",
+        "text": "Search laptops...",
+        "attributes": {
+          "type": "text",
+          "id": "product-query",
+          "name": "query",
+          "class": "txt-query",
+          "placeholder": "Search laptops..."
+        },
+        "path": [
+          "html",
+          "body",
+          "section",
+          "form",
+          "input"
+        ],
+        "parent_name": "form",
+        "parent_attribs": {
+          "id": "finder-form"
+        },
+        "parent_text": "Find",
+        "siblings": [
+          "button"
+        ],
+        "children": []
+      },
+      "verify": {
+        "type": "value",
+        "expected": "ThinkPad X1"
+      },
+      "selector_history": [
+        "#search-input"
+      ],
+      "last_recovered": "2026-09-12T06:17:50.368Z"
+    },
+    {
+      "id": "step-click-search",
+      "action": "click",
+      "target": "#btn-find",
+      "fingerprint": {
+        "tag": "button",
+        "role": "button",
+        "text": "Find",
+        "attributes": {
+          "type": "submit",
+          "id": "btn-find",
+          "class": "btn-find"
+        },
+        "path": [
+          "html",
+          "body",
+          "section",
+          "form",
+          "button"
+        ],
+        "parent_name": "form",
+        "parent_attribs": {
+          "id": "finder-form"
+        },
+        "parent_text": "Find",
+        "siblings": [
+          "input"
+        ],
+        "children": []
+      },
+      "verify": {
+        "type": "selector_visible",
+        "expected": "#products-container, .product-grid, .items-container, #search-results-box"
+      },
+      "selector_history": [
+        "#search-btn"
+      ],
+      "last_recovered": "2026-09-12T06:17:50.529Z"
+    },
+    {
+      "id": "step-add-cart",
+      "action": "click",
+      "target": "#btn-purchase-x1",
+      "fingerprint": {
+        "tag": "button",
+        "role": "button",
+        "text": "Add to Cart",
+        "attributes": {
+          "id": "btn-purchase-x1",
+          "class": "buy-action-btn",
+          "data-product": "thinkpad-x1"
+        },
+        "path": [
+          "html",
+          "body",
+          "div",
+          "div",
+          "button"
+        ],
+        "parent_name": "div",
+        "parent_attribs": {
+          "class": "item-card",
+          "id": "item-thinkpad"
+        },
+        "parent_text": "ThinkPad X1 Carbon Gen 12\n$1,499.00\nAdd to Cart",
+        "siblings": [
+          "div",
+          "div"
+        ],
+        "children": []
+      },
+      "verify": {
+        "type": "text_contains",
+        "target": "#cart-badge",
+        "expected": "1"
+      },
+      "selector_history": [
+        "#btn-add-thinkpad"
+      ],
+      "last_recovered": "2026-09-12T06:17:50.698Z"
+    }
+  ],
+  "success_count": 4,
+  "failure_count": 0,
+  "recovery_count": 4,
+  "created_at": "2026-09-12T06:17:46.187Z",
+  "last_executed": "2026-09-12T06:17:52.767Z"
+}

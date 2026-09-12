@@ -1,0 +1,79 @@
+{
+  "id": "wiki-quantum-computing",
+  "name": "Wikipedia: Quantum computing",
+  "domain": "en.wikipedia.org",
+  "intent": "Search Wikipedia for \"Quantum Computing\" and extract article text",
+  "steps": [
+    {
+      "id": "s1",
+      "action": "navigate",
+      "url": "https://en.wikipedia.org",
+      "verify": {
+        "type": "url",
+        "expected": "wikipedia.org"
+      }
+    },
+    {
+      "id": "s2",
+      "action": "fill",
+      "target": "#searchInput",
+      "value": "Quantum Computing",
+      "fingerprint": {
+        "tag": "input",
+        "role": "textbox",
+        "text": "Search Wikipedia",
+        "attributes": {
+          "class": "cdx-text-input__input mw-searchInput",
+          "type": "search",
+          "name": "search",
+          "placeholder": "Search Wikipedia",
+          "aria-label": "Search Wikipedia",
+          "title": "Search Wikipedia [alt-f]",
+          "id": "searchInput"
+        },
+        "path": [
+          "html",
+          "body",
+          "div",
+          "header",
+          "div",
+          "div",
+          "div",
+          "div",
+          "form",
+          "div",
+          "div",
+          "input"
+        ],
+        "parent_name": "div",
+        "parent_attribs": {
+          "class": "cdx-text-input cdx-text-input--has-start-icon"
+        },
+        "parent_text": "",
+        "siblings": [
+          "span"
+        ],
+        "children": []
+      },
+      "verify": {
+        "type": "value",
+        "expected": "Quantum Computing"
+      }
+    },
+    {
+      "id": "s3",
+      "action": "press",
+      "key": "Enter",
+      "verify": {
+        "type": "article_identity",
+        "expectedTopic": "Quantum Computing",
+        "notUrl": "Main_Page"
+      }
+    }
+  ],
+  "success_count": 1,
+  "failure_count": 0,
+  "recovery_count": 0,
+  "created_at": "2026-09-12T06:33:53.772Z",
+  "last_executed": "2026-09-12T06:33:53.773Z"
+}

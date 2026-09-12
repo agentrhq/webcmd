@@ -1,0 +1,19 @@
+routes:
+- route: "/echo"
+  method: POST
+  allowBody: true
+  exec:
+    proc:
+      path: "bash"
+      args: ["-c", "cat -"]
+- route: "/base64"
+  method: POST
+  allowBody: true
+  exec:
+    shell:
+      command: "echo Your base64-encoded message is: \"$(cat - | base64 -w0)\""
+- route: "/*"
+  exec:
+    proc:
+      path: "echo"
+      args: ["Use 'POST /echo' with a body for it to be echoed back. A request to 'POST /base64' encodes your http body"]

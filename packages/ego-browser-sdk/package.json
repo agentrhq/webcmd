@@ -1,0 +1,15 @@
+{
+  "name": "@citrolabs/ego-browser-sdk",
+  "version": "1.0.0",
+  "description": "Ego-Lite isolated task space browser runtime bridge for Chrome and CDP automation",
+  "type": "module",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js",
+      "default": "./index.js"
+    }
+  }
+}
