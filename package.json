@@ -55,6 +55,7 @@
   "scripts": {
     "benchmark": "uv run python benchmarks/scripts/run_eval.py",
     "dev": "tsx src/main.ts",
+    "ui": "tsx src/workflow-ui-server.ts",
     "dev:bun": "bun src/main.ts",
     "build": "npm run clean-dist && npm run copy-yaml && npm run compile && npm run build-manifest",
     "compile": "tsc --build && node -e \"require('fs').chmodSync('dist/src/main.js', 0o755)\"",
