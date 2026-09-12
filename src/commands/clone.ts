@@ -1,7 +1,9 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { exec } from 'node:child_process';
+import { findPackageRoot } from '../package-paths.js';
 import { WebsiteCloner } from '../cloner/cloner.js';
 import { convertCloneToReact } from '../cloner/react-converter.js';
 import { runVisualVerification } from '../cloner/visual-verifier.js';
@@ -85,10 +87,19 @@ export async function executeCloneCommand(cliUrl: string | undefined, options: C
     }
 
     const parsed = new URL(targetUrl);
-    const defaultDirName = `${parsed.hostname.replace(/[^a-zA-Z0-9.-]/g, '_')}_${Date.now()}`;
+    const cleanSiteName = parsed.hostname.replace('www.', '').split('.')[0] || 'site';
+    
+    let baseClonesDir = path.resolve(process.cwd(), 'clones');
+    try {
+      const pkgRoot = findPackageRoot(fileURLToPath(import.meta.url));
+      baseClonesDir = path.join(pkgRoot, 'clones');
+    } catch {
+      // fallback
+    }
+
     const outputDir = options.output
       ? path.resolve(options.output)
-      : path.resolve(process.cwd(), 'clones', defaultDirName);
+      : path.join(baseClonesDir, cleanSiteName);
 
     const cloner = new WebsiteCloner({
       url: targetUrl,

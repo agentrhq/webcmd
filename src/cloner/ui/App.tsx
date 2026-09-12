@@ -9,6 +9,8 @@ import { convertCloneToReact } from '../react-converter.js';
 import { runVisualVerification } from '../visual-verifier.js';
 import { createZipArchive } from '../zip-bundler.js';
 import { extractDesignSystem } from '../design-system-extractor.js';
+import { fileURLToPath } from 'node:url';
+import { findPackageRoot } from '../../package-paths.js';
 import http from 'node:http';
 import fs from 'node:fs';
 import { exec } from 'node:child_process';
@@ -174,8 +176,15 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
 
     try {
       const parsed = new URL(clean);
-      const defaultName = `${parsed.hostname.replace(/[^a-zA-Z0-9.-]/g, '_')}_${Date.now()}`;
-      setOutputDir(path.resolve(process.cwd(), 'clones', defaultName));
+      const cleanSiteName = parsed.hostname.replace('www.', '').split('.')[0] || 'site';
+      let baseClonesDir = path.resolve(process.cwd(), 'clones');
+      try {
+        const pkgRoot = findPackageRoot(fileURLToPath(import.meta.url));
+        baseClonesDir = path.join(pkgRoot, 'clones');
+      } catch {
+        // fallback
+      }
+      setOutputDir(path.join(baseClonesDir, cleanSiteName));
     } catch {
       setOutputDir(path.resolve(process.cwd(), 'clones', `clone_${Date.now()}`));
     }
