@@ -324,10 +324,19 @@ async function walkFiles(root: string, dir = root): Promise<string[]> {
 
 async function readableRelativePath(root: string, path: string): Promise<string> {
   const relativePath = safeRelativePath(root, path);
-  if ((await lstat(join(root, relativePath))).isSymbolicLink()) throw new Error(`Invalid site memory path: ${path}`);
+  await assertNoSymlinkInPath(root, relativePath, path);
   const [realRoot, realTarget] = await Promise.all([realpath(root), realpath(join(root, relativePath))]);
   if (realTarget !== realRoot && !realTarget.startsWith(`${realRoot}${sep}`)) throw new Error(`Invalid site memory path: ${path}`);
   return relativePath.split(sep).join('/');
+}
+
+async function assertNoSymlinkInPath(root: string, relativePath: string, originalPath: string): Promise<void> {
+  const segments = relativePath.split(/[\\/]+/).filter(Boolean);
+  let current = root;
+  for (const segment of segments) {
+    current = join(current, segment);
+    if ((await lstat(current)).isSymbolicLink()) throw new Error(`Invalid site memory path: ${originalPath}`);
+  }
 }
 
 function safeRelativePath(root: string, path: string): string {
@@ -390,6 +399,15 @@ function validateVerifyFixture(body: string): void {
 }
 
 async function assertInsideSiteRoot(root: string, parent: string, path: string): Promise<void> {
+  const relativeParent = relative(root, parent);
+  if (relativeParent === '' || relativeParent === '.' || !relativeParent.startsWith('..')) {
+    const segments = relativeParent.split(/[\\/]+/).filter(Boolean);
+    let current = root;
+    for (const segment of segments) {
+      current = join(current, segment);
+      if ((await lstat(current)).isSymbolicLink()) throw new Error(`Invalid site memory path: ${path}`);
+    }
+  }
   const [realRoot, realParent] = await Promise.all([realpath(root), realpath(parent)]);
   if (realParent !== realRoot && !realParent.startsWith(`${realRoot}${sep}`)) {
     throw new Error(`Invalid site memory path: ${path}`);
