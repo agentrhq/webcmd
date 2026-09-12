@@ -1,131 +1,17 @@
 {
-  "name": "@agentrhq/webcmd",
-  "version": "0.8.4",
-  "description": "Turn websites, browser sessions, desktop apps, and local tools into deterministic CLI surfaces for humans and AI agents.",
-  "engines": {
-    "node": ">=20.6.0"
-  },
-  "type": "module",
-  "main": "dist/src/main.js",
-  "bin": {
-    "webcmd": "dist/src/main.js"
-  },
-  "exports": {
-    ".": "./dist/src/main.js",
-    "./adapter-analysis": "./dist/src/adapter-analysis.js",
-    "./registry": "./dist/src/registry-api.js",
-    "./errors": "./dist/src/errors.js",
-    "./types": "./dist/src/types.js",
-    "./utils": "./dist/src/utils.js",
-    "./logger": "./dist/src/logger.js",
-    "./launcher": "./dist/src/launcher.js",
-    "./browser/ax-snapshot": "./dist/src/browser/ax-snapshot.js",
-    "./browser/cdp": "./dist/src/browser/cdp.js",
-    "./browser/page": "./dist/src/browser/page.js",
-    "./browser/run": "./dist/src/browser/run/index.js",
-    "./browser/snapshot": "./dist/src/browser/snapshot/index.js",
-    "./browser/article-extract": "./dist/src/browser/article-extract.js",
-    "./browser/verify-fixture": "./dist/src/browser/verify-fixture.js",
-    "./browser/utils": "./dist/src/browser/utils.js",
-    "./download": "./dist/src/download/index.js",
-    "./download/article-download": "./dist/src/download/article-download.js",
-    "./download/media-download": "./dist/src/download/media-download.js",
-    "./download/progress": "./dist/src/download/progress.js",
-    "./fetch/command": "./dist/src/fetch/command.js",
-    "./pipeline": "./dist/src/pipeline/index.js",
-    "./plugin-runtime": "./dist/src/plugin-runtime.js",
-    "./hosted/availability": "./dist/src/hosted/availability.js",
-    "./hosted/core-commands": "./dist/src/hosted/core-commands.js",
-    "./hosted/programmatic": "./dist/src/hosted/programmatic.js"
-  },
-  "files": [
-    "dist/src/",
-    "skills/**",
-    "mcp-skills/**",
-    "cli-manifest.json",
-    "hosted-contract.json",
-    "plugin-catalog.json",
-    "scripts/",
-    "README.md",
-    "LICENSE",
-    "NOTICE"
-  ],
+  "name": "shopping-analyzer",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
   "scripts": {
-    "benchmark": "uv run python benchmarks/scripts/run_eval.py",
-    "dev": "tsx src/main.ts",
-    "dev:bun": "bun src/main.ts",
-    "build": "npm run clean-dist && npm run copy-yaml && npm run compile && npm run build-manifest",
-    "compile": "tsc --build && node -e \"require('fs').chmodSync('dist/src/main.js', 0o755)\"",
-    "build-manifest": "tsx src/build-manifest.ts",
-    "check:codex-plugin": "node scripts/check-codex-plugin.mjs",
-    "check:hosted-contract": "node scripts/check-hosted-contract.mjs",
-    "clean-dist": "node scripts/clean-dist.cjs",
-    "copy-yaml": "node scripts/copy-yaml.cjs",
-    "generate-release-notes": "tsx scripts/generate-release-notes.ts",
-    "docs-sync-review": "tsx scripts/docs-sync-review.ts",
-    "benchmark:snapshot": "tsx scripts/benchmark-snapshot-render.ts",
-    "start": "node dist/src/main.js",
-    "start:bun": "bun dist/src/main.js",
-    "preuninstall": "node -e \"fetch('http://127.0.0.1:9777/shutdown',{method:'POST',headers:{'X-Webcmd':'1'},signal:AbortSignal.timeout(3000)}).catch(()=>{})\" || true",
-    "postinstall": "node scripts/postinstall.js || true",
-    "typecheck": "tsc --noEmit",
-    "prepare": "[ -d src ] && npm run build || true",
-    "prepublishOnly": "npm run build",
-    "test": "vitest run --project unit",
-    "test:bun": "bun vitest run --project unit",
-    "test:all": "vitest run",
-    "test:e2e": "vitest run --project e2e-fixed-port --project e2e",
-    "gate:cloak-sessions": "WEBCMD_LIVE_CLOAK=1 vitest run --project e2e tests/e2e/cloak-session-concurrency.test.ts",
-    "advise:listing-id-pairing": "node scripts/check-listing-id-pairing.mjs",
-    "check:package-bin": "node scripts/check-package-bin.mjs"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [
-    "cli",
-    "browser",
-    "web",
-    "ai"
-  ],
-  "author": "AgentR",
-  "license": "Apache-2.0",
-  "homepage": "https://webcmd.dev/docs",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/agentrhq/webcmd.git"
-  },
-  "publishConfig": {
-    "access": "public"
-  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
   "dependencies": {
-    "@mozilla/readability": "^0.6.0",
-    "cli-table3": "^0.6.5",
-    "cloakbrowser": "0.4.5",
-    "commander": "^14.0.3",
-    "impit": "0.14.3",
-    "js-yaml": "^4.3.2",
-    "jsdom": "^29.0.2",
-    "playwright-core": "1.61.1",
-    "quickjs-emscripten": "0.32.0",
-    "tldts": "^7.4.11",
-    "turndown": "^7.2.2",
-    "turndown-plugin-gfm": "^1.0.2",
-    "undici": "^6.27.0",
-    "ws": "^8.18.0"
-  },
-  "devDependencies": {
-    "@emnapi/core": "^1.11.2",
-    "@emnapi/runtime": "^1.11.2",
-    "@google/genai": "^2.10.0",
-    "@types/js-yaml": "^4.0.9",
-    "@types/jsdom": "^27.0.0",
-    "@types/node": "^25.5.2",
-    "@types/turndown": "^5.0.6",
-    "@types/ws": "^8.5.13",
-    "esbuild": "^0.28.1",
-    "tsx": "^4.19.3",
-    "typescript": "^6.0.2",
-    "vitest": "^4.1.0"
-  },
-  "overrides": {
-    "postcss": "^8.5.10"
+    "cheerio": "^1.2.0",
+    "express": "^5.2.1"
   }
 }
