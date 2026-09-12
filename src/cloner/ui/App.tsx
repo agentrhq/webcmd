@@ -352,32 +352,26 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
   return (
     <Box flexDirection="column" paddingX={1} paddingY={0}>
       {/* =====================================================================
-          PREMIUM MINIMALIST UNIX HEADER
+          PREMIUM HIGH-VISIBILITY HEADER
           ===================================================================== */}
-      <Box borderStyle="round" borderColor="cyan" paddingX={2} paddingY={0} flexDirection="column">
+      <Box borderStyle="round" borderColor="cyanBright" paddingX={2} paddingY={1} flexDirection="column">
         <Box justifyContent="space-between" alignItems="center">
           <Box>
             <Text bold color="cyanBright">
-              █░█░█ █▀▀ █▄▄ █▀▀ █▀▄▀█ █▀▄
-            </Text>
-            <Text bold color="cyan">
-              {'  '}▀▄▀▄▀ ██▄ █▄█ █▄▄ █░▀░█ █▄▀
+              ◆ WEBCMD REVERSE-ENGINEERING & DESIGN STUDIO
             </Text>
           </Box>
-          <Box flexDirection="column" alignItems="flex-end">
+          <Box>
             <Text bold color="greenBright">
               ● ENGINE READY
-            </Text>
-            <Text dimColor color="gray">
-              v0.8.4-pro
             </Text>
           </Box>
         </Box>
         <Box marginTop={1} justifyContent="space-between">
-          <Text dimColor color="gray">
-            [V8 RUNTIME: ACTIVE]  [WCAG 2.1: AA/AAA]  [TOKENS: W3C SPEC]
+          <Text color="white">
+            Architecture: <Text color="yellowBright">Headless V8</Text>  •  <Text color="cyan">W3C Design Tokens</Text>  •  <Text color="magentaBright">React TSX</Text>
           </Text>
-          <Text color="yellow">
+          <Text bold color="yellowBright">
             T+{elapsedSeconds.toFixed(1)}s
           </Text>
         </Box>
@@ -387,12 +381,12 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
           STAGE: URL INPUT
           ===================================================================== */}
       {stage === 'URL_INPUT' && (
-        <Box flexDirection="column" marginTop={1} borderStyle="single" borderColor="cyan" paddingX={2} paddingY={1}>
-          <Text bold color="white">
+        <Box flexDirection="column" marginTop={1} borderStyle="single" borderColor="cyanBright" paddingX={2} paddingY={1}>
+          <Text bold color="yellowBright">
             TARGET INGESTION // Enter Website URL to Reverse-Engineer:
           </Text>
           <Box marginTop={1}>
-            <Text color="cyanBright">❯ </Text>
+            <Text bold color="cyanBright">❯ </Text>
             <TextInput
               value={url}
               onChange={setUrl}
@@ -401,8 +395,8 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
             />
           </Box>
           <Box marginTop={1}>
-            <Text dimColor color="gray">
-              [ENTER] Next  •  [ESC / CTRL+C] Exit
+            <Text color="white">
+              <Text color="cyanBright" bold>[ENTER]</Text> Confirm & Next  •  <Text color="redBright" bold>[CTRL+C]</Text> Exit
             </Text>
           </Box>
         </Box>
@@ -417,14 +411,14 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
             PIPELINE ARCHITECTURE // Select Output Configuration:
           </Text>
           <Box marginBottom={1}>
-            <Text dimColor color="gray">
-              Target: {url}
+            <Text color="white">
+              Target: <Text color="cyanBright" bold>{url}</Text>
             </Text>
           </Box>
           <SelectInput items={modeItems} onSelect={handleModeSelect} />
           <Box marginTop={1}>
-            <Text dimColor color="gray">
-              [↑/↓] Navigate  •  [ENTER] Select Mode  •  [CTRL+C] Exit
+            <Text color="white">
+              <Text color="cyanBright" bold>[↑/↓]</Text> Navigate  •  <Text color="greenBright" bold>[ENTER]</Text> Select  •  <Text color="redBright" bold>[CTRL+C]</Text> Exit
             </Text>
           </Box>
         </Box>
