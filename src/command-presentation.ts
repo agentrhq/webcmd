@@ -1,4 +1,5 @@
-import { CLI_COMMAND } from './brand.js';
+import { ACCENT_RGB, CLI_COMMAND } from './brand.js';
+import { MASCOT_WIDTH, WEAVER, renderRows } from './mascot.js';
 import { JSON_FORMAT_ALIAS_HELP, OUTPUT_FORMAT_HELP, OUTPUT_FORMATS } from './command-surface.js';
 import type { Arg } from './registry.js';
 
@@ -80,8 +81,8 @@ export interface FormatRootHelpOptions {
   columns?: number;
 }
 
-/** Banner from ascii.md — WEB (white) + CMD (#56C5FF) when color is on. */
-export const ROOT_HELP_BANNER_PARTS = [
+/** Wordmark rows — WEB (white) + CMD (#56C5FF) when color is on. */
+const WORDMARK_PARTS = [
   ['ㅤㅤㅤㅤㅤㅤㅤㅤㅤㅤㅤㅤㅤㅤㅤ', 'ㅤㅤㅤㅤㅤㅤㅤㅤㅤㅤㅤㅤㅤㅤㅤ'],
   ['██╗    ██╗███████╗██████╗  ', '██████╗███╗   ███╗██████╗'],
   ['██║    ██║██╔════╝██╔══██╗', '██╔════╝████╗ ████║██╔══██╗'],
@@ -91,8 +92,22 @@ export const ROOT_HELP_BANNER_PARTS = [
   [' ╚══╝╚══╝ ╚══════╝╚═════╝  ', '╚═════╝╚═╝     ╚═╝╚═════╝'],
 ] as const;
 
+/**
+ * Weaver stands to the left of the wordmark. The banner's first row is a
+ * Hangul-filler spacer that is already ~60 display columns wide, so the mascot
+ * column is empty there and the sprite starts on row 1 — that keeps the spacer
+ * row exactly as wide as it was before the mascot existed.
+ */
+const MASCOT_COLUMN: readonly string[] = ['', ...WEAVER.map((row) => `${row}  `)];
+
+const MASCOT_PAD = ' '.repeat(MASCOT_WIDTH + 2);
+
+/** Banner rows as `[mascot, web, cmd]` so each column can be painted separately. */
+export const ROOT_HELP_BANNER_PARTS: readonly (readonly [string, string, string])[] =
+  WORDMARK_PARTS.map(([web, cmd], row) => [MASCOT_COLUMN[row] ?? MASCOT_PAD, web, cmd] as const);
+
 export const ROOT_HELP_BANNER = ROOT_HELP_BANNER_PARTS
-  .map(([web, cmd]) => `${web}${cmd}`)
+  .map(([mascot, web, cmd]) => `${mascot}${web}${cmd}`)
   .join('\n');
 
 interface RootHelpCommandSection {
@@ -109,9 +124,6 @@ const ROOT_HELP_COMMAND_SECTIONS: readonly RootHelpCommandSection[] = [
   { title: 'COMPLETION', order: ['completion'] },
 ];
 
-/** Brand accent from docs theme (`colors.light`). */
-const ACCENT_RGB = { r: 0x56, g: 0xc5, b: 0xff } as const;
-
 const ANSI = {
   reset: '\u001b[0m',
   bold: '\u001b[1m',
@@ -123,7 +135,8 @@ const ANSI = {
 function formatRootHelpBanner(color: boolean): string {
   if (!color) return ROOT_HELP_BANNER;
   return ROOT_HELP_BANNER_PARTS
-    .map(([web, cmd]) => `${paint(web, true, ANSI.white)}${paint(cmd, true, ANSI.accent)}`)
+    .map(([mascot, web, cmd]) =>
+      `${renderRows([mascot], { color: true })}${paint(web, true, ANSI.white)}${paint(cmd, true, ANSI.accent)}`)
     .join('\n');
 }
 

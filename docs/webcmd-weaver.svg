@@ -1,0 +1,23 @@
+<svg width="180" height="120" viewBox="0 0 180 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>Weaver — the webcmd mascot</title>
+  <rect x="60" y="40" width="60" height="40" fill="#0F0F0F"/>
+  <rect x="40" y="0" width="20" height="20" fill="#006B9A"/>
+  <rect x="120" y="0" width="20" height="20" fill="#006B9A"/>
+  <rect x="40" y="20" width="100" height="20" fill="#56C5FF"/>
+  <rect x="20" y="40" width="20" height="20" fill="#006B9A"/>
+  <rect x="40" y="40" width="20" height="20" fill="#56C5FF"/>
+  <rect x="70" y="40" width="10" height="20" fill="#FFFFFF"/>
+  <rect x="100" y="40" width="10" height="20" fill="#FFFFFF"/>
+  <rect x="120" y="40" width="20" height="20" fill="#56C5FF"/>
+  <rect x="140" y="40" width="20" height="20" fill="#006B9A"/>
+  <rect x="20" y="60" width="20" height="20" fill="#006B9A"/>
+  <rect x="40" y="60" width="20" height="20" fill="#56C5FF"/>
+  <rect x="80" y="60" width="10" height="20" fill="#56C5FF"/>
+  <rect x="120" y="60" width="20" height="20" fill="#56C5FF"/>
+  <rect x="140" y="60" width="20" height="20" fill="#006B9A"/>
+  <rect x="40" y="80" width="100" height="20" fill="#56C5FF"/>
+  <rect x="10" y="100" width="20" height="20" fill="#006B9A"/>
+  <rect x="50" y="100" width="20" height="20" fill="#006B9A"/>
+  <rect x="110" y="100" width="20" height="20" fill="#006B9A"/>
+  <rect x="150" y="100" width="20" height="20" fill="#006B9A"/>
+</svg>

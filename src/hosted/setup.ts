@@ -4,7 +4,8 @@ import { constants, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { access, realpath, stat } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
-import { CLI_COMMAND, ENV_PREFIX } from '../brand.js';
+import { CLI_COMMAND, ENV_PREFIX, PRODUCT_DISPLAY_NAME } from '../brand.js';
+import { animateWeaver } from '../mascot.js';
 import { ArgumentError, getErrorMessage, toEnvelope } from '../errors.js';
 import { formatErrorEnvelope } from '../output.js';
 import { writeToStream } from '../stream-write.js';
@@ -104,7 +105,13 @@ export async function runHostedSetup(io: SetupIo = {}): Promise<number> {
     }
 
     const interactive = canPrompt(io);
-    await write('Webcmd setup\n');
+    // Weaver greets first-run setup. Gated on the output actually being a
+    // terminal rather than on `interactive`: an injected `question` makes
+    // prompting possible without the stream being able to move a cursor.
+    if (canAnimate(io)) {
+      await animateWeaver(write, { animate: true, color: !process.env.NO_COLOR });
+    }
+    await write(`${PRODUCT_DISPLAY_NAME} setup\n`);
 
     if ((parsed.chromeProfile || parsed.importChromeCookies !== undefined || parsed.syncToChrome) && parsed.browser && parsed.browser.kind !== 'chrome') {
       throw new ArgumentError(
@@ -150,6 +157,12 @@ export async function runHostedSetup(io: SetupIo = {}): Promise<number> {
   } finally {
     ownedReadline?.close();
   }
+}
+
+/** Whether the output stream can render an in-place animation. */
+function canAnimate(io: SetupIo): boolean {
+  if (io.isTTY !== undefined) return io.isTTY;
+  return process.stdin.isTTY === true && process.stdout.isTTY === true;
 }
 
 function canPrompt(io: SetupIo): boolean {
