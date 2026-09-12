@@ -23,6 +23,8 @@
 
 **Self-learning browser infra for AI agents.**
 
+[![Documentation](https://img.shields.io/badge/Full%20Documentation-DOCUMENTATION.md-brightgreen.svg?style=for-the-badge)](./DOCUMENTATION.md)
+
 Webcmd learns the navigational context of websites as agents use them, then
 turns that knowledge into local memory for faster, cheaper, more reliable
 browser automation. The goal is simple: stop making agents rediscover the same
