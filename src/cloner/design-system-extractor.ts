@@ -1021,22 +1021,46 @@ ${contrastPairs.map(p => `| **${p.role}** | \`${p.hex}\` | ${p.target} | \`${p.r
   await fs.writeFile(auditMdPath, auditMd, 'utf-8');
 
   // -------------------------------------------------------------------------
-  // 12. Generate Figma Tokens Studio Format (`figma-tokens.json`)
+  // 12. Generate Figma Tokens Studio & Variables Format (`figma-tokens.json`)
   // -------------------------------------------------------------------------
   const figmaTokens = {
-    global: {
-      color: {
-        brand: brandScale.reduce((acc, s) => ({ ...acc, [s.step]: { value: s.hex, type: 'color' } }), {}),
-        neutral: neutralScale.reduce((acc, s) => ({ ...acc, [s.step]: { value: s.hex, type: 'color' } }), {}),
-        semantic: semanticColors.reduce((acc, c) => ({ ...acc, [c.variable.replace('--color-', '')]: { value: c.hex, type: 'color' } }), {}),
-      },
-      borderRadius: radii.reduce((acc, r) => ({ ...acc, [r.token.replace('radius-', '')]: { value: r.value, type: 'borderRadius' } }), {}),
-      spacing: spacingScale.reduce((acc, s) => ({ ...acc, [s.token.replace('space-', '')]: { value: s.value, type: 'spacing' } }), {}),
-      fontFamilies: {
-        sans: { value: primaryFont.split(',')[0].trim(), type: 'fontFamilies' },
+    color: {
+      brand: brandScale.reduce((acc, s) => ({
+        ...acc,
+        [s.step]: { $value: s.hex, $type: 'color', value: s.hex, type: 'color' },
+      }), {}),
+      neutral: neutralScale.reduce((acc, s) => ({
+        ...acc,
+        [s.step]: { $value: s.hex, $type: 'color', value: s.hex, type: 'color' },
+      }), {}),
+      semantic: semanticColors.reduce((acc, c) => ({
+        ...acc,
+        [c.name.toLowerCase().replace(/[^a-z0-9]/g, '-')]: { $value: c.hex, $type: 'color', value: c.hex, type: 'color' },
+      }), {}),
+    },
+    borderRadius: radii.reduce((acc, r) => {
+      const num = parseInt(r.value.replace('px', ''), 10) || 0;
+      return {
+        ...acc,
+        [r.token.replace('radius-', '')]: { $value: num, $type: 'dimension', value: `${num}px`, type: 'borderRadius' },
+      };
+    }, {}),
+    spacing: spacingScale.reduce((acc, s) => {
+      const num = s.pixels || parseInt(s.value.replace('px', ''), 10) || 0;
+      const key = s.token.replace('space-', '').replace('.', '_');
+      return {
+        ...acc,
+        [key]: { $value: num, $type: 'dimension', value: `${num}px`, type: 'spacing' },
+      };
+    }, {}),
+    fontFamilies: {
+      sans: {
+        $value: primaryFont.split(',')[0].trim().replace(/['"]/g, ''),
+        $type: 'fontFamily',
+        value: primaryFont.split(',')[0].trim().replace(/['"]/g, ''),
+        type: 'fontFamilies',
       },
     },
-    $themes: [{ id: 'light', name: 'Light Foundation', selectedTokenSets: { global: 'enabled' } }],
   };
   const figmaTokensPath = path.join(designSystemDir, 'figma-tokens.json');
   await fs.writeFile(figmaTokensPath, JSON.stringify(figmaTokens, null, 2), 'utf-8');
