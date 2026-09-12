@@ -8,6 +8,7 @@ plugin-command-manifest.json
 webcmd-browser-router/.webcmd/profiles/
 webcmd-browser-router/.webcmd/decks/
 webcmd-ppt/.webcmd/decks/
+dispute-audit-*.json
 .superpowers/
 .worktrees/
 .agents/*
