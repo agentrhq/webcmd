@@ -12,7 +12,7 @@ class GeminiService:
     def __init__(self):
         settings = get_settings()
         self.client = genai.Client(api_key=settings.gemini_api_key)
-        self.model = "gemini-2.5-flash"
+        self.model = "gemini-3.6-flash"
 
     def _extract_json(self, text: str) -> Any:
         """Extract JSON from Gemini response (handles markdown code blocks)."""
