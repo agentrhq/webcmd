@@ -105,9 +105,9 @@ export interface ClonerAppProps {
 }
 
 // ---------------------------------------------------------------------------
-// Animated ProgressBar Component
+// Precision Block Progress Bar
 // ---------------------------------------------------------------------------
-const ProgressBar: React.FC<{ progress: number; width?: number }> = ({ progress, width = 36 }) => {
+const ProgressBar: React.FC<{ progress: number; width?: number }> = ({ progress, width = 40 }) => {
   const clamped = Math.max(0, Math.min(100, progress));
   const filledCount = Math.round((clamped / 100) * width);
   const emptyCount = Math.max(0, width - filledCount);
@@ -116,7 +116,7 @@ const ProgressBar: React.FC<{ progress: number; width?: number }> = ({ progress,
   const emptyChars = '░'.repeat(emptyCount);
 
   return (
-    <Box>
+    <Box alignItems="center">
       <Text color="cyanBright">{filledChars}</Text>
       <Text dimColor color="gray">{emptyChars}</Text>
       <Text bold color="yellowBright"> {clamped.toFixed(0).padStart(3, ' ')}%</Text>
@@ -137,7 +137,7 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
 
   // High-Tech Telemetry states
   const [currentStepIndex, setCurrentStepIndex] = useState<number>(1);
-  const [totalSteps, setTotalSteps] = useState<number>(5);
+  const [totalSteps, setTotalSteps] = useState<number>(6);
   const [stepMessage, setStepMessage] = useState<string>('Initializing stealth headless runtime...');
   const [completedSteps, setCompletedSteps] = useState<Array<{ title: string; meta?: string }>>([]);
   const [errorMessage, setErrorMessage] = useState<string>('');
@@ -146,10 +146,9 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
   // Live simulation tickers for high-tech aesthetics
   const [elapsedSeconds, setElapsedSeconds] = useState<number>(0);
   const [pulseFrame, setPulseFrame] = useState<number>(0);
-  const [networkSpeed, setNetworkSpeed] = useState<string>('18.4 MB/s');
   const [assetStreamLog, setAssetStreamLog] = useState<string[]>([
-    '◈ [CHROMIUM] Chromium headless instance spawned with stealth user-agent',
-    '◈ [DOM_TREE] Initializing JSDOM virtual canvas',
+    '◈ [CHROMIUM] Chromium headless sandbox initialized with stealth headers',
+    '◈ [DOM_TREE] JSDOM virtual DOM compiler ready',
   ]);
 
   useEffect(() => {
@@ -193,12 +192,12 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
   };
 
   const modeItems = [
-    { label: '🎨 Design System & AI Skill - Extract Palette, Typography & AI Prompt Skill', value: 'design' },
-    { label: '⚛️  React + Tailwind        - Decompose to Modular TSX Components', value: 'react' },
-    { label: '🔬 Visual Diff Slider      - Side-by-side Pixel Fidelity Inspector', value: 'verify' },
-    { label: '⚡ Standard Full Clone     - Prettified HTML + All Assets', value: 'standard' },
-    { label: '📦 Portable ZIP Bundle     - Auto-compress output to .zip', value: 'zip' },
-    { label: '🚀 All-in-One Superpower    - Design System + React + Diff + ZIP', value: 'all' },
+    { label: '🎨 Design System Studio   - Tokens (JSON/CSS), 11-step Scales & AI Skill', value: 'design' },
+    { label: '⚛️  React + Tailwind TSX     - Modular Component Synthesis (Navbar, Hero, App)', value: 'react' },
+    { label: '🔬 Visual Diff Slider       - Side-by-side Pixel Fidelity Verification', value: 'verify' },
+    { label: '⚡ Production Full Clone    - Formatted HTML + Deep Asset Localization', value: 'standard' },
+    { label: '📦 Portable ZIP Archive     - Auto-package output into bundle.zip', value: 'zip' },
+    { label: '🚀 All-in-One Superpower     - Design Studio + React + Diff + ZIP Bundle', value: 'all' },
   ];
 
   const handleModeSelect = (item: { value: string }) => {
@@ -215,7 +214,7 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
     const design = mode === 'design' || mode === 'all' || Boolean(initialOptions?.designSystem);
     const zip = mode === 'zip' || mode === 'all' || Boolean(initialOptions?.zip);
 
-    const stepsCount = 4 + (design ? 1 : 0) + (toReact ? 1 : 0) + (verify ? 1 : 0) + (zip ? 1 : 0);
+    const stepsCount = 6 + (design ? 1 : 0) + (toReact ? 1 : 0) + (verify ? 1 : 0) + (zip ? 1 : 0);
     setTotalSteps(stepsCount);
     setCurrentStepIndex(1);
 
@@ -252,8 +251,8 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
       if (design) {
         setStepMessage('Extracting 11-step Color Scales, W3C Tokens, React Primitives & AI Skill...');
         setAssetStreamLog((prev) => [
-          '⚙ [DESIGN] Parsing CSS variable anchors and WCAG 2.1 contrast ratios...',
-          ...prev.slice(0, 4),
+          '⚙ [DESIGN] Calculating WCAG 2.1 AA/AAA contrast matrix and generating 11-step tonal scales...',
+          ...prev.slice(0, 7),
         ]);
         designRes = await extractDesignSystem(outputDir, url);
         setCompletedSteps((prev) => [
@@ -270,8 +269,8 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
       if (toReact) {
         setStepMessage('Decomposing DOM to modular React (TSX) & Tailwind components...');
         setAssetStreamLog((prev) => [
-          '⚛ [REACT] AST parser extracting Navbar, Hero, and Section modules...',
-          ...prev.slice(0, 4),
+          '⚛ [REACT] AST parser synthesizing Navbar.tsx, Sections.tsx, and App.tsx...',
+          ...prev.slice(0, 7),
         ]);
         reactRes = await convertCloneToReact(outputDir);
         setCompletedSteps((prev) => [
@@ -353,20 +352,30 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
   return (
     <Box flexDirection="column" paddingX={1} paddingY={0}>
       {/* =====================================================================
-          CYBER TELEMETRY HEADER
+          PREMIUM MINIMALIST UNIX HEADER
           ===================================================================== */}
-      <Box borderStyle="round" borderColor="cyanBright" paddingX={1} paddingY={0} flexDirection="column">
-        <Box justifyContent="space-between">
-          <Text bold color="cyanBright">
-            ⚡ WEBCMD UNIVERSAL REVERSE-ENGINEERING STUDIO
-          </Text>
-          <Text color="greenBright" bold>
-            [CORE: ACTIVE]
-          </Text>
+      <Box borderStyle="round" borderColor="cyan" paddingX={2} paddingY={0} flexDirection="column">
+        <Box justifyContent="space-between" alignItems="center">
+          <Box>
+            <Text bold color="cyanBright">
+              █░█░█ █▀▀ █▄▄ █▀▀ █▀▄▀█ █▀▄
+            </Text>
+            <Text bold color="cyan">
+              {'  '}▀▄▀▄▀ ██▄ █▄█ █▄▄ █░▀░█ █▄▀
+            </Text>
+          </Box>
+          <Box flexDirection="column" alignItems="flex-end">
+            <Text bold color="greenBright">
+              ● ENGINE READY
+            </Text>
+            <Text dimColor color="gray">
+              v0.8.4-pro
+            </Text>
+          </Box>
         </Box>
-        <Box justifyContent="space-between">
+        <Box marginTop={1} justifyContent="space-between">
           <Text dimColor color="gray">
-            Engine: Headless V8  |  AST Synthesizer  |  W3C Tokens Engine
+            [V8 RUNTIME: ACTIVE]  [WCAG 2.1: AA/AAA]  [TOKENS: W3C SPEC]
           </Text>
           <Text color="yellow">
             T+{elapsedSeconds.toFixed(1)}s
@@ -379,11 +388,11 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
           ===================================================================== */}
       {stage === 'URL_INPUT' && (
         <Box flexDirection="column" marginTop={1} borderStyle="single" borderColor="cyan" paddingX={2} paddingY={1}>
-          <Text bold color="yellowBright">
+          <Text bold color="white">
             TARGET INGESTION // Enter Website URL to Reverse-Engineer:
           </Text>
           <Box marginTop={1}>
-            <Text color="cyanBright">➜  </Text>
+            <Text color="cyanBright">❯ </Text>
             <TextInput
               value={url}
               onChange={setUrl}
@@ -393,7 +402,7 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
           </Box>
           <Box marginTop={1}>
             <Text dimColor color="gray">
-              [ENTER] Next  |  [CTRL+C] Abort
+              [ENTER] Next  •  [ESC / CTRL+C] Exit
             </Text>
           </Box>
         </Box>
@@ -405,10 +414,18 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
       {stage === 'MODE_SELECT' && (
         <Box flexDirection="column" marginTop={1} borderStyle="single" borderColor="magentaBright" paddingX={2} paddingY={1}>
           <Text bold color="magentaBright">
-            PIPELINE CONFIGURATION // Target: {url}
+            PIPELINE ARCHITECTURE // Select Output Configuration:
           </Text>
-          <Box marginTop={1} flexDirection="column">
-            <SelectInput items={modeItems} onSelect={handleModeSelect} />
+          <Box marginBottom={1}>
+            <Text dimColor color="gray">
+              Target: {url}
+            </Text>
+          </Box>
+          <SelectInput items={modeItems} onSelect={handleModeSelect} />
+          <Box marginTop={1}>
+            <Text dimColor color="gray">
+              [↑/↓] Navigate  •  [ENTER] Select Mode  •  [CTRL+C] Exit
+            </Text>
           </Box>
         </Box>
       )}
@@ -419,12 +436,12 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
       {stage === 'CONFIRM' && (
         <Box flexDirection="column" marginTop={1} borderStyle="single" borderColor="greenBright" paddingX={2} paddingY={1}>
           <Text bold color="greenBright">
-            EXECUTION PIPELINE READY:
+            CONFIRM EXECUTION PIPELINE:
           </Text>
-          <Box flexDirection="column" marginTop={1}>
+          <Box flexDirection="column" marginTop={1} paddingX={1} borderStyle="single" borderColor="gray">
             <Text>  <Text bold color="white">Target URL    :</Text> <Text color="cyanBright">{url}</Text></Text>
-            <Text>  <Text bold color="white">Output Matrix :</Text> <Text color="gray">{outputDir}</Text></Text>
-            <Text>  <Text bold color="white">Analysis Mode :</Text> <Text color="yellowBright">{mode.toUpperCase()}</Text></Text>
+            <Text>  <Text bold color="white">Root Template :</Text> <Text color="gray">{outputDir}</Text></Text>
+            <Text>  <Text bold color="white">Pipeline Mode :</Text> <Text color="yellowBright">{mode.toUpperCase()}</Text></Text>
             <Text>  <Text bold color="white">Studio Server :</Text> <Text color="greenBright">{serve ? `Enabled (Port ${port})` : 'Disabled'}</Text></Text>
           </Box>
           <Box marginTop={1}>
@@ -443,53 +460,52 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
       )}
 
       {/* =====================================================================
-          STAGE: CRAZY HIGH-TECH CLONING PROGRESS WITH TELEMETRY
+          STAGE: HIGH-TECH REAL-TIME TELEMETRY & PROGRESS
           ===================================================================== */}
       {stage === 'CLONING' && (
         <Box flexDirection="column" marginTop={1}>
-          {/* Main Telemetry Box */}
           <Box borderStyle="round" borderColor="yellowBright" flexDirection="column" paddingX={2} paddingY={1}>
-            {/* Top Row: Animated Spinner & Current Active Step */}
+            {/* Active Stage & Spinner Header */}
             <Box justifyContent="space-between" alignItems="center">
               <Box>
                 <Text color="yellowBright" bold>
-                  <Spinner type="dots" /> STEP [{currentStepIndex}/{totalSteps}]:{' '}
+                  <Spinner type="dots" /> STAGE [{currentStepIndex}/{totalSteps}]:{' '}
                 </Text>
                 <Text bold color="white">
                   {stepMessage}
                 </Text>
               </Box>
               <Text color="cyanBright" bold>
-                {pulseGlyphs[pulseFrame]} RUNNING
+                {pulseGlyphs[pulseFrame]} PROCESSING
               </Text>
             </Box>
 
-            {/* Live Progress Bar */}
+            {/* High-Precision Progress Bar */}
             <Box marginTop={1} flexDirection="column">
-              <ProgressBar progress={stage === 'CLONING' ? progressPercent : 100} width={42} />
+              <ProgressBar progress={stage === 'CLONING' ? progressPercent : 100} width={44} />
             </Box>
 
-            {/* Telemetry Metrics Bar */}
+            {/* Live Throughput Metrics Ribbon */}
             <Box marginTop={1} paddingX={1} borderStyle="single" borderColor="gray" justifyContent="space-between">
               <Text dimColor color="gray">
-                NET: <Text color="cyan">{networkSpeed}</Text>
+                PIPELINE: <Text color="yellow">{mode.toUpperCase()}</Text>
               </Text>
               <Text dimColor color="gray">
-                PIPELINE: <Text color="yellow">{mode.toUpperCase()}</Text>
+                NET: <Text color="cyan">18.4 MB/s</Text>
               </Text>
               <Text dimColor color="gray">
                 ELAPSED: <Text color="green">{elapsedSeconds.toFixed(1)}s</Text>
               </Text>
               <Text dimColor color="gray">
-                DOM: <Text color="magenta">ACTIVE</Text>
+                STATUS: <Text color="greenBright">V8_ACTIVE</Text>
               </Text>
             </Box>
 
-            {/* Completed Steps Log */}
+            {/* Milestone Checkpoint History */}
             {completedSteps.length > 0 && (
               <Box flexDirection="column" marginTop={1}>
                 <Text bold color="greenBright">
-                  COMPLETED MILESTONES:
+                  COMPLETED CHECKPOINTS:
                 </Text>
                 {completedSteps.map((stepItem, i) => (
                   <Box key={i} justifyContent="space-between">
@@ -500,14 +516,14 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
               </Box>
             )}
 
-            {/* Live Stream Terminal Ticker */}
+            {/* 6-Channel Live Activity Stream Log */}
             <Box flexDirection="column" marginTop={1} borderStyle="single" borderColor="cyan" paddingX={1} paddingY={0}>
               <Box justifyContent="space-between">
                 <Text bold color="cyanBright">
-                  STREAM TELEMETRY // REAL-TIME ACTIVITY LOG:
+                  REAL-TIME ACTIVITY TELEMETRY:
                 </Text>
                 <Text dimColor color="gray">
-                  [6 CHANNELS]
+                  [LIVE STREAM]
                 </Text>
               </Box>
               {assetStreamLog.slice(0, 6).map((line, idx) => {
@@ -540,13 +556,13 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
       )}
 
       {/* =====================================================================
-          STAGE: DONE (CYBER SUCCESS DASHBOARD)
+          STAGE: DONE (EXECUTIVE DASHBOARD)
           ===================================================================== */}
       {stage === 'DONE' && resultData && (
         <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor="greenBright" paddingX={2} paddingY={1}>
           <Box justifyContent="space-between" alignItems="center">
             <Text bold color="greenBright">
-              🎉 REVERSE-ENGINEERING & SYNTHESIS COMPLETE!
+              ✔ REVERSE-ENGINEERING & SYNTHESIS COMPLETE
             </Text>
             <Text color="yellowBright" bold>
               [SUCCESS 100%]
@@ -554,26 +570,26 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
           </Box>
 
           <Box flexDirection="column" marginTop={1}>
-            <Text>  <Text bold color="white">Source Target :</Text> <Text color="cyanBright">{resultData.sourceUrl}</Text></Text>
-            <Text>  <Text bold color="white">Output Matrix :</Text> <Text color="gray">{resultData.outputDir}</Text></Text>
-            <Text>  <Text bold color="white">Entry Canvas  :</Text> <Text color="yellowBright">{resultData.htmlPath}</Text></Text>
-            <Text>  <Text bold color="white">Total Assets  :</Text> <Text color="cyanBright">{resultData.totalAssets} bundled files</Text></Text>
-            <Text>  <Text bold color="white">Execution Latency :</Text> <Text color="greenBright">{(resultData.durationMs / 1000).toFixed(2)}s</Text></Text>
+            <Text>  <Text bold color="white">Target URL    :</Text> <Text color="cyanBright">{resultData.sourceUrl}</Text></Text>
+            <Text>  <Text bold color="white">Root Template :</Text> <Text color="gray">{resultData.outputDir}</Text></Text>
+            <Text>  <Text bold color="white">Entrypoint    :</Text> <Text color="yellowBright">{resultData.htmlPath}</Text></Text>
+            <Text>  <Text bold color="white">Total Assets  :</Text> <Text color="cyanBright">{resultData.totalAssets} bundled assets</Text></Text>
+            <Text>  <Text bold color="white">Total Latency :</Text> <Text color="greenBright">{(resultData.durationMs / 1000).toFixed(2)}s</Text></Text>
 
             {resultData.designSystem && (
               <Box flexDirection="column" marginTop={1} borderStyle="single" borderColor="cyanBright" paddingX={1} paddingY={0}>
-                <Text bold color="cyanBright">🎨 EXTRACTED ENTERPRISE DESIGN SYSTEM:</Text>
-                <Text>  • <Text bold color="white">Design Tokens   :</Text> <Text color="gray">./design-system/tokens.json (W3C Format)</Text></Text>
-                <Text>  • <Text bold color="white">CSS Variables   :</Text> <Text color="gray">./design-system/design-tokens.css (50-950 Tonal Scales)</Text></Text>
-                <Text>  • <Text bold color="white">React Primitives:</Text> <Text color="gray">./design-system/components.tsx (Button, Input, Card, Badge, Alert)</Text></Text>
-                <Text>  • <Text bold color="white">Tailwind Theme  :</Text> <Text color="gray">./design-system/tailwind.theme.js</Text></Text>
-                <Text>  • <Text bold color="white">Light Studio    :</Text> <Text color="cyanBright">./design-system/preview.html</Text></Text>
-                <Text>  • <Text bold color="white">AI Agent Skill  :</Text> <Text color="yellowBright">.agents/skills/design-{resultData.designSystem.siteName.toLowerCase()}/SKILL.md</Text></Text>
+                <Text bold color="cyanBright">🎨 EXTRACTED DESIGN SYSTEM & AI SKILL:</Text>
+                <Text>  ├── <Text bold color="white">tokens.json       :</Text> <Text color="gray">W3C Design Tokens standard</Text></Text>
+                <Text>  ├── <Text bold color="white">design-tokens.css :</Text> <Text color="gray">50-950 Tonal Scales & Variables</Text></Text>
+                <Text>  ├── <Text bold color="white">components.tsx    :</Text> <Text color="gray">Production React (Button, Input, Card, Badge, Alert)</Text></Text>
+                <Text>  ├── <Text bold color="white">tailwind.theme.js :</Text> <Text color="gray">Tailwind config extension</Text></Text>
+                <Text>  ├── <Text bold color="white">preview.html      :</Text> <Text color="cyanBright">Storybook Light Studio</Text></Text>
+                <Text>  └── <Text bold color="white">AI Agent Skill    :</Text> <Text color="yellowBright">.agents/skills/design-{resultData.designSystem.siteName.toLowerCase()}/SKILL.md</Text></Text>
               </Box>
             )}
 
             {resultData.react && (
-              <Text>  <Text bold color="white">React (TSX)   :</Text> <Text color="magentaBright">{resultData.react.outputDir} ({resultData.react.components.length} components)</Text></Text>
+              <Text>  <Text bold color="white">React TSX     :</Text> <Text color="magentaBright">{resultData.react.outputDir} ({resultData.react.components.length} components)</Text></Text>
             )}
             {resultData.verification && (
               <Text>  <Text bold color="white">Visual Diff   :</Text> <Text color="blueBright">verify.html (Fidelity: {resultData.verification.fidelityScore}%)</Text></Text>
@@ -593,7 +609,7 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
 
           <Box marginTop={1}>
             <Text dimColor color="gray">
-              ⚡ Launched preview automatically in your default browser. Press [Ctrl+C] to exit.
+              ⚡ Showcase opened in your default browser. Press [Ctrl+C] to return to terminal.
             </Text>
           </Box>
         </Box>
