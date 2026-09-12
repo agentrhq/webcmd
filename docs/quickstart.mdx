@@ -61,3 +61,30 @@ Return invoice_id, customer, due_date, amount, status, and detail_url. Pause if 
 need to sign in, never ask me to paste credentials into chat, and do not change
 any records.
 ```
+
+## Run a Natural-Language Workflow
+
+For direct CLI use, configure Gemini in the shell without putting the key in the
+repository:
+
+```powershell
+$env:GEMINI_API_KEY = "your-new-key"
+```
+
+Then provide the goal. Webcmd asks Gemini for a validated workflow, creates a
+browser Session, runs the browser steps, and carries returned values between
+steps:
+
+```powershell
+npm run dev -- workflow run --goal "Find the OB Fitness Challenge on Site A and submit its details on Site B"
+```
+
+Inspect the generated workflow without opening a browser:
+
+```powershell
+npm run dev -- workflow run --goal "Find the OB Fitness Challenge on Site A and submit its details on Site B" --plan-only -f json
+```
+
+Use `--session <id>` when continuing an existing authenticated Session, and use
+`--keep-session` when the automatically created Session should remain available
+after the workflow finishes.
