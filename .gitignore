@@ -1,50 +1,5 @@
-node_modules/
-dist/
-!extension/dist/
-*.tsbuildinfo
-hosted-contract.json
-plugin-command-manifest.json
-.webcmd/
-.superpowers/
-.worktrees/
-.agents/*
-!.agents/plugins/
-.agents/plugins/*
-!.agents/plugins/marketplace.json
-.mcp.json
-*.log
+﻿node_modules/
+package-lock.json
+debug.html
 .DS_Store
-
-# Local-only research, examples, and agent planning artifacts
-autoresearch/
-cases/
-designs/
-docs/superpowers/
-instagram-test/
-llms.txt
-sitemaps/
-
-# Extensions & Secrets
-*.pem
-*.crx
-*.zip
-.envrc
-.windsurf
-.claude
-.cortex
-
-# Database files
-*.db
-autoresearch-results.tsv
-
-# webcmd benchmarks (dataset comparison harness)
-benchmarks/results/
-benchmarks/.venv/
-benchmarks/node_modules/
-benchmarks/**/__pycache__/
-benchmarks/.pytest_cache/
-benchmarks/pytest-cache-files-*
-benchmarks/datasets/*.json
-!benchmarks/datasets/Stealth_Webcmd.json
-benchmarks/.playwright-cli/
-benchmarks/.playwright/
+*.log
