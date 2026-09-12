@@ -152,12 +152,13 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
   ]);
 
   useEffect(() => {
+    if (stage !== 'CLONING') return;
     const timer = setInterval(() => {
       setElapsedSeconds((prev) => prev + 0.1);
       setPulseFrame((prev) => (prev + 1) % 4);
     }, 100);
     return () => clearInterval(timer);
-  }, []);
+  }, [stage]);
 
   useInput((inputChar, key) => {
     if (key.escape || (key.ctrl && inputChar === 'c')) {
@@ -352,27 +353,33 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
   return (
     <Box flexDirection="column" paddingX={1} paddingY={0}>
       {/* =====================================================================
-          PREMIUM HIGH-VISIBILITY HEADER
+          PREMIUM PIXELATED RETRO-CYBER HEADER
           ===================================================================== */}
-      <Box borderStyle="round" borderColor="cyanBright" paddingX={2} paddingY={1} flexDirection="column">
+      <Box borderStyle="round" borderColor="cyanBright" paddingX={2} paddingY={0} flexDirection="column">
         <Box justifyContent="space-between" alignItems="center">
-          <Box>
+          <Box flexDirection="column">
             <Text bold color="cyanBright">
-              ◆ WEBCMD REVERSE-ENGINEERING & DESIGN STUDIO
+              {'█░█░█ █▀▀ █▄▄ █▀▀ █▀▄▀█ █▀▄  █▀▀ █░░ █▀█ █▄░█ █▀▀'}
+            </Text>
+            <Text bold color="cyan">
+              {'▀▄▀▄▀ ██▄ █▄█ █▄▄ █░▀░█ █▄▀  █▄▄ █▄▄ █▄█ █░▀█ ██▄'}
             </Text>
           </Box>
-          <Box>
+          <Box flexDirection="column" alignItems="flex-end">
             <Text bold color="greenBright">
               ● ENGINE READY
+            </Text>
+            <Text bold color="yellow">
+              v0.8.4
             </Text>
           </Box>
         </Box>
         <Box marginTop={1} justifyContent="space-between">
           <Text color="white">
-            Architecture: <Text color="yellowBright">Headless V8</Text>  •  <Text color="cyan">W3C Design Tokens</Text>  •  <Text color="magentaBright">React TSX</Text>
+            <Text color="yellowBright" bold>[V8 STEALTH]</Text> • <Text color="greenBright" bold>[W3C TOKENS]</Text> • <Text color="magentaBright" bold>[REACT TSX]</Text>
           </Text>
-          <Text bold color="yellowBright">
-            T+{elapsedSeconds.toFixed(1)}s
+          <Text color="cyanBright">
+            {stage === 'CLONING' ? `T+${elapsedSeconds.toFixed(1)}s` : '[PRO-MODE]'}
           </Text>
         </Box>
       </Box>
