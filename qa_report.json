@@ -1,0 +1,404 @@
+{
+  "base_url": "https://magical-bombolone-f9fbf8.netlify.app/#",
+  "pages": [
+    {
+      "url": "https://magical-bombolone-f9fbf8.netlify.app/#",
+      "http_status": 200,
+      "security_headers": {
+        "content-security-policy": "MISSING",
+        "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
+        "x-frame-options": "MISSING",
+        "x-content-type-options": "MISSING"
+      },
+      "broken_images": [],
+      "accessibility_issues": [
+        {
+          "type": "unlabeled_input",
+          "name": "(unnamed)"
+        },
+        {
+          "type": "unnamed_button",
+          "outerHTML": "<button type=\"submit\" class=\"demo-send\" style=\"background: transparent; border-w"
+        }
+      ],
+      "mixed_content": [],
+      "forms": [
+        {
+          "id": "(no id)",
+          "action": "https://magical-bombolone-f9fbf8.netlify.app/#",
+          "method": "get",
+          "field_count": 2,
+          "required_field_count": 0,
+          "has_novalidate": false
+        }
+      ],
+      "responsive": {
+        "desktop": {
+          "width": 1440,
+          "horizontal_overflow": false
+        },
+        "tablet": {
+          "width": 768,
+          "horizontal_overflow": false
+        },
+        "mobile": {
+          "width": 375,
+          "horizontal_overflow": false
+        }
+      },
+      "dead_click_results": [
+        {
+          "tag": "A",
+          "label": "AIFlow",
+          "clickable": true,
+          "dead": true,
+          "dom_changed": false,
+          "url_changed": false,
+          "network_fired": false,
+          "dialog_triggered": false,
+          "popup_opened": false,
+          "suggested_fix": "Anchor 'AIFlow' fired no navigation/network/DOM change. Check for a placeholder href (e.g. href='#') or a JS onclick handler that isn't actually wired up."
+        },
+        {
+          "tag": "A",
+          "label": "Features",
+          "clickable": true,
+          "dead": false,
+          "dom_changed": false,
+          "url_changed": true,
+          "network_fired": false,
+          "dialog_triggered": false,
+          "popup_opened": false
+        },
+        {
+          "tag": "A",
+          "label": "Pricing",
+          "clickable": true,
+          "dead": false,
+          "dom_changed": false,
+          "url_changed": true,
+          "network_fired": false,
+          "dialog_triggered": false,
+          "popup_opened": false
+        },
+        {
+          "tag": "A",
+          "label": "FAQ",
+          "clickable": true,
+          "dead": false,
+          "dom_changed": false,
+          "url_changed": true,
+          "network_fired": false,
+          "dialog_triggered": false,
+          "popup_opened": false
+        },
+        {
+          "tag": "A",
+          "label": "Sign in",
+          "clickable": true,
+          "dead": true,
+          "dom_changed": false,
+          "url_changed": false,
+          "network_fired": false,
+          "dialog_triggered": false,
+          "popup_opened": false,
+          "suggested_fix": "Anchor 'Sign in' fired no navigation/network/DOM change. Check for a placeholder href (e.g. href='#') or a JS onclick handler that isn't actually wired up."
+        },
+        {
+          "tag": "A",
+          "label": "Start free",
+          "clickable": true,
+          "dead": false,
+          "dom_changed": true,
+          "url_changed": false,
+          "network_fired": false,
+          "dialog_triggered": false,
+          "popup_opened": false
+        },
+        {
+          "tag": "A",
+          "label": "Continue with Google \u2014 it's free",
+          "clickable": true,
+          "dead": true,
+          "dom_changed": false,
+          "url_changed": false,
+          "network_fired": false,
+          "dialog_triggered": false,
+          "popup_opened": false,
+          "suggested_fix": "Anchor 'Continue with Google \u2014 it's free' fired no navigation/network/DOM change. Check for a placeholder href (e.g. href='#') or a JS onclick handler that isn't actually wired up."
+        },
+        {
+          "tag": "A",
+          "label": "See how it works",
+          "clickable": true,
+          "dead": false,
+          "dom_changed": true,
+          "url_changed": true,
+          "network_fired": false,
+          "dialog_triggered": false,
+          "popup_opened": false
+        },
+        {
+          "tag": "BUTTON",
+          "label": "(no visible label)",
+          "clickable": true,
+          "dead": false,
+          "dom_changed": true,
+          "url_changed": false,
+          "network_fired": false,
+          "dialog_triggered": false,
+          "popup_opened": false
+        },
+        {
+          "tag": "A",
+          "label": "Get started free",
+          "clickable": true,
+          "dead": false,
+          "dom_changed": true,
+          "url_changed": false,
+          "network_fired": false,
+          "dialog_triggered": false,
+          "popup_opened": false
+        },
+        {
+          "tag": "A",
+          "label": "Start Starter",
+          "clickable": true,
+          "dead": true,
+          "dom_changed": false,
+          "url_changed": false,
+          "network_fired": false,
+          "dialog_triggered": false,
+          "popup_opened": false,
+          "suggested_fix": "Anchor 'Start Starter' fired no navigation/network/DOM change. Check for a placeholder href (e.g. href='#') or a JS onclick handler that isn't actually wired up."
+        },
+        {
+          "tag": "A",
+          "label": "Start Pro",
+          "clickable": true,
+          "dead": true,
+          "dom_changed": false,
+          "url_changed": false,
+          "network_fired": false,
+          "dialog_triggered": false,
+          "popup_opened": false,
+          "suggested_fix": "Anchor 'Start Pro' fired no navigation/network/DOM change. Check for a placeholder href (e.g. href='#') or a JS onclick handler that isn't actually wired up."
+        },
+        {
+          "tag": "A",
+          "label": "Contact us",
+          "clickable": true,
+          "dead": true,
+          "dom_changed": false,
+          "url_changed": false,
+          "network_fired": false,
+          "dialog_triggered": false,
+          "popup_opened": false,
+          "suggested_fix": "Anchor 'Contact us' fired no navigation/network/DOM change. Check for a placeholder href (e.g. href='#') or a JS onclick handler that isn't actually wired up."
+        },
+        {
+          "tag": "A",
+          "label": "Get started free with Google",
+          "clickable": true,
+          "dead": false,
+          "dom_changed": true,
+          "url_changed": false,
+          "network_fired": false,
+          "dialog_triggered": false,
+          "popup_opened": false
+        },
+        {
+          "tag": "A",
+          "label": "View pricing \u2192",
+          "clickable": true,
+          "dead": false,
+          "dom_changed": true,
+          "url_changed": true,
+          "network_fired": false,
+          "dialog_triggered": false,
+          "popup_opened": false
+        },
+        {
+          "tag": "A",
+          "label": "\ud835\udd4f",
+          "clickable": true,
+          "dead": false,
+          "dom_changed": true,
+          "url_changed": false,
+          "network_fired": false,
+          "dialog_triggered": false,
+          "popup_opened": false
+        },
+        {
+          "tag": "A",
+          "label": "gh",
+          "clickable": true,
+          "dead": true,
+          "dom_changed": false,
+          "url_changed": false,
+          "network_fired": false,
+          "dialog_triggered": false,
+          "popup_opened": false,
+          "suggested_fix": "Anchor 'gh' fired no navigation/network/DOM change. Check for a placeholder href (e.g. href='#') or a JS onclick handler that isn't actually wired up."
+        },
+        {
+          "tag": "A",
+          "label": "in",
+          "clickable": true,
+          "dead": true,
+          "dom_changed": false,
+          "url_changed": false,
+          "network_fired": false,
+          "dialog_triggered": false,
+          "popup_opened": false,
+          "suggested_fix": "Anchor 'in' fired no navigation/network/DOM change. Check for a placeholder href (e.g. href='#') or a JS onclick handler that isn't actually wired up."
+        },
+        {
+          "tag": "A",
+          "label": "Features",
+          "clickable": true,
+          "dead": true,
+          "dom_changed": false,
+          "url_changed": false,
+          "network_fired": false,
+          "dialog_triggered": false,
+          "popup_opened": false,
+          "suggested_fix": "Anchor 'Features' fired no navigation/network/DOM change. Check for a placeholder href (e.g. href='#') or a JS onclick handler that isn't actually wired up."
+        },
+        {
+          "tag": "A",
+          "label": "Pricing",
+          "clickable": true,
+          "dead": true,
+          "dom_changed": false,
+          "url_changed": false,
+          "network_fired": false,
+          "dialog_triggered": false,
+          "popup_opened": false,
+          "suggested_fix": "Anchor 'Pricing' fired no navigation/network/DOM change. Check for a placeholder href (e.g. href='#') or a JS onclick handler that isn't actually wired up."
+        },
+        {
+          "tag": "A",
+          "label": "Changelog",
+          "clickable": true,
+          "dead": true,
+          "dom_changed": false,
+          "url_changed": false,
+          "network_fired": false,
+          "dialog_triggered": false,
+          "popup_opened": false,
+          "suggested_fix": "Anchor 'Changelog' fired no navigation/network/DOM change. Check for a placeholder href (e.g. href='#') or a JS onclick handler that isn't actually wired up."
+        },
+        {
+          "tag": "A",
+          "label": "Status",
+          "clickable": true,
+          "dead": true,
+          "dom_changed": false,
+          "url_changed": false,
+          "network_fired": false,
+          "dialog_triggered": false,
+          "popup_opened": false,
+          "suggested_fix": "Anchor 'Status' fired no navigation/network/DOM change. Check for a placeholder href (e.g. href='#') or a JS onclick handler that isn't actually wired up."
+        },
+        {
+          "tag": "A",
+          "label": "Roadmap",
+          "clickable": true,
+          "dead": true,
+          "dom_changed": false,
+          "url_changed": false,
+          "network_fired": false,
+          "dialog_triggered": false,
+          "popup_opened": false,
+          "suggested_fix": "Anchor 'Roadmap' fired no navigation/network/DOM change. Check for a placeholder href (e.g. href='#') or a JS onclick handler that isn't actually wired up."
+        },
+        {
+          "tag": "A",
+          "label": "Documentation",
+          "clickable": true,
+          "dead": true,
+          "dom_changed": false,
+          "url_changed": false,
+          "network_fired": false,
+          "dialog_triggered": false,
+          "popup_opened": false,
+          "suggested_fix": "Anchor 'Documentation' fired no navigation/network/DOM change. Check for a placeholder href (e.g. href='#') or a JS onclick handler that isn't actually wired up."
+        },
+        {
+          "tag": "A",
+          "label": "API Reference",
+          "clickable": true,
+          "dead": true,
+          "dom_changed": false,
+          "url_changed": false,
+          "network_fired": false,
+          "dialog_triggered": false,
+          "popup_opened": false,
+          "suggested_fix": "Anchor 'API Reference' fired no navigation/network/DOM change. Check for a placeholder href (e.g. href='#') or a JS onclick handler that isn't actually wired up."
+        },
+        {
+          "tag": "A",
+          "label": "Blog",
+          "clickable": true,
+          "dead": true,
+          "dom_changed": false,
+          "url_changed": false,
+          "network_fired": false,
+          "dialog_triggered": false,
+          "popup_opened": false,
+          "suggested_fix": "Anchor 'Blog' fired no navigation/network/DOM change. Check for a placeholder href (e.g. href='#') or a JS onclick handler that isn't actually wired up."
+        },
+        {
+          "tag": "A",
+          "label": "GitHub",
+          "clickable": true,
+          "dead": true,
+          "dom_changed": false,
+          "url_changed": false,
+          "network_fired": false,
+          "dialog_triggered": false,
+          "popup_opened": false,
+          "suggested_fix": "Anchor 'GitHub' fired no navigation/network/DOM change. Check for a placeholder href (e.g. href='#') or a JS onclick handler that isn't actually wired up."
+        },
+        {
+          "tag": "A",
+          "label": "Support",
+          "clickable": true,
+          "dead": true,
+          "dom_changed": false,
+          "url_changed": false,
+          "network_fired": false,
+          "dialog_triggered": false,
+          "popup_opened": false,
+          "suggested_fix": "Anchor 'Support' fired no navigation/network/DOM change. Check for a placeholder href (e.g. href='#') or a JS onclick handler that isn't actually wired up."
+        },
+        {
+          "tag": "A",
+          "label": "About",
+          "clickable": true,
+          "dead": true,
+          "dom_changed": false,
+          "url_changed": false,
+          "network_fired": false,
+          "dialog_triggered": false,
+          "popup_opened": false,
+          "suggested_fix": "Anchor 'About' fired no navigation/network/DOM change. Check for a placeholder href (e.g. href='#') or a JS onclick handler that isn't actually wired up."
+        },
+        {
+          "tag": "A",
+          "label": "Careers",
+          "clickable": true,
+          "dead": true,
+          "dom_changed": false,
+          "url_changed": false,
+          "network_fired": false,
+          "dialog_triggered": false,
+          "popup_opened": false,
+          "suggested_fix": "Anchor 'Careers' fired no navigation/network/DOM change. Check for a placeholder href (e.g. href='#') or a JS onclick handler that isn't actually wired up."
+        }
+      ],
+      "skipped_dangerous_elements": []
+    }
+  ]
+}
