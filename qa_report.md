@@ -9,18 +9,17 @@
 * **Accessibility issues found:** 2
 * **Horizontal overflow on:** none
 * **Forms found:** 1
-* **Dead clickables:** 21 / 30 scanned
+* **Dead clickables:** 20 / 30 scanned
 
 | Tag | Label | Suggested Fix |
 |---|---|---|
 | A | AIFlow | Anchor 'AIFlow' fired no navigation/network/DOM change. Check for a placeholder href (e.g. href='#') or a JS onclick handler that isn't actually wired up. |
-| A | Start free | Anchor 'Start free' fired no navigation/network/DOM change. Check for a placeholder href (e.g. href='#') or a JS onclick handler that isn't actually wired up. |
+| A | Sign in | Anchor 'Sign in' fired no navigation/network/DOM change. Check for a placeholder href (e.g. href='#') or a JS onclick handler that isn't actually wired up. |
 | A | Continue with Google — it's free | Anchor 'Continue with Google — it's free' fired no navigation/network/DOM change. Check for a placeholder href (e.g. href='#') or a JS onclick handler that isn't actually wired up. |
 | A | Start Starter | Anchor 'Start Starter' fired no navigation/network/DOM change. Check for a placeholder href (e.g. href='#') or a JS onclick handler that isn't actually wired up. |
 | A | Start Pro | Anchor 'Start Pro' fired no navigation/network/DOM change. Check for a placeholder href (e.g. href='#') or a JS onclick handler that isn't actually wired up. |
 | A | Contact us | Anchor 'Contact us' fired no navigation/network/DOM change. Check for a placeholder href (e.g. href='#') or a JS onclick handler that isn't actually wired up. |
-| A | Get started free with Google | Anchor 'Get started free with Google' fired no navigation/network/DOM change. Check for a placeholder href (e.g. href='#') or a JS onclick handler that isn't actually wired up. |
-| A | 𝕏 | Anchor '𝕏' fired no navigation/network/DOM change. Check for a placeholder href (e.g. href='#') or a JS onclick handler that isn't actually wired up. |
+| A | gh | Anchor 'gh' fired no navigation/network/DOM change. Check for a placeholder href (e.g. href='#') or a JS onclick handler that isn't actually wired up. |
 | A | in | Anchor 'in' fired no navigation/network/DOM change. Check for a placeholder href (e.g. href='#') or a JS onclick handler that isn't actually wired up. |
 | A | Features | Anchor 'Features' fired no navigation/network/DOM change. Check for a placeholder href (e.g. href='#') or a JS onclick handler that isn't actually wired up. |
 | A | Pricing | Anchor 'Pricing' fired no navigation/network/DOM change. Check for a placeholder href (e.g. href='#') or a JS onclick handler that isn't actually wired up. |
