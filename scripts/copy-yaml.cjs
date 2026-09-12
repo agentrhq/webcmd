@@ -14,3 +14,9 @@ if (existsSync(extSrc)) {
 const playwrightClient = 'src/browser/run/generated/playwright-client.js';
 mkdirSync('dist/src/browser/run/generated', { recursive: true });
 copyFileSync(playwrightClient, 'dist/src/browser/run/generated/playwright-client.js');
+
+// Copy refund-commander module to dist/
+const { cpSync } = require('fs');
+if (existsSync('src/refund-commander')) {
+  cpSync('src/refund-commander', 'dist/src/refund-commander', { recursive: true });
+}

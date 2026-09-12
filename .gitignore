@@ -4,7 +4,9 @@ dist/
 *.tsbuildinfo
 hosted-contract.json
 plugin-command-manifest.json
-.webcmd/
+/.webcmd/
+webcmd-main/.webcmd/profiles/
+webcmd-main/.webcmd/decks/
 .superpowers/
 .worktrees/
 .agents/*

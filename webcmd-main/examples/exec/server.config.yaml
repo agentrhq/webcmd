@@ -1,0 +1,30 @@
+modules:
+  shellPool:
+    size: 4 # Larger shell pool than default
+routes:
+- route: "/exec/shell"
+  exec:
+    shell: 
+      command: "echo This is a shell exec route"
+- route: "/exec/shell"
+  method: POST
+  exec:
+    shell: 
+      command: "echo This is a shell exec route with your body:; cat -"
+  allowBody: true
+- route: "/exec/proc"
+  exec:
+    proc:
+      path: "bash"
+      args: ["-c", "echo This is a proc exec route"]
+- route: "/exec/proc"
+  method: POST
+  exec:
+    proc:
+      path: "bash"
+      args: ["-c", "echo This is a proc exec route with your body:; cat -"]
+  allowBody: true
+- route: "/*"
+  exec:
+    shell:
+      command: "echo Use 'GET /exec/(shell|proc)' to compare the different execution mode response speeds"

@@ -1,0 +1,75 @@
+{
+  "id": "sunscreen-under-500",
+  "name": "Find Best SPF 50 Sunscreen Under ₹500",
+  "domain": "nykaavault.local",
+  "intent": "Extract, filter by ₹500 budget & SPF 50, rank by value score and recommend top match",
+  "steps": [
+    {
+      "id": "s1",
+      "action": "navigate",
+      "url": "http://127.0.0.1:8094",
+      "verify": {
+        "type": "url",
+        "expected": "8094"
+      }
+    },
+    {
+      "id": "s2",
+      "action": "fill",
+      "target": "#search-input",
+      "value": "sunscreen SPF 50",
+      "fingerprint": {
+        "tag": "input",
+        "role": "textbox",
+        "text": "Search sunscreen SPF 50...",
+        "attributes": {
+          "type": "text",
+          "id": "search-input",
+          "class": "search-input",
+          "placeholder": "Search sunscreen SPF 50...",
+          "value": "sunscreen SPF 50"
+        },
+        "path": [
+          "html",
+          "body",
+          "div",
+          "form",
+          "input"
+        ],
+        "parent_name": "form",
+        "parent_attribs": {
+          "id": "store-search-form"
+        },
+        "parent_text": "Search",
+        "siblings": [
+          "button"
+        ],
+        "children": []
+      },
+      "verify": {
+        "type": "value",
+        "expected": "sunscreen SPF 50"
+      }
+    },
+    {
+      "id": "s3",
+      "action": "extract_catalog",
+      "target": ".product-card",
+      "fingerprint": {
+        "tag": "div",
+        "attributes": {
+          "class": "product-card"
+        }
+      },
+      "verify": {
+        "type": "custom_js",
+        "expression": "document.querySelectorAll(\".product-card, .item-tile, article\").length > 0"
+      }
+    }
+  ],
+  "success_count": 1,
+  "failure_count": 0,
+  "recovery_count": 0,
+  "created_at": "2026-09-12T06:38:46.886Z",
+  "last_executed": "2026-09-12T06:38:46.886Z"
+}

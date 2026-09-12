@@ -1,0 +1,37 @@
+routes:
+- route: "/hello/shell"
+  exec:
+    shell:
+      command: "echo Hello $WC_NAME!"
+  responseStream: both
+  parameters:
+  - name: X-WC-NAME
+    source: header
+    as: WC_NAME
+    disableSanitization: true
+    # Disabling sanitization with shell is especially dangerous when compared to proc
+    # Placing this request shows how any code can be executed:
+    #   curl localhost:8080/hello/shell -H 'X-WC-NAME: bad user"; touch /tmp/test; export ATTACKED="true'
+    # With the shell executer the environment variables are loaded as 'export KEY="VALUE"' from the command line and this can be exploited here.
+    # Sanitization would normally remove " and ;
+    # By placing a single double-quote in the middle of our value, the variable value is terminated for bash and we can execute anything we want afterwards. 
+    # Starting another export (but without the closed double-quote) satisfies the bash syntax and thus our attack was completely hidden
+
+- route: "/hello/proc"
+  exec:
+    proc:
+      path: "/bin/bash"
+      args: ["-c", "echo Hello $WC_NAME!"]
+  responseStream: both
+  parameters:
+  - name: X-WC-NAME
+    source: header
+    as: WC_NAME
+    disableSanitization: true
+    # At least on linux systems disableSantization is not as bad for 'proc' compared to the 'shell' execution mode.
+    # The reason is that environment variables passed to processes are handled more securely compared to exporting their values in the shell
+
+- route: "/*"
+  exec:
+    shell:
+      command: "echo Use 'GET /hello/[shell|proc]' and provide input with the HTTP header 'X-WC-NAME' to play with command injection"

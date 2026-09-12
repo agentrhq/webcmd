@@ -1,0 +1,23 @@
+routes:
+- route: "/exit/{code}"
+  exec:
+    shell:
+      command: "echo STDOUT > /dev/stdout; echo STDERR > /dev/stderr; exit ${WC_CODE:=0}"
+  responseStream: none # set the default configuration for the status codes in this route
+  statusCodes:
+  - exitCode: 0
+    statusCode: 200
+    responseStream: stdout
+  - exitCode: 1
+    statusCode: 400
+    responseStream: stderr
+  - exitCode: 2
+    statusCode: 404
+    responseStream: both
+  - statusCode: 500
+    # catches all other exit codes and uses no response stream due to previous configuration
+    
+- route: "/*"
+  exec:
+    shell:
+      command: "echo Use 'GET /exit/{code}' to get different response streams"

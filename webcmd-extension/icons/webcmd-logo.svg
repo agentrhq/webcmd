@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="100mm"
+   height="100mm"
+   viewBox="0 0 100 100"
+   version="1.1"
+   id="svg5"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs id="defs2">
+    <linearGradient id="linearGradient6093" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop style="stop-color:#00f2fe;stop-opacity:1;" offset="0" />
+      <stop style="stop-color:#4facfe;stop-opacity:1;" offset="1" />
+    </linearGradient>
+    <radialGradient id="radialGradient6087" cx="50%" cy="50%" r="50%">
+      <stop style="stop-color:#0f172a;stop-opacity:1;" offset="0" />
+      <stop style="stop-color:#020617;stop-opacity:1;" offset="1" />
+    </radialGradient>
+  </defs>
+  <g id="layer1">
+    <rect
+       style="fill:url(#radialGradient6087);stroke:#00f2fe;stroke-width:2;"
+       id="rect307"
+       width="96"
+       height="96"
+       x="2"
+       y="2"
+       rx="18"
+       ry="18" />
+    <path
+       style="fill:url(#linearGradient6093);"
+       d="m 18,15 65,35 -65,35 2,-14 38,-21 -38,-21 z"
+       id="path388" />
+  </g>
+</svg>

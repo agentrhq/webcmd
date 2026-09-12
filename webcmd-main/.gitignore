@@ -1,0 +1,9 @@
+# golang
+__debug*
+
+# webcmd config
+webcmd*
+/*.conf
+
+# exceptions
+!*.svg
