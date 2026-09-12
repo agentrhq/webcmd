@@ -8,6 +8,15 @@ const fs = require('fs');
 const path = require('path');
 const { GroqService } = require('../services/groq');
 
+let CDPClient;
+try {
+  CDPClient = require('../../webcmd-browser-router/src/browser/cdp').CDPClient;
+} catch (_) {
+  try {
+    CDPClient = require('../browser/cdp').CDPClient;
+  } catch (_) {}
+}
+
 class CanvaPresentationAgent {
   constructor(options = {}) {
     this.options = {
@@ -51,15 +60,22 @@ class CanvaPresentationAgent {
 
     // 3. If headed or browser requested, launch Webcmd Browser Agent
     if (this.options.headed) {
-      this.log(`🚀 Launching Webcmd CDP Agent with profile "${this.options.profile}" & Anti-Bot Stealth...`);
-      this.cdp = new CDPClient({
-        headed: true,
-        profile: this.options.profile,
-        stealth: true,
-        viewport: { width: 1400, height: 900 }
-      });
+      if (CDPClient) {
+        this.log(`🚀 Launching Webcmd CDP Agent with profile "${this.options.profile}" & Anti-Bot Stealth...`);
+        this.cdp = new CDPClient({
+          headed: true,
+          profile: this.options.profile,
+          stealth: true,
+          viewport: { width: 1400, height: 900 }
+        });
+      } else {
+        this.cdp = null;
+      }
 
       try {
+        if (!this.cdp) {
+          throw new Error('CDPClient unavailable in standalone mode');
+        }
         await this.cdp.launch();
         const fileUri = `file://${deckFilePath.replace(/\\/g, '/')}`;
         const canvaSearchUrl = `https://www.canva.com/search?q=${encodeURIComponent(deckData.title + ' presentation')}`;
