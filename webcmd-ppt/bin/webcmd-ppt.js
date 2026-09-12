@@ -50,10 +50,10 @@ async function run() {
   });
 
   try {
-    const deckPath = await agent.buildPresentation(topic);
+    const result = await agent.buildPresentation(topic);
     console.log(`\n\x1b[32m✔ Presentation successfully synthesized!\x1b[0m`);
-    if (deckPath) {
-      console.log(`\x1b[36m📂 Deck file: ${deckPath}\x1b[0m\n`);
+    if (result && result.deckFilePath) {
+      console.log(`\x1b[36m📂 Deck file: ${result.deckFilePath}\x1b[0m\n`);
     }
   } catch (err) {
     console.error(`\x1b[31m✖ Synthesis failed: ${err.message}\x1b[0m`);
