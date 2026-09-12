@@ -1,4 +1,7 @@
+import fs from 'node:fs';
+import http from 'node:http';
 import path from 'node:path';
+import { exec } from 'node:child_process';
 import { WebsiteCloner } from '../cloner/cloner.js';
 import { convertCloneToReact } from '../cloner/react-converter.js';
 import { runVisualVerification } from '../cloner/visual-verifier.js';
@@ -133,6 +136,25 @@ export async function executeCloneCommand(cliUrl: string | undefined, options: C
         console.log(`[AI SKILL] Registered skill: design-${designRes.siteName.toLowerCase()}`);
       }
       console.log(`[DONE] Total assets: ${result.totalAssets}`);
+
+      if (options.open !== false && !options.noOpen) {
+        const port = parseInt(options.port || '3000', 10) || 3000;
+        const shouldServe = options.serve !== false && !options.noServe;
+        if (shouldServe) {
+          startPreviewServer(outputDir, port, (activePort) => {
+            const previewUrl = `http://localhost:${activePort}${
+              designSystem ? '/design-system/preview.html' : verify ? '/verify.html' : '/index.html'
+            }`;
+            console.log(`[PREVIEW] Server live at: ${previewUrl}`);
+            openInBrowser(previewUrl);
+          });
+        } else {
+          const previewTarget = designSystem
+            ? path.join(outputDir, 'design-system', 'preview.html')
+            : result.htmlPath;
+          openInBrowser(previewTarget);
+        }
+      }
     }
   } catch (err: any) {
     if (isJson) {
@@ -143,3 +165,76 @@ export async function executeCloneCommand(cliUrl: string | undefined, options: C
     process.exitCode = 1;
   }
 }
+
+function openInBrowser(target: string) {
+  const isWindows = process.platform === 'win32';
+  const isMac = process.platform === 'darwin';
+
+  if (isWindows) {
+    exec(`start "" "${target}"`, () => {});
+  } else if (isMac) {
+    exec(`open "${target}"`, () => {});
+  } else {
+    exec(`xdg-open "${target}"`, () => {});
+  }
+}
+
+function startPreviewServer(dir: string, initialPort: number, callback: (port: number) => void) {
+  const mimeTypes: Record<string, string> = {
+    '.html': 'text/html; charset=utf-8',
+    '.css': 'text/css; charset=utf-8',
+    '.js': 'text/javascript; charset=utf-8',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.svg': 'image/svg+xml',
+    '.ico': 'image/x-icon',
+    '.woff2': 'font/woff2',
+    '.woff': 'font/woff',
+    '.ttf': 'font/ttf',
+    '.json': 'application/json; charset=utf-8',
+  };
+
+  const server = http.createServer((req, res) => {
+    let reqPath = decodeURI(req.url || '/').split('?')[0];
+    if (reqPath === '/' || reqPath === '') reqPath = '/index.html';
+
+    const filePath = path.join(dir, reqPath);
+    if (!filePath.startsWith(path.resolve(dir))) {
+      res.writeHead(403);
+      res.end('Forbidden');
+      return;
+    }
+
+    fs.stat(filePath, (err, stats) => {
+      if (err || !stats.isFile()) {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('File Not Found');
+        return;
+      }
+
+      const ext = path.extname(filePath).toLowerCase();
+      const contentType = mimeTypes[ext] || 'application/octet-stream';
+      res.writeHead(200, {
+        'Content-Type': contentType,
+        'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+      });
+      fs.createReadStream(filePath).pipe(res);
+    });
+  });
+
+  server.listen(initialPort, () => {
+    callback(initialPort);
+  });
+
+  server.on('error', (err: any) => {
+    if (err.code === 'EADDRINUSE') {
+      const nextPort = initialPort + 1;
+      server.listen(nextPort, () => {
+        callback(nextPort);
+      });
+    }
+  });
+}
+
