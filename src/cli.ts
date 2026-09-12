@@ -42,7 +42,7 @@ import { buildExtractHtmlJs, runExtractFromHtml } from './browser/extract.js';
 import { analyzeSite, type PageSignals } from './browser/analyze.js';
 import { BROWSER_RUN_HELP_TEXT, browserOptionValueParser } from './browser/command-catalog.js';
 import { registerAuthCommands } from './commands/auth.js';
-import { daemonRestart, daemonStatus, daemonStop } from './commands/daemon.js';
+import { daemonRestart, daemonStart, daemonStatus, daemonStop } from './commands/daemon.js';
 import { enableVerbose, isVerbose, log } from './logger.js';
 import { BrowserCommandError, listExistingBrowserTabs, releaseSiteSessionLease, sendCommand } from './browser/daemon-client.js';
 import { fetchDaemonStatus } from './browser/daemon-transport.js';
@@ -2131,6 +2131,13 @@ cli({
     if (fmt === null) return;
     await daemonStatus({ fmt, fmtExplicit: outputFormatIsExplicit(daemonStatusCmd) });
   });
+  daemonCmd
+    .command('start')
+    .description('Start the daemon')
+    .action(async (_opts: unknown, command: Command) => {
+      await daemonStart();
+      await emitActionResult(command, { ok: !process.exitCode, action: 'start' }, () => undefined);
+    });
   daemonCmd
     .command('stop')
     .description('Stop the daemon')
