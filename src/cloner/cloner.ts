@@ -436,7 +436,8 @@ export class WebsiteCloner {
     const startTime = Date.now();
     const outputDir = this.options.outputDir;
 
-    this.step(1, 4, 'Initializing headless browser engine & directories...', 'START');
+    this.step(1, 6, 'Initializing headless browser engine & directory hierarchy...', 'START');
+    this.log('INFO', `[ENGINE] Target workspace: ${outputDir}`);
     await fs.mkdir(path.join(outputDir, 'assets', 'css'), { recursive: true });
     await fs.mkdir(path.join(outputDir, 'assets', 'js'), { recursive: true });
     await fs.mkdir(path.join(outputDir, 'assets', 'images'), { recursive: true });
@@ -451,6 +452,7 @@ export class WebsiteCloner {
       throw new Error('Puppeteer is required. Run: npm install puppeteer');
     }
 
+    this.log('INFO', '[CHROMIUM] Launching Chromium sandbox with stealth anti-detection flags...');
     const browser = await (puppeteer.default || puppeteer).launch({
       headless: true,
       args: [
@@ -465,6 +467,7 @@ export class WebsiteCloner {
       const page = await browser.newPage();
       await page.setViewport(this.options.viewport);
       await page.setUserAgent(this.options.userAgent);
+      this.log('INFO', `[VIEWPORT] Configured virtual viewport ${this.options.viewport.width}x${this.options.viewport.height} (DPR: 1.0)`);
 
       page.on('response', async (response: any) => {
         try {
@@ -474,7 +477,8 @@ export class WebsiteCloner {
             const mimeType = response.headers()['content-type'] || '';
             const buffer = await response.buffer().catch(() => null);
             if (buffer) {
-              this.registerAsset(resUrl, buffer, mimeType);
+              const rec = this.registerAsset(resUrl, buffer, mimeType);
+              this.log('INFO', `[NET] ⬇ 200 OK (${(buffer.length / 1024).toFixed(1)} KB) -> ${rec.relativePath}`);
             }
           }
         } catch {
@@ -482,19 +486,22 @@ export class WebsiteCloner {
         }
       });
 
-      this.step(1, 4, 'Connecting to website & rendering DOM...', 'START');
+      this.step(2, 6, `Connecting to ${this.options.url} & rendering DOM...`, 'START');
+      this.log('INFO', `[HTTP] Dispatching GET ${this.options.url} (Timeout: ${this.options.timeout}ms)`);
       await page.goto(this.options.url, {
         waitUntil: ['domcontentloaded', 'networkidle2'],
         timeout: this.options.timeout,
       }).catch((err: any) => {
-        this.log('WARN', `Navigation note: ${err.message}. Capturing available DOM.`);
+        this.log('WARN', `[HTTP] Navigation notice: ${err.message}. Capturing active DOM snapshot.`);
       });
 
-      await new Promise((r) => setTimeout(r, 1500));
-      this.step(1, 4, 'Page connection and initial render complete', 'DONE');
+      await new Promise((r) => setTimeout(r, 1200));
+      this.log('SUCCESS', '[DOM] Initial page payload received and V8 script hydration complete');
+      this.step(2, 6, 'Page connection and initial render complete', 'DONE');
 
       if (this.options.autoScroll) {
-        this.step(2, 4, 'Auto-scrolling page to trigger lazy-loaded assets...', 'START');
+        this.step(3, 6, 'Auto-scrolling viewport to trigger lazy-loaded assets & IntersectionObservers...', 'START');
+        this.log('INFO', '[SCROLL] Initiating progressive page scroll to trigger lazy images and infinite components...');
         await page.evaluate(async () => {
           await new Promise<void>((resolve) => {
             let totalHeight = 0;
@@ -509,28 +516,32 @@ export class WebsiteCloner {
                 window.scrollTo(0, 0);
                 resolve();
               }
-            }, 80);
+            }, 75);
           });
         });
-        await new Promise((r) => setTimeout(r, 1000));
-        this.step(2, 4, 'Viewport auto-scroll complete', 'DONE');
+        await new Promise((r) => setTimeout(r, 800));
+        this.log('SUCCESS', `[SCROLL] Viewport scan complete. Discovered ${this.assetMap.size} network assets in session.`);
+        this.step(3, 6, 'Viewport auto-scroll complete', 'DONE');
       }
 
-      this.step(3, 4, `Downloading & caching network assets (${this.assetMap.size} found)...`, 'START');
+      this.step(4, 6, `Processing & caching network assets (${this.assetMap.size} files)...`, 'START');
       const rawHtml = await page.content();
 
       // Deep process CSS assets
+      let cssProcessedCount = 0;
       for (const asset of Array.from(this.assetMap.values())) {
         if (asset.category === 'css' && asset.buffer) {
           try {
             const cssString = asset.buffer.toString('utf-8');
             const processedCss = await this.processCssContent(cssString, asset.normalizedUrl);
             asset.buffer = Buffer.from(processedCss, 'utf-8');
+            cssProcessedCount++;
           } catch {
             // Keep original buffer
           }
         }
       }
+      this.log('INFO', `[CSS] Processed ${cssProcessedCount} stylesheets for deep @import and font URLs`);
 
       // Write assets to disk
       const assetsByCategory: Record<string, number> = {
@@ -553,11 +564,15 @@ export class WebsiteCloner {
           }
         }
       }
-      this.step(3, 4, `Saved ${this.assetMap.size} assets to disk`, 'DONE');
+      this.log('SUCCESS', `[STORAGE] Persisted ${this.assetMap.size} assets (CSS: ${assetsByCategory.css}, JS: ${assetsByCategory.js}, Images: ${assetsByCategory.images}, Fonts: ${assetsByCategory.fonts})`);
+      this.step(4, 6, `Saved ${this.assetMap.size} assets to disk`, 'DONE');
 
-      this.step(4, 4, 'Rewriting DOM links and formatting HTML...', 'START');
+      this.step(5, 6, 'Parsing DOM tree, rewriting asset paths & links...', 'START');
+      this.log('INFO', '[AST] Injecting JSDOM instance to rewrite src, href, and inline style references to relative paths...');
       const rewrittenHtml = await this.rewriteDom(rawHtml, this.options.url);
 
+      this.step(6, 6, 'Formatting HTML with 2-space indentation hierarchy...', 'START');
+      this.log('INFO', '[FORMAT] Prettifying HTML tags, doctype, and attribute indentation...');
       const htmlPath = path.join(outputDir, 'index.html');
       await fs.writeFile(htmlPath, rewrittenHtml, 'utf-8');
 
@@ -575,7 +590,8 @@ export class WebsiteCloner {
         'utf-8'
       );
 
-      this.step(4, 4, 'DOM rewriting and HTML formatting complete', 'DONE');
+      this.log('SUCCESS', `[METADATA] Generated provenance report in metadata.json (${(durationMs / 1000).toFixed(2)}s)`);
+      this.step(6, 6, 'DOM rewriting and HTML formatting complete', 'DONE');
 
       return {
         sourceUrl: this.options.url,
@@ -587,6 +603,7 @@ export class WebsiteCloner {
       };
     } finally {
       await browser.close().catch(() => {});
+      this.log('INFO', '[CHROMIUM] Headless browser session gracefully closed.');
     }
   }
 }

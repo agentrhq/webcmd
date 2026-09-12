@@ -216,12 +216,16 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
         outputDir,
         autoScroll: true,
         formatHtml: true,
+        onLog: (level, message) => {
+          const prefix = level === 'SUCCESS' ? '✔ ' : level === 'WARN' ? '⚠ ' : level === 'ERROR' ? '✖ ' : '◈ ';
+          setAssetStreamLog((prev) => [`${prefix}${message}`, ...prev.slice(0, 7)]);
+        },
         onStep: (step, total, message, status) => {
           if (status === 'START') {
             setStepMessage(message);
             setAssetStreamLog((prev) => [
               `▶ [STAGE ${step}/${total}] ${message}`,
-              ...prev.slice(0, 4),
+              ...prev.slice(0, 7),
             ]);
           } else if (status === 'DONE') {
             setCompletedSteps((prev) => [
@@ -488,15 +492,39 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
             )}
 
             {/* Live Stream Terminal Ticker */}
-            <Box flexDirection="column" marginTop={1} borderStyle="single" borderColor="blue" paddingX={1}>
-              <Text bold color="blueBright">
-                STREAM TELEMETRY // REAL-TIME LOG:
-              </Text>
-              {assetStreamLog.slice(0, 3).map((line, idx) => (
-                <Text key={idx} color={idx === 0 ? 'cyan' : 'gray'} dimColor={idx !== 0}>
-                  {line}
+            <Box flexDirection="column" marginTop={1} borderStyle="single" borderColor="cyan" paddingX={1} paddingY={0}>
+              <Box justifyContent="space-between">
+                <Text bold color="cyanBright">
+                  STREAM TELEMETRY // REAL-TIME ACTIVITY LOG:
                 </Text>
-              ))}
+                <Text dimColor color="gray">
+                  [6 CHANNELS]
+                </Text>
+              </Box>
+              {assetStreamLog.slice(0, 6).map((line, idx) => {
+                let lineColor = 'gray';
+                let isBold = false;
+                if (line.startsWith('✔') || line.includes('[SUCCESS]')) {
+                  lineColor = 'greenBright';
+                  isBold = true;
+                } else if (line.startsWith('▶') || line.startsWith('◈ [CHROMIUM]')) {
+                  lineColor = 'cyanBright';
+                  isBold = true;
+                } else if (line.includes('[NET]') || line.includes('⬇')) {
+                  lineColor = 'yellow';
+                } else if (line.includes('[REACT]') || line.includes('[DESIGN]') || line.includes('⚛') || line.includes('⚙')) {
+                  lineColor = 'magentaBright';
+                  isBold = true;
+                } else if (idx === 0) {
+                  lineColor = 'white';
+                  isBold = true;
+                }
+                return (
+                  <Text key={idx} color={lineColor as any} bold={isBold} dimColor={idx > 3}>
+                    {line}
+                  </Text>
+                );
+              })}
             </Box>
           </Box>
         </Box>
