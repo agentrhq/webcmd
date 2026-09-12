@@ -8,6 +8,7 @@ import { WebsiteCloner } from '../cloner.js';
 import { convertCloneToReact } from '../react-converter.js';
 import { runVisualVerification } from '../visual-verifier.js';
 import { createZipArchive } from '../zip-bundler.js';
+import { extractDesignSystem } from '../design-system-extractor.js';
 import http from 'node:http';
 import fs from 'node:fs';
 import { exec } from 'node:child_process';
@@ -92,6 +93,7 @@ export interface ClonerAppProps {
     toReact?: boolean;
     verify?: boolean;
     zip?: boolean;
+    designSystem?: boolean;
     serve?: boolean;
     port?: number;
   };
@@ -103,7 +105,7 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
   const [stage, setStage] = useState<WizardStage>(initialUrl ? 'CONFIRM' : 'URL_INPUT');
   const [url, setUrl] = useState<string>(initialUrl || '');
   const [outputDir, setOutputDir] = useState<string>(initialOptions?.output || '');
-  const [mode, setMode] = useState<'standard' | 'react' | 'verify' | 'zip' | 'all'>('standard');
+  const [mode, setMode] = useState<'standard' | 'react' | 'verify' | 'design' | 'zip' | 'all'>('standard');
   const [serve] = useState<boolean>(initialOptions?.serve !== false);
   const [port] = useState<number>(initialOptions?.port || 3000);
   const [serverActivePort, setServerActivePort] = useState<number | null>(null);
@@ -142,15 +144,16 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
   };
 
   const modeItems = [
-    { label: '⚡ Standard Full Clone  - Prettified HTML + All Assets', value: 'standard' },
-    { label: '⚛️  React + Tailwind     - Decompose to JSX/TSX Components', value: 'react' },
-    { label: '🔬 Visual Diff Slider   - Side-by-side Fidelity Inspector', value: 'verify' },
-    { label: '📦 Portable ZIP Bundle  - Auto-compress output to .zip', value: 'zip' },
-    { label: '🚀 All-in-One Superpower - React + Diff + ZIP + Preview', value: 'all' },
+    { label: '🎨 Design System & AI Skill - Extract Palette, Typography & AI Prompt Skill', value: 'design' },
+    { label: '⚛️  React + Tailwind        - Decompose to Modular TSX Components', value: 'react' },
+    { label: '🔬 Visual Diff Slider      - Side-by-side Pixel Fidelity Inspector', value: 'verify' },
+    { label: '⚡ Standard Full Clone     - Prettified HTML + All Assets', value: 'standard' },
+    { label: '📦 Portable ZIP Bundle     - Auto-compress output to .zip', value: 'zip' },
+    { label: '🚀 All-in-One Superpower    - Design System + React + Diff + ZIP', value: 'all' },
   ];
 
   const handleModeSelect = (item: { value: string }) => {
-    const selected = item.value as 'standard' | 'react' | 'verify' | 'zip' | 'all';
+    const selected = item.value as 'standard' | 'react' | 'verify' | 'design' | 'zip' | 'all';
     setMode(selected);
     setStage('CONFIRM');
   };
@@ -160,9 +163,10 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
 
     const toReact = mode === 'react' || mode === 'all' || Boolean(initialOptions?.toReact);
     const verify = mode === 'verify' || mode === 'all' || Boolean(initialOptions?.verify);
+    const design = mode === 'design' || mode === 'all' || Boolean(initialOptions?.designSystem);
     const zip = mode === 'zip' || mode === 'all' || Boolean(initialOptions?.zip);
 
-    const stepsCount = 4 + (toReact ? 1 : 0) + (verify ? 1 : 0) + (zip ? 1 : 0);
+    const stepsCount = 4 + (toReact ? 1 : 0) + (verify ? 1 : 0) + (design ? 1 : 0) + (zip ? 1 : 0);
     setTotalSteps(stepsCount);
     setCurrentStepIndex(1);
 
@@ -183,6 +187,17 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
       });
 
       const cloneRes = await cloner.clone();
+
+      let designRes: any = null;
+      if (design) {
+        setStepMessage('Extracting Design Tokens, Color Palette, Typography & AI Skill...');
+        designRes = await extractDesignSystem(outputDir, url);
+        setCompletedSteps((prev: string[]) => [
+          ...prev,
+          `Extracted ${designRes.colors.length} color tokens & generated AI design skill (design-${designRes.siteName.toLowerCase()})`,
+        ]);
+        setCurrentStepIndex((prev: number) => prev + 1);
+      }
 
       let reactRes: any = null;
       if (toReact) {
@@ -212,6 +227,7 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
 
       setResultData({
         ...cloneRes,
+        designSystem: designRes,
         react: reactRes,
         verification: diffRes,
         zip: zipPath,
@@ -220,11 +236,16 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
       if (serve) {
         startPreviewServer(outputDir, port, (activePort) => {
           setServerActivePort(activePort);
-          const previewUrl = `http://localhost:${activePort}${verify ? '/verify.html' : '/index.html'}`;
+          const previewUrl = `http://localhost:${activePort}${
+            design ? '/design-system/preview.html' : verify ? '/verify.html' : '/index.html'
+          }`;
           openInBrowser(previewUrl);
         });
       } else {
-        openInBrowser(cloneRes.htmlPath);
+        const previewTarget = design
+          ? path.join(outputDir, 'design-system', 'preview.html')
+          : cloneRes.htmlPath;
+        openInBrowser(previewTarget);
       }
 
       setStage('DONE');
@@ -248,7 +269,7 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
           WEBCMD UNIVERSAL SITE CLONER & REVERSE-ENGINEERING STUDIO
         </Text>
         <Text dimColor color="gray">
-          Stealth Engine: Active  |  Full SPA Hydration  |  React & Tailwind Synthesizer
+          Stealth Engine: Active  |  Design System Extractor  |  React & Tailwind Synthesizer
         </Text>
       </Box>
 
@@ -279,7 +300,7 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
       {stage === 'MODE_SELECT' && (
         <Box flexDirection="column" marginTop={1} borderStyle="single" borderColor="magenta" padding={1}>
           <Text bold color="magentaBright">
-            Select Cloning Mode for {url}:
+            Select Cloning & Analysis Mode for {url}:
           </Text>
           <Box marginTop={1} flexDirection="column">
             <SelectInput items={modeItems} onSelect={handleModeSelect} />
@@ -294,15 +315,15 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
             Ready to Clone:
           </Text>
           <Box flexDirection="column" marginTop={1}>
-            <Text>  <Text bold color="white">Target URL   :</Text> <Text color="cyan">{url}</Text></Text>
-            <Text>  <Text bold color="white">Destination  :</Text> <Text color="gray">{outputDir}</Text></Text>
-            <Text>  <Text bold color="white">Mode         :</Text> <Text color="yellow">{mode.toUpperCase()}</Text></Text>
-            <Text>  <Text bold color="white">Local Preview:</Text> <Text color="green">{serve ? `Enabled (Port ${port})` : 'Disabled'}</Text></Text>
+            <Text>  <Text bold color="white">Target URL    :</Text> <Text color="cyan">{url}</Text></Text>
+            <Text>  <Text bold color="white">Destination   :</Text> <Text color="gray">{outputDir}</Text></Text>
+            <Text>  <Text bold color="white">Mode          :</Text> <Text color="yellow">{mode.toUpperCase()}</Text></Text>
+            <Text>  <Text bold color="white">Local Preview :</Text> <Text color="green">{serve ? `Enabled (Port ${port})` : 'Disabled'}</Text></Text>
           </Box>
           <Box marginTop={1}>
             <SelectInput
               items={[
-                { label: '🚀 Start Cloning Now', value: 'start' },
+                { label: '🚀 Start Cloning & Analysis', value: 'start' },
                 { label: '❌ Cancel & Exit', value: 'cancel' },
               ]}
               onSelect={(item) => {
@@ -340,7 +361,7 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
       {stage === 'DONE' && resultData && (
         <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor="green" padding={1}>
           <Text bold color="greenBright">
-            🎉 CLONE COMPLETED SUCCESSFULLY!
+            🎉 CLONE & DESIGN EXTRACTION COMPLETED!
           </Text>
           <Box flexDirection="column" marginTop={1}>
             <Text>  <Text bold color="white">Source URL    :</Text> <Text color="cyan">{resultData.sourceUrl}</Text></Text>
@@ -348,6 +369,18 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
             <Text>  <Text bold color="white">Entrypoint    :</Text> <Text color="yellow">{resultData.htmlPath}</Text></Text>
             <Text>  <Text bold color="white">Duration      :</Text> <Text color="green">{(resultData.durationMs / 1000).toFixed(2)}s</Text></Text>
             <Text>  <Text bold color="white">Total Assets  :</Text> <Text color="cyan">{resultData.totalAssets} files</Text></Text>
+
+            {resultData.designSystem && (
+              <Box flexDirection="column" marginTop={1} borderStyle="single" borderColor="magenta" paddingX={1}>
+                <Text bold color="magentaBright">🎨 Extracted Design System & AI Skill:</Text>
+                <Text>  • <Text bold color="white">Tokens JSON     :</Text> <Text color="gray">./design-system/tokens.json</Text></Text>
+                <Text>  • <Text bold color="white">Tailwind Theme  :</Text> <Text color="gray">./design-system/tailwind.theme.js</Text></Text>
+                <Text>  • <Text bold color="white">Style Guide     :</Text> <Text color="gray">./design-system/DesignSystem.md</Text></Text>
+                <Text>  • <Text bold color="white">Showcase Story  :</Text> <Text color="cyan">./design-system/preview.html</Text></Text>
+                <Text>  • <Text bold color="white">Agent Skill     :</Text> <Text color="yellow">.agents/skills/design-{resultData.designSystem.siteName.toLowerCase()}/SKILL.md</Text></Text>
+              </Box>
+            )}
+
             {resultData.react && (
               <Text>  <Text bold color="white">React (TSX)   :</Text> <Text color="magenta">{resultData.react.outputDir} ({resultData.react.components.length} components)</Text></Text>
             )}
@@ -362,14 +395,14 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
           {serverActivePort && (
             <Box marginTop={1} borderStyle="single" borderColor="cyan" paddingX={1}>
               <Text color="cyanBright" bold>
-                🌐 Local Preview Server: http://localhost:{serverActivePort}
+                🌐 Interactive Preview Server: http://localhost:{serverActivePort}
               </Text>
             </Box>
           )}
 
           <Box marginTop={1}>
             <Text dimColor color="gray">
-              Preview opened automatically in your default browser. Press Ctrl+C to exit.
+              Showcase opened automatically in your default browser. Press Ctrl+C to exit.
             </Text>
           </Box>
         </Box>

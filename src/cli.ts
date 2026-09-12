@@ -2254,6 +2254,7 @@ cli({
     .option('-t, --timeout <ms>', 'Navigation timeout in milliseconds', '45000')
     .option('--no-scroll', 'Disable automatic scrolling')
     .option('--no-scripts', 'Exclude dynamic script tags')
+    .option('--design-system', 'Extract Color Palette, Typography & AI Design Prompt Skill')
     .option('--to-react', 'Decompose cloned site into React + Tailwind components')
     .option('--verify', 'Generate pixel-perfect visual diff comparison and slider')
     .option('--zip', 'Package cloned site into a portable ZIP archive')

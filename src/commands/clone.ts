@@ -3,6 +3,7 @@ import { WebsiteCloner } from '../cloner/cloner.js';
 import { convertCloneToReact } from '../cloner/react-converter.js';
 import { runVisualVerification } from '../cloner/visual-verifier.js';
 import { createZipArchive } from '../cloner/zip-bundler.js';
+import { extractDesignSystem } from '../cloner/design-system-extractor.js';
 import { startInkCloner } from '../cloner/ui/index.js';
 
 export interface CloneCommandOptions {
@@ -20,21 +21,48 @@ export interface CloneCommandOptions {
   toReact?: boolean;
   verify?: boolean;
   zip?: boolean;
+  designSystem?: boolean;
   ui?: boolean;
   noUi?: boolean;
 }
 
 export async function executeCloneCommand(cliUrl: string | undefined, options: CloneCommandOptions) {
+  let targetUrl = cliUrl?.trim();
+  let toReact = Boolean(options.toReact);
+  let verify = Boolean(options.verify);
+  let zip = Boolean(options.zip);
+  let designSystem = Boolean(options.designSystem);
+
+  // Parse slash commands passed as first argument
+  if (targetUrl) {
+    if (targetUrl.startsWith('/design')) {
+      designSystem = true;
+      targetUrl = targetUrl.replace('/design', '').trim();
+    } else if (targetUrl.startsWith('/react')) {
+      toReact = true;
+      targetUrl = targetUrl.replace('/react', '').trim();
+    } else if (targetUrl.startsWith('/diff') || targetUrl.startsWith('/verify')) {
+      verify = true;
+      targetUrl = targetUrl.replace(/\/diff|\/verify/, '').trim();
+    } else if (targetUrl.startsWith('/zip')) {
+      zip = true;
+      targetUrl = targetUrl.replace('/zip', '').trim();
+    } else if (targetUrl.startsWith('/clone')) {
+      targetUrl = targetUrl.replace('/clone', '').trim();
+    }
+  }
+
   const isJson = Boolean(options.json) || options.format === 'json';
   const forceNoUi = Boolean(options.noUi) || isJson;
 
   // If running interactively or requested UI, launch Ink React Terminal UI
-  if (!forceNoUi && (!cliUrl || options.ui || process.stdin.isTTY)) {
-    startInkCloner(cliUrl, {
+  if (!forceNoUi && (!targetUrl || options.ui || process.stdin.isTTY)) {
+    startInkCloner(targetUrl, {
       output: options.output,
-      toReact: options.toReact,
-      verify: options.verify,
-      zip: options.zip,
+      toReact,
+      verify,
+      zip,
+      designSystem,
       serve: options.serve !== false && !options.noServe,
       port: parseInt(options.port || '3000', 10) || 3000,
     });
@@ -43,7 +71,6 @@ export async function executeCloneCommand(cliUrl: string | undefined, options: C
 
   // Headless / Non-TTY / JSON Scripted Mode
   try {
-    let targetUrl = cliUrl?.trim();
     if (!targetUrl) {
       console.error('[ERROR] Target URL is required.');
       process.exitCode = 1;
@@ -71,25 +98,40 @@ export async function executeCloneCommand(cliUrl: string | undefined, options: C
 
     const result = await cloner.clone();
 
+    let designRes: any = null;
+    if (designSystem) {
+      designRes = await extractDesignSystem(outputDir, targetUrl);
+    }
+
     let reactRes: any = null;
-    if (options.toReact) {
+    if (toReact) {
       reactRes = await convertCloneToReact(outputDir);
     }
 
     let diffRes: any = null;
-    if (options.verify) {
+    if (verify) {
       diffRes = await runVisualVerification(targetUrl, result.htmlPath, outputDir);
     }
 
     let zipPath: string | null = null;
-    if (options.zip) {
+    if (zip) {
       zipPath = await createZipArchive(outputDir, `${outputDir}.zip`);
     }
 
     if (isJson) {
-      console.log(JSON.stringify({ ...result, react: reactRes, verification: diffRes, zip: zipPath }, null, 2));
+      console.log(
+        JSON.stringify(
+          { ...result, designSystem: designRes, react: reactRes, verification: diffRes, zip: zipPath },
+          null,
+          2
+        )
+      );
     } else {
       console.log(`[DONE] Cloned to: ${outputDir}`);
+      if (designRes) {
+        console.log(`[DESIGN SYSTEM] Extracted tokens to: ${designRes.outputDir}`);
+        console.log(`[AI SKILL] Registered skill: design-${designRes.siteName.toLowerCase()}`);
+      }
       console.log(`[DONE] Total assets: ${result.totalAssets}`);
     }
   } catch (err: any) {
