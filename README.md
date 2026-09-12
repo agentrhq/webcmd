@@ -1,160 +1,38 @@
-<img width="1280" height="640" alt="Webcmd — stop paying agents to rediscover the web" src="docs/readme-hero-v2.png" />
+# DealPulse v2.0
+
+**Autonomous Shopping & Market Spread Analyzer**
+
+DealPulse is a web intelligence application designed to help users "Search once. Uncover the true market spread". The tool extracts verified product listings across various retail channels such as Amazon, Flipkart, and Croma, providing instant arbitrage analytics with zero API walls.
+
+The system utilizes `webcmd` to fetch live search results and parses the data to extract pricing in Indian Rupees (₹, Rs., INR). To ensure accuracy, the analysis engine automatically filters out irrelevant accessories by rejecting listings that contain keywords like "case only", "cover", "cushion", or "earpad".
+
+## Dashboard Interface
+
+The modern web dashboard is hosted locally on `localhost:8080`. When a product query (e.g., "Iphone 16") is executed via the "Scan Deals" button, the UI presents key metrics:
+
+* **Lowest Price (Optimal):** Highlights the best available deal on the market.
+* **Peak Store Price (Market High):** Displays the highest recorded price among the analyzed retailers.
+* **Total Savings (Spread):** Calculates the potential savings across the verified sources.
+* **Actionable Checkout:** A dedicated section displays the verified cheapest listing with a direct "Go to Store" button.
+
+## Project Structure & File Overview
+
+* **`server.js`**: The primary Node.js/Express backend running on port 8080. It serves the static frontend from the `public` directory and exposes a `/api/analyze` POST endpoint. This endpoint executes the `webcmd` fetch command against DuckDuckGo, parses the HTML with Cheerio, filters the results, and returns the highest/lowest pricing data as JSON.
 
 
-<p align="center">
-  <a href="https://www.npmjs.com/package/@agentrhq/webcmd">
-    <img alt="NPM version" src="https://img.shields.io/npm/v/@agentrhq/webcmd.svg?style=for-the-badge&color=1E88E5&labelColor=000000">
-  </a>
-  <a href="https://webcmd.dev/docs">
-    <img alt="Documentation" src="https://img.shields.io/badge/docs-webcmd.dev-7C3AED.svg?style=for-the-badge&labelColor=000000">
-  </a>
-  <a href="https://github.com/agentrhq/webcmd/blob/main/LICENSE">
-    <img alt="License" src="https://img.shields.io/badge/license-Apache%202.0-1E88E5.svg?style=for-the-badge&labelColor=000000">
-  </a>
-  <a href="https://discord.gg/9YP2C9tvMp">
-    <img alt="Join the community on Discord" src="https://img.shields.io/badge/Join%20the%20community-5865F2.svg?style=for-the-badge&logo=discord&logoColor=white&labelColor=000000&logoWidth=20">
-  </a>
-  <a href="https://x.com/agentrhq">
-    <img alt="Follow AgentR on X" src="https://img.shields.io/badge/Built%20by%20%40agentrhq-000000.svg?style=for-the-badge&logo=x&logoColor=white&labelColor=000000&logoWidth=20">
-  </a>
-</p>
+* **`analyzer.js`**: A command-line interface (CLI) script that performs the same DuckDuckGo scraping, parsing, and accessory-filtering logic as the backend. It outputs a formatted "Pricing Analysis Report" directly to the console.
 
-# Webcmd
 
-**Self-learning browser infra for AI agents.**
+* **`scrapers.js`**: Contains a `getAggregatorScraper` string designed to be evaluated within a browser automation context. It navigates to Google Shopping, handles cookie consent banners, and parses the dynamic DOM to extract product titles, prices, and links.
 
-Webcmd learns the navigational context of websites as agents use them, then
-turns that knowledge into local memory for faster, cheaper, more reliable
-browser automation. The goal is simple: stop making agents rediscover the same
-sites on every run and cut browser-agent token spend by up to 90%.
 
-Webcmd pairs live browser control with a self-learning memory layer:
+* **`test-server.js`**: A minimal Express application running on port 8080. It serves a simple `<h1>` tag stating "DealPulse Server is Running!" to verify port availability.
 
-| Layer | Scenario | What Webcmd Helps With |
-| --- | --- | --- |
-| 0. Live browser control | The site is unfamiliar. | Use `webcmd browser` to inspect, click, type, extract, capture network calls, and complete the task in a real browser. |
-| 1. Sitemap memory | The site is familiar, but the action space is not fully known. | Capture an agent-facing sitemap of observed pages, states, actions, workflows, APIs, pitfalls, and fallback paths. |
 
-## Demo
+* **`debug.html`**: A raw HTML dump file containing the response from a Google Shopping search query. It currently shows a redirect/bot-verification page indicating that JavaScript execution is required to proceed.
 
-https://github.com/user-attachments/assets/bdb65307-9e2a-4d58-9175-45d59528ae37
 
-## Quick Start
+* **`package.json` & `package-lock.json**`: Define the Node.js project (named `shopping-analyzer`), specify the ES module type, and lock the dependency versions for `cheerio` and `express`.
 
-### Agent prompt
 
-```text
-Fetch and follow https://raw.githubusercontent.com/agentrhq/webcmd/main/start.md to set up Webcmd end to end.
-```
-
-### Manual
-
-Webcmd requires Node.js 20.6+.
-
-```bash
-npm install -g @agentrhq/webcmd
-webcmd skills add
-```
-
-When prompted, choose Claude, Codex, another supported harness, or a custom
-skills path. That installs exactly one skill, `webcmd-browser`.
-
-Load or tag `webcmd-browser` only for live browser work, then describe the
-outcome you want. Installation and setup commands do not require that skill.
-
-```text
-Use webcmd to research the latest discussions about browser automation across Hacker News and Reddit, then return a concise comparison with source links.
-```
-
-## What You Can Ask
-
-- “Use webcmd to research agentic browser automation on PubMed and return the title, authors, publication date, abstract, and URL for each result.”
-- “Use webcmd to find active AI infrastructure companies in the YC company directory and return the company, batch, description, location, profile URL, and source links. Keep it read-only.”
-- “Use webcmd to look up parts on Grainger by part number and return price, stock, minimum order quantity, lead time, and product URL.”
-- “Use webcmd with my logged-in `work` profile to summarize unread LinkedIn messages from the last seven days and return the sender, subject or opening text, received time, and conversation URL.”
-- “Use webcmd to check Grainger part prices and SAP Ariba purchase-order status, then return a combined summary.”
-
-## See It in Action
-
-```text
-Use webcmd with my logged-in `social` profile to collect my recent X bookmarks and return the author, text, and URL.
-```
-
-The agent uses the logged-in profile to complete the task in a real browser.
-Along the way, Webcmd quietly retains useful navigation context so later agents
-can avoid repeating the same exploration.
-
-## Where Webcmd Works
-
-Webcmd can work through authenticated browser sessions across research, social,
-AI, shopping, and booking products.
-
-| Group | Supported surfaces | Representative outcomes |
-| --- | --- | --- |
-| research and communities | Hacker News, Reddit, PubMed | Compare current discussions, find primary research, and return concise summaries with source links. |
-| social and professional | X/Twitter, LinkedIn, TikTok | Collect bookmarks, monitor public posts, or research people and creators with a named profile when needed. |
-| AI tools | ChatGPT, Claude, Gemini, NotebookLM | Retrieve conversations, research outputs, notebooks, and generated materials from the tools you already use. |
-| shopping and bookings | Amazon, Blinkit, Zepto, BigBasket, District, Practo | Compare products, availability, prices, appointments, events, and delivery options. |
-
-This list is illustrative. Webcmd can operate other websites through the same
-live browser workflow.
-
-## How Self-Learning Works
-
-<img width="1672" height="941" alt="How Webcmd learns: load memory, use the live web, keep useful learnings, and help the next agent" src="docs/readme-self-learning.png" />
-
-Learning stays quiet and selective: the live browser is always truth, Webcmd
-never explores just to learn, and a memory failure never blocks the task. First
-access may use a Webcmd Cloud seed; subsequent learning stays local.
-
-For local, multi-step browser exploration, agents can send one sandboxed
-Playwright-style program to an explicit browser session:
-
-```bash
-webcmd --profile work session create "Work Project" -f json
-# id: work-project-k7
-webcmd --profile work --session work-project-k7 browser tabs
-webcmd --profile work --session work-project-k7 browser run --file explore.js
-printf 'return await page.title();' \
-  | webcmd --profile work --session work-project-k7 browser run --stdin
-webcmd --profile work session close work-project-k7
-```
-
-Profiles are cookie jars; Sessions are independent browser windows within a
-profile, so Session IDs are immutable, Profile-scoped, and safe to reuse for
-that Session's lifetime. Parallel agents should create separate Sessions.
-Raw browser commands require an explicit readable Session ID.
-
-## Benchmarks
-
-On [BU Bench V1](https://github.com/browser-use/benchmark#bu-bench-v1), a
-100-task browser automation benchmark, Webcmd recorded the highest accuracy and
-lowest estimated controller cost per completed task, and fewest agent turns per
-completed task in this comparison.
-
-![BU Bench V1 comparison: webcmd leads accuracy at 67%, cost per completed task at $0.255, and agent turns per completed task at 9.8](./benchmarks/charts/bu-bench-readme.svg)
-
-All tools used the same Pi controller, controller model, Codex `gpt-5.4` judge,
-and CloakBrowser engine. This is a stronger judge than the original BU Bench
-setup, whose [current runner uses Gemini 2.5 Flash](https://github.com/browser-use/benchmark/blob/main/run_eval.py#L37-L38).
-Accuracy is passed tasks out of 100. Cost and agent turns are averaged over
-completed tasks; cost excludes judge usage. See the
-[benchmark report](./benchmarks/README.md) for category results, methodology,
-architectural analysis, and reproduction steps.
-
-## Learn More
-
-Webcmd Cloud can run supported commands and browser sessions on hosted infrastructure. It is in active development and is not yet stable.
-
-- [Prompt Cookbook](https://webcmd.dev/docs/agent-prompts)
-- [How Webcmd Works](https://webcmd.dev/docs/concepts)
-- [Local or Cloud](https://webcmd.dev/docs/local-or-cloud)
-- [Command Surface](https://webcmd.dev/docs/cli-reference)
-
-## Contributing
-
-See [CONTRIBUTING.md](./CONTRIBUTING.md).
-
-## License
-
-Released under the terms in [`LICENSE`](./LICENSE).
+* **`.gitignore`**: Specifies files and directories that Git should not track, such as the `node_modules/` directory, `debug.html`, and `package-lock.json`.
