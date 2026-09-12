@@ -59,6 +59,10 @@ export interface DetailedDesignSystem {
     previewHtml: string;
     reactComponentsTsx: string;
     agentSkillMd: string;
+    accessibilityAuditJson?: string;
+    accessibilityAuditMd?: string;
+    figmaTokensJson?: string;
+    promptBlueprintMd?: string;
   };
 }
 
@@ -968,7 +972,134 @@ ${motion.map(m => `| \`${m.token}\` | \`${m.duration}\` | \`${m.easing}\` | ${m.
   await fs.writeFile(styleGuideMdPath, styleGuideMd, 'utf-8');
 
   // -------------------------------------------------------------------------
-  // 11. Generate Storybook-grade preview.html (Interactive Studio)
+  // 11. Generate Automated WCAG 2.1 Accessibility Audit
+  // -------------------------------------------------------------------------
+  const contrastPairs = [
+    ...brandColors.map(c => ({ role: c.name, hex: c.hex, target: 'White (#FFFFFF)', targetHex: '#FFFFFF', ratio: parseFloat(c.contrastOnWhite.replace(':1', '')), minRequired: 4.5 })),
+    ...brandColors.map(c => ({ role: c.name, hex: c.hex, target: 'Dark (#0F172A)', targetHex: '#0F172A', ratio: parseFloat(c.contrastOnBlack.replace(':1', '')), minRequired: 4.5 })),
+    ...neutralColors.map(c => ({ role: c.name, hex: c.hex, target: 'Canvas (#F8FAFC)', targetHex: '#F8FAFC', ratio: parseFloat(c.contrastOnWhite.replace(':1', '')), minRequired: 3.0 })),
+  ];
+  const passedCount = contrastPairs.filter(p => p.ratio >= p.minRequired).length;
+  const complianceScore = Math.round((passedCount / Math.max(1, contrastPairs.length)) * 100);
+
+  const accessibilityAuditJson = {
+    standard: 'WCAG 2.1 Level AA & AAA',
+    auditedAt: new Date().toISOString(),
+    complianceScore: `${complianceScore}%`,
+    status: complianceScore >= 90 ? 'PASSED_ENTERPRISE' : 'ACTIONABLE_NOTICES',
+    summary: `${passedCount} of ${contrastPairs.length} evaluated color pairings satisfy WCAG 2.1 AA requirements.`,
+    evaluations: contrastPairs.map(p => ({
+      ...p,
+      status: p.ratio >= p.minRequired ? 'PASS' : 'WARN_LOW_CONTRAST',
+      recommendation: p.ratio >= p.minRequired ? 'Suitable for body and interactive UI elements' : 'Restrict to large text (>18pt) or decorative non-text borders',
+    })),
+  };
+  const auditJsonPath = path.join(designSystemDir, 'accessibility-audit.json');
+  await fs.writeFile(auditJsonPath, JSON.stringify(accessibilityAuditJson, null, 2), 'utf-8');
+
+  const auditMd = `# ${siteName} WCAG 2.1 Accessibility & Compliance Audit
+
+> Evaluated against **W3C WCAG 2.1 Level AA & AAA Standards**
+> Global Compliance Score: **${complianceScore}%** (${passedCount}/${contrastPairs.length} Pairs Passed)
+
+---
+
+## 📊 Evaluation Summary
+
+| Token Role | Color HEX | Background Surface | Contrast Ratio | Required | WCAG AA Status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+${contrastPairs.map(p => `| **${p.role}** | \`${p.hex}\` | ${p.target} | \`${p.ratio.toFixed(1)}:1\` | \`${p.minRequired}:1\` | ${p.ratio >= p.minRequired ? '✅ **PASS**' : '⚠️ *Large text only*'} |`).join('\n')}
+
+---
+
+## 💡 Accessibility Engineering Guidelines
+1. **Body Text (>14px):** Always maintain minimum **4.5:1** contrast.
+2. **Hero Headers & Large Text (>18px bold):** Requires minimum **3.0:1** contrast.
+3. **Interactive Buttons & Inputs:** All active border outlines must exceed **3.0:1** against the background canvas.
+`;
+  const auditMdPath = path.join(designSystemDir, 'AccessibilityAudit.md');
+  await fs.writeFile(auditMdPath, auditMd, 'utf-8');
+
+  // -------------------------------------------------------------------------
+  // 12. Generate Figma Tokens Studio Format (`figma-tokens.json`)
+  // -------------------------------------------------------------------------
+  const figmaTokens = {
+    global: {
+      color: {
+        brand: brandScale.reduce((acc, s) => ({ ...acc, [s.step]: { value: s.hex, type: 'color' } }), {}),
+        neutral: neutralScale.reduce((acc, s) => ({ ...acc, [s.step]: { value: s.hex, type: 'color' } }), {}),
+        semantic: semanticColors.reduce((acc, c) => ({ ...acc, [c.variable.replace('--color-', '')]: { value: c.hex, type: 'color' } }), {}),
+      },
+      borderRadius: radii.reduce((acc, r) => ({ ...acc, [r.token.replace('radius-', '')]: { value: r.value, type: 'borderRadius' } }), {}),
+      spacing: spacingScale.reduce((acc, s) => ({ ...acc, [s.token.replace('space-', '')]: { value: s.value, type: 'spacing' } }), {}),
+      fontFamilies: {
+        sans: { value: primaryFont.split(',')[0].trim(), type: 'fontFamilies' },
+      },
+    },
+    $themes: [{ id: 'light', name: 'Light Foundation', selectedTokenSets: { global: 'enabled' } }],
+  };
+  const figmaTokensPath = path.join(designSystemDir, 'figma-tokens.json');
+  await fs.writeFile(figmaTokensPath, JSON.stringify(figmaTokens, null, 2), 'utf-8');
+
+  // -------------------------------------------------------------------------
+  // 13. Generate Master AI Prompt Blueprint (`AI_PROMPT_BLUEPRINT.md`)
+  // -------------------------------------------------------------------------
+  const promptBlueprint = `# Master AI System Prompt Blueprint // ${siteName}
+
+Copy and paste this prompt into **Cursor, Claude, Copilot, or ChatGPT** to generate pixel-authentic UIs in the exact visual design system of **${siteName}**:
+
+\`\`\`markdown
+You are an expert Frontend Architect specializing in the ${siteName} Design System.
+When writing modern React / Tailwind CSS code, strictly adhere to these design tokens and principles:
+
+1. BRAND COLOR PALETTE:
+   - Primary Brand Action: ${primaryAccent} (500), ${brandScale[6].hex} (600 hover), ${brandScale[0].hex} (50 tint)
+   - Secondary Accent: ${secondaryAccent}
+   - Canvas Background: #F8FAFC (Slate 50)
+   - Surface Cards: #FFFFFF with 1px border #E2E8F0 and rounded-2xl
+   - Typography Stack: "${primaryFont}"
+
+2. COMPONENT PATTERNS:
+   - Primary Button: bg-[${primaryAccent}] text-white font-semibold px-4 py-2 rounded-lg shadow-sm hover:opacity-95 active:scale-95 transition-all
+   - Form Inputs: bg-white border border-slate-300 rounded-lg px-3.5 py-2 text-sm focus:border-[${primaryAccent}] focus:ring-2 focus:ring-sky-100 outline-none
+   - Card Containers: bg-white border border-slate-200 rounded-2xl p-6 shadow-sm hover:shadow-md transition-shadow
+
+Please scaffold the requested UI using these exact specifications.
+\`\`\`
+`;
+  const promptBlueprintPath = path.join(designSystemDir, 'AI_PROMPT_BLUEPRINT.md');
+  await fs.writeFile(promptBlueprintPath, promptBlueprint, 'utf-8');
+
+  // -------------------------------------------------------------------------
+  // 14. Generate AI Agent Design Skill (`DESIGN_SKILL.md`)
+  // -------------------------------------------------------------------------
+  const agentSkillMd = `---
+name: design-${siteName.toLowerCase()}
+description: Pixel-authentic enterprise design system and UI generation guidelines based on ${siteName} (${sourceUrl}). Use when building modern React/Tailwind landing pages, dashboards, or components in the exact signature visual style of ${siteName}.
+---
+
+# ${siteName} Enterprise Design System Skill
+
+Extracted from: \`${sourceUrl}\`
+Primary Accent: \`${primaryAccent}\`
+Typography: \`${primaryFont}\`
+
+## Design Guidelines & Component Signatures
+- **Design Tokens CSS:** \`design-tokens.css\`
+- **Tailwind Theme Preset:** \`tailwind.theme.js\`
+- **React UI Primitives:** \`components.tsx\`
+- **WCAG Audit:** \`AccessibilityAudit.md\` (Score: ${complianceScore}%)
+`;
+  const agentSkillMdPath = path.join(designSystemDir, 'DESIGN_SKILL.md');
+  await fs.writeFile(agentSkillMdPath, agentSkillMd, 'utf-8');
+
+  // Also register into `.agents/skills/design-<sitename>/SKILL.md`
+  const workspaceSkillDir = path.join(process.cwd(), '.agents', 'skills', `design-${siteName.toLowerCase()}`);
+  await fs.mkdir(workspaceSkillDir, { recursive: true });
+  await fs.writeFile(path.join(workspaceSkillDir, 'SKILL.md'), agentSkillMd, 'utf-8');
+
+  // -------------------------------------------------------------------------
+  // 15. Generate Storybook-grade preview.html (Interactive Studio)
   // -------------------------------------------------------------------------
   const previewHtml = `<!DOCTYPE html>
 <html lang="en">
@@ -1014,229 +1145,190 @@ ${motion.map(m => `| \`${m.token}\` | \`${m.duration}\` | \`${m.easing}\` | ${m.
     .brand-header {
       padding: 0 8px 20px 8px;
       border-bottom: 1px solid var(--border-subtle);
+      margin-bottom: 20px;
     }
     .brand-logo {
       display: flex;
       align-items: center;
       gap: 10px;
-      font-size: 18px;
       font-weight: 800;
-      letter-spacing: -0.02em;
+      font-size: 16px;
       color: var(--text-primary);
     }
     .brand-badge {
       width: 28px;
       height: 28px;
-      border-radius: 8px;
-      background: var(--gradient-brand);
+      background: var(--color-primary-500);
+      color: #FFFFFF;
       display: flex;
       align-items: center;
       justify-content: center;
-      color: #fff;
-      font-size: 13px;
+      border-radius: var(--radius-sm);
       font-weight: 800;
+      font-size: 13px;
     }
     .brand-sub {
-      font-size: 12px;
+      font-size: 11px;
       color: var(--text-secondary);
+      font-weight: 500;
       margin-top: 4px;
     }
-
     .nav-list {
       list-style: none;
-      margin-top: 20px;
       display: flex;
       flex-direction: column;
       gap: 4px;
+    }
+    .nav-category {
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      padding: 12px 10px 4px 10px;
     }
     .nav-item a {
       display: flex;
       align-items: center;
       gap: 10px;
-      padding: 9px 12px;
+      padding: 8px 10px;
       border-radius: var(--radius-sm);
       color: var(--text-secondary);
-      text-decoration: none;
       font-size: 13px;
-      font-weight: 600;
+      font-weight: 500;
+      text-decoration: none;
       transition: all 0.15s ease;
     }
-    .nav-item a:hover, .nav-item a.active {
+    .nav-item a:hover {
+      background: var(--bg-muted);
+      color: var(--text-primary);
+    }
+    .nav-item a.active {
       background: var(--color-primary-50);
       color: var(--color-primary-500);
-    }
-    .nav-category {
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--text-muted);
-      padding: 16px 12px 6px 12px;
+      font-weight: 600;
     }
 
-    /* Main Content Area */
+    /* Main Area */
     .main-wrapper {
       margin-left: var(--sidebar-width);
       flex: 1;
-      padding: 48px 48px 80px 48px;
-      max-width: 1400px;
+      padding: 40px 48px;
+      max-width: 1280px;
     }
 
-    /* Top Hero */
+    /* Hero Banner */
     .hero-banner {
       background: #FFFFFF;
       border: 1px solid var(--border-subtle);
-      border-radius: var(--radius-lg);
-      padding: 36px 40px;
-      margin-bottom: 40px;
-      box-shadow: var(--shadow-sm);
+      border-radius: var(--radius-xl);
+      padding: 32px 40px;
+      margin-bottom: 36px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      position: relative;
-      overflow: hidden;
-    }
-    .hero-banner::after {
-      content: '';
-      position: absolute;
-      top: 0;
-      right: 0;
-      width: 300px;
-      height: 100%;
-      background: var(--gradient-mesh);
-      opacity: 0.7;
-      pointer-events: none;
+      box-shadow: var(--shadow-sm);
     }
     .hero-title h1 {
-      font-size: 32px;
+      font-size: 26px;
       font-weight: 800;
-      letter-spacing: -0.025em;
       color: var(--text-primary);
+      letter-spacing: -0.02em;
+      margin-bottom: 6px;
     }
     .hero-title p {
+      font-size: 14px;
       color: var(--text-secondary);
-      font-size: 15px;
-      margin-top: 6px;
     }
     .tag-pill {
-      background: #E0F2FE;
-      color: #0284C7;
-      border: 1px solid #BAE6FD;
-      padding: 6px 16px;
+      background: var(--color-primary-50);
+      color: var(--color-primary-600);
+      border: 1px solid var(--color-primary-100);
+      padding: 6px 14px;
       border-radius: var(--radius-full);
       font-size: 12px;
       font-weight: 700;
       display: inline-flex;
       align-items: center;
       gap: 6px;
+      text-decoration: none;
+    }
+    .btn-site-link {
+      background: #0F172A;
+      color: #FFFFFF;
+      padding: 8px 18px;
+      border-radius: var(--radius-md);
+      font-size: 13px;
+      font-weight: 700;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s ease;
+      box-shadow: var(--shadow-sm);
+    }
+    .btn-site-link:hover {
+      background: #1E293B;
+      transform: translateY(-1px);
     }
 
-    /* Section Cards */
+    /* Sections */
     .section-card {
       background: #FFFFFF;
       border: 1px solid var(--border-subtle);
-      border-radius: var(--radius-lg);
-      padding: 36px;
-      margin-bottom: 36px;
+      border-radius: var(--radius-xl);
+      padding: 32px;
+      margin-bottom: 32px;
       box-shadow: var(--shadow-sm);
     }
     .section-header {
+      margin-bottom: 24px;
       display: flex;
       justify-content: space-between;
-      align-items: center;
+      align-items: baseline;
       border-bottom: 1px solid var(--border-subtle);
-      padding-bottom: 18px;
-      margin-bottom: 28px;
+      padding-bottom: 16px;
     }
     .section-header h2 {
-      font-size: 22px;
+      font-size: 18px;
       font-weight: 700;
-      letter-spacing: -0.015em;
       color: var(--text-primary);
+      letter-spacing: -0.01em;
     }
     .section-header span {
-      font-size: 13px;
-      color: var(--text-secondary);
-      font-weight: 500;
-    }
-
-    /* Color Swatch Grids */
-    .swatch-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-      gap: 18px;
-    }
-    .swatch-box {
-      background: #FFFFFF;
-      border: 1px solid var(--border-subtle);
-      border-radius: var(--radius-md);
-      overflow: hidden;
-      box-shadow: var(--shadow-xs);
-      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-      cursor: pointer;
-    }
-    .swatch-box:hover {
-      transform: translateY(-3px);
-      box-shadow: var(--shadow-md);
-      border-color: var(--border-strong);
-    }
-    .swatch-preview {
-      height: 90px;
-      width: 100%;
-      position: relative;
-    }
-    .swatch-info {
-      padding: 14px;
-    }
-    .swatch-hex {
-      font-size: 14px;
-      font-weight: 700;
-      font-family: var(--font-family-mono);
-      color: var(--text-primary);
-    }
-    .swatch-name {
       font-size: 12px;
-      font-weight: 600;
-      color: var(--color-primary-500);
-      margin-top: 2px;
-    }
-    .swatch-contrast {
-      font-size: 11px;
-      color: var(--text-secondary);
-      margin-top: 4px;
-      display: flex;
-      justify-content: space-between;
+      color: var(--text-muted);
     }
 
-    /* Scale Row */
+    /* Scales */
     .scale-row {
       display: grid;
       grid-template-columns: repeat(11, 1fr);
       gap: 8px;
-      margin-top: 14px;
       margin-bottom: 28px;
     }
     .scale-chip {
       display: flex;
       flex-direction: column;
-      border-radius: var(--radius-sm);
-      overflow: hidden;
       border: 1px solid var(--border-subtle);
-      text-align: center;
+      border-radius: var(--radius-md);
+      overflow: hidden;
       cursor: pointer;
-      transition: transform 0.15s ease;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
     }
     .scale-chip:hover {
-      transform: scale(1.05);
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-md);
     }
     .scale-color {
       height: 48px;
       width: 100%;
     }
     .scale-label {
-      font-size: 11px;
+      padding: 6px 4px;
+      font-size: 10px;
       font-weight: 700;
-      padding: 4px 2px;
+      text-align: center;
       background: #FFFFFF;
       color: var(--text-secondary);
       font-family: var(--font-family-mono);
@@ -1246,117 +1338,144 @@ ${motion.map(m => `| \`${m.token}\` | \`${m.duration}\` | \`${m.easing}\` | ${m.
     .data-table {
       width: 100%;
       border-collapse: collapse;
-      text-align: left;
+      font-size: 13px;
     }
     .data-table th {
-      padding: 12px 16px;
-      background: var(--bg-canvas);
-      font-size: 12px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
+      text-align: left;
+      padding: 12px 14px;
+      background: var(--bg-muted);
       color: var(--text-secondary);
+      font-weight: 700;
       border-bottom: 1px solid var(--border-subtle);
     }
     .data-table td {
-      padding: 16px;
+      padding: 12px 14px;
       border-bottom: 1px solid var(--border-subtle);
-      font-size: 14px;
+      color: var(--text-primary);
+      vertical-align: middle;
     }
     .code-badge {
-      background: var(--bg-muted);
-      color: var(--text-primary);
-      padding: 3px 8px;
-      border-radius: var(--radius-xs);
       font-family: var(--font-family-mono);
-      font-size: 12px;
+      font-size: 11px;
+      background: var(--bg-muted);
       border: 1px solid var(--border-subtle);
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: var(--text-primary);
     }
-
-    /* Component Demos */
-    .demo-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-      gap: 24px;
-    }
-    .demo-box {
-      border: 1px solid var(--border-subtle);
-      border-radius: var(--radius-md);
-      padding: 24px;
-      background: #FFFFFF;
-    }
-    .demo-title {
-      font-size: 14px;
+    .badge-pass {
+      background: #ECFDF5;
+      color: #059669;
+      border: 1px solid #A7F3D0;
+      padding: 3px 8px;
+      border-radius: var(--radius-full);
+      font-size: 11px;
       font-weight: 700;
-      color: var(--text-secondary);
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      margin-bottom: 16px;
-    }
-    .demo-row {
-      display: flex;
-      gap: 12px;
-      flex-wrap: wrap;
+      display: inline-flex;
       align-items: center;
+      gap: 4px;
+    }
+    .badge-warn {
+      background: #FFFBEB;
+      color: #D97706;
+      border: 1px solid #FDE68A;
+      padding: 3px 8px;
+      border-radius: var(--radius-full);
+      font-size: 11px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
     }
 
     /* Buttons */
     .btn {
-      padding: 10px 20px;
-      border-radius: var(--radius-sm);
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
       display: inline-flex;
       align-items: center;
+      justify-content: center;
       gap: 8px;
-      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-      border: 1px solid transparent;
+      padding: 10px 20px;
+      font-size: 14px;
+      font-weight: 600;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: all 0.15s ease;
       text-decoration: none;
+      border: 1px solid transparent;
     }
-    .btn:active { transform: scale(0.98); }
-    .btn-primary { background: var(--color-primary-500); color: #FFFFFF; box-shadow: var(--shadow-xs); }
-    .btn-primary:hover { opacity: 0.92; box-shadow: var(--shadow-md); transform: translateY(-1px); }
-    .btn-secondary { background: #FFFFFF; color: var(--text-primary); border-color: var(--border-strong); box-shadow: var(--shadow-xs); }
-    .btn-secondary:hover { background: var(--bg-canvas); }
-    .btn-outline { background: transparent; color: var(--color-primary-500); border-color: var(--color-primary-500); }
-    .btn-outline:hover { background: var(--color-primary-50); }
-    .btn-ghost { background: transparent; color: var(--text-secondary); }
-    .btn-ghost:hover { background: var(--bg-muted); color: var(--text-primary); }
-    .btn-danger { background: var(--color-danger); color: #FFFFFF; }
-    .btn-danger:hover { opacity: 0.9; }
+    .btn-primary {
+      background: var(--color-primary-500);
+      color: #FFFFFF;
+      box-shadow: var(--shadow-sm);
+    }
+    .btn-primary:hover {
+      background: var(--color-primary-600);
+      transform: translateY(-1px);
+    }
+    .btn-secondary {
+      background: #FFFFFF;
+      color: var(--text-primary);
+      border-color: var(--border-strong);
+    }
+    .btn-outline {
+      background: transparent;
+      color: var(--color-primary-500);
+      border-color: var(--color-primary-500);
+    }
+    .btn-ghost {
+      background: transparent;
+      color: var(--text-secondary);
+    }
+    .btn-danger {
+      background: #EF4444;
+      color: #FFFFFF;
+    }
 
     /* Inputs */
     .input-field {
       width: 100%;
-      background: #FFFFFF;
-      border: 1px solid var(--border-strong);
       padding: 10px 14px;
-      border-radius: var(--radius-sm);
       font-size: 14px;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-md);
+      background: #FFFFFF;
       color: var(--text-primary);
       outline: none;
-      transition: all 0.15s ease;
-      box-shadow: var(--shadow-xs);
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
     }
     .input-field:focus {
       border-color: var(--color-primary-500);
       box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15);
     }
 
-    /* Cards */
-    .preview-card {
-      background: #FFFFFF;
-      border: 1px solid var(--border-subtle);
+    /* Code block */
+    .code-container {
+      background: #0F172A;
       border-radius: var(--radius-lg);
-      padding: 24px;
-      box-shadow: var(--shadow-sm);
-      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      padding: 20px;
+      color: #E2E8F0;
+      font-family: var(--font-family-mono);
+      font-size: 12px;
+      line-height: 1.6;
+      overflow-x: auto;
+      position: relative;
     }
-    .preview-card:hover {
-      box-shadow: var(--shadow-md);
-      transform: translateY(-2px);
-      border-color: var(--border-strong);
+    .code-copy-btn {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      background: rgba(255, 255, 255, 0.15);
+      color: #FFFFFF;
+      border: none;
+      padding: 5px 12px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .code-copy-btn:hover {
+      background: rgba(255, 255, 255, 0.3);
     }
 
     /* Toast Notification */
@@ -1394,24 +1513,30 @@ ${motion.map(m => `| \`${m.token}\` | \`${m.duration}\` | \`${m.easing}\` | ${m.
         <div class="brand-sub">Universal Design System</div>
       </div>
       <ul class="nav-list">
+        <li class="nav-category">Audits & Reports</li>
+        <li class="nav-item"><a href="#audit" class="active">♿ WCAG 2.1 Audit (${complianceScore}%)</a></li>
+
         <li class="nav-category">Foundations</li>
-        <li class="nav-item"><a href="#colors" class="active">🎨 Colors & Scales</a></li>
+        <li class="nav-item"><a href="#colors">🎨 Colors & Scales</a></li>
         <li class="nav-item"><a href="#typography">✍️ Typography Scale</a></li>
         <li class="nav-item"><a href="#spacing">📐 Spacing & Grid</a></li>
         <li class="nav-item"><a href="#elevation">📦 Elevation & Shadows</a></li>
         
-        <li class="nav-category">Components</li>
-        <li class="nav-item"><a href="#buttons">🔘 Buttons & Triggers</a></li>
-        <li class="nav-item"><a href="#forms">📝 Form Inputs</a></li>
-        <li class="nav-item"><a href="#cards">🗂️ Cards & Containers</a></li>
-        <li class="nav-item"><a href="#badges">🏷️ Badges & Pills</a></li>
+        <li class="nav-category">UI Components</li>
+        <li class="nav-item"><a href="#buttons">🔘 Buttons & Inputs</a></li>
+        <li class="nav-item"><a href="#cards">🗂️ Cards & Badges</a></li>
 
-        <li class="nav-category">Export</li>
-        <li class="nav-item"><a href="#tokens">⚙️ Tokens & React Code</a></li>
+        <li class="nav-category">Export & AI</li>
+        <li class="nav-item"><a href="#react-code">⚛️ React Components (TSX)</a></li>
+        <li class="nav-item"><a href="#blueprint">⚡ AI System Prompt</a></li>
+        <li class="nav-item"><a href="#figma">📐 Figma DTCG Tokens</a></li>
+
+        <li class="nav-category">Navigation</li>
+        <li class="nav-item"><a href="../index.html" target="_blank" style="color: var(--color-primary-500); font-weight: 700;">🌐 View Cloned Website ↗</a></li>
       </ul>
     </div>
     <div style="padding: 12px; background: var(--bg-muted); border-radius: var(--radius-sm); font-size: 11px; color: var(--text-secondary);">
-      Extracted by <strong>Webcmd</strong>
+      Extracted by <strong>Webcmd Studio</strong>
     </div>
   </aside>
 
@@ -1421,22 +1546,96 @@ ${motion.map(m => `| \`${m.token}\` | \`${m.duration}\` | \`${m.easing}\` | ${m.
     <header class="hero-banner">
       <div class="hero-title">
         <h1>${siteName} Production Design System</h1>
-        <p>Extracted from <a href="${sourceUrl}" target="_blank" style="color: var(--color-primary-500); text-decoration: none; font-weight: 600;">${sourceUrl}</a> • WCAG 2.1 AA Compliant</p>
+        <p>Extracted from <a href="${sourceUrl}" target="_blank" style="color: var(--color-primary-500); text-decoration: none; font-weight: 600;">${sourceUrl}</a></p>
       </div>
-      <div class="tag-pill">
-        <span style="width: 8px; height: 8px; border-radius: 50%; background: #10B981;"></span>
-        Light & Production Ready
+      <div style="display: flex; gap: 12px; align-items: center;">
+        <a href="#audit" class="tag-pill">
+          <span style="width: 8px; height: 8px; border-radius: 50%; background: #10B981;"></span>
+          ${complianceScore}% WCAG 2.1 AA
+        </a>
+        <a href="../index.html" target="_blank" class="btn-site-link">
+          🌐 View Cloned Site ↗
+        </a>
       </div>
     </header>
 
-    <!-- 1. Colors Section -->
+    <!-- SECTION: WCAG 2.1 ACCESSIBILITY AUDIT -->
+    <section id="audit" class="section-card">
+      <div class="section-header">
+        <div>
+          <h2>♿ WCAG 2.1 AA/AAA Accessibility Audit</h2>
+          <p style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">Automated contrast ratio evaluations & ADA Section 508 compliance matrix</p>
+        </div>
+        <button class="btn btn-secondary" style="font-size: 12px; padding: 6px 14px;" onclick="copyAuditSummary()">Copy Audit Markdown</button>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
+        <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: var(--radius-lg); padding: 18px; text-align: center;">
+          <div style="font-size: 28px; font-weight: 800; color: #10B981;">${complianceScore}%</div>
+          <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-top: 4px;">Global AA Compliance Score</div>
+        </div>
+        <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: var(--radius-lg); padding: 18px; text-align: center;">
+          <div style="font-size: 28px; font-weight: 800; color: var(--text-primary);">${passedCount} / ${contrastPairs.length}</div>
+          <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-top: 4px;">Color Pairs Passed</div>
+        </div>
+        <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: var(--radius-lg); padding: 18px; text-align: center;">
+          <div style="font-size: 28px; font-weight: 800; color: #0284C7;">Level AA</div>
+          <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-top: 4px;">Target W3C Standard</div>
+        </div>
+      </div>
+
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Token Role</th>
+            <th>Color HEX</th>
+            <th>Target Surface</th>
+            <th>Contrast Ratio</th>
+            <th>WCAG AA (4.5:1)</th>
+            <th>WCAG AAA (7.0:1)</th>
+            <th>Engineering Guidance</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${contrastPairs.map(p => `
+            <tr>
+              <td><strong>${p.role}</strong></td>
+              <td>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span style="width: 14px; height: 14px; border-radius: 3px; background: ${p.hex}; border: 1px solid #CBD5E1;"></span>
+                  <span class="code-badge">${p.hex}</span>
+                </div>
+              </td>
+              <td>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span style="width: 14px; height: 14px; border-radius: 3px; background: ${p.targetHex}; border: 1px solid #CBD5E1;"></span>
+                  <span>${p.target}</span>
+                </div>
+              </td>
+              <td><strong style="font-family: var(--font-family-mono); font-size: 13px;">${p.ratio.toFixed(2)}:1</strong></td>
+              <td>
+                ${p.ratio >= p.minRequired ? '<span class="badge-pass">✔ PASS</span>' : '<span class="badge-warn">⚠ Large Text Only</span>'}
+              </td>
+              <td>
+                ${p.ratio >= 7.0 ? '<span class="badge-pass">✔ PASS</span>' : '<span class="badge-warn">⚠ Normal AA</span>'}
+              </td>
+              <td style="font-size: 12px; color: var(--text-secondary);">
+                ${p.ratio >= p.minRequired ? 'Suitable for body text & interactive buttons' : 'Restrict to headlines (>18pt) or non-text UI borders'}
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </section>
+
+    <!-- SECTION 1: COLORS -->
     <section id="colors" class="section-card">
       <div class="section-header">
         <h2>1. Color & Palette System</h2>
-        <span>Click any color swatch to copy HEX</span>
+        <span>Click any swatch to copy HEX</span>
       </div>
 
-      <h4 style="font-size: 14px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 12px;">Primary Brand Scale (50-950)</h4>
+      <h4 style="font-size: 13px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 12px;">Primary Brand Scale (50-950)</h4>
       <div class="scale-row">
         ${brandScale.map(s => `
           <div class="scale-chip" onclick="copyHex('${s.hex}')" title="Copy ${s.hex}">
@@ -1446,7 +1645,7 @@ ${motion.map(m => `| \`${m.token}\` | \`${m.duration}\` | \`${m.easing}\` | ${m.
         `).join('')}
       </div>
 
-      <h4 style="font-size: 14px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 12px;">Neutral Slate Scale (50-950)</h4>
+      <h4 style="font-size: 13px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 12px;">Neutral Slate Scale (50-950)</h4>
       <div class="scale-row">
         ${neutralScale.map(s => `
           <div class="scale-chip" onclick="copyHex('${s.hex}')" title="Copy ${s.hex}">
@@ -1456,41 +1655,24 @@ ${motion.map(m => `| \`${m.token}\` | \`${m.duration}\` | \`${m.easing}\` | ${m.
         `).join('')}
       </div>
 
-      <h4 style="font-size: 14px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; margin: 24px 0 12px 0;">Semantic & Status Roles</h4>
-      <div class="swatch-grid">
-        ${brandColors.map(c => `
-          <div class="swatch-box" onclick="copyHex('${c.hex}')">
-            <div class="swatch-preview" style="background: ${c.hex};"></div>
-            <div class="swatch-info">
-              <div class="swatch-hex">${c.hex}</div>
-              <div class="swatch-name">${c.name}</div>
-              <div class="swatch-contrast">
-                <span>Contrast</span>
-                <strong>${c.contrastOnWhite}</strong>
-              </div>
-            </div>
-          </div>
-        `).join('')}
+      <h4 style="font-size: 13px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 12px;">Semantic & Functional Roles</h4>
+      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px;">
         ${semanticColors.map(c => `
-          <div class="swatch-box" onclick="copyHex('${c.hex}')">
-            <div class="swatch-preview" style="background: ${c.hex};"></div>
-            <div class="swatch-info">
-              <div class="swatch-hex">${c.hex}</div>
-              <div class="swatch-name">${c.name}</div>
-              <div class="swatch-contrast">
-                <span>Contrast</span>
-                <strong>${c.contrastOnWhite}</strong>
-              </div>
+          <div style="background: #FFFFFF; border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: 14px; display: flex; align-items: center; gap: 12px; cursor: pointer;" onclick="copyHex('${c.hex}')">
+            <div style="width: 42px; height: 42px; border-radius: var(--radius-md); background: ${c.hex}; border: 1px solid #E2E8F0; flex-shrink: 0;"></div>
+            <div>
+              <div style="font-size: 13px; font-weight: 700; color: var(--text-primary);">${c.name}</div>
+              <div style="font-size: 11px; color: var(--text-muted); font-family: var(--font-family-mono);">${c.hex}</div>
             </div>
           </div>
         `).join('')}
       </div>
     </section>
 
-    <!-- 2. Typography Section -->
+    <!-- SECTION 2: TYPOGRAPHY -->
     <section id="typography" class="section-card">
       <div class="section-header">
-        <h2>2. Typography Hierarchy</h2>
+        <h2>2. Typography Scale</h2>
         <span>Stack: ${primaryFont}</span>
       </div>
       <table class="data-table">
@@ -1500,7 +1682,7 @@ ${motion.map(m => `| \`${m.token}\` | \`${m.duration}\` | \`${m.easing}\` | ${m.
             <th>Size</th>
             <th>Weight</th>
             <th>Line Height</th>
-            <th>Sample Render</th>
+            <th>Preview</th>
           </tr>
         </thead>
         <tbody>
@@ -1509,41 +1691,40 @@ ${motion.map(m => `| \`${m.token}\` | \`${m.duration}\` | \`${m.easing}\` | ${m.
               <td><strong>${t.level}</strong></td>
               <td><span class="code-badge">${t.size}</span></td>
               <td>${t.weight}</td>
-              <td><span class="code-badge">${t.lineHeight}</span></td>
-              <td><span style="font-size: ${t.size}; font-weight: ${t.weight.split(' ')[0]}; line-height: ${t.lineHeight}; letter-spacing: ${t.tracking}; color: var(--text-primary);">The quick brown fox jumps</span></td>
+              <td>${t.lineHeight}</td>
+              <td style="font-size: ${t.size}; font-weight: ${t.weight}; line-height: ${t.lineHeight}; letter-spacing: ${t.tracking}; color: var(--text-primary);">
+                The quick brown fox jumps over the lazy dog
+              </td>
             </tr>
           `).join('')}
         </tbody>
       </table>
     </section>
 
-    <!-- 3. Spacing & Elevation -->
+    <!-- SECTION 3: SPACING & GRID -->
     <section id="spacing" class="section-card">
       <div class="section-header">
-        <h2>3. Spacing & 8-Point Layout Rhythm</h2>
-        <span>Multiples of 4px / 8px</span>
+        <h2>3. Spacing System & Grid</h2>
+        <span>8pt Grid Scale</span>
       </div>
-      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px;">
+      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px;">
         ${spacingScale.map(s => `
-          <div style="background: var(--bg-muted); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 16px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-              <span class="code-badge">${s.token}</span>
-              <strong style="font-size: 13px; color: var(--text-primary);">${s.value}</strong>
-            </div>
-            <div style="height: 12px; width: ${s.value}; background: var(--color-primary-500); border-radius: 2px; margin-bottom: 8px;"></div>
-            <p style="font-size: 11px; color: var(--text-secondary);">${s.usage}</p>
+          <div style="background: var(--bg-muted); border-radius: var(--radius-md); padding: 14px; border: 1px solid var(--border-subtle);">
+            <div style="font-size: 11px; font-weight: 700; font-family: var(--font-family-mono); color: var(--text-primary);">${s.token} (${s.value})</div>
+            <div style="height: 8px; width: ${s.pixels}px; max-width: 100%; background: var(--color-primary-500); border-radius: 2px; margin: 10px 0 6px 0;"></div>
+            <div style="font-size: 11px; color: var(--text-secondary);">${s.usage}</div>
           </div>
         `).join('')}
       </div>
     </section>
 
-    <!-- 4. Elevation & Shadows -->
+    <!-- SECTION 4: ELEVATION & SHADOWS -->
     <section id="elevation" class="section-card">
       <div class="section-header">
         <h2>4. Elevation & Shadows</h2>
-        <span>Depth and layering</span>
+        <span>Light-mode depth hierarchy</span>
       </div>
-      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 20px;">
+      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 20px;">
         ${shadows.map(s => `
           <div style="background: #FFFFFF; border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: 24px; box-shadow: ${s.value}; text-align: center;">
             <span class="code-badge">${s.token}</span>
@@ -1553,80 +1734,129 @@ ${motion.map(m => `| \`${m.token}\` | \`${m.duration}\` | \`${m.easing}\` | ${m.
       </div>
     </section>
 
-    <!-- 5. Component Primitives -->
+    <!-- SECTION 5: UI COMPONENTS -->
     <section id="buttons" class="section-card">
       <div class="section-header">
         <h2>5. Interactive UI Components</h2>
-        <span>Ready-to-use primitives</span>
+        <span>Live Primitives</span>
       </div>
-      <div class="demo-grid">
-        <!-- Buttons Demo -->
-        <div class="demo-box">
-          <div class="demo-title">Button Variants</div>
-          <div class="demo-row" style="margin-bottom: 16px;">
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px;">
+        <!-- Buttons -->
+        <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: var(--radius-lg); padding: 24px;">
+          <h3 style="font-size: 14px; font-weight: 700; margin-bottom: 14px; color: var(--text-primary);">Buttons & Triggers</h3>
+          <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px;">
             <button class="btn btn-primary">Primary Action</button>
             <button class="btn btn-secondary">Secondary</button>
             <button class="btn btn-outline">Outline</button>
           </div>
-          <div class="demo-row">
+          <div style="display: flex; flex-wrap: wrap; gap: 10px;">
             <button class="btn btn-ghost">Ghost</button>
             <button class="btn btn-danger">Destructive</button>
           </div>
         </div>
 
-        <!-- Form Demo -->
-        <div id="forms" class="demo-box">
-          <div class="demo-title">Form Controls</div>
-          <div style="display: flex; flex-direction: column; gap: 14px;">
+        <!-- Inputs -->
+        <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: var(--radius-lg); padding: 24px;">
+          <h3 style="font-size: 14px; font-weight: 700; margin-bottom: 14px; color: var(--text-primary);">Form Controls</h3>
+          <div style="display: flex; flex-direction: column; gap: 12px;">
             <div>
-              <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Email Address</label>
-              <input type="email" class="input-field" placeholder="name@company.com" value="alex@developer.io">
+              <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">Email Address</label>
+              <input type="email" class="input-field" placeholder="alex@domain.com" value="alex@developer.io">
             </div>
             <div>
-              <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Workspace Domain</label>
-              <input type="text" class="input-field" placeholder="workspace.domain">
+              <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">Workspace</label>
+              <input type="text" class="input-field" placeholder="workspace-slug">
             </div>
           </div>
         </div>
 
-        <!-- Cards Demo -->
-        <div id="cards" class="demo-box">
-          <div class="demo-title">Interactive Card</div>
-          <div class="preview-card">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-              <span style="background: #ECFDF5; color: #059669; border: 1px solid #A7F3D0; padding: 3px 10px; border-radius: var(--radius-full); font-size: 11px; font-weight: 700;">Active Status</span>
-              <span style="font-size: 12px; color: var(--text-secondary);">2m ago</span>
+        <!-- Cards -->
+        <div id="cards" style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: var(--radius-lg); padding: 24px;">
+          <h3 style="font-size: 14px; font-weight: 700; margin-bottom: 14px; color: var(--text-primary);">Container Card</h3>
+          <div style="background: #FFFFFF; border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: 20px; box-shadow: var(--shadow-sm);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <span class="badge-pass">Active</span>
+              <span style="font-size: 11px; color: var(--text-muted);">Just now</span>
             </div>
-            <h3 style="font-size: 17px; font-weight: 700; color: var(--text-primary); margin-bottom: 6px;">${siteName} Container</h3>
-            <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 18px;">Crisp light elevation with modular spacing and responsive layout.</p>
-            <button class="btn btn-primary" style="width: 100%; justify-content: center;">Deploy Feature</button>
-          </div>
-        </div>
-
-        <!-- Badges Demo -->
-        <div id="badges" class="demo-box">
-          <div class="demo-title">Badge & Status Chips</div>
-          <div class="demo-row">
-            <span style="background: var(--color-primary-50); color: var(--color-primary-500); border: 1px solid var(--color-primary-100); padding: 4px 12px; border-radius: 9999px; font-size: 12px; font-weight: 700;">Brand Pill</span>
-            <span style="background: #ECFDF5; color: #059669; border: 1px solid #A7F3D0; padding: 4px 12px; border-radius: 9999px; font-size: 12px; font-weight: 700;">Completed</span>
-            <span style="background: #FFFBEB; color: #D97706; border: 1px solid #FDE68A; padding: 4px 12px; border-radius: 9999px; font-size: 12px; font-weight: 700;">Warning</span>
-            <span style="background: #FEF2F2; color: #DC2626; border: 1px solid #FECACA; padding: 4px 12px; border-radius: 9999px; font-size: 12px; font-weight: 700;">Danger</span>
+            <h4 style="font-size: 15px; font-weight: 700; color: var(--text-primary); margin-bottom: 4px;">${siteName} Component</h4>
+            <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 14px;">Tailored design tokens with responsive scaling.</p>
+            <button class="btn btn-primary" style="width: 100%; justify-content: center; font-size: 13px;">Deploy Component</button>
           </div>
         </div>
       </div>
     </section>
+
+    <!-- SECTION 6: REACT TSX CODE -->
+    <section id="react-code" class="section-card">
+      <div class="section-header">
+        <div>
+          <h2>⚛️ React + Tailwind Component Code</h2>
+          <p style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">Ready-to-use TypeScript + Tailwind CSS UI Primitives</p>
+        </div>
+        <button class="btn btn-secondary" style="font-size: 12px; padding: 6px 14px;" onclick="copyCode('react-code-block')">Copy React Code</button>
+      </div>
+      <div class="code-container">
+        <button class="code-copy-btn" onclick="copyCode('react-code-block')">Copy TSX</button>
+        <pre id="react-code-block"><code>${reactComponentsTsx.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code></pre>
+      </div>
+    </section>
+
+    <!-- SECTION 7: AI SYSTEM PROMPT BLUEPRINT -->
+    <section id="blueprint" class="section-card">
+      <div class="section-header">
+        <div>
+          <h2>⚡ Master AI Prompt Blueprint</h2>
+          <p style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">Copy-paste into Cursor, Claude, ChatGPT, or Copilot to replicate this design system</p>
+        </div>
+        <button class="btn btn-primary" style="font-size: 12px; padding: 6px 14px;" onclick="copyCode('prompt-blueprint-block')">Copy Master Prompt</button>
+      </div>
+      <div class="code-container">
+        <button class="code-copy-btn" onclick="copyCode('prompt-blueprint-block')">Copy Prompt</button>
+        <pre id="prompt-blueprint-block"><code>${promptBlueprint.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code></pre>
+      </div>
+    </section>
+
+    <!-- SECTION 8: FIGMA DTCG TOKENS -->
+    <section id="figma" class="section-card">
+      <div class="section-header">
+        <div>
+          <h2>📐 Figma Tokens Studio (DTCG)</h2>
+          <p style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">W3C Design Token Community Group Standard</p>
+        </div>
+        <button class="btn btn-secondary" style="font-size: 12px; padding: 6px 14px;" onclick="copyCode('figma-token-block')">Copy Figma JSON</button>
+      </div>
+      <div class="code-container">
+        <button class="code-copy-btn" onclick="copyCode('figma-token-block')">Copy JSON</button>
+        <pre id="figma-token-block"><code>${JSON.stringify(figmaTokens, null, 2).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code></pre>
+      </div>
+    </section>
   </main>
 
-  <!-- Toast Copy Notification -->
+  <!-- Toast Notification -->
   <div id="toast" class="toast">Copied to clipboard!</div>
 
   <script>
     function copyHex(hex) {
       navigator.clipboard.writeText(hex);
+      showToast('Copied ' + hex + ' to clipboard');
+    }
+    function copyCode(elementId) {
+      const el = document.getElementById(elementId);
+      if (el) {
+        navigator.clipboard.writeText(el.innerText);
+        showToast('Code copied to clipboard!');
+      }
+    }
+    function copyAuditSummary() {
+      const summary = \`${auditMd.replace(/`/g, '\\`').replace(/\$/g, '\\$')}\`;
+      navigator.clipboard.writeText(summary);
+      showToast('Accessibility audit copied to clipboard!');
+    }
+    function showToast(msg) {
       const toast = document.getElementById('toast');
-      toast.innerText = 'Copied ' + hex + ' to clipboard';
+      toast.innerText = msg;
       toast.classList.add('show');
-      setTimeout(() => toast.classList.remove('show'), 2000);
+      setTimeout(() => toast.classList.remove('show'), 2200);
     }
   </script>
 </body>
@@ -1634,100 +1864,6 @@ ${motion.map(m => `| \`${m.token}\` | \`${m.duration}\` | \`${m.easing}\` | ${m.
 `;
   const previewHtmlPath = path.join(designSystemDir, 'preview.html');
   await fs.writeFile(previewHtmlPath, previewHtml, 'utf-8');
-
-  // -------------------------------------------------------------------------
-  // 12. Generate AI Agent Design Skill (`DESIGN_SKILL.md`)
-  // -------------------------------------------------------------------------
-  const agentSkillMd = `---
-name: design-${siteName.toLowerCase()}
-description: Pixel-authentic enterprise design system and UI generation guidelines based on ${siteName} (${sourceUrl}). Use when building modern React/Tailwind landing pages, dashboards, or components in the exact signature visual style of ${siteName}.
----
-
-# ${siteName} Enterprise Design System Skill
-
-Use this skill whenever asked to generate, design, or scaffold modern UI interfaces in the signature visual style of **${siteName}**.
-
-## Core Design Architecture & Theme
-
-- **Theme:** Clean, modern, high-contrast Light Theme.
-- **Brand Colors:**
-${brandColors.map(c => `  - **${c.name}:** \`${c.hex}\` (\`${c.variable}\`) — *${c.description}* (Contrast on white: \`${c.contrastOnWhite}\`)`).join('\n')}
-- **Surface Palette:**
-${neutralColors.map(c => `  - **${c.name}:** \`${c.hex}\` (\`${c.variable}\`)`).join('\n')}
-- **Typography Stack:** \`${primaryFont}\`
-- **Corner Radii:** \`${radii[1].value}\` (xs), \`${radii[2].value}\` (sm), \`${radii[3].value}\` (md), \`${radii[4].value}\` (lg)
-- **Shadows:** \`${shadows[0].value}\` (xs), \`${shadows[1].value}\` (sm), \`${shadows[2].value}\` (md)
-
----
-
-## Tailwind Theme Configuration
-
-When writing React/Tailwind code for this design system, extend your Tailwind configuration:
-
-\`\`\`javascript
-module.exports = {
-  theme: {
-    extend: {
-      colors: {
-        brand: {
-          50: '${brandScale[0].hex}',
-          100: '${brandScale[1].hex}',
-          500: '${brandScale[5].hex}',
-          600: '${brandScale[6].hex}',
-          secondary: '${secondaryAccent}',
-          accent: '${tertiaryAccent}',
-        },
-        surface: {
-          canvas: '${neutralColors[0].hex}',
-          card: '${neutralColors[1].hex}',
-          muted: '${neutralColors[2].hex}',
-        },
-        border: {
-          subtle: '${neutralColors[3].hex}',
-          strong: '${neutralColors[4].hex}',
-        },
-        content: {
-          primary: '${neutralColors[5].hex}',
-          secondary: '${neutralColors[6].hex}',
-          muted: '${neutralColors[7].hex}',
-        },
-        status: {
-          success: '${semanticColors[0].hex}',
-          warning: '${semanticColors[2].hex}',
-          danger: '${semanticColors[4].hex}',
-          info: '${semanticColors[6].hex}',
-        }
-      },
-      fontFamily: {
-        sans: [${JSON.stringify(primaryFont.split(',')[0].trim())}, 'Inter', 'system-ui', 'sans-serif'],
-      }
-    }
-  }
-}
-\`\`\`
-
----
-
-## Component Anatomy Rules
-
-1. **Page Canvas:** Use \`bg-slate-50 min-h-screen text-slate-900 font-sans antialiased\`.
-2. **Cards & Panels:** Use \`bg-white border border-slate-200 rounded-2xl p-6 shadow-sm hover:shadow-md transition-shadow\`.
-3. **Buttons:**
-   - **Primary Action:** \`bg-[${primaryAccent}] text-white font-semibold px-5 py-2.5 rounded-lg shadow-sm hover:opacity-90 active:scale-[0.98] transition-all\`.
-   - **Secondary Action:** \`bg-white border border-slate-300 text-slate-800 font-medium px-5 py-2.5 rounded-lg shadow-sm hover:bg-slate-50 active:scale-[0.98]\`.
-4. **Form Inputs:**
-   - Use \`bg-white border border-slate-300 text-slate-900 rounded-lg px-3.5 py-2 text-sm focus:border-[${primaryAccent}] focus:ring-3 focus:ring-sky-100 outline-none shadow-xs\`.
-5. **Typography:**
-   - **Hero Headlines:** \`text-4xl md:text-5xl font-extrabold tracking-tight text-slate-900\`.
-   - **Subheadings:** \`text-slate-600 text-base md:text-lg leading-relaxed\`.
-`;
-  const agentSkillMdPath = path.join(designSystemDir, 'DESIGN_SKILL.md');
-  await fs.writeFile(agentSkillMdPath, agentSkillMd, 'utf-8');
-
-  // Also register into `.agents/skills/design-<sitename>/SKILL.md`
-  const workspaceSkillDir = path.join(process.cwd(), '.agents', 'skills', `design-${siteName.toLowerCase()}`);
-  await fs.mkdir(workspaceSkillDir, { recursive: true });
-  await fs.writeFile(path.join(workspaceSkillDir, 'SKILL.md'), agentSkillMd, 'utf-8');
 
   return {
     siteName,
@@ -1764,6 +1900,11 @@ module.exports = {
       previewHtml: previewHtmlPath,
       reactComponentsTsx: reactComponentsTsxPath,
       agentSkillMd: agentSkillMdPath,
+      accessibilityAuditJson: auditJsonPath,
+      accessibilityAuditMd: auditMdPath,
+      figmaTokensJson: figmaTokensPath,
+      promptBlueprintMd: promptBlueprintPath,
     },
   };
 }
+

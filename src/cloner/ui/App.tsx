@@ -130,7 +130,7 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
   const [stage, setStage] = useState<WizardStage>(initialUrl ? 'CONFIRM' : 'URL_INPUT');
   const [url, setUrl] = useState<string>(initialUrl || '');
   const [outputDir, setOutputDir] = useState<string>(initialOptions?.output || '');
-  const [mode, setMode] = useState<'standard' | 'react' | 'verify' | 'design' | 'zip' | 'all'>('standard');
+  const [mode, setMode] = useState<'standard' | 'react' | 'verify' | 'design' | 'zip' | 'all' | 'audit'>('standard');
   const [serve] = useState<boolean>(initialOptions?.serve !== false);
   const [port] = useState<number>(initialOptions?.port || 3000);
   const [serverActivePort, setServerActivePort] = useState<number | null>(null);
@@ -169,6 +169,28 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
   const handleUrlSubmit = (submittedUrl: string) => {
     let clean = submittedUrl.trim();
     if (!clean) return;
+
+    let preselectedMode: 'standard' | 'react' | 'verify' | 'design' | 'zip' | 'all' | 'audit' | null = null;
+    if (clean.startsWith('/audit')) {
+      preselectedMode = 'audit';
+      clean = clean.replace('/audit', '').trim();
+    } else if (clean.startsWith('/design') || clean.startsWith('/figma') || clean.startsWith('/prompt')) {
+      preselectedMode = 'design';
+      clean = clean.replace(/\/design|\/figma|\/prompt/, '').trim();
+    } else if (clean.startsWith('/react')) {
+      preselectedMode = 'react';
+      clean = clean.replace('/react', '').trim();
+    } else if (clean.startsWith('/diff') || clean.startsWith('/verify')) {
+      preselectedMode = 'verify';
+      clean = clean.replace(/\/diff|\/verify/, '').trim();
+    } else if (clean.startsWith('/zip')) {
+      preselectedMode = 'zip';
+      clean = clean.replace('/zip', '').trim();
+    } else if (clean.startsWith('/clone')) {
+      preselectedMode = 'standard';
+      clean = clean.replace('/clone', '').trim();
+    }
+
     if (!clean.startsWith('http://') && !clean.startsWith('https://')) {
       clean = `https://${clean}`;
     }
@@ -189,21 +211,26 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
       setOutputDir(path.resolve(process.cwd(), 'clones', `clone_${Date.now()}`));
     }
 
-    setStage('MODE_SELECT');
+    if (preselectedMode) {
+      setMode(preselectedMode);
+      setStage('CONFIRM');
+    } else {
+      setStage('MODE_SELECT');
+    }
   };
 
   const modeItems = [
-    { label: '🎨 Design System Studio   - Tokens (JSON/CSS), 11-step Scales & AI Skill', value: 'design' },
+    { label: '🎨 Design System Studio   - Tokens, 11-step Scales & AI Skill', value: 'design' },
+    { label: '♿ WCAG Accessibility Audit - Automated Contrast Ratio & ADA Matrix', value: 'audit' },
     { label: '⚛️  React + Tailwind TSX     - Modular Component Synthesis (Navbar, Hero, App)', value: 'react' },
     { label: '🔬 Visual Diff Slider       - Side-by-side Pixel Fidelity Verification', value: 'verify' },
     { label: '⚡ Production Full Clone    - Formatted HTML + Deep Asset Localization', value: 'standard' },
     { label: '📦 Portable ZIP Archive     - Auto-package output into bundle.zip', value: 'zip' },
-    { label: '🚀 All-in-One Superpower     - Design Studio + React + Diff + ZIP Bundle', value: 'all' },
+    { label: '🚀 All-in-One Superpower     - Design + Audit + React + Diff + ZIP', value: 'all' },
   ];
 
   const handleModeSelect = (item: { value: string }) => {
-    const selected = item.value as 'standard' | 'react' | 'verify' | 'design' | 'zip' | 'all';
-    setMode(selected);
+    setMode(item.value as any);
     setStage('CONFIRM');
   };
 
@@ -212,7 +239,7 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
 
     const toReact = mode === 'react' || mode === 'all' || Boolean(initialOptions?.toReact);
     const verify = mode === 'verify' || mode === 'all' || Boolean(initialOptions?.verify);
-    const design = mode === 'design' || mode === 'all' || Boolean(initialOptions?.designSystem);
+    const design = mode === 'design' || mode === 'audit' || mode === 'all' || Boolean(initialOptions?.designSystem);
     const zip = mode === 'zip' || mode === 'all' || Boolean(initialOptions?.zip);
 
     const stepsCount = 6 + (design ? 1 : 0) + (toReact ? 1 : 0) + (verify ? 1 : 0) + (zip ? 1 : 0);
@@ -322,13 +349,25 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
       if (serve) {
         startPreviewServer(outputDir, port, (activePort) => {
           setServerActivePort(activePort);
-          const previewUrl = `http://localhost:${activePort}${
-            design ? '/design-system/preview.html' : verify ? '/verify.html' : '/index.html'
-          }`;
+          let targetPath = '/index.html';
+          if (mode === 'audit') {
+            targetPath = '/design-system/preview.html#audit';
+          } else if (mode === 'design') {
+            targetPath = '/design-system/preview.html#colors';
+          } else if (mode === 'react') {
+            targetPath = '/design-system/preview.html#react-code';
+          } else if (mode === 'verify') {
+            targetPath = '/verify.html';
+          } else if (mode === 'all') {
+            targetPath = '/design-system/preview.html#audit';
+          } else {
+            targetPath = '/index.html';
+          }
+          const previewUrl = `http://localhost:${activePort}${targetPath}`;
           openInBrowser(previewUrl);
         });
       } else {
-        const previewTarget = design
+        const previewTarget = (mode === 'audit' || mode === 'design' || mode === 'react' || mode === 'all')
           ? path.join(outputDir, 'design-system', 'preview.html')
           : cloneRes.htmlPath;
         openInBrowser(previewTarget);
@@ -390,7 +429,7 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
       {stage === 'URL_INPUT' && (
         <Box flexDirection="column" marginTop={1} borderStyle="single" borderColor="cyanBright" paddingX={2} paddingY={1}>
           <Text bold color="yellowBright">
-            TARGET INGESTION // Enter Website URL to Reverse-Engineer:
+            TARGET INGESTION // Enter Website URL or Command (/design, /react, /audit, /clone):
           </Text>
           <Box marginTop={1}>
             <Text bold color="cyanBright">❯ </Text>
@@ -398,7 +437,7 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
               value={url}
               onChange={setUrl}
               onSubmit={handleUrlSubmit}
-              placeholder="https://linear.app or stripe.com"
+              placeholder="e.g. /design linear.app or https://stripe.com"
             />
           </Box>
           <Box marginTop={1}>
@@ -557,7 +596,7 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
       )}
 
       {/* =====================================================================
-          STAGE: DONE (EXECUTIVE DASHBOARD)
+          STAGE: DONE (EXECUTIVE DASHBOARD & NEXT ACTION MENU)
           ===================================================================== */}
       {stage === 'DONE' && resultData && (
         <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor="greenBright" paddingX={2} paddingY={1}>
@@ -608,16 +647,65 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
             </Box>
           )}
 
-          <Box marginTop={1}>
-            <Text dimColor color="gray">
-              ⚡ Showcase opened in your default browser. Press [Ctrl+C] to return to terminal.
+          {/* NEXT ACTION COMMAND MENU */}
+          <Box marginTop={1} borderStyle="single" borderColor="magentaBright" paddingX={1} flexDirection="column">
+            <Text bold color="magentaBright">
+              ⚡ NEXT ACTION // Select Command to Continue:
             </Text>
+            <SelectInput
+              items={[
+                { label: '🌐 Open Cloned Website in Browser (index.html)', value: 'open_site' },
+                { label: '♿ Open WCAG Accessibility Audit (preview.html#audit)', value: 'open_audit' },
+                { label: '🎨 Open Design System Studio (preview.html)', value: 'open_studio' },
+                { label: '⚛️  Open React Component Primitives (preview.html#react-code)', value: 'open_react' },
+                { label: '🔄 Reverse-Engineer Another Site (/clone <url>)', value: 'new_url' },
+                { label: '🎨 Extract Design Tokens & AI Skill (/design <url>)', value: 'new_design' },
+                { label: '♿ Run WCAG Accessibility Audit (/audit <url>)', value: 'new_audit' },
+                { label: '⚛️  Synthesize React + Tailwind Components (/react <url>)', value: 'new_react' },
+                { label: '📁 Open Cloned Workspace Folder in File Explorer', value: 'open_folder' },
+                { label: '❌ Exit Terminal Studio', value: 'exit' },
+              ]}
+              onSelect={(action) => {
+                if (action.value === 'new_url' || action.value === 'new_design' || action.value === 'new_audit' || action.value === 'new_react') {
+                  setUrl('');
+                  setCompletedSteps([]);
+                  setResultData(null);
+                  setElapsedSeconds(0);
+                  if (action.value === 'new_audit') {
+                    setMode('audit');
+                  } else if (action.value === 'new_design') {
+                    setMode('design');
+                  } else if (action.value === 'new_react') {
+                    setMode('react');
+                  } else {
+                    setMode('standard');
+                  }
+                  setStage('URL_INPUT');
+                } else if (action.value === 'open_site') {
+                  const previewUrl = `http://localhost:${serverActivePort || 3000}/index.html`;
+                  openInBrowser(previewUrl);
+                } else if (action.value === 'open_audit') {
+                  const previewUrl = `http://localhost:${serverActivePort || 3000}/design-system/preview.html#audit`;
+                  openInBrowser(previewUrl);
+                } else if (action.value === 'open_studio') {
+                  const previewUrl = `http://localhost:${serverActivePort || 3000}/design-system/preview.html`;
+                  openInBrowser(previewUrl);
+                } else if (action.value === 'open_react') {
+                  const previewUrl = `http://localhost:${serverActivePort || 3000}/design-system/preview.html#react-code`;
+                  openInBrowser(previewUrl);
+                } else if (action.value === 'open_folder') {
+                  openInBrowser(resultData.outputDir);
+                } else if (action.value === 'exit') {
+                  exit();
+                }
+              }}
+            />
           </Box>
         </Box>
       )}
 
       {/* =====================================================================
-          STAGE: ERROR
+          STAGE: ERROR (WITH RETRY OPTION)
           ===================================================================== */}
       {stage === 'ERROR' && (
         <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor="redBright" paddingX={2} paddingY={1}>
@@ -629,13 +717,26 @@ export const ClonerApp: React.FC<ClonerAppProps> = ({ initialUrl, initialOptions
               {errorMessage}
             </Text>
           </Box>
-          <Box marginTop={1}>
-            <Text dimColor color="gray">
-              Press [Ctrl+C] to return to terminal.
-            </Text>
+          <Box marginTop={1} flexDirection="column">
+            <SelectInput
+              items={[
+                { label: '🔄 Try Again / Enter New URL', value: 'retry' },
+                { label: '❌ Exit Terminal Studio', value: 'exit' },
+              ]}
+              onSelect={(action) => {
+                if (action.value === 'retry') {
+                  setUrl('');
+                  setErrorMessage('');
+                  setStage('URL_INPUT');
+                } else {
+                  exit();
+                }
+              }}
+            />
           </Box>
         </Box>
       )}
     </Box>
   );
 };
+
