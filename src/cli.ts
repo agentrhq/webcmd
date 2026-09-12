@@ -43,6 +43,7 @@ import { analyzeSite, type PageSignals } from './browser/analyze.js';
 import { BROWSER_RUN_HELP_TEXT, browserOptionValueParser } from './browser/command-catalog.js';
 import { registerAuthCommands } from './commands/auth.js';
 import { daemonRestart, daemonStatus, daemonStop } from './commands/daemon.js';
+import { executeCloneCommand } from './commands/clone.js';
 import { enableVerbose, isVerbose, log } from './logger.js';
 import { BrowserCommandError, listExistingBrowserTabs, releaseSiteSessionLease, sendCommand } from './browser/daemon-client.js';
 import { fetchDaemonStatus } from './browser/daemon-transport.js';
@@ -2243,6 +2244,27 @@ cli({
       .action((args: string[]) => passthroughExternal(ext.name, args));
     externalRootCommands.add(command);
   }
+
+  // ── Universal Website Cloner ──────────────────────────────────────────────
+  program
+    .command('clone')
+    .description('Clone and replicate any website into a local directory with full assets')
+    .argument('[url]', 'Target website URL to clone (prompts interactively if omitted)')
+    .option('-o, --output <dir>', 'Destination output directory')
+    .option('-t, --timeout <ms>', 'Navigation timeout in milliseconds', '45000')
+    .option('--no-scroll', 'Disable automatic scrolling')
+    .option('--no-scripts', 'Exclude dynamic script tags')
+    .option('--design-system', 'Extract Color Palette, Typography & AI Design Prompt Skill')
+    .option('--to-react', 'Decompose cloned site into React + Tailwind components')
+    .option('--verify', 'Generate pixel-perfect visual diff comparison and slider')
+    .option('--zip', 'Package cloned site into a portable ZIP archive')
+    .option('-s, --serve', 'Launch local preview server after cloning', true)
+    .option('--no-serve', 'Do not launch preview server')
+    .option('--no-open', 'Do not automatically open in default browser')
+    .option('-p, --port <port>', 'Server port for preview', '3000')
+    .action(async (url: string | undefined, opts: any) => {
+      await executeCloneCommand(url, opts);
+    });
 
   // ── Antigravity serve (long-running, special case) ────────────────────────
 
