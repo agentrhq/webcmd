@@ -1,108 +1,75 @@
-/**
- * StandardResult Contract for PilgrimOS Adapters (PC2A Core).
- *
- * All adapters return this exact shape to guarantee uniform responses to PC1.
- */
+export const RESULT_STATUSES = [
+  'completed',
+  'searching',
+  'partial',
+  'failed',
+  'retrying',
+  'blocked',
+  'approval_required',
+] as const;
 
-export type StandardResultStatus =
-  | 'completed'
-  | 'searching'
-  | 'partial'
-  | 'failed'
-  | 'retrying'
-  | 'blocked'
-  | 'approval_required';
+export type ResultStatus = (typeof RESULT_STATUSES)[number];
 
-export interface StandardResultMetadata {
+export interface ResultMetadata {
   source: string;
   timestamp: string;
   [key: string]: unknown;
 }
 
-export interface StandardResult<T = Record<string, unknown>> {
+export interface StandardResult<T = unknown> {
   success: boolean;
-  status: StandardResultStatus;
+  status: ResultStatus;
   adapter: string;
   action: string;
-  data: T | null;
-  metadata: StandardResultMetadata;
-  error: Record<string, unknown> | null;
+  data: T;
+  metadata: ResultMetadata;
+  error: StandardError | null;
 }
 
-/**
- * Factory helpers to generate StandardResult instances with strict typing.
- */
-export function createSuccessResult<T>(
-  adapter: string,
-  action: string,
-  data: T,
-  source = 'webcmd',
-  extraMetadata?: Record<string, unknown>,
-): StandardResult<T> {
-  return {
-    success: true,
-    status: 'completed',
-    adapter,
-    action,
-    data,
-    metadata: {
-      source,
-      timestamp: new Date().toISOString(),
-      ...extraMetadata,
-    },
-    error: null,
-  };
+export interface StandardError {
+  code: ErrorCode;
+  message: string;
+  retryable: boolean;
+  details?: unknown;
 }
 
-export function createApprovalRequiredResult(
-  adapter: string,
-  action: string,
-  reason: string,
-  source = 'webcmd',
-  extraMetadata?: Record<string, unknown>,
-): StandardResult<null> {
-  return {
-    success: false,
-    status: 'approval_required',
-    adapter,
-    action,
-    data: null,
-    metadata: {
-      source,
-      timestamp: new Date().toISOString(),
-      approvalReason: reason,
-      ...extraMetadata,
-    },
-    error: {
-      code: 'APPROVAL_REQUIRED',
-      message: `Action '${action}' reached protected state: ${reason}`,
-    },
-  };
-}
+export const ERROR_CODES = [
+  'NAVIGATION_FAILED',
+  'TIMEOUT',
+  'ELEMENT_NOT_FOUND',
+  'PAGE_CHANGED',
+  'WEBSITE_UNAVAILABLE',
+  'RATE_LIMITED',
+  'LOGIN_REQUIRED',
+  'CAPTCHA_DETECTED',
+  'NO_AVAILABILITY',
+  'INVALID_INPUT',
+  'UNKNOWN_ERROR',
+] as const;
 
-export function createFailureResult(
-  adapter: string,
-  action: string,
-  errorCode: string,
-  errorMessage: string,
-  source = 'webcmd',
-  details?: unknown,
-  status: StandardResultStatus = 'failed',
-): StandardResult<null> {
+export type ErrorCode = (typeof ERROR_CODES)[number];
+
+export function createResult<T>(params: {
+  success: boolean;
+  status: ResultStatus;
+  adapter: string;
+  action: string;
+  data: T;
+  source?: string;
+  error?: StandardError | null;
+  metadata?: Record<string, unknown>;
+}): StandardResult<T> {
   return {
-    success: false,
-    status,
-    adapter,
-    action,
-    data: null,
+    success: params.success,
+    status: params.status,
+    adapter: params.adapter,
+    action: params.action,
+    data: params.data,
     metadata: {
-      source,
+      source: params.source ?? '',
       timestamp: new Date().toISOString(),
+      ...(params.metadata ?? {}),
     },
-    error: {
-      code: errorCode,
-      message: errorMessage,
-      details: details ?? null,
-    },
+    error: params.error ?? null,
   };
 }

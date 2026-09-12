@@ -1,25 +1,12 @@
-import { StandardResult } from './result_schema.js';
+import type { StandardResult } from './result_schema';
 
-/**
- * Base abstract class for all PC2 adapters.
- * Guarantees that any adapter implements run(input) -> Promise<StandardResult>.
- */
-export abstract class AdapterBase<TInput = unknown, TOutput = Record<string, unknown>> {
-  readonly adapterName?: string;
-
-  /**
-   * Primary entry point executing an adapter flow.
-   *
-   * @param input Typed input specific to the adapter action.
-   * @returns Clean StandardResult matching the exact contract.
-   */
-  abstract run(input: TInput): Promise<StandardResult<TOutput>>;
+export interface AdapterInput {
+  action: string;
+  [key: string]: unknown;
 }
 
-/**
- * Interface representation of AdapterBase for callers preferring interface contracts.
- */
-export interface IAdapterBase<TInput = unknown, TOutput = Record<string, unknown>> {
-  readonly adapterName?: string;
-  run(input: TInput): Promise<StandardResult<TOutput>>;
+export abstract class AdapterBase<TInput extends AdapterInput = AdapterInput, TData = unknown> {
+  public abstract readonly adapter: string;
+
+  public abstract run(input: TInput): Promise<StandardResult<TData>>;
 }
