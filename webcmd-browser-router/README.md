@@ -1,7 +1,10 @@
-# Overview
-<img src="assets/logo/webcmd.svg" height="100">
+# @webcmd/browser-router ⚡
 
-> "webcmd is your fast and simple bridge between the web and shell scripts with focus on customizability and security!"
+> **Self-Learning, Self-Recovering Browser Router & CDP Automation for AI Workflows**
+
+<img src="assets/logo/webcmd.svg" height="80">
+
+`webcmd-browser-router` is your fast and robust bridge between web automation, Chrome DevTools Protocol (CDP), and shell process execution with adaptive self-healing recovery.
 
 It aims to be
 - Easy to configure

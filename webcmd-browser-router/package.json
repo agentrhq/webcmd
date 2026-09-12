@@ -1,7 +1,7 @@
 {
-  "name": "webcmd",
+  "name": "@webcmd/browser-router",
   "version": "2.0.0",
-  "description": "Self-Learning, Self-Recovering Browser Agent for AI Workflows",
+  "description": "Self-Learning, Self-Recovering Browser Router & CDP Automation for AI Workflows",
   "main": "src/browser/cdp.js",
   "bin": {
     "webcmd": "./bin/webcmd.js"

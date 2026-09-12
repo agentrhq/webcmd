@@ -5,8 +5,9 @@ dist/
 hosted-contract.json
 plugin-command-manifest.json
 /.webcmd/
-webcmd-main/.webcmd/profiles/
-webcmd-main/.webcmd/decks/
+webcmd-browser-router/.webcmd/profiles/
+webcmd-browser-router/.webcmd/decks/
+webcmd-ppt/.webcmd/decks/
 .superpowers/
 .worktrees/
 .agents/*

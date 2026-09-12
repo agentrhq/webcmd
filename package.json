@@ -55,6 +55,8 @@
     "dev": "tsx src/main.ts",
     "dev:bun": "bun src/main.ts",
     "clone": "tsx src/cloner/cli.ts",
+    "ppt": "node webcmd-ppt/bin/webcmd-ppt.js",
+    "router": "node webcmd-browser-router/bin/webcmd.js",
     "build": "npm run clean-dist && npm run copy-yaml && npm run compile && npm run build-manifest",
     "compile": "tsc --build && node -e \"require('fs').chmodSync('dist/src/main.js', 0o755)\"",
     "build-manifest": "tsx src/build-manifest.ts",

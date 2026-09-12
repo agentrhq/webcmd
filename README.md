@@ -35,6 +35,15 @@ Webcmd pairs live browser control with a self-learning memory layer:
 | 0. Live browser control | The site is unfamiliar. | Use `webcmd browser` to inspect, click, type, extract, capture network calls, and complete the task in a real browser. |
 | 1. Sitemap memory | The site is familiar, but the action space is not fully known. | Capture an agent-facing sitemap of observed pages, states, actions, workflows, APIs, pitfalls, and fallback paths. |
 
+## 📦 Modular Ecosystem & Packages
+
+| Package | Purpose | Entry Command |
+| :--- | :--- | :--- |
+| [**`webcmd-cloner`**](./webcmd-cloner) | Universal Website Cloner with interactive **Ink React TUI**, React TSX component decomposition, and Figma W3C tokens | `npm run clone` |
+| [**`webcmd-browser-router`**](./webcmd-browser-router) | Go + Node CDP routing engine, adaptive self-healing recovery, and persistent workflow store | `npm run router` |
+| [**`webcmd-ppt`**](./webcmd-ppt) | Sub-second AI executive presentation synthesizer powered by Groq ultra-fast inference | `npm run ppt` |
+| [**`webcmd-extension`**](./webcmd-extension) | Chrome MV3 browser extension for live visual overlays, inspector, and daemon bridge | Chrome Extension |
+
 ## Demo
 
 https://github.com/user-attachments/assets/bdb65307-9e2a-4d58-9175-45d59528ae37

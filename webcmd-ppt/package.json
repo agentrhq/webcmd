@@ -1,0 +1,24 @@
+{
+  "name": "@webcmd/ppt",
+  "version": "1.0.0",
+  "description": "Sub-Second AI Executive Presentation & Slide Deck Synthesizer with Groq and Canva Engine",
+  "main": "src/agent/canva-agent.js",
+  "bin": {
+    "webcmd-ppt": "./bin/webcmd-ppt.js"
+  },
+  "scripts": {
+    "start": "node ./bin/webcmd-ppt.js",
+    "ppt": "node ./bin/webcmd-ppt.js",
+    "ppt:headed": "node ./bin/webcmd-ppt.js --headed"
+  },
+  "keywords": [
+    "slides",
+    "presentation",
+    "groq",
+    "canva",
+    "ai-agent",
+    "deck-synthesis"
+  ],
+  "author": "Webcmd Team",
+  "license": "Apache-2.0"
+}
