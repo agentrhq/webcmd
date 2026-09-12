@@ -5,6 +5,9 @@ import { exec } from 'node:child_process';
 import readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { WebsiteCloner } from '../cloner/cloner.js';
+import { convertCloneToReact } from '../cloner/react-converter.js';
+import { runVisualVerification } from '../cloner/visual-verifier.js';
+import { createZipArchive } from '../cloner/zip-bundler.js';
 
 export interface CloneCommandOptions {
   output?: string;
@@ -12,11 +15,15 @@ export interface CloneCommandOptions {
   scroll?: boolean;
   scripts?: boolean;
   serve?: boolean;
+  noServe?: boolean;
   open?: boolean;
   noOpen?: boolean;
   port?: string;
   format?: string;
   json?: boolean;
+  toReact?: boolean;
+  verify?: boolean;
+  zip?: boolean;
 }
 
 function openInBrowser(target: string) {
@@ -32,7 +39,7 @@ function openInBrowser(target: string) {
   }
 }
 
-function startLocalServer(dir: string, initialPort: number, autoOpen: boolean) {
+function startLocalServer(dir: string, initialPort: number, autoOpen: boolean, initialPath: string = '') {
   const mimeTypes: Record<string, string> = {
     '.html': 'text/html',
     '.css': 'text/css',
@@ -91,7 +98,7 @@ function startLocalServer(dir: string, initialPort: number, autoOpen: boolean) {
   });
 
   server.listen(currentPort, () => {
-    const serverUrl = `http://localhost:${currentPort}`;
+    const serverUrl = `http://localhost:${currentPort}${initialPath}`;
     console.log(`\n  ┌──────────────────────────────────────────────────────────────┐`);
     console.log(`  │  PREVIEW SERVER READY: ${serverUrl.padEnd(38)}│`);
     console.log(`  │  Press Ctrl+C to stop the server                             │`);
@@ -108,6 +115,9 @@ async function promptInteractive(): Promise<{
   outputDir: string;
   autoScroll: boolean;
   serve: boolean;
+  toReact: boolean;
+  verify: boolean;
+  zip: boolean;
   autoOpen: boolean;
   port: number;
 }> {
@@ -115,17 +125,44 @@ async function promptInteractive(): Promise<{
 
   console.log(`\n  ┌──────────────────────────────────────────────────────────────┐`);
   console.log(`  │               WEBCMD UNIVERSAL WEBSITE CLONER                │`);
-  console.log(`  │  Full dynamic DOM hydration, asset resolution & formatting   │`);
+  console.log(`  │  Full dynamic DOM hydration, React convert & Visual Diff     │`);
+  console.log(`  ├──────────────────────────────────────────────────────────────┤`);
+  console.log(`  │  Slash Commands Supported:                                   │`);
+  console.log(`  │    /clone <url>   - Standard full site clone                 │`);
+  console.log(`  │    /react <url>   - Clone + Decompose to React & Tailwind    │`);
+  console.log(`  │    /diff <url>    - Clone + Side-by-side Visual Diff Slider  │`);
+  console.log(`  │    /zip <url>     - Clone + Portable ZIP package             │`);
   console.log(`  └──────────────────────────────────────────────────────────────┘\n`);
 
   try {
-    let url = '';
-    while (!url) {
-      const answer = await rl.question('  Target website URL : ');
-      url = answer.trim();
-      if (!url) {
-        console.log('  [ERROR] URL cannot be empty. Please enter a valid URL.');
+    let rawInput = '';
+    while (!rawInput) {
+      rawInput = (await rl.question('  Enter URL or /command : ')).trim();
+      if (!rawInput) {
+        console.log('  [ERROR] Input cannot be empty.');
       }
+    }
+
+    let url = rawInput;
+    let toReact = false;
+    let verify = false;
+    let zip = false;
+
+    if (rawInput.startsWith('/react')) {
+      toReact = true;
+      url = rawInput.replace('/react', '').trim();
+    } else if (rawInput.startsWith('/diff') || rawInput.startsWith('/verify')) {
+      verify = true;
+      url = rawInput.replace(/\/diff|\/verify/, '').trim();
+    } else if (rawInput.startsWith('/zip')) {
+      zip = true;
+      url = rawInput.replace('/zip', '').trim();
+    } else if (rawInput.startsWith('/clone')) {
+      url = rawInput.replace('/clone', '').trim();
+    }
+
+    while (!url) {
+      url = (await rl.question('  Target website URL : ')).trim();
     }
 
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
@@ -143,6 +180,16 @@ async function promptInteractive(): Promise<{
     const defaultOutput = path.resolve(process.cwd(), 'clones', defaultDirName);
     const outAnswer = await rl.question(`  Output folder [${defaultDirName}] : `);
     const outputDir = outAnswer.trim() ? path.resolve(outAnswer.trim()) : defaultOutput;
+
+    if (!toReact) {
+      const reactAns = await rl.question('  Convert to React (TSX) + Tailwind Components? (y/N) : ');
+      toReact = reactAns.trim().toLowerCase() === 'y';
+    }
+
+    if (!verify) {
+      const verifyAns = await rl.question('  Generate Pixel-Perfect Visual Diff Slider? (y/N) : ');
+      verify = verifyAns.trim().toLowerCase() === 'y';
+    }
 
     const scrollAnswer = await rl.question('  Auto-scroll for lazy components? (Y/n) : ');
     const autoScroll = scrollAnswer.trim().toLowerCase() !== 'n';
@@ -163,11 +210,12 @@ async function promptInteractive(): Promise<{
     console.log(`  ├──────────────────────────────────────────────────────────────┤`);
     console.log(`  │  Target URL   : ${url.substring(0, 44).padEnd(45)}│`);
     console.log(`  │  Destination  : ${path.basename(outputDir).substring(0, 44).padEnd(45)}│`);
-    console.log(`  │  Auto-Scroll  : ${(autoScroll ? 'Enabled' : 'Disabled').padEnd(45)}│`);
+    console.log(`  │  React (TSX)  : ${(toReact ? 'Enabled (Tailwind)' : 'Disabled').padEnd(45)}│`);
+    console.log(`  │  Visual Diff  : ${(verify ? 'Enabled (Slider)' : 'Disabled').padEnd(45)}│`);
     console.log(`  │  Preview      : ${(serve ? `Enabled (Port ${port})` : 'Disabled').padEnd(45)}│`);
     console.log(`  └──────────────────────────────────────────────────────────────┘\n`);
 
-    return { url, outputDir, autoScroll, serve, autoOpen, port };
+    return { url, outputDir, autoScroll, serve, toReact, verify, zip, autoOpen, port };
   } finally {
     rl.close();
   }
@@ -179,8 +227,28 @@ export async function executeCloneCommand(cliUrl: string | undefined, options: C
     let outputDir = options.output ? path.resolve(options.output) : '';
     let autoScroll = options.scroll !== false;
     let serve = options.serve !== undefined ? Boolean(options.serve) : true;
+    if (options.noServe) serve = false;
     let autoOpen = options.noOpen !== true;
     let port = parseInt(options.port || '3000', 10) || 3000;
+    let toReact = Boolean(options.toReact);
+    let verify = Boolean(options.verify);
+    let zip = Boolean(options.zip);
+
+    // Support slash commands in CLI arguments e.g. webcmd clone /react https://example.com
+    if (targetUrl) {
+      if (targetUrl.startsWith('/react')) {
+        toReact = true;
+        targetUrl = targetUrl.replace('/react', '').trim();
+      } else if (targetUrl.startsWith('/diff') || targetUrl.startsWith('/verify')) {
+        verify = true;
+        targetUrl = targetUrl.replace(/\/diff|\/verify/, '').trim();
+      } else if (targetUrl.startsWith('/zip')) {
+        zip = true;
+        targetUrl = targetUrl.replace('/zip', '').trim();
+      } else if (targetUrl.startsWith('/clone')) {
+        targetUrl = targetUrl.replace('/clone', '').trim();
+      }
+    }
 
     const isJson = Boolean(options.json) || options.format === 'json';
 
@@ -190,6 +258,9 @@ export async function executeCloneCommand(cliUrl: string | undefined, options: C
       outputDir = interactive.outputDir;
       autoScroll = interactive.autoScroll;
       serve = interactive.serve;
+      toReact = interactive.toReact;
+      verify = interactive.verify;
+      zip = interactive.zip;
       autoOpen = interactive.autoOpen;
       port = interactive.port;
     }
@@ -210,9 +281,8 @@ export async function executeCloneCommand(cliUrl: string | undefined, options: C
       outputDir = path.resolve(process.cwd(), 'clones', defaultDirName);
     }
 
-    if (!isJson) {
-      console.log(`  [1/4] Connecting & Rendering DOM ........................`);
-    }
+    const totalSteps = 4 + (toReact ? 1 : 0) + (verify ? 1 : 0) + (zip ? 1 : 0);
+    let currentStep = 1;
 
     const cloner = new WebsiteCloner({
       url: targetUrl,
@@ -224,11 +294,12 @@ export async function executeCloneCommand(cliUrl: string | undefined, options: C
       onStep: (step, total, message, status) => {
         if (!isJson) {
           if (status === 'START') {
-            const stepNum = `[${step}/${total}]`;
+            const stepNum = `[${currentStep}/${totalSteps}]`;
             const dots = '.'.repeat(Math.max(2, 54 - message.length - stepNum.length));
             process.stdout.write(`  ${stepNum} ${message} ${dots} `);
           } else if (status === 'DONE') {
             console.log(`[OK]`);
+            currentStep++;
           } else if (status === 'FAIL') {
             console.log(`[FAILED]`);
           }
@@ -238,12 +309,60 @@ export async function executeCloneCommand(cliUrl: string | undefined, options: C
 
     const result = await cloner.clone();
 
+    // React Conversion Step
+    let reactResult: any = null;
+    if (toReact) {
+      if (!isJson) {
+        const stepNum = `[${currentStep}/${totalSteps}]`;
+        const msg = 'Decomposing to React (TSX) & Tailwind...';
+        const dots = '.'.repeat(Math.max(2, 54 - msg.length - stepNum.length));
+        process.stdout.write(`  ${stepNum} ${msg} ${dots} `);
+      }
+      reactResult = await convertCloneToReact(outputDir);
+      if (!isJson) {
+        console.log(`[OK] (${reactResult.components.length} components created)`);
+        currentStep++;
+      }
+    }
+
+    // Visual Verification Step
+    let diffResult: any = null;
+    if (verify) {
+      if (!isJson) {
+        const stepNum = `[${currentStep}/${totalSteps}]`;
+        const msg = 'Capturing pixel-perfect visual diff...';
+        const dots = '.'.repeat(Math.max(2, 54 - msg.length - stepNum.length));
+        process.stdout.write(`  ${stepNum} ${msg} ${dots} `);
+      }
+      diffResult = await runVisualVerification(targetUrl, result.htmlPath, outputDir);
+      if (!isJson) {
+        console.log(`[OK] (${diffResult.fidelityScore}% fidelity)`);
+        currentStep++;
+      }
+    }
+
+    // ZIP Step
+    let zipPath: string | null = null;
+    if (zip) {
+      if (!isJson) {
+        const stepNum = `[${currentStep}/${totalSteps}]`;
+        const msg = 'Packaging into portable ZIP bundle...';
+        const dots = '.'.repeat(Math.max(2, 54 - msg.length - stepNum.length));
+        process.stdout.write(`  ${stepNum} ${msg} ${dots} `);
+      }
+      zipPath = await createZipArchive(outputDir, `${outputDir}.zip`);
+      if (!isJson) {
+        console.log(`[OK]`);
+        currentStep++;
+      }
+    }
+
     if (isJson) {
-      console.log(JSON.stringify(result, null, 2));
+      console.log(JSON.stringify({ ...result, react: reactResult, verification: diffResult, zip: zipPath }, null, 2));
       return;
     }
 
-    // Print Clean Summary Box
+    // Print Rich Summary Box
     console.log(`\n  ┌──────────────────────────────────────────────────────────────┐`);
     console.log(`  │                       CLONE SUMMARY                          │`);
     console.log(`  ├──────────────────────────────────────────────────────────────┤`);
@@ -263,14 +382,25 @@ export async function executeCloneCommand(cliUrl: string | undefined, options: C
     if (result.assetsByCategory.fonts) {
       console.log(`  │    • Web Fonts       : ${String(result.assetsByCategory.fonts).padEnd(38)}│`);
     }
+    if (toReact) {
+      console.log(`  │  React (TSX)  : ./react/src/App.tsx (${reactResult.components.length} components)      │`);
+    }
+    if (verify) {
+      console.log(`  │  Visual Diff  : ./verify.html (Fidelity: ${diffResult.fidelityScore}%)            │`);
+    }
+    if (zipPath) {
+      console.log(`  │  ZIP Archive  : ${path.basename(zipPath).padEnd(45)}│`);
+    }
     console.log(`  │  Duration     : ${((result.durationMs / 1000).toFixed(2) + 's').padEnd(45)}│`);
     console.log(`  └──────────────────────────────────────────────────────────────┘\n`);
 
+    const previewUrlPath = verify ? '/verify.html' : '/index.html';
+
     if (serve) {
-      startLocalServer(outputDir, port, autoOpen);
+      startLocalServer(outputDir, port, autoOpen, previewUrlPath);
     } else if (autoOpen) {
-      console.log(`  Opening cloned index.html in your default browser...`);
-      openInBrowser(result.htmlPath);
+      const openTarget = verify ? path.join(outputDir, 'verify.html') : result.htmlPath;
+      openInBrowser(openTarget);
     }
   } catch (err: any) {
     if (options.json || options.format === 'json') {

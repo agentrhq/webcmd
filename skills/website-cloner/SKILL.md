@@ -7,68 +7,55 @@ description: Universal Website Cloner skill to clone any website (React, Next.js
 
 Use this skill when you or the user want to clone, replicate, or archive any modern website, web application, or landing page into a local directory.
 
-## Execution Methods
+## Terminal Slash Commands
 
-### 1. Native Webcmd Interactive Mode (Recommended)
-Run without arguments to trigger interactive prompts directly in the terminal:
-```bash
-webcmd clone
-```
-The CLI will interactively ask for:
-1. Target website URL (e.g. `https://example.com`)
-2. Output folder path (default: `./clones/<domain>_<timestamp>`)
-3. Auto-scroll toggle (to trigger lazy-loaded images/fonts)
-4. Local preview server toggle
+When running `webcmd clone`, you can type slash commands directly in the prompt or in the CLI:
+
+| Command | Action |
+| :--- | :--- |
+| `/clone <url>` | Standard full site clone with dynamic DOM hydration & formatted HTML |
+| `/react <url>` | Clone + automatically decompose to **React (TSX) + Tailwind CSS components** |
+| `/diff <url>` or `/verify <url>` | Clone + generate **Pixel-Perfect Visual Diff Comparison Slider** |
+| `/zip <url>` | Clone + automatically package into a portable `.zip` archive |
 
 ---
 
-### 2. Direct Webcmd CLI Command
-```bash
-webcmd clone <url> [options]
-```
-
-### Options
-
-| Option | Description | Default |
-| :--- | :--- | :--- |
-| `-o, --output <dir>` | Destination folder for the clone | `./clones/<domain>_<timestamp>` |
-| `-t, --timeout <ms>` | Navigation timeout in milliseconds | `45000` |
-| `--no-scroll` | Disable automatic scrolling | `false` |
-| `--no-scripts` | Exclude dynamic JavaScript execution | `false` |
-| `-s, --serve` | Start a local HTTP preview server after cloning | `false` |
-| `-p, --port <port>` | Port for local preview server | `3000` |
-| `-f, --format <fmt>` | Output format: `table`, `json`, `yaml`, `md` | `table` |
-| `--json` | Output machine-readable JSON summary only | `false` |
-
----
-
-### Examples
+## Direct CLI Usage
 
 ```bash
-# Interactive prompt
-webcmd clone
-
-# Clone directly to a custom folder
+# 1. Standard clone
 webcmd clone https://news.ycombinator.com -o ./clones/hackernews
 
-# Clone and immediately launch local preview server
-webcmd clone https://webcmd.dev -o ./clones/webcmd-docs --serve
+# 2. Clone and convert into React + Tailwind Components
+webcmd clone https://linear.app -o ./clones/linear --to-react
+
+# 3. Clone and generate side-by-side Visual Diff verification slider
+webcmd clone https://webcmd.dev -o ./clones/webcmd --verify
+
+# 4. Clone and package into a portable ZIP archive
+webcmd clone https://example.com -o ./clones/example --zip
 ```
 
 ---
 
 ## Output Structure
 
-The cloned site is created with a clean hierarchy:
 ```
 clones/
 └── <site-name>/
-    ├── index.html          # Hydrated HTML with rewritten relative asset links
+    ├── index.html          # Hydrated & Prettified HTML
+    ├── verify.html         # Interactive Before/After Visual Diff Slider (if --verify)
     ├── metadata.json       # Clone metadata, duration, and asset breakdown
-    └── assets/
-        ├── css/            # All downloaded stylesheets
-        ├── js/             # All script files
-        ├── images/         # All PNG, JPG, WebP, SVG images & icons
-        ├── fonts/          # All WOFF2, TTF, OTF webfonts
-        └── media/          # Videos and audio assets
+    ├── assets/
+    │   ├── css/            # Downloaded stylesheets
+    │   ├── js/             # Script files
+    │   ├── images/         # PNG, JPG, WebP, SVG images & icons
+    │   └── fonts/          # WOFF2, TTF webfonts
+    └── react/              # (if --to-react)
+        ├── src/
+        │   ├── App.tsx
+        │   ├── main.tsx
+        │   └── components/ # Decomposed modular TSX components
+        ├── package.json
+        └── tailwind.config.js
 ```
