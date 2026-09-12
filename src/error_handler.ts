@@ -1,4 +1,4 @@
-import { ERROR_CODES, type ErrorCode, type StandardError } from './result_schema';
+import { ERROR_CODES, type ErrorCode, type StandardError } from './result_schema.js';
 
 export { ERROR_CODES };
 export type { ErrorCode };

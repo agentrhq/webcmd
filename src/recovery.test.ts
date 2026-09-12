@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DangerousActionError, RecoveryManager } from '../src/adapters/core';
+import { DangerousActionError, RecoveryManager } from './recovery.js';
 
 describe('RecoveryManager', () => {
   it('retries safe failures up to the default maximum', async () => {

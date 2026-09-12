@@ -1,4 +1,4 @@
-import { BrowserManager, type BrowserSession } from '../core/browser_manager';
+import { BrowserManager, type BrowserSession } from './adapters/core/browser_manager.js';
 
 export class WebcmdSessionManager {
   constructor(private readonly browser: BrowserManager) {}

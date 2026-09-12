@@ -77,7 +77,11 @@
     "test:e2e": "vitest run --project e2e-fixed-port --project e2e",
     "gate:cloak-sessions": "WEBCMD_LIVE_CLOAK=1 vitest run --project e2e tests/e2e/cloak-session-concurrency.test.ts",
     "advise:listing-id-pairing": "node scripts/check-listing-id-pairing.mjs",
-    "check:package-bin": "node scripts/check-package-bin.mjs"
+    "check:package-bin": "node scripts/check-package-bin.mjs",
+    "pc2a:raw-smoke": "tsx src/adapters/webcmd/raw-smoke.ts",
+    "pc2a:core-smoke": "tsx src/adapters/webcmd/core-smoke.ts",
+    "pc2a:test": "vitest run src/adapters/core src/adapters/webcmd",
+    "pc2a:typecheck": "tsc --noEmit"
   },
   "keywords": [
     "cli",

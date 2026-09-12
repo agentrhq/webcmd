@@ -1,4 +1,4 @@
-import type { StandardResult } from './result_schema';
+import type { StandardResult } from './result_schema.js';
 
 export interface AdapterInput {
   action: string;

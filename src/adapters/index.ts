@@ -3,6 +3,10 @@
 export * from './core/types.js';
 export * from './core/core-mock.js';
 export * from './core/hitl-guard.js';
+export * from './core/browser_manager.js';
+export * from './webcmd/client.js';
+export * from './webcmd/session.js';
+export * from './webcmd/skills.js';
 
 export * from './temple/types.js';
 export * from './temple/availability.js';

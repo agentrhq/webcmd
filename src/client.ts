@@ -8,6 +8,7 @@ export interface WebcmdExecResult {
 
 export interface WebcmdClientOptions {
   command?: string;
+  commandArgs?: string[];
   cwd?: string;
   env?: Record<string, string | undefined>;
   timeoutMs?: number;
@@ -15,12 +16,14 @@ export interface WebcmdClientOptions {
 
 export class WebcmdClient {
   private readonly command: string;
+  private readonly commandArgs: string[];
   private readonly cwd?: string;
   private readonly env?: Record<string, string | undefined>;
   private readonly timeoutMs: number;
 
   constructor(options: WebcmdClientOptions = {}) {
     this.command = options.command ?? 'webcmd';
+    this.commandArgs = options.commandArgs ?? [];
     this.cwd = options.cwd;
     this.env = options.env;
     this.timeoutMs = options.timeoutMs ?? 120_000;
@@ -28,7 +31,7 @@ export class WebcmdClient {
 
   async exec(args: string[], stdin?: string): Promise<WebcmdExecResult> {
     return new Promise((resolve, reject) => {
-      const child = spawn(this.command, args, {
+      const child = spawn(this.command, [...this.commandArgs, ...args], {
         cwd: this.cwd,
         env: { ...process.env, ...this.env },
         windowsHide: true,
@@ -43,7 +46,7 @@ export class WebcmdClient {
         if (settled) return;
         settled = true;
         child.kill();
-        reject(new Error(`Webcmd command timed out after ${this.timeoutMs}ms: ${this.command} ${args.join(' ')}`));
+        reject(new Error(`Webcmd command timed out after ${this.timeoutMs}ms: ${this.command} ${[...this.commandArgs, ...args].join(' ')}`));
       }, this.timeoutMs);
 
       child.stdout.setEncoding('utf8');

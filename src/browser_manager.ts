@@ -1,7 +1,7 @@
-import { ErrorHandler } from './error_handler';
-import { createResult, type StandardResult } from './result_schema';
-import { RecoveryManager, DEFAULT_RETRY_POLICY } from './recovery';
-import { WebcmdClient } from '../webcmd/client';
+import { ErrorHandler } from './error_handler.js';
+import { createResult, type StandardResult } from './result_schema.js';
+import { RecoveryManager, DEFAULT_RETRY_POLICY } from './recovery.js';
+import { WebcmdClient } from './client.js';
 
 export interface BrowserSession {
   readonly id: string;
@@ -57,7 +57,7 @@ export class BrowserManager {
 
     return RecoveryManager.retry(run, {
       ...DEFAULT_RETRY_POLICY,
-      shouldRetry: (error) => ErrorHandler.isRetryable(ErrorHandler.classify(error)),
+      shouldRetry: (error: unknown) => ErrorHandler.isRetryable(ErrorHandler.classify(error)),
     });
   }
 

@@ -25,7 +25,7 @@ export class DangerousActionError extends Error {
   }
 }
 
-import { ErrorHandler } from './error_handler';
+import { ErrorHandler } from './error_handler.js';
 
 export class RecoveryManager {
   static async retry<T>(
