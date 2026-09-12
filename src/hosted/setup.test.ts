@@ -578,6 +578,28 @@ describe('webcmd setup', () => {
     expect(messages.join('')).toContain('--chrome-profile, --import-chrome-cookies, and --sync-to-chrome are only valid with --browser chrome');
   });
 
+  it.each([
+    ['--mode local', ['--mode', 'local', '--browser', 'cloak'], '--mode'],
+    ['--mode=local', ['--mode=local'], '--mode'],
+    ['--api-key', ['--api-key', 'sk-test'], '--api-key'],
+  ])('names the removed %s flag instead of listing every valid flag', async (_label, argv, flag) => {
+    tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-removed-flag-'));
+    const messages: string[] = [];
+
+    await expect(runHostedSetup({
+      env: { WEBCMD_CONFIG_DIR: tempDir },
+      argv,
+      isTTY: false,
+      fetchDaemonStatus: async () => null,
+      write: message => { messages.push(message); },
+      stderr: new Writable({ write: (chunk, _enc, cb) => { messages.push(chunk.toString()); cb(); } }),
+    })).resolves.not.toBe(0);
+
+    const output = messages.join('');
+    expect(output).toContain(`\`setup\` no longer accepts ${flag}`);
+    expect(output).not.toContain(`unknown flag ${flag}`);
+  });
+
   it('reuses an existing SLAB app without downloading it again', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-slab-reuse-'));
     const events: string[] = [];

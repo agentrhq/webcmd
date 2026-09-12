@@ -79,6 +79,22 @@ const SETUP_HELP = [
   '',
 ].join('\n');
 
+/**
+ * Flags `setup` used to accept before it stopped configuring hosted mode. They
+ * still appear in older docs and in muscle memory, so name them instead of
+ * letting them fall through to the generic unknown-flag list.
+ */
+const REMOVED_SETUP_FLAGS: readonly { name: string; remediation: string }[] = [
+  {
+    name: '--mode',
+    remediation: `setup always configures local mode, so drop the flag and pick a browser with \`${CLI_COMMAND} setup --browser <cloak|chrome|slab|absolute-path>\``,
+  },
+  {
+    name: '--api-key',
+    remediation: 'setup no longer stores a Webcmd Cloud API key',
+  },
+];
+
 export async function runHostedSetup(io: SetupIo = {}): Promise<number> {
   const write = io.write
     ? async (message: string) => { await io.write!(message); }
@@ -398,6 +414,15 @@ function parseSetupArgs(argv: readonly string[]): {
       const value = token.startsWith('--browser=') ? token.slice('--browser='.length) : argv[++i];
       browser = parseLocalBrowser(value);
       continue;
+    }
+    const removed = REMOVED_SETUP_FLAGS.find(
+      flag => token === flag.name || token.startsWith(`${flag.name}=`),
+    );
+    if (removed) {
+      throw new ArgumentError(
+        `\`setup\` no longer accepts ${removed.name}; ${removed.remediation}.`,
+        `${SETUP_USAGE}\n${SETUP_EXAMPLE}`,
+      );
     }
 
     throw new ArgumentError(
