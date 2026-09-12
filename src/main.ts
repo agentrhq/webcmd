@@ -23,7 +23,7 @@ import { PKG_VERSION } from './version.js';
 import { EXIT_CODES } from './errors.js';
 import { isSupportedNodeVersion, MIN_SUPPORTED_NODE_MAJOR } from './runtime-detect.js';
 import { CONFIG_DIR_NAME } from './brand.js';
-import { configureHostedWorkspaceOption, parseHostedRootCommandSurface, rootCompletionSentinelIndex } from './root-command-surface.js';
+import {financeagentPlugin} from './mcp-skills/financeagent/finance-agent.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
