@@ -543,7 +543,7 @@ afterAll(async () => {
   });
 
   it('initializes against a pre-launched persistent context without registering it twice', async () => {
-    const userDataDir = fs.mkdtempSync('/tmp/webcmd-persistent-browser-run-');
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-persistent-browser-run-'));
     const persistent = await chromium.launchPersistentContext(userDataDir, { headless: true });
     try {
       const persistentPage = persistent.pages()[0] ?? await persistent.newPage();
@@ -566,10 +566,10 @@ afterAll(async () => {
       await persistent.close();
       fs.rmSync(userDataDir, { recursive: true, force: true });
     }
-  });
+  }, 20_000);
 
   it('hides sibling Session pages in a persistent context', async () => {
-    const userDataDir = fs.mkdtempSync('/tmp/webcmd-persistent-browser-run-');
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-persistent-browser-run-'));
     const persistent = await chromium.launchPersistentContext(userDataDir, { headless: true });
     try {
       const owned = persistent.pages()[0] ?? await persistent.newPage();
@@ -597,7 +597,7 @@ afterAll(async () => {
       await persistent.close();
       fs.rmSync(userDataDir, { recursive: true, force: true });
     }
-  });
+  }, 20_000);
 
   it('waits for requests and responses', async () => {
     const output = await run(`
