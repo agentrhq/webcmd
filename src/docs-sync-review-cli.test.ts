@@ -361,6 +361,72 @@ describe('OpenAI and documentation boundaries', () => {
     expect(result).toEqual({ verdict: 'no_update_needed', summary: 'Covered.', findings: [] });
   });
 
+  it('constrains the response with the strict review schema', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({
+      choices: [{ message: { content: '{"verdict":"no_update_needed","summary":"Covered.","findings":[]}' } }],
+    }));
+
+    await generateOpenAIReview('review prompt', 'gpt-test', 'api-key', fetchImpl);
+
+    const body = JSON.parse((fetchImpl.mock.calls as unknown as Array<[unknown, { body: string }]>)[0][1].body);
+    expect(body.response_format).toMatchObject({
+      type: 'json_schema',
+      json_schema: { name: 'docs_sync_review', strict: true },
+    });
+    expect(body.response_format.json_schema.schema.properties.verdict.enum)
+      .toEqual(['no_update_needed', 'review_suggested', 'likely_missing']);
+  });
+
+  it('sends no schema keyword that strict structured output rejects', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({
+      choices: [{ message: { content: '{"verdict":"no_update_needed","summary":"Covered.","findings":[]}' } }],
+    }));
+
+    await generateOpenAIReview('review prompt', 'gpt-test', 'api-key', fetchImpl);
+
+    const body = (fetchImpl.mock.calls as unknown as Array<[unknown, { body: string }]>)[0][1].body;
+    expect(body).not.toContain('maxItems');
+    expect(body).not.toContain('minItems');
+  });
+
+  it('keeps the schema when only low reasoning is rejected', async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ error: { message: 'unsupported parameter' } }, 400))
+      .mockResolvedValueOnce(jsonResponse({
+        choices: [{ message: { content: '{"verdict":"no_update_needed","summary":"Covered.","findings":[]}' } }],
+      }));
+
+    await expect(generateOpenAIReview('review prompt', 'gpt-test', 'api-key', fetchImpl))
+      .resolves.toEqual({ verdict: 'no_update_needed', summary: 'Covered.', findings: [] });
+    const second = (fetchImpl.mock.calls as unknown as Array<[unknown, { body: string }]>)[1][1].body;
+    expect(second).not.toContain('reasoning_effort');
+    expect(second).toContain('"json_schema"');
+  });
+
+  it('drops the schema only after the model also rejects it', async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ error: { message: 'unsupported parameter' } }, 400))
+      .mockResolvedValueOnce(jsonResponse({ error: { message: 'response_format unsupported' } }, 400))
+      .mockResolvedValueOnce(jsonResponse({
+        choices: [{ message: { content: '{"verdict":"no_update_needed","summary":"Covered.","findings":[]}' } }],
+      }));
+
+    await expect(generateOpenAIReview('review prompt', 'gpt-test', 'api-key', fetchImpl))
+      .resolves.toEqual({ verdict: 'no_update_needed', summary: 'Covered.', findings: [] });
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    const third = (fetchImpl.mock.calls as unknown as Array<[unknown, { body: string }]>)[2][1].body;
+    expect(third).not.toContain('reasoning_effort');
+    expect(third).not.toContain('response_format');
+  });
+
+  it('stops retrying when the last rung still fails', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({ error: { message: 'bad request' } }, 400));
+
+    await expect(generateOpenAIReview('review prompt', 'gpt-test', 'api-key', fetchImpl))
+      .rejects.toThrow('OpenAI request failed with HTTP 400');
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
   it('accepts fenced OpenAI JSON output', async () => {
     const fetchImpl = vi.fn(async () => jsonResponse({
       choices: [{ message: { content: '```json\n{"verdict":"no_update_needed","summary":"Covered.","findings":[]}\n```' } }],
