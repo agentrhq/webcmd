@@ -154,4 +154,13 @@ function main() {
 
 }
 
-main();
+try {
+  main();
+} catch (err) {
+  // Completion install is best-effort; never fail the package install. The
+  // former `|| true` guard in package.json could not do this on Windows, where
+  // npm runs lifecycle scripts through cmd.exe and `true` does not exist.
+  if (process.env.WEBCMD_VERBOSE) {
+    console.error(`Warning: postinstall did not complete: ${err?.message ?? err}`);
+  }
+}
