@@ -1,0 +1,9 @@
+{
+  "name": "webcmd-plugin-meridian",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Meridian (getmeridian.tech) founder workflows: Astra ideation chat, ideal-user personas, competitor research, and the Astra market-intelligence agent",
+  "peerDependencies": {
+    "@agentrhq/webcmd": ">=0.5.3"
+  }
+}
