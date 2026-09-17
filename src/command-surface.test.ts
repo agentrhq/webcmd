@@ -219,6 +219,29 @@ describe('configureCommandSurface', () => {
     ]));
     expect(command.registeredArguments.map((argument) => argument.name())).toEqual(['query', 'scope']);
   });
+
+  it('preserves adapter arguments that collide with shared execution flags', () => {
+    const command = new Command('search');
+    const collisions = ['format', 'json', 'trace', 'verbose', 'window', 'site-session', 'keep-tab'];
+    configureCommandSurface(command, {
+      ...metadata,
+      browser: true,
+      args: collisions.map(name => ({ name, type: 'string' })),
+    });
+
+    expect(command.options.map(option => option.long)).toEqual(collisions.map(name => `--${name}`));
+    expect(parseCommandSurface({
+      ...metadata,
+      browser: true,
+      args: [{ name: 'json', type: 'bool', default: false }],
+    }, ['--json'])).toMatchObject({
+      args: { json: true },
+      format: 'plain',
+      formatExplicit: false,
+      trace: 'off',
+      verbose: false,
+    });
+  });
 });
 
 describe('unknown option contract', () => {

@@ -14,7 +14,7 @@ import { Command } from 'commander';
 import { log } from './logger.js';
 import { type CliCommand, fullName, getRegistry } from './registry.js';
 import { errorEnvelopeFormat, formatErrorEnvelope, render as renderOutput } from './output.js';
-import { configureCommandSurface, outputFormatIsExplicit, parseOutputFormat, prepareCommandArgs, requestedOutputFormat } from './command-surface.js';
+import { configureCommandSurface, isSharedCommandOption, outputFormatIsExplicit, parseOutputFormat, prepareCommandArgs, requestedOutputFormat } from './command-surface.js';
 import {
   commandHelpData,
   formatCommandHelpText,
@@ -95,8 +95,11 @@ export function registerCommandToProgram(
       }
       const kwargs = prepareCommandArgs(cmd, rawKwargs);
 
-      const verbose = optionsRecord.verbose === true;
-      let format = parseOutputFormat(requestedOutputFormat(subCmd, optionsRecord.format ?? 'table'));
+      const verbose = isSharedCommandOption(subCmd, '--verbose') && optionsRecord.verbose === true;
+      let format = parseOutputFormat(requestedOutputFormat(
+        subCmd,
+        isSharedCommandOption(subCmd, '--format') ? optionsRecord.format ?? 'table' : 'table',
+      ));
       const formatExplicit = outputFormatIsExplicit(subCmd);
       if (verbose) process.env.WEBCMD_VERBOSE = '1';
       const globals = typeof subCmd.optsWithGlobals === 'function' ? subCmd.optsWithGlobals() as Record<string, unknown> : {};
@@ -106,10 +109,10 @@ export function registerCommandToProgram(
           prepared: true,
           ...(typeof globals.profile === 'string' && globals.profile.trim() ? { profile: globals.profile.trim() } : {}),
           ...(typeof globals.session === 'string' && globals.session.trim() ? { session: globals.session.trim() } : {}),
-          ...(typeof optionsRecord.trace === 'string' && optionsRecord.trace !== 'off' ? { trace: optionsRecord.trace } : {}),
-          ...(cmd.browser && typeof optionsRecord.window === 'string' ? { windowMode: optionsRecord.window } : {}),
-          ...(cmd.browser && typeof optionsRecord.siteSession === 'string' ? { siteSession: optionsRecord.siteSession } : {}),
-          ...(cmd.browser && typeof optionsRecord.keepTab === 'string' ? { keepTab: optionsRecord.keepTab } : {}),
+          ...(isSharedCommandOption(subCmd, '--trace') && typeof optionsRecord.trace === 'string' && optionsRecord.trace !== 'off' ? { trace: optionsRecord.trace } : {}),
+          ...(cmd.browser && isSharedCommandOption(subCmd, '--window') && typeof optionsRecord.window === 'string' ? { windowMode: optionsRecord.window } : {}),
+          ...(cmd.browser && isSharedCommandOption(subCmd, '--site-session') && typeof optionsRecord.siteSession === 'string' ? { siteSession: optionsRecord.siteSession } : {}),
+          ...(cmd.browser && isSharedCommandOption(subCmd, '--keep-tab') && typeof optionsRecord.keepTab === 'string' ? { keepTab: optionsRecord.keepTab } : {}),
         });
       if (result === null || result === undefined) {
         return;

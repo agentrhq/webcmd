@@ -232,15 +232,21 @@ export function configureCommandSurface(command: Command, metadata: CommandSurfa
     else command.option(flag, arg.help ?? '');
   }
 
-  addOutputFormatOption(command)
-    .option('--trace <mode>', `Trace capture: ${TRACE_MODES.join(', ')}`, 'off')
-    .option('-v, --verbose', 'Debug output', false);
+  addSharedExecutionOptions(command);
 
   if (metadata.browser) {
-    command
-      .option('--window <mode>', `Browser window mode: ${BROWSER_WINDOW_MODES.join(' or ')} (default: background)`)
-      .option('--site-session <mode>', `Adapter site session lifecycle: ${SITE_SESSION_MODES.join(' or ')}`)
-      .option('--keep-tab <bool>', 'Keep the browser tab lease after the command finishes');
+    addSharedOption(command, '--window', () => command.option(
+      '--window <mode>',
+      `Browser window mode: ${BROWSER_WINDOW_MODES.join(' or ')} (default: background)`,
+    ));
+    addSharedOption(command, '--site-session', () => command.option(
+      '--site-session <mode>',
+      `Adapter site session lifecycle: ${SITE_SESSION_MODES.join(' or ')}`,
+    ));
+    addSharedOption(command, '--keep-tab', () => command.option(
+      '--keep-tab <bool>',
+      'Keep the browser tab lease after the command finishes',
+    ));
   }
 }
 
@@ -324,8 +330,8 @@ export function parseCommandSurface(
   const args = coerceCommandArguments(metadata.args, input);
   const formatExplicit = outputFormatIsExplicit(command);
   const format = parseOutputFormat(formatExplicit ? requestedOutputFormat(command, parsedOptions.format) : defaultFormat);
-  const trace = parseTraceMode(parsedOptions.trace ?? 'off');
-  const verbose = parsedOptions.verbose === true;
+  const trace = isSharedCommandOption(command, '--trace') ? parseTraceMode(parsedOptions.trace ?? 'off') : 'off';
+  const verbose = isSharedCommandOption(command, '--verbose') && parsedOptions.verbose === true;
 
   return {
     args,
@@ -455,6 +461,41 @@ export function addOutputFormatOption(command: Command, defaultFormat = 'table')
     .option('--json', JSON_FORMAT_ALIAS_HELP, false);
 }
 
+type CommandWithSharedOptions = Command & { _webcmdSharedOptions?: Set<string> };
+
+function addSharedExecutionOptions(command: Command): void {
+  const flags = command.options.flatMap(option => [option.short, option.long]).filter(Boolean) as string[];
+  const shared = new Set<string>();
+  (command as CommandWithSharedOptions)._webcmdSharedOptions = shared;
+
+  if (!flags.includes('--format')) {
+    command.option(flags.includes('-f') ? '--format <fmt>' : '-f, --format <fmt>', OUTPUT_FORMAT_HELP, 'table');
+    shared.add('--format');
+  }
+  addSharedOption(command, '--json', () => command.option('--json', JSON_FORMAT_ALIAS_HELP, false));
+  addSharedOption(command, '--trace', () => command.option('--trace <mode>', `Trace capture: ${TRACE_MODES.join(', ')}`, 'off'));
+  if (!command.options.some(option => option.long === '--verbose')) {
+    command.option(
+      command.options.some(option => option.short === '-v') ? '--verbose' : '-v, --verbose',
+      'Debug output',
+      false,
+    );
+    shared.add('--verbose');
+  }
+}
+
+function addSharedOption(command: Command, flag: string, register: () => void): void {
+  if (command.options.some(option => option.short === flag || option.long === flag)) return;
+  register();
+  ((command as CommandWithSharedOptions)._webcmdSharedOptions ??= new Set()).add(flag);
+}
+
+/** Whether an option belongs to webcmd rather than to the adapter grammar. */
+export function isSharedCommandOption(command: Command, flag: string): boolean {
+  const shared = (command as CommandWithSharedOptions)._webcmdSharedOptions;
+  return shared ? shared.has(flag) : command.options.some(option => option.short === flag || option.long === flag);
+}
+
 /**
  * Give every command in a tree the same output-format grammar.
  *
@@ -487,12 +528,15 @@ export function ensureOutputFormatOptions(command: Command): void {
 }
 
 export function outputFormatIsExplicit(command: Command): boolean {
-  return command.getOptionValueSource('format') === 'cli' || command.getOptionValueSource('json') === 'cli';
+  return (isSharedCommandOption(command, '--format') && command.getOptionValueSource('format') === 'cli')
+    || (isSharedCommandOption(command, '--json') && command.getOptionValueSource('json') === 'cli');
 }
 
 /** Resolve `--json` onto `--format json` unless `--format` was also passed. */
 export function requestedOutputFormat(command: Command, format: unknown): unknown {
-  return command.getOptionValueSource('json') === 'cli' && command.getOptionValueSource('format') !== 'cli'
+  return isSharedCommandOption(command, '--json')
+    && command.getOptionValueSource('json') === 'cli'
+    && command.getOptionValueSource('format') !== 'cli'
     ? 'json'
     : format;
 }
