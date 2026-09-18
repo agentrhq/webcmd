@@ -1,4 +1,5 @@
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
@@ -89,7 +90,10 @@ describe('plugin runtime search helpers', () => {
 describe('plugin runtime desktop command factories', () => {
   it('creates screenshot, status, new, and dump commands with their existing behavior', async () => {
     const site = `runtime-test-${process.pid}`;
-    const output = `/tmp/${site}.txt`;
+    const output = path.join(os.tmpdir(), `${site}.txt`);
+    const domFile = path.join(os.tmpdir(), `${site}-dom.html`);
+    const a11yFile = path.join(os.tmpdir(), `${site}-a11y.txt`);
+    const snapshotFile = path.join(os.tmpdir(), `${site}-snapshot.json`);
     const page = {
       evaluate: vi.fn()
         .mockResolvedValueOnce('<html>snapshot</html>')
@@ -109,8 +113,8 @@ describe('plugin runtime desktop command factories', () => {
 
     try {
       await expect(runBrowserCommand(screenshot, page, { output })).resolves.toEqual([
-        { Status: 'Success', File: `/tmp/${site}-dom.html` },
-        { Status: 'Success', File: `/tmp/${site}-a11y.txt` },
+        { Status: 'Success', File: domFile },
+        { Status: 'Success', File: a11yFile },
       ]);
       await expect(runBrowserCommand(status, page)).resolves.toEqual([
         { Status: 'Connected', Url: 'https://example.com', Title: 'Example' },
@@ -118,18 +122,69 @@ describe('plugin runtime desktop command factories', () => {
       await expect(runBrowserCommand(create, page)).resolves.toEqual([{ Status: 'Success' }]);
       await expect(runBrowserCommand(dump, page)).resolves.toEqual([{
         action: 'Dom extraction finished',
-        files: `/tmp/${site}-dom.html, /tmp/${site}-snapshot.json`,
+        files: `${domFile}, ${snapshotFile}`,
       }]);
 
-      expect(fs.readFileSync(`/tmp/${site}-a11y.txt`, 'utf8')).toBe('{\n  "tree": "snapshot"\n}');
-      expect(fs.readFileSync(`/tmp/${site}-dom.html`, 'utf8')).toBe('<body>dump</body>');
-      expect(fs.readFileSync(`/tmp/${site}-snapshot.json`, 'utf8')).toBe('{\n  "tree": "dump"\n}');
+      expect(fs.readFileSync(a11yFile, 'utf8')).toBe('{\n  "tree": "snapshot"\n}');
+      expect(fs.readFileSync(domFile, 'utf8')).toBe('<body>dump</body>');
+      expect(fs.readFileSync(snapshotFile, 'utf8')).toBe('{\n  "tree": "dump"\n}');
       expect(page.pressKey).toHaveBeenCalledWith(process.platform === 'darwin' ? 'Meta+N' : 'Control+N');
       expect(page.wait).toHaveBeenCalledWith(1);
     } finally {
-      for (const file of [`/tmp/${site}-dom.html`, `/tmp/${site}-a11y.txt`, `/tmp/${site}-snapshot.json`]) {
+      for (const file of [domFile, a11yFile, snapshotFile]) {
         fs.rmSync(file, { force: true });
       }
+    }
+  });
+
+  it('defaults screenshot and dump output to the OS temp dir', async () => {
+    const site = `runtime-tmpdir-${process.pid}`;
+    // os.tmpdir() reads these on every call, so this relocates the default for
+    // the command factories without mocking a builtin module.
+    const tmpEnvKeys = process.platform === 'win32' ? ['TEMP', 'TMP'] : ['TMPDIR'];
+    const previous = tmpEnvKeys.map((key) => [key, process.env[key]] as const);
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-runtime-tmpdir-'));
+    for (const key of tmpEnvKeys) process.env[key] = tmp;
+
+    const page = {
+      evaluate: vi.fn()
+        .mockResolvedValueOnce('<html>snapshot</html>')
+        .mockResolvedValueOnce('<body>dump</body>'),
+      snapshot: vi.fn()
+        .mockResolvedValueOnce({ tree: 'snapshot' })
+        .mockResolvedValueOnce({ tree: 'dump' }),
+    };
+
+    try {
+      expect(os.tmpdir()).toBe(tmp);
+      const screenshot = makeScreenshotCommand(site, 'Runtime Test');
+      const dump = makeDumpCommand(site);
+
+      expect(screenshot.args?.[0]?.help).toContain(path.join(tmp, `${site}-snapshot.txt`));
+
+      const shot = await runBrowserCommand(screenshot, page) as Array<{ File: string }>;
+      expect(shot.map((row) => row.File)).toEqual([
+        path.join(tmp, `${site}-snapshot-dom.html`),
+        path.join(tmp, `${site}-snapshot-a11y.txt`),
+      ]);
+
+      const dumped = await runBrowserCommand(dump, page) as Array<{ files: string }>;
+      expect(dumped[0].files).toBe(
+        `${path.join(tmp, `${site}-dom.html`)}, ${path.join(tmp, `${site}-snapshot.json`)}`,
+      );
+
+      expect(fs.readdirSync(tmp).sort()).toEqual([
+        `${site}-dom.html`,
+        `${site}-snapshot-a11y.txt`,
+        `${site}-snapshot-dom.html`,
+        `${site}-snapshot.json`,
+      ]);
+    } finally {
+      for (const [key, value] of previous) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+      fs.rmSync(tmp, { recursive: true, force: true });
     }
   });
 });
