@@ -87,8 +87,10 @@ describe('candidate environment provenance', () => {
   });
 
   it('bounds public-IP lookup and omits the field on timeout', async () => {
+    let abortReason: unknown;
     const fetch = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
       init?.signal?.addEventListener('abort', () => {
+        abortReason = init.signal?.reason;
         reject(init.signal?.reason ?? new Error('aborted'));
       });
     }));
@@ -105,7 +107,11 @@ describe('candidate environment provenance', () => {
 
     expect(env.publicIp).toBeUndefined();
     expect(fetch).toHaveBeenCalledTimes(1);
-    expect(Date.now() - started).toBeGreaterThanOrEqual(2000);
+    // The lookup is bounded by its own AbortSignal.timeout, not by the caller
+    // giving up. Assert that mechanism rather than a wall-clock floor: the
+    // timer clock and Date.now() are different sources, so elapsed time can
+    // land a millisecond under the configured timeout.
+    expect((abortReason as Error | undefined)?.name).toBe('TimeoutError');
     expect(Date.now() - started).toBeLessThan(4000);
   });
 });
