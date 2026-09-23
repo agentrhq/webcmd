@@ -103,6 +103,27 @@ export function createAdapterOverride(
   fs.mkdirSync(path.dirname(basePath), { recursive: true });
   fs.writeFileSync(basePath, content);
 
+  // The plugin command file may import sibling files from the same plugin
+  // directory (shared helpers, types, constants). Only the named command
+  // file was copied above, so a forked override whose command file imports
+  // a sibling would resolve those imports to nothing once it's relocated
+  // into clis/. Copy every other file in the plugin's directory alongside
+  // it — mirroring the plugin's own directory layout under clis/<site>/ —
+  // so relative imports the command file makes keep resolving after the
+  // fork. The command file itself is excluded here since it's already
+  // been written above (and clis/ layout intentionally flattens site/
+  // rather than nesting per-command, so a second write would collide).
+  const pluginDir = path.dirname(pluginFile);
+  const commandFileName = path.basename(pluginFile);
+  const siblingEntries = fs.readdirSync(pluginDir, { withFileTypes: true });
+  for (const entry of siblingEntries) {
+    if (!entry.isFile() || entry.name === commandFileName) continue;
+    const siblingSrc = path.join(pluginDir, entry.name);
+    const siblingDest = path.join(path.dirname(overridePath), entry.name);
+    if (fs.existsSync(siblingDest)) continue; // don't clobber an existing override file
+    fs.copyFileSync(siblingSrc, siblingDest);
+  }
+
   const commitHash = readCommitHashFor(homeDir, site);
 
   const records = readOverrideRecords(options.homeDir);
