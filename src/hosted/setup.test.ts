@@ -6,7 +6,7 @@ import { Writable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getConfigPath, makeLocalConfig, saveWebcmdConfig } from './config.js';
-import { runHostedSetup } from './setup.js';
+import { getSetupStatus, runHostedSetup } from './setup.js';
 import type { SlabSetupStatus } from '../slab/status.js';
 
 let tempDir: string | undefined;
@@ -185,6 +185,31 @@ describe('webcmd setup', () => {
     expect(JSON.parse(await readFile(getConfigPath({ env }), 'utf8'))).toMatchObject({
       mode: 'local',
       browser: { kind: 'chrome', executablePath },
+    });
+  });
+
+  it('persists and reports the selected Chrome profile in setup status', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'webcmd-setup-chrome-profile-status-'));
+    const env = { WEBCMD_CONFIG_DIR: tempDir } as NodeJS.ProcessEnv;
+    const executablePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+
+    await expect(runHostedSetup({
+      env,
+      argv: ['--browser', 'chrome', '--chrome-profile', 'Profile 15'],
+      isTTY: false,
+      resolveGoogleChromeExecutable: async () => executablePath,
+      fetchDaemonStatus: async () => null,
+      write: () => undefined,
+    })).resolves.toBe(0);
+
+    expect(JSON.parse(await readFile(getConfigPath({ env }), 'utf8'))).toMatchObject({
+      mode: 'local',
+      browser: { kind: 'chrome', executablePath, chromeProfile: 'Profile 15' },
+    });
+    expect(await getSetupStatus({ env })).toMatchObject({
+      configured: true,
+      mode: 'local',
+      browser: { kind: 'chrome', executablePath, chromeProfile: 'Profile 15' },
     });
   });
 
