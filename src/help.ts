@@ -128,20 +128,31 @@ export function buildRootHelpPresentation(program: Command, groups: RootAdapterG
   }));
   return {
     description: program.description(),
-    usage: [`${program.name()} [options] [command]`],
-    baseText: commanderHelp.formatHelp(program, commanderHelp),
+    usage: [
+      `${program.name()} [options] [command]`,
+      `${program.name()} <site> <command> [args] [options]`,
+      `${program.name()} --session <session-id> browser <command> [args] [options]`,
+      `${program.name()} list [options]`,
+    ],
     options,
     commands: program.commands
       .filter((command) => !adapterNames.has(command.name()))
       .map((command) => ({ name: command.name(), description: command.description() })),
     groups: [
-      { label: `External CLIs (${groups.external.length})`, items: groups.external.map((cli) => cli.label) },
-      { label: `App adapters (${groups.apps.length})`, items: groups.apps },
-      { label: `Site adapters (${groups.sites.length})`, items: groups.sites },
+      { label: `SITES (${groups.sites.length})`, items: groups.sites },
+      { label: `APP ADAPTERS (${groups.apps.length})`, items: groups.apps },
+      { label: `EXTERNAL CLIs (${groups.external.length})`, items: groups.external.map((cli) => cli.label) },
     ],
-    footer: [
-      `Run '${CLI_COMMAND} list' for full command details, or '${CLI_COMMAND} <site> --help' to inspect one site.`,
-      `Agent tip: use '${CLI_COMMAND} <site> --help -f yaml' for all command args/options in one structured response.`,
+    examples: [
+      `${CLI_COMMAND} list`,
+      `${CLI_COMMAND} <site> --help`,
+      `${CLI_COMMAND} --session <session-id> browser tabs`,
+      `${CLI_COMMAND} github whoami -f yaml`,
+    ],
+    agents: [
+      `${CLI_COMMAND} <site> --help -f yaml`,
+      `${CLI_COMMAND} list -f yaml`,
+      `${CLI_COMMAND} <site> <command> -f yaml`,
     ],
   };
 }
@@ -166,7 +177,7 @@ export function installRootPresentationHelp(
 function formatGroupSection(label: string, names: readonly string[]): string[] {
   if (names.length === 0) return [];
   return [
-    `${label} (${names.length}):`,
+    `${label} (${names.length})`,
     wrapCommaList(names),
     '',
   ];
@@ -176,9 +187,9 @@ export function formatRootAdapterHelpText(groups: RootAdapterGroups): string {
   const total = groups.external.length + groups.apps.length + groups.sites.length;
   if (total === 0) return '';
   const lines: string[] = [''];
-  lines.push(...formatGroupSection('External CLIs', groups.external.map(cli => cli.label)));
-  lines.push(...formatGroupSection('App adapters', groups.apps));
-  lines.push(...formatGroupSection('Site adapters', groups.sites));
+  lines.push(...formatGroupSection('SITES', groups.sites));
+  lines.push(...formatGroupSection('APP ADAPTERS', groups.apps));
+  lines.push(...formatGroupSection('EXTERNAL CLIs', groups.external.map(cli => cli.label)));
   lines.push(`Run '${CLI_COMMAND} list' for full command details, or '${CLI_COMMAND} <site> --help' to inspect one site.`);
   lines.push(`Agent tip: use '${CLI_COMMAND} <site> --help -f yaml' for all command args/options in one structured response.`);
   lines.push('');

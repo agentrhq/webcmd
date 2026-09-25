@@ -2,7 +2,11 @@ import type { ConventionAuditReport, ConventionRuleId, ConventionViolation } fro
 import { ArgumentError, attachTraceReceipt, CliError, EXIT_CODES, type ExitCode } from '../errors.js';
 import type { ValidationReport } from '../validate.js';
 import { parseExecutionArtifactDownloadUrl } from './artifact-url.js';
-import { HOSTED_CORE_COMMANDS_CAPABILITY, isHostedCoreCommandId } from './core-commands.js';
+import {
+  HOSTED_COMMAND_ORIGIN_CAPABILITY,
+  HOSTED_CORE_COMMANDS_CAPABILITY,
+  isHostedCoreCommandId,
+} from './core-commands.js';
 import { log } from '../logger.js';
 import { HOSTED_SESSION_PROTOCOL_VERSION } from './types.js';
 import type {
@@ -609,6 +613,7 @@ export class HostedClient {
           'x-webcmd-client-capabilities': [
             'hosted-live-view-v1',
             HOSTED_CORE_COMMANDS_CAPABILITY,
+            HOSTED_COMMAND_ORIGIN_CAPABILITY,
           ].join(', '),
           ...(init.body ? { 'content-type': 'application/json' } : {}),
           ...(this.workspace ? { 'x-webcmd-workspace': this.workspace } : {}),
@@ -1125,7 +1130,7 @@ function isHostedManifestCommand(value: unknown): boolean {
   if (!hasOnlyKeys(value, [
     'site', 'name', 'aliases', 'command', 'description', 'access', 'example', 'domain', 'strategy', 'browser',
     'args', 'columns', 'tags', 'keywords', 'pipeline', 'defaultFormat', 'type', 'modulePath', 'sourceFile', 'navigateBefore',
-    'siteSession', 'freshPage', 'adapterPackageId', 'adapterPackageName', 'adapterPackageVersion',
+    'siteSession', 'freshPage', 'adapterPackageId', 'adapterPackageName', 'adapterPackageVersion', 'origin',
   ])) return false;
   if (typeof value.site !== 'string' || typeof value.name !== 'string' || typeof value.command !== 'string') return false;
   if (typeof value.description !== 'string' || typeof value.access !== 'string' || typeof value.strategy !== 'string') return false;
@@ -1138,7 +1143,7 @@ function isHostedManifestCommand(value: unknown): boolean {
   if (value.defaultFormat !== undefined && value.defaultFormat !== null && typeof value.defaultFormat !== 'string') return false;
   if (value.example !== undefined && typeof value.example !== 'string') return false;
   if (value.pipeline !== undefined && (!Array.isArray(value.pipeline) || !value.pipeline.every(isRecord))) return false;
-  for (const key of ['type', 'modulePath', 'sourceFile', 'siteSession', 'adapterPackageId', 'adapterPackageName', 'adapterPackageVersion']) {
+  for (const key of ['type', 'modulePath', 'sourceFile', 'siteSession', 'adapterPackageId', 'adapterPackageName', 'adapterPackageVersion', 'origin']) {
     if (value[key] !== undefined && typeof value[key] !== 'string') return false;
   }
   if (value.freshPage !== undefined && typeof value.freshPage !== 'boolean') return false;

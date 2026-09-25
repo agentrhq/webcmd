@@ -1,9 +1,0 @@
-{
-  "name": "webcmd-plugin-linkedin",
-  "version": "0.1.0",
-  "type": "module",
-  "description": "LinkedIn profile, network, messaging, job, and Sales Navigator commands for WebCMD",
-  "peerDependencies": {
-    "@agentrhq/webcmd": ">=0.7.4"
-  }
-}

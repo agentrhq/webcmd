@@ -1,4 +1,5 @@
 export const HOSTED_CORE_COMMANDS_CAPABILITY = 'hosted-core-commands-v1' as const;
+export const HOSTED_COMMAND_ORIGIN_CAPABILITY = 'hosted-command-origin-v1' as const;
 
 export const HOSTED_CORE_COMMAND_IDS = [
   'validate',

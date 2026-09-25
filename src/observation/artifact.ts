@@ -195,7 +195,7 @@ function renderSummary(
     '## How To Use',
     '',
     '- Start with this summary, then inspect `trace.jsonl` only when the evidence below is insufficient.',
-    '- For adapter repair policy and retry limits, use the `webcmd-autofix` skill.',
+    '- For adapter repair, run `webcmd adapter path <site>/<command>` and retry with `--trace retain-on-failure`.',
     '- `adapterSourcePathExists: false` means the path is a best-effort hint, not a confirmed editable file.',
     '',
     '## Error',

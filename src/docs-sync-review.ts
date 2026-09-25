@@ -80,7 +80,7 @@ export const REVIEW_JSON_SCHEMA = {
     },
     findings: {
       type: 'array',
-      maxItems: 5,
+      description: 'At most 5 findings; an empty array when no documentation update is needed.',
       items: {
         type: 'object',
         additionalProperties: false,
@@ -166,7 +166,6 @@ const GENERAL_DOCUMENTATION = [
   'README.md',
   'docs/cli-reference.mdx',
   'docs/concepts.mdx',
-  'skills/webcmd-usage/SKILL.md',
 ];
 
 const BROWSER_DOCUMENTATION = [
@@ -175,15 +174,12 @@ const BROWSER_DOCUMENTATION = [
   'docs/browser-and-sitemap-memory.mdx',
   'docs/cli-reference.mdx',
   'docs/concepts.mdx',
-  'skills/webcmd-browser-sitemap/SKILL.md',
   'skills/webcmd-browser/SKILL.md',
-  'skills/webcmd-usage/SKILL.md',
 ];
 
 const HOSTED_DOCUMENTATION = [
   ...BROWSER_DOCUMENTATION,
   'docs/authentication-and-profiles.mdx',
-  'docs/local-or-cloud.mdx',
 ];
 
 const HOSTED_PROFILE_PATHS = /^(?:src\/completion-shared|src\/hosted\/(?:browser-args|client|runner|types))\.ts$/;
@@ -193,8 +189,6 @@ const ADAPTER_DOCUMENTATION = [
   'docs/authoring.mdx',
   'docs/cli-reference.mdx',
   'docs/skills.mdx',
-  'skills/webcmd-adapter-author/SKILL.md',
-  'skills/webcmd-usage/SKILL.md',
 ];
 
 export function selectDocumentationPaths(files: ChangedFile[]): string[] {
@@ -316,6 +310,9 @@ export function buildReviewPrompts(
       'Use no_update_needed only when the supplied changes require no README, docs, or skill update.',
       'Use review_suggested when context or evidence is ambiguous or incomplete.',
       'Use likely_missing only when an exact changed-file excerpt supports a specific missing documentation update.',
+      'Respond with a JSON object using exactly these keys: {"verdict": "no_update_needed" | "review_suggested" | "likely_missing", "summary": string, "findings": array}.',
+      'Each finding uses exactly these keys: {"surface": "readme" | "docs" | "skill", "behaviorChange": string, "changedPath": string, "evidence": string, "suggestedPath": string, "reason": string}.',
+      'Return at most 5 findings, and an empty findings array when the verdict is no_update_needed.',
       '',
       'BEGIN UNTRUSTED PULL REQUEST DATA',
       `PR: #${context.number}`,

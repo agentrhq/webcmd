@@ -6,18 +6,26 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   addFieldMapping,
   addResponseSample,
   appendNote,
+  copyDraftFiles,
+  deleteProductFile,
   getVerifyFixture,
+  listProductKeys,
   listSiteMemory,
   markEndpointStale,
   putVerifyFixture,
+  readProductFile,
   setEndpoint,
   showSiteMemory,
+  writeProductFile,
 } from './local-store.js';
+import { GIT_TEST_TIMEOUT_MS, removeTempDirs } from './__fixtures__/git-test-support.js';
+
+vi.setConfig({ testTimeout: GIT_TEST_TIMEOUT_MS });
 
 const tempHomes: string[] = [];
 const base = { site: 'example.test' };
@@ -29,7 +37,7 @@ afterEach(async () => {
   else process.env.HOME = originalHome;
   if (originalUserProfile === undefined) delete process.env.USERPROFILE;
   else process.env.USERPROFILE = originalUserProfile;
-  await Promise.all(tempHomes.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+  await removeTempDirs(tempHomes);
   await rm(join(process.cwd(), '.webcmd/sites/no-home.test'), { recursive: true, force: true });
 });
 
@@ -260,6 +268,57 @@ describe('local site memory store', () => {
 
     await expect(showSiteMemory(base.site, { homeDir, paths: ['linkdir/secret.txt'] })).rejects.toThrow(/Invalid site memory path/);
     await expect(listSiteMemory(base.site, { homeDir, paths: ['linkdir/secret.txt'] })).rejects.toThrow(/Invalid site memory path/);
+  });
+
+  it('writes and reads a contained product file', async () => {
+    const homeDir = await tempHome();
+    await writeProductFile('example.test', 'sitemap/SITE.md', '# Example\n', { homeDir });
+
+    await expect(readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).resolves.toBe('# Example\n');
+  });
+
+  it('rejects a product path that escapes the sites root', async () => {
+    const homeDir = await tempHome();
+
+    await expect(writeProductFile('example.test', '../outside.md', 'nope\n', { homeDir }))
+      .rejects.toThrow(/Invalid site memory path/);
+    await expect(readProductFile('example.test', '../outside.md', { homeDir }))
+      .rejects.toThrow(/Invalid site memory path/);
+  });
+
+  it('deletes a contained product file and ignores a missing path', async () => {
+    const homeDir = await tempHome();
+    await writeProductFile('example.test', 'sitemap/SITE.md', '# Example\n', { homeDir });
+
+    await deleteProductFile('example.test', 'sitemap/SITE.md', { homeDir });
+
+    await expect(readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).resolves.toBeNull();
+    await expect(deleteProductFile('example.test', 'sitemap/SITE.md', { homeDir })).resolves.toBeUndefined();
+    await expect(deleteProductFile('example.test', '../outside.md', { homeDir }))
+      .rejects.toThrow(/Invalid site memory path/);
+  });
+
+  it('copies contained draft files into product memory', async () => {
+    const homeDir = await tempHome();
+    const draft = join(homeDir, '.webcmd/sites/.drafts/task-1/example.test/sitemap/SITE.md');
+    await mkdir(join(draft, '..'), { recursive: true });
+    await writeFile(draft, '# Draft\n');
+
+    await copyDraftFiles('example.test', 'task-1', ['sitemap/SITE.md'], { homeDir });
+
+    await expect(readProductFile('example.test', 'sitemap/SITE.md', { homeDir })).resolves.toBe('# Draft\n');
+  });
+
+  it('lists product keys while skipping .git, .drafts, and other dot entries', async () => {
+    const homeDir = await tempHome();
+    await writeProductFile('example.test', 'manifest.json', '{}\n', { homeDir });
+    const sites = join(homeDir, '.webcmd/sites');
+    await mkdir(join(sites, '.git'), { recursive: true });
+    await mkdir(join(sites, '.drafts', 'task'), { recursive: true });
+    await mkdir(join(sites, '.cache'), { recursive: true });
+    await writeFile(join(sites, '.hidden'), 'nope');
+
+    await expect(listProductKeys({ homeDir })).resolves.toEqual(['example.test']);
   });
 
   it('uses USERPROFILE instead of writing under cwd when HOME is unset', async () => {

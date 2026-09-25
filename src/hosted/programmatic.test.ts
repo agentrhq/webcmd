@@ -17,7 +17,7 @@ const manifest = {
   metadata: {
     contractSchemaVersion: 1,
     sessionProtocolVersion: 1,
-    webcmdPackageVersion: '0.7.4',
+    webcmdPackageVersion: PKG_VERSION,
     generatedAt: new Date(0).toISOString(),
   },
   commands: [],

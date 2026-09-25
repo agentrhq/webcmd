@@ -174,6 +174,65 @@ async function updateJson(
   });
 }
 
+export async function readProductFile(productKey: string, path: string, opts: LocalStoreOptions = {}): Promise<string | null> {
+  const productRoot = join(sitesRoot(opts), productSegment(productKey));
+  const relative = containedRelativePath(productRoot, path);
+  if (!await exists(productRoot)) return null;
+  try {
+    const safe = await readableRelativePath(productRoot, relative);
+    return await readFile(join(productRoot, safe), 'utf8');
+  } catch (err) {
+    if (isNodeError(err) && err.code === 'ENOENT') return null;
+    throw err;
+  }
+}
+
+export async function writeProductFile(productKey: string, path: string, body: string, opts: LocalStoreOptions = {}): Promise<void> {
+  const productRoot = join(sitesRoot(opts), productSegment(productKey));
+  await mkdir(productRoot, { recursive: true });
+  const relative = containedRelativePath(productRoot, path);
+  const target = join(productRoot, ...relative.split('/'));
+  await mkdir(dirname(target), { recursive: true });
+  await assertInsideSiteRoot(productRoot, dirname(target), path);
+  await withWriteLock(target, () => atomicWrite(target, body));
+}
+
+export async function deleteProductFile(productKey: string, path: string, opts: LocalStoreOptions = {}): Promise<void> {
+  const productRoot = join(sitesRoot(opts), productSegment(productKey));
+  const relative = containedRelativePath(productRoot, path);
+  try {
+    await unlink(join(productRoot, ...relative.split('/')));
+  } catch (err) {
+    if (isNodeError(err) && err.code === 'ENOENT') return;
+    throw err;
+  }
+}
+
+export async function copyDraftFiles(productKey: string, taskId: string, paths: string[], opts: LocalStoreOptions = {}): Promise<void> {
+  const draftRoot = join(sitesRoot(opts), '.drafts', productSegment(taskId), productSegment(productKey));
+  for (const path of paths) {
+    const relative = containedRelativePath(draftRoot, path);
+    const safe = await readableRelativePath(draftRoot, relative);
+    const body = await readFile(join(draftRoot, safe), 'utf8');
+    await writeProductFile(productKey, relative, body, opts);
+  }
+}
+
+export async function listProductKeys(opts: LocalStoreOptions = {}): Promise<string[]> {
+  const root = sitesRoot(opts);
+  if (!await exists(root)) return [];
+  const entries = await readdir(root, { withFileTypes: true });
+  return entries.filter((entry) => entry.isDirectory() && !entry.name.startsWith('.')).map((entry) => entry.name).sort();
+}
+
+export function sitesRoot(opts: LocalStoreOptions = {}): string {
+  return join(requiredHomeDir(opts), '.webcmd', 'sites');
+}
+
+export function containedRelativePath(root: string, path: string): string {
+  return safeRelativePath(root, path).split(sep).join('/');
+}
+
 async function writeSiteFile(site: string, path: string, body: string, opts: LocalStoreOptions): Promise<void> {
   const root = await ensureSiteRoot(site, opts);
   const target = join(root, path);
@@ -191,7 +250,7 @@ function withWriteLock<T>(target: string, fn: () => Promise<T>): Promise<T> {
   return withPathLock(target, () => withFileLock(target, fn));
 }
 
-async function withPathLock<T>(target: string, fn: () => Promise<T>): Promise<T> {
+export async function withPathLock<T>(target: string, fn: () => Promise<T>): Promise<T> {
   const previous = writeChains.get(target) ?? Promise.resolve();
   const next = previous.catch(() => undefined).then(fn);
   const settled = next.then(() => undefined, () => undefined);
@@ -202,7 +261,7 @@ async function withPathLock<T>(target: string, fn: () => Promise<T>): Promise<T>
   return next;
 }
 
-async function atomicWrite(target: string, body: string): Promise<void> {
+export async function atomicWrite(target: string, body: string): Promise<void> {
   const temp = join(dirname(target), `.${basename(target)}.${process.pid}.${randomUUID()}.tmp`);
   try {
     await writeFile(temp, body, 'utf8');
@@ -236,12 +295,19 @@ function siteRoot(site: string, opts: LocalStoreOptions): string {
   if (!site || site.includes('/') || site.includes('\\') || site === '.' || site === '..') {
     throw new Error(`Invalid site memory site: ${site}`);
   }
-  return join(requiredHomeDir(opts), '.webcmd', 'sites', site);
+  return join(sitesRoot(opts), site);
+}
+
+function productSegment(value: string): string {
+  if (!value || value.includes('/') || value.includes('\\') || value === '.' || value === '..' || value.startsWith('.')) {
+    throw new Error(`Invalid site memory path: ${value}`);
+  }
+  return value;
 }
 
 async function memoryPaths(root: string, requested?: string[]): Promise<string[]> {
   if (!await exists(root)) return [];
-  const paths = (requested ?? await walkFiles(root)).filter((path) => !isInternalWritePath(path));
+  const paths = (requested ?? await walkFiles(root)).filter((path) => !isInternalWritePath(path) && !isCandidateMemoryPath(path));
   return Promise.all(paths.map((path) => readableRelativePath(root, path))).then((items) => items.sort());
 }
 
@@ -249,7 +315,7 @@ async function walkFiles(root: string, dir = root): Promise<string[]> {
   const entries = await readdir(dir, { withFileTypes: true });
   const nested = await Promise.all(entries.map(async (entry) => {
     const path = join(dir, entry.name);
-    if (entry.isDirectory()) return walkFiles(root, path);
+    if (entry.isDirectory()) return entry.name === 'candidates' ? [] : walkFiles(root, path);
     if (entry.isFile() && !isInternalWritePath(entry.name)) return [relative(root, path)];
     return [];
   }));
@@ -275,6 +341,11 @@ function safeRelativePath(root: string, path: string): string {
 function isInternalWritePath(path: string): boolean {
   const name = basename(path);
   return tempWritePattern.test(name) || lockWritePattern.test(name);
+}
+
+function isCandidateMemoryPath(path: string): boolean {
+  const normalized = path.split(sep).join('/');
+  return normalized === 'candidates' || normalized.startsWith('candidates/');
 }
 
 function requiredHomeDir(opts: LocalStoreOptions): string {

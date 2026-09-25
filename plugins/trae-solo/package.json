@@ -1,9 +1,0 @@
-{
-  "name": "webcmd-plugin-trae-solo",
-  "version": "0.1.0",
-  "type": "module",
-  "description": "Webcmd commands for trae-solo",
-  "peerDependencies": {
-    "@agentrhq/webcmd": ">=0.5.3"
-  }
-}

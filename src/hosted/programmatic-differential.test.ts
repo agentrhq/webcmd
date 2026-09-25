@@ -43,6 +43,7 @@ async function runInstalled(argv: string[]): Promise<{ exitCode: number; stdout:
       env: {
         PATH: process.env.PATH ?? '', HOME: configDir, WEBCMD_CONFIG_DIR: configDir,
         NO_COLOR: '1', COLUMNS: '80', CI: '1', WEBCMD_NO_UPDATE_CHECK: '1',
+        WEBCMD_CREDENTIAL_BACKEND: 'file',
       },
       maxBuffer: 32 * 1024 * 1024,
     });

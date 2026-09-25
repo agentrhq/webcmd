@@ -80,4 +80,14 @@ describe('hosted root help', () => {
       { name: 'daemon', description: 'Manage the local Webcmd daemon' },
     ]);
   });
+
+  it('advertises --workspace and WEBCMD_WORKSPACE in hosted root help', () => {
+    const help = formatRootHelp(HOSTED_ROOT_HELP);
+    expect(help).toContain('--workspace <id>');
+    expect(help).toContain('WEBCMD_WORKSPACE');
+  });
+
+  it.each(['session', 'site'])('lists the working %s group in hosted root help', (name) => {
+    expect(HOSTED_ROOT_HELP.commands.map(command => command.name.split(/\s/, 1)[0]!)).toContain(name);
+  });
 });

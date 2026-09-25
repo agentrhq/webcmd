@@ -9,12 +9,16 @@
  * marker the filesystem can see: `open(..., 'wx')` creates the lock file only
  * when it does not already exist, atomically, on every platform we support.
  *
- * Abandoned locks never wedge site memory. A lock whose owner process is gone
- * is broken on the next attempt, and any lock older than `staleMs` is broken
- * regardless — the critical section itself is a small read plus a rename, which
- * takes milliseconds. `timeoutMs` is deliberately longer than `staleMs` so an
- * abandoned lock is always broken rather than surfaced to the user as an error.
+ * Abandoned locks never wedge site memory. A lock whose owner process is
+ * confirmed gone is broken on the next attempt. A lock older than `staleMs`
+ * is broken too, but only when we cannot confirm the owner is still alive on
+ * this host — a same-host owner that `process.kill(pid, 0)` finds alive is
+ * still working, no matter how long its critical section has run, and is
+ * never stolen on staleness alone. `timeoutMs` is deliberately longer than
+ * `staleMs` so a genuinely abandoned lock is broken rather than surfaced to
+ * the user as an error.
  */
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 import { open, readFile, stat, unlink } from 'node:fs/promises';
 import { hostname } from 'node:os';
@@ -26,9 +30,14 @@ import { isActionablePid, isPidAlive } from '../session-lease.js';
 export const LOCK_STALE_MS = 10_000;
 /** Total acquire budget. Longer than LOCK_STALE_MS so stale locks are broken, not reported. */
 export const LOCK_TIMEOUT_MS = 15_000;
+/** Repository lock stale bound: copy, explicit staging, and two local commits, including slow Git. */
+export const REPOSITORY_LOCK_STALE_MS = 60_000;
+/** Total repository-lock acquire budget. Longer than REPOSITORY_LOCK_STALE_MS so stale owners recover. */
+export const REPOSITORY_LOCK_TIMEOUT_MS = 90_000;
 
 const RETRY_MIN_MS = 5;
 const RETRY_MAX_MS = 50;
+const heldLocks = new AsyncLocalStorage<Set<string>>();
 
 export interface FileLockOptions {
   staleMs?: number;
@@ -50,9 +59,14 @@ export function lockPathFor(target: string): string {
 /** Run `fn` while holding the cross-process lock for `target`. */
 export async function withFileLock<T>(target: string, fn: () => Promise<T>, options: FileLockOptions = {}): Promise<T> {
   const lockPath = lockPathFor(target);
+  const owned = heldLocks.getStore();
+  if (owned?.has(lockPath)) return fn();
+
   const token = await acquire(lockPath, options);
+  const next = new Set(owned);
+  next.add(lockPath);
   try {
-    return await fn();
+    return await heldLocks.run(next, fn);
   } finally {
     await release(lockPath, token);
   }
@@ -105,8 +119,13 @@ async function breakIfAbandoned(lockPath: string, staleMs: number): Promise<bool
   const before = await statOrUndefined(lockPath);
   if (!before) return true;
   const owner = await readOwner(lockPath);
+  const checkable = owner.host === hostname() && isActionablePid(owner.pid);
+  const ownerAlive = checkable && isPidAlive(owner.pid);
+  // A same-host owner we can confirm is still alive is still working, no matter
+  // how long its critical section has run — staleness alone never steals its lock.
+  if (ownerAlive) return false;
+  const ownerGone = checkable && !ownerAlive;
   const expired = Date.now() - before.mtimeMs > staleMs;
-  const ownerGone = owner.host === hostname() && isActionablePid(owner.pid) && !isPidAlive(owner.pid);
   if (!expired && !ownerGone) return false;
 
   const after = await statOrUndefined(lockPath);

@@ -305,10 +305,20 @@ export async function runBrowserProgram(
   const baselineStore = options.snapshotBaselineStore ?? new MemorySnapshotBaselineStore();
   if (!snapshotDiffEnabled) baselineStore.clear(input.pageId);
   let host!: QuickJSHost;
+  let transport!: PlaywrightTransport;
   const artifactSink = input.artifactSink ?? new LocalBrowserRunArtifactSink();
-  const transport = new PlaywrightTransport(input, message => (
-    host.deliverTransport(message)
-  ));
+  const pendingDelivery: string[] = [];
+  transport = new PlaywrightTransport(input, message => {
+    if (!host) {
+      pendingDelivery.push(message);
+      return;
+    }
+    host.deliverTransport(message);
+  }, (error) => {
+    if (!host) return;
+    host.cancelPending(error);
+    void transport.cancel(error);
+  });
   const quickjsBootStartedAt = Date.now();
   try {
     host = await QuickJSHost.create({
@@ -354,6 +364,8 @@ export async function runBrowserProgram(
       },
     });
     host.installHostCall();
+    for (const message of pendingDelivery) host.deliverTransport(message);
+    pendingDelivery.length = 0;
   } catch (error) {
     timings.quickjs_boot_ms = Math.max(0, Date.now() - quickjsBootStartedAt);
     await transport.dispose(error instanceof Error ? error : new Error(String(error)));

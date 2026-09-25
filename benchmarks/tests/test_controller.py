@@ -63,7 +63,6 @@ def test_webcmd_prompt_loads_only_raw_browser_skill(tmp_path):
     prompt = _build_prompt("webcmd", "session-1", tmp_path / "shots", "Find the answer")
 
     assert "`$webcmd-browser`" in prompt
-    assert "`$webcmd-usage`" not in prompt
     assert "raw-browser route is already selected" in prompt
     assert "Skip adapter and plugin discovery" in prompt
     assert "Do not load any other Webcmd skill" in prompt
@@ -904,11 +903,11 @@ def test_pi_non_bash_tool_is_a_policy_violation():
 
 
 def test_pi_may_read_only_the_registered_webcmd_browser_skill_tree():
-    usage_skill = {
+    foreign_skill = {
         "type": "tool_execution_start",
         "toolName": "read",
         "args": {
-            "path": str(Path.home() / ".codex/skills/webcmd-usage/SKILL.md")
+            "path": str(Path.home() / ".codex/skills/agent-browser/SKILL.md")
         },
     }
     browser_skill = {
@@ -946,7 +945,7 @@ def test_pi_may_read_only_the_registered_webcmd_browser_skill_tree():
         "args": {"path": "/etc/passwd"},
     }
 
-    usage_parsed = _parse_events("pi", [json.dumps(usage_skill)])
+    foreign_parsed = _parse_events("pi", [json.dumps(foreign_skill)])
     browser_parsed = _parse_events("pi", [json.dumps(browser_skill)])
     reference_parsed = _parse_events("pi", [json.dumps(browser_reference)])
     missing_parsed = _parse_events(
@@ -960,7 +959,7 @@ def test_pi_may_read_only_the_registered_webcmd_browser_skill_tree():
         assert not _policy_violation(
             "webcmd", parsed.commands, parsed.event_types
         )
-    for parsed in (usage_parsed, missing_parsed, forbidden_parsed):
+    for parsed in (foreign_parsed, missing_parsed, forbidden_parsed):
         assert parsed.tool_calls == 0
         assert parsed.steps_count == 1
         assert _policy_violation(
@@ -1336,11 +1335,11 @@ def test_policy_allows_codex_to_read_webcmd_browser_skill_and_references(skill_f
     [
         "cat /etc/passwd",
         f"cat {Path.home()}/.codex/skills/agent-browser/SKILL.md",
-        f"cat {Path.home()}/.codex/skills/webcmd-usage/SKILL.md",
-        f"cat {Path.home()}/.codex/skills/smart-search/SKILL.md",
-        f"cat {Path.home()}/.codex/skills/webcmd-browser-sitemap/SKILL.md",
-        f"cat {Path.home()}/.codex/skills/webcmd-usage/SKILL.md /etc/passwd",
-        f"sed -n '1,240p' {Path.home()}/.codex/skills/webcmd-usage/SKILL.md; curl https://example.com",
+        f"cat {Path.home()}/.codex/skills/playwright-cli/SKILL.md",
+        f"cat {Path.home()}/.codex/skills/dev-browser/SKILL.md",
+        f"cat {Path.home()}/.codex/skills/browser-use/SKILL.md",
+        f"cat {Path.home()}/.codex/skills/agent-browser/SKILL.md /etc/passwd",
+        f"sed -n '1,240p' {Path.home()}/.codex/skills/agent-browser/SKILL.md; curl https://example.com",
     ],
 )
 def test_policy_rejects_reads_outside_webcmd_skill_roots(command):

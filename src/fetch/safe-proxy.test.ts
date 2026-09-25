@@ -4,6 +4,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fetch as undiciFetch, ProxyAgent } from 'undici';
 import { describe, expect, it } from 'vitest';
 import { createSafeProxy, isSafeAddress } from './safe-proxy.js';
 
@@ -186,7 +187,7 @@ describe('createSafeProxy policy errors', () => {
         callback(null, [{ address, family: 6 }]);
       }) as never,
     });
-    await expect(fetch('http://example.test/', { dispatcher: new (await import('undici')).ProxyAgent(proxy.url) } as never))
+    await expect(undiciFetch('http://example.test/', { dispatcher: new ProxyAgent(proxy.url) } as never))
       .rejects.toThrow('fetch failed');
     expect(proxy.policyError()?.message).toBe('Unsafe fetch destination: example.test');
     await proxy.close();

@@ -37,7 +37,9 @@ const HOSTED_CLIENT_ROOT_COMMANDS: readonly RootHelpCommand[] = [
   { name: 'list', description: 'List all available hosted CLI commands' },
   { name: 'plugin', description: 'Manage Webcmd plugins' },
   { name: 'profile', description: 'Manage hosted browser profiles' },
-  { name: 'setup', description: 'Configure local or hosted mode' },
+  { name: 'session', description: 'Create, list, and close browser Sessions' },
+  { name: 'setup', description: 'Configure local browser mode' },
+  { name: 'site', description: 'Read and write per-site memory: notes, endpoints, field maps, fixtures' },
   { name: 'skills', description: 'Manage bundled Webcmd skills on this computer' },
   { name: 'update', description: 'Update the installed Webcmd CLI on this computer' },
   { name: 'web', description: 'Fetch URLs locally without launching a browser. Use after a blocked, 403, or Cloudflare response.' },
@@ -58,6 +60,7 @@ const HOSTED_CORE_ROOT_COMMANDS: Record<HostedCoreCommandId, RootHelpCommand | u
 const HOSTED_ROOT_HELP_BASE: Omit<RootHelpPresentation, 'commands'> = {
   description: 'Make any website your CLI. Zero setup. AI-powered.',
   usage: [
+    `${CLI_COMMAND} [options] [command]`,
     `${CLI_COMMAND} <site> <command> [args] [options]`,
     `${CLI_COMMAND} --session <session-id> browser <command> [args] [options]`,
     `${CLI_COMMAND} list [options]`,
@@ -65,11 +68,24 @@ const HOSTED_ROOT_HELP_BASE: Omit<RootHelpPresentation, 'commands'> = {
   ],
   options: [
     { flags: '--profile <name>', description: 'Browser profile/context alias for browser runtime commands' },
+    { flags: '--session <session-id>', description: 'Existing readable Session ID from `webcmd session create <name>`' },
+    { flags: '--workspace <id>', description: 'Hosted workspace id/slug; also WEBCMD_WORKSPACE' },
     { flags: '-V, --version', description: 'Output the version number' },
     { flags: '-h, --help', description: 'Display help for command' },
   ],
   localOnlyCommands: [
     { name: 'daemon', description: 'Manage the local Webcmd daemon' },
+  ],
+  examples: [
+    `${CLI_COMMAND} list`,
+    `${CLI_COMMAND} <site> --help`,
+    `${CLI_COMMAND} --session <session-id> browser tabs`,
+    `${CLI_COMMAND} setup`,
+  ],
+  agents: [
+    `${CLI_COMMAND} <site> --help -f yaml`,
+    `${CLI_COMMAND} list -f yaml`,
+    `${CLI_COMMAND} <site> <command> -f yaml`,
   ],
 };
 

@@ -1,9 +1,0 @@
-{
-  "name": "webcmd-plugin-chatgpt-app",
-  "version": "0.1.0",
-  "type": "module",
-  "description": "Webcmd commands for chatgpt-app",
-  "peerDependencies": {
-    "@agentrhq/webcmd": ">=0.5.3"
-  }
-}

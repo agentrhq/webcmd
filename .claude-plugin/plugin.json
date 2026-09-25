@@ -1,7 +1,7 @@
 {
   "name": "webcmd",
-  "version": "0.7.9",
-  "description": "Turn websites, browser sessions, desktop apps, and local tools into deterministic CLI surfaces for humans and AI agents.",
+  "version": "0.8.4",
+  "description": "Self-learning browser infrastructure for AI agents: live browser control plus local sitemap memory that makes repeat runs faster and cheaper.",
   "author": {
     "name": "AgentRHQ",
     "url": "https://github.com/agentrhq"

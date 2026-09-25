@@ -6,8 +6,8 @@ LITPROMPT ?= litprompt
 #   skill-src/cli/      -> skills/          installable CLI/harness skills
 #   skill-src/mcp/      -> mcp-skills/      MCP resource documents
 #
-#   skill-src/cli/webcmd-usage/SKILL.src.md -> skills/webcmd-usage/SKILL.md
-#   skill-src/mcp/webcmd-usage.src.md       -> mcp-skills/webcmd-usage.md
+#   skill-src/cli/webcmd-browser/SKILL.src.md -> skills/webcmd-browser/SKILL.md
+#   skill-src/mcp/webcmd-browser.src.md       -> mcp-skills/webcmd-browser.md
 #
 # Source files are never named SKILL.md, and no generated MCP document is
 # either: skill installers (`npx skills add`, harness scanners) match that

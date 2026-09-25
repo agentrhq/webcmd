@@ -7,11 +7,17 @@ import {
   CloakSessionManager,
   resolveCloakBrowserVersion,
 } from './session-manager.js';
+import type { LaunchChromePersistentContext } from './session-manager.js';
 
 export interface LocalCloakRuntimeProviderOptions {
   baseDir?: string;
+  profileNamespace?: string;
+  executablePath?: string;
+  runtimeName?: 'cloak' | 'chrome' | 'custom';
   launchPersistentContext?: LaunchPersistentContext;
   launchBackgroundPersistentContext?: LaunchPersistentContext;
+  launchChromePersistentContext?: LaunchChromePersistentContext;
+  syncToChrome?: boolean;
 }
 
 export class LocalCloakRuntimeProvider implements BrowserRuntimeProvider {
@@ -25,7 +31,14 @@ export class LocalCloakRuntimeProvider implements BrowserRuntimeProvider {
       isActive: session => this.manager?.hasSession(session.profileId, session.id) ?? false,
     });
     this.manager = new CloakSessionManager({
-      ...opts,
+      baseDir: opts.baseDir,
+      profileNamespace: opts.profileNamespace,
+      executablePath: opts.executablePath,
+      runtimeKind: opts.runtimeName,
+      launchPersistentContext: opts.launchPersistentContext,
+      launchBackgroundPersistentContext: opts.launchBackgroundPersistentContext,
+      launchChromePersistentContext: opts.launchChromePersistentContext,
+      syncToChrome: opts.syncToChrome,
       hasActiveHandoff: profileId => this.sessions.list(profileId, 100).some(session => (
         Boolean(session.handoff) && Date.parse(session.handoff!.expiresAt) > Date.now()
       )),
@@ -36,7 +49,7 @@ export class LocalCloakRuntimeProvider implements BrowserRuntimeProvider {
     const profiles = this.manager.profileStatuses();
     return {
       runtimeConnected: true,
-      runtimeName: 'cloak',
+      runtimeName: this.opts.runtimeName ?? 'cloak',
       runtimeVersion: resolveCloakBrowserVersion(),
       profiles,
       pending: 0,
@@ -76,7 +89,7 @@ export class LocalCloakRuntimeProvider implements BrowserRuntimeProvider {
     return this.sessions.clearHandoff(this.resolveProfileId(command), command.sessionId!);
   }
 
-  async listSessions(input: { profileId?: string; limit?: number }): Promise<BrowserSessionListRow[]> {
+  async listSessions(input: { profileId?: string; limit?: number; includeDiscovered?: boolean }): Promise<BrowserSessionListRow[]> {
     return this.sessions.list(input.profileId, input.limit).map((session) => ({
       ...session,
       runtimeState: this.manager.hasSession(session.profileId, session.id) ? 'active' : 'idle',

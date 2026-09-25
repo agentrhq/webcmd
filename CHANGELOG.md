@@ -4,6 +4,7 @@
 
 ### Added
 
+- `webcmd setup --mode local --browser chrome` detects and reuses an installed normal Google Chrome with an isolated `~/.webcmd/chrome/profiles` directory.
 - Hosted mode can negotiate and run core validation, diagnostics, adapter lifecycle, profile lifecycle, and catalog-list commands advertised by Webcmd Cloud.
 - `@agentrhq/webcmd/adapter-analysis` exposes platform-neutral validation and convention-audit rules for trusted hosted command inventories.
 - `@agentrhq/webcmd/hosted/core-commands` exposes the `hosted-core-commands-v1` capability contract and canonical command IDs.
@@ -11,9 +12,133 @@
 
 ### Changed
 
+- Installed Google Chrome now uses a Webcmd-owned explicit nonzero loopback CDP port instead of Playwright's debugging pipe. Normal headed Chrome therefore retains its native `navigator.webdriver === false` value; Cloak, SLAB, and custom executables are unchanged.
+- `WEBCMD_BROWSER_BINARY_PATH` can select a compatible Chromium executable for local browser Sessions; it takes precedence over the existing `CLOAKBROWSER_BINARY_PATH` override and isolates each browser build's profile data from managed Cloak profiles.
 - Hosted help and completion advertise Cloud-owned core commands only when the authenticated manifest advertises them.
 - Hosted command lists retain excluded commands as `LOCAL` rows and return a local-only error instead of plugin-install guidance.
 - Local auth commands initialize user CLI compatibility shims, and hosted auth uses the same native grammar, flags, choices, and help as local mode.
+
+## [0.8.4](https://github.com/agentrhq/webcmd/compare/webcmd-v0.8.3...webcmd-v0.8.4) (2026-09-08)
+
+### Improvements
+- `webcmd setup` now offers interactive Chrome profile syncing when Chrome is selected. The new prompt defaults to disabled and does not appear when the option was already specified.
+
+### Fixes
+- `webcmd profile list` now shows saved but disconnected profiles in plain-text output, even when no runtime profiles are currently connected.
+- Chrome profile exports now run shortly after command activity, even when tabs remain open. Rapid commands are debounced into a single export without closing browsers or pages.
+- Exported Chrome profiles now use their webcmd alias as the display name when registration succeeds. This naming update is best-effort when Chrome is already running.
+
+### Contributors
+[@ankitranjan7](https://github.com/ankitranjan7)
+
+## [0.8.3](https://github.com/agentrhq/webcmd/compare/webcmd-v0.8.2...webcmd-v0.8.3) (2026-09-08)
+
+### Highlights
+- Added `webcmd setup --browser chrome --sync-to-chrome` to automatically copy profile cookies into a webcmd-managed native Chrome profile when the browser runtime closes. The profile is registered with Chrome in the background and can then be opened directly in Chrome.
+- Added persistent, versioned agent behavior settings for each native SLAB profile, providing consistent humanized browser interactions across daemon sessions.
+
+### Improvements
+- Humanized input now avoids intentional mistypes in sensitive fields such as passwords, payment fields, and one-time-code inputs.
+- Disposing an agent page now cancels in-progress humanized input and delays immediately.
+- Playwright tracing snapshots are disabled on agent-controlled pages.
+
+### Fixes
+- Browser network-capture waits now use monotonic elapsed time, preventing premature timeouts when the system clock changes.
+
+### Contributors
+[@AcidicSoil](https://github.com/AcidicSoil) | [@ankitranjan7](https://github.com/ankitranjan7) | [@rishabhraj36](https://github.com/rishabhraj36)
+
+## [0.8.2](https://github.com/agentrhq/webcmd/compare/webcmd-v0.8.1...webcmd-v0.8.2) (2026-09-07)
+
+### Improvements
+- `webcmd setup` now exclusively configures local browser mode. The hosted/local prompt and the `--mode` and `--api-key` options have been removed. Browser selection, Chrome cookie import, status reporting, and daemon restart behavior remain available.
+- On first access to a product without local site memory, Webcmd now requests a seed from `https://api.webcmd.dev` by default. The unauthenticated request sends only the resolved product/domain, uses a two-second timeout, and is not retried. Set `WEBCMD_GLOBAL_MEMORY=off` to disable lookups; `WEBCMD_GLOBAL_MEMORY_URL` remains available as a developer or test override.
+
+### Fixes
+- `webcmd skills remove` now removes skills from only one provider and scope—or one custom `--path`—instead of scanning every supported location. It supports `--provider` and `--scope`, prompts for them interactively when needed, and includes them in JSON output. Stable links under `~/.webcmd/skills` are no longer removed by this command.
+- `webcmd skills add` and `webcmd skills update` now prune stale symlinks from `~/.webcmd/skills` while preserving user-owned entries that are not symlinks.
+
+### Contributors
+[@ankitranjan7](https://github.com/ankitranjan7)
+
+## [0.8.1](https://github.com/agentrhq/webcmd/compare/webcmd-v0.8.0...webcmd-v0.8.1) (2026-09-04)
+
+### Highlights
+- Local Chrome setup can now import cookies from installed Chrome profiles, allowing Webcmd to start with existing sign-ins. Setup maps Chrome’s default profile to Webcmd’s `default` profile and creates stable names for additional profiles.
+- Use `--chrome-profile` to import one Chrome profile, or `--import-chrome-cookies` and `--no-import-chrome-cookies` to control cookie import in non-interactive setup.
+
+### Improvements
+- Redesigned `webcmd --help` with an ASCII banner, clearer command groups, global options, examples, agent guidance, and dynamic site/external CLI lists. Structured JSON and YAML help remain unchanged.
+- Browser readiness messages now identify the configured runtime and provide relevant guidance for SLAB, Cloak, Chrome, and custom runtimes.
+
+### Fixes
+- Improved SLAB session orchestration:
+  - Native profile IDs such as `Profile 1` are now supported.
+  - `session list` exposes unbound SLAB windows as temporary `discovered` sessions.
+  - `browser tabs` discovers pages without focusing or claiming them.
+  - `browser bind --page <page-id>` claims the page’s complete window, including sibling tabs.
+  - Closing an adopted human session detaches Webcmd while leaving the window open.
+  - `browser close --page <page-id>` can close an exact tab; `--force` permits closing adopted human tabs.
+  - Explicit session closure now cleans up SLAB session records correctly.
+  - The initial blank page is claimed instead of leaving an unowned tab behind.
+- Fixed installed Chrome on macOS unloading its profile or terminating after the last visible probe window closes.
+- Browser daemon startup no longer inherits caller-owned temporary-directory environment variables, improving reliability when launched from short-lived environments.
+
+### Contributors
+[@rajarshidattapy](https://github.com/rajarshidattapy) | [@rishabhraj36](https://github.com/rishabhraj36)
+
+## [0.8.0](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.11...webcmd-v0.8.0) (2026-09-02)
+
+
+### Features
+
+* **browser:** restore runtime rollout with SLAB reuse ([#479](https://github.com/agentrhq/webcmd/issues/479)) ([ae87b4a](https://github.com/agentrhq/webcmd/commit/ae87b4a8aae700c57af8dc5f1a41684d6aa5b160))
+* **browser:** support custom Chromium binaries with isolated profiles ([#462](https://github.com/agentrhq/webcmd/issues/462)) ([fde64e2](https://github.com/agentrhq/webcmd/commit/fde64e295575b02ccfaed15dfd78156d642c3806))
+* **site-memory:** add local self-learning browser memory ([#475](https://github.com/agentrhq/webcmd/issues/475)) ([018b723](https://github.com/agentrhq/webcmd/commit/018b7239ceb413691034497c35a3016a4a2654b5))
+
+## [0.7.11](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.10...webcmd-v0.7.11) (2026-08-31)
+
+### Fixes
+- Hosted help now includes `--workspace <id>`, `WEBCMD_WORKSPACE`, and the `session` and `site` command groups.
+- Unknown site commands now suggest using `webcmd browser init <site>/<command>` to author the missing command.
+- Hosted `webcmd list` output now reports command origins consistently as `builtin`, `plugin:<name>`, `local`, or `override:<plugin>`.
+- Fixed browser runs hanging after popup or download events fired. `page.waitForEvent('popup')` and `page.waitForEvent('download')` now resolve correctly, while event-specific timeouts are honored when no event occurs.
+
+### Adapters
+- Moved 123 community adapters to the standalone [`agentrhq/webcmd-plugins`](https://github.com/agentrhq/webcmd-plugins) repository without behavioral changes.
+- Preserved compatibility for existing official source identifiers by normalizing legacy `agentrhq/webcmd` sources to the new repository.
+- The standalone community plugin catalog requires Webcmd 0.7.11 or newer.
+
+### Contributors
+[@ankitranjan7](https://github.com/ankitranjan7)
+
+## [0.7.10](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.9...webcmd-v0.7.10) (2026-08-28)
+
+### Highlights
+- Hosted mode can now negotiate and run core commands advertised by Webcmd Cloud, including diagnostics, profile lifecycle, and plugin catalog commands. Help, completion, and execution only expose capabilities supported by the connected Cloud service.
+- Registered external CLIs can now run locally while Webcmd is configured for hosted mode. Arguments and child exit codes are preserved, and hosted sites take precedence if names collide.
+
+### Improvements
+- Hosted help and shell completion now advertise locally handled `skills`, `update`, and `external` commands.
+- Hosted root help now includes `session`, `site`, and `--workspace <id>`, including the `WEBCMD_WORKSPACE` environment-variable alternative.
+- Hosted authentication commands now use the same grammar, flags, choices, and help as local mode.
+- `webcmd profile use` now stores a validated hosted profile preference locally.
+- Hosted command lists retain unavailable commands as `LOCAL` entries and report origins consistently as `builtin`, `plugin:<name>`, `local`, or `override:<plugin>`.
+- Unknown site subcommands now suggest the corresponding authoring command, such as `webcmd browser init <site>/<command>`.
+- Added public package exports for the hosted core-command capability contract.
+
+### Fixes
+- **Breaking:** `webcmd doctor` now exits with code 78 (`CONFIG_ERROR`) when a required readiness check fails. Its stdout report is unchanged, and soft warnings do not affect the exit code.
+- Fixed browser runs hanging after popup or download events fired. `waitForEvent('popup')` and `waitForEvent('download')` now resolve correctly, while event-specific timeouts take effect before the outer run timeout.
+- `external install` now returns a nonzero exit code when installation fails.
+- External CLI registrations using explicit executable paths are now detected without an unnecessary `PATH` lookup.
+
+### Adapters
+- Hosted mode can run Cloud-advertised adapter workflows including `validate`, `verify`, `convention-audit`, `adapter status`, and `adapter reset`.
+- Added the public `@agentrhq/webcmd/adapter-analysis` export for platform-neutral adapter validation and convention auditing.
+
+### Contributors
+[@ankitranjan7](https://github.com/ankitranjan7)
 
 ## [0.7.9](https://github.com/agentrhq/webcmd/compare/webcmd-v0.7.8...webcmd-v0.7.9) (2026-08-28)
 

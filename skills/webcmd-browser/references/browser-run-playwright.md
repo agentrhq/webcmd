@@ -1,5 +1,7 @@
 # Browser Run Details
 
+This file is only the QuickJS `browser run` contract. Site memory, candidates, and checkpointing are not part of this runtime.
+
 ## The runtime is QuickJS, not Node and not the page
 
 `browser run` executes your program in a QuickJS sandbox. `page`, `context`, and `browser`

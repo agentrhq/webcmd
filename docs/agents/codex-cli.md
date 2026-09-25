@@ -1,6 +1,6 @@
 ---
-title: Codex CLI Agent
-sidebarTitle: Codex CLI
+title: Codex CLI
+sidebarTitle: Codex
 ---
 
 ## Agent prompt
@@ -38,7 +38,7 @@ codex plugin add webcmd@webcmd
 
 The same flow is available in the TUI: run `/plugins`, choose **Add plugin marketplace**, and enter `agentrhq/webcmd` or `https://github.com/agentrhq/webcmd`.
 
-The plugin bundles all seven Webcmd skills, and installs the npm CLI on first use if `webcmd` is missing. Start a new task after installing.
+The plugin bundles exactly one skill, `webcmd-browser`, and installs the npm CLI on first use if `webcmd` is missing. Start a new task after installing.
 
 Useful follow-ups: `codex plugin list`, `codex plugin remove webcmd`, `codex plugin marketplace upgrade`. All accept `--json`.
 
@@ -50,7 +50,7 @@ webcmd doctor
 webcmd skills add
 ```
 
-When `webcmd skills add` prompts, choose the `agents` provider. It installs into `~/.agents/skills/` (user) or `.agents/skills/` (project), which Codex CLI reads on startup. Codex then surfaces `webcmd-usage` and `webcmd-browser` as skills.
+When `webcmd skills add` prompts, choose the `agents` provider. It installs into `~/.agents/skills/` (user) or `.agents/skills/` (project), which Codex CLI reads on startup. Codex then surfaces `webcmd-browser` as a skill.
 
 Restart Codex (or start a new session) after installing skills.
 
@@ -84,10 +84,9 @@ disabled_tools = ["navigate", "screenshot"]
 | Search results look stale | `web_search` defaults to `"cached"`. Set `web_search = "live"` in `~/.codex/config.toml`, then restart `codex`. |
 | `web_search` was disabled and search stopped working | Expected. Set it back to `"live"` or `"cached"` — Webcmd does not replace search. |
 | `webcmd` not found in Codex shell | Confirm `webcmd` is on the PATH Codex uses; restart after installing the CLI. |
-| Browser Session idles or loses its window | Keep its immutable, Profile-scoped ID; `webcmd --profile work --session work-project-k7 browser tabs` reopens it. Start with `webcmd --profile work session create "Work Project"`; use `webcmd --profile work session list` and `webcmd --profile work session close work-project-k7` for lifecycle. Adapter commands without `--session` reuse `adapter-default`; raw browser commands require an explicit readable selector. |
+| Browser Session idles or loses its window | Keep its immutable, Profile-scoped ID; `webcmd --profile work --session work-project-k7 browser tabs` reopens it. Start with `webcmd --profile work session create "Work Project"`; use `webcmd --profile work session list` and `webcmd --profile work session close work-project-k7` for lifecycle. |
 
 ## See also
 
 * [`start.md`](../../start.md) — common setup, [auth profiles and human handoff](../../start.md#auth-profiles-and-human-handoff), and [security](../../start.md#security).
 * [`webcmd-browser`](../../skills/webcmd-browser/SKILL.md) — the raw browser session surface.
-* [`webcmd-usage`](../../skills/webcmd-usage/SKILL.md) — adapter-first usage rules.

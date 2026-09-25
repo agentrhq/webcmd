@@ -70,7 +70,7 @@ vi.mock('node:child_process', async () => {
 });
 
 import { handleProgramParseError } from './cli-error-report.js';
-import { createProgram, findPackageRoot, loadAntigravityServe, normalizeVerifyRows, renderVerifyPreview, resolveBrowserVerifyInvocation, resolveSitemapAvailabilityForUrl, selectFreshByTimestamp } from './cli.js';
+import { createProgram, findPackageRoot, loadAntigravityServe, normalizeVerifyRows, renderVerifyPreview, resolveBrowserVerifyInvocation, selectFreshByTimestamp } from './cli.js';
 
 const realHome = process.env.HOME;
 const realConfigDir = process.env.WEBCMD_CONFIG_DIR;
@@ -641,11 +641,16 @@ describe('createProgram root help descriptions', () => {
   it('renders the actual local root through the shared root presentation seam', () => {
     const program = createProgram('', '');
     const presentation = getInstalledRootHelpPresentation(program);
-    const commanderHelp = program.createHelp();
+    const help = program.helpInformation();
 
     expect(presentation).toBeDefined();
-    expect(presentation!.baseText).toBe(commanderHelp.formatHelp(program, commanderHelp));
-    expect(program.helpInformation()).toBe(formatRootHelp(presentation!));
+    expect(presentation!.baseText).toBeUndefined();
+    expect(help).toBe(formatRootHelp(presentation!));
+    expect(help).toContain('CORE');
+    expect(help).toContain('BROWSER');
+    expect(help).toContain('GLOBAL OPTIONS');
+    expect(help).toContain('EXAMPLES');
+    expect(help).toContain('AGENTS');
   });
 
   it('guides an absent site to explicit plugin search and install without side effects', async () => {
@@ -723,9 +728,9 @@ describe('createProgram root help descriptions', () => {
       const program = createProgram('', '');
       const help = program.helpInformation();
 
-      expect(help).toContain('Site adapters (2):');
+      expect(help).toContain('SITES (2)');
       expect(help).toContain('reddit, youtube');
-      expect(help).toContain("webcmd <site> --help -f yaml");
+      expect(help).toContain('webcmd <site> --help -f yaml');
       expect(help).not.toMatch(/\n  reddit\s+hot/);
       expect(help).not.toMatch(/\n  youtube\s+search/);
     } finally {
@@ -762,13 +767,13 @@ describe('createProgram root help descriptions', () => {
       const help = program.helpInformation();
 
       // Two separate sections, each with own count
-      expect(help).toContain('App adapters (1):');
-      expect(help).toMatch(/App adapters \(1\):\n {2}chatwise/);
-      expect(help).toContain('Site adapters (1):');
-      expect(help).toMatch(/Site adapters \(1\):\n {2}youtube/);
+      expect(help).toContain('APP ADAPTERS (1)');
+      expect(help).toMatch(/APP ADAPTERS \(1\)\n {2}chatwise/);
+      expect(help).toContain('SITES (1)');
+      expect(help).toMatch(/SITES \(1\)\n {2}youtube/);
 
-      // App adapters appear before Site adapters (External CLIs are absent here)
-      expect(help.indexOf('App adapters')).toBeLessThan(help.indexOf('Site adapters'));
+      // Sites appear before app adapters in the redesigned root help
+      expect(help.indexOf('SITES')).toBeLessThan(help.indexOf('APP ADAPTERS'));
     } finally {
       registry.clear();
       for (const [key, value] of snapshot) registry.set(key, value);
@@ -1253,7 +1258,7 @@ name: 'search',
         usage: 'webcmd browser bind [options]',
         positionals: [],
       });
-      expect(bind.command_options.map((option: any) => option.name)).toEqual(['page', 'verbose', 'format', 'json']);
+      expect(bind.command_options.map((option: any) => option.name)).toEqual(['page', 'targetId', 'verbose', 'format', 'json']);
       expect(data.structured_help).toMatchObject({
         formats: ['yaml', 'json'],
         usage: 'webcmd browser --help -f yaml',
@@ -1302,6 +1307,14 @@ name: 'search',
     } finally {
       process.argv = argv;
     }
+  });
+
+  it('describes session close cleanup consistently with its discard behavior', () => {
+    const program = createProgram('', '');
+    const session = program.commands.find(cmd => cmd.name() === 'session')!;
+    const close = session.commands.find(cmd => cmd.name() === 'close')!;
+
+    expect(close.description()).toBe('Close a browser Session runtime and discard its durable record');
   });
 
   it('renders plugin namespace structured help with positional + option leaves', () => {
@@ -1438,7 +1451,7 @@ name: 'search',
       expect(data.commands.map((cmd: any) => cmd.name)).toEqual(['create', 'list', 'rename', 'use']);
       const list = data.commands.find((cmd: any) => cmd.name === 'list');
       expect(list).toMatchObject({
-        description: 'List Chrome and Chromium profiles available through the Cloak runtime',
+        description: 'List profiles available through the Cloak runtime',
       });
       const rename = data.commands.find((cmd: any) => cmd.name === 'rename');
       expect(rename).toMatchObject({
@@ -1549,71 +1562,22 @@ describe('selectFreshByTimestamp', () => {
   });
 });
 
-describe('resolveSitemapAvailabilityForUrl', () => {
-  function registryFor(site: string, domain: string): Map<string, any> {
-    return new Map([[`${site}:read`, {
-      site,
-      name: 'read',
-      access: 'read',
-      description: 'read',
-      domain,
-      browser: false,
-      args: [],
-    }]]);
-  }
-
-  it('detects local sitemap overlays using adapter registry domain matches', () => {
-    const homeDir = path.join(os.tmpdir(), 'webcmd-sitemap-home');
-    const packageRoot = path.join(os.tmpdir(), 'webcmd-sitemap-package');
-    const localSitemap = path.join(homeDir, '.webcmd', 'sites', 'hackernews', 'sitemap');
-    const exists = new Set([localSitemap]);
-
-    const report = resolveSitemapAvailabilityForUrl('https://news.ycombinator.com/item?id=1', {
-      homeDir,
-      packageRoot,
-      registry: registryFor('hackernews', 'news.ycombinator.com'),
-      fileExists: (candidate) => exists.has(candidate),
-    });
-
-    expect(report).toMatchObject({
-      site: 'hackernews',
-      available: true,
-      source: 'local',
-      paths: { local: localSitemap },
-    });
-    expect(report?.hint).toContain('webcmd-browser-sitemap');
-  });
-
-  it('reports global+local when both sitemap layers exist', () => {
-    const homeDir = path.join(os.tmpdir(), 'webcmd-sitemap-home');
-    const packageRoot = path.join(os.tmpdir(), 'webcmd-sitemap-package');
-    const localSitemap = path.join(homeDir, '.webcmd', 'sites', 'twitter', 'sitemap.md');
-    const globalSitemap = path.join(packageRoot, 'sitemaps', 'twitter');
-    const exists = new Set([localSitemap, globalSitemap]);
-
-    const report = resolveSitemapAvailabilityForUrl('https://x.com/webcmd', {
-      homeDir,
-      packageRoot,
-      registry: registryFor('twitter', 'x.com'),
-      fileExists: (candidate) => exists.has(candidate),
-    });
-
-    expect(report).toMatchObject({
-      site: 'twitter',
-      source: 'local+global',
-      paths: { local: localSitemap, global: globalSitemap },
-    });
-  });
-
-  it('returns null when no sitemap layer exists', () => {
-    const report = resolveSitemapAvailabilityForUrl('https://example.com/', {
-      homeDir: path.join(os.tmpdir(), 'webcmd-sitemap-home'),
-      packageRoot: path.join(os.tmpdir(), 'webcmd-sitemap-package'),
-      registry: new Map(),
-      fileExists: () => false,
-    });
-
-    expect(report).toBeNull();
+describe('local learning command registration', () => {
+  it('registers site memory context, candidate, and checkpoint on the local program', () => {
+    const program = createProgram('', '');
+    for (const path of [
+      ['site', 'memory', 'context'],
+      ['site', 'memory', 'candidate', 'add'],
+      ['site', 'memory', 'candidate', 'search'],
+      ['site', 'memory', 'candidate', 'show'],
+      ['site', 'memory', 'candidate', 'list'],
+      ['site', 'memory', 'checkpoint'],
+      ['site', 'memory', 'classify'],
+    ]) {
+      let command: ReturnType<typeof createProgram> | undefined = program;
+      for (const segment of path) command = command?.commands.find(child => child.name() === segment) as typeof program | undefined;
+      expect(command, path.join(' ')).toBeDefined();
+    }
   });
 });
 
@@ -2018,6 +1982,37 @@ describe('profile list', () => {
     expect(output).not.toContain(`Webcmd ${'extension'}`);
     expect(output).not.toContain('webcmd daemon restart');
   });
+
+  it('lists disconnected saved aliases when no runtime profiles are connected', async () => {
+    fs.mkdirSync(process.env.WEBCMD_CONFIG_DIR!, { recursive: true });
+    fs.writeFileSync(path.join(process.env.WEBCMD_CONFIG_DIR!, 'browser-profiles.json'), JSON.stringify({
+      version: 1,
+      aliases: { work: 'ctx_work' },
+    }));
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ok: true,
+        pid: 123,
+        uptime: 1,
+        daemonVersion: PKG_VERSION,
+        runtimeConnected: false,
+        runtimeName: 'Cloak',
+        profiles: [],
+        pending: 0,
+        memoryMB: 20,
+        port: 9777,
+      }),
+    } as Response);
+    const program = createProgram('', '');
+
+    await program.parseAsync(['node', 'webcmd', 'profile', 'list']);
+
+    const output = stdoutSpy.mock.calls.flat().join('\n');
+    expect(output).toContain('Disconnected saved profiles:');
+    expect(output).toContain('ctx_work work — not connected');
+    expect(output).not.toContain('No Cloak runtime profiles are active');
+  });
 });
 
 describe('structured output for data-returning built-ins', () => {
@@ -2114,6 +2109,38 @@ describe('structured output for data-returning built-ins', () => {
 
     await createProgram('', '').parseAsync(['node', 'webcmd', 'skills', 'list', '-f', 'json']);
     expect(JSON.parse(stdout())).toEqual(bare);
+  });
+
+  it('removes skills for --provider and --scope without prompting', async () => {
+    const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-skills-project-'));
+    const previousCwd = process.cwd();
+    process.chdir(projectDir);
+    try {
+      await createProgram('', '').parseAsync(['node', 'webcmd', 'skills', 'add', '--provider', 'codex', '--scope', 'project', '--json']);
+      const added = JSON.parse(stdout()) as { skills: Array<{ destination: string }> };
+      consoleLogSpy.mockClear();
+
+      await createProgram('', '').parseAsync(['node', 'webcmd', 'skills', 'remove', '--provider', 'codex', '--scope', 'project', '--json']);
+      const removed = JSON.parse(stdout());
+
+      expect(removed).toMatchObject({ provider: 'codex', scope: 'project' });
+      expect(removed.removed).toEqual(added.skills.map((skill) => skill.destination));
+      for (const linkPath of removed.removed) {
+        expect(() => fs.lstatSync(linkPath)).toThrow();
+      }
+    } finally {
+      process.chdir(previousCwd);
+      fs.rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects skills remove --provider custom without --path as a JSON error', async () => {
+    const stderr = await captureStderr(async () => {
+      await createProgram('', '').parseAsync(['node', 'webcmd', 'skills', 'remove', '--provider', 'custom', '--json']);
+    });
+
+    expect(process.exitCode).toBe(EXIT_CODES.USAGE_ERROR);
+    expect(stderr).toContain('Custom skill provider requires --path.');
   });
 
   it('renders daemon status as JSON', async () => {
@@ -2263,13 +2290,17 @@ describe('browser raw session commands', () => {
     expect(mockListExistingBrowserTabs).toHaveBeenCalledWith('work-k7', {});
   });
 
-  it('binds only an explicit stable page id', async () => {
+  it('binds an explicit stable page id or CDP target id', async () => {
     const program = createProgram('', '');
 
     await program.parseAsync(['node', 'webcmd', '--session', 'work-k7', 'browser', 'bind', '--page', 'page-123']);
 
     expect(mockSendCommand).toHaveBeenCalledWith('bind', {
       session: 'work-k7', surface: 'browser', page: 'page-123',
+    });
+    await program.parseAsync(['node', 'webcmd', '--session', 'work-k7', 'browser', 'bind', '--target-id', 'target-123']);
+    expect(mockSendCommand).toHaveBeenLastCalledWith('bind', {
+      session: 'work-k7', surface: 'browser', targetId: 'target-123',
     });
     await expect(program.parseAsync(['node', 'webcmd', '--session', 'work-k7', 'browser', 'bind', '--index', '0']))
       .rejects.toThrow(/process\.exit unexpectedly called/);
@@ -2417,10 +2448,23 @@ describe('browser raw session commands', () => {
     await program.parseAsync(['node', 'webcmd', '--session', 'work-k7', 'browser', 'close']);
     expect(mockSendCommand).toHaveBeenCalledWith('close-window', { session: 'work-k7', surface: 'browser' });
   });
+
+  it('routes exact-page force only on browser close', async () => {
+    const program = createProgram('', '');
+    await program.parseAsync(['node', 'webcmd', '--session', 'work-k7', 'browser', 'close', '--page', 'page-7', '--force']);
+    expect(mockSendCommand).toHaveBeenCalledWith('close-window', {
+      session: 'work-k7', surface: 'browser', page: 'page-7', force: true,
+    });
+  });
 });
 
 describe('browser Session lifecycle commands', () => {
   const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+  function liveSession(id: string, profileId: string) {
+    const t = new Date().toISOString();
+    return { id, profileId, kind: 'explicit' as const, createdAt: t, updatedAt: t, lastUsedAt: t };
+  }
 
   beforeEach(() => {
     process.exitCode = undefined;
@@ -2463,14 +2507,7 @@ describe('browser Session lifecycle commands', () => {
     fs.mkdirSync(baseDir, { recursive: true });
     fs.writeFileSync(path.join(baseDir, 'browser-sessions.json'), JSON.stringify({
       version: 2,
-      sessions: ['default', 'work'].map((profileId) => ({
-        id: 'work-project-k7',
-        profileId,
-        kind: 'explicit',
-        createdAt: '2026-08-11T00:00:00.000Z',
-        updatedAt: '2026-08-11T00:00:00.000Z',
-        lastUsedAt: '2026-08-11T00:00:00.000Z',
-      })),
+      sessions: ['default', 'work'].map((profileId) => liveSession('work-project-k7', profileId)),
     }), { mode: 0o600 });
     await createProgram('', '').parseAsync(['node', 'webcmd', 'profile', 'create', 'work']);
     consoleLogSpy.mockClear();
@@ -2492,14 +2529,7 @@ describe('browser Session lifecycle commands', () => {
     fs.mkdirSync(baseDir, { recursive: true });
     fs.writeFileSync(path.join(baseDir, 'browser-sessions.json'), JSON.stringify({
       version: 2,
-      sessions: [{
-        id: 'work-project-k7',
-        profileId: 'work',
-        kind: 'explicit',
-        createdAt: '2026-08-11T00:00:00.000Z',
-        updatedAt: '2026-08-11T00:00:00.000Z',
-        lastUsedAt: '2026-08-11T00:00:00.000Z',
-      }],
+      sessions: [liveSession('work-project-k7', 'work')],
     }), { mode: 0o600 });
     mockSendCommand.mockRejectedValueOnce(new Error('daemon unavailable'));
 
@@ -2561,14 +2591,7 @@ describe('browser Session lifecycle commands', () => {
     fs.mkdirSync(baseDir, { recursive: true });
     fs.writeFileSync(path.join(baseDir, 'browser-sessions.json'), JSON.stringify({
       version: 2,
-      sessions: [{
-        id: 'existing-k7',
-        profileId: 'default',
-        kind: 'explicit',
-        createdAt: '2026-08-11T00:00:00.000Z',
-        updatedAt: '2026-08-11T00:00:00.000Z',
-        lastUsedAt: '2026-08-11T00:00:00.000Z',
-      }],
+      sessions: [liveSession('existing-k7', 'default')],
     }), { mode: 0o600 });
 
     await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'list', '-f', 'json']);
@@ -2584,14 +2607,7 @@ describe('browser Session lifecycle commands', () => {
     fs.mkdirSync(baseDir, { recursive: true });
     fs.writeFileSync(path.join(baseDir, 'browser-sessions.json'), JSON.stringify({
       version: 2,
-      sessions: [{
-        id: 'work-project-k7',
-        profileId: 'default',
-        kind: 'explicit',
-        createdAt: '2026-08-11T00:00:00.000Z',
-        updatedAt: '2026-08-11T00:00:00.000Z',
-        lastUsedAt: '2026-08-11T00:00:00.000Z',
-      }],
+      sessions: [liveSession('work-project-k7', 'default')],
     }), { mode: 0o600 });
 
     await createProgram('', '').parseAsync(['node', 'webcmd', 'session', 'close', 'work-project-k7', '-f', 'json']);
@@ -2600,6 +2616,7 @@ describe('browser Session lifecycle commands', () => {
       contextId: 'default',
       session: 'work-project-k7',
       force: false,
+      discard: true,
     });
     expect(JSON.parse(consoleLogSpy.mock.calls.flat().join('\n'))).toMatchObject({
       closed: false,
@@ -2614,14 +2631,7 @@ describe('browser Session lifecycle commands', () => {
     fs.mkdirSync(baseDir, { recursive: true });
     fs.writeFileSync(path.join(baseDir, 'browser-sessions.json'), JSON.stringify({
       version: 2,
-      sessions: [{
-        id: 'work-project-k7',
-        profileId: 'work',
-        kind: 'explicit',
-        createdAt: '2026-08-11T00:00:00.000Z',
-        updatedAt: '2026-08-11T00:00:00.000Z',
-        lastUsedAt: '2026-08-11T00:00:00.000Z',
-      }],
+      sessions: [liveSession('work-project-k7', 'work')],
     }), { mode: 0o600 });
 
     await expect(

@@ -77,25 +77,13 @@ jobs:
         if: ${{ steps.release.outputs.release_created || inputs.publish_tag != '' }}
         run: npm run build
 
-      - name: Build plugin command manifest
-        if: ${{ steps.release.outputs.release_created || inputs.publish_tag != '' }}
-        run: npm run build-plugin-manifest
-
-      - name: Check plugin command parity
-        if: ${{ steps.release.outputs.release_created || inputs.publish_tag != '' }}
-        run: npm run check:plugin-parity
-
-      - name: Check community plugin metadata
-        if: ${{ steps.release.outputs.release_created || inputs.publish_tag != '' }}
-        run: npm run check-community-plugins
-
       - name: Check generated contract artifacts
         if: ${{ steps.release.outputs.release_created || inputs.publish_tag != '' }}
         run: npm run check:hosted-contract
 
       - name: Check all generated artifacts are committed
         if: ${{ steps.release.outputs.release_created || inputs.publish_tag != '' }}
-        run: git diff --exit-code -- cli-manifest.json hosted-contract.json webcmd-plugin.json README.md
+        run: git diff --exit-code -- cli-manifest.json hosted-contract.json README.md
 
       - name: Check Codex plugin metadata
         if: ${{ steps.release.outputs.release_created || inputs.publish_tag != '' }}

@@ -194,7 +194,7 @@ export function adapterRepairHelp(commandKey?: string): string {
   const key = parts.length === 2 ? `${parts[0]}/${parts[1]}` : '<site>/<command>';
   return [
     'Treat this as adapter breakage.',
-    `Load the webcmd-autofix skill, run \`webcmd adapter path ${key}\`, patch only that file, and retry with --trace retain-on-failure.`,
+    `Run \`webcmd adapter path ${key}\`, patch only that file, and retry with --trace retain-on-failure.`,
     'Do not sign up, solve CAPTCHA, log in, or replace the adapter with curl unless the error code is AUTH_REQUIRED.',
   ].join(' ');
 }
@@ -204,7 +204,7 @@ export function withAdapterRepairHelp(envelope: ErrorEnvelope, cmdName?: string)
   const parts = cmdName?.trim().split(/[/\s]+/).filter(Boolean) ?? [];
   if (envelope.error.code === 'UNKNOWN' && parts.length !== 2) return envelope;
   const existing = envelope.error.help;
-  if (existing && /adapter path|webcmd-autofix/i.test(existing)) return envelope;
+  if (existing && /adapter path/i.test(existing)) return envelope;
   const repair = adapterRepairHelp(cmdName);
   return {
     ...envelope,

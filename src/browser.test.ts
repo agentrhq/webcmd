@@ -1,3 +1,6 @@
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { BrowserBridge, generateStealthJs } from './browser/index.js';
 import { extractTabEntries, diffTabIndexes, appendLimited } from './browser/tabs.js';
@@ -6,10 +9,19 @@ import { __test__ as cdpTest } from './browser/cdp.js';
 import { classifyBrowserError } from './browser/errors.js';
 import * as daemonTransport from './browser/daemon-transport.js';
 import * as daemonLifecycle from './browser/daemon-lifecycle.js';
+import { makeLocalConfig, saveWebcmdConfig } from './hosted/config.js';
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
 });
+
+function useBrowserConfig(browser: Parameters<typeof makeLocalConfig>[1]): string {
+  const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webcmd-browser-config-'));
+  vi.stubEnv('WEBCMD_CONFIG_DIR', configDir);
+  saveWebcmdConfig(makeLocalConfig(new Date('2026-08-31T00:00:00.000Z'), browser), { env: { WEBCMD_CONFIG_DIR: configDir } });
+  return configDir;
+}
 
 describe('browser helpers', () => {
   it('extracts tab entries from string snapshots', () => {
@@ -150,6 +162,7 @@ describe('BrowserBridge state', () => {
   });
 
   it('fails fast when daemon is running but runtime is disconnected (same version)', async () => {
+    const configDir = useBrowserConfig({ kind: 'cloak' });
     const { PKG_VERSION } = await import('./version.js');
     vi.spyOn(daemonTransport, 'getDaemonHealth').mockResolvedValue({
       state: 'no-runtime',
@@ -168,7 +181,38 @@ describe('BrowserBridge state', () => {
 
     const bridge = new BrowserBridge();
 
-    await expect(bridge.connect({ timeout: 0.1 })).rejects.toThrow('Browser runtime is not ready');
+    try {
+      await expect(bridge.connect({ timeout: 0.1 })).rejects.toThrow('Browser runtime is not ready');
+    } finally {
+      fs.rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('lets selected SLAB commands reach dispatch when the daemon is running but SLAB is not attached yet', async () => {
+    const configDir = useBrowserConfig({ kind: 'slab' });
+    const { PKG_VERSION } = await import('./version.js');
+    vi.spyOn(daemonTransport, 'getDaemonHealth').mockResolvedValue({
+      state: 'no-runtime',
+      status: {
+        ok: true,
+        pid: 999999,
+        uptime: 0,
+        daemonVersion: PKG_VERSION,
+        runtimeConnected: false,
+        runtimeName: 'SLAB',
+        pending: 0,
+        memoryMB: 0,
+        port: 0,
+      },
+    });
+
+    const bridge = new BrowserBridge();
+
+    try {
+      await expect(bridge.connect({ timeout: 0.1, session: 's1' })).resolves.toBeDefined();
+    } finally {
+      fs.rmSync(configDir, { recursive: true, force: true });
+    }
   });
 
   it('attempts stale daemon replacement when daemonVersion is missing', async () => {

@@ -448,6 +448,19 @@ describe('Page active target tracking', () => {
     }));
   });
 
+  it('passes an explicit destructive force only for the selected tab close', async () => {
+    sendCommandMock.mockResolvedValueOnce({ closed: 'page-2' });
+
+    const page = new Page('default');
+    await page.closeTab?.('page-2', { force: true });
+
+    expect(sendCommandMock).toHaveBeenCalledWith('tabs', expect.objectContaining({
+      op: 'close',
+      page: 'page-2',
+      force: true,
+    }));
+  });
+
   it('clears the active page binding when closing the selected tab by numeric index', async () => {
     sendCommandFullMock.mockResolvedValueOnce({ data: { selected: true }, page: 'page-2' });
     sendCommandMock

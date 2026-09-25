@@ -1,9 +1,0 @@
-{
-  "name": "webcmd-plugin-rest-countries",
-  "version": "0.1.0",
-  "type": "module",
-  "description": "Webcmd commands for rest-countries",
-  "peerDependencies": {
-    "@agentrhq/webcmd": ">=0.5.3"
-  }
-}

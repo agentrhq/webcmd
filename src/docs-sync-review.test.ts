@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   MAX_DIFF_CHARACTERS,
+  REVIEW_JSON_SCHEMA,
   buildReviewPrompts,
   classifyPullRequest,
   createDeferredResult,
@@ -44,7 +45,7 @@ describe('classifyPullRequest', () => {
     ['public type changes', changed('src/types.ts', '+export interface Result {}')],
     ['README changes', changed('README.md', '+New user behavior')],
     ['documentation changes', changed('docs/cli-reference.mdx', '+New CLI behavior')],
-    ['skill changes', changed('skills/webcmd-usage/SKILL.md', '+New agent behavior')],
+    ['skill changes', changed('skills/webcmd-browser/SKILL.md', '+New agent behavior')],
   ])('routes %s to Gemini with a public signal', (_name, file) => {
     expect(classifyPullRequest([file])).toMatchObject({
       route: 'gemini',
@@ -114,9 +115,7 @@ describe('review context', () => {
       'docs/browser-and-sitemap-memory.mdx',
       'docs/cli-reference.mdx',
       'docs/concepts.mdx',
-      'skills/webcmd-browser-sitemap/SKILL.md',
       'skills/webcmd-browser/SKILL.md',
-      'skills/webcmd-usage/SKILL.md',
     ]);
   });
 
@@ -128,10 +127,7 @@ describe('review context', () => {
       'docs/browser-and-sitemap-memory.mdx',
       'docs/cli-reference.mdx',
       'docs/concepts.mdx',
-      'docs/local-or-cloud.mdx',
-      'skills/webcmd-browser-sitemap/SKILL.md',
       'skills/webcmd-browser/SKILL.md',
-      'skills/webcmd-usage/SKILL.md',
     ]);
   });
 
@@ -143,10 +139,15 @@ describe('review context', () => {
       'docs/browser-and-sitemap-memory.mdx',
       'docs/cli-reference.mdx',
       'docs/concepts.mdx',
-      'docs/local-or-cloud.mdx',
-      'skills/webcmd-browser-sitemap/SKILL.md',
       'skills/webcmd-browser/SKILL.md',
-      'skills/webcmd-usage/SKILL.md',
+    ]);
+  });
+
+  it('selects general documentation without the browser skill', () => {
+    expect(selectDocumentationPaths([changed('src/cli.ts')])).toEqual([
+      'README.md',
+      'docs/cli-reference.mdx',
+      'docs/concepts.mdx',
     ]);
   });
 
@@ -155,18 +156,18 @@ describe('review context', () => {
       'README.md',
       'docs/cli-reference.mdx',
       'docs/concepts.mdx',
-      'skills/webcmd-usage/SKILL.md',
     ]);
   });
 
-  it('selects adapter and plugin documentation', () => {
-    expect(selectDocumentationPaths([changed('clis/reddit/search.js')])).toEqual([
+  it.each([
+    ['adapter', 'clis/reddit/search.js'],
+    ['plugin', 'plugins/example/search.js'],
+  ])('selects %s documentation without the browser skill', (_name, filePath) => {
+    expect(selectDocumentationPaths([changed(filePath)])).toEqual([
       'README.md',
       'docs/authoring.mdx',
       'docs/cli-reference.mdx',
       'docs/skills.mdx',
-      'skills/webcmd-adapter-author/SKILL.md',
-      'skills/webcmd-usage/SKILL.md',
     ]);
   });
 
@@ -212,7 +213,7 @@ describe('review context', () => {
 
     const [result] = buildReviewPrompts(context, [
       { path: 'README.md', content: 'x'.repeat(70_000) },
-      { path: 'skills/webcmd-usage/SKILL.md', content: 'TAIL_MARKER' },
+      { path: 'docs/concepts.mdx', content: 'TAIL_MARKER' },
     ]);
 
     expect(result.prompt).toContain('TAIL_MARKER');
@@ -263,6 +264,50 @@ describe('review context', () => {
 
     expect(result.truncated).toBe(true);
     expect(result.diffText).toContain('[patch unavailable]');
+  });
+
+  it('names the response keys the validator reads', () => {
+    const context: PullRequestReviewContext = {
+      number: 72,
+      title: 'Add profile option',
+      body: null,
+      draft: false,
+      headSha: 'abc123',
+      labels: [],
+      files: [{ path: 'src/cli.ts', status: 'modified', patch: '+  .option("--profile <name>")' }],
+    };
+
+    const [result] = buildReviewPrompts(context, []);
+
+    // The schema-less fallback rung has only the prompt to go on, so the keys
+    // validateGeminiReview reads must be stated there too.
+    expect(result.prompt).toContain('"verdict"');
+    expect(result.prompt).toContain('"summary"');
+    expect(result.prompt).toContain('"findings"');
+    expect(result.prompt).toContain('"suggestedPath"');
+    expect(result.prompt).toContain('"behaviorChange"');
+  });
+});
+
+describe('REVIEW_JSON_SCHEMA', () => {
+  it('describes every key the validator requires', () => {
+    expect(REVIEW_JSON_SCHEMA.required).toEqual(['verdict', 'summary', 'findings']);
+    expect(REVIEW_JSON_SCHEMA.properties.findings.items.required).toEqual([
+      'surface',
+      'behaviorChange',
+      'changedPath',
+      'evidence',
+      'suggestedPath',
+      'reason',
+    ]);
+  });
+
+  it('stays inside the strict structured-output subset', () => {
+    // strict: true rejects array length keywords; validateGeminiReview caps the
+    // findings list instead.
+    expect(JSON.stringify(REVIEW_JSON_SCHEMA)).not.toContain('maxItems');
+    expect(REVIEW_JSON_SCHEMA.additionalProperties).toBe(false);
+    expect(REVIEW_JSON_SCHEMA.properties.findings.items.additionalProperties).toBe(false);
   });
 });
 

@@ -12,7 +12,7 @@ import * as readline from 'node:readline/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Command, Option } from 'commander';
 import { findPackageRoot, getBuiltEntryCandidates } from './package-paths.js';
-import { type CliCommand, getRegistry } from './registry.js';
+import { getRegistry } from './registry.js';
 // Side-effect import: registers client-owned `web fetch` in the core registry
 // so it reaches help, `list`, completions and manifests without a plugin.
 import './fetch/command.js';
@@ -25,7 +25,7 @@ import { handleProgramParseError } from './cli-error-report.js';
 import { PKG_VERSION } from './version.js';
 import { printCompletionScript } from './completion.js';
 import { loadExternalClis, executeExternalCli, installExternalCli, registerExternalCli, isBinaryInstalled, formatExternalCliLabel } from './external.js';
-import { addWebcmdSkills, listWebcmdSkills, removeWebcmdSkills, updateWebcmdSkill, type WebcmdSkillAddResult } from './skills.js';
+import { addWebcmdSkills, listWebcmdSkills, removeWebcmdSkills, updateWebcmdSkill, type WebcmdSkillAddResult, type WebcmdSkillRemoveResult } from './skills.js';
 import { registerAllCommands } from './commanderAdapter.js';
 import { buildRootHelpPresentation, classifyAdapter, commanderCommandHelpData, installCommanderNamespaceStructuredHelp, installRootPresentationHelp, installStructuredHelp, leadingPositionalFromUsage, rootHelpData, type RootAdapterGroups } from './help.js';
 import { EXIT_CODES, getErrorMessage, BrowserConnectError, CliError, ArgumentError } from './errors.js';
@@ -46,7 +46,8 @@ import { daemonRestart, daemonStatus, daemonStop } from './commands/daemon.js';
 import { enableVerbose, isVerbose, log } from './logger.js';
 import { BrowserCommandError, listExistingBrowserTabs, releaseSiteSessionLease, sendCommand } from './browser/daemon-client.js';
 import { fetchDaemonStatus } from './browser/daemon-transport.js';
-import { aliasForContextId, createProfile, loadProfileConfig, normalizeContextId, ProfileNotFoundError, profileListRows, profileRouteParams, renameProfile, resolveKnownProfile, resolveProfileSelection, setDefaultProfile, type ProfileSelection } from './browser/profile.js';
+import { aliasForContextId, commitSlabProfileEnsure, createProviderProfile, loadProfileConfig, normalizeContextId, prepareSlabProfileEnsure, ProfileNotFoundError, profileListRows, profileRouteParams, renameProviderProfile, resolveKnownProfile, resolveProfileSelection, rotateSlabProfileEnsure, setProviderDefaultProfile, type ProfileProvider, type ProfileSelection } from './browser/profile.js';
+import { loadWebcmdConfig } from './hosted/config.js';
 import { formatDaemonVersion, isDaemonStale } from './browser/daemon-version.js';
 import { DEFAULT_BROWSER_CONNECT_TIMEOUT } from './browser/config.js';
 import { CLI_COMMAND, PACKAGE_NAME } from './brand.js';
@@ -63,16 +64,21 @@ import { BrowserRunError } from './browser/run/types.js';
 import { classifyCommandOrigin, formatCommandOrigin } from './command-origin.js';
 import { readOverrideRecords, removeOverrideRecords } from './override-provenance.js';
 import { clearDaemonRunContext, generateRunId, isUnknownOutcomeError, runWithDaemonRunContext } from './session-lease.js';
-import { createLocalSiteMemoryBackend, registerSiteCommands } from './site-memory/commands.js';
+import { createLocalLearningBackend, createLocalSiteMemoryBackend, registerSiteCommands } from './site-memory/commands.js';
 import { resolveAdapterSourcePath, splitAdapterCommandKey } from './adapter-source.js';
 
 const CLI_FILE = fileURLToPath(import.meta.url);
 const FOLLOW_POLL_MS = 1_000;
-const externalRootCommands = new WeakSet<Command>();
 
-function getBrowserCacheDir(): string {
-  return process.env.WEBCMD_CACHE_DIR || path.join(os.homedir(), '.webcmd', 'cache');
+function selectedProfileProvider(): ProfileProvider {
+  const config = loadWebcmdConfig();
+  return config.mode === 'local' ? config.browser.kind : 'cloak';
 }
+function selectedProfileProviderLabel(): string {
+  const provider = selectedProfileProvider();
+  return provider === 'slab' ? 'SLAB' : provider === 'cloak' ? 'Cloak' : provider === 'chrome' ? 'Chrome' : 'custom browser';
+}
+const externalRootCommands = new WeakSet<Command>();
 
 function parsePositiveIntOption(value: string | undefined, _label: string, fallback: number): number {
   const parsed = value === undefined ? fallback : Number.parseInt(value, 10);
@@ -124,20 +130,23 @@ type SkillLinkCommandOptions = {
   json?: boolean;
 };
 
-function isInteractiveSkillAdd(opts: SkillLinkCommandOptions): boolean {
+function isInteractiveSkillCommand(opts: SkillLinkCommandOptions): boolean {
   return !opts.json && process.stdin.isTTY === true && process.stdout.isTTY === true;
 }
 
-async function resolveSkillAddOptions(opts: SkillLinkCommandOptions): Promise<SkillLinkCommandOptions> {
-  if (!isInteractiveSkillAdd(opts)) return opts;
+async function resolveSkillCommandOptions(
+  opts: SkillLinkCommandOptions,
+  questions: { scope: string; provider: string },
+): Promise<SkillLinkCommandOptions> {
+  if (!isInteractiveSkillCommand(opts)) return opts;
 
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   try {
-    const scope = opts.scope ?? await choosePrompt(rl, 'Where should Webcmd add skills?', [
+    const scope = opts.scope ?? await choosePrompt(rl, questions.scope, [
       { key: '1', label: 'Global', value: 'user', aliases: ['global', 'user', 'g'] },
       { key: '2', label: 'Local project', value: 'project', aliases: ['local', 'project', 'l'] },
     ], '1');
-    const provider = opts.provider ?? (opts.path ? undefined : await choosePrompt(rl, 'Which coding agent should use them?', [
+    const provider = opts.provider ?? (opts.path ? undefined : await choosePrompt(rl, questions.provider, [
       { key: '1', label: 'Agents', value: 'agents', aliases: ['agents', 'agent', 'a'] },
       { key: '2', label: 'Codex', value: 'codex', aliases: ['codex', 'c'] },
       { key: '3', label: 'Claude', value: 'claude', aliases: ['claude', 'claude-code'] },
@@ -148,6 +157,20 @@ async function resolveSkillAddOptions(opts: SkillLinkCommandOptions): Promise<Sk
   } finally {
     rl.close();
   }
+}
+
+async function resolveSkillAddOptions(opts: SkillLinkCommandOptions): Promise<SkillLinkCommandOptions> {
+  return resolveSkillCommandOptions(opts, {
+    scope: 'Where should Webcmd add skills?',
+    provider: 'Which coding agent should use them?',
+  });
+}
+
+async function resolveSkillRemoveOptions(opts: SkillLinkCommandOptions): Promise<SkillLinkCommandOptions> {
+  return resolveSkillCommandOptions(opts, {
+    scope: 'Where should Webcmd remove skills from?',
+    provider: "Which coding agent's skills should be removed?",
+  });
 }
 
 async function choosePrompt<T extends string>(
@@ -197,9 +220,9 @@ function wantsJsonEnvelope(opts: { json?: boolean; format?: string }): boolean {
   return opts.json === true || opts.format === 'json';
 }
 
-function handleSkillRemoveCommand(customPath: string | undefined, json: boolean): void {
+async function handleSkillRemoveCommand(action: () => WebcmdSkillRemoveResult | Promise<WebcmdSkillRemoveResult>, json: boolean): Promise<void> {
   try {
-    const result = removeWebcmdSkills({ customPath });
+    const result = await action();
     if (json) {
       console.log(JSON.stringify(result, null, 2));
       return;
@@ -325,144 +348,6 @@ export type SiteMemoryReport = {
   endpoints: { present: boolean; count: number; path: string };
   notes: { present: boolean; path: string };
 };
-
-export type SitemapAvailability = {
-  site: string;
-  available: true;
-  source: 'local' | 'global' | 'local+global';
-  hint: string;
-  paths: {
-    local?: string;
-    global?: string;
-  };
-};
-
-type SitemapHintState = {
-  seenSites: string[];
-  updatedAt: string;
-};
-
-type SitemapAvailabilityOptions = {
-  homeDir?: string;
-  packageRoot?: string;
-  registry?: Map<string, CliCommand>;
-  fileExists?: (candidate: string) => boolean;
-};
-
-const SITEMAP_HINT =
-  'Site sitemap available. For navigation context, use the webcmd-browser-sitemap skill; treat browser state as truth if it disagrees.';
-
-function siteNameCandidatesFromUrl(url: string, registry: Map<string, CliCommand> = getRegistry()): string[] {
-  let host: string;
-  try {
-    host = new URL(url).hostname.toLowerCase().replace(/^www\./, '');
-  } catch {
-    return [];
-  }
-
-  const scored = new Map<string, number>();
-  for (const command of registry.values()) {
-    if (!command.domain) continue;
-    let domainHost = command.domain.toLowerCase().trim();
-    try {
-      domainHost = new URL(domainHost.includes('://') ? domainHost : `https://${domainHost}`).hostname.toLowerCase();
-    } catch {
-      domainHost = domainHost.split('/')[0] ?? domainHost;
-    }
-    domainHost = domainHost.replace(/^www\./, '');
-    if (!domainHost) continue;
-    if (host === domainHost || host.endsWith(`.${domainHost}`)) {
-      scored.set(command.site, Math.max(scored.get(command.site) ?? 0, domainHost.length));
-    }
-  }
-
-  const registrySites = [...scored.entries()]
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .map(([site]) => site);
-
-  const hostParts = host.split('.').filter(Boolean);
-  const fallback = hostParts.length >= 2 ? hostParts[hostParts.length - 2] : hostParts[0];
-  return [...new Set([...registrySites, ...(fallback ? [fallback] : [])])];
-}
-
-function firstExistingSitemapPath(paths: string[], fileExists: (candidate: string) => boolean): string | undefined {
-  return paths.find((candidate) => fileExists(candidate));
-}
-
-function sitemapPathsForSite(site: string, opts: Required<Pick<SitemapAvailabilityOptions, 'homeDir' | 'packageRoot' | 'fileExists'>>): { local?: string; global?: string } {
-  const safeSite = site.replace(/[^a-zA-Z0-9_-]+/g, '-');
-  if (!safeSite) return {};
-  const localBase = path.join(opts.homeDir, '.webcmd', 'sites', safeSite);
-  return {
-    local: firstExistingSitemapPath([
-      path.join(localBase, 'sitemap'),
-      path.join(localBase, 'sitemap.md'),
-    ], opts.fileExists),
-    global: firstExistingSitemapPath([
-      path.join(opts.packageRoot, 'sitemaps', safeSite),
-      path.join(opts.packageRoot, 'sitemaps', `${safeSite}.md`),
-    ], opts.fileExists),
-  };
-}
-
-export function resolveSitemapAvailabilityForUrl(url: string, options: SitemapAvailabilityOptions = {}): SitemapAvailability | null {
-  const homeDir = options.homeDir ?? os.homedir();
-  const packageRoot = options.packageRoot ?? findPackageRoot(CLI_FILE);
-  const registry = options.registry ?? getRegistry();
-  const fileExists = options.fileExists ?? fs.existsSync;
-
-  for (const site of siteNameCandidatesFromUrl(url, registry)) {
-    const paths = sitemapPathsForSite(site, { homeDir, packageRoot, fileExists });
-    if (!paths.local && !paths.global) continue;
-    const source = paths.local && paths.global ? 'local+global' : paths.local ? 'local' : 'global';
-    return {
-      site,
-      available: true,
-      source,
-      hint: SITEMAP_HINT,
-      paths,
-    };
-  }
-  return null;
-}
-
-function getBrowserSitemapHintStatePath(scope: string): string {
-  const safeScope = scope.replace(/[^a-zA-Z0-9_-]+/g, '_');
-  return path.join(getBrowserCacheDir(), 'browser-sitemap-hints', `${safeScope}.json`);
-}
-
-function loadBrowserSitemapHintState(scope: string): SitemapHintState {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(getBrowserSitemapHintStatePath(scope), 'utf-8')) as SitemapHintState;
-    if (parsed && typeof parsed === 'object' && Array.isArray(parsed.seenSites)) {
-      return {
-        seenSites: parsed.seenSites.filter((site) => typeof site === 'string'),
-        updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : new Date(0).toISOString(),
-      };
-    }
-  } catch {
-    // First command in this browser session has no hint cache yet.
-  }
-  return { seenSites: [], updatedAt: new Date(0).toISOString() };
-}
-
-function markBrowserSitemapHintSeen(scope: string, site: string): void {
-  const state = loadBrowserSitemapHintState(scope);
-  if (!state.seenSites.includes(site)) state.seenSites.push(site);
-  const target = getBrowserSitemapHintStatePath(scope);
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.writeFileSync(target, JSON.stringify({ seenSites: state.seenSites, updatedAt: new Date().toISOString() }), 'utf-8');
-}
-
-function sitemapHintForBrowserUrl(url: string, scope: string, opts: { oncePerSession: boolean }): SitemapAvailability | null {
-  const sitemap = resolveSitemapAvailabilityForUrl(url);
-  if (!sitemap) return null;
-  if (!opts.oncePerSession) return sitemap;
-  const state = loadBrowserSitemapHintState(scope);
-  if (state.seenSites.includes(sitemap.site)) return null;
-  markBrowserSitemapHintSeen(scope, sitemap.site);
-  return sitemap;
-}
 
 export function checkSiteMemory(site: string): SiteMemoryReport {
   const siteDir = path.join(os.homedir(), '.webcmd', 'sites', site);
@@ -600,7 +485,7 @@ async function requireKnownProfileId(command?: Command): Promise<string> {
 }
 
 function formatHandoff(row: BrowserSessionListRow): string {
-  return row.handoff ? `${row.handoff.site} until ${row.handoff.expiresAt}` : '';
+  return row.rowKind !== 'discovered' && row.handoff ? `${row.handoff.site} until ${row.handoff.expiresAt}` : '';
 }
 
 function sessionCreateOutput(data: unknown): unknown {
@@ -696,7 +581,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
     .name('webcmd')
     .description('Make any website your CLI. Zero setup. AI-powered.');
   configureRootCommandSurface(program);
-  registerSiteCommands(program, createLocalSiteMemoryBackend());
+  registerSiteCommands(program, createLocalSiteMemoryBackend(), undefined, {}, createLocalLearningBackend());
   const siteCmd = program.commands.find(command => command.name() === 'site')!;
   // Snapshot before applyRootSubcommandSummaries() rewrites .description() to a child-name listing.
   const originalSiteDescription = siteCmd.description();
@@ -843,10 +728,24 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
 
   skillsCmd
     .command('remove')
-    .description('Remove bundled Webcmd skill symlinks from supported locations')
-    .option('--path <path>', 'Also remove links from a custom agent skills directory')
+    .description('Remove bundled Webcmd skill symlinks from an agent skills folder')
+    .option('-p, --provider <provider>', 'Agent provider: agents, codex, claude')
+    .option('-s, --scope <scope>', 'Remove scope: user/global or project/local')
+    .option('--path <path>', 'Custom agent skills directory')
     .option('--json', 'Output a JSON envelope', false)
-    .action((opts) => handleSkillRemoveCommand(opts.path, wantsJsonEnvelope(opts)));
+    .action(async (opts) => {
+      await handleSkillRemoveCommand(async () => {
+        const resolved = await resolveSkillRemoveOptions(opts);
+        if (resolved.provider === 'custom' && !resolved.path) {
+          throw new ArgumentError('Custom skill provider requires --path.', 'Pass --path <skills-dir> or run interactively.');
+        }
+        return removeWebcmdSkills({
+          provider: resolved.provider,
+          scope: resolved.scope,
+          customPath: resolved.path,
+        });
+      }, wantsJsonEnvelope(opts));
+    });
 
   program
     .command('update')
@@ -873,7 +772,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
           console.error('Hint: run "webcmd skills update" once the new version is active.');
         }
       }
-      // The Cloak runtime/extension ships separately from npm; surface it if stale.
+  // The Cloak runtime/extension ships separately from npm; surface it if stale.
       const runtimeNotice = getRuntimeUpdateNotice();
       if (runtimeNotice) process.stdout.write(runtimeNotice);
       console.log('Update complete.');
@@ -939,12 +838,16 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
       // `profileId` is a column because these rows are scoped to the selected
       // Profile. Without it the table reads as every Session on the machine,
       // which is what led agents to act on Sessions from unrelated Profiles.
-      await renderOutput(output, { fmt, fmtExplicit: outputFormatIsExplicit(command), columns: ['id', 'profileId', 'kind', 'runtimeState', 'handoff'] });
+      await renderOutput(output, {
+        fmt,
+        fmtExplicit: outputFormatIsExplicit(command),
+        columns: ['rowKind', 'id', 'profileId', 'kind', 'runtimeState', 'window', 'page', 'tabCount', 'ownership', 'title', 'url', 'handoff'],
+      });
     });
 
   const sessionCloseCmd = addOutputFormatOption(sessionCmd
     .command('close')
-    .description('Close a browser Session runtime without deleting its durable record')
+    .description('Close a browser Session runtime and discard its durable record')
     .argument('[session-id]', 'Existing readable Session ID from `webcmd session create <name>` (or pass the root `--session <id>` selector)')
     .option('--force', 'Close even while the Session is busy or paused for handoff'), 'yaml');
   sessionCloseCmd.action(async (positionalSessionId: string | undefined, opts: { format?: string; force?: boolean }, command) => {
@@ -967,6 +870,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
             contextId: profileId,
             session: sessionId,
             force: opts.force === true,
+            discard: true,
           });
           await renderOutput(data, { fmt, fmtExplicit: outputFormatIsExplicit(command) });
           return;
@@ -975,7 +879,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
         }
       }
       if (opts.force === true) {
-        const data = await sendCommand('session-close', { contextId: profileId, session: sessionId, force: true });
+        const data = await sendCommand('session-close', { contextId: profileId, session: sessionId, force: true, discard: true });
         await renderOutput(data, { fmt, fmtExplicit: outputFormatIsExplicit(command) });
         return;
       }
@@ -1359,12 +1263,20 @@ cli({
   browser.addCommand(withBrowserVerbose(new Command('bind')
     .description('Bind this session to an existing page')
     .addOption(new Option('--page <id>', 'Stable page id returned by tabs')
-      .makeOptionMandatory()
       .argParser(browserOptionValueParser('bind', 'page')!))
+    .addOption(new Option('--target-id <id>', 'Native CDP target id for an explicitly acquired page')
+      .argParser(browserOptionValueParser('bind', 'targetId')!))
     .action(rawBrowserAction((session, routing, opts) => {
       const page = typeof opts.page === 'string' ? opts.page.trim() : '';
-      if (!page) throw new BrowserCommandError('--page must be a non-empty stable page id', 'invalid_request');
-      return sendCommand('bind', { session, surface: 'browser', ...routing, page });
+      const targetId = typeof opts.targetId === 'string' ? opts.targetId.trim() : '';
+      if (page && targetId) throw new BrowserCommandError('Use either --page or --target-id, not both', 'invalid_request');
+      if (!page && !targetId) throw new BrowserCommandError('Bind requires a non-empty --page or --target-id', 'invalid_request');
+      return sendCommand('bind', {
+        session,
+        surface: 'browser',
+        ...routing,
+        ...(page ? { page } : { targetId }),
+      });
     }))));
 
   const runCommand = withBrowserVerbose(new Command('run')
@@ -1414,10 +1326,14 @@ cli({
 
   browser.addCommand(withBrowserVerbose(new Command('close')
     .description('Close or detach this browser session')
-    .action(rawBrowserAction((session, routing) => sendCommand('close-window', {
+    .addOption(new Option('--page <id>', 'Stable page id to close exactly').argParser(browserOptionValueParser('close', 'page')!))
+    .option('--force', 'Allow destructive closure of a human-adopted tab')
+    .action(rawBrowserAction((session, routing, opts) => sendCommand('close-window', {
       session,
       surface: 'browser',
       ...routing,
+      ...(typeof opts.page === 'string' && opts.page.trim() ? { page: opts.page.trim() } : {}),
+      ...(opts.force === true ? { force: true } : {}),
     })))));
   // ── Built-in: doctor / completion ──────────────────────────────────────────
 
@@ -2050,7 +1966,7 @@ cli({
 
   const profileListCmd = addOutputFormatOption(profileCmd
     .command('list')
-    .description('List Chrome and Chromium profiles available through the Cloak runtime'));
+    .description(`List profiles available through the ${selectedProfileProviderLabel()} runtime`));
   profileListCmd.action(async (opts: { format?: string }, command: Command) => {
       const fmt = resolveCommandOutputFormat(command, opts.format);
       if (fmt === null) return;
@@ -2094,14 +2010,14 @@ cli({
         console.log('Run: webcmd daemon restart');
         return;
       }
-      if (profiles.length === 0) {
-        console.log('No Cloak runtime profiles are active.');
+      if (profiles.length === 0 && Object.keys(config.aliases).length === 0 && !config.defaultContextId) {
+        console.log(`No ${selectedProfileProviderLabel()} runtime profiles are active.`);
         console.log('Run a browser-backed command or webcmd <site> login to create one.');
         return;
       }
 
       const knownContextIds = new Set(profiles.map((profile) => profile.contextId));
-      console.log('Available Cloak profiles');
+      console.log(`Available ${selectedProfileProviderLabel()} profiles`);
       console.log();
       for (const profile of profiles) {
         const alias = aliasForContextId(config, profile.contextId);
@@ -2129,10 +2045,29 @@ cli({
 
   profileCmd
     .command('create')
-    .description('Create a Cloak profile alias')
+    .description(`Create a ${selectedProfileProviderLabel()} profile alias`)
     .argument('<alias>', 'Local alias, e.g. work or personal')
     .action(async (alias: string, _opts: unknown, command: Command) => {
-      const result = createProfile(alias);
+      const provider = selectedProfileProvider();
+      if (provider === 'slab') {
+        let pending = await prepareSlabProfileEnsure(alias);
+        let ensured: { profile: { id: string; displayName: string }; created: boolean };
+        try {
+          ensured = await sendCommand('profile-ensure', pending) as typeof ensured;
+        } catch (error) {
+          if (!(error instanceof BrowserCommandError) || error.code !== 'PROFILE_REPAIR_REQUIRED') throw error;
+          pending = await rotateSlabProfileEnsure(pending.alias, pending.idempotencyKey);
+          ensured = await sendCommand('profile-ensure', pending) as typeof ensured;
+        }
+        await commitSlabProfileEnsure(pending.alias, pending.idempotencyKey, ensured.profile.id);
+        await emitActionResult(command, { ok: true, action: 'create', alias: pending.alias, contextId: ensured.profile.id, created: ensured.created }, () => {
+          console.log(ensured.created
+            ? `Profile ${pending.alias} created (contextId: ${ensured.profile.id}).`
+            : `Profile ${pending.alias} already exists (contextId: ${ensured.profile.id}).`);
+        });
+        return;
+      }
+      const result = await createProviderProfile(provider, alias);
       await emitActionResult(command, {
         ok: true,
         action: 'create',
@@ -2148,12 +2083,12 @@ cli({
 
   profileCmd
     .command('rename')
-    .description('Assign a local alias to an available Cloak profile')
+    .description(`Assign a local alias to an available ${selectedProfileProviderLabel()} profile`)
     .argument('<contextId>', 'Profile contextId from webcmd profile list')
     .argument('<alias>', 'Local alias, e.g. work or personal')
     .action(async (contextId: string, alias: string, _opts: unknown, command: Command) => {
       try {
-        renameProfile(contextId, alias);
+        await renameProviderProfile(selectedProfileProvider(), contextId, alias);
         await emitActionResult(command, { ok: true, action: 'rename', contextId, alias }, () => {
           console.log(`Profile ${contextId} is now aliased as ${alias}.`);
         });
@@ -2165,7 +2100,7 @@ cli({
 
   profileCmd
     .command('use')
-    .description('Set the default Cloak profile for future commands')
+    .description(`Set the default ${selectedProfileProviderLabel()} profile for future commands`)
     .argument('<profile>', 'Profile alias or contextId from webcmd profile list')
     .action(async (profile: string, _opts: unknown, command: Command) => {
       const status = await fetchDaemonStatus();
@@ -2173,14 +2108,14 @@ cli({
       const connected = status && !isDaemonStale(status, PKG_VERSION) && Array.isArray(status.profiles)
         ? status.profiles
         : [];
-      const next = setDefaultProfile(profile, profileListRows(config, connected));
+      const defaultContextId = await setProviderDefaultProfile(selectedProfileProvider(), profile, profileListRows(config, connected));
       await emitActionResult(command, {
         ok: true,
         action: 'use',
         profile,
-        defaultContextId: next.defaultContextId ?? profile,
+        defaultContextId,
       }, () => {
-        console.log(`Default Cloak profile: ${next.defaultContextId ?? profile}`);
+        console.log(`Default ${selectedProfileProviderLabel()} profile: ${defaultContextId}`);
       });
     });
 

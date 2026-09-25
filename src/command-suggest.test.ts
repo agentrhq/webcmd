@@ -4,7 +4,9 @@ import * as path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { handleProgramParseError } from './cli-error-report.js';
 import { createProgram } from './cli.js';
-import { editDistance, unknownRootCommandMessage, unknownSubcommandMessage } from './command-suggest.js';
+import { editDistance, isReservedRootCommand, unknownRootCommandMessage, unknownSubcommandMessage } from './command-suggest.js';
+import { HOSTED_ROOT_HELP } from './completion-shared.js';
+import { WEBCMD_ROOT_COMMANDS } from './hooks.js';
 
 function namespaceOf(program: ReturnType<typeof createProgram>, name: string) {
   return program.commands.find(command => command.name() === name)!;
@@ -59,6 +61,19 @@ describe('unknown root command', () => {
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe('reserved roots', () => {
+  it('matches WEBCMD_ROOT_COMMANDS plus hosted root help, not stale extras', () => {
+    for (const name of WEBCMD_ROOT_COMMANDS) expect(isReservedRootCommand(name)).toBe(true);
+    for (const command of HOSTED_ROOT_HELP.commands) {
+      expect(isReservedRootCommand(command.name.split(/\s/, 1)[0]!)).toBe(true);
+    }
+    expect(isReservedRootCommand('artifact')).toBe(true);
+    expect(isReservedRootCommand('setup')).toBe(true);
+    expect(isReservedRootCommand('tab')).toBe(false);
+    expect(isReservedRootCommand('github')).toBe(false);
   });
 });
 

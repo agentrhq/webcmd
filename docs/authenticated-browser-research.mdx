@@ -1,0 +1,42 @@
+---
+title: Authenticated Browser Research
+description: Use a logged-in browser Profile for private research without exposing credentials or taking unintended actions.
+---
+
+# Authenticated Browser Research
+
+Authenticated research is useful when results are visible only after sign-in,
+such as private dashboards, saved searches, account-specific pricing, or
+internal tools.
+
+## Name the Profile
+
+Tell the agent which browser Profile contains the correct account. Profiles
+separate work, personal, customer, and environment state.
+
+```text
+Use Webcmd with my `work` Profile to review companies in my saved LinkedIn job
+search that are hiring Forward Deployed Engineers. Return company, role,
+location, description, and source URL. Do not open candidate profiles, apply,
+message anyone, or change the saved search.
+```
+
+## Complete Sign-In Yourself
+
+If the Profile is signed out, the agent pauses and hands you the browser. Enter
+credentials and one-time codes directly in that browser, then let the agent run
+the returned verification command. Do not send secrets through chat.
+
+## Keep Research Read-Only
+
+Authenticated pages often place high-impact controls beside the information an
+agent is reading. State the boundary explicitly: no messages, applications,
+comments, purchases, saved-item changes, or account updates unless separately
+approved.
+
+## Verify the Result
+
+The agent should confirm that the expected account and page are active, collect
+only the requested fields, attach source URLs, and distinguish unavailable
+values from inferred ones. Close the Session when the task is complete unless
+you asked to keep it available for follow-up work.

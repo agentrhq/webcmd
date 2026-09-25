@@ -17,6 +17,8 @@ import type { BrowserProfileStatus } from './browser/daemon-transport.js';
 import { aliasForContextId, loadProfileConfig } from './browser/profile.js';
 import { formatDaemonVersion, isDaemonStale, staleDaemonIssue } from './browser/daemon-version.js';
 import { findShadowedUserAdapters, formatAdapterShadowIssue, type AdapterShadow } from './adapter-shadow.js';
+import { configureCloakBrowserBinary } from './browser/browser-binary.js';
+import { loadWebcmdConfig, type LocalBrowserConfig } from './hosted/config.js';
 
 const DOCTOR_LIVE_TIMEOUT_SECONDS = 8;
 
@@ -36,8 +38,6 @@ export type BrowserBinaryStatus = {
   path: string;
   downloadUrl?: string;
   error?: string;
-  /** True when CLOAKBROWSER_BINARY_PATH is set — a different check than the managed cache. */
-  override: boolean;
 };
 
 export type DoctorReport = {
@@ -50,6 +50,7 @@ export type DoctorReport = {
   runtimeFlaky?: boolean;
   runtimeName?: string;
   runtimeVersion?: string;
+  selectedBrowser?: LocalBrowserConfig;
   binary?: BrowserBinaryStatus;
   connectivity?: ConnectivityResult;
   profiles?: BrowserProfileStatus[];
@@ -82,16 +83,16 @@ function isLaunchableFile(binaryPath: string): boolean {
 
 /**
  * Check whether the CloakBrowser Chromium binary is actually installed.
- * `runtimeConnected: true` only means the
- * daemon/Cloak runtime process is healthy — it says nothing about whether the
- * browser binary CloakBrowser needs to launch is present on disk, which is
- * exactly the gap that made a missing-binary failure look like a generic
- * connectivity problem (#239).
+ * `runtimeConnected: true` only means the daemon/Cloak runtime process is
+ * healthy — it says nothing about whether the browser binary CloakBrowser
+ * needs to launch is present on disk.
  */
-export function checkBrowserBinary(): BrowserBinaryStatus {
-  const override = process.env.CLOAKBROWSER_BINARY_PATH;
-  if (override) {
-    return { installed: isLaunchableFile(override), path: override, override: true };
+export function checkBrowserBinary(browser: LocalBrowserConfig = { kind: 'cloak' }): BrowserBinaryStatus {
+  if (browser.kind === 'custom' || browser.kind === 'chrome') {
+    return {
+      installed: isLaunchableFile(browser.executablePath),
+      path: browser.executablePath,
+    };
   }
   try {
     const info = binaryInfo();
@@ -99,23 +100,25 @@ export function checkBrowserBinary(): BrowserBinaryStatus {
       installed: info.installed && isLaunchableFile(info.binaryPath),
       path: info.binaryPath,
       downloadUrl: info.downloadUrl,
-      override: false,
     };
   } catch (err) {
-    return { installed: undefined, path: 'unknown', error: getErrorMessage(err), override: false };
+    return { installed: undefined, path: 'unknown', error: getErrorMessage(err) };
   }
 }
 
 /**
  * Test connectivity by attempting a real browser command.
  */
-export async function checkConnectivity(opts?: { timeout?: number }): Promise<ConnectivityResult> {
+export async function checkConnectivity(
+  browser: LocalBrowserConfig = { kind: 'cloak' },
+  opts?: { timeout?: number },
+): Promise<ConnectivityResult> {
   const start = Date.now();
   const timeoutSeconds = opts?.timeout ?? DOCTOR_LIVE_TIMEOUT_SECONDS;
   let sessionId: string | undefined;
   try {
     // A first-use download can exceed doctor's deliberately short live-probe deadline.
-    await ensureBinary();
+    if (browser.kind === 'cloak') await ensureBinary();
     setDaemonCommandTimeoutSeconds(timeoutSeconds);
     const session = await sendCommand('session-create', { sessionName: 'Doctor Probe' }) as { id?: unknown };
     if (typeof session.id !== 'string') throw new Error('Doctor could not create a browser Session.');
@@ -149,11 +152,18 @@ export async function checkConnectivity(opts?: { timeout?: number }): Promise<Co
 }
 
 export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<DoctorReport> {
+  const config = loadWebcmdConfig();
+  const selectedBrowser = config.mode === 'local' ? config.browser : { kind: 'cloak' } satisfies LocalBrowserConfig;
+  configureCloakBrowserBinary(
+    selectedBrowser.kind === 'custom' || selectedBrowser.kind === 'chrome'
+      ? selectedBrowser.executablePath
+      : undefined,
+  );
   // Live connectivity check is the core of doctor — it doubles as auto-start
   // (bridge.connect spawns daemon) and validates
   // end-to-end browser bridge health.
-  const connectivity = await checkConnectivity();
-  const binary = checkBrowserBinary();
+  const connectivity = await checkConnectivity(selectedBrowser);
+  const binary = selectedBrowser.kind === 'slab' ? undefined : checkBrowserBinary(selectedBrowser);
 
   // Single status read *after* connectivity side-effects settle.
   const health = await getDaemonHealth();
@@ -166,22 +176,22 @@ export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<Doctor
   const runtimeName = health.status?.runtimeName;
   const runtimeVersion = health.status?.runtimeVersion;
   const issues: string[] = [];
+  const expectedRuntimeLabel = expectedRuntimeLabelFor(selectedBrowser);
   let adapterShadows: AdapterShadow[] = [];
   try {
     adapterShadows = findShadowedUserAdapters();
   } catch (err) {
     issues.push(`Could not check adapter overrides: ${getErrorMessage(err)}`);
   }
-  if (binary.error) {
-    issues.push(`Could not check CloakBrowser Chromium binary: ${binary.error}`);
-  } else if (binary.installed === false) {
-    const source = binary.override ? `CLOAKBROWSER_BINARY_PATH (${binary.path})` : binary.path;
+  if (binary?.error) {
+    issues.push(`Could not check ${selectedBrowser.kind === 'cloak' ? 'CloakBrowser Chromium' : `${expectedRuntimeLabel} browser`} binary: ${binary.error}`);
+  } else if (binary?.installed === false) {
     issues.push(
-      `CloakBrowser Chromium is ${binary.override ? 'not launchable at' : 'not installed at'} ${source}.\n` +
+      `${selectedBrowser.kind === 'cloak' ? 'CloakBrowser Chromium is not installed' : 'Selected browser executable is not available'} at ${binary.path}.\n` +
       (binary.downloadUrl ? `  Download URL: ${binary.downloadUrl}\n` : '') +
-      (binary.override
-        ? '  Check that CLOAKBROWSER_BINARY_PATH points at a compatible local Chromium executable.'
-        : '  Check network access to the download URL above, or set CLOAKBROWSER_BINARY_PATH to a compatible local Chromium executable.'),
+      (selectedBrowser.kind === 'custom' || selectedBrowser.kind === 'chrome'
+        ? '  Confirm the absolute executable path still exists and is launchable.'
+        : '  Check network access to the download URL above.'),
     );
   }
   if (daemonFlaky) {
@@ -197,24 +207,36 @@ export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<Doctor
   }
   if (runtimeFlaky) {
     issues.push(
-      'Cloak runtime connection is unstable. The live browser test succeeded, but the daemon reported the runtime disconnected immediately afterward.\n' +
-      'This usually means Chrome/Chromium or the Cloak runtime is still starting, reconnecting, or was suspended.',
+      `${expectedRuntimeLabel} runtime connection is unstable. The live browser test succeeded, but the daemon reported the runtime disconnected immediately afterward.\n` +
+      (selectedBrowser.kind === 'slab'
+        ? 'This usually means SLAB is still starting, reconnecting, or was suspended.'
+        : selectedBrowser.kind === 'custom' || selectedBrowser.kind === 'chrome'
+          ? 'This usually means the selected browser is still starting, reconnecting, or was suspended.'
+          : 'This usually means Chrome/Chromium or the Cloak runtime is still starting, reconnecting, or was suspended.'),
     );
   } else if (daemonRunning && !runtimeConnected) {
     if (health.state === 'profile-required') {
       issues.push(
-        'Multiple Chrome profiles are connected to the daemon, but no default profile was selected.\n' +
+        'Multiple browser profiles are connected to the daemon, but no default profile was selected.\n' +
         '  Run webcmd profile list, then webcmd profile use <name>, or pass --profile <name>.',
       );
     } else if (health.state === 'profile-disconnected') {
       issues.push(
         `Selected browser profile is not connected: ${health.status?.contextId ?? 'unknown'}.\n` +
-        '  Open that Chrome profile and make sure Cloak is enabled.',
+        (selectedBrowser.kind === 'slab'
+          ? '  Open SLAB and reconnect that profile.'
+          : selectedBrowser.kind === 'custom' || selectedBrowser.kind === 'chrome'
+            ? '  Open that browser profile and make sure the selected browser is running.'
+            : '  Open that Chrome profile and make sure Cloak is enabled.'),
       );
     } else {
       issues.push(
-        'Daemon is running but the Cloak runtime is not connected.\n' +
-        '  Make sure Chrome/Chromium is open and Cloak is enabled.\n' +
+        `Daemon is running but the ${expectedRuntimeLabel} runtime is not connected.\n` +
+        (selectedBrowser.kind === 'slab'
+          ? '  Make sure SLAB is open.\n'
+          : selectedBrowser.kind === 'custom' || selectedBrowser.kind === 'chrome'
+            ? '  Make sure the selected browser executable can launch and the browser is open.\n'
+            : '  Make sure Chrome/Chromium is open and Cloak is enabled.\n') +
         '  If Chrome is already open, try: webcmd daemon restart',
       );
     }
@@ -231,7 +253,7 @@ export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<Doctor
       ? `Commands currently fall back to the only active profile: ${profiles[0].contextId}.`
       : 'Multiple profiles are active, so commands will ask you to choose.';
     issues.push(
-      `Default Cloak profile is not active: ${label}.\n` +
+      `Default browser profile is not active: ${label}.\n` +
       `  ${fallbackNote}\n` +
       '  Refresh it with: webcmd profile list, then webcmd profile use <name>.',
     );
@@ -250,6 +272,7 @@ export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<Doctor
     runtimeFlaky,
     runtimeName,
     runtimeVersion,
+    selectedBrowser,
     binary,
     connectivity,
     profiles,
@@ -285,15 +308,22 @@ export function renderBrowserDoctorReport(report: DoctorReport): string {
     : report.runtimeVersion
       ? ` (v${report.runtimeVersion})`
       : ' (version unknown)';
-  const runtimeName = report.runtimeName ?? 'Cloak';
+  const runtimeName = report.runtimeName ?? expectedRuntimeLabelFor(report.selectedBrowser ?? { kind: 'cloak' });
   const runtimeLabel = report.runtimeFlaky
     ? 'unstable (connected during live check, then disconnected)'
     : report.runtimeConnected ? 'connected' : 'not connected';
   lines.push(`${runtimeIcon} Runtime: ${runtimeName} ${runtimeLabel}${runtimeVersion}`);
 
-  // Browser binary status — distinct from "Runtime connected", which only
-  // reflects the daemon/Cloak process and says nothing about whether the
-  // Chromium binary Cloak needs to launch is actually installed.
+  const selectedBrowserLabel = report.selectedBrowser?.kind === 'custom'
+    ? `custom (${report.selectedBrowser.executablePath})`
+    : report.selectedBrowser?.kind === 'chrome'
+      ? `Google Chrome (${report.selectedBrowser.executablePath})`
+    : report.selectedBrowser?.kind === 'slab'
+      ? 'SLAB (macOS alpha opt-in)'
+      : 'Cloak (bundled default)';
+  lines.push(`[OK] Selected browser: ${selectedBrowserLabel}`);
+
+  // Browser binary availability is distinct from a live daemon attachment.
   if (report.binary) {
     const binaryIcon = report.binary.installed === undefined
       ? '[WARN]'
@@ -302,7 +332,7 @@ export function renderBrowserDoctorReport(report: DoctorReport): string {
       ? 'status unknown'
       : report.binary.installed
       ? `installed at ${report.binary.path}`
-      : `${report.binary.override ? 'not launchable' : 'not installed'} (${report.binary.path})`;
+      : `not installed (${report.binary.path})`;
     lines.push(`${binaryIcon} Browser binary: ${binaryLabel}`);
   }
 
@@ -337,4 +367,11 @@ export function renderBrowserDoctorReport(report: DoctorReport): string {
   }
 
   return lines.join('\n');
+}
+
+function expectedRuntimeLabelFor(browser: LocalBrowserConfig): string {
+  if (browser.kind === 'slab') return 'SLAB';
+  if (browser.kind === 'chrome') return 'chrome';
+  if (browser.kind === 'custom') return 'custom';
+  return 'Cloak';
 }

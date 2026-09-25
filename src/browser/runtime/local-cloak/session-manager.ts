@@ -4,7 +4,10 @@ import { fileURLToPath } from 'node:url';
 import type { Browser, BrowserContext, CDPSession, Page as PlaywrightPage } from 'playwright-core';
 import { launchPersistentContext as cloakLaunchPersistentContext } from 'cloakbrowser';
 import type { BrowserSurface, BrowserWindowMode, SiteSessionMode } from '../../protocol.js';
-import { activateDarwinBackgroundContext, launchDarwinBackgroundPersistentContext } from './darwin-background-launch.js';
+import {
+  activateDarwinBackgroundContext,
+  launchDarwinBackgroundPersistentContext,
+} from './darwin-background-launch.js';
 import { normalizeProfileId, resolveCloakProfileDir } from './profiles.js';
 import { CloakNetworkCapture } from './network.js';
 import { findPackageRoot } from '../../../package-paths.js';
@@ -12,11 +15,17 @@ import { findExactCloakProfileProcesses } from './process-matcher.js';
 import { log } from '../../../logger.js';
 import { BrowserConnectError, CliError, EXIT_CODES } from '../../../errors.js';
 import { isClosedContextError } from '../../run/types.js';
+import { configureCloakBrowserBinary } from '../../browser-binary.js';
+import { activateChromeContext, launchChromePersistentContext } from './chrome-launch.js';
+import { findExactChromeProcesses, terminateChromeProcessTree } from './chrome-process.js';
+import { chromeUserDataDir, exportCookiesToNativeChrome as defaultExportCookies, ensureNativeProfileDirectory as defaultEnsureNativeProfileDirectory } from '../../google-chrome.js';
+import { registerNativeChromeProfile as defaultRegisterNativeChromeProfile } from './chrome-profile-export.js';
 
 const UNRESOLVED = Symbol('unresolved');
 const TARGET_PAGE_MATCH_TIMEOUT_MS = 1_000;
 export const PROFILE_IDLE_TIMEOUT_MS = 60_000;
 export const PROFILE_CLOSE_TIMEOUT_MS = 3_000;
+export const CHROME_SYNC_EXPORT_DEBOUNCE_MS = 3_000;
 let cachedCloakBrowserVersion: string | undefined | typeof UNRESOLVED = UNRESOLVED;
 
 /**
@@ -41,6 +50,7 @@ export function resolveCloakBrowserVersion(): string | undefined {
 }
 
 export type LaunchPersistentContext = typeof cloakLaunchPersistentContext;
+export type LaunchChromePersistentContext = typeof launchChromePersistentContext;
 export type RecoverLockedProfile = (userDataDir: string) => Promise<boolean>;
 
 export interface SessionKeyInput {
@@ -153,12 +163,20 @@ export class SessionWindowConflictError extends CliError {
 
 export interface CloakSessionManagerOptions {
   baseDir?: string;
+  profileNamespace?: string;
+  executablePath?: string;
+  runtimeKind?: 'cloak' | 'chrome' | 'custom';
   launchPersistentContext?: LaunchPersistentContext;
   launchBackgroundPersistentContext?: LaunchPersistentContext;
+  launchChromePersistentContext?: LaunchChromePersistentContext;
   activateBackgroundContext?: typeof activateDarwinBackgroundContext;
   recoverLockedProfile?: RecoverLockedProfile;
   platform?: NodeJS.Platform;
   hasActiveHandoff?: (profileId: string) => boolean;
+  syncToChrome?: boolean;
+  ensureNativeProfileDirectory?: typeof defaultEnsureNativeProfileDirectory;
+  exportCookiesToNativeChrome?: typeof defaultExportCookies;
+  registerNativeChromeProfile?: typeof defaultRegisterNativeChromeProfile;
 }
 
 let pageCounter = 0;
@@ -194,10 +212,16 @@ export class CloakSessionManager {
 
   private readonly launchPersistentContext: LaunchPersistentContext;
   private readonly launchBackgroundPersistentContext: LaunchPersistentContext;
+  private readonly launchChromePersistentContext: LaunchChromePersistentContext;
   private readonly activateBackgroundContext: typeof activateDarwinBackgroundContext;
   private readonly platform: NodeJS.Platform;
   private readonly recoverLockedProfile: RecoverLockedProfile;
   private readonly hasActiveHandoff: (profileId: string) => boolean;
+  private readonly ensureNativeProfileDirectory: typeof defaultEnsureNativeProfileDirectory;
+  private readonly exportCookiesToNativeChrome: typeof defaultExportCookies;
+  private readonly registerNativeChromeProfile: typeof defaultRegisterNativeChromeProfile;
+  private readonly syncExportsInFlight = new Set<string>();
+  private readonly chromeSyncExportTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly profiles = new Map<string, ProfileRuntime>();
   private readonly profileLaunches = new Map<string, Promise<ProfileRuntime>>();
   private readonly profileLifecycleQueues = new Map<string, Promise<void>>();
@@ -218,10 +242,18 @@ export class CloakSessionManager {
   constructor(private readonly opts: CloakSessionManagerOptions = {}) {
     this.launchPersistentContext = opts.launchPersistentContext ?? cloakLaunchPersistentContext;
     this.launchBackgroundPersistentContext = opts.launchBackgroundPersistentContext ?? launchDarwinBackgroundPersistentContext;
-    this.activateBackgroundContext = opts.activateBackgroundContext ?? activateDarwinBackgroundContext;
+    this.launchChromePersistentContext = opts.launchChromePersistentContext ?? launchChromePersistentContext;
+    this.activateBackgroundContext = opts.activateBackgroundContext
+      ?? (opts.runtimeKind === 'chrome' ? activateChromeContext : activateDarwinBackgroundContext);
     this.platform = opts.platform ?? process.platform;
-    this.recoverLockedProfile = opts.recoverLockedProfile ?? recoverLockedCloakProfile;
+    this.recoverLockedProfile = opts.recoverLockedProfile
+      ?? (opts.runtimeKind === 'chrome' && opts.executablePath
+        ? userDataDir => recoverLockedChromeProfile(opts.executablePath!, userDataDir, this.platform)
+        : recoverLockedCloakProfile);
     this.hasActiveHandoff = opts.hasActiveHandoff ?? (() => false);
+    this.ensureNativeProfileDirectory = opts.ensureNativeProfileDirectory ?? defaultEnsureNativeProfileDirectory;
+    this.exportCookiesToNativeChrome = opts.exportCookiesToNativeChrome ?? defaultExportCookies;
+    this.registerNativeChromeProfile = opts.registerNativeChromeProfile ?? defaultRegisterNativeChromeProfile;
   }
 
   profileStatuses() {
@@ -248,6 +280,7 @@ export class CloakSessionManager {
       if (runtime) {
         runtime.activeCommands = count;
         this.cancelProfileIdle(runtime);
+        this.cancelChromeSyncExport(profileId);
       }
     });
     try {
@@ -261,6 +294,7 @@ export class CloakSessionManager {
         if (runtime) {
           runtime.activeCommands = count;
           this.scheduleProfileIdle(profileId, runtime);
+          this.scheduleChromeSyncExport(profileId, runtime);
         }
       });
     }
@@ -690,6 +724,8 @@ export class CloakSessionManager {
 
   async shutdown(): Promise<void> {
     this.shuttingDown = true;
+    for (const timer of this.chromeSyncExportTimers.values()) clearTimeout(timer);
+    this.chromeSyncExportTimers.clear();
     while (this.profileLaunches.size > 0) {
       await Promise.allSettled([...this.profileLaunches.values()]);
     }
@@ -755,16 +791,27 @@ export class CloakSessionManager {
   }
 
   private async launchProfileRuntime(profileId: string, windowMode?: BrowserWindowMode): Promise<ProfileRuntime> {
-    const userDataDir = resolveCloakProfileDir(profileId, { baseDir: this.opts.baseDir });
+    const userDataDir = resolveCloakProfileDir(profileId, {
+      baseDir: this.opts.baseDir,
+      profileNamespace: this.opts.profileNamespace,
+    });
     fs.mkdirSync(userDataDir, { recursive: true });
+    configureCloakBrowserBinary(this.opts.executablePath);
     const launchOptions = {
       userDataDir,
       headless: false,
       humanize: true,
+      ...(this.opts.executablePath ? { launchOptions: { executablePath: this.opts.executablePath } } : {}),
     };
-    const launchPersistentContext = this.platform === 'darwin' && windowMode === 'background'
-      ? this.launchBackgroundPersistentContext
-      : this.launchPersistentContext;
+    // The macOS background launcher depends on Cloak Chromium publishing a
+    // DevToolsActivePort file. Compatible Chromium forks may be app bundles but
+    // not implement that contract, so custom executables use Playwright's
+    // normal persistent launcher instead.
+    const launchPersistentContext = this.opts.runtimeKind === 'chrome'
+      ? this.launchChromePersistentContext
+      : this.platform === 'darwin' && windowMode === 'background' && !this.opts.executablePath
+        ? this.launchBackgroundPersistentContext
+        : this.launchPersistentContext;
     let context: BrowserContext;
     try {
       context = await launchPersistentContext(launchOptions);
@@ -830,6 +877,7 @@ export class CloakSessionManager {
     if (runtime.disposed) return;
     runtime.disposed = true;
     this.cancelProfileIdle(runtime);
+    this.cancelChromeSyncExport(runtime.profileId);
     for (const entry of runtime.targetPages.values()) {
       if (entry.idleTimer) clearTimeout(entry.idleTimer);
       this.networkCapture.stop(entry.page);
@@ -956,6 +1004,51 @@ export class CloakSessionManager {
     } finally {
       if (timeout) clearTimeout(timeout);
       this.cleanupRuntime(runtime);
+      this.scheduleChromeExport(runtime.profileId, runtime);
+    }
+  }
+
+  private scheduleChromeSyncExport(profileId: string, runtime: ProfileRuntime): void {
+    if (this.opts.runtimeKind !== 'chrome' || this.opts.syncToChrome !== true) return;
+    this.cancelChromeSyncExport(profileId);
+    const timer = setTimeout(() => {
+      this.chromeSyncExportTimers.delete(profileId);
+      this.scheduleChromeExport(profileId, runtime);
+    }, CHROME_SYNC_EXPORT_DEBOUNCE_MS);
+    timer.unref?.();
+    this.chromeSyncExportTimers.set(profileId, timer);
+  }
+
+  private cancelChromeSyncExport(profileId: string): void {
+    const timer = this.chromeSyncExportTimers.get(profileId);
+    if (timer) {
+      clearTimeout(timer);
+      this.chromeSyncExportTimers.delete(profileId);
+    }
+  }
+
+  private scheduleChromeExport(profileId: string, runtime: ProfileRuntime): void {
+    if (this.opts.runtimeKind !== 'chrome' || this.opts.syncToChrome !== true) return;
+    if (this.syncExportsInFlight.has(profileId)) return;
+    this.syncExportsInFlight.add(profileId);
+    this.exportProfileToChrome(profileId, runtime).finally(() => {
+      this.syncExportsInFlight.delete(profileId);
+    });
+  }
+
+  private async exportProfileToChrome(profileId: string, runtime: ProfileRuntime): Promise<void> {
+    const nativeUserDataDir = chromeUserDataDir({ platform: this.platform });
+    if (!nativeUserDataDir) return;
+    let created: boolean;
+    try {
+      ({ created } = this.ensureNativeProfileDirectory(nativeUserDataDir, profileId));
+    } catch {
+      return; // Name collision with a real native profile — logged by the caller of ensureNativeProfileDirectory itself; skip silently here.
+    }
+    const cookiesPath = path.join(runtime.userDataDir, 'Default', 'Cookies');
+    this.exportCookiesToNativeChrome({ cookiesPath }, path.join(nativeUserDataDir, profileId));
+    if (created && this.opts.executablePath) {
+      await this.registerNativeChromeProfile(this.opts.executablePath, nativeUserDataDir, profileId);
     }
   }
 
@@ -1431,6 +1524,26 @@ async function recoverLockedCloakProfile(userDataDir: string): Promise<boolean> 
 
   signalPids(await findExactCloakProfileProcesses(userDataDir), 'SIGKILL');
   return waitForProfileProcessesToExit(userDataDir, 1500);
+}
+
+async function recoverLockedChromeProfile(
+  executablePath: string,
+  userDataDir: string,
+  platform: NodeJS.Platform,
+): Promise<boolean> {
+  const identity = { executablePath, userDataDir };
+  const initial = await findExactChromeProcesses(identity, platform);
+  if (initial.length === 0) return false;
+  for (const pid of initial) await terminateChromeProcessTree(pid, platform, false);
+  const deadline = Date.now() + 2500;
+  while (Date.now() < deadline) {
+    await new Promise<void>(resolve => setTimeout(resolve, 100));
+    if ((await findExactChromeProcesses(identity, platform)).length === 0) return true;
+  }
+  for (const pid of await findExactChromeProcesses(identity, platform)) {
+    await terminateChromeProcessTree(pid, platform, true);
+  }
+  return (await findExactChromeProcesses(identity, platform)).length === 0;
 }
 
 async function waitForProfileProcessesToExit(userDataDir: string, timeoutMs: number): Promise<boolean> {

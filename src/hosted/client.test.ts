@@ -164,7 +164,7 @@ describe('HostedClient', () => {
   it('advertises live-view and hosted-core capability tokens', async () => {
     const fetchImpl = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
       expect(new Headers(init?.headers).get('x-webcmd-client-capabilities'))
-        .toBe('hosted-live-view-v1, hosted-core-commands-v1');
+        .toBe('hosted-live-view-v1, hosted-core-commands-v1, hosted-command-origin-v1');
       return jsonResponse({ ok: true, manifest });
     });
     await new HostedClient(clientOptions(fetchImpl)).getManifest();
@@ -452,11 +452,11 @@ describe('HostedClient', () => {
       url: 'https://api.example.com/v1/sessions',
       method: 'POST',
       body: '{"name":"Work Project","profile":"work"}',
-      liveViewCapability: 'hosted-live-view-v1, hosted-core-commands-v1',
+      liveViewCapability: 'hosted-live-view-v1, hosted-core-commands-v1, hosted-command-origin-v1',
     });
     expect(requests.slice(1).map(({ url, method, liveViewCapability }) => ({ url, method, liveViewCapability }))).toEqual([
-      { url: 'https://api.example.com/v1/sessions?profile=default&limit=20', method: 'GET', liveViewCapability: 'hosted-live-view-v1, hosted-core-commands-v1' },
-      { url: 'https://api.example.com/v1/sessions/session_wire/close', method: 'POST', liveViewCapability: 'hosted-live-view-v1, hosted-core-commands-v1' },
+      { url: 'https://api.example.com/v1/sessions?profile=default&limit=20', method: 'GET', liveViewCapability: 'hosted-live-view-v1, hosted-core-commands-v1, hosted-command-origin-v1' },
+      { url: 'https://api.example.com/v1/sessions/session_wire/close', method: 'POST', liveViewCapability: 'hosted-live-view-v1, hosted-core-commands-v1, hosted-command-origin-v1' },
     ]);
   });
 
@@ -504,7 +504,7 @@ describe('HostedClient', () => {
     expect(prepareBody).toEqual({
       command: 'github/whoami', profile: 'work', session: 'session_work', executionScope: 'profile',
     });
-    expect(prepareCapability).toBe('hosted-live-view-v1, hosted-core-commands-v1');
+    expect(prepareCapability).toBe('hosted-live-view-v1, hosted-core-commands-v1, hosted-command-origin-v1');
     await expect(client.prepareExecution({ command: 'github/unknown' })).rejects.toMatchObject({ code: 'HOSTED_PROTOCOL' });
   });
 
@@ -1139,7 +1139,7 @@ describe('HostedClient', () => {
       body: new Uint8Array(Buffer.from('png')),
     });
     expect(JSON.parse(String(requests[2]?.body))).toMatchObject({ session: 'session_a' });
-    expect(requests[3]?.capabilities).toBe('hosted-live-view-v1, hosted-core-commands-v1');
+    expect(requests[3]?.capabilities).toBe('hosted-live-view-v1, hosted-core-commands-v1, hosted-command-origin-v1');
   });
 
   it('preserves execution and trace metadata from hosted failure envelopes', async () => {

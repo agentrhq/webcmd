@@ -1,9 +1,0 @@
-{
-  "name": "webcmd-plugin-ualberta",
-  "version": "0.1.0",
-  "type": "module",
-  "description": "University of Alberta postgraduate course export adapter",
-  "peerDependencies": {
-    "@agentrhq/webcmd": ">=0.5.2"
-  }
-}

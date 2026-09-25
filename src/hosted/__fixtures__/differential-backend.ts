@@ -1,5 +1,6 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { PKG_VERSION } from '../../version.js';
 
 export interface DifferentialBackend {
   url: string;
@@ -12,7 +13,7 @@ const MANIFEST = {
   metadata: {
     contractSchemaVersion: 1,
     sessionProtocolVersion: 1,
-    webcmdPackageVersion: '0.7.4',
+    webcmdPackageVersion: PKG_VERSION,
     generatedAt: '1970-01-01T00:00:00.000Z',
   },
   commands: [

@@ -1,0 +1,38 @@
+{
+  "request": {
+    "id": "create-v2-1",
+    "method": "createProfile",
+    "params": {
+      "protocolVersion": { "min": 2, "max": 2 },
+      "idempotencyKey": "webcmd:work",
+      "displayName": "work"
+    }
+  },
+  "response": {
+    "id": "create-v2-1",
+    "ok": true,
+    "result": {
+      "profile": { "id": "Profile 1", "displayName": "work" },
+      "created": true
+    }
+  },
+  "retried": {
+    "request": {
+      "id": "create-v2-2",
+      "method": "createProfile",
+      "params": {
+        "protocolVersion": { "min": 2, "max": 2 },
+        "idempotencyKey": "webcmd:work",
+        "displayName": "renamed-locally"
+      }
+    },
+    "response": {
+      "id": "create-v2-2",
+      "ok": true,
+      "result": {
+        "profile": { "id": "Profile 1", "displayName": "work" },
+        "created": false
+      }
+    }
+  }
+}

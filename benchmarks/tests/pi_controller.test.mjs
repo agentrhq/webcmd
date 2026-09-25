@@ -130,7 +130,7 @@ test("Pi sidecar accepts browser-use as a benchmark tool before starting a sessi
 });
 
 test("Pi sidecar rejects a missing explicitly selected skill", () => {
-  const missing = "/definitely/missing/webcmd-usage";
+  const missing = "/definitely/missing/skill";
   const result = spawnSync(
     process.execPath,
     [

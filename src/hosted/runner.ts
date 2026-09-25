@@ -38,6 +38,7 @@ import { loadBrowserRunSource, readProcessStdin } from '../browser/run/input.js'
 import { BrowserRunError } from '../browser/run/types.js';
 import { CLI_COMMAND } from '../brand.js';
 import { formatPluginSearchEmptyCopy, presentPluginSearch } from '../plugin-search-presentation.js';
+import { unknownSiteCommandHint } from '../command-suggest.js';
 import { missingPluginGuidance } from '../discovery.js';
 import type { ExternalCliConfig } from '../external.js';
 import { webFetchCommand } from '../fetch/command.js';
@@ -721,7 +722,7 @@ async function dispatchHosted(
     const known = [...new Set(hostedCommands(manifest).filter(entry => entry.site === site).map(entry => entry.name))].sort();
     const help = known.length > 0 ? `help: valid subcommands for \`webcmd ${site}\`: ${known.join(', ')}\n` : '';
     throw new CommanderCompatibleError(
-      `error: unknown command '${commandName}'\n${help}`,
+      `error: unknown command '${commandName}'\n${help}${unknownSiteCommandHint(site, commandName)}\n`,
       EXIT_CODES.USAGE_ERROR,
     );
   }

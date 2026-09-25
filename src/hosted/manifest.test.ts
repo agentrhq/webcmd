@@ -122,6 +122,23 @@ describe('hosted manifest helpers', () => {
     expect(commandNamesForSite(manifest, 'docker')).toEqual([]);
   });
 
+  it('reports origin on hosted list rows', () => {
+    expect(hostedListRows({
+      ...manifest,
+      commands: [
+        { ...manifest.commands[0]!, adapterPackageId: 'pkg_default_webcmd' },
+        { ...manifest.commands[0]!, site: 'pypi', name: 'package', command: 'pypi/package', origin: 'plugin:pypi' },
+        { ...manifest.commands[0]!, site: 'quotes', name: 'list', command: 'quotes/list', origin: 'local' },
+        { ...manifest.commands[0]!, site: 'openfda', name: 'search', command: 'openfda/search', origin: 'override:openfda' },
+      ],
+    }, true)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ command: 'github/whoami', origin: 'builtin' }),
+      expect.objectContaining({ command: 'pypi/package', origin: 'plugin:pypi' }),
+      expect.objectContaining({ command: 'quotes/list', origin: 'local' }),
+      expect.objectContaining({ command: 'openfda/search', origin: 'override:openfda' }),
+    ]));
+  });
+
   it('includes availability in hosted table presentation', () => {
     const presentation = hostedListPresentation(manifest, 'table');
 
@@ -173,7 +190,7 @@ describe('hosted manifest helpers', () => {
     expect(stdout.text()).toContain('completion');
     expect(stdout.text()).toMatch(/profile\s+Manage hosted browser profiles/);
     expect(stdout.text()).toContain('--profile <name>');
-    expect(stdout.text()).toContain('Local-only commands:');
+    expect(stdout.text()).toContain('LOCAL-ONLY');
   });
 
   it('completes private hosted manifest commands without local discovery', async () => {
@@ -259,7 +276,9 @@ describe('hosted manifest helpers', () => {
       'list',
       'plugin',
       'profile',
+      'session',
       'setup',
+      'site',
       'skills',
       'update',
       'web',

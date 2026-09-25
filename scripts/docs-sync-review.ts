@@ -3,6 +3,7 @@ import { isAbsolute, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
   REVIEW_COMMENT_MARKER,
+  REVIEW_JSON_SCHEMA,
   buildReviewPrompts,
   classifyPullRequest,
   createDeferredResult,
@@ -181,13 +182,25 @@ export function loadDocumentation(
   return excerpts;
 }
 
+/**
+ * Request rungs, most capable first. A model that rejects a parameter answers
+ * HTTP 400, so each rung drops exactly one capability rather than abandoning
+ * structured output altogether: an unusable `reasoning_effort` must not cost us
+ * the schema that keeps `verdict` well-formed.
+ */
+const REQUEST_LADDER: ReadonlyArray<{ reasoningEffort: boolean; structuredOutput: boolean }> = [
+  { reasoningEffort: true, structuredOutput: true },
+  { reasoningEffort: false, structuredOutput: true },
+  { reasoningEffort: false, structuredOutput: false },
+];
+
 export async function generateOpenAIReview(
   prompt: string,
   model: string,
   apiKey: string,
   fetchImpl: FetchLike = fetch,
 ): Promise<unknown> {
-  const response = await requestOpenAIReview(prompt, model, apiKey, fetchImpl, true);
+  const response = await requestOpenAIReview(prompt, model, apiKey, fetchImpl, 0);
   const data = await response.json() as {
     choices?: Array<{ message?: { content?: string | null } }>;
   };
@@ -201,8 +214,9 @@ async function requestOpenAIReview(
   model: string,
   apiKey: string,
   fetchImpl: FetchLike,
-  useLowReasoning: boolean,
+  rung: number,
 ): Promise<Response> {
+  const options = REQUEST_LADDER[rung] ?? REQUEST_LADDER[REQUEST_LADDER.length - 1]!;
   const response = await fetchImpl('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -218,12 +232,24 @@ async function requestOpenAIReview(
         },
         { role: 'user', content: prompt },
       ],
-      ...(useLowReasoning ? { reasoning_effort: 'low' } : {}),
+      ...(options.reasoningEffort ? { reasoning_effort: 'low' } : {}),
+      ...(options.structuredOutput
+        ? {
+          response_format: {
+            type: 'json_schema',
+            json_schema: {
+              name: 'docs_sync_review',
+              strict: true,
+              schema: REVIEW_JSON_SCHEMA,
+            },
+          },
+        }
+        : {}),
     }),
     signal: AbortSignal.timeout(180_000),
   });
-  if (response.status === 400 && useLowReasoning) {
-    return requestOpenAIReview(prompt, model, apiKey, fetchImpl, false);
+  if (response.status === 400 && rung + 1 < REQUEST_LADDER.length) {
+    return requestOpenAIReview(prompt, model, apiKey, fetchImpl, rung + 1);
   }
   if (!response.ok) {
     const detail = (await response.text()).slice(0, 600);

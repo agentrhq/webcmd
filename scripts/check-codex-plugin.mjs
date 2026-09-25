@@ -23,7 +23,7 @@ assert.equal(manifest.skills, './skills/');
 assert.equal(manifest.author?.name, 'AgentRHQ');
 assert.equal(manifest.interface?.developerName, 'AgentRHQ');
 const expectedDefaultPrompts = [
-  'Create a Zillow rental-search plugin for WebCMD with city, max rent, and bedroom filters. Test it and show me the command.',
+  'Research agentic browser automation on Hacker News and Reddit, then return a concise comparison with source links.',
   'Compare MacBook Air M5 prices and availability on Amazon, Walmart, and Best Buy.',
   'Find and rank today\u2019s most-discussed AI agent launches across Hacker News, Reddit, Product Hunt, and arXiv.',
 ];
@@ -46,15 +46,7 @@ assert.equal(claudeMarketplace.plugins?.length, 1);
 assert.equal(claudeMarketplacePlugin?.name, 'webcmd');
 assert.equal(claudeMarketplacePlugin?.source, './');
 
-const expectedSkills = [
-  'smart-search',
-  'webcmd-adapter-author',
-  'webcmd-autofix',
-  'webcmd-browser',
-  'webcmd-browser-sitemap',
-  'webcmd-sitemap-author',
-  'webcmd-usage',
-];
+const expectedSkills = ['webcmd-browser'];
 const actualSkills = fs
   .readdirSync(path.join(root, 'skills'), { withFileTypes: true })
   .filter(
@@ -66,13 +58,12 @@ const actualSkills = fs
   .sort();
 
 assert.deepEqual(actualSkills, expectedSkills);
+assert.equal(actualSkills.length, 1);
 
-const usageSkill = readText('skills/webcmd-usage/SKILL.md');
-assert.match(usageSkill, /Bash\(npm:\*\)/);
-assert.match(usageSkill, /## CLI Preflight/);
-assert.match(usageSkill, /webcmd --version/);
-assert.match(usageSkill, /npm install -g @agentrhq\/webcmd/);
+const browserSkill = readText('skills/webcmd-browser/SKILL.md');
+assert.match(browserSkill, /webcmd-browser/);
+assert.match(manifest.interface?.longDescription ?? '', /webcmd-browser|one skill/i);
 
 console.log(
-  `Codex and Claude Code plugin metadata valid: ${actualSkills.length} skills`,
+  `Codex and Claude Code plugin metadata valid: ${actualSkills.length} skill`,
 );

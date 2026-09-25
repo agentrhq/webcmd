@@ -415,9 +415,10 @@ describe('commanderAdapter error envelope output', () => {
       ok: false,
       error: {
         code: 'EMPTY_RESULT',
-        help: expect.stringMatching(/adapter path github\/issue|webcmd-autofix/),
+        help: expect.stringMatching(/adapter path github\/issue/),
       },
     });
+    expect(JSON.parse(output).error.help).not.toMatch(/Load the .* skill/i);
     expect(output).not.toContain('# AutoFix');
 
     stderrSpy.mockRestore();

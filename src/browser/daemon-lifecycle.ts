@@ -6,6 +6,7 @@ import { DEFAULT_DAEMON_PORT } from '../constants.js';
 import { BrowserConnectError } from '../errors.js';
 import { PKG_VERSION } from '../version.js';
 import { isVerbose } from '../logger.js';
+import { loadWebcmdConfig } from '../hosted/config.js';
 import { waitForBridgeReady } from './bridge-readiness.js';
 import { fetchDaemonStatus, getDaemonHealth, requestDaemonShutdown, type DaemonHealth, type DaemonStatus } from './daemon-transport.js';
 
@@ -43,10 +44,14 @@ export function resolveDaemonLaunchSpec(): DaemonLaunchSpec {
 
 export function spawnDaemonProcess(): ChildProcess {
   const launch = resolveDaemonLaunchSpec();
+  const env = { ...process.env };
+  delete env.TMPDIR;
+  delete env.TMP;
+  delete env.TEMP;
   const proc = spawn(launch.binary, launch.args, {
     detached: true,
     stdio: 'ignore',
-    env: { ...process.env },
+    env,
   });
   proc.unref();
   return proc;
@@ -127,6 +132,7 @@ export async function ensureBrowserBridgeReady(
   const health = await getDaemonHealth({ contextId });
   const daemonVersion = health.status?.daemonVersion;
   const isStale = !!health.status && (!daemonVersion || daemonVersion !== PKG_VERSION);
+  const selectedSlab = selectedLocalBrowserKind() === 'slab';
   let staleDaemonReplaced = false;
   let spawnedProcess: ChildProcess | null = null;
 
@@ -171,14 +177,30 @@ export async function ensureBrowserBridgeReady(
     throw browserConnectErrorFromHealth(health, contextId);
   }
 
+  if (!staleDaemonReplaced && selectedSlab && health.state !== 'stopped') {
+    return { health, spawnedProcess };
+  }
+
   if (staleDaemonReplaced || health.state === 'stopped') {
     if (verbose && (isVerbose() || process.stderr.isTTY)) {
       process.stderr.write('⏳ Starting daemon...\n');
     }
     spawnedProcess = daemonLifecycleHooks.spawnDaemonProcess();
   } else if (verbose && (isVerbose() || process.stderr.isTTY)) {
-    process.stderr.write('⏳ Waiting for Cloak runtime to connect...\n');
-    process.stderr.write('   Make sure Chrome or Chromium is open and Cloak is enabled.\n');
+    const kind = selectedLocalBrowserKind();
+    process.stderr.write(`⏳ Waiting for ${runtimeLabel(kind)} to connect...\n`);
+    process.stderr.write(`   ${runtimeReadinessHint(kind)}\n`);
+  }
+
+  if (selectedSlab) {
+    const status = await waitForDaemonStatus(timeoutMs);
+    if (status) {
+      const finalHealth = await getDaemonHealth({ contextId });
+      if (finalHealth.state !== 'profile-required' && finalHealth.state !== 'stopped') {
+        return { health: finalHealth, spawnedProcess };
+      }
+      throw browserConnectErrorFromHealth(finalHealth, contextId);
+    }
   }
 
   const finalHealth = await waitForBridgeReady(getDaemonHealth, { timeoutMs, contextId });
@@ -186,7 +208,29 @@ export async function ensureBrowserBridgeReady(
   throw browserConnectErrorFromHealth(finalHealth, contextId);
 }
 
-function browserConnectErrorFromHealth(health: DaemonHealth, contextId?: string): BrowserConnectError {
+function selectedLocalBrowserKind(): 'cloak' | 'chrome' | 'slab' | 'custom' {
+  const config = loadWebcmdConfig();
+  return config.mode === 'local' ? config.browser.kind : 'cloak';
+}
+
+type LocalBrowserKind = 'cloak' | 'chrome' | 'slab' | 'custom';
+
+function runtimeLabel(kind: LocalBrowserKind): string {
+  return kind === 'slab' ? 'SLAB' : kind === 'cloak' ? 'Cloak' : kind === 'chrome' ? 'Chrome' : 'the custom browser runtime';
+}
+
+function runtimeReadinessHint(kind: LocalBrowserKind): string {
+  if (kind === 'slab') return 'Open SLAB and retry the browser command.';
+  if (kind === 'cloak') return 'Make sure Chrome/Chromium is open and Cloak is enabled.';
+  if (kind === 'chrome') return 'Make sure the configured Chrome runtime is open and reachable.';
+  return 'Make sure the configured custom browser runtime is running and reachable.';
+}
+
+export function browserConnectErrorFromHealth(
+  health: DaemonHealth,
+  contextId?: string,
+  kind: LocalBrowserKind = selectedLocalBrowserKind(),
+): BrowserConnectError {
   if (health.state === 'profile-required') {
     return new BrowserConnectError(
       'Multiple browser profiles are connected',
@@ -199,14 +243,14 @@ function browserConnectErrorFromHealth(health: DaemonHealth, contextId?: string)
     const label = contextId ?? health.status.contextId ?? 'unknown';
     return new BrowserConnectError(
       `Browser profile "${label}" is not connected`,
-      'Open the matching Chrome profile and make sure Cloak is enabled, or choose another profile with webcmd profile use <name>.',
+      `${kind === 'slab' ? 'Open SLAB and verify that Profile' : `Open the matching ${runtimeLabel(kind)} profile`} "${label}" is available, or choose another profile with webcmd profile use <name>.`,
       'profile-disconnected',
     );
   }
   if (health.state === 'no-runtime') {
     return new BrowserConnectError(
       'Browser runtime is not ready',
-      'Run `webcmd daemon restart`. If CloakBrowser is downloading its browser binary, wait for it to finish and retry.',
+      `${runtimeReadinessHint(kind)} Run \`webcmd doctor\` for local status.`,
       'runtime-not-ready',
     );
   }

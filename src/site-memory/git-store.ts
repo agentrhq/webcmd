@@ -1,0 +1,261 @@
+import { execFile as execFileCb } from 'node:child_process';
+import { access, mkdir, realpath } from 'node:fs/promises';
+import { join } from 'node:path';
+import { promisify } from 'node:util';
+import { REPOSITORY_LOCK_STALE_MS, REPOSITORY_LOCK_TIMEOUT_MS, withFileLock } from './file-lock.js';
+import { atomicWrite, containedRelativePath, sitesRoot, type LocalStoreOptions } from './local-store.js';
+import type { MemoryRevision } from './model.js';
+
+const execFile = promisify(execFileCb);
+export type GitExecFile = (
+  file: string,
+  args: readonly string[],
+  options: { cwd: string; encoding: 'utf8'; env: NodeJS.ProcessEnv },
+) => Promise<{ stdout: string }>;
+export const defaultGitExec: GitExecFile = async (file, args, options) => {
+  const { stdout } = await execFile(file, [...args], options);
+  return { stdout };
+};
+let gitExec = defaultGitExec;
+
+export function setGitExecForTests(next?: GitExecFile): void {
+  gitExec = next ?? defaultGitExec;
+}
+
+const AUTHOR_NAME = 'webcmd';
+const AUTHOR_EMAIL = 'webcmd@local';
+const GITIGNORE = ['.drafts/', '*.lock', '*.tmp', '**/fixtures/', '**/verify/', ''].join('\n');
+const GIT_FLAGS = [
+  '-c', `user.name=${AUTHOR_NAME}`,
+  '-c', `user.email=${AUTHOR_EMAIL}`,
+  '-c', 'commit.gpgsign=false',
+  '-c', 'core.hooksPath=/dev/null',
+];
+
+export interface SitesRepository {
+  revision(): Promise<MemoryRevision | null>;
+  commit(paths: string[], message: string): Promise<MemoryRevision>;
+  pathsChanged(paths: string[]): Promise<boolean>;
+  dirtyPaths(scope: string): Promise<string[]>;
+  isAncestor(commit: MemoryRevision): Promise<boolean>;
+  showAtHead(path: string): Promise<string | null>;
+  withRepositoryLock<T>(fn: () => Promise<T>): Promise<T>;
+}
+
+export async function openSitesRepository(options: LocalStoreOptions = {}): Promise<SitesRepository> {
+  const root = await ensureSitesRoot(options);
+  await assertExactRootOrAbsent(root);
+  return {
+    revision: () => revisionOf(root),
+    commit: (paths, message) => withRepositoryLock(root, () => commitPaths(root, paths, message)),
+    pathsChanged: (paths) => pathsDifferFromHead(root, paths),
+    dirtyPaths: (scope) => dirtyPathsIn(root, scope),
+    isAncestor: (commit) => isAncestorOfHead(root, commit),
+    showAtHead: (path) => showAtHead(root, path),
+    withRepositoryLock: (fn) => withRepositoryLock(root, fn),
+  };
+}
+
+function withRepositoryLock<T>(root: string, fn: () => Promise<T>): Promise<T> {
+  return withFileLock(join(root, '.repository'), fn, {
+    staleMs: REPOSITORY_LOCK_STALE_MS,
+    timeoutMs: REPOSITORY_LOCK_TIMEOUT_MS,
+  });
+}
+
+async function ensureSitesRoot(options: LocalStoreOptions): Promise<string> {
+  const root = sitesRoot(options);
+  await mkdir(root, { recursive: true });
+  return realpath(root);
+}
+
+async function commitPaths(root: string, paths: string[], message: string): Promise<MemoryRevision> {
+  if (paths.length === 0) throw new Error('Refusing to commit without explicit paths.');
+  await ensureRepository(root);
+  const relativePaths = paths.map((path) => containedRelativePath(root, path));
+  const createdIgnore = await missing(join(root, '.gitignore'));
+  if (createdIgnore) await atomicWrite(join(root, '.gitignore'), GITIGNORE);
+  const staged = createdIgnore ? [...relativePaths, '.gitignore'] : relativePaths;
+  await assertNoUnrelatedDirty(root, relativePaths);
+  try {
+    await git(root, ['add', '--', ...staged]);
+    await assertStagedSubset(root, staged);
+    await git(root, ['commit', '--no-gpg-sign', '-m', message]);
+  } catch (err) {
+    try {
+      await restoreStagedPaths(root, staged);
+    } catch (cleanupErr) {
+      throw new AggregateError([err, cleanupErr], 'Commit failed and index cleanup also failed');
+    }
+    throw err;
+  }
+  return (await git(root, ['rev-parse', 'HEAD'])).trim();
+}
+
+async function pathsDifferFromHead(root: string, paths: string[]): Promise<boolean> {
+  if (paths.length === 0) return false;
+  const relativePaths = paths.map((path) => containedRelativePath(root, path));
+  const status = await git(root, ['status', '--porcelain', '-z', '-uall', '--', ...relativePaths]);
+  return porcelainEntries(status).length > 0;
+}
+
+async function dirtyPathsIn(root: string, scope: string): Promise<string[]> {
+  const relative = containedRelativePath(root, scope);
+  const status = await git(root, ['status', '--porcelain', '-z', '-uall', '--', relative]);
+  return porcelainEntries(status).map((entry) => entry.path);
+}
+
+async function isAncestorOfHead(root: string, commit: MemoryRevision): Promise<boolean> {
+  if (!commit) return false;
+  try {
+    await git(root, ['merge-base', '--is-ancestor', commit, 'HEAD']);
+    return true;
+  } catch (err) {
+    if (isGitExit(err, 1) || isGitExit(err, 128)) return false;
+    throw err;
+  }
+}
+
+async function showAtHead(root: string, path: string): Promise<string | null> {
+  try {
+    return await git(root, ['show', `HEAD:${containedRelativePath(root, path)}`]);
+  } catch (err) {
+    if (isMissingHeadPath(err)) return null;
+    throw err;
+  }
+}
+
+async function restoreStagedPaths(root: string, relativePaths: string[]): Promise<void> {
+  if (await revisionOf(root) !== null) {
+    await git(root, ['restore', '--staged', '--', ...relativePaths]);
+  } else {
+    await git(root, ['rm', '--cached', '-f', '--ignore-unmatch', '--', ...relativePaths]);
+  }
+}
+
+async function ensureRepository(root: string): Promise<void> {
+  if (!await hasExactRepository(root)) {
+    await git(root, ['init']);
+    await assertExactRoot(root);
+  }
+  await git(root, ['config', 'user.name', AUTHOR_NAME]);
+  await git(root, ['config', 'user.email', AUTHOR_EMAIL]);
+}
+
+async function revisionOf(root: string): Promise<MemoryRevision | null> {
+  try {
+    return (await git(root, ['rev-parse', 'HEAD'])).trim();
+  } catch {
+    return null;
+  }
+}
+
+async function assertExactRootOrAbsent(root: string): Promise<void> {
+  try {
+    await assertExactRoot(root);
+  } catch (err) {
+    if (isNotRepo(err)) return;
+    throw err;
+  }
+}
+
+async function hasExactRepository(root: string): Promise<boolean> {
+  try {
+    await assertExactRoot(root);
+    return true;
+  } catch (err) {
+    if (isNotRepo(err)) return false;
+    throw err;
+  }
+}
+
+async function assertExactRoot(root: string): Promise<void> {
+  const top = (await git(root, ['rev-parse', '--show-toplevel'])).trim();
+  if (await realpath(top) !== await realpath(root)) {
+    throw new Error('An ancestor Git repository owns the sites path; it is not the sites repository.');
+  }
+}
+
+async function assertNoUnrelatedDirty(root: string, allowed: string[]): Promise<void> {
+  const allow = new Set(allowed);
+  const scopes = productScopes(allowed);
+  if (scopes.length === 0) return;
+  const status = await git(root, ['status', '--porcelain', '-z', '-uall', '--', ...scopes]);
+  for (const { code, path } of porcelainEntries(status)) {
+    if (code === '??' || code === '!!') continue;
+    if (!allow.has(path)) throw new Error(`Refusing to commit unrelated dirty path: ${path}`);
+  }
+}
+
+async function assertStagedSubset(root: string, allowed: string[]): Promise<void> {
+  const allow = new Set(allowed);
+  const cached = await git(root, ['diff', '--cached', '--name-only', '-z']);
+  for (const path of cached.split('\0')) {
+    if (!path) continue;
+    if (!allow.has(path)) throw new Error(`Refusing to commit unrelated staged path: ${path}`);
+  }
+}
+
+async function missing(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return false;
+  } catch (err) {
+    if (err instanceof Error && 'code' in err && err.code === 'ENOENT') return true;
+    throw err;
+  }
+}
+
+function productScopes(allowed: string[]): string[] {
+  const scopes = new Set<string>();
+  for (const path of allowed) {
+    if (path === '.gitignore') continue;
+    const product = path.split('/')[0];
+    if (product) scopes.add(product);
+  }
+  return [...scopes];
+}
+
+function porcelainEntries(status: string): { code: string; path: string }[] {
+  const entries: { code: string; path: string }[] = [];
+  const parts = status.split('\0');
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    if (!part) continue;
+    const code = part.slice(0, 2);
+    const path = part.slice(3);
+    if (code.includes('R') || code.includes('C')) i += 1;
+    entries.push({ code, path });
+  }
+  return entries;
+}
+
+async function git(root: string, args: string[]): Promise<string> {
+  const env = { ...process.env };
+  delete env.GIT_DIR;
+  delete env.GIT_WORK_TREE;
+  env.LC_ALL = 'C';
+  env.LANG = 'C';
+  env.GIT_AUTHOR_NAME = AUTHOR_NAME;
+  env.GIT_AUTHOR_EMAIL = AUTHOR_EMAIL;
+  env.GIT_COMMITTER_NAME = AUTHOR_NAME;
+  env.GIT_COMMITTER_EMAIL = AUTHOR_EMAIL;
+  const { stdout } = await gitExec('git', [...GIT_FLAGS, ...args], { cwd: root, encoding: 'utf8', env });
+  return stdout;
+}
+
+function isNotRepo(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const stderr = 'stderr' in err && typeof err.stderr === 'string' ? err.stderr : '';
+  return 'code' in err && err.code === 128 && /not a git repository/i.test(stderr);
+}
+
+function isGitExit(err: unknown, code: number): boolean {
+  return Boolean(err && typeof err === 'object' && 'code' in err && err.code === code);
+}
+
+function isMissingHeadPath(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const stderr = 'stderr' in err && typeof err.stderr === 'string' ? err.stderr : '';
+  return /exists on disk, but not in 'HEAD'|does not exist in 'HEAD'/.test(stderr);
+}

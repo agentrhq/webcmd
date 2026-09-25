@@ -17,6 +17,7 @@ import { getErrorMessage, PluginError } from './errors.js';
 import { log } from './logger.js';
 import { isRecord } from './utils.js';
 import { PACKAGE_NAME } from './brand.js';
+import { normalizeOfficialPluginSource } from './official-plugin-source.js';
 import { fileSha256, readOverrideRecords } from './override-provenance.js';
 import {
   readPluginManifest,
@@ -262,7 +263,7 @@ function resolveRemotePluginSource(lockEntry: LockEntry | undefined, dir: string
   if (!source || source.kind === 'local') {
     throw new Error(`Unable to determine remote source for plugin at ${dir}`);
   }
-  return source.url;
+  return normalizeOfficialPluginSource(source.url);
 }
 
 function pathExistsSync(p: string): boolean {
@@ -1338,7 +1339,7 @@ export function updatePlugin(name: string, options: { force?: boolean } = {}): s
   if (source?.kind === 'monorepo') {
     const monoDir = path.join(getMonoreposDir(), source.repoName);
     const monoName = source.repoName;
-    const cloneUrl = source.url;
+    const cloneUrl = normalizeOfficialPluginSource(source.url);
     const discarded = inspectPluginDirtiness(name, options.force === true, () => getDirtyFiles(monoDir, {
       pathspec: source.subPath,
       ...(lockEntry?.commitHash ? { against: lockEntry.commitHash } : {}),
@@ -1592,6 +1593,7 @@ function getPluginSource(dir: string): string | undefined {
 function parseSource(
   source: string,
 ): ParsedSource | null {
+  source = normalizeOfficialPluginSource(source);
   if (source.startsWith('file://')) {
     try {
       const localPath = path.resolve(fileURLToPath(source));

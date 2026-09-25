@@ -1,0 +1,222 @@
+import { createConnection, type Socket } from 'node:net';
+import type { ConnectOverCDPTransport } from 'playwright-core';
+import { type SlabCredential } from './protocol.js';
+
+const MAX_FRAME_BYTES = 64 * 1024 * 1024;
+
+export interface CdpIpcTransportOptions {
+  endpoint: string;
+  credential: SlabCredential;
+  timeoutMs?: number;
+}
+
+type State = 'ready' | 'open' | 'closed';
+
+function isObject(value: unknown): value is object {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function encodeFrame(value: object): Buffer {
+  const body = Buffer.from(JSON.stringify(value));
+  if (body.byteLength === 0 || body.byteLength > MAX_FRAME_BYTES) {
+    throw new Error('SLAB CDP IPC frame exceeds 64 MiB');
+  }
+  const header = Buffer.allocUnsafe(4);
+  header.writeUInt32BE(body.byteLength);
+  return Buffer.concat([header, body]);
+}
+
+export class CdpIpcTransport implements ConnectOverCDPTransport {
+  onclose?: (reason?: string) => void;
+
+  private readonly chunks: Buffer[] = [];
+  private messageHandler?: (message: object) => void;
+  private pendingMessages: object[] = [];
+  private bufferedBytes = 0;
+  private expectedLength?: number;
+  private state: State = 'ready';
+  private authenticated = false;
+  private resolveAuthentication?: () => void;
+  private rejectAuthentication?: (error: Error) => void;
+  private timeoutTimer?: ReturnType<typeof setTimeout>;
+
+  private constructor(private readonly socket: Socket) {
+    socket.on('data', (chunk) => this.onData(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+    socket.on('error', () => this.fail('connection closed'));
+    socket.on('close', () => this.fail('connection closed'));
+  }
+
+  get onmessage(): ((message: object) => void) | undefined {
+    return this.messageHandler;
+  }
+
+  set onmessage(handler: ((message: object) => void) | undefined) {
+    this.messageHandler = handler;
+    this.flushPendingMessages();
+  }
+
+  static connect(options: CdpIpcTransportOptions): Promise<ConnectOverCDPTransport> {
+    return new Promise((resolve, reject) => {
+      const socket = createConnection({ path: options.endpoint });
+      const transport = new CdpIpcTransport(socket);
+      const timeoutMs = options.timeoutMs ?? 30_000;
+      const deadline = timeoutMs > 0 ? Date.now() + timeoutMs : undefined;
+      let settled = false;
+
+      const finishReject = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        if (transport.timeoutTimer) clearTimeout(transport.timeoutTimer);
+        reject(error);
+      };
+      const finishResolve = () => {
+        if (settled) return;
+        settled = true;
+        if (transport.timeoutTimer) clearTimeout(transport.timeoutTimer);
+        resolve(transport);
+      };
+      const onConnectError = (error: Error) => finishReject(error);
+      const scheduleTimeout = (reason: string) => {
+        if (deadline === undefined) return;
+        const remainingMs = deadline - Date.now();
+        if (remainingMs <= 0) {
+          transport.fail(reason);
+          return;
+        }
+        transport.timeoutTimer = setTimeout(() => transport.fail(reason), remainingMs);
+      };
+
+      transport.rejectAuthentication = finishReject;
+      socket.once('error', onConnectError);
+      socket.once('connect', () => {
+        if (settled) return;
+        socket.off('error', onConnectError);
+        if (transport.timeoutTimer) clearTimeout(transport.timeoutTimer);
+        transport.resolveAuthentication = finishResolve;
+        transport.rejectAuthentication = finishReject;
+        scheduleTimeout('authentication timeout');
+        try {
+          socket.write(encodeFrame({ type: 'authenticate', credential: options.credential.reveal() }));
+        } catch (error) {
+          transport.fail(error instanceof Error ? error.message.replace(/^SLAB CDP IPC /, '') : 'authentication failed');
+        }
+      });
+      scheduleTimeout('connection timeout');
+    });
+  }
+
+  open(): void {
+    if (this.state !== 'ready') return;
+    this.state = 'open';
+    this.flushPendingMessages();
+  }
+
+  send(message: object): void {
+    if (this.state === 'closed') throw new Error('SLAB CDP IPC transport is closed');
+    if (!this.authenticated) throw new Error('SLAB CDP IPC transport is not authenticated');
+    if (!isObject(message)) throw new Error('SLAB CDP IPC message must be an object');
+    this.socket.write(encodeFrame(message));
+  }
+
+  close(): void {
+    this.fail('connection closed');
+  }
+
+  private onData(chunk: Buffer): void {
+    if (this.state === 'closed') return;
+    this.chunks.push(chunk);
+    this.bufferedBytes += chunk.byteLength;
+    this.parseFrames();
+  }
+
+  private parseFrames(): void {
+    while (this.state !== 'closed') {
+      if (this.expectedLength === undefined) {
+        if (this.bufferedBytes < 4) return;
+        const header = this.read(4);
+        const length = header.readUInt32BE(0);
+        if (length === 0 || length > MAX_FRAME_BYTES) {
+          this.fail('frame exceeds 64 MiB');
+          return;
+        }
+        this.expectedLength = length;
+      }
+      if (this.bufferedBytes < this.expectedLength) return;
+      const body = this.read(this.expectedLength);
+      this.expectedLength = undefined;
+      this.handleFrame(body);
+    }
+  }
+
+  private read(length: number): Buffer {
+    const first = this.chunks[0];
+    if (first && first.byteLength >= length) {
+      const value = first.subarray(0, length);
+      if (first.byteLength === length) this.chunks.shift();
+      else this.chunks[0] = first.subarray(length);
+      this.bufferedBytes -= length;
+      return value;
+    }
+
+    const value = Buffer.allocUnsafe(length);
+    let offset = 0;
+    while (offset < length) {
+      const chunk = this.chunks.shift();
+      if (!chunk) throw new Error('SLAB CDP IPC parser lost buffered data');
+      const size = Math.min(chunk.byteLength, length - offset);
+      chunk.copy(value, offset, 0, size);
+      offset += size;
+      if (size < chunk.byteLength) this.chunks.unshift(chunk.subarray(size));
+    }
+    this.bufferedBytes -= length;
+    return value;
+  }
+
+  private handleFrame(body: Buffer): void {
+    let message: unknown;
+    try {
+      message = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(body));
+    } catch {
+      this.fail('frame contains invalid JSON');
+      return;
+    }
+    if (!isObject(message)) {
+      this.fail('frame must contain a JSON object');
+      return;
+    }
+    if (!this.authenticated) {
+      if (Object.keys(message).length !== 1 || !Object.hasOwn(message, 'type') || (message as { type?: unknown }).type !== 'authenticated') {
+        this.fail('authentication failed');
+        return;
+      }
+      this.authenticated = true;
+      this.state = 'open';
+      const resolve = this.resolveAuthentication;
+      this.resolveAuthentication = undefined;
+      this.rejectAuthentication = undefined;
+      if (this.timeoutTimer) clearTimeout(this.timeoutTimer);
+      resolve?.();
+      return;
+    }
+    if (this.state === 'open' && this.messageHandler) this.messageHandler(message);
+    else this.pendingMessages.push(message);
+  }
+
+  private flushPendingMessages(): void {
+    if (this.state !== 'open' || !this.messageHandler) return;
+    for (const message of this.pendingMessages) this.messageHandler(message);
+    this.pendingMessages = [];
+  }
+
+  private fail(reason: string): void {
+    if (this.state === 'closed') return;
+    this.state = 'closed';
+    if (this.timeoutTimer) clearTimeout(this.timeoutTimer);
+    const reject = this.rejectAuthentication;
+    this.resolveAuthentication = undefined;
+    this.rejectAuthentication = undefined;
+    reject?.(new Error(`SLAB CDP IPC ${reason}`));
+    this.socket.destroy();
+    this.onclose?.(`SLAB CDP IPC ${reason}`);
+  }
+}

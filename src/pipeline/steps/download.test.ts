@@ -154,7 +154,7 @@ describe('stepDownload', () => {
       page,
       {
         url: '${{ item.url }}',
-        dir: '/tmp/webcmd-download-test',
+        dir: path.join(os.tmpdir(), 'webcmd-download-test'),
         filename: '${{ index }}.mp4',
         progress: false,
         concurrency: 1,
