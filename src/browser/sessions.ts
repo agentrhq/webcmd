@@ -86,6 +86,26 @@ export class LocalBrowserSessionStore {
     return { ...record };
   }
 
+  ensure(profileId: string, sessionId: string): BrowserSessionRecord {
+    requireSessionIdShape(sessionId);
+    const state = this.load();
+    const existing = state.sessions.find((row) => row.profileId === profileId && row.id === sessionId);
+    if (existing) return { ...existing };
+
+    const timestamp = this.now().toISOString();
+    const record: BrowserSessionRecord = {
+      id: sessionId,
+      profileId,
+      kind: sessionId === ADAPTER_DEFAULT_SESSION_ID ? 'adapter-default' : 'explicit',
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      lastUsedAt: timestamp,
+    };
+    state.sessions.push(record);
+    this.save(state);
+    return { ...record };
+  }
+
   find(profileId: string, sessionId: string): BrowserSessionRecord | undefined {
     requireSessionIdShape(sessionId);
     const record = this.load().sessions.find((row) => row.id === sessionId && row.profileId === profileId);
