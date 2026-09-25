@@ -51,7 +51,9 @@ describe('createAdapterOverride', () => {
 
   it('copies sibling files from the plugin directory alongside the command', () => {
     const helperFile = path.join(path.dirname(pluginFile), 'helpers.js');
+    fs.writeFileSync(pluginFile, "import { parse } from './helpers.js';\n");
     fs.writeFileSync(helperFile, '// shared helper\nmodule.exports = { parse() {} };\n');
+    fs.writeFileSync(path.join(path.dirname(pluginFile), 'inbox.js'), "import { cli } from '@agentrhq/webcmd/registry';\n");
     seedLock({
       linkedin: {
         source: { kind: 'local', path: path.resolve(home) },
@@ -65,10 +67,12 @@ describe('createAdapterOverride', () => {
     const copiedHelper = path.join(path.dirname(result.overridePath), 'helpers.js');
     expect(fs.existsSync(copiedHelper)).toBe(true);
     expect(fs.readFileSync(copiedHelper, 'utf-8')).toBe(fs.readFileSync(helperFile, 'utf-8'));
+    expect(fs.existsSync(path.join(path.dirname(result.overridePath), 'inbox.js'))).toBe(false);
   });
 
   it('does not overwrite a sibling file the user already has in their override dir', () => {
     const helperFile = path.join(path.dirname(pluginFile), 'helpers.js');
+    fs.writeFileSync(pluginFile, "import { parse } from './helpers.js';\n");
     fs.writeFileSync(helperFile, '// upstream helper\n');
     const overrideDir = path.join(home, '.webcmd', 'clis', 'linkedin');
     fs.mkdirSync(overrideDir, { recursive: true });
@@ -84,6 +88,35 @@ describe('createAdapterOverride', () => {
     createAdapterOverride('linkedin/search', { homeDir: home });
 
     expect(fs.readFileSync(path.join(overrideDir, 'helpers.js'), 'utf-8')).toBe('// user-edited helper\n');
+  });
+
+  it('copies nested and transitive imports without copying unrelated commands', () => {
+    const pluginDir = path.dirname(pluginFile);
+    fs.writeFileSync(pluginFile, "import { parse } from './helpers.js';\n");
+    fs.writeFileSync(path.join(pluginDir, 'helpers.js'), "export { parse } from './shared/parse.js';\n");
+    fs.mkdirSync(path.join(pluginDir, 'shared'));
+    fs.writeFileSync(path.join(pluginDir, 'shared', 'parse.js'), 'export const parse = () => 1;\n');
+    fs.writeFileSync(path.join(pluginDir, 'inbox.js'), 'export const unrelated = true;\n');
+
+    const result = createAdapterOverride('linkedin/search', { homeDir: home });
+    const overrideDir = path.dirname(result.overridePath);
+    expect(fs.readFileSync(path.join(overrideDir, 'shared', 'parse.js'), 'utf-8')).toContain('parse');
+    expect(fs.existsSync(path.join(overrideDir, 'inbox.js'))).toBe(false);
+  });
+
+  it('ignores commented imports and refuses imports outside the plugin', () => {
+    const pluginDir = path.dirname(pluginFile);
+    fs.writeFileSync(pluginFile, "// import './inbox.js'\nimport './helpers.js';\n");
+    fs.writeFileSync(path.join(pluginDir, 'helpers.js'), 'export const ok = true;\n');
+    fs.writeFileSync(path.join(pluginDir, 'inbox.js'), 'export const unrelated = true;\n');
+    const result = createAdapterOverride('linkedin/search', { homeDir: home });
+    expect(fs.existsSync(path.join(path.dirname(result.overridePath), 'inbox.js'))).toBe(false);
+
+    fs.rmSync(result.overridePath);
+    fs.writeFileSync(pluginFile, "import '../outside.js';\n");
+    fs.writeFileSync(path.join(path.dirname(pluginDir), 'outside.js'), 'export {};\n');
+    expect(() => createAdapterOverride('linkedin/search', { homeDir: home })).toThrow(/escapes the plugin directory/);
+    expect(fs.existsSync(result.overridePath)).toBe(false);
   });
 
   it('refuses a command that comes from no installed plugin', () => {

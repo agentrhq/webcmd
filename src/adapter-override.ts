@@ -50,6 +50,37 @@ function readCommitHashFor(homeDir: string, plugin: string): string | null {
   }
 }
 
+function importedPluginFiles(entry: string): string[] {
+  const root = path.dirname(entry);
+  const seen = new Set<string>([entry]);
+  const pending = [entry];
+  const files: string[] = [];
+  while (pending.length) {
+    const current = pending.pop()!;
+    // ponytail: this handles literal imports; use a parser if adapters start building specifiers dynamically.
+    const source = fs.readFileSync(current, 'utf-8').replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
+    for (const match of source.matchAll(/(?:\bfrom\s*|\bimport\s*|\brequire\s*)\(?\s*(['"])(\.[^'"]*)\1/g)) {
+      const specifier = match[2]!;
+      const candidate = path.resolve(path.dirname(current), specifier);
+      const target = fs.existsSync(candidate) ? candidate : `${candidate}.js`;
+      const relative = path.relative(root, target);
+      if (relative.startsWith('..') || path.isAbsolute(relative)) {
+        throw new Error(`Import ${specifier} in ${current} escapes the plugin directory`);
+      }
+      if (!fs.existsSync(target)) throw new Error(`Imported file ${specifier} in ${current} does not exist`);
+      const realRelative = path.relative(fs.realpathSync(root), fs.realpathSync(target));
+      if (realRelative.startsWith('..') || path.isAbsolute(realRelative)) {
+        throw new Error(`Import ${specifier} in ${current} escapes the plugin directory`);
+      }
+      if (seen.has(target)) continue;
+      seen.add(target);
+      files.push(relative);
+      if (path.extname(target) === '.js') pending.push(target);
+    }
+  }
+  return files;
+}
+
 /** Fork an installed plugin's command file into ~/.webcmd/clis and record provenance. */
 export function createAdapterOverride(
   commandKey: string,
@@ -96,6 +127,7 @@ export function createAdapterOverride(
   }
 
   const basePath = getBaseCopyPath(commandKey, options.homeDir);
+  const dependencies = importedPluginFiles(pluginFile);
 
   const content = fs.readFileSync(pluginFile);
   fs.mkdirSync(path.dirname(overridePath), { recursive: true });
@@ -103,24 +135,11 @@ export function createAdapterOverride(
   fs.mkdirSync(path.dirname(basePath), { recursive: true });
   fs.writeFileSync(basePath, content);
 
-  // The plugin command file may import sibling files from the same plugin
-  // directory (shared helpers, types, constants). Only the named command
-  // file was copied above, so a forked override whose command file imports
-  // a sibling would resolve those imports to nothing once it's relocated
-  // into clis/. Copy every other file in the plugin's directory alongside
-  // it — mirroring the plugin's own directory layout under clis/<site>/ —
-  // so relative imports the command file makes keep resolving after the
-  // fork. The command file itself is excluded here since it's already
-  // been written above (and clis/ layout intentionally flattens site/
-  // rather than nesting per-command, so a second write would collide).
-  const pluginDir = path.dirname(pluginFile);
-  const commandFileName = path.basename(pluginFile);
-  const siblingEntries = fs.readdirSync(pluginDir, { withFileTypes: true });
-  for (const entry of siblingEntries) {
-    if (!entry.isFile() || entry.name === commandFileName) continue;
-    const siblingSrc = path.join(pluginDir, entry.name);
-    const siblingDest = path.join(path.dirname(overridePath), entry.name);
+  for (const relative of dependencies) {
+    const siblingSrc = path.join(path.dirname(pluginFile), relative);
+    const siblingDest = path.join(path.dirname(overridePath), relative);
     if (fs.existsSync(siblingDest)) continue; // don't clobber an existing override file
+    fs.mkdirSync(path.dirname(siblingDest), { recursive: true });
     fs.copyFileSync(siblingSrc, siblingDest);
   }
 
