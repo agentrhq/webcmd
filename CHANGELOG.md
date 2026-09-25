@@ -18,6 +18,21 @@
 - Hosted command lists retain excluded commands as `LOCAL` rows and return a local-only error instead of plugin-install guidance.
 - Local auth commands initialize user CLI compatibility shims, and hosted auth uses the same native grammar, flags, choices, and help as local mode.
 
+## [0.8.5](https://github.com/agentrhq/webcmd/compare/webcmd-v0.8.4...webcmd-v0.8.5) (2026-09-25)
+
+
+### Bug Fixes
+
+* **browser:** name the Cloak setContent hang instead of advising a longer timeout ([#448](https://github.com/agentrhq/webcmd/issues/448)) ([#528](https://github.com/agentrhq/webcmd/issues/528)) ([b2bc303](https://github.com/agentrhq/webcmd/commit/b2bc30327c3a8d256da7fd53bf324ad90ae047dd))
+* **browser:** name the CloakBrowser session cap instead of "target closed" ([#225](https://github.com/agentrhq/webcmd/issues/225)) ([#467](https://github.com/agentrhq/webcmd/issues/467)) ([84b8400](https://github.com/agentrhq/webcmd/commit/84b8400d5288d39fe4658433e61a0ace428bbb9d))
+* bump js-yaml to 4.3.2 for GHSA-2883-xcg3-v3hh ([b72bf28](https://github.com/agentrhq/webcmd/commit/b72bf2862c4e35c813a44d4dbf9a12d77801cd24))
+* **cli:** name the removed setup flags instead of a generic unknown-flag error ([#509](https://github.com/agentrhq/webcmd/issues/509)) ([303ce9d](https://github.com/agentrhq/webcmd/commit/303ce9d4d14b443e7d7ebb8239402fe82298cd07))
+* copy sibling plugin files when creating an adapter override ([#533](https://github.com/agentrhq/webcmd/issues/533)) ([9d8ea44](https://github.com/agentrhq/webcmd/commit/9d8ea440fd3d86ddadf53e66b6f27db6134b0312))
+* **docs-review:** constrain the advisory review with the schema it already defines ([#466](https://github.com/agentrhq/webcmd/issues/466)) ([c4c145f](https://github.com/agentrhq/webcmd/commit/c4c145fe01f78a3ab4cb52da4ac3530422e79f6d))
+* prevent adapter option collisions from bricking the CLI ([#529](https://github.com/agentrhq/webcmd/issues/529)) ([4713d01](https://github.com/agentrhq/webcmd/commit/4713d0101ade99ada530da25b123feb3e2f6568c))
+* run install lifecycle scripts on Windows ([#483](https://github.com/agentrhq/webcmd/issues/483)) ([5208f0f](https://github.com/agentrhq/webcmd/commit/5208f0f39f8f5c17d5ae284841991121950b8e12))
+* **site-memory:** stop a stale file lock from being stolen while the owner is still alive ([#496](https://github.com/agentrhq/webcmd/issues/496)) ([79b5d68](https://github.com/agentrhq/webcmd/commit/79b5d68d60afc86a15c79788451f3b632016bc92)), closes [#432](https://github.com/agentrhq/webcmd/issues/432)
+
 ## [0.8.4](https://github.com/agentrhq/webcmd/compare/webcmd-v0.8.3...webcmd-v0.8.4) (2026-09-08)
 
 ### Improvements

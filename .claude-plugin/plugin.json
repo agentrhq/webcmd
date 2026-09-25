@@ -1,6 +1,6 @@
 {
   "name": "webcmd",
-  "version": "0.8.4",
+  "version": "0.8.5",
   "description": "Self-learning browser infrastructure for AI agents: live browser control plus local sitemap memory that makes repeat runs faster and cheaper.",
   "author": {
     "name": "AgentRHQ",
