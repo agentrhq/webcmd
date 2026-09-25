@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Strategy, type CliCommand } from './registry.js';
 import {
+  commandHelpData,
   commandListPresentation,
   commandListRows,
   filterCommandsByTag,
@@ -182,6 +183,33 @@ describe('shared command presentation', () => {
     expect(formatCommandHelp(toPresentableCommand(localCommand))).toContain(
       'Browser window mode: foreground or background (default: background)',
     );
+  });
+
+  it('shows adapter-owned flags only with their adapter meanings', () => {
+    const command = toPresentableCommand({
+      ...localCommand,
+      args: [
+        { name: 'json', type: 'bool', help: 'Adapter JSON' },
+        { name: 'trace', type: 'string', help: 'Adapter trace' },
+        { name: 'window', type: 'string', help: 'Adapter window' },
+      ],
+    });
+    const help = formatCommandHelp(command);
+    const data = commandHelpData(command) as {
+      common_options: Array<{ name: string }>;
+      browser_common_options: Array<{ name: string }>;
+    };
+
+    expect(help).toContain('Adapter JSON');
+    expect(help).toContain('Adapter trace');
+    expect(help).toContain('Adapter window');
+    expect(help).not.toContain('Alias of --format json');
+    expect(help).not.toContain('Trace capture:');
+    expect(help).not.toContain('Browser window mode:');
+    expect(data.common_options.map(option => option.name)).not.toContain('json');
+    expect(data.common_options.map(option => option.name)).not.toContain('trace');
+    expect(data.browser_common_options.map(option => option.name)).not.toContain('window');
+    expect(data.common_options.map(option => option.name)).toContain('format');
   });
 
   it('builds byte-identical structured and display list rows', () => {

@@ -586,29 +586,35 @@ export function commandHelpData(command: PresentableCommand): Record<string, unk
   return {
     site: command.site,
     ...compactCommand(command),
-    common_options: COMMON_OPTIONS.map(compactCommonOption),
-    ...(command.browser ? { browser_common_options: BROWSER_COMMON_OPTIONS.map(compactCommonOption) } : {}),
+    common_options: unshadowedOptions(COMMON_OPTIONS, command).map(compactCommonOption),
+    ...(command.browser ? { browser_common_options: unshadowedOptions(BROWSER_COMMON_OPTIONS, command).map(compactCommonOption) } : {}),
     output_formats: ['table', 'plain', 'yaml', 'json', 'md', 'csv'],
   };
 }
 
-export function formatCommonOptionsHelp(): string {
-  const rows = COMMON_OPTIONS.map((option) => {
+function unshadowedOptions<T extends { name: string }>(options: readonly T[], command?: PresentableCommand): T[] {
+  if (!command) return [...options];
+  const owned = new Set(commandOptions(command).map(arg => arg.name));
+  return options.filter(option => !owned.has(option.name));
+}
+
+export function formatCommonOptionsHelp(command?: PresentableCommand): string {
+  const rows = unshadowedOptions(COMMON_OPTIONS, command).map((option) => {
     const details: string[] = [option.help];
     if ('default' in option) details.push(`default: ${option.default}`);
     if ('choices' in option) details.push(`choices: ${option.choices.join(', ')}`);
     return [option.flags, details.join('  ')] as [string, string];
   });
-  return ['Common options:', ...formatRows(rows)].join('\n');
+  return rows.length ? ['Common options:', ...formatRows(rows)].join('\n') : '';
 }
 
-export function formatBrowserCommonOptionsHelp(): string {
-  const rows = BROWSER_COMMON_OPTIONS.map((option) => {
+export function formatBrowserCommonOptionsHelp(command?: PresentableCommand): string {
+  const rows = unshadowedOptions(BROWSER_COMMON_OPTIONS, command).map((option) => {
     const details: string[] = [option.help];
     if ('choices' in option) details.push(`choices: ${option.choices.join(', ')}`);
     return [option.flags, details.join('  ')] as [string, string];
   });
-  return ['Browser common options:', ...formatRows(rows)].join('\n');
+  return rows.length ? ['Browser common options:', ...formatRows(rows)].join('\n') : '';
 }
 
 export function formatSiteHelp(site: string, commands: readonly PresentableCommand[]): string {
@@ -650,8 +656,12 @@ export function formatCommandHelp(command: PresentableCommand): string {
   ] as [string, string]);
   if (optionRows.length) lines.push('Command options:', ...formatRows(optionRows), '');
 
-  lines.push(formatCommonOptionsHelp(), '');
-  if (command.browser) lines.push(formatBrowserCommonOptionsHelp(), '');
+  const commonOptions = formatCommonOptionsHelp(command);
+  if (commonOptions) lines.push(commonOptions, '');
+  if (command.browser) {
+    const browserOptions = formatBrowserCommonOptionsHelp(command);
+    if (browserOptions) lines.push(browserOptions, '');
+  }
 
   const meta = [
     `Access: ${command.access}`,
