@@ -1,0 +1,39 @@
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Startup Error [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯⎯[39m
+Error: Failed to load custom Reporter from basic
+    at loadCustomReporterModule (file:///C:/Users/srise/webcmd/node_modules/vitest/dist/chunks/cli-api.BUXBO6jS.js:11338:9)
+    at file:///C:/Users/srise/webcmd/node_modules/vitest/dist/chunks/cli-api.BUXBO6jS.js:11354:23
+    ... 3 lines matching cause stack trace ...
+    at _createServer (file:///C:/Users/srise/webcmd/node_modules/vite/dist/node/chunks/node.js:26145:84)
+    at createViteServer (file:///C:/Users/srise/webcmd/node_modules/vitest/dist/chunks/cli-api.BUXBO6jS.js:8819:17)
+    at createVitest (file:///C:/Users/srise/webcmd/node_modules/vitest/dist/chunks/cli-api.BUXBO6jS.js:14159:18)
+    at prepareVitest (file:///C:/Users/srise/webcmd/node_modules/vitest/dist/chunks/cli-api.BUXBO6jS.js:14526:14)
+    at startVitest (file:///C:/Users/srise/webcmd/node_modules/vitest/dist/chunks/cli-api.BUXBO6jS.js:14469:14) {
+  [cause]: Error: Failed to load url basic (resolved id: basic). Does the file exist?
+      at reviveInvokeError (file:///C:/Users/srise/webcmd/node_modules/vite/dist/node/module-runner.js:538:14)
+      at Object.invoke (file:///C:/Users/srise/webcmd/node_modules/vite/dist/node/module-runner.js:554:33)
+      at ServerModuleRunner.getModuleInformation (file:///C:/Users/srise/webcmd/node_modules/vite/dist/node/module-runner.js:1183:7)
+      at ServerModuleRunner.import (file:///C:/Users/srise/webcmd/node_modules/vite/dist/node/module-runner.js:1099:23)
+      at loadCustomReporterModule (file:///C:/Users/srise/webcmd/node_modules/vitest/dist/chunks/cli-api.BUXBO6jS.js:11336:26)
+      at file:///C:/Users/srise/webcmd/node_modules/vitest/dist/chunks/cli-api.BUXBO6jS.js:11354:23
+      at async Promise.all (index 0)
+      at Vitest._setServer (file:///C:/Users/srise/webcmd/node_modules/vitest/dist/chunks/cli-api.BUXBO6jS.js:13153:138)
+      at BasicMinimalPluginContext.handler (file:///C:/Users/srise/webcmd/node_modules/vitest/dist/chunks/cli-api.BUXBO6jS.js:14125:5)
+      at _createServer (file:///C:/Users/srise/webcmd/node_modules/vite/dist/node/chunks/node.js:26145:84) {
+    code: 'ERR_LOAD_URL',
+    runnerError: Error: RunnerError
+        at reviveInvokeError (file:///C:/Users/srise/webcmd/node_modules/vite/dist/node/module-runner.js:539:64)
+        at Object.invoke (file:///C:/Users/srise/webcmd/node_modules/vite/dist/node/module-runner.js:554:33)
+        at ServerModuleRunner.getModuleInformation (file:///C:/Users/srise/webcmd/node_modules/vite/dist/node/module-runner.js:1183:7)
+        at ServerModuleRunner.import (file:///C:/Users/srise/webcmd/node_modules/vite/dist/node/module-runner.js:1099:23)
+        at loadCustomReporterModule (file:///C:/Users/srise/webcmd/node_modules/vitest/dist/chunks/cli-api.BUXBO6jS.js:11336:26)
+        at file:///C:/Users/srise/webcmd/node_modules/vitest/dist/chunks/cli-api.BUXBO6jS.js:11354:23
+        at async Promise.all (index 0)
+        at Vitest._setServer (file:///C:/Users/srise/webcmd/node_modules/vitest/dist/chunks/cli-api.BUXBO6jS.js:13153:138)
+        at BasicMinimalPluginContext.handler (file:///C:/Users/srise/webcmd/node_modules/vitest/dist/chunks/cli-api.BUXBO6jS.js:14125:5)
+        at _createServer (file:///C:/Users/srise/webcmd/node_modules/vite/dist/node/chunks/node.js:26145:84)
+  }
+}
+
+
+
