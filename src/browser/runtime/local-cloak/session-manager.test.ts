@@ -1327,6 +1327,19 @@ describe('CloakSessionManager', () => {
     expect(error.message).toContain('Process exited with code 76');
   });
 
+  it('does not call a Chrome exit 76 a CloakBrowser license failure', async () => {
+    const failure = new Error('browserType.launchPersistentContext: Process exited with code 76');
+    const launchChromePersistentContext = vi.fn().mockRejectedValue(failure);
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      runtimeKind: 'chrome',
+      launchChromePersistentContext,
+    });
+
+    await expect(manager.getPage({ profileId: 'actor', session: 'work', surface: 'browser' }))
+      .rejects.toBe(failure);
+  });
+
   it('points at the other live profile when navigation keeps losing the browser', async () => {
     const peer = fakeContext();
     const first = fakeContext();
@@ -1355,6 +1368,34 @@ describe('CloakSessionManager', () => {
     expect(error.hint).toContain('peer');
     expect(error.hint).toContain('one browser at a time');
     expect(launchPersistentContext).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not suggest a CloakBrowser license for a Chrome navigation disconnect', async () => {
+    const peer = fakeContext();
+    const first = fakeContext();
+    first.page.goto.mockRejectedValue(new Error('Target page, context or browser has been closed'));
+    first.context.newPage.mockResolvedValue(first.page);
+    const replacement = fakeContext();
+    replacement.page.goto.mockRejectedValue(new Error('Target page, context or browser has been closed'));
+    replacement.context.newPage.mockResolvedValue(replacement.page);
+    const launchChromePersistentContext = vi.fn()
+      .mockResolvedValueOnce(peer.context)
+      .mockResolvedValueOnce(first.context)
+      .mockResolvedValueOnce(replacement.context);
+    const manager = new CloakSessionManager({
+      baseDir: '/tmp/webcmd-test',
+      runtimeKind: 'chrome',
+      launchChromePersistentContext,
+    });
+
+    await manager.getPage({ profileId: 'peer', session: 'work', surface: 'browser' });
+    const error = await manager.newPage({
+      profileId: 'actor', session: 'work', surface: 'browser', url: 'https://example.com/',
+    }).catch((value: unknown) => value) as { code: string; hint: string };
+
+    expect(error.code).toBe('BROWSER_CONNECT');
+    expect(error.hint).not.toContain('CloakBrowser');
+    expect(error.hint).not.toContain('CLOAKBROWSER_LICENSE_KEY');
   });
 
   it('does not blame concurrency when no other profile is running', async () => {

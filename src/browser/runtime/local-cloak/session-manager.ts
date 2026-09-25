@@ -769,9 +769,10 @@ export class CloakSessionManager {
   private browserDisconnectedError(profileId: string, cause: unknown): BrowserConnectError {
     const detail = cause instanceof Error ? cause.message : String(cause);
     const others = [...this.profiles.keys()].filter((id) => id !== profileId);
-    const hint = others.length > 0
-      ? `Profile ${others.join(', ')} still has a browser open. CloakBrowser's free tier runs one browser at a time and exits a second launch with code ${CLOAK_SESSION_CAP_EXIT_CODE}. Close the other profile, or set CLOAKBROWSER_LICENSE_KEY for a tier with more sessions.`
-      : 'The browser closed on its own before the request finished. Run `webcmd daemon restart`; on macOS, WEBCMD_WINDOW=foreground avoids the background launch path.';
+    const isCloak = this.opts.runtimeKind === undefined || this.opts.runtimeKind === 'cloak';
+    const hint = isCloak && others.length > 0
+      ? `Profile ${others.join(', ')} still has a browser open. On CloakBrowser's free tier, another browser may hit the one browser at a time cap (exit code ${CLOAK_SESSION_CAP_EXIT_CODE}). Close the other profile, or set CLOAKBROWSER_LICENSE_KEY for a tier with more sessions.`
+      : `The browser closed before the request finished. Run \`webcmd daemon restart\`.${isCloak ? ' On macOS, WEBCMD_WINDOW=foreground avoids the background launch path.' : ''}`;
     return new BrowserConnectError(
       `Browser profile ${profileId} disconnected during navigation: ${detail}`,
       hint,
@@ -816,7 +817,9 @@ export class CloakSessionManager {
     try {
       context = await launchPersistentContext(launchOptions);
     } catch (err) {
-      if (isCloakSessionCapError(err)) throw this.sessionCapError(profileId, err);
+      if ((this.opts.runtimeKind === undefined || this.opts.runtimeKind === 'cloak') && isCloakSessionCapError(err)) {
+        throw this.sessionCapError(profileId, err);
+      }
       if (!isProfileAlreadyInUseError(err) || !(await this.recoverLockedProfile(userDataDir))) throw err;
       context = await launchPersistentContext(launchOptions);
     }
