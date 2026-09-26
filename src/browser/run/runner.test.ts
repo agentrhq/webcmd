@@ -19,6 +19,7 @@ import {
   type BrowserContext,
   type Page,
 } from 'playwright-core';
+import { WebSocketServer } from 'ws';
 import { LocalBrowserRunArtifactSink } from './artifacts.js';
 import { MemorySnapshotBaselineStore } from '../snapshot/index.js';
 import { PlaywrightTransport, unsupportedApiMessage } from './playwright-transport.js';
@@ -683,6 +684,38 @@ afterAll(async () => {
         posted: { method: 'POST', title: 'Ess\u00e9nce', body: '{"ok":true}' },
       });
     } finally {
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
+  });
+
+  it('delivers binary WebSocket frames without a Buffer global (webcmd#532)', async () => {
+    const server = new WebSocketServer({ port: 0, host: '127.0.0.1' });
+    server.on('connection', socket => {
+      socket.on('message', data => socket.send(data, { binary: true }));
+    });
+    await new Promise<void>(resolve => server.once('listening', () => resolve()));
+    const { port } = server.address() as import('node:net').AddressInfo;
+    try {
+      const output = await run(`
+        const received = new Promise(resolve => page.on('websocket', socket => {
+          socket.on('framereceived', frame => resolve(Array.from(frame.payload)));
+        }));
+        const echoed = await page.evaluate(port => new Promise((resolve, reject) => {
+          const socket = new WebSocket('ws://127.0.0.1:' + port);
+          socket.binaryType = 'arraybuffer';
+          socket.onopen = () => socket.send(new Uint8Array([0, 1, 254, 255]));
+          socket.onmessage = event => resolve(Array.from(new Uint8Array(event.data)));
+          socket.onerror = () => reject(new Error('socket error'));
+        }), ${port});
+        return { echoed, received: await received };
+      `);
+
+      expect(output.result).toEqual({
+        echoed: [0, 1, 254, 255],
+        received: [0, 1, 254, 255],
+      });
+    } finally {
+      for (const client of server.clients) client.terminate();
       await new Promise<void>(resolve => server.close(() => resolve()));
     }
   });
