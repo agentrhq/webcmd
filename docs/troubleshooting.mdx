@@ -118,6 +118,20 @@ print or replace secrets without my approval.
 `webcmd setup` now configures local browser mode only. Cloud credentials are
 provisioned separately.
 
+## Direct Fetch Errors (`web fetch`)
+
+When fetching a public URL using `webcmd web fetch --url <url>`, the CLI performs
+a fast HTTP request without opening a browser. If the target page requires
+client-side scripts or blocks direct requests, `web fetch` fails fast:
+
+| Code | Meaning | Next step |
+| --- | --- | --- |
+| `FETCH_REQUIRES_BROWSER` | The page returned a JavaScript shell or client-rendered app. | Switch to an explicit browser Session: create a Session and use `webcmd browser ...`. |
+| `FETCH_BLOCKED` | The site blocked direct non-browser requests with an anti-bot challenge. | Use `webcmd browser ...` with the appropriate Profile so the request runs in a live browser. |
+| `FETCH_BODY_TOO_LARGE` | The fetched response exceeded the 10 MiB safety limit. | Use a targeted browser program (`webcmd browser run`) to extract only the needed fields. |
+| `FETCH_UNSAFE_ADDRESS` | The requested URL resolves to a private, loopback, or cloud-metadata IP. | Ensure the target URL is a public web destination. |
+| `FETCH_TOO_MANY_REDIRECTS` | The request exceeded maximum HTTP redirects. | Verify the destination URL; the site may be stuck in an authentication or consent redirect loop. |
+
 ## Node Fails on Startup
 
 Webcmd requires Node.js 20.6 or newer:
@@ -127,6 +141,20 @@ node --version
 ```
 
 Upgrade Node.js, reinstall Webcmd, and retry.
+
+## Windows Platform Notes
+
+On Windows (PowerShell or Command Prompt):
+
+- **Local State Location**: User state, Profiles, cache, and site memory are stored in `%USERPROFILE%\.webcmd` (e.g., `C:\Users\<username>\.webcmd`), which corresponds to `~/.webcmd`.
+- **Paths with Spaces**: When pointing to an absolute executable path in `webcmd setup --browser`, enclose paths with spaces in double quotes:
+  ```powershell
+  webcmd setup --browser "C:\Program Files\Google\Chrome\Application\chrome.exe"
+  ```
+- **Stopping Stale Processes**: If a background daemon or browser instance is unresponsive, check the PID with `webcmd daemon status` and terminate it in PowerShell:
+  ```powershell
+  Stop-Process -Id <pid>
+  ```
 
 ## Advanced Diagnostics
 
