@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Webcmd Workflow Console</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark">W</span><span>webcmd</span><span class="slash">/</span><span class="muted">workflow console</span></div>
+      <div class="status"><span class="status-dot"></span><span id="serviceStatus">Local runner ready</span></div>
+    </header>
+
+    <section class="intro">
+      <p class="eyebrow">Natural language browser automation</p>
+      <h1>Tell the browser what to do.</h1>
+      <p class="lede">Describe a task across websites. Gemini turns it into a checked workflow, then Webcmd runs it in a real browser session.</p>
+    </section>
+
+    <section class="workspace">
+      <div class="composer panel">
+        <div class="panel-heading"><div><span class="section-number">01</span><h2>Your goal</h2></div><span class="hint">Read-only until submission</span></div>
+        <label class="sr-only" for="goal">Natural-language goal</label>
+        <textarea id="goal" rows="5" placeholder="Example: Find the OB Fitness Challenge on Site A and submit its details on Site B">Find information from cmrit and fill this form https://forms.gle/tPKidTfsb6LUyoxQ8</textarea>
+        <div class="examples"><span>Try:</span><button data-goal="Open amazon and find iPhone 18, but do not purchase it">Shop research</button><button data-goal="Find my latest unread LinkedIn messages and summarize them">Account research</button><button data-goal="Find the event details on the source site and fill the registration form">Cross-site form</button></div>
+
+        <div class="controls">
+          <label>Profile<input id="profile" value="default" placeholder="default"></label>
+          <label>Session<input id="session" placeholder="Create automatically"></label>
+          <label>Model<input id="model" value="gemini-2.5-flash"></label>
+        </div>
+        <div class="actions"><button class="secondary" id="preview"><span>Preview plan</span><kbd>⌘ P</kbd></button><button class="primary" id="run"><span class="play">▶</span> Run workflow</button></div>
+        <p class="safety-note"><span>●</span> External writes should be reviewed before you run them. The browser may pause for sign-in or confirmation.</p>
+      </div>
+
+      <aside class="panel activity">
+        <div class="panel-heading"><div><span class="section-number">02</span><h2>Activity</h2></div><span id="activityState" class="pill">Idle</span></div>
+        <div id="timeline" class="timeline"><div class="empty-state"><div class="empty-icon">↗</div><strong>Nothing running</strong><span>Your plan and browser results will appear here.</span></div></div>
+      </aside>
+    </section>
+
+    <section id="resultPanel" class="panel result-panel hidden">
+      <div class="panel-heading"><div><span class="section-number">03</span><h2>Result</h2></div><button id="clear" class="icon-button" title="Clear result">×</button></div>
+      <pre id="result"></pre>
+    </section>
+    <footer><span>Webcmd local console</span><span>GEMINI_API_KEY stays in your terminal environment</span></footer>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

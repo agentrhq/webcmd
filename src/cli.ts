@@ -66,6 +66,8 @@ import { readOverrideRecords, removeOverrideRecords } from './override-provenanc
 import { clearDaemonRunContext, generateRunId, isUnknownOutcomeError, runWithDaemonRunContext } from './session-lease.js';
 import { createLocalLearningBackend, createLocalSiteMemoryBackend, registerSiteCommands } from './site-memory/commands.js';
 import { resolveAdapterSourcePath, splitAdapterCommandKey } from './adapter-source.js';
+import { planWithGemini } from './planner/gemini.js';
+import { runBrowserWorkflow } from './planner/index.js';
 
 const CLI_FILE = fileURLToPath(import.meta.url);
 const FOLLOW_POLL_MS = 1_000;
@@ -659,6 +661,58 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string, pluginsDi
     if (fmt === 'table') console.log(renderVerifyReport(r));
     else await renderOutput(r, { fmt, fmtExplicit });
     process.exitCode = r.ok ? EXIT_CODES.SUCCESS : EXIT_CODES.GENERIC_ERROR;
+  });
+
+  const workflowRunCmd = addOutputFormatOption(program
+    .command('workflow')
+    .description('Plan and execute a natural-language browser workflow')
+    .command('run')
+    .description('Ask Gemini to plan a workflow and run it in a browser Session')
+    .requiredOption('--goal <text>', 'Natural-language task to perform')
+    .option('--session <id>', 'Existing browser Session ID; created automatically when omitted')
+    .option('--profile <name>', 'Browser profile to use', 'default')
+    .option('--model <name>', 'Gemini model name')
+    .option('--plan-only', 'Print the validated plan without opening a browser')
+    .option('--keep-session', 'Keep an automatically created Session open after completion'));
+  workflowRunCmd.action(async (opts) => {
+    const fmt = resolveCommandOutputFormat(workflowRunCmd, opts.format);
+    if (fmt === null) return;
+    try {
+      const workflow = await planWithGemini(opts.goal, { model: opts.model });
+      if (opts.planOnly) {
+        await renderOutput(workflow, { fmt, fmtExplicit: outputFormatIsExplicit(workflowRunCmd), title: 'webcmd/workflow/plan', source: 'webcmd workflow run' });
+        return;
+      }
+      const profile = resolveProfileSelection(opts.profile);
+      const profileId = profile?.contextId ?? 'default';
+      let session = opts.session?.trim();
+      let created = false;
+      if (!session) {
+        const createdData = await sendCommand('session-create', { contextId: profileId, sessionName: 'workflow' });
+        if (!createdData || typeof createdData !== 'object' || typeof (createdData as { id?: unknown }).id !== 'string') {
+          throw new CliError('SESSION_CREATE_FAILED', 'The browser daemon did not return a usable workflow Session ID.');
+        }
+        session = (createdData as { id: string }).id;
+        created = true;
+      }
+      try {
+        const result = await runBrowserWorkflow(workflow, { session, profile: opts.profile, context: {} });
+        await renderOutput({ session, ...result }, { fmt, fmtExplicit: outputFormatIsExplicit(workflowRunCmd), title: 'webcmd/workflow/result', source: 'webcmd workflow run' });
+      } finally {
+        if (created && !opts.keepSession) {
+          try {
+            await sendCommand('session-close', { contextId: profileId, session, force: true, discard: true });
+          } catch {
+            // Browser runtime cleanup is best effort after a workflow failure.
+          }
+        }
+      }
+    } catch (error) {
+      const message = error instanceof CliError ? `${error.code}: ${error.message}` : getErrorMessage(error);
+      if (error instanceof CliError && error.hint) console.error(`${message}\n${error.hint}`);
+      else console.error(message);
+      process.exitCode = error instanceof CliError ? error.exitCode : EXIT_CODES.GENERIC_ERROR;
+    }
   });
 
   // Bare `skills` and `skills list` render the same rows; the only difference is
