@@ -146,9 +146,11 @@ export async function runHostedSetup(io: SetupIo = {}): Promise<number> {
     const before = await (io.fetchDaemonStatus ?? fetchDaemonStatus)();
     try {
       const selected = await validateLocalBrowser(browser, io, chromeDiscovery, syncToChrome);
+      const chromeProfile = selected.kind === 'chrome' ? parsed.chromeProfile?.trim() : undefined;
+      const persistedSelected = selected.kind === 'chrome' && chromeProfile ? { ...selected, chromeProfile } : selected;
       if (selected.kind === 'chrome') await maybeImportChromeCookies(parsed, io, interactive, ask, write);
-      (io.saveConfig ?? saveWebcmdConfig)(makeLocalConfig(io.now?.() ?? new Date(), selected), io);
-      if (before) await restartConfiguredDaemon(selected, io);
+      (io.saveConfig ?? saveWebcmdConfig)(makeLocalConfig(io.now?.() ?? new Date(), persistedSelected), io);
+      if (before) await restartConfiguredDaemon(persistedSelected, io);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       await write(`Local browser setup failed: ${message}\n`);
