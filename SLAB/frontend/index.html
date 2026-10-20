@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deadline Detective — AI Browser Agent for College Opportunities</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div class="case-backdrop"></div>
+
+<header class="site-header">
+  <div class="header-inner">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg width="30" height="30" viewBox="0 0 30 30" fill="none">
+          <circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="2.4"/>
+          <line x1="17.8" y1="17.8" x2="26" y2="26" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+        </svg>
+      </span>
+      <div class="brand-text">
+        <h1>Deadline Detective</h1>
+        <p class="tagline">AI Browser Agent for College Opportunities</p>
+      </div>
+    </div>
+    <div class="case-stamp">Case files opened &amp; tracked</div>
+  </div>
+</header>
+
+<main>
+
+  <!-- INPUT SECTION -->
+  <section class="panel intake-panel" id="intake-panel" aria-labelledby="intake-heading">
+    <div class="panel-header">
+      <span class="panel-index">File No. 001</span>
+      <h2 id="intake-heading">Open a new case</h2>
+      <p class="panel-sub">Tell the detective what you're hunting for — scholarships, hackathons, internships, research programs — and it'll comb the web for leads.</p>
+    </div>
+
+    <form id="research-form">
+      <div class="field">
+        <label for="task">What should I investigate?</label>
+        <textarea
+          id="task"
+          name="task"
+          rows="5"
+          placeholder="e.g. Find summer research internships in machine learning for undergrads, open to international applicants, with deadlines in the next 60 days."
+          required></textarea>
+      </div>
+
+      <div class="field-grid">
+        <div class="field">
+          <label for="year">Year</label>
+          <select id="year" name="year">
+            <option value="">Prefer not to say</option>
+            <option value="1st Year">1st Year</option>
+            <option value="2nd Year">2nd Year</option>
+            <option value="3rd Year">3rd Year</option>
+            <option value="4th Year">4th Year</option>
+            <option value="Graduate">Graduate</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="branch">Branch</label>
+          <input type="text" id="branch" name="branch" placeholder="e.g. CSE, AI, ECE" autocomplete="off">
+        </div>
+
+        <div class="field">
+          <label for="interests">Interests</label>
+          <input type="text" id="interests" name="interests" placeholder="e.g. NLP, robotics, product design" autocomplete="off">
+        </div>
+      </div>
+
+      <button type="submit" id="submit-btn" class="btn-primary">
+        <span class="btn-label">Start Research</span>
+        <svg class="btn-icon" width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+          <path d="M4 9H14M14 9L9.5 4.5M14 9L9.5 13.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </form>
+  </section>
+
+  <!-- LOADING SECTION -->
+  <section class="panel loading-panel" id="loading-panel" hidden aria-live="polite">
+    <div class="loading-inner">
+      <div class="magnifier-spinner" aria-hidden="true">
+        <svg width="56" height="56" viewBox="0 0 56 56" fill="none">
+          <circle cx="23" cy="23" r="15" stroke="currentColor" stroke-width="3.2"/>
+          <line x1="33.5" y1="33.5" x2="49" y2="49" stroke="currentColor" stroke-width="3.6" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <h2>Working the case…</h2>
+      <ul class="progress-list" id="progress-list">
+        <li data-step="0"><span class="step-marker"></span>Planning research with Gemini…</li>
+        <li data-step="1"><span class="step-marker"></span>Opening browser session with Webcmd…</li>
+        <li data-step="2"><span class="step-marker"></span>Visiting websites…</li>
+        <li data-step="3"><span class="step-marker"></span>Analyzing eligibility &amp; deadlines…</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ERROR SECTION -->
+  <section class="panel error-panel" id="error-panel" hidden>
+    <h2>The trail went cold</h2>
+    <p id="error-message">Something interrupted the investigation. Please try again.</p>
+    <button type="button" id="retry-btn" class="btn-secondary">Try again</button>
+  </section>
+
+  <!-- RESULTS SECTION -->
+  <section class="results-wrap" id="results-section" hidden aria-labelledby="results-heading">
+
+    <div class="panel summary-panel">
+      <div class="panel-header">
+        <span class="panel-index">File No. 002</span>
+        <h2 id="results-heading">Case summary</h2>
+      </div>
+      <p id="summary-text" class="summary-text"></p>
+    </div>
+
+    <div class="panel actions-panel">
+      <div class="panel-header">
+        <span class="panel-index">Priority</span>
+        <h2>Your Next 3 Actions</h2>
+      </div>
+      <ol class="actions-list" id="actions-list"></ol>
+    </div>
+
+    <div class="panel table-panel">
+      <div class="panel-header">
+        <span class="panel-index">Evidence Board</span>
+        <h2>Opportunities found</h2>
+      </div>
+      <div class="table-scroll">
+        <table id="results-table">
+          <thead>
+            <tr>
+              <th>Opportunity</th>
+              <th>Eligible?</th>
+              <th>Deadline</th>
+              <th>What to do</th>
+              <th>Source</th>
+            </tr>
+          </thead>
+          <tbody id="results-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel sources-panel">
+      <div class="panel-header">
+        <span class="panel-index">Field Notes</span>
+        <h2>Sources checked</h2>
+      </div>
+      <ul class="sources-list" id="sources-list"></ul>
+    </div>
+
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <p>Powered by Webcmd + Gemini</p>
+</footer>
+
+<script src="/static/script.js"></script>
+</body>
+</html>
