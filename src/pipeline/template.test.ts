@@ -100,6 +100,29 @@ describe('evalExpr', () => {
   it('applies join filter', () => {
     expect(evalExpr('item.tags | join(,)', { item: { tags: ['a', 'b', 'c'] } })).toBe('a,b,c');
   });
+  it('keeps a | inside a quoted filter argument', () => {
+    expect(evalExpr("item.tags | join(' | ')", { item: { tags: ['a', 'b', 'c'] } })).toBe('a | b | c');
+    expect(evalExpr("item.name | default('a|b') | upper", { item: {} })).toBe('A|B');
+  });
+  it('keeps a | inside a quoted string literal', () => {
+    expect(evalExpr("'a|b'", {})).toBe('a|b');
+    expect(evalExpr("item.name || 'a|b'", { item: {} })).toBe('a|b');
+  });
+  it('still splits filters after an unterminated quote', () => {
+    expect(evalExpr("item.name | default(it's) | upper", { item: {} })).toBe("IT'S");
+  });
+  it('returns a plain quoted string literal', () => {
+    expect(evalExpr("'plain'", {})).toBe('plain');
+    expect(evalExpr('"it\'s"', {})).toBe("it's");
+  });
+  it('evaluates concatenation that starts and ends with a string literal', () => {
+    expect(evalExpr("'https://x.test/' + item.id + '/'", { item: { id: 7 } })).toBe('https://x.test/7/');
+    expect(evalExpr('"a" + "b"', {})).toBe('ab');
+    expect(evalExpr("'x' === 'x' ? 'yes' : 'no'", {})).toBe('yes');
+  });
+  it('evaluates escapes in a string literal', () => {
+    expect(evalExpr("'it\\'s'", {})).toBe("it's");
+  });
   it('applies upper filter', () => {
     expect(evalExpr('item.name | upper', { item: { name: 'hello' } })).toBe('HELLO');
   });
@@ -146,6 +169,9 @@ describe('render', () => {
   });
   it('renders inline helper expressions', () => {
     expect(render('https://example.com/search?q=${{ encodeURIComponent(args.keyword) }}', { args: { keyword: 'hello world' } })).toBe('https://example.com/search?q=hello%20world');
+  });
+  it('renders a concatenation wrapped in string literals', () => {
+    expect(render("${{ 'https://x.test/' + item.id + '/' }}", { item: { id: 7 } })).toBe('https://x.test/7/');
   });
   it('renders full multiline expressions', () => {
     expect(render("${{\n  args.topic ? `https://medium.com/tag/${args.topic}` : 'https://medium.com/tag/technology'\n}}", { args: { topic: 'ai' } })).toBe('https://medium.com/tag/ai');

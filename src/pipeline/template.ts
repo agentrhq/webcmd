@@ -41,7 +41,7 @@ export function evalExpr(expr: string, ctx: RenderContext): unknown {
 
   // ── Pipe filters: expr | filter1(arg) | filter2 ──
   // Split on single | (not ||) so "item.a || item.b | upper" works correctly.
-  const pipeSegments = expr.split(/(?<!\|)\|(?!\|)/).map(s => s.trim());
+  const pipeSegments = splitPipes(expr);
   if (pipeSegments.length > 1) {
     let result = evalExpr(pipeSegments[0], ctx);
     for (let i = 1; i < pipeSegments.length; i++) {
@@ -50,8 +50,11 @@ export function evalExpr(expr: string, ctx: RenderContext): unknown {
     return result;
   }
 
-  // Fast path: quoted string literal — skip VM overhead
-  const strLit = expr.match(/^(['"])(.*)\1$/);
+  // Fast path: quoted string literal — skip VM overhead.
+  // The body must not contain the delimiter or a backslash: "'a' + item.id + 'b'"
+  // also starts and ends with a quote but is a concatenation, and escapes need
+  // real JS parsing. Both fall through to the VM below.
+  const strLit = expr.match(/^(['"])((?:(?!\1)[^\\])*)\1$/);
   if (strLit) return strLit[2];
 
   // Fast path: numeric literal
@@ -64,6 +67,35 @@ export function evalExpr(expr: string, ctx: RenderContext): unknown {
   // Fallback: evaluate as JS in a sandboxed VM.
   // Handles ||, ??, arithmetic, ternary, method calls, etc. natively.
   return evalJsExpr(expr, { args, item, data, root, index });
+}
+
+const PIPE_SEPARATOR = /(?<!\|)\|(?!\|)/;
+
+/**
+ * Split an expression into its filter segments on single `|` (not `||`),
+ * skipping any `|` inside a quoted string so `join(' | ')` and `'a|b'` stay
+ * in one segment. An unterminated quote (e.g. `default(it's)`) means the
+ * quotes are not string delimiters, so fall back to the plain split.
+ */
+function splitPipes(expr: string): string[] {
+  const segments: string[] = [];
+  let quote = '';
+  let start = 0;
+  for (let i = 0; i < expr.length; i++) {
+    const ch = expr[i];
+    if (quote) {
+      if (ch === '\\') i++;
+      else if (ch === quote) quote = '';
+    } else if (ch === "'" || ch === '"' || ch === '`') {
+      quote = ch;
+    } else if (ch === '|' && expr[i - 1] !== '|' && expr[i + 1] !== '|') {
+      segments.push(expr.slice(start, i));
+      start = i + 1;
+    }
+  }
+  if (quote) return expr.split(PIPE_SEPARATOR).map(s => s.trim());
+  segments.push(expr.slice(start));
+  return segments.map(s => s.trim());
 }
 
 /**
