@@ -778,13 +778,13 @@ export class WebSocket extends ChannelOwner<channels.WebSocketChannel> implement
       if (event.opcode === 1)
         this.emit(Events.WebSocket.FrameSent, { payload: event.data });
       else if (event.opcode === 2)
-        this.emit(Events.WebSocket.FrameSent, { payload: Buffer.from(event.data, 'base64') });
+        this.emit(Events.WebSocket.FrameSent, { payload: quickjsEncoding.decodeBase64(event.data) });
     });
     this._channel.on('frameReceived', event => {
       if (event.opcode === 1)
         this.emit(Events.WebSocket.FrameReceived, { payload: event.data });
       else if (event.opcode === 2)
-        this.emit(Events.WebSocket.FrameReceived, { payload: Buffer.from(event.data, 'base64') });
+        this.emit(Events.WebSocket.FrameReceived, { payload: quickjsEncoding.decodeBase64(event.data) });
     });
     this._channel.on('socketError', ({ error }) => this.emit(Events.WebSocket.Error, error));
     this._channel.on('close', () => {
