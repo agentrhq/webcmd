@@ -61,6 +61,21 @@ return { url: page.url(), title: await page.title() };
 JS
 ```
 
+In Windows PowerShell, pass the script via a string or pipe:
+
+```powershell
+@'
+await page.goto('https://example.com');
+return { url: page.url(), title: await page.title() };
+'@ | webcmd --profile work --session work-project-k7 browser run --stdin --timeout 45
+```
+
+Alternatively, pass a local file with `--file <path>`:
+
+```bash
+webcmd --profile work --session work-project-k7 browser run --file ./script.js --timeout 45
+```
+
 The CLI reads files locally and sends their source, not their path, to the
 runtime. `--timeout` is measured in seconds and `--max-output` bounds returned
 results and logs. Successful runs include a `snapshotDiff` by default. Use
