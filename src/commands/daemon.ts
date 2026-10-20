@@ -107,6 +107,31 @@ export async function daemonStop(): Promise<void> {
   }
 }
 
+export async function daemonStart(): Promise<void> {
+  const current = await fetchDaemonStatus();
+  if (current) {
+    log.info(`Daemon is already running (PID ${current.pid}) on port ${current.port}.`);
+    return;
+  }
+
+  const result = await restartDaemon();
+  if (!result.status) {
+    log.error('Daemon start timed out before the daemon reported status.');
+    process.exitCode = 1;
+    return;
+  }
+
+  const version = formatDaemonVersion(result.status);
+  log.success(`Daemon started on port ${result.status.port} (${version}).`);
+  if (result.status.runtimeConnected) {
+    const profiles = result.status.profiles?.length ?? 0;
+    const profileText = profiles > 0 ? `; ${profiles} ${profiles === 1 ? 'profile' : 'profiles'} connected` : '';
+    log.status(`Runtime connected${profileText}.`);
+  } else {
+    log.warn('Daemon is running, but the Cloak runtime has not connected yet.');
+  }
+}
+
 export async function daemonRestart(): Promise<void> {
   const before = await fetchDaemonStatus();
   if (before?.profiles && before.profiles.length > 0) {
@@ -136,3 +161,4 @@ export async function daemonRestart(): Promise<void> {
     log.warn('Daemon is running, but the Cloak runtime has not connected yet.');
   }
 }
+

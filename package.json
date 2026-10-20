@@ -54,6 +54,10 @@
     "benchmark": "uv run python benchmarks/scripts/run_eval.py",
     "dev": "tsx src/main.ts",
     "dev:bun": "bun src/main.ts",
+    "daemon": "tsx src/daemon.ts",
+    "daemon:start": "tsx src/main.ts daemon start",
+    "daemon:status": "tsx src/main.ts daemon status",
+    "daemon:stop": "tsx src/main.ts daemon stop",
     "build": "npm run clean-dist && npm run copy-yaml && npm run compile && npm run build-manifest",
     "compile": "tsc --build && node -e \"require('fs').chmodSync('dist/src/main.js', 0o755)\"",
     "build-manifest": "tsx src/build-manifest.ts",
@@ -77,7 +81,11 @@
     "test:e2e": "vitest run --project e2e-fixed-port --project e2e",
     "gate:cloak-sessions": "WEBCMD_LIVE_CLOAK=1 vitest run --project e2e tests/e2e/cloak-session-concurrency.test.ts",
     "advise:listing-id-pairing": "node scripts/check-listing-id-pairing.mjs",
-    "check:package-bin": "node scripts/check-package-bin.mjs"
+    "check:package-bin": "node scripts/check-package-bin.mjs",
+    "pc2a:raw-smoke": "tsx src/adapters/webcmd/raw-smoke.ts",
+    "pc2a:core-smoke": "tsx src/adapters/webcmd/core-smoke.ts",
+    "pc2a:test": "vitest run src/adapters/core src/adapters/webcmd",
+    "pc2a:typecheck": "tsc --noEmit"
   },
   "keywords": [
     "cli",
