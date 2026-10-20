@@ -1,4 +1,5 @@
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { ArgumentError, AuthRequiredError, CommandExecutionError, EmptyResultError } from './errors.js';
 import { cli, Strategy, type CliCommand, type CommandArgs, type CliOptions } from './registry-api.js';
@@ -101,10 +102,10 @@ export function makeScreenshotCommand(site: string, displayName?: string, extra:
     domain: 'localhost',
     strategy: Strategy.UI,
     browser: true,
-    args: [{ name: 'output', required: false, help: `Output file path (default: /tmp/${site}-snapshot.txt)` }],
+    args: [{ name: 'output', required: false, help: `Output file path (default: ${path.join(os.tmpdir(), `${site}-snapshot.txt`)})` }],
     columns: ['Status', 'File'],
     func: async (page: IPage, kwargs: CommandArgs) => {
-      const outputPath = kwargs.output || `/tmp/${site}-snapshot.txt`;
+      const outputPath = kwargs.output || path.join(os.tmpdir(), `${site}-snapshot.txt`);
       const snap = await page.snapshot({ compact: true });
       const html = await page.evaluate('document.documentElement.outerHTML');
       const htmlPath = String(outputPath).replace(/\.\w+$/, '') + '-dom.html';
@@ -172,8 +173,8 @@ export function makeDumpCommand(site: string) {
     args: [],
     columns: ['action', 'files'],
     func: async (page: IPage) => {
-      const domPath = `/tmp/${site}-dom.html`;
-      const snapPath = `/tmp/${site}-snapshot.json`;
+      const domPath = path.join(os.tmpdir(), `${site}-dom.html`);
+      const snapPath = path.join(os.tmpdir(), `${site}-snapshot.json`);
       fs.mkdirSync(path.dirname(domPath), { recursive: true });
       fs.mkdirSync(path.dirname(snapPath), { recursive: true });
       fs.writeFileSync(domPath, await page.evaluate('document.body.innerHTML'));
