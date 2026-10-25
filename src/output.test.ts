@@ -53,6 +53,32 @@ describe('formatOutput', () => {
     );
   });
 
+  it('escapes commas, quotes, and newlines in CSV header cells', () => {
+    // Column names come from the row keys, so a scraped field name can carry a delimiter.
+    // An unescaped header produced more header cells than the rows beneath it.
+    expect(formatOutput([
+      { 'Revenue, USD': 10, 'said "hi"': 'x', 'two\nlines': 'y' },
+    ], { fmt: 'csv', fmtExplicit: true, isTTY: false })).toBe(
+      '"Revenue, USD","said ""hi""","two\nlines"\n10,x,y\n',
+    );
+  });
+
+  it('escapes pipe characters in Markdown header cells', () => {
+    expect(formatOutput([
+      { 'a|b': 1, ok: 'yes' },
+    ], { fmt: 'md', fmtExplicit: true, isTTY: false })).toBe(
+      '| a\\|b | ok |\n| --- | --- |\n| 1 | yes |\n',
+    );
+  });
+
+  it('escapes an explicit column name', () => {
+    expect(formatOutput([
+      { 'a,b': 1 },
+    ], { fmt: 'csv', fmtExplicit: true, columns: ['a,b'], isTTY: false })).toBe(
+      '"a,b"\n1\n',
+    );
+  });
+
   it('uses YAML for an implicit table format on a non-TTY stream', () => {
     expect(rendered([{ name: 'alice', score: 10 }], {
       fmt: 'table',

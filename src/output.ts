@@ -215,11 +215,15 @@ function formatMarkdown(data: unknown, opts: RenderOptions): string {
 
   const columns = resolveColumns(rows, opts);
   const output = [
-    `| ${columns.join(' | ')} |`,
+    `| ${columns.map(markdownCell).join(' | ')} |`,
     `| ${columns.map(() => '---').join(' | ')} |`,
-    ...rows.map(row => `| ${columns.map(column => String(row[column] ?? '').replace(/\|/g, '\\|')).join(' | ')} |`),
+    ...rows.map(row => `| ${columns.map(column => markdownCell(row[column])).join(' | ')} |`),
   ];
   return `${output.join('\n')}\n`;
+}
+
+function markdownCell(value: unknown): string {
+  return String(value ?? '').replace(/\|/g, '\\|');
 }
 
 function formatCsv(data: unknown, opts: RenderOptions): string {
@@ -227,7 +231,7 @@ function formatCsv(data: unknown, opts: RenderOptions): string {
   if (!rows.length) return '';
   const columns = resolveColumns(rows, opts);
   const output = [
-    columns.join(','),
+    columns.map(csvCell).join(','),
     ...rows.map(row => columns.map(column => csvCell(row[column])).join(',')),
   ];
   return `${output.join('\n')}\n`;

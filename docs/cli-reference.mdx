@@ -194,6 +194,12 @@ webcmd daemon status -f json
 
 `yml` and `markdown` are aliases for `yaml` and `md`.
 
+`csv` and `md` escape values that contain the format's own delimiter, so the
+output stays well formed: a comma, quote, or newline makes a CSV field quoted,
+and a pipe in a Markdown cell is backslash-escaped. Column headings are escaped
+the same way as the values beneath them, which matters when a field name comes
+from page text rather than the adapter author.
+
 ## Skills
 
 The package ships one agent skill, `webcmd-browser`:
