@@ -179,13 +179,12 @@ export async function launchElectronApp(appPath: string, app: ElectronAppEntry, 
 export function electronLaunchArgs(port: number, extraArgs: string[] = []): string[] {
   return [
     `--remote-debugging-port=${port}`,
-    '--remote-allow-origins=*',
     ...extraArgs,
   ];
 }
 
 function manualElectronLaunchHint(label: string, port: number): string {
-  return `Start ${label} manually with --remote-debugging-port=${port} --remote-allow-origins=*, then either:`;
+  return `Start ${label} manually with --remote-debugging-port=${port}, then either:`;
 }
 
 async function pollForReady(port: number): Promise<void> {
@@ -246,7 +245,7 @@ export async function resolveElectronEndpoint(site: string): Promise<string> {
     if (!confirmed) {
       throw new CommandExecutionError(
         `${label} needs to be restarted with CDP enabled.`,
-        `Manually restart: kill the app and relaunch with --remote-debugging-port=${port} --remote-allow-origins=*`,
+        `Manually restart: kill the app and relaunch with --remote-debugging-port=${port}`,
       );
     }
     process.stderr.write(`  Restarting ${label}...\n`);
@@ -262,15 +261,7 @@ export async function resolveElectronEndpoint(site: string): Promise<string> {
     );
   }
 
-  // Step 4: Launch
-  //
-  // Chrome / Electron 142+ enforces an Origin allow-list on the CDP
-  // WebSocket upgrade (ws://127.0.0.1:<port>/devtools/page/<id>). Without
-  // --remote-allow-origins=* every ws client other than chrome://inspect
-  // gets HTTP 403 "Rejected an incoming WebSocket connection from the
-  // http://127.0.0.1:<port> origin". This affects every Electron app
-  // webcmd launches because they all bundle a recent Chromium. Same
-  // mitigation as Puppeteer / Playwright / chrome-devtools-mcp.
+  // Step 4: Launch with Chromium's default DevTools Origin policy.
   const args = electronLaunchArgs(port, app.extraArgs ?? []);
   await launchElectronApp(appPath, app, args, label);
 
