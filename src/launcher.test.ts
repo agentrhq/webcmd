@@ -136,17 +136,15 @@ describe('resolveExecutableCandidates', () => {
 });
 
 describe('electronLaunchArgs', () => {
-  it('includes Chromium 142 WebSocket origin allow-list for auto-launched Electron apps', () => {
+  it('keeps the default CDP origin policy for auto-launched Electron apps', () => {
     expect(electronLaunchArgs(9234)).toEqual([
       '--remote-debugging-port=9234',
-      '--remote-allow-origins=*',
     ]);
   });
 
-  it('preserves app-specific extra launch args after the required CDP flags', () => {
+  it('preserves app-specific extra launch args after the debug port', () => {
     expect(electronLaunchArgs(9234, ['--foo=bar'])).toEqual([
       '--remote-debugging-port=9234',
-      '--remote-allow-origins=*',
       '--foo=bar',
     ]);
   });
